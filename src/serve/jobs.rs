@@ -29,7 +29,7 @@ use crate::{
     augment_ai,
     card::Card,
     config::{AiConfig, AskConfig, Audience, GenerateDeckConfig},
-    exam, generate, parser,
+    exam, generate, l1,
     session::{Session, now_ms},
     share,
     trace::{self, Delta, SourceBase, Walk},
@@ -548,13 +548,13 @@ impl RemoteGenerating {
     }
 
     /// The suggested file name a placed deck would get: [`generate::deck_name`]
-    /// normalized to a `.txt` stem, exactly like `library::place_deck`'s own
+    /// normalized to a `.md` stem, exactly like `library::place_deck`'s own
     /// normalization (mirrored here, never called, since the server must not
     /// place the file itself).
     fn suggested_filename(&self) -> String {
         let name = generate::deck_name(&self.url);
-        let stem = name.strip_suffix(".txt").unwrap_or(&name);
-        format!("{stem}.txt")
+        let stem = name.strip_suffix(".md").unwrap_or(&name);
+        format!("{stem}.md")
     }
 
     pub(super) fn dto(&self) -> RemoteGenerateDto {
@@ -569,7 +569,7 @@ impl RemoteGenerating {
             },
             Some(Ok(text)) => {
                 let filename = self.suggested_filename();
-                let cards = parser::parse_str(&filename, text).ok().map(|c| c.len());
+                let cards = l1::parse_str(&filename, text).ok().map(|c| c.len());
                 RemoteGenerateDto {
                     phase: "done",
                     deck: Some(text.clone()),

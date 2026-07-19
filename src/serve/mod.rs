@@ -643,7 +643,7 @@ pub fn run_review(
                 );
                 respond_json(request, &catalog);
             }
-            // Land an uploaded `.tsv`/`.txt` file via `place_deck`. Strict
+            // Land an uploaded `.tsv`/`.md` file via `place_deck`. Strict
             // unlike `generate`'s lenient save: an invalid upload is 400 and
             // no file remains — the upload still exists on the user's
             // device, so nothing is lost by refusing to keep a broken copy.
@@ -662,7 +662,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // `.tsv` converts (Anki export); `.txt` is a deck as-is. Case
+                // `.tsv` converts (Anki export); `.md` is a deck as-is. Case
                 // folded so `FILE.TSV` matches — the browser's file picker
                 // accept filter offers upper-case extensions too.
                 let lower_name = b.name.to_ascii_lowercase();
@@ -674,13 +674,13 @@ pub fn run_review(
                             continue;
                         }
                     }
-                } else if lower_name.ends_with(".txt") {
+                } else if lower_name.ends_with(".md") {
                     b.text
                 } else {
                     respond_status(request, 400);
                     continue;
                 };
-                let place_name = normalize_txt_extension(&b.name, &lower_name);
+                let place_name = normalize_md_extension(&b.name, &lower_name);
                 match crate::library::place_deck(&dir, &place_name, &text) {
                     Ok(p) if p.parse_error.is_none() => {
                         let deck = p
@@ -738,8 +738,8 @@ pub fn run_review(
                 // logic (stage-then-merge: fail fast on what's already
                 // knowable, same principle as the CLI's destination guard).
                 let name = generate::deck_name(&b.url);
-                let stem = name.strip_suffix(".txt").unwrap_or(&name);
-                let file = format!("{stem}.txt");
+                let stem = name.strip_suffix(".md").unwrap_or(&name);
+                let file = format!("{stem}.md");
                 if dest.join(&file).exists() {
                     respond_json(
                         request,
@@ -1251,6 +1251,11 @@ pub fn run_review(
                     }
                     Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
                         respond_status(request, 422);
+                    }
+                    // A CSPRNG failure minting the identity token: a server-side
+                    // fault, not a bad request.
+                    Err(store::MintError::Mint(_)) => {
+                        respond_status(request, 500);
                     }
                 }
             }

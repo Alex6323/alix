@@ -39,7 +39,7 @@ pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
 
     // `--zip`: the offline fallback — write an archive instead of sending.
     if args.zip {
-        let stem = name.strip_suffix(".txt").unwrap_or(&name);
+        let stem = name.strip_suffix(".md").unwrap_or(&name);
         let out = match &args.output {
             Some(p) if p.is_dir() => p.join(format!("{stem}.zip")),
             Some(p) => p.clone(),

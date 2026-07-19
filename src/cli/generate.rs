@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use alix::{config::Config, deck::Deck, generate, library, parser};
+use alix::{config::Config, deck::Deck, generate, l1, library};
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -25,13 +25,14 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
         .unwrap_or("understand the whole source");
     let src_path = PathBuf::from(&args.source);
 
-    // Naming an existing trace stub (`% trace:`) builds its checkpoints in
-    // place; a plain text file without the directive is treated as source
+    // Naming an existing trace stub (a frontmatter `trace:` key) builds its
+    // checkpoints in place; a plain file without one is treated as source
     // material below.
     if src_path.is_file()
-        && src_path.extension().is_some_and(|e| e == "txt")
-        && std::fs::read_to_string(&src_path)
-            .is_ok_and(|t| t.lines().any(|l| l.trim_start().starts_with("% trace:")))
+        && src_path.extension().is_some_and(|e| e == "md")
+        && std::fs::read_to_string(&src_path).is_ok_and(|t| {
+            alix::l1::parse_l1("stub.md", &t).is_ok_and(|d| d.frontmatter.trace.is_some())
+        })
     {
         let deck = Deck::load(&src_path)?;
         return trace_build(&src_path, &deck, args.yes, &config);
@@ -293,10 +294,10 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
         Some(name) => name.clone(),
         None => generate::deck_name(&source),
     };
-    let name = if name.ends_with(".txt") {
+    let name = if name.ends_with(".md") {
         name
     } else {
-        format!("{name}.txt")
+        format!("{name}.md")
     };
 
     if args.print {
@@ -304,7 +305,7 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
         if !text.ends_with('\n') {
             println!();
         }
-        match parser::parse_str(&name, &text) {
+        match l1::parse_str(&name, &text) {
             Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
             Err(e) => eprintln!("(warning: does not parse yet — {e})"),
         }
@@ -351,14 +352,14 @@ const RESET: &str = "\x1b[0m";
 fn trace_build(deck_path: &Path, deck: &Deck, yes: bool, config: &Config) -> Result<()> {
     if !deck.is_trace() {
         bail!(
-            "{} declares no `% trace:` — add the path you want to understand \
-             (e.g. `% trace: how X becomes Y`), then build it",
+            "{} declares no `trace:` — add the path you want to understand \
+             (e.g. a frontmatter `trace: how X becomes Y`), then build it",
             deck.subject
         );
     }
     if deck.sources.is_empty() {
         bail!(
-            "{} declares no `% source:` — add the scope to trace (a repo `.`, a \
+            "{} declares no `source:` — add the scope to trace (a repo `.`, a \
              directory, a file, or a URL)",
             deck.subject
         );
@@ -371,12 +372,17 @@ fn trace_build(deck_path: &Path, deck: &Deck, yes: bool, config: &Config) -> Res
     );
     let cards = alix::trace_ai::build(deck, &config.trace, &config.ask)?;
     alix::deck::set_trace_checkpoints(deck_path, &cards)?;
+    // Creation paths stamp at birth: mint tokens into the freshly written
+    // checkpoints (loud but non-fatal; review-open stamps again).
+    if let Err(e) = alix::stamp::stamp_deck(deck_path) {
+        eprintln!("warning: cannot stamp {}: {e}", deck_path.display());
+    }
 
-    let n = parser::parse_str(&deck.subject, &cards)
+    let n = alix::l1::parse_str(&deck.subject, &cards)
         .map(|c| c.len())
         .unwrap_or(0);
     println!(
-        "Wrote {n} checkpoints to {}. Review them and their `% at:` locators, \
+        "Wrote {n} checkpoints to {}. Review them and their `at:` locators, \
          then walk it from the picker: run `alix` and pick it.",
         deck_path.display()
     );
@@ -396,15 +402,15 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     let menu = alix::trace_ai::suggest(source, &config.trace, &config.ask)?;
     println!("{menu}");
     println!(
-        "\n{DIM}Paste a suggestion into a new deck (its `% trace:` + `% source:`), \
-         then build it:  alix generate <deck>{RESET}"
+        "\n{DIM}Paste a suggestion into a new deck's frontmatter (its `trace:` + \
+         `source:` keys), then build it:  alix generate <deck>{RESET}"
     );
     Ok(())
 }
 
 /// `alix explore --walk`: build an explore walk over a source's shape and walk
-/// it immediately. Writes the trace to a file (default `explore.txt`) with an
-/// absolute `% source:` so it re-walks from anywhere, then runs the shared walk.
+/// it immediately. Writes the trace to a file (default `explore.md`) with an
+/// absolute `source:` so it re-walks from anywhere, then runs the shared walk.
 /// Authors a trace over the source's shape (what it is → parts → entry →
 /// spine), written as a trace deck. The old explore-walk, minus the terminal
 /// walk — walking happens in the browser now.
@@ -417,17 +423,17 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
     );
     let checkpoints = alix::explore::walk(&source, goal, &config.trace, &config.ask)?;
 
-    // Wrap the checkpoints in a trace deck with an absolute `% source:` root so
+    // Wrap the checkpoints in a trace deck with an absolute `source:` root so
     // the saved walk reads the right files from anywhere.
     let name = Path::new(&source)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(source.as_str());
     let deck_text = format!(
-        "% trace: exploring {name} — what it is, its parts, and its spine\n\
-         % source: {source}\n\n{checkpoints}\n"
+        "---\ntrace: \"exploring {name} — what it is, its parts, and its spine\"\n\
+         source: \"{source}\"\n---\n\n{checkpoints}\n"
     );
-    let out = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.txt".into()));
+    let out = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
     if out.exists() && !args.force {
         bail!(
             "{} already exists; pass --force to overwrite",
@@ -441,6 +447,11 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
         out
     };
     std::fs::write(&out, &deck_text).with_context(|| format!("cannot write {}", out.display()))?;
+    // Creation paths stamp at birth (loud but non-fatal; review-open stamps
+    // again).
+    if let Err(e) = alix::stamp::stamp_deck(&out) {
+        eprintln!("warning: cannot stamp {}: {e}", out.display());
+    }
     println!(
         "Wrote the explore walk to {} — walk it from the picker: run `alix` and \
          pick it.",

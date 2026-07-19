@@ -91,7 +91,7 @@ enum Command {
     ///
     /// The target is a path: a single deck file reports that deck; a folder
     /// or workspace reports every deck inside it, each against the store it
-    /// actually uses. E.g. `alix stats spanish.txt` or `alix stats
+    /// actually uses. E.g. `alix stats spanish.md` or `alix stats
     /// ~/decks/flutter`.
     Stats(DeckArgs),
     /// List all cards with their state and due time (deck, folder, or workspace).
@@ -258,7 +258,7 @@ struct GenerateArgs {
     #[arg(long)]
     workspace: Option<PathBuf>,
 
-    /// Single deck: output name (default: derived from the source). A `.txt`
+    /// Single deck: output name (default: derived from the source). A `.md`
     /// extension is added if missing.
     #[arg(short, long)]
     output: Option<String>,
@@ -306,7 +306,7 @@ struct GenerateDeckArgs {
     source: String,
 
     /// Output deck name (default: a slug derived from the URL). Written into
-    /// the decks directory; a `.txt` extension is added if missing.
+    /// the decks directory; a `.md` extension is added if missing.
     #[arg(short, long)]
     output: Option<String>,
 
@@ -408,7 +408,7 @@ struct ImportArgs {
     file: PathBuf,
 
     /// Output deck name (default: a slug from the file name). Written into the
-    /// decks directory; a `.txt` extension is added if missing.
+    /// decks directory; a `.md` extension is added if missing.
     #[arg(short, long)]
     output: Option<String>,
 
@@ -432,7 +432,7 @@ struct ImportArgs {
 #[derive(Args)]
 struct DeckArgs {
     /// A path: one deck file (just that deck), or a folder/workspace
-    /// (every deck inside it) — e.g. `spanish.txt` or `~/decks/flutter`.
+    /// (every deck inside it) — e.g. `spanish.md` or `~/decks/flutter`.
     #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: PathBuf,
 
@@ -448,7 +448,7 @@ struct DeckArgs {
 #[derive(Args)]
 struct ResetArgs {
     /// What to clear, as a path: one deck file, or a folder/workspace
-    /// (every deck inside it) — e.g. `spanish.txt` or `~/decks/flutter`.
+    /// (every deck inside it) — e.g. `spanish.md` or `~/decks/flutter`.
     #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: Option<PathBuf>,
 

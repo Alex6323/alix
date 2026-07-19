@@ -199,7 +199,7 @@ pub(super) struct DeckItemDto {
     /// workspace/folder group row. Unlike `reviewable*` (state), this never
     /// changes with progress.
     pub(super) selectable: bool,
-    /// Display title (`% title:`, else the name without `.txt`, else folder).
+    /// Display title (the `# H1`, else the name without `.md`, else folder).
     pub(super) label: String,
     pub(super) meta: Option<String>,
     /// `new`/`started`/`finished`/`examdue` for a deck; `workspace`/`folder` for

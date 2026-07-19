@@ -270,14 +270,14 @@ mod tests {
             // No resolvable home dir in this environment — nothing to verify.
             return;
         };
-        let path = dirs.home_dir().join("decks").join("rust.txt");
-        let expected = format!("~/{}", Path::new("decks").join("rust.txt").display());
+        let path = dirs.home_dir().join("decks").join("rust.md");
+        let expected = format!("~/{}", Path::new("decks").join("rust.md").display());
         assert_eq!(abbreviate_home(&path), expected);
     }
 
     #[test]
     fn abbreviate_home_leaves_a_path_outside_home_unchanged() {
-        let outside = PathBuf::from("/definitely-not-the-home-dir-xyz/decks/rust.txt");
+        let outside = PathBuf::from("/definitely-not-the-home-dir-xyz/decks/rust.md");
         if let Some(dirs) = directories::BaseDirs::new()
             && outside.starts_with(dirs.home_dir())
         {

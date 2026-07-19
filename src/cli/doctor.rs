@@ -73,14 +73,10 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                 if let Some(desc) = &deck.trace {
                     println!("  trace:    {desc}");
                 }
-                for (a, b) in deck.duplicates() {
-                    warnings += 1;
-                    eprintln!(
-                        "warning: {}: cards at lines {} and {} have identical answers \
-                         and share their learning progress",
-                        deck.subject, a.line, b.line
-                    );
-                }
+                // The duplicate-answer check is RETIRED with token identity:
+                // content no longer keys progress, so identical answers no
+                // longer collide. Duplicate-token checks land with the dedup
+                // task.
                 // Image paths are resolved but never checked at load time, so a
                 // missing file is reported here (advisory: the deck still works,
                 // the web server just 404s the image).
@@ -147,7 +143,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                         {
                             warnings += 1;
                             eprintln!(
-                                "warning: {}: card at line {}: `% at: {at}` — {e:#}",
+                                "warning: {}: card at line {}: `at: {at}` — {e:#}",
                                 deck.subject, card.line
                             );
                         }
@@ -161,7 +157,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                     warnings += 1;
                     eprintln!(
                         "warning: {}: requires source-less `{prereq}` — this edge \
-                         doesn't gate its exam; add a `% source:` to `{prereq}` to \
+                         doesn't gate its exam; add a `source:` to `{prereq}` to \
                          make it a real prerequisite",
                         deck.subject
                     );
@@ -313,7 +309,7 @@ mod tests {
     fn check_warns_on_a_missing_workspace_icon() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "icon = \"assets/gone.svg\"\n").unwrap();
-        std::fs::write(dir.path().join("a.txt"), "# a\n\t1\n").unwrap();
+        std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
         // Warnings don't fail the check; the missing-icon path just adds one.
         assert!(check(vec![dir.path().to_path_buf()]).is_ok());
     }
@@ -327,7 +323,7 @@ mod tests {
             "[review]\ndeadline = \"soonish\"\n",
         )
         .unwrap();
-        std::fs::write(dir.path().join("a.txt"), "# a\n\t1\n").unwrap();
+        std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
         assert!(check(vec![dir.path().to_path_buf()]).is_ok());
     }
 }

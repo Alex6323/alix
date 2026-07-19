@@ -374,8 +374,17 @@ mod tests {
 
     use super::*;
 
+    /// A stamped test card whose token derives from `back`, so distinct
+    /// backs give distinct ids (cards sharing a front stay tellable apart).
     fn card(front: &str, back: &str) -> Card {
-        Card::plain(Arc::from("d.txt"), front.into(), vec![back.into()], None, 1)
+        let mut c = Card::plain(Arc::from("d.md"), front.into(), vec![back.into()], None, 1);
+        let slug: String = back
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        c.token = Some(Arc::from(format!("q{slug}").as_str()));
+        c
     }
 
     #[test]

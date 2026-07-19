@@ -233,16 +233,16 @@ pub(super) fn download_filename(name: &str) -> String {
     }
 }
 
-/// Normalizes an uploaded name's `.txt` extension to lower case before it
+/// Normalizes an uploaded name's `.md` extension to lower case before it
 /// reaches [`crate::library::place_deck`], whose suffix-strip is
-/// case-sensitive (a locked contract) — without this, `FILE.TXT` would save
-/// as `FILE.TXT.txt`. `lower_name` is the already-lowercased name, used only
-/// to test the ending; slicing 4 bytes off `name` is safe because a matched
-/// `.txt` ending means the last 4 bytes are that same ASCII extension
+/// case-sensitive (a locked contract) — without this, `FILE.MD` would save
+/// as `FILE.MD.md`. `lower_name` is the already-lowercased name, used only
+/// to test the ending; slicing 3 bytes off `name` is safe because a matched
+/// `.md` ending means the last 3 bytes are that same ASCII extension
 /// (lowercasing never changes a string's byte length).
-pub(super) fn normalize_txt_extension(name: &str, lower_name: &str) -> String {
-    if lower_name.ends_with(".txt") {
-        format!("{}.txt", &name[..name.len() - 4])
+pub(super) fn normalize_md_extension(name: &str, lower_name: &str) -> String {
+    if lower_name.ends_with(".md") {
+        format!("{}.md", &name[..name.len() - 3])
     } else {
         name.to_string()
     }
