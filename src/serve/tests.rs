@@ -71,31 +71,31 @@ fn quotes_and_backslashes_are_stripped_from_download_filenames() {
 }
 
 #[test]
-fn an_uppercase_txt_extension_is_lowered_before_placing() {
-    let name = "FILE.TXT";
+fn an_uppercase_md_extension_is_lowered_before_placing() {
+    let name = "FILE.MD";
     let lower = name.to_ascii_lowercase();
-    assert_eq!(normalize_txt_extension(name, &lower), "FILE.txt");
+    assert_eq!(normalize_md_extension(name, &lower), "FILE.md");
 }
 
 #[test]
-fn a_lowercase_txt_extension_passes_through_unchanged() {
-    let name = "deck.txt";
+fn a_lowercase_md_extension_passes_through_unchanged() {
+    let name = "deck.md";
     let lower = name.to_ascii_lowercase();
-    assert_eq!(normalize_txt_extension(name, &lower), "deck.txt");
+    assert_eq!(normalize_md_extension(name, &lower), "deck.md");
 }
 
 #[test]
-fn a_tsv_name_is_left_untouched_by_the_txt_normalizer() {
+fn a_tsv_name_is_left_untouched_by_the_md_normalizer() {
     let name = "EXPORT.TSV";
     let lower = name.to_ascii_lowercase();
-    assert_eq!(normalize_txt_extension(name, &lower), "EXPORT.TSV");
+    assert_eq!(normalize_md_extension(name, &lower), "EXPORT.TSV");
 }
 
 #[test]
 fn card_dto_structures_the_note() {
     let note = "Intro here.\n```\nfn main() {}\n```";
     let card = Card::plain(
-        Arc::from("s.txt"),
+        Arc::from("s.md"),
         "the front".to_string(),
         vec!["the back".to_string()],
         Some(note.to_string()),
@@ -119,7 +119,7 @@ fn card_dto_structures_the_note() {
 #[test]
 fn card_dto_exposes_image_urls_and_registry_matches() {
     let mut card = Card::plain(
-        Arc::from("s.txt"),
+        Arc::from("s.md"),
         "q".to_string(),
         vec!["a".to_string()],
         None,
@@ -150,7 +150,7 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
 #[test]
 fn plain_card_has_no_image_urls() {
     let card = Card::plain(
-        Arc::from("s.txt"),
+        Arc::from("s.md"),
         "q".to_string(),
         vec!["a".to_string()],
         None,
@@ -215,12 +215,12 @@ fn app_page_dispatches_the_kids_page_for_kids_and_review_for_adult() {
 #[test]
 fn resolve_row_resolves_a_unique_bare_deck_name() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("solo.txt"), "# f\n\tb\n").unwrap();
+    std::fs::write(dir.path().join("solo.md"), "## f\nb\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
     assert_eq!(
-        Resolved::One(dir.path().join("solo.txt")),
-        resolve_row("solo.txt", dir.path(), &recent)
+        Resolved::One(dir.path().join("solo.md")),
+        resolve_row("solo.md", dir.path(), &recent)
     );
 }
 
@@ -240,15 +240,15 @@ fn resolve_row_resolves_a_workspace_row_to_many_with_every_member_file() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
-    std::fs::write(ws.join("b.txt"), "# c\n\td\n").unwrap();
+    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
+    std::fs::write(ws.join("b.md"), "## c\nd\n").unwrap();
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
     assert_eq!(
         Resolved::Many {
             dir: ws.clone(),
-            files: vec![ws.join("a.txt"), ws.join("b.txt")],
+            files: vec![ws.join("a.md"), ws.join("b.md")],
         },
         resolve_row("english", dir.path(), &recent)
     );
@@ -256,7 +256,7 @@ fn resolve_row_resolves_a_workspace_row_to_many_with_every_member_file() {
 
 #[test]
 fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
-    // A folder with an `alix.toml` manifest but zero `*.txt` decks:
+    // A folder with an `alix.toml` manifest but zero `*.md` decks:
     // `workspace::has_decks` requires at least one member, so
     // `picker::catalog` never surfaces this row at all — it can't reach
     // the old `vec![e.path]`/`One` fallback because it never becomes a
@@ -276,38 +276,38 @@ fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
 
 #[test]
 fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
-    // Two real `a.txt` decks that share a bare name but live in different
+    // Two real `a.md` decks that share a bare name but live in different
     // containers: one under `decks_dir`, the other reached only via
-    // `recent` (so the catalog surfaces both under the same key "a.txt").
+    // `recent` (so the catalog surfaces both under the same key "a.md").
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.txt"), "# f\n\tb\n").unwrap();
+    std::fs::write(dir.path().join("a.md"), "## f\nb\n").unwrap();
     let elsewhere = tempfile::tempdir().unwrap();
-    std::fs::write(elsewhere.path().join("a.txt"), "# g\n\th\n").unwrap();
+    std::fs::write(elsewhere.path().join("a.md"), "## g\nh\n").unwrap();
     let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-    recent.record(&[elsewhere.path().join("a.txt")], 1000);
+    recent.record(&[elsewhere.path().join("a.md")], 1000);
 
     assert_eq!(
         Resolved::Ambiguous,
-        resolve_row("a.txt", dir.path(), &recent)
+        resolve_row("a.md", dir.path(), &recent)
     );
 }
 
 #[test]
 fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_name_is_duplicated() {
     // "english" collides across two containers (ambiguous bare name), but
-    // the qualified member key "english/a.txt" is unaffected — qualified
+    // the qualified member key "english/a.md" is unaffected — qualified
     // and bare names are disjoint namespaces (a filename can't contain
     // `/`), so the collision on one never bleeds into the other.
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
 
     let other_ws = tempfile::tempdir().unwrap();
     let other_english = other_ws.path().join("english");
     std::fs::create_dir(&other_english).unwrap();
-    std::fs::write(other_english.join("z.txt"), "# z\n\ty\n").unwrap();
+    std::fs::write(other_english.join("z.md"), "## z\ny\n").unwrap();
     std::fs::write(
         other_english.join(crate::workspace::MANIFEST),
         "title = \"Other English\"\n",
@@ -322,8 +322,8 @@ fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_nam
         resolve_row("english", dir.path(), &recent)
     );
     assert_eq!(
-        Resolved::One(ws.join("a.txt")),
-        resolve_row("english/a.txt", dir.path(), &recent)
+        Resolved::One(ws.join("a.md")),
+        resolve_row("english/a.md", dir.path(), &recent)
     );
 }
 
@@ -331,21 +331,21 @@ fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_nam
 fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambiguous() {
     // Same setup as the test above (two "english" containers, one reached
     // only via `recent`), but this time both containers hold a member
-    // file with the *same* name too ("a.txt"), so the qualified key
-    // "english/a.txt" itself collides — the documented always-works
+    // file with the *same* name too ("a.md"), so the qualified key
+    // "english/a.md" itself collides — the documented always-works
     // escape hatch must reject this, not last-wins onto whichever
     // container the catalog visited last (dangerous behind /api/reset,
     // which writes progress/deletes by this resolved path).
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
 
     let other_ws = tempfile::tempdir().unwrap();
     let other_english = other_ws.path().join("english");
     std::fs::create_dir(&other_english).unwrap();
-    std::fs::write(other_english.join("a.txt"), "# z\n\ty\n").unwrap();
+    std::fs::write(other_english.join("a.md"), "## z\ny\n").unwrap();
     std::fs::write(
         other_english.join(crate::workspace::MANIFEST),
         "title = \"Other English\"\n",
@@ -361,7 +361,7 @@ fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambigu
     );
     assert_eq!(
         Resolved::Ambiguous,
-        resolve_row("english/a.txt", dir.path(), &recent)
+        resolve_row("english/a.md", dir.path(), &recent)
     );
 }
 
@@ -385,7 +385,7 @@ fn a_drained_job_ignores_further_messages_without_replacing() {
     let (tx, rx) = std::sync::mpsc::channel();
 
     // First message: place a deck.
-    tx.send(Ok("# f\n\tb\n".to_string())).unwrap();
+    tx.send(Ok("## f\nb\n".to_string())).unwrap();
     let mut g = Generating {
         rx,
         url: "https://example.com/some-article".to_string(),
@@ -402,7 +402,7 @@ fn a_drained_job_ignores_further_messages_without_replacing() {
 
     // Send a second, distinguishable message (would place a different deck
     // if poll #2 tried to drain it).
-    tx.send(Ok("# other\n\tanswer\n".to_string())).unwrap();
+    tx.send(Ok("## other\nanswer\n".to_string())).unwrap();
 
     // Poll #2: guard should short-circuit, leaving the second message queued.
     let first_outcome = g.outcome.clone();
@@ -438,7 +438,7 @@ fn resolve_dest_falls_back_to_decks_dir_and_rejects_unknown_names() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
     // Absent/empty → the served root, without touching the catalog.
@@ -473,11 +473,11 @@ fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
     let elsewhere = tempfile::tempdir().unwrap();
     let other_english = elsewhere.path().join("english");
     std::fs::create_dir(&other_english).unwrap();
-    std::fs::write(other_english.join("z.txt"), "# z\n\ty\n").unwrap();
+    std::fs::write(other_english.join("z.md"), "## z\ny\n").unwrap();
     let mut recent = RecentDecks::load(dir.path().join("recent.json"));
     recent.record(&[other_english], 1000);
 
@@ -494,12 +494,12 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     let ws = dir.path().join("animals");
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    std::fs::write(ws.join("one.txt"), "# q1\n\ta1\n").unwrap();
-    std::fs::write(ws.join("two.txt"), "# q2\n\ta2\n").unwrap();
+    std::fs::write(ws.join("one.md"), "## q1 <!-- id: qa -->\na1\n").unwrap();
+    std::fs::write(ws.join("two.md"), "## q2 <!-- id: qb -->\na2\n").unwrap();
 
     let mut ws_store = Store::open(crate::workspace::store_path(&ws)).unwrap();
     let now = now_ms();
-    for name in ["one.txt", "two.txt"] {
+    for name in ["one.md", "two.md"] {
         let deck = Deck::load(ws.join(name)).unwrap();
         let id = deck.cards[0].id();
         let future = crate::store::FsrsState {
@@ -557,10 +557,10 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("letters");
     std::fs::create_dir(&folder).unwrap();
-    std::fs::write(folder.join("a.txt"), "# q\n\ta\n").unwrap();
+    std::fs::write(folder.join("a.md"), "## q <!-- id: qa -->\na\n").unwrap();
 
     let mut instance_store = Store::open(dir.path().join("instance.json")).unwrap();
-    let deck = Deck::load(folder.join("a.txt")).unwrap();
+    let deck = Deck::load(folder.join("a.md")).unwrap();
     let id = deck.cards[0].id();
     let now = now_ms();
     let future = crate::store::FsrsState {
@@ -603,16 +603,12 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
 #[test]
 fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     let dir = tempfile::tempdir().unwrap();
-    // A cloze card with no `{{...}}` holes fails to parse — `Deck::load` errors.
-    std::fs::write(
-        dir.path().join("broken.txt"),
-        "# front\n% reveal: cloze\n\tno holes\n",
-    )
-    .unwrap();
+    // An unclosed cloze hole fails to parse — `Deck::load` errors.
+    std::fs::write(dir.path().join("broken.md"), "## front\nbad \\cloze{oops\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let entry = picker::catalog(dir.path(), &recent)
         .into_iter()
-        .find(|e| e.name == "broken.txt")
+        .find(|e| e.name == "broken.md")
         .expect("catalog lists the broken deck file even though it won't parse");
     assert!(
         Deck::load(&entry.path).is_err(),
@@ -686,10 +682,10 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
     );
     let augment = crate::augment::AugmentCache::open(deck.with_extension("augment.json"));
     let mut decks = HashMap::new();
-    decks.insert("d.txt".to_string(), deck);
+    decks.insert("d.md".to_string(), deck);
     Reviewing::new(SessionBuild {
         session,
-        label: "d.txt".to_string(),
+        label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
         source_roots: HashMap::new(),
@@ -702,10 +698,10 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
 #[test]
 fn state_reports_the_sessions_depth_and_typeline_mode() {
     let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.txt");
-    let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n";
+    let deck = dir.path().join("d.md");
+    let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(cards[0].id(), 0); // seen, so it's a quiz not an acquire
     let r = reviewing_at(deck, cards, &store, Depth::Reconstruct);
@@ -717,17 +713,17 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
     );
     assert_eq!(
         "typeline", dto.mode,
-        "reconstruct + `% reveal: line` types the next line"
+        "reconstruct + `reveal: line` types the next line"
     );
 }
 
 #[test]
 fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.txt");
-    let text = "# why\n\tfirst fact\n\tsecond fact\n";
+    let deck = dir.path().join("d.md");
+    let text = "## why <!-- id: q1 -->\nfirst fact\nsecond fact\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(cards[0].id(), 0); // seen, so it's a quiz not an acquire
     let mut r = reviewing_at(deck, cards.clone(), &store, Depth::Reconstruct);
@@ -750,12 +746,12 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
 #[test]
 fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.txt");
+    let deck = dir.path().join("d.md");
     // A real expanded cloze card: its sub-card's back is the bare gap text, an
     // atomic answer that a Recognize pick fills from cached AI distractors.
-    let text = "# where\n% reveal: cloze\n\tThe {{cat}} sat here\n";
+    let text = "## where <!-- id: q1 -->\nThe \\cloze{cat} sat here\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let cards = crate::l1::parse_str("d.md", text).unwrap();
     assert_eq!(vec!["cat".to_string()], cards[0].back); // gap text is the back
     let id = cards[0].id();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -779,14 +775,14 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
 
 #[test]
 fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step() {
-    // A `% reveal: line` card (ordered multi-line back) at Recognize must offer
+    // A `reveal: line` card (ordered multi-line back) at Recognize must offer
     // whole-sequence options — the real ordering vs the AI's alternate wrong
     // orderings — never a pick-one-step built from the card's own lines.
     let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.txt");
-    let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n\tthird\n";
+    let deck = dir.path().join("d.md");
+    let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\nthird\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let cards = crate::l1::parse_str("d.md", text).unwrap();
     let id = cards[0].id();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
@@ -824,10 +820,10 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
     // cards), so it falls back to `None` — the client's self-report chips, not a
     // synthesized pick-one-step question.
     let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.txt");
-    let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n\tthird\n";
+    let deck = dir.path().join("d.md");
+    let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\nthird\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(cards[0].id(), 0); // seen → the Recognize MC, not the acquire on-ramp
     let r = reviewing_at(deck, cards, &store, Depth::Recognize);
@@ -849,10 +845,10 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     // now covers Recognize too), and once the floor passes and the card is
     // served again, the options reshuffle ({#reorder-mc-on-each-appearance}).
     let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.txt");
-    let text = "# q\n\tanswer\n";
+    let deck = dir.path().join("d.md");
+    let text = "## q <!-- id: q1 -->\nanswer\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let cards = crate::l1::parse_str("d.md", text).unwrap();
     let id = cards[0].id();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
@@ -916,10 +912,10 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     // and a store entry, so a later Recall session quizzes it directly — never
     // through the recognition-MC acquire on-ramp (spec §4.6).
     let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.txt");
-    let text = "# q\n\tanswer\n";
+    let deck = dir.path().join("d.md");
+    let text = "## q <!-- id: q1 -->\nanswer\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     let state = store.get_or_insert(cards[0].id(), 0);
     state.recognized_ms = Some(500); // recognized, but no Recall schedule yet
@@ -955,16 +951,17 @@ fn input_name_matches_clap_value_names() {
 // execution (covered by `ask.rs`'s own tests) isn't involved.
 
 fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
-    let deck = dir.join("d.txt");
-    std::fs::write(&deck, "# front\n\tback\n").unwrap();
+    let deck = dir.join("d.md");
+    std::fs::write(&deck, "## front <!-- id: q1 -->\nback\n").unwrap();
     let store = Store::open(dir.join("p.json")).unwrap();
-    let card = Card::plain(
-        Arc::from("d.txt"),
+    let mut card = Card::plain(
+        Arc::from("d.md"),
         "front".to_string(),
         vec!["back".to_string()],
         None,
         1,
     );
+    card.token = Some(Arc::from("q1"));
     let session = Session::new(
         vec![card.clone()],
         &store,
@@ -973,10 +970,10 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         now_ms(),
     );
     let mut decks = HashMap::new();
-    decks.insert("d.txt".to_string(), deck.clone());
+    decks.insert("d.md".to_string(), deck.clone());
     let reviewing = Reviewing::new(SessionBuild {
         session,
-        label: "d.txt".to_string(),
+        label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
         source_roots: HashMap::new(),
@@ -1081,10 +1078,10 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
     // nonexistent binary: if the short-circuit works, it's never touched.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("29.rs"), "fn real() {}\n").unwrap();
-    let deck_path = dir.path().join("d.txt");
+    let deck_path = dir.path().join("d.md");
     std::fs::write(
         &deck_path,
-        "% source: 29.rs\n# q\n\ta\n\t% at: 29.rs:1 from src/caching.rs:46-66\n",
+        "---\nsource: 29.rs\n---\n## q\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n",
     )
     .unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();
@@ -1100,15 +1097,15 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         now_ms(),
     );
     let mut decks = HashMap::new();
-    decks.insert("d.txt".to_string(), deck_path);
+    decks.insert("d.md".to_string(), deck_path);
     let mut source_roots = HashMap::new();
     // Configured (`source_access` opted in), but unresolved on disk.
-    source_roots.insert("d.txt".to_string(), dir.path().join("gone-origin"));
+    source_roots.insert("d.md".to_string(), dir.path().join("gone-origin"));
     let mut source_bases = HashMap::new();
-    source_bases.insert("d.txt".to_string(), SourceBase::for_deck(&deck));
+    source_bases.insert("d.md".to_string(), SourceBase::for_deck(&deck));
     let mut r = Reviewing::new(SessionBuild {
         session,
-        label: "d.txt".to_string(),
+        label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
         source_roots,
@@ -1149,7 +1146,7 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
         purpose: Purpose::DraftCard,
         card,
     });
-    tx.send(Reply::Answer("# term?\n\tdefinition\n".to_string()))
+    tx.send(Reply::Answer("## term?\ndefinition\n".to_string()))
         .unwrap();
     let (status, error) = r.poll_ask();
     assert_eq!(Some("card drafted".to_string()), status);
@@ -1167,18 +1164,17 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
 /// A two-checkpoint trace over a single source file, in `dir`.
 fn walk_deck(dir: &Path) -> crate::trace::Trace {
     std::fs::write(dir.join("source.txt"), "first\nsecond\nthird\n").unwrap();
-    let path = dir.join("t.txt");
+    let path = dir.join("t.md");
     std::fs::write(
         &path,
-        "% trace: how it works\n\
-         % source: source.txt\n\
-         # Predict the first hop\n\
-         \t% given: line — the input line\n\
-         \tit reads the first line\n\
-         \t% at: 1\n\
-         # Predict the second hop\n\
-         \tit reads line two\n\
-         \t% at: 2\n",
+        "---\ntrace: how it works\nsource: source.txt\n---\n\
+         ## Predict the first hop <!-- id: t1 -->\n\
+         <!-- given: line — the input line -->\n\
+         it reads the first line\n\
+         <!-- at: 1 -->\n\
+         ## Predict the second hop <!-- id: t2 -->\n\
+         it reads line two\n\
+         <!-- at: 2 -->\n",
     )
     .unwrap();
     crate::trace::Trace::from_deck(&Deck::load(&path).unwrap()).unwrap()
@@ -1294,13 +1290,17 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
 // ── Augment screen (the picker's "Augment" action) ──
 
 fn aug_card(front: &str, back: &str) -> Card {
-    Card::plain(
-        Arc::from("d.txt"),
+    let mut card = Card::plain(
+        Arc::from("d.md"),
         front.to_string(),
         vec![back.to_string()],
         None,
         1,
-    )
+    );
+    // The token is the identity now; derive a readable one from the front so
+    // two fixture cards never share an id.
+    card.token = Some(Arc::from(front.to_ascii_lowercase()));
+    card
 }
 
 #[test]
@@ -1315,7 +1315,7 @@ fn augmenting_reports_coverage_and_removal_persists() {
     seed.set_note(cards[1].id(), "n".into());
     seed.save().unwrap();
 
-    let mut aug = Augmenting::open("d.txt".into(), cards.clone(), cache_path.clone(), None);
+    let mut aug = Augmenting::open("d.md".into(), cards.clone(), cache_path.clone(), None);
     let dto = aug.dto();
     assert_eq!(2, dto.cards);
     assert!(dto.busy.is_none());
@@ -1352,7 +1352,7 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     seed.set_distractors(cards[0].id(), vec!["x".into()]);
     seed.save().unwrap();
 
-    let mut aug = Augmenting::open("d.txt".into(), cards, cache_path, None);
+    let mut aug = Augmenting::open("d.md".into(), cards, cache_path, None);
     // Fully covered → no gap → no costed call is started.
     let started = aug.generate_batch(
         vec![("choices".into(), None)],
@@ -1375,7 +1375,7 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
     let cache_path = dir.path().join("augment.json");
     // A fresh card has both a missing note and missing choices.
     let cards = vec![aug_card("Q", "a")];
-    let mut aug = Augmenting::open("d.txt".into(), cards, cache_path, None);
+    let mut aug = Augmenting::open("d.md".into(), cards, cache_path, None);
 
     let ai = AiConfig::default();
     // Notes parses `{"index": "text"}`; choices parses `{"index": ["a", ...]}`.
@@ -1420,8 +1420,8 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
 #[test]
 fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
     let dir = tempfile::tempdir().unwrap();
-    let deck_path = dir.path().join("rust.txt");
-    std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+    let deck_path = dir.path().join("rust.md");
+    std::fs::write(&deck_path, "## q1 <!-- id: qa -->\na1\n").unwrap();
     let deck = Deck::load(&deck_path).unwrap();
 
     let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1440,8 +1440,8 @@ fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
 
     // A due virtual card for this deck adds to the whole-deck due count —
     // sidecar content keyed by its `Card::id`, plus a fresh schedule at t=0.
-    let vtext = "# virtual front\n\tvirtual back\n".to_string();
-    let vid = crate::parser::parse_str(&deck.subject, &vtext).unwrap()[0].id();
+    let vtext = "## virtual front <!-- id: v1 -->\nvirtual back\n".to_string();
+    let vid = crate::l1::parse_str(&deck.subject, &vtext).unwrap()[0].id();
     store.insert_virtual(crate::store::VirtualCard {
         id: vid,
         kind: crate::store::VirtualKind::Remediation,

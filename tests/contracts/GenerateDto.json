@@ -1,6 +1,6 @@
 {
   "cards": 12,
-  "deck": "rust-ownership.txt",
+  "deck": "rust-ownership.md",
   "elapsed": 41,
   "error": null,
   "phase": "done"

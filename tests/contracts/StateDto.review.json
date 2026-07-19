@@ -59,7 +59,7 @@
   ],
   "depth": "recall",
   "exam_due": [
-    "rust.txt"
+    "rust.md"
   ],
   "failed": 1,
   "initial": 5,
@@ -68,7 +68,7 @@
     "one owner per value"
   ],
   "kind": "review",
-  "label": "rust.txt",
+  "label": "rust.md",
   "mode": "flip",
   "passed": 1,
   "phase": "review",

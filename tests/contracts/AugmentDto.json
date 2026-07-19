@@ -1,7 +1,7 @@
 {
   "busy": "choices",
   "cards": 12,
-  "deck": "rust.txt",
+  "deck": "rust.md",
   "done": [
     "format"
   ],

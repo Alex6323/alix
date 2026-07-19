@@ -1,8 +1,8 @@
 {
   "cards": 1,
-  "deck": "% link: https://example.org\n# Q\n\tA\n",
+  "deck": "---\nlink: https://example.org\n---\n## Q\nA\n",
   "elapsed": null,
   "error": null,
-  "filename": "example-org.txt",
+  "filename": "example-org.md",
   "phase": "done"
 }

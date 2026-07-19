@@ -948,18 +948,23 @@ mod tests {
         store::{FsrsState, Store},
     };
 
+    /// A stamped test card: `tok{n}` is its identity token, so distinct
+    /// `n` give distinct ids (sibling tests reuse one `n` with distinct
+    /// `hole`s, the real cloze shape).
     fn card(subject: &str, n: usize) -> Card {
-        Card::plain(
+        let mut card = Card::plain(
             Arc::from(subject),
             format!("front {n}"),
             vec![format!("back {n}")],
             None,
             n,
-        )
+        );
+        card.token = Some(Arc::from(format!("tok{n}").as_str()));
+        card
     }
 
     fn cards(n: usize) -> Vec<Card> {
-        (0..n).map(|i| card("deck.txt", i)).collect()
+        (0..n).map(|i| card("deck.md", i)).collect()
     }
 
     fn empty_store() -> (Store, tempfile::TempDir) {
@@ -980,8 +985,13 @@ mod tests {
     /// `main::synthesize_virtual`: the parsed card on a far-out `line`). `back`
     /// drives the id, so distinct `back` values give distinct virtual cards.
     fn insert_virtual(store: &mut Store, parent: &str, back: &str, created_ms: u64) -> Card {
-        let text = format!("# virtual front\n\t{back}\n");
-        let mut card = crate::parser::parse_str(parent, &text).unwrap().remove(0);
+        let slug: String = back
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        let text = format!("## virtual front <!-- id: v{slug} -->\n{back}\n");
+        let mut card = crate::l1::parse_str(parent, &text).unwrap().remove(0);
         card.line = 1_000_000;
         let id = card.id();
         store.insert_virtual(VirtualCard {
@@ -1594,13 +1604,11 @@ mod tests {
     fn remove_current_also_drops_cloze_siblings() {
         let (store, _dir) = empty_store();
         // Two sub-cards of one source card (same line) plus one other card.
-        let mut all = vec![
-            card("deck.txt", 1),
-            card("deck.txt", 1),
-            card("deck.txt", 2),
-        ];
+        let mut all = vec![card("deck.md", 1), card("deck.md", 1), card("deck.md", 2)];
         all[0].back = vec!["hole a".into()];
+        all[0].hole = Some(0);
         all[1].back = vec!["hole b".into()];
+        all[1].hole = Some(1);
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
         assert_eq!(3, session.remaining());
         // Removing one sub-card removes its sibling too, leaving only card 2.
@@ -1620,9 +1628,10 @@ mod tests {
         let mut all = Vec::new();
         for (line, name) in [(1, "A"), (2, "B")] {
             for hole in 1..=2 {
-                let mut c = card("deck.txt", line);
+                let mut c = card("deck.md", line);
                 c.front = format!("{name}{hole}");
                 c.back = vec![format!("{name} answer {hole}")];
+                c.hole = Some(hole as u32 - 1);
                 all.push(c);
             }
         }
@@ -1649,8 +1658,9 @@ mod tests {
         let (store, _dir) = empty_store();
         let mut all = Vec::new();
         for hole in 1..=3 {
-            let mut c = card("deck.txt", 1);
+            let mut c = card("deck.md", 1);
             c.back = vec![format!("answer {hole}")];
+            c.hole = Some(hole as u32 - 1);
             all.push(c);
         }
         let session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
@@ -1737,7 +1747,7 @@ mod tests {
     #[test]
     fn is_retired_once_the_interval_passes_the_cap() {
         let (mut store, _dir) = empty_store();
-        let c = card("deck.txt", 0);
+        let c = card("deck.md", 0);
 
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS))); // unseen — never retired
         // An FSRS interval at/past the cap rests.
@@ -1775,7 +1785,7 @@ mod tests {
 
         // A card just passed to stage 2 at `now` is on cooldown (due in 1h):
         // not reviewable now, reviewable once its due time arrives.
-        let c = card("deck.txt", 0);
+        let c = card("deck.md", 0);
         let s = store.get_or_insert(c.id(), now);
         s.streak = 1;
         s.acquired_ms = now;
@@ -2069,21 +2079,25 @@ mod tests {
         // Two sub-cards of one cloze share (subject, line) → siblings; plus one
         // other card. Without a topology, separate_siblings would slip `other`
         // between the siblings; with a topology, the walk order is kept verbatim.
-        let sib_a = Card::plain(
-            Arc::from("d.txt"),
+        let mut sib_a = Card::plain(
+            Arc::from("d.md"),
             "front a".into(),
             vec!["a".into()],
             None,
             7,
         );
-        let sib_b = Card::plain(
-            Arc::from("d.txt"),
+        sib_a.token = Some(Arc::from("sib"));
+        sib_a.hole = Some(0);
+        let mut sib_b = Card::plain(
+            Arc::from("d.md"),
             "front b".into(),
             vec!["b".into()],
             None,
             7,
         );
-        let other = card("d.txt", 3);
+        sib_b.token = Some(Arc::from("sib"));
+        sib_b.hole = Some(1);
+        let other = card("d.md", 3);
         let all = vec![sib_a.clone(), sib_b.clone(), other.clone()];
         for c in &all {
             store.get_or_insert(c.id(), 0);
@@ -2165,7 +2179,7 @@ mod tests {
     #[test]
     fn virtual_card_joins_the_roster_and_is_served() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000; // past the acquire cooldown: due
         let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert_eq!(1, session.initial_size);
@@ -2176,7 +2190,7 @@ mod tests {
     #[test]
     fn grading_a_virtual_card_updates_store_cards() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let id = synth.id();
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let mut session =
@@ -2196,7 +2210,7 @@ mod tests {
     #[test]
     fn virtual_card_not_treated_as_unseen() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert!(!session.current_unseen(&store));
@@ -2205,9 +2219,9 @@ mod tests {
     #[test]
     fn a_missed_virtual_card_reappears_on_its_fsrs_due() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let synth_id = synth.id();
-        let deck_card = card("deck.txt", 0);
+        let deck_card = card("deck.md", 0);
         store.get_or_insert(deck_card.id(), 0);
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000; // both due (past the acquire cooldown)
@@ -2236,21 +2250,21 @@ mod tests {
         let sched = sched();
 
         // Due: created at t=0, past its stage-1 cooldown by `now`.
-        insert_virtual(&mut store, "deck.txt", "gap-due", 0);
+        insert_virtual(&mut store, "deck.md", "gap-due", 0);
         // Not yet due: created at `now`, still cooling down.
-        insert_virtual(&mut store, "deck.txt", "gap-not-due", now);
+        insert_virtual(&mut store, "deck.md", "gap-not-due", now);
         // Archived: its interval already sits at the cap, so it's excluded —
         // derived from `store.cards`, no stored flag.
-        let archived = insert_virtual(&mut store, "deck.txt", "gap-archived", 0);
+        let archived = insert_virtual(&mut store, "deck.md", "gap-archived", 0);
         store.get_or_insert(archived.id(), 0).recall = Some(retired_fsrs());
 
         assert_eq!(
             1,
-            count_reviewable_virtual(&store, "deck.txt", sched.as_ref(), now, cap)
+            count_reviewable_virtual(&store, "deck.md", sched.as_ref(), now, cap)
         );
         assert!(has_reviewable_virtual(
             &store,
-            "deck.txt",
+            "deck.md",
             sched.as_ref(),
             now,
             cap
@@ -2260,7 +2274,7 @@ mod tests {
     #[test]
     fn next_due_at_includes_virtual_cards() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 1000);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 1000);
         let session = Session::new(
             vec![synth],
             &store,
@@ -2279,7 +2293,7 @@ mod tests {
     #[test]
     fn virtual_card_is_retired_when_interval_reaches_cap() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let id = synth.id();
         let options = SessionOptions {
             retire_after_days: Some(4),
@@ -2313,7 +2327,7 @@ mod tests {
             0,
             count_reviewable_virtual(
                 &store,
-                "deck.txt",
+                "deck.md",
                 sched().as_ref(),
                 now,
                 options.retire_after_days
@@ -2327,7 +2341,7 @@ mod tests {
         // not retired once the cap is raised above its interval — exactly
         // like a deck card. No stickiness from a stored flag.
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let id = synth.id();
         store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             scheduled_days: 10,
@@ -2342,18 +2356,18 @@ mod tests {
         let sched = sched();
         assert_eq!(
             0,
-            count_reviewable_virtual(&store, "deck.txt", sched.as_ref(), now, Some(10))
+            count_reviewable_virtual(&store, "deck.md", sched.as_ref(), now, Some(10))
         );
         assert_eq!(
             1,
-            count_reviewable_virtual(&store, "deck.txt", sched.as_ref(), now, Some(20))
+            count_reviewable_virtual(&store, "deck.md", sched.as_ref(), now, Some(20))
         );
     }
 
     #[test]
     fn retired_virtual_card_is_excluded_from_queue_and_counts() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let id = synth.id();
         store.get_or_insert(id, 0).recall = Some(retired_fsrs());
 
@@ -2365,7 +2379,7 @@ mod tests {
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         assert_eq!(
             0,
-            count_reviewable_virtual(&store, "deck.txt", sched().as_ref(), now, cap)
+            count_reviewable_virtual(&store, "deck.md", sched().as_ref(), now, cap)
         );
         // The sidecar entry itself survives — archived, not deleted.
         assert!(store.is_virtual(id));
@@ -2374,7 +2388,7 @@ mod tests {
     #[test]
     fn retire_only_at_cap_not_below() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let id = synth.id();
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000; // past the acquire cooldown

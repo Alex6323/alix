@@ -257,7 +257,7 @@ mod tests {
         augment::AugmentCache,
         card::Card,
         depth::Depth,
-        parser,
+        l1 as parser,
         scheduler::{Fsrs, Grade},
         session::{Session, SessionOptions},
         store::{Store, VirtualCard, VirtualKind},
@@ -268,8 +268,21 @@ mod tests {
     const T0: u64 = 1_000_000;
     const NOW: u64 = T0 + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
 
+    /// Parses an L1 fixture and stamps each file card with a distinct
+    /// literal token (cloze sub-cards share their card's token, as a stamped
+    /// file would), so the store/augment lookups below key on real ids.
     fn parse(text: &str) -> Vec<Card> {
-        parser::parse_str("deck.txt", text).unwrap()
+        let mut cards = parser::parse_str("deck.md", text).unwrap();
+        let mut n = 0;
+        let mut last_line = 0;
+        for card in &mut cards {
+            if card.line != last_line {
+                n += 1;
+                last_line = card.line;
+            }
+            card.token = Some(std::sync::Arc::from(format!("tok{n}").as_str()));
+        }
+        cards
     }
 
     fn fixtures() -> (Store, AugmentCache, tempfile::TempDir) {
@@ -313,8 +326,8 @@ mod tests {
     #[test]
     fn mode_follows_the_depth_and_reveal_matrix() {
         let (mut store, mut augment, _dir) = fixtures();
-        let flip = parse("# q\n\ta\n");
-        let line = parse("# q\n\t% reveal: line\n\tone\n\ttwo\n");
+        let flip = parse("## q\na\n");
+        let line = parse("## q <!-- reveal: line -->\none\ntwo\n");
         // Recognize renders a Choice only when a pick can be built, so its case
         // needs cached AI distractors (a card without them falls back to Flip,
         // see `a_recognize_card_with_no_buildable_pick...`).
@@ -345,7 +358,7 @@ mod tests {
     #[test]
     fn acquire_flags_a_first_encounter_only() {
         let (mut store, augment, _dir) = fixtures();
-        let cards = parse("# q\n\ta\n");
+        let cards = parse("## q\na\n");
         let fresh = session_at(cards.clone(), &store, Depth::Recall, NOW);
         assert!(
             state(&fresh, &store, &augment, Some(NOW)).acquire,
@@ -363,8 +376,7 @@ mod tests {
     #[test]
     fn card_view_carries_context_note_and_images() {
         let (mut store, augment, _dir) = fixtures();
-        let mut cards =
-            parse("# q\n\t% reveal: cloze\n\tthe {{answer}} is here\n\t! a note line\n");
+        let mut cards = parse("## q\nthe \\cloze{answer} is here\n> a note line\n");
         cards[0].image = Some("/pics/front.png".into());
         cards[0].image_back = Some("/pics/back.png".into());
         seen(&mut store, &cards);
@@ -390,8 +402,7 @@ mod tests {
 
     #[test]
     fn card_view_structures_the_note_and_flags_a_reshape() {
-        let mut cards =
-            parse("# q\n\tan answer\n\t! Intro here.\n\t! ```\n\t! let x = 1;\n\t! ```\n");
+        let mut cards = parse("## q\nan answer\n> Intro here.\n> ```\n> let x = 1;\n> ```\n");
         let plain = CardView::from(&cards[0]);
         assert_eq!(
             plain.note,
@@ -419,13 +430,13 @@ mod tests {
 
     #[test]
     fn card_view_carries_the_raw_at_locator() {
-        let cards = parse("# q\n\t% at: src/lib.rs:10-20\n\ta\n");
+        let cards = parse("## q\n<!-- at: src/lib.rs:10-20 -->\na\n");
         let view = CardView::from(&cards[0]);
         assert_eq!(view.at.as_deref(), Some("src/lib.rs:10-20"));
     }
 
     /// Four cards with distinct single-line answers.
-    const FOUR: &str = "# q1\n\ta1\n# q2\n\ta2\n# q3\n\ta3\n# q4\n\ta4\n";
+    const FOUR: &str = "## q1\na1\n## q2\na2\n## q3\na3\n## q4\na4\n";
 
     #[test]
     fn choices_appear_only_at_recognize_or_the_acquire_bar() {
@@ -467,7 +478,7 @@ mod tests {
         // Choice (a pick with no options strands the card); it falls back to
         // a plain reveal, and every client renders an answerable card.
         let (mut store, augment, _dir) = fixtures();
-        let cards = parse("# lone q\n\tlone a\n");
+        let cards = parse("## lone q\nlone a\n");
         seen(&mut store, &cards);
         let recognize = session_at(cards, &store, Depth::Recognize, NOW);
         let s = state(&recognize, &store, &augment, Some(NOW));
@@ -507,7 +518,7 @@ mod tests {
     fn check_typed_orders_only_for_typeline() {
         let (mut store, _augment, _dir) = fixtures();
         // Reconstruct + line reveal = TypeLine: position matters.
-        let line = parse("# q\n\t% reveal: line\n\tone\n\ttwo\n");
+        let line = parse("## q <!-- reveal: line -->\none\ntwo\n");
         seen(&mut store, &line);
         let typeline = session_at(line, &store, Depth::Reconstruct, NOW);
         let swapped = vec!["two".to_string(), "one".to_string()];
@@ -515,7 +526,7 @@ mod tests {
         assert!(!ordered.passed, "typeline is position-sensitive");
 
         // Reconstruct + a multi-line flip card checks unordered.
-        let multi = parse("# q\n\tone\n\ttwo\n");
+        let multi = parse("## q\none\ntwo\n");
         seen(&mut store, &multi);
         let unordered_session = session_at(multi, &store, Depth::Reconstruct, NOW);
         let unordered = check_typed(&unordered_session, &swapped).expect("feedback");
@@ -527,7 +538,7 @@ mod tests {
     fn keypoints_appear_only_for_an_explain_check_past_acquire() {
         let (mut store, mut augment, _dir) = fixtures();
         // A seen multi-line flip card at Reconstruct renders as Explain.
-        let mut cards = parse("# q\n\tfirst fact\n\tsecond fact\n");
+        let mut cards = parse("## q\nfirst fact\nsecond fact\n");
         seen(&mut store, &cards);
 
         // Uncached: the rubric falls back to the AUTHORED back lines. The
@@ -592,13 +603,13 @@ mod tests {
     #[test]
     fn promotable_flags_a_virtual_card_only() {
         let (mut store, augment, _dir) = fixtures();
-        let text = "# virtual front\n\tvirtual back\n";
-        let mut synth = parser::parse_str("deck.txt", text).unwrap().remove(0);
+        let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n";
+        let mut synth = parser::parse_str("deck.md", text).unwrap().remove(0);
         synth.line = 1_000_000;
         store.insert_virtual(VirtualCard {
             id: synth.id(),
             kind: VirtualKind::Remediation,
-            parent: "deck.txt".to_string(),
+            parent: "deck.md".to_string(),
             text: text.to_string(),
             created_ms: T0,
         });
@@ -606,7 +617,7 @@ mod tests {
         let session = session_at(vec![synth], &store, Depth::Recall, NOW);
         assert!(state(&session, &store, &augment, Some(NOW)).promotable);
 
-        let regular = parse("# q\n\ta\n");
+        let regular = parse("## q\na\n");
         seen(&mut store, &regular);
         let plain = session_at(regular, &store, Depth::Recall, NOW);
         assert!(!state(&plain, &store, &augment, Some(NOW)).promotable);
@@ -615,7 +626,7 @@ mod tests {
     #[test]
     fn can_restart_flips_with_the_injected_clock() {
         let (mut store, augment, _dir) = fixtures();
-        let cards = parse("# q\n\ta\n");
+        let cards = parse("## q\na\n");
         seen(&mut store, &cards);
         let mut session = session_at(cards, &store, Depth::Recall, NOW);
         session.grade(&mut store, Grade::Pass, NOW);
@@ -631,7 +642,7 @@ mod tests {
     #[test]
     fn input_follows_the_card() {
         let (mut store, augment, _dir) = fixtures();
-        let cards = parse("# q\n\t% input: draw\n\ta\n");
+        let cards = parse("## q <!-- input: draw -->\na\n");
         seen(&mut store, &cards);
         let session = session_at(cards, &store, Depth::Recall, NOW);
         assert_eq!(

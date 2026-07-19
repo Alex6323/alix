@@ -1,7 +1,7 @@
 {
   "can_remediate": false,
-  "cards": "# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed",
-  "deck": "rust.txt",
+  "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed",
+  "deck": "rust.md",
   "elapsed": null,
   "error": null,
   "gaps": [

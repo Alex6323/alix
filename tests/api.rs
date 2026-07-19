@@ -29,7 +29,7 @@ use alix::{
     assemble::{AssembleConfig, Pacing},
     augment::{self, AugmentCache},
     config::{Audience, Config},
-    parser,
+    l1,
     recent::RecentDecks,
     serve::{self, PairInfo, ReviewOptions},
     store::Store,
@@ -161,7 +161,7 @@ impl Drop for Guard {
 /// on the second, rather than jumping straight to `"done"`) — and enough to
 /// make `run_review`'s store resolution (`assemble::store_for`, via
 /// `cfg.instance_store`) do real work if a test picks it via `/api/select`.
-const FIXTURE_DECK: &str = "# 2 + 2\n\t4\n\n# 3 + 3\n\t6\n";
+const FIXTURE_DECK: &str = "## 2 + 2 <!-- id: s1 -->\n4\n\n## 3 + 3 <!-- id: s2 -->\n6\n";
 
 /// Builds the `run_review` options over one fixture deck living in `dir`,
 /// mirroring (in miniature) what `src/cli/launch.rs` wires up for the real
@@ -223,10 +223,10 @@ fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
 /// Like [`spawn_test_server_with`], but runs `extra` against the decks dir
 /// right after [`FIXTURE_DECK`] is written and before the server starts —
 /// lets a test add its own fixture files (e.g. a workspace folder) alongside
-/// `sample.txt`.
+/// `sample.md`.
 fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
-    let deck_path = dir.path().join("sample.txt");
+    let deck_path = dir.path().join("sample.md");
     std::fs::write(&deck_path, FIXTURE_DECK).unwrap();
     extra(dir.path());
     let store_path = dir.path().join("store.json");
@@ -276,14 +276,20 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
     )
 }
 
-/// Five single-line, distinct-answer cards. The fixture writes this twice: as
-/// `choice.txt` (for the augment-generation tests, un-augmented) and as
-/// `choice-armed.txt` (for the choose/order tests, with cached AI distractors so
-/// a Recognize session builds a real pick). Distractors are never sampled from
+/// Five single-line, distinct-answer cards, twice: `choice.md` (for the
+/// augment-generation tests, un-augmented) and `choice-armed.md` (for the
+/// choose/order tests, with cached AI distractors so a Recognize session
+/// builds a real pick). Identity is the token, so the two copies carry
+/// DISTINCT literal tokens (c1.. vs ca1..) to keep their ids apart — the
+/// filename no longer separates them. Distractors are never sampled from
 /// sibling answers, so only the armed copy renders choices. See
 /// [`spawn_full_server_fixture`].
-const CHOICE_DECK: &str =
-    "# 1 + 1\n\t2\n\n# 2 + 2\n\t4\n\n# 3 + 3\n\t6\n\n# 4 + 4\n\t8\n\n# 5 + 5\n\t10\n";
+const CHOICE_DECK: &str = "## 1 + 1 <!-- id: c1 -->\n2\n\n## 2 + 2 <!-- id: c2 -->\n4\n\n\
+                           ## 3 + 3 <!-- id: c3 -->\n6\n\n## 4 + 4 <!-- id: c4 -->\n8\n\n\
+                           ## 5 + 5 <!-- id: c5 -->\n10\n";
+const CHOICE_ARMED_DECK: &str = "## 1 + 1 <!-- id: ca1 -->\n2\n\n## 2 + 2 <!-- id: ca2 -->\n4\n\n\
+                                 ## 3 + 3 <!-- id: ca3 -->\n6\n\n## 4 + 4 <!-- id: ca4 -->\n8\n\n\
+                                 ## 5 + 5 <!-- id: ca5 -->\n10\n";
 
 /// [`CHOICE_DECK`]'s authored front → back, so a test can find which option is
 /// correct without hard-coding a queue order the shuffle doesn't guarantee.
@@ -302,20 +308,20 @@ fn choice_answer(front: &str) -> &'static str {
 /// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
 /// `walk_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
-const TRACE_DECK: &str = "% trace: how it works\n\
-% source: source.txt\n\
-# Predict the first hop\n\
-\t% given: line — the input line\n\
-\tit reads the first line\n\
-\t% at: 1\n\
-# Predict the second hop\n\
-\tit reads line two\n\
-\t% at: 2\n";
+const TRACE_DECK: &str = "---\ntrace: how it works\nsource: source.txt\n---\n\
+## Predict the first hop <!-- id: t1 -->\n\
+<!-- given: line — the input line -->\n\
+it reads the first line\n\
+<!-- at: 1 -->\n\
+## Predict the second hop <!-- id: t2 -->\n\
+it reads line two\n\
+<!-- at: 2 -->\n";
 const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 
 /// Richer than [`spawn_test_server`]: the same open (no-token) server, but its
-/// decks dir also carries [`CHOICE_DECK`] twice — `choice.txt` (seen, no cached
-/// distractors, for the augment-generation tests) and `choice-armed.txt` (seen
+/// decks dir also carries the choice fixture twice — `choice.md` (seen, no
+/// cached distractors, for the augment-generation tests) and `choice-armed.md`
+/// (seen
 /// with cached AI distractors, so a Recognize-depth session quizzes it as a real
 /// multiple-choice — see `current_question`, `src/serve/dto.rs`) — and
 /// [`TRACE_DECK`] (routed to a real `Walk` by the real
@@ -338,28 +344,29 @@ fn spawn_full_server_fixture(
     extra: impl FnOnce(&Path),
 ) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
-    std::fs::write(dir.path().join("sample.txt"), FIXTURE_DECK).unwrap();
-    std::fs::write(dir.path().join("choice.txt"), CHOICE_DECK).unwrap();
-    std::fs::write(dir.path().join("choice-armed.txt"), CHOICE_DECK).unwrap();
-    std::fs::write(dir.path().join("trace.txt"), TRACE_DECK).unwrap();
+    std::fs::write(dir.path().join("sample.md"), FIXTURE_DECK).unwrap();
+    std::fs::write(dir.path().join("choice.md"), CHOICE_DECK).unwrap();
+    std::fs::write(dir.path().join("choice-armed.md"), CHOICE_ARMED_DECK).unwrap();
+    std::fs::write(dir.path().join("trace.md"), TRACE_DECK).unwrap();
     std::fs::write(dir.path().join("source.txt"), TRACE_SOURCE).unwrap();
     extra(dir.path());
     let store_path = dir.path().join("store.json");
 
-    // Two copies of the choice deck, distinct filenames → distinct card ids:
-    // `choice.txt` is seen but NOT augmented, so the augment-generation tests
-    // still have `choices` warm items to build; `choice-armed.txt` is seen AND
-    // carries a full set of cached AI distractors, so the choose/order tests
-    // render a real pick. Distractors are never sampled from siblings, so the
-    // cache is the only way to arm a pick. They are non-numeric, so none
-    // collides with a card's own numeric answer and gets dropped as a duplicate.
+    // Two copies of the choice deck with distinct literal tokens → distinct
+    // card ids: `choice.md` is seen but NOT augmented, so the
+    // augment-generation tests still have `choices` warm items to build;
+    // `choice-armed.md` is seen AND carries a full set of cached AI
+    // distractors, so the choose/order tests render a real pick. Distractors
+    // are never sampled from siblings, so the cache is the only way to arm a
+    // pick. They are non-numeric, so none collides with a card's own numeric
+    // answer and gets dropped as a duplicate.
     {
         let mut seed = Store::open(&store_path).unwrap();
         let mut aug = AugmentCache::open(augment::augment_path_for(&store_path));
-        for card in parser::parse_str("choice.txt", CHOICE_DECK).unwrap() {
+        for card in l1::parse_str("choice.md", CHOICE_DECK).unwrap() {
             seed.get_or_insert(card.id(), 0);
         }
-        for card in parser::parse_str("choice-armed.txt", CHOICE_DECK).unwrap() {
+        for card in l1::parse_str("choice-armed.md", CHOICE_ARMED_DECK).unwrap() {
             seed.get_or_insert(card.id(), 0);
             aug.set_distractors(
                 card.id(),
@@ -579,11 +586,11 @@ fn post_json(base: &str, path: &str, json: &str) -> HttpResp {
     )
 }
 
-/// Selects [`FIXTURE_DECK`] (by its fixed file name, `sample.txt`) and returns
+/// Selects [`FIXTURE_DECK`] (by its fixed file name, `sample.md`) and returns
 /// the resulting `StateDto` response — the common first step of every
 /// review-loop test below.
 fn select_fixture(base: &str) -> HttpResp {
-    post_json(base, "/api/select", r#"{"deck":"sample.txt"}"#)
+    post_json(base, "/api/select", r#"{"deck":"sample.md"}"#)
 }
 
 #[test]
@@ -602,7 +609,7 @@ fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
     // see `deck_catalog` in `src/serve/catalog.rs`.
     let recent = body["recent"].as_array().expect("recent is an array");
     assert!(
-        recent.iter().any(|d| d["name"] == "sample.txt"),
+        recent.iter().any(|d| d["name"] == "sample.md"),
         "body: {body}"
     );
 }
@@ -612,7 +619,7 @@ fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
 // `spawn_test_server`'s fixture is a single loose deck — no workspace
 // anywhere — so none of these tests can use it. `write_animals_workspace`
 // adds a real workspace (an `alix.toml` manifest + two member decks)
-// alongside `sample.txt` via `spawn_test_server_fixture`, so `/api/decks`
+// alongside `sample.md` via `spawn_test_server_fixture`, so `/api/decks`
 // actually has a group row to exercise.
 
 /// Writes a workspace `animals/` (with `alix.toml`, so it registers as
@@ -622,8 +629,8 @@ fn write_animals_workspace(dir: &Path) {
     let ws = dir.join("animals");
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    std::fs::write(ws.join("one.txt"), "# q1\n\ta1\n").unwrap();
-    std::fs::write(ws.join("two.txt"), "# q2\n\ta2\n").unwrap();
+    std::fs::write(ws.join("one.md"), "## q1 <!-- id: aq1 -->\na1\n").unwrap();
+    std::fs::write(ws.join("two.md"), "## q2 <!-- id: aq2 -->\na2\n").unwrap();
 }
 
 #[test]
@@ -960,7 +967,7 @@ fn get_img_with_an_unknown_key_yields_404() {
 fn post_api_browse_returns_a_browse_dto_with_the_fixture_cards() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/browse", r#"{"deck":"sample.txt"}"#);
+    let resp = post_json(&base, "/api/browse", r#"{"deck":"sample.md"}"#);
 
     assert_eq!(200, resp.status);
     assert_eq!(
@@ -978,7 +985,7 @@ fn post_api_browse_returns_a_browse_dto_with_the_fixture_cards() {
 fn post_api_browse_with_an_unknown_deck_yields_400() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/browse", r#"{"deck":"nope.txt"}"#);
+    let resp = post_json(&base, "/api/browse", r#"{"deck":"nope.md"}"#);
 
     assert_eq!(400, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
@@ -990,7 +997,7 @@ fn post_api_browse_with_an_unknown_deck_yields_400() {
 fn post_api_deck_topology_reports_the_fixture_decks_due_count() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"sample.txt"}"#);
+    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"sample.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1009,7 +1016,7 @@ fn post_api_deck_topology_with_an_unknown_deck_still_returns_the_empty_default_d
     // name still gets 200 with the empty default, not a 400.
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"nope.txt"}"#);
+    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"nope.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1029,11 +1036,11 @@ fn post_api_reset_clears_the_fixture_decks_progress() {
     // Grade the first card so it has stored progress to clear.
     post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
 
-    let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.txt"}"#);
+    let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("sample.txt", body["deck"], "body: {body}");
+    assert_eq!("sample.md", body["deck"], "body: {body}");
     assert_eq!(1, body["cards_cleared"], "body: {body}");
 }
 
@@ -1041,7 +1048,7 @@ fn post_api_reset_clears_the_fixture_decks_progress() {
 fn post_api_reset_with_an_unknown_deck_yields_400() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/reset", r#"{"deck":"nope.txt"}"#);
+    let resp = post_json(&base, "/api/reset", r#"{"deck":"nope.md"}"#);
 
     assert_eq!(400, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
@@ -1050,18 +1057,18 @@ fn post_api_reset_with_an_unknown_deck_yields_400() {
 // ── Import ──────────────────────────────────────────────────────────────
 
 #[test]
-fn post_api_import_lands_a_txt_deck_and_reports_its_card_count() {
+fn post_api_import_lands_an_md_deck_and_reports_its_card_count() {
     let (base, _guard) = spawn_test_server();
 
     let resp = post_json(
         &base,
         "/api/import",
-        r##"{"name":"extra.txt","text":"# f\n\tb\n"}"##,
+        r###"{"name":"extra.md","text":"## f\nb\n"}"###,
     );
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("extra.txt", body["deck"], "body: {body}");
+    assert_eq!("extra.md", body["deck"], "body: {body}");
     assert_eq!(1, body["cards"], "body: {body}");
 }
 
@@ -1079,7 +1086,7 @@ fn post_api_import_converts_a_tsv_upload_to_a_deck() {
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(2, body["cards"], "body: {body}");
     assert!(
-        body["deck"].as_str().unwrap().ends_with(".txt"),
+        body["deck"].as_str().unwrap().ends_with(".md"),
         "body: {body}"
     );
 }
@@ -1164,15 +1171,15 @@ fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
     // no ordering flag; the retired client `ordered` field is ignored.
     let (base, _guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(
-            dir.join("steps.txt"),
-            "# steps\n% reveal: line\n\tone\n\ttwo\n",
+            dir.join("steps.md"),
+            "## steps <!-- id: st1 --> <!-- reveal: line -->\none\ntwo\n",
         )
         .unwrap();
     });
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"steps.txt","depth":"reconstruct"}"#,
+        r#"{"deck":"steps.md","depth":"reconstruct"}"#,
     );
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1214,7 +1221,7 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"choice-armed.txt","depth":"recognize"}"#,
+        r#"{"deck":"choice-armed.md","depth":"recognize"}"#,
     );
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1255,7 +1262,7 @@ fn choices_keep_their_order_across_state_pulls_while_the_card_is_on_screen() {
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"choice-armed.txt","depth":"recognize"}"#,
+        r#"{"deck":"choice-armed.md","depth":"recognize"}"#,
     );
     let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     let before = first["choices"].clone();
@@ -1287,7 +1294,7 @@ fn choices_keep_their_order_across_a_full_tutor_round_trip() {
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"choice-armed.txt","depth":"recognize"}"#,
+        r#"{"deck":"choice-armed.md","depth":"recognize"}"#,
     );
     let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     let before = first["choices"].clone();
@@ -1333,12 +1340,12 @@ fn recognize_is_unavailable_and_empty_on_an_unaugmented_deck() {
     };
     assert_eq!(
         false,
-        find("choice.txt")["can_recognize"],
+        find("choice.md")["can_recognize"],
         "un-augmented deck can't recognize"
     );
     assert_eq!(
         true,
-        find("choice-armed.txt")["can_recognize"],
+        find("choice-armed.md")["can_recognize"],
         "the armed deck can recognize"
     );
 
@@ -1346,7 +1353,7 @@ fn recognize_is_unavailable_and_empty_on_an_unaugmented_deck() {
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+        r#"{"deck":"choice.md","depth":"recognize"}"#,
     );
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1361,13 +1368,12 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     // hole has AI distractors cached, served as a choice, answered, then the
     // state re-pulled (the tutor-close pull). The order must hold on both the
     // Recognize path (seen card) and the acquire path (unseen card).
-    const CLOZE_DECK: &str = "# What is frb, in one sentence?\n\
-        % reveal: cloze\n\
-        \tA {{code-generation}} tool generating the {{FFI}} glue on both sides.\n";
+    const CLOZE_DECK: &str = "## What is frb, in one sentence? <!-- id: frb1 -->\n\
+        A \\cloze{code-generation} tool generating the \\cloze{FFI} glue on both sides.\n";
     for seed_store in [true, false] {
         let (base, _guard) = spawn_full_server_fixture(None, |dir| {
-            std::fs::write(dir.join("frb.txt"), CLOZE_DECK).unwrap();
-            let cards = parser::parse_str("frb.txt", CLOZE_DECK).unwrap();
+            std::fs::write(dir.join("frb.md"), CLOZE_DECK).unwrap();
+            let cards = l1::parse_str("frb.md", CLOZE_DECK).unwrap();
             // Real distractor sets on every sub-card, mirroring the user's
             // augment.json (the lib computes the ids — never hand-rolled).
             let mut cache = alix::augment::AugmentCache::open(dir.join("augment.json"));
@@ -1389,7 +1395,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
         let resp = post_json(
             &base,
             "/api/select",
-            r#"{"deck":"frb.txt","depth":"recognize"}"#,
+            r#"{"deck":"frb.md","depth":"recognize"}"#,
         );
         let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
         let before = first["choices"].clone();
@@ -1514,7 +1520,7 @@ fn post_api_restart_rebuilds_the_queue_and_resets_session_stats() {
     // `cram` makes `restart`'s queue rebuild deterministic regardless of the
     // FSRS interval a "passed" grade schedules — cram serves every non-retired
     // card, due or not (`session::build_queue`).
-    post_json(&base, "/api/select", r#"{"deck":"sample.txt","cram":true}"#);
+    post_json(&base, "/api/select", r#"{"deck":"sample.md","cram":true}"#);
     let grade_resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
     let grade_body: serde_json::Value = serde_json::from_slice(&grade_resp.body).unwrap();
     assert_eq!(1, grade_body["passed"], "body: {grade_body}");
@@ -1558,11 +1564,11 @@ fn post_api_deselect_returns_to_the_picker_state_dto() {
 fn post_api_augment_open_reports_coverage_for_the_fixture_deck() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"sample.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("sample.txt", body["deck"], "body: {body}");
+    assert_eq!("sample.md", body["deck"], "body: {body}");
     assert_eq!(2, body["cards"], "body: {body}");
     assert!(body["busy"].is_null(), "body: {body}");
     let rows = body["rows"].as_array().unwrap();
@@ -1578,7 +1584,7 @@ fn post_api_augment_open_reports_coverage_for_the_fixture_deck() {
 fn post_api_augment_open_with_an_unknown_deck_yields_400() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"nope.txt"}"#);
+    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"nope.md"}"#);
 
     assert_eq!(400, resp.status);
 }
@@ -1586,7 +1592,7 @@ fn post_api_augment_open_with_an_unknown_deck_yields_400() {
 #[test]
 fn post_api_augment_remove_on_an_empty_cache_still_succeeds_as_a_noop() {
     let (base, _guard) = spawn_test_server();
-    post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+    post_json(&base, "/api/augment/open", r#"{"deck":"sample.md"}"#);
 
     let resp = post_json(&base, "/api/augment/remove", r#"{"target":"choices"}"#);
 
@@ -1604,7 +1610,7 @@ fn post_api_augment_remove_on_an_empty_cache_still_succeeds_as_a_noop() {
 #[test]
 fn post_api_augment_close_returns_the_picker_state_dto() {
     let (base, _guard) = spawn_test_server();
-    post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+    post_json(&base, "/api/augment/open", r#"{"deck":"sample.md"}"#);
 
     let resp = post_json(&base, "/api/augment/close", "{}");
 
@@ -1633,7 +1639,7 @@ fn post_api_augment_generate_with_a_targets_list_runs_every_target_even_after_on
     // genuine failure without needing two scripted replies.
     let fake = fake_reply(scripts.path(), r#"{"0": "a note"}"#);
     let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.md"}"#);
 
     let resp = post_json(
         &base,
@@ -1685,7 +1691,7 @@ fn each_batch_target_carries_its_own_guidance() {
     .unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.md"}"#);
 
     let resp = post_json(
         &base,
@@ -1754,7 +1760,7 @@ fn a_batch_reuses_one_claude_session_across_targets() {
     let reply = r#"{"0": ["w1","w2","w3"]}"#;
     let fake = fake_conversation_cli(&scripts, &[reply, reply]);
     let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.md"}"#);
 
     let resp = post_json(
         &base,
@@ -1803,7 +1809,7 @@ fn a_failed_target_starts_a_fresh_session_for_the_rest_of_the_batch() {
     // with a FRESH session for keypoints rather than resuming a dead one.
     std::fs::write(scripts.path().join("fail-1"), "").unwrap();
     let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.md"}"#);
 
     let resp = post_json(
         &base,
@@ -1837,7 +1843,7 @@ fn a_single_target_batch_stays_a_stateless_one_shot() {
     let scripts = TempDir::new().unwrap();
     let fake = fake_conversation_cli(&scripts, &[r#"{"0": "a note"}"#]);
     let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.md"}"#);
 
     let resp = post_json(
         &base,
@@ -1867,8 +1873,16 @@ fn write_workspace_fixture(dir: &Path) {
     let ws = dir.join("ws");
     std::fs::create_dir_all(&ws).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"WS\"\n").unwrap();
-    std::fs::write(ws.join("m1.txt"), "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
-    std::fs::write(ws.join("m2.txt"), "# q3\n\ta3\n# q4\n\ta4\n# q5\n\ta5\n").unwrap();
+    std::fs::write(
+        ws.join("m1.md"),
+        "## q1 <!-- id: w1 -->\na1\n## q2 <!-- id: w2 -->\na2\n",
+    )
+    .unwrap();
+    std::fs::write(
+        ws.join("m2.md"),
+        "## q3 <!-- id: w3 -->\na3\n## q4 <!-- id: w4 -->\na4\n## q5 <!-- id: w5 -->\na5\n",
+    )
+    .unwrap();
 }
 
 /// A folder holding a deck but no `alix.toml` manifest. `workspace::has_decks`
@@ -1879,7 +1893,7 @@ fn write_workspace_fixture(dir: &Path) {
 fn write_plain_folder_fixture(dir: &Path) {
     let folder = dir.join("plainfolder");
     std::fs::create_dir_all(&folder).unwrap();
-    std::fs::write(folder.join("loose.txt"), "# q\n\ta\n").unwrap();
+    std::fs::write(folder.join("loose.md"), "## q <!-- id: lq1 -->\na\n").unwrap();
 }
 
 #[test]
@@ -1899,7 +1913,7 @@ fn augment_open_on_a_workspace_unions_member_cards_and_offers_the_icon_row() {
     assert_eq!(1, icon["eligible"], "body: {body}");
 
     // A plain deck's screen must NOT offer the icon target.
-    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"sample.md"}"#);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert!(
         body["rows"]
@@ -1979,13 +1993,13 @@ fn post_api_exam_start_on_a_trace_deck_opens_directly_in_the_answering_phase() {
     // need the AI backend to generate questions.
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"trace.txt"}"#);
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("answering", body["phase"], "body: {body}");
     assert_eq!(true, body["is_trace"], "body: {body}");
-    assert_eq!("trace.txt", body["deck"], "body: {body}");
+    assert_eq!("trace.md", body["deck"], "body: {body}");
     assert_eq!(1, body["total"], "body: {body}");
     assert_eq!(0, body["current"], "body: {body}");
     assert!(body["question"].as_str().is_some(), "body: {body}");
@@ -1994,7 +2008,7 @@ fn post_api_exam_start_on_a_trace_deck_opens_directly_in_the_answering_phase() {
 #[test]
 fn post_api_exam_close_returns_the_picker_state_dto() {
     let (base, _guard) = spawn_full_server(None);
-    post_json(&base, "/api/exam/start", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
 
     let resp = post_json(&base, "/api/exam/close", "{}");
 
@@ -2008,18 +2022,18 @@ fn post_api_exam_close_returns_the_picker_state_dto() {
 fn post_api_exam_start_with_an_unknown_deck_yields_400() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"nope.txt"}"#);
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"nope.md"}"#);
 
     assert_eq!(400, resp.status);
 }
 
 #[test]
 fn post_api_exam_start_on_a_deck_with_no_exam_yields_409() {
-    // `sample.txt` declares no `% source:` and isn't a trace — `has_exam()`
+    // `sample.md` declares no `source:` and isn't a trace — `has_exam()`
     // is false, so it can never be sat.
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"sample.txt"}"#);
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"sample.md"}"#);
 
     assert_eq!(409, resp.status);
 }
@@ -2042,7 +2056,7 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
         r#"{"verdict":"pass","feedback":"nice work retracing it","missed":[]}"#,
     );
     let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/exam/start", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
 
     let resp = post_json(
         &base,
@@ -2072,7 +2086,7 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
 fn selecting_a_trace_deck_returns_a_walk_through_the_real_classifier() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    let resp = post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -2083,7 +2097,7 @@ fn selecting_a_trace_deck_returns_a_walk_through_the_real_classifier() {
 fn selecting_a_trace_deck_returns_a_walk_dto_not_a_review_state() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    let resp = post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -2098,7 +2112,7 @@ fn selecting_a_trace_deck_returns_a_walk_dto_not_a_review_state() {
 #[test]
 fn walk_predict_then_self_grade_reveals_the_excerpt_and_advances_the_hop() {
     let (base, _guard) = spawn_full_server(None);
-    post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
     let resp = post_json(&base, "/api/walk/predict", r#"{"text":"my guess"}"#);
 
@@ -2120,7 +2134,7 @@ fn walk_predict_then_self_grade_reveals_the_excerpt_and_advances_the_hop() {
 #[test]
 fn walk_restart_resets_to_the_first_hop() {
     let (base, _guard) = spawn_full_server(None);
-    post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
     post_json(&base, "/api/walk/predict", r#"{"text":"my guess"}"#);
     post_json(&base, "/api/walk/grade", r#"{"delta":"n"}"#); // now on hop 2
 
@@ -2135,7 +2149,7 @@ fn walk_restart_resets_to_the_first_hop() {
 #[test]
 fn walk_leave_returns_to_the_picker_state_dto() {
     let (base, _guard) = spawn_full_server(None);
-    post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
     let resp = post_json(&base, "/api/walk/leave", "{}");
 
@@ -2160,7 +2174,7 @@ fn walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend() {
     let scripts = TempDir::new().unwrap();
     let fake = fake_reply(scripts.path(), "PASSED — you got hop one right.\n");
     let (base, _guard) = spawn_full_server(Some(&fake));
-    let select_resp = post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    let select_resp = post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
     let select_body: serde_json::Value = serde_json::from_slice(&select_resp.body).unwrap();
     assert_eq!(true, select_body["auto_grade"], "body: {select_body}");
 
@@ -2258,7 +2272,7 @@ fn get_api_receive_with_no_receive_in_flight_yields_409() {
 /// "no active review" check, so no deck needs to be selected for these to 403.
 fn spawn_kids_server() -> (String, Guard) {
     let dir = TempDir::new().unwrap();
-    std::fs::write(dir.path().join("sample.txt"), FIXTURE_DECK).unwrap();
+    std::fs::write(dir.path().join("sample.md"), FIXTURE_DECK).unwrap();
     let store_path = dir.path().join("store.json");
 
     let store = Store::open(&store_path).unwrap();
@@ -2315,7 +2329,7 @@ fn spawn_kids_server() -> (String, Guard) {
 fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(scripts.path(), "# term?\n\tdefinition\n");
+    let fake = fake_reply(scripts.path(), "## term?\ndefinition\n");
     let (base, _guard) = spawn_full_server(Some(&fake));
     select_fixture(&base);
 
@@ -2374,7 +2388,7 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     // seeds one), so `build_queue` sorts it into the "due" group, ahead of
     // the two never-graded fixture cards in "fresh": it's the first card the
     // reselected session serves.
-    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.txt","cram":true}"#);
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md","cram":true}"#);
     assert_eq!(200, resp.status);
     let select_body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(3, select_body["remaining"], "body: {select_body}");
@@ -2407,24 +2421,6 @@ fn ask_card_draft_and_create_are_refused_for_a_kids_audience() {
         r#"{"front":"f","back":["b"]}"#,
     );
     assert_eq!(403, create_resp.status);
-}
-
-#[test]
-fn ask_card_create_with_a_back_matching_an_authored_card_yields_422() {
-    let (base, _guard) = spawn_test_server();
-    select_fixture(&base);
-
-    // A different front, but the same back line as the fixture's "2 + 2"
-    // card: `Card::id` hashes the subject plus the normalized back only
-    // (front and note are ignored, `src/card.rs::Card::id`), so this
-    // collides with the deck's own authored card and must be refused.
-    let resp = post_json(
-        &base,
-        "/api/ask/card/create",
-        r#"{"front":"what does 2 plus 2 equal?","back":["4"]}"#,
-    );
-
-    assert_eq!(422, resp.status);
 }
 
 // ── Workspace deadline ───────────────────────────────────────────────────
@@ -2527,7 +2523,7 @@ fn workspace_deadline_rejects_a_plain_deck_row_and_an_unknown_name() {
     let resp = post_json(
         &base,
         "/api/workspace/deadline",
-        r#"{"name":"sample.txt","date":"2099-01-02"}"#,
+        r#"{"name":"sample.md","date":"2099-01-02"}"#,
     );
     assert_eq!(400, resp.status);
 
@@ -2619,8 +2615,8 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 /// grades the source, never the deck's own cards.
 fn write_exam_deck_fixture(dir: &Path) {
     std::fs::write(
-        dir.join("examdeck.txt"),
-        "% source: examsource.txt\n# c\n\ta\n",
+        dir.join("examdeck.md"),
+        "---\nsource: examsource.txt\n---\n## c <!-- id: e1 -->\na\n",
     )
     .unwrap();
     std::fs::write(dir.join("examsource.txt"), "c stands for a concept.\n").unwrap();
@@ -2648,7 +2644,7 @@ fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
              *'\"grades\"'*) cat {grades} ;;\n\
              *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
              *compression*) cat {grades} ;;\n\
-             *) printf '# term?\\n\\tdefinition\\n' ;;\n\
+             *) printf '## term?\\ndefinition\\n' ;;\n\
              esac\n",
             grades = grades_path.display(),
         ),
@@ -2703,7 +2699,7 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"why does this matter?"}"#,
     );
     assert_eq!(200, resp.status);
@@ -2725,7 +2721,7 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[{"q":"why does this matter?","a":"because it demonstrates addition"}],
             "question":"anything else?"}"#,
     );
@@ -2781,7 +2777,7 @@ fn remote_ask_answers_409_while_a_turn_is_thinking_and_the_loop_stays_live() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"why?"}"#,
     );
     assert_eq!(200, resp.status);
@@ -2796,7 +2792,7 @@ fn remote_ask_answers_409_while_a_turn_is_thinking_and_the_loop_stays_live() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"again?"}"#,
     );
     assert_eq!(409, resp.status);
@@ -2847,7 +2843,7 @@ fn remote_note_round_trips_condensed_lines_capped_and_cleaned_server_side() {
     let resp = post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[{"q":"why does this matter?","a":"because it demonstrates addition"},
                        {"q":"anything else?","a":"no, that covers it"}]}"#,
     );
@@ -2879,7 +2875,7 @@ fn remote_note_rejects_empty_history_and_garbage_body_with_400() {
     let resp = post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},"history":[]}"#,
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},"history":[]}"#,
     );
     assert_eq!(400, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
@@ -2923,7 +2919,7 @@ fn remote_note_answers_409_while_a_call_is_thinking_in_the_shared_slot() {
     let resp = post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[{"q":"why?","a":"because"}]}"#,
     );
     assert_eq!(200, resp.status);
@@ -2938,7 +2934,7 @@ fn remote_note_answers_409_while_a_call_is_thinking_in_the_shared_slot() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"again?"}"#,
     );
     assert_eq!(409, resp.status);
@@ -2960,7 +2956,7 @@ fn remote_generate_round_trips_deck_text_for_a_url() {
     let scripts = TempDir::new().unwrap();
     let fake = fake_reply(
         scripts.path(),
-        "% Generated from https://example.org\n% link: https://example.org\n# Q\n\tA\n",
+        "---\nlink: https://example.org\n---\n## Q\nA\n",
     );
     let (base, _guard) = spawn_full_server(Some(&fake));
 
@@ -2978,8 +2974,8 @@ fn remote_generate_round_trips_deck_text_for_a_url() {
     });
     assert_eq!("done", body["phase"], "body: {body}");
     let deck = body["deck"].as_str().expect("deck is a string");
-    assert!(deck.contains("# Q"), "deck: {deck}");
-    assert_eq!("example-org.txt", body["filename"], "body: {body}");
+    assert!(deck.contains("## Q"), "deck: {deck}");
+    assert_eq!("example-org.md", body["filename"], "body: {body}");
     assert_eq!(1, body["cards"], "body: {body}");
     assert!(body["error"].is_null(), "body: {body}");
 }
@@ -3001,7 +2997,7 @@ fn remote_generate_answers_409_while_thinking_then_a_later_post_after_settle_suc
         "mkfifo {fifo:?} failed"
     );
     let reply = scripts.path().join("reply");
-    std::fs::write(&reply, "# Q\n\tA\n").unwrap();
+    std::fs::write(&reply, "## Q\nA\n").unwrap();
     let fake = scripts.path().join("fake-claude");
     std::fs::write(
         &fake,
@@ -3084,11 +3080,7 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
 
-    let resp = post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examdeck.txt"}"#,
-    );
+    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
     assert_eq!(200, resp.status);
 
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
@@ -3137,11 +3129,7 @@ fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
 
-    post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examdeck.txt"}"#,
-    );
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     assert_eq!(
         1,
@@ -3175,7 +3163,7 @@ fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
 fn remote_exam_start_accepts_a_trace_deck_and_opens_answering() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.txt"}"#);
+    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
     assert_eq!(200, resp.status);
 
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -3196,7 +3184,7 @@ fn remote_exam_start_accepts_a_trace_deck_and_opens_answering() {
 fn remote_exam_start_still_refuses_a_source_less_non_trace_deck_with_409() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"sample.txt"}"#);
+    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"sample.md"}"#);
 
     assert_eq!(409, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
@@ -3219,7 +3207,7 @@ fn remote_exam_trace_grade_pass_settles_to_results_and_writes_no_store() {
     let store_path = guard.dir().join("store.json");
     let before = std::fs::read(&store_path).ok();
 
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
     let resp = post_json(
         &base,
         "/api/remote/exam/grade",
@@ -3256,7 +3244,7 @@ fn remote_exam_trace_grade_fail_refuses_remediation_and_writes_no_store() {
     let store_path = guard.dir().join("store.json");
     let before = std::fs::read(&store_path).ok();
 
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
     post_json(
         &base,
         "/api/remote/exam/grade",
@@ -3401,11 +3389,7 @@ fn remote_endpoints_never_write_the_server_store() {
     let decks_before = snapshot_dir(guard.dir());
 
     // (a) a full remote exam that PASSES.
-    post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examdeck.txt"}"#,
-    );
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
@@ -3418,11 +3402,7 @@ fn remote_endpoints_never_write_the_server_store() {
         r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap one"]}]}"#,
     )
     .unwrap();
-    post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examdeck.txt"}"#,
-    );
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
@@ -3443,7 +3423,7 @@ fn remote_endpoints_never_write_the_server_store() {
         r#"{"verdict":"pass","feedback":"re-derives the chain","missed":[]}"#,
     )
     .unwrap();
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(
         &base,
@@ -3461,7 +3441,7 @@ fn remote_endpoints_never_write_the_server_store() {
         r#"{"verdict":"fail","feedback":"missed the second hop","missed":["it reads the second line"]}"#,
     )
     .unwrap();
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(
         &base,
@@ -3477,7 +3457,7 @@ fn remote_endpoints_never_write_the_server_store() {
     post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"examdeck.txt","front":"c","back":["a"],"at":null},
+        r#"{"card":{"subject":"examdeck.md","front":"c","back":["a"],"at":null},
             "history":[],"question":"why?"}"#,
     );
     let body = poll_until(&base, "/api/remote/ask", |b| {
@@ -3487,7 +3467,7 @@ fn remote_endpoints_never_write_the_server_store() {
     post_json(
         &base,
         "/api/remote/ask/draft",
-        r#"{"card":{"subject":"examdeck.txt","front":"c","back":["a"],"at":null},
+        r#"{"card":{"subject":"examdeck.md","front":"c","back":["a"],"at":null},
             "history":[{"q":"why?","a":"because"}]}"#,
     );
     let body = poll_until(&base, "/api/remote/ask", |b| {
@@ -3497,7 +3477,7 @@ fn remote_endpoints_never_write_the_server_store() {
     post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"examdeck.txt","front":"c","back":["a"],"at":null},
+        r#"{"card":{"subject":"examdeck.md","front":"c","back":["a"],"at":null},
             "history":[{"q":"why?","a":"because"}]}"#,
     );
     let body = poll_until(&base, "/api/remote/ask", |b| {

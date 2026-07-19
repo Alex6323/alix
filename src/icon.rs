@@ -248,7 +248,7 @@ mod tests {
             "title = \"Light Client\"\ndescription = \"understand the source\"\n",
         )
         .unwrap();
-        std::fs::write(dir.join("a.txt"), "% title: Sync protocol\n# q\n\ta\n").unwrap();
+        std::fs::write(dir.join("a.md"), "# Sync protocol\n## q\na\n").unwrap();
     }
 
     #[test]

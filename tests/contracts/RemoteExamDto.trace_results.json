@@ -1,7 +1,7 @@
 {
   "can_remediate": false,
   "cards": null,
-  "deck": "trace.txt",
+  "deck": "trace.md",
   "elapsed": null,
   "error": null,
   "gaps": [

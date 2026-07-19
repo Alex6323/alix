@@ -1046,13 +1046,23 @@ mod tests {
 
     // ── Coverage / gaps / removal (the web Augment screen's lib backing) ──
 
+    /// A stamped plain card whose token derives from `back`, so distinct
+    /// backs give distinct identities for the cache keys below.
     fn plain_card(back: &str) -> Card {
-        Card::plain("deck.txt".into(), "Q".into(), vec![back.into()], None, 1)
+        let mut c = Card::plain("deck.md".into(), "Q".into(), vec![back.into()], None, 1);
+        let slug: String = back
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        c.token = Some(std::sync::Arc::from(format!("q{slug}").as_str()));
+        c
     }
 
     fn cloze_card(back: &str) -> Card {
         let mut c = plain_card(back);
         c.hash_lines = Some(vec![back.into()]);
+        c.hole = Some(0);
         c
     }
 

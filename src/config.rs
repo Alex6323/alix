@@ -1533,7 +1533,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // The deadline overlay only fires inside a real workspace (manifest + a deck).
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
-        std::fs::write(dir.path().join("a.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(dir.path().join("a.md"), "## q\na\n").unwrap();
         std::fs::write(
             dir.path().join("alix.local.toml"),
             "[review]\ndeadline = \"2026-09-01\"\ndeadline_ramp = \"3w\"\n",
@@ -1554,7 +1554,7 @@ mod tests {
         // about the workspace gate (covered separately).
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
-        std::fs::write(dir.path().join("a.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(dir.path().join("a.md"), "## q\na\n").unwrap();
         std::fs::write(
             dir.path().join("alix.local.toml"),
             "[review]\ndeadline = \"soonish\"\nretention = 0.85\n",

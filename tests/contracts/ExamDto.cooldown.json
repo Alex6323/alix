@@ -3,7 +3,7 @@
   "can_remediate": false,
   "cooldown_ms": 90000,
   "current": 0,
-  "deck": "deck.txt",
+  "deck": "deck.md",
   "elapsed": null,
   "error": null,
   "gaps": [],

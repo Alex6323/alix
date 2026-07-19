@@ -128,10 +128,10 @@ fn statedto_review_phase_wire_shape() {
         passed: 1,
         failed: 1,
         acquired: 4,
-        exam_due: vec!["rust.txt".to_string()],
+        exam_due: vec!["rust.md".to_string()],
         can_restart: true,
         promotable: true,
-        label: "rust.txt".to_string(),
+        label: "rust.md".to_string(),
     };
     pin(
         "StateDto.review",
@@ -175,10 +175,10 @@ fn statedto_review_phase_wire_shape() {
             "passed": 1,
             "failed": 1,
             "acquired": 4,
-            "exam_due": ["rust.txt"],
+            "exam_due": ["rust.md"],
             "can_restart": true,
             "promotable": true,
-            "label": "rust.txt"
+            "label": "rust.md"
         }),
     );
 }
@@ -332,7 +332,7 @@ fn walkdto_done_phase_wire_shape() {
 fn examdto_results_phase_wire_shape() {
     let dto = ExamDto {
         phase: "results",
-        deck: "rust.txt".to_string(),
+        deck: "rust.md".to_string(),
         strictness: "balanced",
         total: 1,
         current: 1,
@@ -352,7 +352,7 @@ fn examdto_results_phase_wire_shape() {
         can_remediate: false,
         remediated_count: None,
         is_trace: false,
-        unlocks: vec!["next.txt".to_string()],
+        unlocks: vec!["next.md".to_string()],
         thinking: false,
         error: None,
         elapsed: None,
@@ -363,7 +363,7 @@ fn examdto_results_phase_wire_shape() {
         &dto,
         json!({
             "phase": "results",
-            "deck": "rust.txt",
+            "deck": "rust.md",
             "strictness": "balanced",
             "total": 1,
             "current": 1,
@@ -383,7 +383,7 @@ fn examdto_results_phase_wire_shape() {
             "can_remediate": false,
             "remediated_count": null,
             "is_trace": false,
-            "unlocks": ["next.txt"],
+            "unlocks": ["next.md"],
             "thinking": false,
             "error": null,
             "elapsed": null,
@@ -394,13 +394,13 @@ fn examdto_results_phase_wire_shape() {
 
 #[test]
 fn examdto_cooldown_phase_wire_shape() {
-    let dto = cooldown_dto("deck.txt", 90000);
+    let dto = cooldown_dto("deck.md", 90000);
     pin(
         "ExamDto.cooldown",
         &dto,
         json!({
             "phase": "cooldown",
-            "deck": "deck.txt",
+            "deck": "deck.md",
             "strictness": "balanced",
             "total": 0,
             "current": 0,
@@ -445,7 +445,7 @@ fn decklistdto_wire_shape() {
             is_workspace: true,
             description: Some("learn Rust ownership".to_string()),
             members: vec![MemberDto {
-                name: "rustws/intro.txt".to_string(),
+                name: "rustws/intro.md".to_string(),
                 selectable: true,
                 label: "Intro".to_string(),
                 meta: Some("3/10".to_string()),
@@ -484,7 +484,7 @@ fn decklistdto_wire_shape() {
             }),
         }],
         recent: vec![DeckItemDto {
-            name: "vocab.txt".to_string(),
+            name: "vocab.md".to_string(),
             selectable: true,
             label: "Vocab".to_string(),
             meta: Some("new".to_string()),
@@ -541,7 +541,7 @@ fn decklistdto_wire_shape() {
                 "is_workspace": true,
                 "description": "learn Rust ownership",
                 "members": [{
-                    "name": "rustws/intro.txt",
+                    "name": "rustws/intro.md",
                     "selectable": true,
                     "label": "Intro",
                     "meta": "3/10",
@@ -580,7 +580,7 @@ fn decklistdto_wire_shape() {
                 }
             }],
             "recent": [{
-                "name": "vocab.txt",
+                "name": "vocab.md",
                 "selectable": true,
                 "label": "Vocab",
                 "meta": "new",
@@ -646,7 +646,7 @@ fn decktopologydto_wire_shape() {
 fn browsedto_wire_shape() {
     let dto = BrowseDto {
         phase: "browse",
-        label: "rust.txt".to_string(),
+        label: "rust.md".to_string(),
         cards: vec![CardDto {
             front: "q".to_string(),
             context: Vec::new(),
@@ -666,7 +666,7 @@ fn browsedto_wire_shape() {
         &dto,
         json!({
             "phase": "browse",
-            "label": "rust.txt",
+            "label": "rust.md",
             "cards": [{
                 "front": "q",
                 "context": [],
@@ -880,29 +880,29 @@ fn pairdto_wire_shape() {
 #[test]
 fn resetdto_wire_shape() {
     let dto = ResetDto {
-        deck: "rust.txt".to_string(),
+        deck: "rust.md".to_string(),
         cards_cleared: 17,
     };
     pin(
         "ResetDto",
         &dto,
-        json!({"deck": "rust.txt", "cards_cleared": 17}),
+        json!({"deck": "rust.md", "cards_cleared": 17}),
     );
 }
 
 #[test]
 fn importdto_wire_shape() {
     let dto = ImportDto {
-        deck: "kanji.txt".to_string(),
+        deck: "kanji.md".to_string(),
         cards: 40,
     };
-    pin("ImportDto", &dto, json!({"deck": "kanji.txt", "cards": 40}));
+    pin("ImportDto", &dto, json!({"deck": "kanji.md", "cards": 40}));
 }
 
 #[test]
 fn augmentdto_wire_shape() {
     let dto = AugmentDto {
-        deck: "rust.txt".to_string(),
+        deck: "rust.md".to_string(),
         cards: 12,
         rows: vec![AugmentRowDto {
             kind: "choices",
@@ -926,7 +926,7 @@ fn augmentdto_wire_shape() {
         "AugmentDto",
         &dto,
         json!({
-            "deck": "rust.txt",
+            "deck": "rust.md",
             "cards": 12,
             "rows": [{
                 "kind": "choices",
@@ -953,7 +953,7 @@ fn augmentdto_wire_shape() {
 fn generatedto_done_wire_shape() {
     let dto = GenerateDto {
         phase: "done",
-        deck: Some("rust-ownership.txt".to_string()),
+        deck: Some("rust-ownership.md".to_string()),
         cards: Some(12),
         elapsed: Some(41),
         error: None,
@@ -961,7 +961,7 @@ fn generatedto_done_wire_shape() {
     pin(
         "GenerateDto",
         &dto,
-        json!({"phase": "done", "deck": "rust-ownership.txt", "cards": 12,
+        json!({"phase": "done", "deck": "rust-ownership.md", "cards": 12,
                "elapsed": 41, "error": null}),
     );
 }
@@ -1124,7 +1124,7 @@ fn remoteexamdto_idle_wire_shape() {
 fn remoteexamdto_answering_wire_shape() {
     let dto = RemoteExamDto {
         phase: "answering",
-        deck: "rust.txt".to_string(),
+        deck: "rust.md".to_string(),
         strictness: "balanced",
         questions: vec![
             "Why does Rust use ownership?".to_string(),
@@ -1145,7 +1145,7 @@ fn remoteexamdto_answering_wire_shape() {
         &dto,
         json!({
             "phase": "answering",
-            "deck": "rust.txt",
+            "deck": "rust.md",
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?", "What is borrowing?"],
             "passed": null,
@@ -1165,7 +1165,7 @@ fn remoteexamdto_answering_wire_shape() {
 fn remoteexamdto_results_wire_shape() {
     let dto = RemoteExamDto {
         phase: "results",
-        deck: "rust.txt".to_string(),
+        deck: "rust.md".to_string(),
         strictness: "balanced",
         questions: vec!["Why does Rust use ownership?".to_string()],
         passed: Some(false),
@@ -1190,7 +1190,7 @@ fn remoteexamdto_results_wire_shape() {
         &dto,
         json!({
             "phase": "results",
-            "deck": "rust.txt",
+            "deck": "rust.md",
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?"],
             "passed": false,
@@ -1217,7 +1217,7 @@ fn remoteexamdto_results_wire_shape() {
 fn remoteexamdto_remediated_wire_shape() {
     let dto = RemoteExamDto {
         phase: "remediated",
-        deck: "rust.txt".to_string(),
+        deck: "rust.md".to_string(),
         strictness: "balanced",
         questions: vec!["Why does Rust use ownership?".to_string()],
         passed: Some(false),
@@ -1232,8 +1232,7 @@ fn remoteexamdto_remediated_wire_shape() {
         gaps: vec!["ownership and the GC-free memory model".to_string()],
         can_remediate: false,
         cards: Some(
-            "# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed"
-                .to_string(),
+            "## Why does Rust use ownership?\nso drops are deterministic, no GC needed".to_string(),
         ),
         is_trace: false,
         thinking: false,
@@ -1245,7 +1244,7 @@ fn remoteexamdto_remediated_wire_shape() {
         &dto,
         json!({
             "phase": "remediated",
-            "deck": "rust.txt",
+            "deck": "rust.md",
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?"],
             "passed": false,
@@ -1259,7 +1258,7 @@ fn remoteexamdto_remediated_wire_shape() {
             }],
             "gaps": ["ownership and the GC-free memory model"],
             "can_remediate": false,
-            "cards": "# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed",
+            "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed",
             "is_trace": false,
             "thinking": false,
             "elapsed": null,
@@ -1272,7 +1271,7 @@ fn remoteexamdto_remediated_wire_shape() {
 fn remoteexamdto_trace_results_wire_shape() {
     let dto = RemoteExamDto {
         phase: "results",
-        deck: "trace.txt".to_string(),
+        deck: "trace.md".to_string(),
         strictness: "balanced",
         questions: vec!["how it works".to_string()],
         passed: Some(false),
@@ -1299,7 +1298,7 @@ fn remoteexamdto_trace_results_wire_shape() {
         &dto,
         json!({
             "phase": "results",
-            "deck": "trace.txt",
+            "deck": "trace.md",
             "strictness": "balanced",
             "questions": ["how it works"],
             "passed": false,
@@ -1350,8 +1349,8 @@ fn remotegeneratedto_generating_wire_shape() {
 fn remotegeneratedto_done_wire_shape() {
     let dto = RemoteGenerateDto {
         phase: "done",
-        deck: Some("% link: https://example.org\n# Q\n\tA\n".to_string()),
-        filename: Some("example-org.txt".to_string()),
+        deck: Some("---\nlink: https://example.org\n---\n## Q\nA\n".to_string()),
+        filename: Some("example-org.md".to_string()),
         cards: Some(1),
         elapsed: None,
         error: None,
@@ -1361,8 +1360,8 @@ fn remotegeneratedto_done_wire_shape() {
         &dto,
         json!({
             "phase": "done",
-            "deck": "% link: https://example.org\n# Q\n\tA\n",
-            "filename": "example-org.txt",
+            "deck": "---\nlink: https://example.org\n---\n## Q\nA\n",
+            "filename": "example-org.md",
             "cards": 1,
             "elapsed": null,
             "error": null

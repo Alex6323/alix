@@ -1,7 +1,7 @@
 {
   "can_remediate": true,
   "cards": null,
-  "deck": "rust.txt",
+  "deck": "rust.md",
   "elapsed": null,
   "error": null,
   "gaps": [

@@ -140,11 +140,19 @@ pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{answer::Mode, parser};
+    use crate::{answer::Mode, l1};
 
+    /// A one-card fixture whose token derives from `back` (alphanumerics
+    /// only), so distinct backs give distinct (stamped) identities for the
+    /// cache lookups below.
     fn card(back: &str) -> crate::card::Card {
-        let text = format!("# q\n{back}");
-        parser::parse_str("t", &text).unwrap().remove(0)
+        let slug: String = back
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        let text = format!("## q <!-- id: q{slug}x -->\n{back}\n");
+        l1::parse_str("t.md", &text).unwrap().remove(0)
     }
 
     #[test]

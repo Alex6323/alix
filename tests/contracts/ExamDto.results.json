@@ -3,7 +3,7 @@
   "can_remediate": false,
   "cooldown_ms": null,
   "current": 1,
-  "deck": "rust.txt",
+  "deck": "rust.md",
   "elapsed": null,
   "error": null,
   "gaps": [],
@@ -29,6 +29,6 @@
   "thinking": false,
   "total": 1,
   "unlocks": [
-    "next.txt"
+    "next.md"
   ]
 }
