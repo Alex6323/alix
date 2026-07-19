@@ -1484,8 +1484,8 @@ mod tests {
     fn is_deck_content_requires_a_card_or_frontmatter() {
         // A prose `.md` with neither a `## ` card nor frontmatter is not a deck.
         assert!(!is_deck_content("# Notes\n\njust some prose here\n"));
-        // A `## ` heading buried inside a code fence is content, not a front —
-        // a naive line scan would be fooled, the fence-aware parser is not.
+        // A `## ` heading buried inside a code fence is content, not a front.
+        // A naive line scan would be fooled, the fence-aware parser is not.
         assert!(!is_deck_content("# Notes\n\n```\n## not a card\n```\n"));
         // A real card front makes it a deck.
         assert!(is_deck_content("## q\na\n"));
@@ -1493,7 +1493,7 @@ mod tests {
 
     #[test]
     fn a_header_only_stub_is_deck_content() {
-        // A trace stub (frontmatter, zero cards) MUST still enumerate — the
+        // A trace stub (frontmatter, zero cards) MUST still enumerate: the
         // frontmatter arm, not the card arm, carries it. This is the mutation
         // sentinel: drop `|| deck.frontmatter_span.is_some()` and it fails.
         assert!(is_deck_content("---\ntrace: a walk\n---\n"));

@@ -897,7 +897,7 @@ mod tests {
         assert!(p.contains("column 0"));
         assert!(p.contains("## Why?"));
         assert!(p.contains("Q: q\nA: a"));
-        // The L1 pin: no retired old-format syntax may sneak back in — the
+        // The L1 pin: no retired old-format syntax may sneak back in. The
         // trainer no longer parses `# ` fronts, tab-indented answers, `! `
         // notes, `%` directives, or `{{ }}` clozes.
         assert!(!p.contains("{{"));

@@ -509,7 +509,7 @@ mod tests {
     #[test]
     fn a_header_only_stub_still_lists() {
         // A trace stub (frontmatter, zero cards) has no `## ` card yet, but must
-        // still list so the user can select and build it — the frontmatter arm
+        // still list so the user can select and build it. The frontmatter arm
         // of the deck-ness predicate carries it.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("stub.md"), "---\ntrace: a walk\n---\n").unwrap();

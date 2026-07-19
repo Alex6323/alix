@@ -369,7 +369,7 @@ pub fn stamp_for_session(path: &Path) {
 /// cards the stamp left tokenless (loudly). Shared by review-open ([`select`])
 /// and augment-open (`/api/augment/open`, `alix deck augment`): both key the
 /// store / paid augment cache by card id, so an unstamped card (interim id 0)
-/// must never reach them — it would collapse the cache to a single key-0 entry
+/// must never reach them: it would collapse the cache to a single key-0 entry
 /// and orphan the spend at the first real stamp. A load failure propagates (a
 /// broken deck must not half-open); a stamp failure is non-fatal and only its
 /// own cards drop.
@@ -749,7 +749,7 @@ mod tests {
         // open the file carries real tokens and every returned card has a
         // derived (nonzero) id. Mutation sentinel: drop the stamp call in
         // `stamp_and_load_deck` and the deck stays unstamped, so every card is
-        // excluded and the returned union is empty — this asserts otherwise.
+        // excluded and the returned union is empty; this asserts otherwise.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         std::fs::write(&path, "## q1\na1\n## q2\na2\n").unwrap();

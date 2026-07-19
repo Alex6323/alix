@@ -728,7 +728,7 @@ mod tests {
         assert!(p.contains("a \"goal\"")); // distinguish a trace from a future goal/curriculum
         assert!(p.contains("Read, Glob")); // same read-only exploration
         assert!(!p.contains("WebFetch")); // local source needs no web tool
-        // The L1 pin: no retired old-format syntax in the recon prompt — no
+        // The L1 pin: no retired old-format syntax in the recon prompt. No
         // `%` directives (locators, givens, or the deck-level trace key) and no
         // `{{ }}` clozes; the trainer no longer parses any of them.
         assert!(!p.contains("% at:")); // recon never emits locators
