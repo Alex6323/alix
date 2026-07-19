@@ -27,8 +27,16 @@ use crate::{
     config::Strictness,
     depth::Reveal,
     session::Order,
+    store::HoleFingerprint,
     token,
 };
+
+/// The internal, non-frozen mask a cloze hole's own span is replaced with when
+/// fingerprinting its answer line for realignment (spec §3.4). A NUL is safe: the
+/// parser rejects C0 controls outside the whitespace set, so it never occurs in
+/// canonical card text and can't collide with real content. Store-internal, so
+/// changing it is a declared `FP_VERSION` bump, never a frozen-format change.
+const HOLE_MASK: &str = "\u{0}";
 
 /// What a cloze hole is replaced with when it is the one being asked.
 pub const BLANK: &str = "____";
@@ -282,6 +290,40 @@ pub fn content_fingerprint(front: &str, back: &[String]) -> u64 {
     let mut hasher = XxHash64::default();
     hasher.write(canonical_content(front, back).as_bytes());
     hasher.finish()
+}
+
+/// XxHash64 of a canonicalized string — one component of a hole fingerprint.
+fn hash64(s: &str) -> u64 {
+    let mut hasher = XxHash64::default();
+    hasher.write(s.as_bytes());
+    hasher.finish()
+}
+
+/// Every hole's realignment fingerprint for a card's scanned answer lines,
+/// in document order (spec §3.4). `text_fp` hashes the canonicalized hidden
+/// text; `line_fp` hashes the hole's answer line canonicalized with THIS hole's
+/// span replaced by [`HOLE_MASK`] and its siblings rendered as their hidden text
+/// — so a rewritten context changes `line_fp` (falling to the text-only pass)
+/// while the hole keeps its position marker among its siblings.
+fn hole_fingerprints(parsed: &[Vec<Seg>], holes: &[(usize, usize, &str)]) -> Vec<HoleFingerprint> {
+    holes
+        .iter()
+        .map(|(hole_line, hole_seg, text)| {
+            let text_fp = hash64(&collapse(text));
+            let mut line = String::new();
+            for (si, segment) in parsed[*hole_line].iter().enumerate() {
+                match segment {
+                    Seg::Text(t) => line.push_str(t),
+                    Seg::Hole(_) if si == *hole_seg => line.push_str(HOLE_MASK),
+                    Seg::Hole(h) => line.push_str(h),
+                }
+            }
+            HoleFingerprint {
+                text_fp,
+                line_fp: hash64(&collapse(&line)),
+            }
+        })
+        .collect()
 }
 
 /// Whether `.md` file content enumerates as a deck (spec §3.1.3): it has at
@@ -1128,6 +1170,9 @@ fn build_card(
     // not collide).
     let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
     let block_fingerprint = content_fingerprint(&front, &raw_answer);
+    // Every hole's realignment fingerprint, in document order — shared by all
+    // sub-cards of this block so any one can rebuild the card's store records.
+    let block_holes = hole_fingerprints(&parsed, &holes);
     for (n, (hole_line, hole_seg, answer_text)) in holes.iter().enumerate() {
         let context: Vec<String> = parsed
             .iter()
@@ -1159,6 +1204,7 @@ fn build_card(
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
         card.hole = Some(n as u32);
+        card.block_holes = block_holes.clone();
         // Override the per-sub-card default (front + this hole's hidden text) with
         // the block fingerprint so all holes of the block dedup as a unit.
         card.content_fingerprint = block_fingerprint;

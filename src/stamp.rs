@@ -15,6 +15,7 @@
 //! failure aborts without a partial write.
 
 use std::{
+    collections::{HashMap, HashSet},
     fs,
     ops::Range,
     path::{Path, PathBuf},
@@ -121,6 +122,19 @@ enum DeckAction {
 /// Non-block-mapping frontmatter is a loud write-fail that leaves the file
 /// untouched. A deck with nothing to stamp is a byte no-op (no write).
 pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
+    stamp_deck_reclaiming(path, &HashMap::new())
+}
+
+/// [`stamp_deck`], but an unstamped card whose §7 content fingerprint is a key
+/// in `reclaim` is stamped with that pre-existing token instead of a fresh mint
+/// — the §1.7 lost-comment RECLAIM: a card that lost its `<!-- id: -->` comment
+/// re-adopts the orphaned token its progress still hangs off. Each reclaim
+/// token is used at most once (a second card of identical content mints fresh),
+/// so no reclaim can mint a duplicate. An empty map is exactly [`stamp_deck`].
+pub fn stamp_deck_reclaiming(
+    path: &Path,
+    reclaim: &HashMap<u64, String>,
+) -> Result<StampOutcome, StampError> {
     let original = fs::read_to_string(path).map_err(|source| StampError::Read {
         path: path.to_path_buf(),
         source,
@@ -180,9 +194,27 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
         DeckAction::None => None,
         _ => Some(mint()?),
     };
+    // A card line's §7 content fingerprint (a cloze block's sub-cards share it),
+    // so a lost-comment reclaim can re-adopt the orphaned token by content.
+    let fp_by_line: HashMap<usize, u64> = deck
+        .cards
+        .iter()
+        .map(|card| (card.line, card.content_fingerprint))
+        .collect();
+    let mut reclaimed_tokens: HashSet<String> = HashSet::new();
     let mut minted_cards = Vec::with_capacity(card_lines.len());
-    for _ in &card_lines {
-        minted_cards.push(mint()?);
+    for line in &card_lines {
+        let reclaim_token = fp_by_line
+            .get(line)
+            .and_then(|fp| reclaim.get(fp))
+            .filter(|token| !reclaimed_tokens.contains(*token));
+        match reclaim_token {
+            Some(token) => {
+                reclaimed_tokens.insert(token.clone());
+                minted_cards.push(token.clone());
+            }
+            None => minted_cards.push(mint()?),
+        }
     }
 
     // Collect every insertion into `body` as (byte offset, text), then apply

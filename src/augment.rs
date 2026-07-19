@@ -461,6 +461,88 @@ impl AugmentCache {
         }
     }
 
+    /// MOVE a cloze card's hole-keyed cache entries to follow the realignment
+    /// cascade (spec §3.4, the D2 cross-family rule: MOVE, never invalidate — a
+    /// displaced hole must never inherit another word's distractors, and a live
+    /// hole must never lose its cached choices to a re-index). Per the
+    /// [`CascadeOutcome`], each matched hole's `token-<old>` augmentation and any
+    /// topology reference move to `token-<new>`; orphaned holes' entries drop;
+    /// fresh holes have none until augmented. Returns whether anything changed
+    /// (so the caller can skip an unnecessary save). Does not save.
+    pub fn remap_holes(&mut self, token: &str, outcome: &crate::store::CascadeOutcome) -> bool {
+        // An identity remap with nothing orphaned moves no id (a fresh hole
+        // appended at the end adds no old key to rewrite).
+        let identity = outcome.remap.iter().all(|(from, to)| from == to);
+        if identity && outcome.orphaned.is_empty() {
+            return false;
+        }
+        let moves: HashMap<u32, u32> = outcome.remap.iter().copied().collect();
+
+        // Per-card augmentations: pull every stored hole's entry (matched or
+        // orphaned), then re-insert only the matched ones at their new index —
+        // a fresh rebuild, so a fresh hole's key is left empty and an orphaned
+        // hole's entry drops.
+        let stored: Vec<u32> = moves
+            .keys()
+            .copied()
+            .chain(outcome.orphaned.iter().copied())
+            .collect();
+        let mut pulled: Vec<(u32, Augmentation)> = Vec::new();
+        for n in &stored {
+            if let Some(aug) = self
+                .cards
+                .remove(&crate::token::card_id(token, Some(*n), false))
+            {
+                pulled.push((*n, aug));
+            }
+        }
+        for (from, aug) in pulled {
+            if let Some(to) = moves.get(&from) {
+                self.cards
+                    .insert(crate::token::card_id(token, Some(*to), false), aug);
+            }
+        }
+
+        // Deck-level topology references (walk order, region membership, edges):
+        // a hole id in any of them is rewritten to its new index, or dropped
+        // when its hole orphaned.
+        let remap_id = |id: &str| -> Option<String> {
+            match crate::token::parse_card_id(id) {
+                Some((t, Some(n), false)) if t == token => moves
+                    .get(&n)
+                    .map(|to| crate::token::card_id(token, Some(*to), false)),
+                _ => Some(id.to_string()),
+            }
+        };
+        for topo in &mut self.topologies {
+            topo.walk.retain(|id| remap_id(id).is_some());
+            for slot in &mut topo.walk {
+                if let Some(new) = remap_id(slot) {
+                    *slot = new;
+                }
+            }
+            topo.edges
+                .retain(|e| remap_id(&e.from).is_some() && remap_id(&e.to).is_some());
+            for edge in &mut topo.edges {
+                if let Some(new) = remap_id(&edge.from) {
+                    edge.from = new;
+                }
+                if let Some(new) = remap_id(&edge.to) {
+                    edge.to = new;
+                }
+            }
+            for region in &mut topo.regions {
+                region.cards.retain(|id| remap_id(id).is_some());
+                for slot in &mut region.cards {
+                    if let Some(new) = remap_id(slot) {
+                        *slot = new;
+                    }
+                }
+            }
+        }
+        true
+    }
+
     /// The number of cards with cached augmentations.
     pub fn len(&self) -> usize {
         self.cards.len()
@@ -770,6 +852,57 @@ mod tests {
     fn open_missing_file_is_empty() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("augment.json"));
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn augment_entries_move_with_their_hole() {
+        // Cross-family MOVE (spec §3.4, D2, user-ruled): choices are cached for
+        // hole 0; a new hole is inserted before it, so the old hole is now hole
+        // 1. Its distractors must MOVE to `token-1` (never invalidate, never
+        // stay under `token-0` where a different word would inherit them).
+        use crate::store::CascadeOutcome;
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        cache.set_distractors("tok-0", vec!["wrong x".into(), "wrong y".into()]);
+        cache.set_note("tok-0", "a note about the old hole 0".into());
+
+        // Insert a hole at the front: old hole 0 → file hole 1; file hole 0 is
+        // fresh (has no augmentation yet).
+        let outcome = CascadeOutcome {
+            remap: vec![(0, 1)],
+            orphaned: vec![],
+            fresh: vec![0],
+        };
+        assert!(cache.remap_holes("tok", &outcome));
+
+        // The choices + note now live under token-1…
+        assert_eq!(
+            Some(["wrong x".to_string(), "wrong y".to_string()].as_slice()),
+            cache.distractors("tok-1")
+        );
+        assert_eq!(Some("a note about the old hole 0"), cache.note("tok-1"));
+        // …and the fresh hole 0 has none (a displaced hole never inherits
+        // another word's distractors).
+        assert!(cache.distractors("tok-0").is_none());
+        assert!(cache.note("tok-0").is_none());
+    }
+
+    #[test]
+    fn an_orphaned_holes_augmentation_is_dropped_not_inherited() {
+        // A hole whose word vanished orphans: its cached entry is dropped, never
+        // left under a live key for a new word to inherit.
+        use crate::store::CascadeOutcome;
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        cache.set_distractors("tok-0", vec!["a".into()]);
+        let outcome = CascadeOutcome {
+            remap: vec![],
+            orphaned: vec![0],
+            fresh: vec![0],
+        };
+        assert!(cache.remap_holes("tok", &outcome));
+        assert!(cache.distractors("tok-0").is_none());
         assert!(cache.is_empty());
     }
 

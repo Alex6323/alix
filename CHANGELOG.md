@@ -15,6 +15,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "introduced" count, hiding the grade rows when nothing was graded.
 
 ### Added
+- **A cloze card's blanks now keep their progress when you edit its gaps.**
+  Inserting, deleting, or reordering `\cloze{…}` gaps, or rewording the text
+  around one, no longer shuffles or resets the review schedules across a card's
+  blanks: each schedule follows its hidden word, matching first by word and
+  surrounding context, then by word alone. A gap whose word *and* context both
+  change starts fresh (it can't be told from a new gap), and a deleted gap's
+  progress is set aside rather than inherited by a different word. Any cached
+  choice-mode distractors and notes move with their gap. And if a whole card
+  loses its `<!-- id: … -->` comment (say a formatter strips it) but its content
+  is unchanged, opening the deck re-adopts the old token so the progress isn't
+  orphaned; `alix doctor` now says whether an orphan's progress can still be
+  reclaimed this way, or its content changed too so it can't.
 - **`alix doctor` now lints a decks folder for identity problems, and `alix
   reset --orphans` clears the leftovers it finds.** Over a folder, doctor
   reports duplicate deck and card tokens (naming which copy keeps the earned

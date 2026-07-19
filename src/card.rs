@@ -106,6 +106,12 @@ pub struct Card {
     /// For a cloze sub-card: this hole's 0-based document-order index.
     /// Dormant like `token`.
     pub hole: Option<u32>,
+    /// For a cloze card: EVERY hole's realignment fingerprint, in document
+    /// order — the same block-level vector on every sub-card of the block (the
+    /// parser fills it), so any one sub-card can rebuild the whole card's
+    /// [`crate::store::CardRecords`]. Empty for a plain card. Store-internal,
+    /// never part of the identity hash.
+    pub block_holes: Vec<crate::store::HoleFingerprint>,
     /// True for the swapped half of a `direction: both`/`reverse` card.
     /// Dormant like `token`.
     pub reversed: bool,
@@ -155,6 +161,7 @@ impl Card {
             display_back: None,
             token: None,
             hole: None,
+            block_holes: Vec::new(),
             reversed: false,
             content_fingerprint,
         }

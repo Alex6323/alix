@@ -280,6 +280,129 @@ pub struct Writer {
     pub at_ms: u64,
 }
 
+/// The fingerprint-records format version (spec §6). A one-byte tag on every
+/// [`CardRecords`]: bumping it declares a store-data invalidation, so a change
+/// to the §7 canonical form can't silently wipe hole schedules on unchanged
+/// cards — stale-versioned records are ignored and rewritten, never mismatched.
+/// Store-internal and freely changeable (never card identity).
+pub const FP_VERSION: u8 = 1;
+
+/// The two 64-bit fingerprints that let a cloze hole's schedule FOLLOW THE WORD
+/// across edits (spec §3.4). Store-internal, non-frozen matcher data: `text_fp`
+/// hashes the hole's hidden text, `line_fp` hashes its masked answer line
+/// (both canonicalized in [`crate::l1`]). The matcher only tests equality, so
+/// ~16 bytes/hole suffices — the raw strings are never stored.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HoleFingerprint {
+    /// XxHash64 of the canonicalized hidden text.
+    pub text_fp: u64,
+    /// XxHash64 of the canonicalized answer line with this hole's span masked.
+    pub line_fp: u64,
+}
+
+/// A card's realignment/reclaim records (spec §6), keyed in the store by the
+/// card's base token. Store-internal, never identity, a serde-default soft add.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CardRecords {
+    /// [`FP_VERSION`] at write time; a stale value is ignored and rewritten.
+    pub version: u8,
+    /// The block-level §7 content fingerprint
+    /// ([`crate::l1::content_fingerprint`]) — powers the §1.7 lost-comment
+    /// reclaim and the precise doctor tell.
+    pub content_fp: u64,
+    /// Each hole's fingerprint in recorded (document) order; empty for a plain
+    /// card. The cascade compares the file's current holes against these.
+    pub holes: Vec<HoleFingerprint>,
+}
+
+/// A hole schedule evicted from a live `token-N` key when its word vanished
+/// from a card (spec §3.4): the reclaim shelf. Never left squatting on a live
+/// key where a new word could inherit the old word's schedule; un-pruned and
+/// reclaim-eligible per §5, cleared only by an explicit reset.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct OrphanedHole {
+    /// The base token the evicted hole belonged to.
+    pub token: String,
+    /// The evicted hole's fingerprint (the matcher key if it ever returns).
+    pub fp: HoleFingerprint,
+    /// The schedule/history the hole carried when it was evicted.
+    pub state: CardState,
+}
+
+/// The outcome of realigning one card's holes ([`realign_holes`]): a pure
+/// function over fingerprints, so it speaks in hole indices; the store
+/// application composes the full `token-N` ids from the card's token.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CascadeOutcome {
+    /// Stored hole index → new file hole index for each matched hole. The
+    /// schedule under `token-<old>` moves to `token-<new>`.
+    pub remap: Vec<(u32, u32)>,
+    /// Stored hole indices with no match: their schedules orphan to the shelf.
+    pub orphaned: Vec<u32>,
+    /// File hole indices with no history: fresh holes, no schedule yet.
+    pub fresh: Vec<u32>,
+}
+
+/// Re-attach stored hole schedules to a card's current file holes so a hole's
+/// progress FOLLOWS THE WORD, not the position (spec §3.4). Two passes, each
+/// walking file holes in document order and consuming the FIRST unconsumed
+/// stored record — in recorded order — that matches:
+///
+/// 1. exact `(text_fp, line_fp)` pairs anchor first (context intact);
+/// 2. leftovers match by `text_fp` alone (a rewritten context, or an identical-word twin).
+///
+/// Leftover stored records orphan; leftover file holes are fresh. The
+/// document-order tie-break makes identical twins pair index-for-index (a swap
+/// is observationally a no-op), and keeps the result deterministic.
+pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> CascadeOutcome {
+    let mut consumed = vec![false; stored.len()];
+    // For each file hole, the stored record it matched (if any).
+    let mut matched: Vec<Option<usize>> = vec![None; file.len()];
+
+    // Pass 1: exact text + context.
+    for (fi, fh) in file.iter().enumerate() {
+        for (si, sh) in stored.iter().enumerate() {
+            if !consumed[si] && sh.text_fp == fh.text_fp && sh.line_fp == fh.line_fp {
+                consumed[si] = true;
+                matched[fi] = Some(si);
+                break;
+            }
+        }
+    }
+    // Pass 2: text alone, for the file holes pass 1 left unmatched.
+    for (fi, fh) in file.iter().enumerate() {
+        if matched[fi].is_some() {
+            continue;
+        }
+        for (si, sh) in stored.iter().enumerate() {
+            if !consumed[si] && sh.text_fp == fh.text_fp {
+                consumed[si] = true;
+                matched[fi] = Some(si);
+                break;
+            }
+        }
+    }
+
+    let mut remap = Vec::new();
+    let mut fresh = Vec::new();
+    for (fi, m) in matched.iter().enumerate() {
+        match m {
+            Some(si) => remap.push((*si as u32, fi as u32)),
+            None => fresh.push(fi as u32),
+        }
+    }
+    remap.sort_unstable();
+    let orphaned = (0..stored.len())
+        .filter(|si| !consumed[*si])
+        .map(|si| si as u32)
+        .collect();
+    CascadeOutcome {
+        remap,
+        orphaned,
+        fresh,
+    }
+}
+
 /// On-disk representation of the store.
 #[derive(Serialize, Deserialize)]
 struct StoreFile {
@@ -290,6 +413,14 @@ struct StoreFile {
     version: u32,
     /// Card states keyed by the card's identity token (its `Card::id`).
     cards: HashMap<String, CardState>,
+    /// Per-card realignment/reclaim records keyed by base token (spec §6). A
+    /// serde-default soft add: a store from before this field loads with none.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    records: HashMap<String, CardRecords>,
+    /// The reclaim shelf: hole schedules evicted from live keys (spec §3.4).
+    /// A serde-default soft add.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hole_orphans: Vec<OrphanedHole>,
     /// Deck-level progress keyed by subject. Optional: a store written before
     /// this field existed (or with no mastered decks) simply has no `decks`
     /// key.
@@ -313,6 +444,10 @@ pub struct Store {
     cards: HashMap<String, CardState>,
     decks: HashMap<String, DeckProgress>,
     virtual_cards: HashMap<String, VirtualCard>,
+    /// Per-card realignment/reclaim records, keyed by base token (spec §6).
+    records: HashMap<String, CardRecords>,
+    /// The reclaim shelf: hole schedules evicted from live keys (spec §3.4).
+    hole_orphans: Vec<OrphanedHole>,
     /// This device's label, stamped into the file on every save. `None` (the
     /// default) leaves the file's existing marker untouched, so tests and
     /// one-off tools do not masquerade as a device.
@@ -350,6 +485,8 @@ impl Store {
                 cards: HashMap::new(),
                 decks: HashMap::new(),
                 virtual_cards: HashMap::new(),
+                records: HashMap::new(),
+                hole_orphans: Vec::new(),
                 device: None,
                 last_writer: None,
             });
@@ -384,6 +521,8 @@ impl Store {
             cards,
             decks: file.decks,
             virtual_cards,
+            records: file.records,
+            hole_orphans: file.hole_orphans,
             device: None,
             last_writer: file.writer,
         })
@@ -414,6 +553,8 @@ impl Store {
         let file = StoreFile {
             version: CURRENT_VERSION,
             cards: self.cards.clone(),
+            records: self.records.clone(),
+            hole_orphans: self.hole_orphans.clone(),
             decks: self.decks.clone(),
             virtual_cards,
             // An unnamed consumer preserves the marker on disk rather than
@@ -485,6 +626,165 @@ impl Store {
     /// deck. Returns whether an entry was present. Does not save.
     pub fn remove(&mut self, card_id: &str) -> bool {
         self.cards.remove(card_id).is_some()
+    }
+
+    /// The realignment/reclaim records for a base token, if any (spec §6).
+    pub fn records(&self, token: &str) -> Option<&CardRecords> {
+        self.records.get(token)
+    }
+
+    /// The reclaim shelf: hole schedules evicted from live keys (spec §3.4).
+    pub fn hole_orphans(&self) -> &[OrphanedHole] {
+        &self.hole_orphans
+    }
+
+    /// Content-fingerprint → orphaned token, for the §1.7 lost-comment reclaim:
+    /// for each `wanted` content fingerprint, an ORPHANED base token (not in
+    /// `live`, but still carrying a stored schedule) whose records hold that
+    /// fingerprint — the token an unstamped card of that content re-adopts. At
+    /// most one token per fingerprint (lowest token breaks a tie, for
+    /// determinism); empty when nothing matches. Read-only.
+    pub fn reclaim_candidates(
+        &self,
+        live: &HashSet<String>,
+        wanted: &HashSet<u64>,
+    ) -> HashMap<u64, String> {
+        use std::collections::hash_map::Entry;
+        let mut best: HashMap<u64, String> = HashMap::new();
+        for (token, rec) in &self.records {
+            if !wanted.contains(&rec.content_fp) || live.contains(token) {
+                continue;
+            }
+            // A genuine orphan still has a schedule to preserve — under the base
+            // token (plain) or a `token-N` sub-key (cloze). The `-` delimiter is
+            // outside the token alphabet, so the prefix test can't cross tokens.
+            let prefix = format!("{token}-");
+            let has_schedule = self
+                .cards
+                .keys()
+                .any(|key| key == token || key.starts_with(&prefix));
+            if !has_schedule {
+                continue;
+            }
+            match best.entry(rec.content_fp) {
+                Entry::Vacant(v) => {
+                    v.insert(token.clone());
+                }
+                Entry::Occupied(mut o) => {
+                    if token < o.get() {
+                        o.insert(token.clone());
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    /// Write (or refresh) a card's [`CardRecords`] under its base token — the
+    /// §6 invariant that no store entry exists without its records. Called at
+    /// every entry-creation site (review-open, the tutor/remediation mints, the
+    /// trace-walk grade). A no-op for an unstamped card (no token to key on).
+    /// Does NOT run the hole cascade — that is [`realign_card_holes`], which
+    /// reads the OLD records before this overwrites them. Does not save.
+    pub fn ensure_records(&mut self, card: &Card) {
+        if let Some(token) = card.token.as_deref() {
+            self.ensure_records_raw(token, card.content_fingerprint, &card.block_holes);
+        }
+    }
+
+    /// [`ensure_records`] for a caller that has an id + fingerprints but no
+    /// `Card` (the trace-walk grade path, whose checkpoints carry only an id).
+    /// `token` is the base token; a plain card's id already is its token.
+    pub fn ensure_records_raw(&mut self, token: &str, content_fp: u64, holes: &[HoleFingerprint]) {
+        self.records.insert(
+            token.to_string(),
+            CardRecords {
+                version: FP_VERSION,
+                content_fp,
+                holes: holes.to_vec(),
+            },
+        );
+    }
+
+    /// Re-attach a cloze card's stored hole schedules to its current file holes
+    /// (spec §3.4), then refresh its records to the current version + file
+    /// holes. Returns the [`CascadeOutcome`] when a realignment actually MOVED
+    /// schedules (the card had current-version records whose holes disagreed
+    /// with the file) so the caller can move the matching augment entries; `None`
+    /// when nothing moved — no prior records, a stale [`FP_VERSION`] (ignored and
+    /// rewritten, never mismatched: a canon tweak must not wipe schedules on
+    /// unchanged cards), or the holes already agree. Does not save.
+    ///
+    /// The cascade REBUILDS this token's `token-N` entries into a fresh map:
+    /// fingerprinted moves win contested keys, a fresh hole wins its live key
+    /// (it simply has no entry until reviewed), and unmatched (orphaned) records
+    /// are EVICTED to the shelf — never left squatting where a new word would
+    /// inherit the old word's schedule.
+    pub fn realign_card_holes(
+        &mut self,
+        token: &str,
+        file_holes: &[HoleFingerprint],
+        content_fp: u64,
+    ) -> Option<CascadeOutcome> {
+        let outcome = match self.records.get(token) {
+            // Current-version records whose holes disagree: run the cascade.
+            Some(rec) if rec.version == FP_VERSION && rec.holes != file_holes => {
+                let stored = rec.holes.clone();
+                let outcome = realign_holes(&stored, file_holes);
+                self.apply_hole_cascade(token, &stored, &outcome);
+                Some(outcome)
+            }
+            // No records, a stale version, or holes already agree: no cascade.
+            // Schedules stay positionally as they are; records are refreshed
+            // below to the current version + file holes.
+            _ => None,
+        };
+        self.ensure_records_raw(token, content_fp, file_holes);
+        outcome
+    }
+
+    /// Rebuild `token`'s `token-N` schedule entries per a [`CascadeOutcome`]:
+    /// matched holes move to their new index, orphaned holes are evicted to the
+    /// shelf with their stored fingerprint, and fresh indices are left with no
+    /// entry. `stored_holes` are the pre-cascade records (for the evicted
+    /// fingerprints). Does not save.
+    fn apply_hole_cascade(
+        &mut self,
+        token: &str,
+        stored_holes: &[HoleFingerprint],
+        outcome: &CascadeOutcome,
+    ) {
+        // Pull every current `token-N` entry out into a fresh map keyed by old
+        // hole index, so the rebuild can't leave a stale entry under a live key.
+        let mut old: HashMap<u32, CardState> = HashMap::new();
+        for n in 0..stored_holes.len() as u32 {
+            let key = crate::token::card_id(token, Some(n), false);
+            if let Some(state) = self.cards.remove(&key) {
+                old.insert(n, state);
+            }
+        }
+        // Matched holes move to their new index.
+        for (from, to) in &outcome.remap {
+            if let Some(state) = old.remove(from) {
+                let key = crate::token::card_id(token, Some(*to), false);
+                self.cards.insert(key, state);
+            }
+        }
+        // Orphaned holes: evict any surviving schedule to the shelf. A hole with
+        // no schedule (never reviewed) leaves nothing behind.
+        for orphan in &outcome.orphaned {
+            if let Some(state) = old.remove(orphan) {
+                let fp = stored_holes
+                    .get(*orphan as usize)
+                    .copied()
+                    .unwrap_or_default();
+                self.hole_orphans.push(OrphanedHole {
+                    token: token.to_string(),
+                    fp,
+                    state,
+                });
+            }
+        }
     }
 
     /// Returns a virtual card by its id, if one exists.
@@ -638,6 +938,8 @@ impl Store {
         self.cards.clear();
         self.decks.clear();
         self.virtual_cards.clear();
+        self.records.clear();
+        self.hole_orphans.clear();
         n
     }
 
@@ -835,6 +1137,8 @@ pub fn mint_tutor_card(
         text,
         created_ms: now_ms,
     });
+    // Invariant (§6): records exist before the schedule entry does.
+    store.ensure_records(card);
     store.get_or_insert(&id, now_ms);
     Ok(id)
 }
@@ -1025,6 +1329,8 @@ pub fn store_remediation_cards(
                     text: block.clone(),
                     created_ms: now_ms,
                 });
+                // Invariant (§6): records exist before the schedule entry does.
+                store.ensure_records(card);
                 store.get_or_insert(&id, now_ms);
                 created_or_revived += 1;
             }
@@ -1157,6 +1463,166 @@ mod tests {
         let path = dir.path().join("progress.json");
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
+    }
+
+    /// A hole fingerprint from a `word` key and a `context` key. The realign
+    /// matcher only tests equality, so distinct integers stand in for distinct
+    /// hidden texts and masked lines.
+    fn hf(word: u64, context: u64) -> HoleFingerprint {
+        HoleFingerprint {
+            text_fp: word,
+            line_fp: context,
+        }
+    }
+
+    #[test]
+    fn inserting_a_hole_shifts_neighbors_without_losing_schedules() {
+        // Holes A, B; a new hole is inserted at the front.
+        let a = hf(1, 10);
+        let b = hf(2, 20);
+        let fresh_word = hf(9, 90);
+        let outcome = realign_holes(&[a, b], &[fresh_word, a, b]);
+        // A (stored 0) → file 1, B (stored 1) → file 2; file 0 is fresh.
+        assert_eq!(vec![(0, 1), (1, 2)], outcome.remap);
+        assert_eq!(vec![0], outcome.fresh);
+        assert!(outcome.orphaned.is_empty());
+    }
+
+    #[test]
+    fn deleting_a_hole_orphans_exactly_that_record() {
+        // Holes A, B, C; the middle one (B) is deleted.
+        let a = hf(1, 10);
+        let b = hf(2, 20);
+        let c = hf(3, 30);
+        let outcome = realign_holes(&[a, b, c], &[a, c]);
+        assert_eq!(vec![(0, 0), (2, 1)], outcome.remap);
+        assert_eq!(vec![1], outcome.orphaned);
+        assert!(outcome.fresh.is_empty());
+    }
+
+    #[test]
+    fn reordering_holes_follows_the_words() {
+        // A and B swap document positions (each keeps its own text + context,
+        // e.g. two holes on different lines that trade order).
+        let a = hf(1, 10);
+        let b = hf(2, 20);
+        let outcome = realign_holes(&[a, b], &[b, a]);
+        // A's schedule (stored 0) follows to file 1; B's (stored 1) to file 0.
+        assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
+        assert!(outcome.orphaned.is_empty());
+        assert!(outcome.fresh.is_empty());
+    }
+
+    #[test]
+    fn a_context_rewrite_still_matches_by_text_alone() {
+        // Same hidden word, rewritten surrounding context (line_fp differs).
+        let stored = hf(1, 10);
+        let rewritten = hf(1, 99);
+        let outcome = realign_holes(&[stored], &[rewritten]);
+        // Pass 1 (exact) misses; pass 2 (text alone) anchors it.
+        assert_eq!(vec![(0, 0)], outcome.remap);
+        assert!(outcome.orphaned.is_empty());
+        assert!(outcome.fresh.is_empty());
+    }
+
+    #[test]
+    fn identical_twins_pair_in_document_order_on_both_sides() {
+        // Two indistinguishable holes (same word AND context) on each side.
+        let twin = hf(5, 50);
+        let outcome = realign_holes(&[twin, twin], &[twin, twin]);
+        // Document order on both sides: stored 0 → file 0, stored 1 → file 1.
+        // (A swap would be observationally a no-op, but the tie-break pins this.)
+        assert_eq!(vec![(0, 0), (1, 1)], outcome.remap);
+        assert!(outcome.orphaned.is_empty());
+        assert!(outcome.fresh.is_empty());
+    }
+
+    #[test]
+    fn word_and_context_both_changed_is_a_fresh_hole() {
+        // Neither text nor context survives: no match at all.
+        let stored = hf(1, 10);
+        let changed = hf(7, 70);
+        let outcome = realign_holes(&[stored], &[changed]);
+        assert!(outcome.remap.is_empty());
+        assert_eq!(vec![0], outcome.fresh);
+        assert_eq!(vec![0], outcome.orphaned);
+    }
+
+    #[test]
+    fn a_fresh_hole_always_wins_the_live_key_and_the_orphan_goes_to_the_shelf() {
+        // A new word replaces the old one at the same position: the file hole
+        // is fresh (it will own the live token-0 key) and the stored record
+        // orphans (its schedule is evicted, never inherited by the new word).
+        let stored = hf(1, 10);
+        let replacement = hf(8, 80);
+        let outcome = realign_holes(&[stored], &[replacement]);
+        assert!(outcome.remap.is_empty());
+        assert_eq!(vec![0], outcome.fresh);
+        assert_eq!(vec![0], outcome.orphaned);
+    }
+
+    #[test]
+    fn the_cascade_rebuilds_entries_into_a_fresh_map() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let token = "tok";
+        let a = hf(1, 10);
+        let b = hf(2, 20);
+        store.ensure_records_raw(token, 100, &[a, b]);
+        store.get_or_insert("tok-0", 0).total_reviews = 1; // hole A's schedule
+        store.get_or_insert("tok-1", 0).total_reviews = 2; // hole B's schedule
+
+        // Hole 0's word is replaced (Z); hole 1 (B) is unchanged.
+        let z = hf(8, 80);
+        let outcome = store.realign_card_holes(token, &[z, b], 100).unwrap();
+        assert_eq!(vec![(1, 1)], outcome.remap);
+        assert_eq!(vec![0], outcome.orphaned);
+        assert_eq!(vec![0], outcome.fresh);
+
+        // B's schedule stays put (a fingerprinted move wins its key)…
+        assert_eq!(2, store.get("tok-1").unwrap().total_reviews);
+        // …the fresh word Z owns the live token-0 key with NO inherited
+        // schedule (it will get a fresh one when first reviewed)…
+        assert!(store.get("tok-0").is_none());
+        // …and A's orphaned schedule sits on the shelf, never under a live key.
+        assert_eq!(1, store.hole_orphans().len());
+        assert_eq!("tok", store.hole_orphans()[0].token);
+        assert_eq!(a, store.hole_orphans()[0].fp);
+        assert_eq!(1, store.hole_orphans()[0].state.total_reviews);
+        // Records are refreshed to the current file holes.
+        assert_eq!(vec![z, b], store.records(token).unwrap().holes);
+    }
+
+    #[test]
+    fn a_stale_fingerprint_version_is_ignored_and_rewritten_never_mismatched() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let token = "tok";
+        let a = hf(1, 10);
+        let b = hf(2, 20);
+        // Records written under a superseded FP_VERSION, with holes that would
+        // orphan tok-0 if a cascade ran.
+        store.records.insert(
+            token.to_string(),
+            CardRecords {
+                version: FP_VERSION.wrapping_add(1),
+                content_fp: 100,
+                holes: vec![a],
+            },
+        );
+        store.get_or_insert("tok-0", 0).total_reviews = 7;
+
+        // A stale version must be ignored (never mismatched into a cascade that
+        // would wipe schedules on an unchanged card), and simply rewritten.
+        let outcome = store.realign_card_holes(token, &[a, b], 100);
+        assert!(outcome.is_none());
+        // The positional schedule is untouched; nothing was evicted.
+        assert_eq!(7, store.get("tok-0").unwrap().total_reviews);
+        assert!(store.hole_orphans().is_empty());
+        // Records are rewritten at the current version + current file holes.
+        let rec = store.records(token).unwrap();
+        assert_eq!(FP_VERSION, rec.version);
+        assert_eq!(vec![a, b], rec.holes);
     }
 
     #[test]
@@ -2180,6 +2646,70 @@ mod tests {
         // The seeded schedule (so it enters the queue as a new card) is exercised
         // end-to-end by the tests/api.rs round-trip in Task 9, where drillability
         // is asserted against the running server.
+    }
+
+    #[test]
+    fn records_exist_whenever_an_entry_is_created() {
+        // The §6 invariant, at the two store-side entry-creation paths: a tutor
+        // mint and a remediation mint both write records alongside the schedule,
+        // so no store entry is ever token→schedule with no content to reclaim
+        // against. (The trace-walk grade path and review-open are covered by
+        // their own tests in trace.rs / assemble.rs.)
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        let tutor = mint_tutor_card(
+            &mut store,
+            "geo.md",
+            "capital of italy?",
+            &["Rome".to_string()],
+            100,
+            &HashSet::new(),
+        )
+        .unwrap();
+        assert!(store.get(&tutor).is_some(), "the schedule entry exists");
+        let rec = store.records(&tutor).expect("records exist for the entry");
+        assert_eq!(FP_VERSION, rec.version);
+        assert!(rec.holes.is_empty(), "a plain tutor card has no holes");
+
+        store_remediation(
+            &mut store,
+            "d.md",
+            "## Why does X happen?\nbecause Y\n",
+            200,
+            None,
+        )
+        .unwrap();
+        let gap = store.virtual_cards_for("d.md")[0].id.clone();
+        assert!(store.get(&gap).is_some());
+        assert!(
+            store.records(&gap).is_some(),
+            "a remediation mint writes records too"
+        );
+
+        // A cloze remediation block records every hole under its base token.
+        store_remediation(
+            &mut store,
+            "d.md",
+            "## Fill\nthe \\cloze{a} and \\cloze{b}\n",
+            300,
+            None,
+        )
+        .unwrap();
+        let cloze_id = store
+            .virtual_cards_for("d.md")
+            .into_iter()
+            .find(|v| v.text.contains("\\cloze"))
+            .unwrap()
+            .id
+            .clone();
+        let (base, _, _) = crate::token::parse_card_id(&cloze_id).unwrap();
+        assert_eq!(
+            2,
+            store.records(base).unwrap().holes.len(),
+            "both holes recorded under the base token"
+        );
     }
 
     #[test]

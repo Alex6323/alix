@@ -99,6 +99,10 @@ pub struct Checkpoint {
     pub at_origin: Option<String>,
     /// The card's identity token — the key its per-checkpoint SRS hangs off.
     pub card_id: String,
+    /// The card's §7 content fingerprint, so the walk-grade entry-creation path
+    /// can uphold the §6 records invariant (a trace card is a plain predict/
+    /// verify card, so it carries no holes).
+    pub content_fp: u64,
     /// The 1-based line of the checkpoint's front in the deck file, so an
     /// ask-Claude "save note" can append a `!` line to the right checkpoint.
     pub line: usize,
@@ -158,6 +162,7 @@ impl Trace {
                     locator: c.at.clone(),
                     at_origin: c.at_origin.clone(),
                     card_id: c.id()?,
+                    content_fp: c.content_fingerprint,
                     line: c.line,
                 })
             })
@@ -384,6 +389,9 @@ impl Walk {
             return;
         }
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
+            // Invariant (§6): the walk grades with no Session, so it is itself
+            // an entry-creation site — write records before the schedule entry.
+            store.ensure_records_raw(&checkpoint.card_id, checkpoint.content_fp, &[]);
             let state = store.get_or_insert(&checkpoint.card_id, now_ms);
             Fsrs::default().apply(state, Depth::Recall, delta.grade(), now_ms, false);
         }
@@ -1511,6 +1519,27 @@ mod tests {
         assert_eq!(1, summary.passed);
         assert_eq!(1, summary.failed);
         assert_eq!(vec![1], summary.weak); // the failed hop is the weak edge
+    }
+
+    #[test]
+    fn a_trace_walk_grade_creates_an_entry_with_records() {
+        // The §6 invariant at the trace-walk grade path (review finding F1): the
+        // walk grades with no Session, so it is itself an entry-creation site and
+        // must write records before the schedule entry — else the entry is
+        // token→schedule with no content fingerprint to ever reclaim against.
+        let dir = tempfile::tempdir().unwrap();
+        let deck = trace_deck(dir.path());
+        let trace = Trace::from_deck(&deck).unwrap();
+        let card0 = trace.checkpoints[0].card_id.clone();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        assert!(store.get(&card0).is_none(), "no entry before the grade");
+        let mut walk = Walk::new(trace);
+        walk.predict("guess".to_string());
+        walk.grade(&mut store, Delta::Passed, 1000);
+        assert!(store.get(&card0).is_some(), "the grade created the entry");
+        let rec = store.records(&card0).expect("records exist alongside it");
+        assert_eq!(crate::store::FP_VERSION, rec.version);
+        assert!(rec.holes.is_empty(), "a trace card is a plain card");
     }
 
     #[test]

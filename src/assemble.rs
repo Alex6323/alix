@@ -9,7 +9,7 @@
 //! (the catalog, folded from member values).
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -358,12 +358,57 @@ pub fn selectable(path: &Path) -> bool {
 /// loud but non-fatal: the deck still loads, and [`exclude_unstamped`] drops
 /// the cards the failed write left tokenless.
 pub fn stamp_for_session(path: &Path) {
-    if let Err(e) = stamp::stamp_deck(path) {
+    stamp_for_session_reclaiming(path, &HashMap::new());
+}
+
+/// [`stamp_for_session`], but passing a §1.7 reclaim map (content fingerprint →
+/// orphaned token) so a card that lost its `<!-- id: -->` comment re-adopts the
+/// token its progress still hangs off, instead of minting fresh. Review-open
+/// only (augment-open never reclaims); [`reclaim_map`] builds the map.
+pub fn stamp_for_session_reclaiming(path: &Path, reclaim: &HashMap<u64, String>) {
+    if let Err(e) = stamp::stamp_deck_reclaiming(path, reclaim) {
         eprintln!(
             "warning: cannot stamp {}: {e}; its unstamped cards are excluded from this session",
             path.display()
         );
     }
+}
+
+/// The §1.7 lost-comment reclaim map for review-open (content fingerprint →
+/// orphaned token). Empty unless the deck has unstamped cards whose §7 content
+/// matches an ORPHANED token's records — a token still carrying a schedule that
+/// no live card in the deck's WORKSPACE claims (so a token a sibling deck still
+/// holds is never stolen). Read-only: the actual re-adoption is the reclaiming
+/// stamp write. The workspace scan runs only when unstamped cards exist (the
+/// uncommon case: a freshly generated deck, or a comment-stripped one).
+pub fn reclaim_map(store: &Store, path: &Path) -> HashMap<u64, String> {
+    let Ok(deck) = Deck::load(path) else {
+        return HashMap::new();
+    };
+    let wanted: HashSet<u64> = deck
+        .cards
+        .iter()
+        .filter(|card| card.token.is_none())
+        .map(|card| card.content_fingerprint)
+        .collect();
+    if wanted.is_empty() {
+        return HashMap::new();
+    }
+    // Every stamped card token across the deck's containing folder is live, so
+    // an orphan is genuinely unclaimed workspace-wide before it is reclaimed.
+    let mut live: HashSet<String> = HashSet::new();
+    if let Some(dir) = path.parent() {
+        for file in workspace::deck_files(dir) {
+            if let Ok(other) = Deck::load(&file) {
+                for card in &other.cards {
+                    if let Some(token) = card.token.as_deref() {
+                        live.insert(token.to_string());
+                    }
+                }
+            }
+        }
+    }
+    store.reclaim_candidates(&live, &wanted)
 }
 
 /// Resolve any card-token collision the deck at `path` is the LOSER of, at the
@@ -394,6 +439,37 @@ pub fn resolve_duplicates_at_open(path: &Path) {
             );
         }
     }
+}
+
+/// Uphold the §6 records invariant for every deck card at review-open and
+/// realign each cloze card's hole schedules to its current file holes (spec
+/// §3.4). For a plain card, writes/refreshes its [`crate::store::CardRecords`].
+/// For a cloze card, runs the cascade (which rekeys `token-N` schedules, evicts
+/// orphaned holes to the shelf, and MOVES the matching augment-cache entries)
+/// and refreshes its records. Returns whether any cascade actually moved
+/// schedules, so the caller can persist both stores at once (a re-open then sees
+/// agreeing holes and does not re-run). Processes each base token once (a cloze
+/// block's sub-cards share their `block_holes` + `content_fingerprint`).
+fn realign_and_record(store: &mut Store, augment: &mut AugmentCache, cards: &[Card]) -> bool {
+    let mut cascaded = false;
+    let mut seen: HashSet<&str> = HashSet::new();
+    for card in cards {
+        let Some(token) = card.token.as_deref() else {
+            continue;
+        };
+        if !seen.insert(token) {
+            continue;
+        }
+        if card.block_holes.is_empty() {
+            store.ensure_records(card);
+        } else if let Some(outcome) =
+            store.realign_card_holes(token, &card.block_holes, card.content_fingerprint)
+        {
+            augment.remap_holes(token, &outcome);
+            cascaded = true;
+        }
+    }
+    cascaded
 }
 
 /// Stamp one deck file (an enumerated §2.1 write site), load it, and drop any
@@ -469,7 +545,11 @@ pub fn select(
     if let [path] = paths.as_slice()
         && path.is_file()
     {
-        stamp_for_session(path);
+        // §1.7 reclaim: a card that lost its `<!-- id: -->` comment re-adopts
+        // the orphaned token its progress hangs off, rather than minting fresh.
+        // Computed before stamping, from the store's orphans (workspace-scoped).
+        let reclaim = reclaim_map(store, path);
+        stamp_for_session_reclaiming(path, &reclaim);
         // Resolve any duplicate card token this deck loses (spec §2.4): the
         // session-open write site, and the only place resolution writes. The
         // keeper deck keeps the earned progress; this file's colliding card
@@ -548,7 +628,20 @@ pub fn select(
     // --target notes`) — shown with the card's own deck note on reveal. (Question
     // variants are rotated in per-presentation by the frontends, and distractors
     // are read when a choice question is built.)
-    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    let mut augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    // Uphold the §6 records invariant for every deck card (before the session
+    // build reaches any `get_or_insert`), and realign a cloze card's hole
+    // schedules to its current file holes (spec §3.4) — a cascade that also
+    // MOVES the matching augment-cache entries. Persist both stores at this
+    // enumerated write site when a realignment moved anything.
+    if realign_and_record(store, &mut augment, &cards) {
+        if let Err(e) = augment.save() {
+            eprintln!("warning: could not save the augment cache: {e}");
+        }
+        if let Err(e) = store.save() {
+            eprintln!("warning: could not save progress: {e}");
+        }
+    }
     for card in &mut cards {
         // Reshape first (re-renders the deck note, front, answer, mode) …
         augment.apply_format(card);
@@ -930,6 +1023,150 @@ it reads line two\n\
             },
             instance_store: None,
         }
+    }
+
+    #[test]
+    fn review_open_records_every_deck_card_including_cloze_holes() {
+        // The §6 invariant at review-open: every deck card gets records before
+        // the session build, a plain card with no holes and a cloze card with
+        // one hole fingerprint per hole under its base token.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\
+             the \\cloze{alpha} and \\cloze{beta}\n## Plain <!-- id: plaincard -->\nanswer\n",
+        )
+        .unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+
+        select(
+            vec![path],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+
+        let plain = store.records("plaincard").expect("plain card records");
+        assert!(plain.holes.is_empty());
+        let cloze = store.records("fillcard").expect("cloze card records");
+        assert_eq!(2, cloze.holes.len(), "one fingerprint per hole");
+    }
+
+    #[test]
+    fn reordering_cloze_holes_in_the_file_moves_schedules_through_review_open() {
+        // End-to-end (spec §3.4): a first open records the card's holes; after
+        // the two gaps are swapped in the file, a second open's cascade moves
+        // each gap's schedule to follow its word, not its position.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\cloze{alpha} then \\cloze{beta}\n",
+        )
+        .unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+
+        // First open records holes [alpha, beta]; then seed distinct schedules.
+        select(
+            vec![path.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+        store.get_or_insert("fillcard-0", 0).total_reviews = 1; // alpha
+        store.get_or_insert("fillcard-1", 0).total_reviews = 2; // beta
+
+        // Swap the two gaps in the file, then re-open.
+        std::fs::write(
+            &path,
+            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\cloze{beta} then \\cloze{alpha}\n",
+        )
+        .unwrap();
+        select(
+            vec![path],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+
+        // alpha (was hole 0) is now hole 1; beta (was hole 1) is now hole 0.
+        // Each schedule followed its word.
+        assert_eq!(1, store.get("fillcard-1").unwrap().total_reviews, "alpha");
+        assert_eq!(2, store.get("fillcard-0").unwrap().total_reviews, "beta");
+        assert!(
+            store.hole_orphans().is_empty(),
+            "a pure swap orphans nothing"
+        );
+    }
+
+    #[test]
+    fn an_unstamped_card_matching_an_orphans_content_fingerprint_readopts_the_token() {
+        // §1.7 reclaim: a card whose `<!-- id: -->` comment was stripped, whose
+        // §7 content still matches an orphaned token's records, re-adopts that
+        // token at review-open instead of minting fresh — its earned schedule is
+        // preserved, not orphaned.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("geo.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck1\"\n---\n## Capital of France?\nParis\n",
+        )
+        .unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+
+        // Seed the orphan: a token carrying a schedule + records whose content
+        // fingerprint equals the deck card's, but no live card claims it.
+        let content_fp =
+            crate::l1::content_fingerprint("Capital of France?", &["Paris".to_string()]);
+        let orphan = "orphantoken0000000000000000";
+        store.ensure_records_raw(orphan, content_fp, &[]);
+        store.get_or_insert(orphan, 0).total_reviews = 5;
+
+        select(
+            vec![path.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+
+        // The card re-adopted the orphan's token in the file…
+        let stamped = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            stamped.contains(&format!("<!-- id: {orphan} -->")),
+            "expected the reclaimed token in the file: {stamped}"
+        );
+        // …and its earned schedule survived (no fresh mint + empty new entry).
+        assert_eq!(5, store.get(orphan).unwrap().total_reviews);
+    }
+
+    #[test]
+    fn read_only_scans_never_write_records() {
+        // Listing a workspace opens the store read-only and must never write it
+        // (no records added on a mere scan) — records are a review-open act.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("d.md"),
+            "---\nid: \"deck1\"\n---\n## q <!-- id: qcard -->\na\n",
+        )
+        .unwrap();
+        let store_path = workspace::root_store_path(dir.path());
+        let mut store = Store::open(&store_path).unwrap();
+        store.get_or_insert("qcard", 0);
+        store.save().unwrap();
+        let before = std::fs::read(&store_path).unwrap();
+
+        crate::listing::list_root(dir.path(), &ReviewConfig::default(), 1000);
+
+        let after = std::fs::read(&store_path).unwrap();
+        assert_eq!(
+            before, after,
+            "a read-only listing must not write the store"
+        );
     }
 
     #[test]
