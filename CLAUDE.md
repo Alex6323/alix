@@ -327,13 +327,11 @@ to this codebase. When in doubt, mirror the surrounding code.
   one. Cheap, and it catches mis-founded designs before a build pays for them.
 - **A doc for fresh readers gets a context-free read before it's called delivered** (user
   rule, 2026-07-19). Hand the doc ALONE to a fresh agent with one question: "list every
-  term or claim you cannot resolve from this document alone"; fix what it lists. The known
-  offender is session-born shorthand (spec codenames like "L1", `{#anchors}`, arc names):
-  from inside the session it reads as the thing's name, so the writer cannot see it, and an
-  "imagine a future reader" prose rule cannot trigger on what the writer cannot see. Only a
-  reader who actually lacks the context detects it. Applies to `docs/bugs/`,
-  `docs/product/`, `docs/results/`, the book, README; a codename grep is a cheap first pass,
-  the fresh read is the gate.
+  term or claim you cannot resolve from this document alone"; fix what it lists. The target
+  is session-born shorthand (codenames, `{#anchors}`, arc names) that reads as the thing's
+  real name from inside the session, so the writer cannot self-detect it; only a reader who
+  lacks the context can. Applies to `docs/bugs/`, `docs/product/`, `docs/results/`, the
+  book, README; a codename grep is the cheap first pass, the fresh read is the gate.
 - **An assumption is verified only when a command failed to refute it.** In specs/plans
   write `Assumption — falsification command · expected output · fallback`; never a bare
   "verify X". A step satisfiable by *reading* is not verification. Docs (including
@@ -345,17 +343,12 @@ to this codebase. When in doubt, mirror the surrounding code.
   promised `DeckItemDto.name` was always selectable; two agents "verified" it by reading,
   and the kids client shipped a dead button. One `curl` returned 400.)
 - **Always prove: reproduce the reported symptom itself, not a proxy, before claiming a
-  fix** (user rule, 2026-07-19). A reproduction that uses a *different mechanism or client*
-  than the bug report is a correlated sensor: if it goes green you have learned nothing about
-  the real fault, and if it *agrees* with your hypothesis you must be more suspicious, not
-  satisfied. Match the reproduction to the report: a browser bug is reproduced with a
-  browser, a mobile bug on the device, a specific-collection bug on that collection. The fix
-  is proven only when THAT reproduction goes red before the change and green after. Reach for
-  the faithful tool even when a cheaper proxy is at hand (Playwright was installed; a `curl`
-  probe was easier and flattered a wrong keep-alive hypothesis, so the "second reload"
-  stall was declared fixed twice while the real cause, a global lock held across the slow
-  cold listing, sat untouched). The pull toward the cheap green number is the relief-delivery
-  bias; the antidote is to make the symptom itself the gate.
+  fix** (user rule, 2026-07-19). A reproduction using a *different mechanism or client* than
+  the report is a correlated sensor: green teaches nothing about the real fault, and
+  agreement with your hypothesis should raise suspicion, not end it. Match the tool to the
+  report (a browser bug to a browser, a device bug to the device, a specific-collection bug
+  to that collection); the fix is proven only when THAT reproduction goes red before the
+  change and green after. Reach for the faithful tool even when a cheaper proxy is at hand.
 - **When blocked, stop — never build around the obstacle.** A wall the plan didn't anticipate
   (a cooldown, an unreachable fixture, an id you can't compute) means *report*, not improvise;
   a rule here won't survive one. Briefs must name the wall and the sanctioned route, or say
