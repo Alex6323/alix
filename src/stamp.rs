@@ -130,8 +130,6 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
     // offset is never shifted by a later insertion.
     let mut inserts: Vec<(usize, String)> = Vec::new();
     for (line, tok) in card_lines.iter().zip(&minted_cards) {
-        // A divided front's id goes below its `---`, never between the heading
-        // and the divider: an id line there stops the `---` from dividing.
         let anchor = if next_line_is_divider(body, *line) {
             line + 1
         } else {
@@ -217,8 +215,6 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), StampError> {
     })
 }
 
-/// Whether the line after `line` is a bare `---` divider, mirroring the parser's
-/// exact `---` match, so a divided front's id lands below the divider.
 fn next_line_is_divider(text: &str, line: usize) -> bool {
     let Some(start) = nth_line_start(text, line + 1) else {
         return false;
@@ -228,8 +224,6 @@ fn next_line_is_divider(text: &str, line: usize) -> bool {
     rest[..end].trim_matches(&WS[..]) == "---"
 }
 
-/// The newline terminating `line` (`"\r\n"` or `"\n"`), so an inserted id line
-/// matches the file's convention.
 fn line_terminator(text: &str, line: usize) -> &'static str {
     let Some(start) = nth_line_start(text, line) else {
         return "\n";

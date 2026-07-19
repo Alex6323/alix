@@ -56,9 +56,7 @@ impl DeckSettings {
             order: frontmatter.order,
             direction: frontmatter.direction,
             img_dir: frontmatter.img_dir.clone(),
-            // Grading strictness is a learner setting; a deck can never ship
-            // its own grading rigor (only workspace `[defaults]` or global
-            // config feed `exam_strictness`, via `from_directives`).
+            // Learner setting: a deck never ships grading rigor.
             exam_strictness: None,
             origin: frontmatter.origin.clone(),
         }
@@ -1195,8 +1193,6 @@ mod tests {
         let text = "---\nstrictness: strict\n---\n## f\nb\n";
         let path = write_deck(dir.path(), "d.md", text);
 
-        // Grading strictness is a learner setting; a deck can't ship it, so the
-        // key is just an ordinary unknown-key lint, not a recognized directive.
         let l1deck = l1::parse_l1("d.md", text).unwrap();
         assert_eq!(
             vec![l1::Lint {
@@ -1210,8 +1206,13 @@ mod tests {
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(None, deck.settings.exam_strictness);
+    }
 
-        // Workspace `[defaults]` strictness still reaches the deck's settings.
+    #[test]
+    fn workspace_defaults_strictness_still_reaches_deck_settings() {
+        let text = "---\nstrictness: strict\n---\n## f\nb\n";
+        let l1deck = l1::parse_l1("d.md", text).unwrap();
+
         let mut settings = DeckSettings::from_frontmatter(&l1deck.frontmatter);
         settings.fill_from(&DeckSettings::from_directives(&[(
             "strictness".to_string(),
