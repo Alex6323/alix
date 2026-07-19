@@ -9,10 +9,12 @@
 //! token) is a separate write, done at the session-open site (`assemble`).
 //!
 //! The keep-rule (which copy wins) is deliberately simple and OWNED: an
-//! undecorated/shortest stem beats a decorated superstring of it (`deck.md`
-//! beats `deck (1).md` and `deck copy.md`); unrelated names (`notes.md` vs
-//! `summary.md` from a plain `cp`) fall back to scan order. The tool cannot
-//! know which unrelated copy is pristine, so scan order is honest, not correct.
+//! undecorated stem beats a decorated superstring of it (`deck.md` beats
+//! `deck (1).md` and `deck copy.md`; the decoration must start with a
+//! non-alphanumeric character, so `deck1.md` neither decorates `deck.md` nor
+//! is decorated by `deck10.md`); unrelated names (`notes.md` vs `summary.md`
+//! from a plain `cp`) fall back to scan order. The tool cannot know which
+//! unrelated copy is pristine, so scan order is honest, not correct.
 
 use std::{
     collections::HashMap,
@@ -186,9 +188,9 @@ fn card_dupes(parsed: &[Parsed], excluded: &[usize]) -> Vec<CardDupe> {
 }
 
 /// The index of the file that keeps a shared token, by the §2.4 keep-rule:
-/// the undecorated/shortest stem wins when one name is a prefix of another (a
-/// decorated copy like `deck (1).md` loses to `deck.md`), else the earliest in
-/// scan order. `paths` is in scan order.
+/// the undecorated stem wins when the other name decorates it (a decorated
+/// copy like `deck (1).md` loses to `deck.md`), else the earliest in scan
+/// order. `paths` is in scan order.
 fn keeper_index(paths: &[&Path]) -> usize {
     let mut best = 0;
     for i in 1..paths.len() {
@@ -201,13 +203,24 @@ fn keeper_index(paths: &[&Path]) -> usize {
 
 /// Whether `challenger` should replace `current` as the keeper: true only when
 /// `current`'s stem is a decorated superstring of `challenger`'s (so the
-/// challenger is the undecorated base). Unrelated names and decorated
+/// challenger is the undecorated base). A decoration starts at a word
+/// boundary: the first character after the shared stem must be
+/// non-alphanumeric (`deck (1)`, `deck copy`, `deck-2`); an alphanumeric
+/// continuation (`deck1` vs `deck10`, two independently numbered decks) is an
+/// unrelated name, never a decoration. Unrelated names and decorated
 /// challengers keep `current` (the earlier one, in scan order), which is what
 /// makes the fallback order-based, not lexicographic.
 fn beats(challenger: &Path, current: &Path) -> bool {
     let c = stem(challenger);
     let cur = stem(current);
-    c != cur && cur.starts_with(c.as_str())
+    // `starts_with` guarantees `c.len()` is a char boundary of `cur`, and
+    // `c != cur` guarantees a next character exists.
+    c != cur
+        && cur.starts_with(c.as_str())
+        && cur[c.len()..]
+            .chars()
+            .next()
+            .is_some_and(|ch| !ch.is_alphanumeric())
 }
 
 /// A file name without its `.md` extension (the comparison unit for the
@@ -320,10 +333,12 @@ mod tests {
 
     // ---- keep-rule edge pins: what "decorated" requires -------------------
     //
-    // `beats` only recognizes decoration as one stem being a literal string
-    // prefix of the other (`deck` vs `deck (1)`/`deck copy`). Two stems that
-    // are merely unrelated — including two that share a prefix by accident —
-    // fall back to scan order, same as `unrelated_duplicate_deck_names_fall_back_to_scan_order`.
+    // `beats` recognizes decoration as one stem being a string prefix of the
+    // other WITH the continuation starting non-alphanumeric (`deck` vs
+    // `deck (1)`/`deck copy`). Anything else (unrelated stems, and stems
+    // that share a prefix by accident, `deck1` vs `deck10`) falls back to
+    // scan order, same as
+    // `unrelated_duplicate_deck_names_fall_back_to_scan_order`.
 
     #[test]
     fn two_decorated_copies_without_an_original_fall_back_to_scan_order() {
@@ -355,16 +370,21 @@ mod tests {
         );
     }
 
-    // `a_shorter_unrelated_stem_wins_nothing` (deck1 vs deck10, longer scanned
-    // first) is INTENTIONALLY NOT PINNED here: it fails against the real
-    // `beats()`. `deck10.md` scanned before `deck1.md` yields keeper =
-    // `deck1.md`, not `deck10.md` — `beats()`'s decoration check is a bare
-    // string-prefix test with no word-boundary/non-alphanumeric guard, so it
-    // mistakes `deck10` (an unrelated, independently numbered deck) for a
-    // decorated superstring of `deck1`, and lets the shorter stem steal the
-    // keeper slot out of scan order. This is a real, verified (executed, not
-    // read) edge-case bug in the keep-rule, out of this fix pass's sanctioned
-    // scope ("no production change expected"); see
-    // `.superpowers/sdd/task-7-report.md` § Fix pass for the repro and BLOCKED
-    // status on this one item.
+    #[test]
+    fn an_alphanumeric_continuation_is_not_a_decoration() {
+        let dir = tempfile::tempdir().unwrap();
+        // `deck10` and `deck1` are two unrelated, independently numbered
+        // decks: `deck10`'s stem string-starts-with `deck1`'s, but the
+        // continuation (`0`) is alphanumeric, so it is NOT a decoration
+        // (`deck (1)`, `deck copy`, `deck-2` all continue with a
+        // non-alphanumeric char). The shorter stem must win nothing: scanned
+        // with the longer name first, scan order decides, and `deck10.md`
+        // keeps. Before the word-boundary guard in `beats`, `deck1.md` stole
+        // the keeper slot here; this test is the pin for that guard.
+        let ten = write(dir.path(), "deck10.md", "dsame", "cten");
+        let one = write(dir.path(), "deck1.md", "dsame", "cone");
+
+        let map = scan(&[ten.clone(), one.clone()]);
+        assert_eq!(vec![(ten, one, "dsame".to_string())], map.excluded_decks);
+    }
 }
