@@ -2,8 +2,6 @@ use std::path::Path;
 
 use anyhow::Result;
 
-/// A name counts as taken if either a `.md` or a pre-migration `.txt` file
-/// exists for the candidate stem.
 #[flutter_rust_bridge::frb(sync)]
 pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -> Result<String> {
     let dir = Path::new(&decks_dir);
@@ -15,9 +13,7 @@ pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -
 
     let mut candidate = stem.to_string();
     let mut n = 2;
-    while dir.join(format!("{candidate}.md")).exists()
-        || dir.join(format!("{candidate}.txt")).exists()
-    {
+    while dir.join(format!("{candidate}.md")).exists() {
         candidate = format!("{stem}-{n}");
         n += 1;
     }
@@ -49,34 +45,6 @@ mod tests {
         assert_eq!(name, "topic.md");
         let deck = alix::deck::Deck::load(dir.path().join("topic.md")).unwrap();
         assert_eq!(deck.cards.len(), 2);
-    }
-
-    #[test]
-    fn a_colliding_filename_stems_to_dash_2_leaving_the_original_untouched() {
-        let dir = tempfile::tempdir().unwrap();
-        let original = "# Original\n\n## q\na\n";
-        std::fs::write(dir.path().join("foo.txt"), original).unwrap();
-
-        let name = apply_generated_deck(
-            dir_str(&dir),
-            "foo.txt".to_string(),
-            "## new\nb\n".to_string(),
-        )
-        .unwrap();
-        assert_eq!(name, "foo-2.md");
-        assert_eq!(
-            std::fs::read(dir.path().join("foo.txt")).unwrap(),
-            original.as_bytes(),
-            "the pre-existing deck must survive byte for byte"
-        );
-
-        let name = apply_generated_deck(
-            dir_str(&dir),
-            "foo.txt".to_string(),
-            "## newer\nc\n".to_string(),
-        )
-        .unwrap();
-        assert_eq!(name, "foo-3.md");
     }
 
     #[test]

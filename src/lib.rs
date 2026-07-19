@@ -65,7 +65,6 @@ pub mod trace;
 #[cfg(feature = "full")]
 pub mod trace_ai;
 pub mod tutorial;
-pub mod txt_compat;
 pub mod workspace;
 
 // Only the AI-facing modules use these fake-CLI helpers, and they're all

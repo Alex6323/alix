@@ -710,9 +710,6 @@ mod tests {
         let p = fill_prompt(&items);
         assert!(p.contains("FACT cards"));
         assert!(p.contains("<!-- at: file:start-end -->"));
-        // The L1 pin: no retired old-format syntax in the fill prompt.
-        assert!(!p.contains("% at:"));
-        assert!(!p.contains("% trace"));
         assert!(!p.contains("TAB-indented"));
         assert!(p.contains("show its source on reveal"));
         assert!(p.contains("relative to the SAME root"));
@@ -730,7 +727,6 @@ mod tests {
         assert!(p.contains("CITE REAL STRUCTURAL EVIDENCE"));
         assert!(p.contains("candidate traces"));
         assert!(p.contains("<!-- at:"));
-        assert!(!p.contains("% at:")); // the L1 pin: no retired syntax
         assert!(p.contains("Read, Glob"));
         assert!(!p.contains("WebFetch"));
     }

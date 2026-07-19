@@ -586,9 +586,6 @@ mod tests {
         assert!(p.contains("black-box hop"));
         assert!(p.contains("free variable"));
         assert!(p.contains("<!-- given:"));
-        assert!(!p.contains("% at:"));
-        assert!(!p.contains("% given:"));
-        assert!(!p.contains("% trace:"));
         assert!(p.contains("MUST be COMPLETE"));
         assert!(p.contains("does NOT BIND"));
         assert!(p.contains("KEY POINTS MUST BE GROUNDED"));
@@ -621,9 +618,6 @@ mod tests {
         assert!(p.contains("a \"goal\""));
         assert!(p.contains("Read, Glob"));
         assert!(!p.contains("WebFetch"));
-        assert!(!p.contains("% at:"));
-        assert!(!p.contains("% given:"));
-        assert!(!p.contains("% trace:"));
         assert!(!p.contains("{{"));
     }
 

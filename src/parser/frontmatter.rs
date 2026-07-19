@@ -158,7 +158,7 @@ fn load_frontmatter(
     Ok(frontmatter)
 }
 
-/// `reveal:` values in L1: `cloze` is retired (holes are the trigger).
+/// `reveal:` values; cloze is retired (holes are the trigger).
 pub(super) fn parse_reveal(value: &str) -> Option<Reveal> {
     Reveal::parse(value).filter(|reveal| *reveal != Reveal::Cloze)
 }

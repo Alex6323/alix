@@ -441,8 +441,6 @@ mod tests {
         assert!(p.contains("REVISE before finishing"));
         assert!(p.contains("cover exactly what the front asks"));
         assert!(p.contains("drilled on its own"));
-        assert!(!p.contains("% reveal"));
-        assert!(!p.contains("% link"));
         assert!(!p.contains("{{"));
         assert!(!p.contains("indented answer"));
     }
@@ -457,7 +455,6 @@ mod tests {
         assert!(p.contains("one line per pair"));
         assert!(p.ends_with("---\nlink: u\n---\n\n## Q\nA\n"));
         assert!(p.contains("`---` frontmatter block"));
-        assert!(!p.contains("% reveal"));
         assert!(!p.contains("{{"));
     }
 
@@ -490,9 +487,6 @@ mod tests {
         assert!(p.contains("<!-- at: file:start-end -->"));
         assert!(p.contains("never guess"));
         assert!(p.contains("drilled on its own"));
-        assert!(!p.contains("% reveal"));
-        assert!(!p.contains("% source"));
-        assert!(!p.contains("% at:"));
         assert!(!p.contains("{{"));
         assert!(!p.contains("indented answer"));
     }

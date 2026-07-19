@@ -288,15 +288,18 @@ to this codebase. When in doubt, mirror the surrounding code.
   maintained crate — re-implementing it from a spec is the *higher*-risk choice. Separate a
   heavy *full package* (e.g. an ML optimizer) from its light *core* before rejecting a dep on
   weight.
-- **Don't break card identity.** A card's id is
-  `XxHash64(deck file name + its back lines)` — or, for **cloze** cards, its
-  `hash_lines`: each line's text with the `{{ }}` delimiters stripped (so
-  restyling the markup doesn't reshuffle ids), plus a per-hole index — see
-  `Card::id` (`src/card.rs`). It deliberately ignores the front, notes, and
-  comments, so editing those preserves a card's review history while changing a
-  back line resets it. Preserve this whenever you touch the parser,
-  `hash_lines`, or deck rewriting — a careless change silently wipes users'
-  progress.
+- **Don't break card identity.** A card's id is a minted 128-bit token, rendered as 26
+  lowercase Crockford base32 chars and written into the deck file as an `<!-- id: t -->`
+  line closing the card; `Card::id` returns that token verbatim (sub-ids: `t-N` per cloze
+  hole, `t-r` for the reversed half of a both-directions card). See `Card::id`
+  (`src/card.rs`) and `src/parser/`. The token is minted once (on review-open,
+  augment-open, or card creation) and never changes, so editing a card's front, back, or
+  notes preserves its review history: that permanence is the point of the token model (it
+  replaced a content hash that reset progress on every edit). Preserve it whenever you touch
+  the parser, stamping, or deck rewriting: dropping or altering an id line severs a card
+  from its progress (doctor flags unstamped content and orphaned ids). Separately,
+  `content_fingerprint` (`src/parser/canonical.rs`) is a content hash used only for
+  tutor/remediation dedup, never for identity.
 - Roadmap and design rationale live in `ROADMAP.md` (gitignored, local) — the raw
   idea dump, items tagged `* [ ] -- <P0–P3|--> - (Category) <text>` (`--`/`[x]` =
   done). `PLAN.md` (also gitignored, local) is the **plan at a glance**: a

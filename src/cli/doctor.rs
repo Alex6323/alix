@@ -272,17 +272,10 @@ fn workspace_findings(dir: &Path) -> Report {
         }
         let orphans = store.orphans(&known_cards, &known_subjects);
         for key in &orphans.cards {
-            if is_pre_l1_leftover(key) {
-                report.warn(format!(
-                    "orphaned store key `{key}` is a pre-1.0 numeric id (from before token \
-                     identity); `alix reset --orphans` clears it"
-                ));
-            } else {
-                report.warn(format!(
-                    "orphaned store key (card) `{key}` matches no card in {}",
-                    dir.display()
-                ));
-            }
+            report.warn(format!(
+                "orphaned store key (card) `{key}` matches no card in {}",
+                dir.display()
+            ));
         }
         for key in &orphans.decks {
             report.warn(format!(
@@ -301,68 +294,7 @@ fn workspace_findings(dir: &Path) -> Report {
         }
     }
 
-    txt_era_findings(dir, &deck_files, &mut report);
     report
-}
-
-fn txt_era_findings(dir: &Path, deck_files: &[PathBuf], report: &mut Report) {
-    let deck_set: HashSet<&Path> = deck_files.iter().map(PathBuf::as_path).collect();
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map(|rd| rd.flatten().map(|e| e.path()).collect())
-        .unwrap_or_default();
-    entries.sort();
-    for path in entries {
-        if !path.is_file() {
-            continue;
-        }
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if name.starts_with('.') {
-            continue;
-        }
-        if alix::workspace::is_conventional_non_deck(name)
-            || alix::workspace::is_conflict_name(name)
-        {
-            continue;
-        }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let candidate = match ext {
-            "txt" => true,
-            "md" => !deck_set.contains(path.as_path()),
-            _ => false,
-        };
-        if candidate
-            && let Ok(text) = std::fs::read_to_string(&path)
-            && looks_txt_era(&text)
-        {
-            report.warn(format!(
-                "{}: pre-1.0 `.txt`-era format; no converter ships: regenerate or hand-convert",
-                path.display()
-            ));
-        }
-    }
-}
-
-fn looks_txt_era(text: &str) -> bool {
-    let mut old_fronts = 0;
-    for line in text.lines() {
-        if line.starts_with("## ") {
-            return false;
-        }
-        if let Some(rest) = line.strip_prefix("# ")
-            && !rest.trim().is_empty()
-        {
-            old_fronts += 1;
-        }
-    }
-    old_fronts >= 2
-}
-
-// A u64 is at most 20 digits, so a wrong-length all-decimal key can only be a
-// pre-token-identity leftover, never a real canonical token.
-fn is_pre_l1_leftover(key: &str) -> bool {
-    !key.is_empty()
-        && key.len() != alix::token::TOKEN_LEN
-        && key.bytes().all(|b| b.is_ascii_digit())
 }
 
 fn check(decks: Vec<PathBuf>) -> Result<()> {
@@ -615,13 +547,6 @@ mod tests {
             "## pic <!-- id: img1 -->\n<!-- img: missing.png -->\nphoto\n",
         );
         w(dir, "fresh.md", "## q\na\n");
-        w(dir, "old-deck.txt", "# q1\na1\n# q2\na2\n");
-        w(dir, "README.txt", "# q1\na1\n# q2\na2\n");
-        w(
-            dir,
-            "old-format.md",
-            "# First heading\nsome prose\n# Second heading\nmore prose\n",
-        );
         w(
             dir,
             "trace-bad.md",
@@ -680,18 +605,6 @@ mod tests {
         assert!(warnings.contains("indented `##`"), "{warnings}");
         assert!(warnings.contains("missing image"), "{warnings}");
         assert!(
-            warnings.contains("`.txt`-era") && warnings.contains("old-deck.txt"),
-            "txt-era (.txt branch): {warnings}"
-        );
-        assert!(
-            warnings.contains("`.txt`-era") && warnings.contains("old-format.md"),
-            "txt-era (.md branch, zero `##`): {warnings}"
-        );
-        assert!(
-            !warnings.contains("README.txt"),
-            "a conventional non-deck name must never trip the txt-era advisory, any extension: {warnings}"
-        );
-        assert!(
             warnings.contains("checkpoint at line") && warnings.contains("has only 2 lines"),
             "trace-locator: {warnings}"
         );
@@ -706,33 +619,6 @@ mod tests {
         assert!(
             warnings.contains("card content without ids"),
             "unstamped warning: {warnings}"
-        );
-    }
-
-    #[test]
-    fn all_decimal_wrong_length_store_keys_are_tagged_pre_l1_leftovers() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-        let live = "abcdefghjkmnpqrstvwxyz2345";
-        w(
-            dir,
-            "deck.md",
-            &format!("---\nid: abcdefghjkmnpqrstvwxyz6789\n---\n## q <!-- id: {live} -->\na\n"),
-        );
-        let mut store = alix::store::Store::open(dir.join("progress.json")).unwrap();
-        store.get_or_insert(live, 0);
-        store.get_or_insert("1234567890123456", 0);
-        store.save().unwrap();
-
-        let report = workspace_findings(dir);
-        let warnings = report.warnings.join("\n");
-        assert!(
-            warnings.contains("pre-1.0 numeric id") && warnings.contains("1234567890123456"),
-            "the numeric leftover must be tagged as pre-1.0: {warnings}"
-        );
-        assert!(
-            !warnings.contains(live),
-            "the live card must not be flagged: {warnings}"
         );
     }
 }

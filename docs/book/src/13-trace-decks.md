@@ -125,8 +125,8 @@ hop by hop:
 
 A trace's `% trace:` is a *question* ("how X becomes Y"). The **exam** is to
 answer it: retrace the whole path in a sentence or two, from memory. The model grades
-that compression against the path's checkpoints — AI-graded, exactly like a
-[fact deck's exam](12-the-ai-exam.md), at the deck's `% strictness:` — and
+that compression against the path's checkpoints (AI-graded, exactly like a
+[fact deck's exam](12-the-ai-exam.md)) and
 **passing masters the trace**, which unlocks its dependents. So the symmetry is:
 
 - walking the checkpoints (predict → verify each edge) is the **drill**;

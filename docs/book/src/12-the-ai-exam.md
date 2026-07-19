@@ -83,10 +83,10 @@ leaves mastery intact.
 
 ## Strictness — match the rigor to the material
 
-How hard each answer is judged is a property of the *material*, so it's per deck. A
-checklist topic — a procedure, exact syntax, a security drill — should fail you for
-omitting a step; a conceptual topic shouldn't. Set it with a `% strictness:`
-header directive (or the `[exam]` default):
+How hard each answer is judged fits the *material*: a checklist topic (a procedure,
+exact syntax, a security drill) should fail you for omitting a step; a conceptual topic
+shouldn't. It's a learner setting, not per deck: the `[exam]` `strictness` config default,
+optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
 
 - **strict** — completeness required: every rubric point must be present, so
   omitting one is a gap.
