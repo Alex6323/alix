@@ -2141,7 +2141,9 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     ];
     let first = alix(&args);
     assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let placed = std::fs::read_to_string(ws.join("geo.md")).unwrap();
 
+    // The no-force path is a loud hard error that writes nothing.
     let second = alix(&args);
     assert!(!second.status.success());
     assert!(
@@ -2149,11 +2151,23 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
         "stderr: {}",
         stderr(&second)
     );
+    assert_eq!(
+        placed,
+        std::fs::read_to_string(ws.join("geo.md")).unwrap(),
+        "the deck must be untouched when --force is absent"
+    );
+    assert!(!ws.join("geo.md.bak").exists());
 
+    // --force routes through the replace protocol: the old file is kept as a
+    // `.md.bak` (a plain overwrite would not).
     let mut forced = args.to_vec();
     forced.push("--force");
     let third = alix(&forced);
     assert!(third.status.success(), "stderr: {}", stderr(&third));
+    assert_eq!(
+        placed,
+        std::fs::read_to_string(ws.join("geo.md.bak")).unwrap()
+    );
 }
 
 // ── `alix workspace init` ────────────────────────────────────────────────────

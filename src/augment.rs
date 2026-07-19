@@ -742,6 +742,27 @@ impl AugmentCache {
         }
         self.topologies.retain(|t| !t.belongs_to(deck_tokens));
     }
+
+    /// Removes every augmentation a replaced deck owns (spec §7): each per-card
+    /// entry whose base token is in `card_tokens`, and every topology owned by a
+    /// deck token in `deck_tokens`. Token-scoped, unlike [`clear_all`](Self::clear_all)'s
+    /// exact-id set, so a stale entry lingering under a wiped token can't survive.
+    /// Returns whether anything was removed, so the caller can skip a needless
+    /// save. Does not save.
+    pub fn wipe_tokens(
+        &mut self,
+        card_tokens: &HashSet<String>,
+        deck_tokens: &HashSet<String>,
+    ) -> bool {
+        let cards_before = self.cards.len();
+        self.cards.retain(|id, _| {
+            !crate::token::parse_card_id(id)
+                .is_some_and(|(token, _, _)| card_tokens.contains(token))
+        });
+        let topos_before = self.topologies.len();
+        self.topologies.retain(|t| !t.belongs_to(deck_tokens));
+        self.cards.len() != cards_before || self.topologies.len() != topos_before
+    }
 }
 
 /// One per-card target's coverage for a deck: how many eligible cards already

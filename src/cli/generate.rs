@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     GenerateArgs,
-    common::{confirm, deck_out_dir, preflight_source},
+    common::{confirm, deck_out_dir, preflight_source, store_for},
 };
 
 /// `alix generate`: one entry for all AI authoring. Routes by what the source
@@ -35,7 +35,7 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
         })
     {
         let deck = Deck::load(&src_path)?;
-        return trace_build(&src_path, &deck, args.yes, &config);
+        return trace_build(&src_path, &deck, args.yes, args.force, &config);
     }
 
     // `--trace`: author a trace over the source — a suggestions menu with
@@ -194,7 +194,9 @@ fn build_workspace(
         source,
         Some(&filled),
     )?;
-    let merged = alix::explore::merge_built(&staging, &dir, args.force)?;
+    let mut store = alix::store::Store::open(alix::workspace::root_store_path(&dir))
+        .with_context(|| format!("opening the store for {}", dir.display()))?;
+    let merged = alix::explore::merge_built(&staging, &dir, args.force, &mut store)?;
 
     let total = materialized.traces + materialized.decks;
     let stubs = total - materialized.filled;
@@ -321,9 +323,18 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
                 target.display()
             );
         }
-        // --force is CLI-only: clear the collision before placing.
-        std::fs::remove_file(&target)
-            .with_context(|| format!("cannot overwrite {}", target.display()))?;
+        // --force: wholesale-replace, wiping the old deck's progress. Strict
+        // unlike a fresh place: an unparseable regeneration aborts and is set
+        // aside rather than overwriting the working deck.
+        let mut store = store_for(std::slice::from_ref(&target), None, config)?;
+        let report = library::replace_deck(&dir, &name, &text, &mut store)?;
+        println!(
+            "Replaced {} — {} cards, wiped progress for {} card(s).",
+            target.display(),
+            report.minted,
+            report.wiped_cards
+        );
+        return Ok(());
     }
     let placed = library::place_deck(&dir, &name, &text)?;
     match placed.parse_error {
@@ -349,7 +360,13 @@ const RESET: &str = "\x1b[0m";
 /// Discovers the path with Claude (`alix trace --build`) and writes the
 /// checkpoints back into the deck file, keeping its `% trace:`/`% source:`
 /// header.
-fn trace_build(deck_path: &Path, deck: &Deck, yes: bool, config: &Config) -> Result<()> {
+fn trace_build(
+    deck_path: &Path,
+    deck: &Deck,
+    yes: bool,
+    force: bool,
+    config: &Config,
+) -> Result<()> {
     if !deck.is_trace() {
         bail!(
             "{} declares no `trace:` — add the path you want to understand \
@@ -364,6 +381,16 @@ fn trace_build(deck_path: &Path, deck: &Deck, yes: bool, config: &Config) -> Res
             deck.subject
         );
     }
+    // A stub with no checkpoints yet is a fresh fill; one that already carries
+    // cards is a REBUILD — a content replacement that wipes their progress, so
+    // it needs `--force` (the no-force loud error, spec §7).
+    let rebuild = !deck.cards.is_empty();
+    if rebuild && !force {
+        bail!(
+            "{} already has checkpoints; pass --force to rebuild (this wipes their progress)",
+            deck.subject
+        );
+    }
     let source = deck.sources.first().map(String::as_str).unwrap_or_default();
     preflight_source(source, config.ask.preflight_threshold, yes)?;
     eprintln!(
@@ -371,6 +398,28 @@ fn trace_build(deck_path: &Path, deck: &Deck, yes: bool, config: &Config) -> Res
          few minutes)…"
     );
     let cards = alix::trace_ai::build(deck, &config.trace, &config.ask)?;
+
+    if rebuild {
+        let existing = std::fs::read_to_string(deck_path)
+            .with_context(|| format!("cannot read {}", deck_path.display()))?;
+        let new_text = alix::deck::trace_checkpoint_text(deck_path, &existing, &cards)?;
+        let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
+        let name = deck_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("trace.md");
+        let mut store = store_for(std::slice::from_ref(&deck_path.to_path_buf()), None, config)?;
+        let report = library::replace_deck(dir, name, &new_text, &mut store)?;
+        println!(
+            "Rebuilt {} — {} checkpoints, wiped progress for {} card(s). Review them \
+             and their `at:` locators, then walk it from the picker.",
+            deck_path.display(),
+            report.minted,
+            report.wiped_cards
+        );
+        return Ok(());
+    }
+
     alix::deck::set_trace_checkpoints(deck_path, &cards)?;
     // Creation paths stamp at birth: mint tokens into the freshly written
     // checkpoints (loud but non-fatal; review-open stamps again).
@@ -439,29 +488,50 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
         "---\ntrace: {trace}\nsource: {}\n---\n\n{checkpoints}\n",
         l1::yaml_quote(&source)
     );
-    let out = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
-    if out.exists() && !args.force {
-        bail!(
-            "{} already exists; pass --force to overwrite",
-            out.display()
-        );
-    }
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
+    let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
     let out = if args.workspace.is_some() {
-        dir.join(out)
+        dir.join(&raw)
     } else {
-        out
+        raw
     };
-    std::fs::write(&out, &deck_text).with_context(|| format!("cannot write {}", out.display()))?;
-    // Creation paths stamp at birth (loud but non-fatal; review-open stamps
-    // again).
-    if let Err(e) = alix::stamp::stamp_deck(&out) {
-        eprintln!("warning: cannot stamp {}: {e}", out.display());
+    let out_dir = out
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let name = out
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("explore.md")
+        .to_string();
+    if out.exists() {
+        if !args.force {
+            bail!(
+                "{} already exists; pass --force to overwrite",
+                out.display()
+            );
+        }
+        // --force: wholesale-replace, wiping the old walk's progress.
+        let mut store = store_for(std::slice::from_ref(&out), None, config)?;
+        let report = library::replace_deck(&out_dir, &name, &deck_text, &mut store)?;
+        println!(
+            "Rebuilt the explore walk at {} — {} checkpoints, wiped progress for {} card(s).",
+            out.display(),
+            report.minted,
+            report.wiped_cards
+        );
+        return Ok(());
+    }
+    // place_deck writes and stamps at birth.
+    let placed = library::place_deck(&out_dir, &name, &deck_text)?;
+    if let Some(e) = &placed.parse_error {
+        eprintln!("warning: the explore walk does not parse yet: {e}");
     }
     println!(
         "Wrote the explore walk to {} — walk it from the picker: run `alix` and \
          pick it.",
-        out.display()
+        placed.path.display()
     );
     Ok(())
 }

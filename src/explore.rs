@@ -23,7 +23,9 @@ use crate::{
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     l1::yaml_quote,
-    share, title,
+    library, share,
+    store::Store,
+    title,
     trace::{self, resolve_source},
     trace_ai::{self, build_run_config, clean_to_cards},
     workspace,
@@ -578,9 +580,16 @@ pub struct MergeReport {
 /// Moves everything materialized in `staging` into `dest` (created if
 /// missing), one top-level entry at a time. A name that already exists in
 /// `dest` is a conflict: the existing file is kept and the new one stays
-/// in `staging` — unless `force`, which replaces it. Directories (assets/)
-/// follow the same top-level rule; their contents are not merged inside.
-pub fn merge_built(staging: &Path, dest: &Path, force: bool) -> Result<MergeReport> {
+/// in `staging` — unless `force`, which replaces it. A force-overwritten `.md`
+/// deck routes through the replace protocol ([`library::replace_deck`]), so the
+/// old member's progress in `store` is wiped rather than orphaned; other entries
+/// (assets/ directories, non-deck files) follow the plain top-level move rule.
+pub fn merge_built(
+    staging: &Path,
+    dest: &Path,
+    force: bool,
+    store: &mut Store,
+) -> Result<MergeReport> {
     fs::create_dir_all(dest).with_context(|| format!("cannot create {}", dest.display()))?;
     let mut moved = 0;
     let mut conflicts = Vec::new();
@@ -594,6 +603,19 @@ pub fn merge_built(staging: &Path, dest: &Path, force: bool) -> Result<MergeRepo
         if to.exists() {
             if !force {
                 conflicts.push(name);
+                continue;
+            }
+            // A `.md` deck collision is a content replacement: wipe the old
+            // member's progress by routing the new text through the replace
+            // protocol (which keeps the old file as `.md.bak`), then drop the
+            // now-consumed staging copy.
+            if to.is_file() && from.is_file() && name.ends_with(".md") {
+                let text = fs::read_to_string(&from)
+                    .with_context(|| format!("cannot read {}", from.display()))?;
+                library::replace_deck(dest, &name, &text, store)?;
+                fs::remove_file(&from)
+                    .with_context(|| format!("cannot remove {}", from.display()))?;
+                moved += 1;
                 continue;
             }
             if to.is_dir() {
@@ -978,7 +1000,8 @@ preamble ignored
         fs::write(staging.join("alix.toml"), "[defaults]\n").unwrap();
         fs::write(staging.join("01-a.txt"), "deck a\n").unwrap();
 
-        let report = merge_built(&staging, &dest, false).unwrap();
+        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let report = merge_built(&staging, &dest, false, &mut store).unwrap();
 
         assert_eq!(2, report.moved);
         assert!(report.conflicts.is_empty());
@@ -1003,7 +1026,8 @@ preamble ignored
         fs::write(dest.join("01-a.txt"), "the user's own deck\n").unwrap();
         fs::write(staging.join("01-a.txt"), "the freshly generated deck\n").unwrap();
 
-        let report = merge_built(&staging, &dest, false).unwrap();
+        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let report = merge_built(&staging, &dest, false, &mut store).unwrap();
 
         assert_eq!(0, report.moved);
         assert_eq!(vec!["01-a.txt".to_string()], report.conflicts);
@@ -1028,7 +1052,8 @@ preamble ignored
         fs::write(dest.join("01-a.txt"), "stale\n").unwrap();
         fs::write(staging.join("01-a.txt"), "fresh\n").unwrap();
 
-        let report = merge_built(&staging, &dest, true).unwrap();
+        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let report = merge_built(&staging, &dest, true, &mut store).unwrap();
 
         assert_eq!(1, report.moved);
         assert!(report.conflicts.is_empty());
@@ -1041,13 +1066,46 @@ preamble ignored
     }
 
     #[test]
+    fn a_forced_md_collision_routes_through_the_replace_protocol() {
+        let (staging, dest) = merge_test_dirs("md-replace");
+        fs::create_dir_all(&dest).unwrap();
+        // An existing stamped member deck with progress in the store.
+        fs::write(
+            dest.join("01-a.md"),
+            "---\nid: \"da1\"\n---\n## old <!-- id: c1 -->\nold\n",
+        )
+        .unwrap();
+        fs::write(staging.join("01-a.md"), "## new q\nnew ans\n").unwrap();
+        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        store.get_or_insert("c1", 0);
+        store.save().unwrap();
+
+        let report = merge_built(&staging, &dest, true, &mut store).unwrap();
+
+        assert_eq!(1, report.moved);
+        // The old member's progress was wiped and its bytes kept as `.md.bak`.
+        assert!(store.get("c1").is_none());
+        assert!(dest.join("01-a.md.bak").exists());
+        // The new deck is in place; staging is drained.
+        assert!(
+            fs::read_to_string(dest.join("01-a.md"))
+                .unwrap()
+                .contains("new q")
+        );
+        assert!(!staging.join("01-a.md").exists());
+
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
+    #[test]
     fn a_directory_entry_merges_as_one_unit_under_the_same_collision_rule() {
         let (staging, dest) = merge_test_dirs("dir");
         fs::create_dir_all(staging.join("assets")).unwrap();
         fs::write(staging.join("assets/img.svg"), "new\n").unwrap();
 
         // clean merge: the whole `assets/` dir moves in as one entry
-        let report = merge_built(&staging, &dest, false).unwrap();
+        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let report = merge_built(&staging, &dest, false, &mut store).unwrap();
         assert_eq!(1, report.moved);
         assert!(report.conflicts.is_empty());
         assert_eq!(
@@ -1058,7 +1116,7 @@ preamble ignored
         // a second build's `assets/` collides with the whole dir, not its contents
         fs::create_dir_all(staging.join("assets")).unwrap();
         fs::write(staging.join("assets/img.svg"), "newer\n").unwrap();
-        let report = merge_built(&staging, &dest, false).unwrap();
+        let report = merge_built(&staging, &dest, false, &mut store).unwrap();
         assert_eq!(0, report.moved);
         assert_eq!(vec!["assets".to_string()], report.conflicts);
         assert_eq!(

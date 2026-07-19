@@ -617,9 +617,22 @@ pub fn set_trace_checkpoints(path: &Path, cards: &str) -> Result<(), DeckError> 
         source,
     };
     let existing = std::fs::read_to_string(path).map_err(io_err)?;
-    let fronts = front_lines_of(path, &existing)?;
-    let new_text = replace_after_header(&existing, &fronts, cards);
+    let new_text = trace_checkpoint_text(path, &existing, cards)?;
     write_deck_text(path, &new_text)
+}
+
+/// The full deck text after replacing `existing`'s checkpoint cards with
+/// `cards`, keeping everything before the first card front — the
+/// [`set_trace_checkpoints`] transform without the write. The rebuild flow
+/// routes this text through the replace protocol so the old checkpoints'
+/// progress is wiped.
+pub fn trace_checkpoint_text(
+    path: &Path,
+    existing: &str,
+    cards: &str,
+) -> Result<String, DeckError> {
+    let fronts = front_lines_of(path, existing)?;
+    Ok(replace_after_header(existing, &fronts, cards))
 }
 
 /// Returns the header of `text` (every line before the first `## ` card

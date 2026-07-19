@@ -1045,6 +1045,47 @@ impl Store {
         }
         removed
     }
+
+    /// Wipes a replaced deck's store state (spec §7): every authored card
+    /// schedule whose base token is in `tokens`, those tokens' realignment
+    /// records and reclaim-shelf entries, the deck-family entry keyed by
+    /// `subject`, and every virtual card parented to `subject` (with its own
+    /// schedule). Returns how many authored card schedules were removed.
+    /// Deliberate wholesale destruction: nothing it touches is left half-removed
+    /// to orphan later. Does not save.
+    pub fn wipe_deck(&mut self, tokens: &HashSet<String>, subject: &str) -> usize {
+        let doomed: Vec<String> = self
+            .cards
+            .keys()
+            .filter(|id| {
+                crate::token::parse_card_id(id).is_some_and(|(token, _, _)| tokens.contains(token))
+            })
+            .cloned()
+            .collect();
+        let mut wiped = 0;
+        for id in doomed {
+            if self.cards.remove(&id).is_some() {
+                wiped += 1;
+            }
+        }
+        for token in tokens {
+            self.records.remove(token);
+        }
+        self.hole_orphans
+            .retain(|orphan| !tokens.contains(&orphan.token));
+        self.decks.remove(subject);
+        let virtuals: Vec<String> = self
+            .virtual_cards
+            .values()
+            .filter(|vc| vc.parent == subject)
+            .map(|vc| vc.id.clone())
+            .collect();
+        for id in virtuals {
+            self.virtual_cards.remove(&id);
+            self.cards.remove(&id);
+        }
+        wiped
+    }
 }
 
 /// The store keys matching no known card/deck in the scanned workspace (spec
@@ -1774,6 +1815,60 @@ mod tests {
         assert!(store.get("livetoken").is_some());
         assert!(store.records("livetoken").is_some());
         assert!(store.hole_orphans().iter().any(|o| o.token == "livetoken"));
+    }
+
+    #[test]
+    fn wipe_deck_clears_every_family_for_its_tokens_and_spares_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let a = hf(1, 10);
+
+        // The doomed deck's token: a plain schedule, a hole schedule, records, a
+        // shelf entry, its deck-family mastery, and a virtual card parented to it.
+        store.get_or_insert("doom", 0);
+        store.get_or_insert("doom-0", 0);
+        store.ensure_records_raw("doom", 100, &[a]);
+        store.hole_orphans.push(OrphanedHole {
+            token: "doom".to_string(),
+            fp: a,
+            state: CardState::new(0),
+        });
+        store.set_deck_mastered("doomed.md", 1);
+        store.insert_virtual(VirtualCard {
+            id: "vdoom".to_string(),
+            kind: VirtualKind::Remediation,
+            parent: "doomed.md".to_string(),
+            text: "## v <!-- id: vdoom -->\nx\n".to_string(),
+            created_ms: 0,
+        });
+        store.get_or_insert("vdoom", 0);
+        // A bystander token with the same families, under another deck.
+        store.get_or_insert("keep", 0);
+        store.ensure_records_raw("keep", 200, &[a]);
+        store.hole_orphans.push(OrphanedHole {
+            token: "keep".to_string(),
+            fp: a,
+            state: CardState::new(0),
+        });
+        store.set_deck_mastered("keep.md", 1);
+
+        let tokens: HashSet<String> = ["doom".to_string()].into_iter().collect();
+        let wiped = store.wipe_deck(&tokens, "doomed.md");
+
+        // Both the base and the hole schedule counted; every doomed family gone.
+        assert_eq!(2, wiped);
+        assert!(store.get("doom").is_none());
+        assert!(store.get("doom-0").is_none());
+        assert!(store.records("doom").is_none());
+        assert!(store.hole_orphans().iter().all(|o| o.token != "doom"));
+        assert!(!store.deck_mastered("doomed.md"));
+        assert!(store.get_virtual("vdoom").is_none());
+        assert!(store.get("vdoom").is_none());
+        // The bystander deck is untouched across every family.
+        assert!(store.get("keep").is_some());
+        assert!(store.records("keep").is_some());
+        assert!(store.hole_orphans().iter().any(|o| o.token == "keep"));
+        assert!(store.deck_mastered("keep.md"));
     }
 
     #[test]

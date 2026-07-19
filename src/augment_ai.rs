@@ -1035,6 +1035,36 @@ mod tests {
     }
 
     #[test]
+    fn augment_never_touches_the_deck_file() {
+        // A4's runtime pin (spec §7): the whole warm path — parse the deck,
+        // generate via the backend, write the cache — writes only the sidecar,
+        // never the deck file.
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("d.md");
+        let deck_src = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Capital of France? <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\nParis\n";
+        std::fs::write(&deck_path, deck_src).unwrap();
+        let before = std::fs::read(&deck_path).unwrap();
+
+        let deck = crate::l1::parse_l1("d.md", deck_src).unwrap();
+        let items: Vec<WarmItem> = deck.cards.iter().map(WarmItem::from_card).collect();
+        let cli = fake_reply(dir.path(), r#"{"0": ["w1","w2","w3"]}"#);
+        let map = generate(&items, 3, None, &ask_config(&cli), None).unwrap();
+
+        let store_path = dir.path().join("progress.json");
+        let cache_path = crate::augment::augment_path_for(&store_path);
+        let mut cache = crate::augment::AugmentCache::open(&cache_path);
+        for (id, distractors) in &map {
+            cache.set_distractors(id, distractors.clone());
+        }
+        cache.save().unwrap();
+
+        // The deck file is byte-for-byte unchanged; only the sidecar was written.
+        assert_eq!(before, std::fs::read(&deck_path).unwrap());
+        assert!(cache_path.exists());
+    }
+
+    #[test]
     fn generate_keypoints_parses_and_maps_each_card() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();

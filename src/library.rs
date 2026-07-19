@@ -3,11 +3,19 @@
 //! lenient on purpose: a generated deck that does not parse yet is still
 //! saved (fixable by hand) and the problem is reported, not swallowed.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, bail};
 
-use crate::{deck::Deck, l1, stamp, store::Store};
+use crate::{
+    augment::{self, AugmentCache},
+    deck::Deck,
+    l1, stamp,
+    store::Store,
+};
 
 /// What [`place_deck`] wrote: where it landed, how many cards parsed, and the
 /// parse problem when the text is not a valid deck yet.
@@ -38,15 +46,7 @@ pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
         bail!("{} already exists", path.display());
     }
     let parsed = l1::parse_str(&file, text);
-    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let body = if text.ends_with('\n') {
-        text.to_string()
-    } else {
-        format!("{text}\n")
-    };
-    let tmp = dir.join(format!(".{file}.tmp"));
-    std::fs::write(&tmp, body).with_context(|| format!("cannot write {}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).with_context(|| format!("cannot write {}", path.display()))?;
+    write_body(&path, text)?;
     Ok(match parsed {
         Ok(cards) => {
             if let Err(e) = stamp::stamp_deck(&path) {
@@ -63,6 +63,130 @@ pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
             cards: 0,
             parse_error: Some(format!("{e:#}")),
         },
+    })
+}
+
+/// Writes `text` to `path` atomically (a hidden `.<name>.tmp` sibling, then
+/// `rename`), ensuring a trailing newline. The parent dir is created if missing.
+fn write_body(path: &Path, text: &str) -> Result<()> {
+    let body = if text.ends_with('\n') {
+        text.to_string()
+    } else {
+        format!("{text}\n")
+    };
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("deck");
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("cannot create {}", parent.display()))?;
+    let tmp = parent.join(format!(".{name}.tmp"));
+    std::fs::write(&tmp, body).with_context(|| format!("cannot write {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("cannot write {}", path.display()))?;
+    Ok(())
+}
+
+/// What [`replace_deck`] did: how many card tokens were stamped into the new
+/// deck, and how many of the replaced deck's authored card schedules were wiped.
+#[derive(Debug)]
+pub struct ReplaceReport {
+    pub minted: usize,
+    pub wiped_cards: usize,
+}
+
+/// Wholesale-replaces the existing deck at `<dir>/<name>.md` (spec §7). Reached
+/// only from a `--force` flow: a replace without `--force` is a loud error at
+/// the call site ([`place_deck`]'s errors-on-collision behavior stays the
+/// no-force path).
+///
+/// Strict-parses `text` first: an unparseable replacement aborts before the old
+/// file is touched and is written aside as `<name>.rej`. The old file is kept as
+/// `<name>.md.bak` (both aside extensions are non-`.md`, so neither enumerates
+/// as a deck). The new text is written and stamped fresh, then the replaced
+/// deck's store state is deleted wholesale via [`Store::wipe_deck`] and its
+/// augment-cache entries via [`AugmentCache::wipe_tokens`] — authored schedules
+/// under the old tokens, that deck's records and reclaim-shelf entries, its
+/// deck-family entry, its topologies, and every virtual card parented to it.
+/// Deliberate destruction leaves no orphan noise behind. Saves the store.
+pub fn replace_deck(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    store: &mut Store,
+) -> Result<ReplaceReport> {
+    let stem = Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("deck");
+    let stem = stem.strip_suffix(".md").unwrap_or(stem);
+    let file = format!("{stem}.md");
+    let path = dir.join(&file);
+
+    // Strict-parse the NEW text. An unparseable replacement never touches the
+    // old file: it is dumped aside as `<stem>.rej` and the error surfaced.
+    if let Err(e) = l1::parse_l1(&file, text) {
+        let rej = dir.join(format!("{stem}.rej"));
+        write_body(&rej, text)?;
+        bail!(
+            "the replacement for {} does not parse; wrote it aside to {} and left the existing file untouched: {e:#}",
+            path.display(),
+            rej.display()
+        );
+    }
+
+    // Capture the OLD deck's tokens before overwriting: each card's base token
+    // (deduped) and the deck token. Best-effort — a validly placed deck parses.
+    let mut old_card_tokens: HashSet<String> = HashSet::new();
+    let mut old_deck_tokens: HashSet<String> = HashSet::new();
+    let old_text = std::fs::read_to_string(&path).unwrap_or_default();
+    if let Ok(old) = l1::parse_l1(&file, &old_text) {
+        for card in &old.cards {
+            if let Some(token) = card.token.as_deref() {
+                old_card_tokens.insert(token.to_string());
+            }
+        }
+        if let Some(token) = old.deck_token {
+            old_deck_tokens.insert(token);
+        }
+    }
+
+    // Keep the old file as `<stem>.md.bak`, then write the new text.
+    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    if path.exists() {
+        let bak = dir.join(format!("{file}.bak"));
+        std::fs::rename(&path, &bak)
+            .with_context(|| format!("cannot keep {} as {}", path.display(), bak.display()))?;
+    }
+    write_body(&path, text)?;
+
+    // Stamp the new deck fresh (loud but non-fatal; review-open stamps again).
+    let minted = match stamp::stamp_deck(&path) {
+        Ok(outcome) => outcome.minted_cards.len(),
+        Err(e) => {
+            eprintln!("warning: cannot stamp {}: {e}", path.display());
+            0
+        }
+    };
+
+    // Delete the replaced deck's store state wholesale. The store saves before
+    // the augment cache: were the augment save to fail, its leftover entries are
+    // keyed by dead card ids no live card can reach (harmless), whereas an
+    // unsaved store would leave doctor-visible orphans.
+    let wiped_cards = store.wipe_deck(&old_card_tokens, &file);
+    store
+        .save()
+        .context("saving the store after replacing a deck")?;
+    let cache_path = augment::augment_path_for(store.path());
+    if cache_path.exists() {
+        let mut cache = AugmentCache::open(&cache_path);
+        if cache.wipe_tokens(&old_card_tokens, &old_deck_tokens) {
+            cache
+                .save()
+                .with_context(|| format!("cannot save {}", cache_path.display()))?;
+        }
+    }
+
+    Ok(ReplaceReport {
+        minted,
+        wiped_cards,
     })
 }
 
@@ -202,6 +326,324 @@ mod tests {
             text,
             created_ms: 0,
         }
+    }
+
+    // --- replace_deck (spec §7) ---
+
+    /// A deck file with a controlled deck token and one manually-tokened card.
+    fn write_deck(dir: &Path, name: &str, deck_token: &str, card_token: &str) {
+        std::fs::write(
+            dir.join(name),
+            format!("---\nid: \"{deck_token}\"\n---\n## q <!-- id: {card_token} -->\nans\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn unparseable_regeneration_aborts_before_touching_the_old_file_and_writes_a_rej() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        let orig = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert("c1", 0);
+        store.save().unwrap();
+
+        // A `## ` front with no answer line does not parse.
+        let err =
+            replace_deck(dir.path(), "a", "## broken with no answer\n", &mut store).unwrap_err();
+
+        assert!(format!("{err:#}").contains("does not parse"), "{err:#}");
+        // The old file is untouched and no `.bak` was made.
+        assert_eq!(
+            orig,
+            std::fs::read_to_string(dir.path().join("a.md")).unwrap()
+        );
+        assert!(!dir.path().join("a.md.bak").exists());
+        // The rejected text is set aside for the user to fix by hand.
+        let rej = std::fs::read_to_string(dir.path().join("a.rej")).unwrap();
+        assert!(rej.contains("## broken with no answer"), "{rej}");
+        // Progress is intact — nothing was wiped.
+        assert!(store.get("c1").is_some());
+    }
+
+    #[test]
+    fn the_replaced_deck_is_kept_as_a_bak_and_baks_are_not_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        let orig = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
+
+        // The old bytes survive verbatim as `a.md.bak`.
+        assert_eq!(
+            orig,
+            std::fs::read_to_string(dir.path().join("a.md.bak")).unwrap()
+        );
+        // The new deck is in place …
+        let now = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        assert!(now.contains("new q"), "{now}");
+        // … and deck enumeration lists only it, never the `.bak`.
+        let decks = crate::workspace::deck_files(dir.path());
+        assert_eq!(1, decks.len(), "{decks:?}");
+        assert!(decks[0].ends_with("a.md"));
+    }
+
+    #[test]
+    fn replacing_a_deck_wipes_its_progress_augment_entries_and_parented_virtuals() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        write_deck(dir.path(), "b.md", "db1", "cb1");
+        let store_path = dir.path().join("p.json");
+        let mut store = Store::open(&store_path).unwrap();
+
+        // Deck A: a card schedule, deck-family mastery, records, a parented virtual.
+        store.get_or_insert("c1", 0);
+        store.set_deck_mastered("a.md", 1);
+        store.ensure_records_raw("c1", 42, &[]);
+        store.insert_virtual(crate::store::VirtualCard {
+            id: "va1".into(),
+            kind: crate::store::VirtualKind::Remediation,
+            parent: "a.md".into(),
+            text: "## v <!-- id: va1 -->\nvans\n".into(),
+            created_ms: 0,
+        });
+        store.get_or_insert("va1", 0);
+        // Deck B (shares the store): its own schedule + mastery.
+        store.get_or_insert("cb1", 0);
+        store.set_deck_mastered("b.md", 1);
+        store.save().unwrap();
+
+        // Augment cache beside the store: A's card entry + A's topology, plus B's.
+        let cache_path = augment::augment_path_for(&store_path);
+        let mut cache = AugmentCache::open(&cache_path);
+        cache.set_distractors("c1", vec!["x".into()]);
+        cache.add_topology(crate::augment::Topology {
+            name: "auto".into(),
+            deck_token: "da1".into(),
+            ..Default::default()
+        });
+        cache.set_distractors("cb1", vec!["y".into()]);
+        cache.add_topology(crate::augment::Topology {
+            name: "auto".into(),
+            deck_token: "db1".into(),
+            ..Default::default()
+        });
+        cache.save().unwrap();
+
+        let report = replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
+
+        assert_eq!(1, report.wiped_cards);
+        // A's state is gone …
+        assert!(store.get("c1").is_none());
+        assert!(!store.deck_mastered("a.md"));
+        assert!(store.records("c1").is_none());
+        assert!(store.get_virtual("va1").is_none());
+        assert!(store.get("va1").is_none());
+        // … while B's state is untouched.
+        assert!(store.get("cb1").is_some());
+        assert!(store.deck_mastered("b.md"));
+
+        // A's augment entries are gone from disk, B's kept.
+        let cache = AugmentCache::open(&cache_path);
+        assert!(cache.distractors("c1").is_none());
+        assert!(!cache.has_topology_for(&once("da1")));
+        assert!(cache.distractors("cb1").is_some());
+        assert!(cache.has_topology_for(&once("db1")));
+    }
+
+    #[test]
+    fn a_replaced_deck_leaves_no_orphaned_store_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert("c1", 0);
+        store.set_deck_mastered("a.md", 1);
+        store.ensure_records_raw("c1", 7, &[]);
+        store.save().unwrap();
+
+        replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
+
+        // The doctor orphan check is clean immediately after: the new deck's
+        // fresh tokens were never keyed, and every old key was wiped.
+        let deck = Deck::load(dir.path().join("a.md")).unwrap();
+        let known_ids: HashSet<String> = deck.cards.iter().filter_map(|c| c.id()).collect();
+        let orphans = store.orphans(&known_ids, &once("a.md"));
+        assert!(orphans.is_empty(), "{orphans:?}");
+    }
+
+    #[test]
+    fn every_replacement_mints_fresh_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        // Place first, so the old deck carries real (canonical) minted tokens.
+        place_deck(dir.path(), "a", "## old q\nold ans\n## old r\nold b\n").unwrap();
+        let old_text = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        let old = crate::l1::parse_l1("a.md", &old_text).unwrap();
+        let old_tokens: Vec<String> = old
+            .cards
+            .iter()
+            .filter_map(|c| c.token.as_deref().map(str::to_string))
+            .chain(old.deck_token.clone())
+            .collect();
+        assert!(old_tokens.len() >= 3, "{old_tokens:?}");
+
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
+
+        let now = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        for tok in &old_tokens {
+            assert!(!now.contains(tok.as_str()), "old token {tok} reappeared");
+        }
+        // Sanity on the fixture: the `.bak` really does hold the old tokens.
+        let bak = std::fs::read_to_string(dir.path().join("a.md.bak")).unwrap();
+        assert!(old_tokens.iter().all(|t| bak.contains(t.as_str())));
+    }
+
+    /// Every L1 marker in one deck (mirrors stamp.rs's fixture): block-mapping
+    /// frontmatter without an `id:`, a divided card with a fence + note + escape
+    /// + trailing-space front, and a two-hole cloze card.
+    const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\cloze{alpha} and \\cloze{beta} here\n> cloze note\n";
+
+    /// The base tokens of `text`'s file cards (one per `## ` line) plus its deck
+    /// token, in document order.
+    fn all_tokens(subject: &str, text: &str) -> Vec<String> {
+        let deck = crate::l1::parse_l1(subject, text).unwrap();
+        let mut toks = Vec::new();
+        let mut last_line = None;
+        for card in &deck.cards {
+            if last_line != Some(card.line) {
+                if let Some(t) = card.token.as_deref() {
+                    toks.push(t.to_string());
+                }
+                last_line = Some(card.line);
+            }
+        }
+        toks.extend(deck.deck_token);
+        toks
+    }
+
+    fn assert_no_duplicate_tokens(subject: &str, text: &str) {
+        let toks = all_tokens(subject, text);
+        let uniq: HashSet<&String> = toks.iter().collect();
+        assert_eq!(
+            toks.len(),
+            uniq.len(),
+            "duplicate token in {subject}: {toks:?}"
+        );
+    }
+
+    /// The §9 writer invariants: every sanctioned deck-file writer leaves each
+    /// card carrying its token, its front text intact, and no two file cards (or
+    /// the deck) sharing a token.
+    #[test]
+    fn every_writer_preserves_tokens_and_text_and_never_duplicates() {
+        // place_deck: mints into the fixture.
+        {
+            let dir = tempfile::tempdir().unwrap();
+            place_deck(dir.path(), "d", MARKER_FIXTURE).unwrap();
+            let text = std::fs::read_to_string(dir.path().join("d.md")).unwrap();
+            let deck = crate::l1::parse_l1("d.md", &text).unwrap();
+            assert!(deck.cards.iter().all(|c| c.token.is_some()), "all stamped");
+            assert!(text.contains("First question"), "front text kept");
+            assert!(
+                text.contains("alpha") && text.contains("beta"),
+                "cloze kept"
+            );
+            assert_no_duplicate_tokens("d.md", &text);
+        }
+        // replace_deck: mints into the fixture over an existing deck.
+        {
+            let dir = tempfile::tempdir().unwrap();
+            place_deck(dir.path(), "d", "## x\ny\n").unwrap();
+            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            replace_deck(dir.path(), "d", MARKER_FIXTURE, &mut store).unwrap();
+            let text = std::fs::read_to_string(dir.path().join("d.md")).unwrap();
+            let deck = crate::l1::parse_l1("d.md", &text).unwrap();
+            assert!(deck.cards.iter().all(|c| c.token.is_some()), "all stamped");
+            assert!(text.contains("First question"));
+            assert_no_duplicate_tokens("d.md", &text);
+        }
+        // stamp_deck: mints into the fixture written by hand.
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("d.md");
+            std::fs::write(&path, MARKER_FIXTURE).unwrap();
+            stamp::stamp_deck(&path).unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            let deck = crate::l1::parse_l1("d.md", &text).unwrap();
+            assert!(deck.cards.iter().all(|c| c.token.is_some()));
+            assert!(text.contains("First question"));
+            assert_no_duplicate_tokens("d.md", &text);
+        }
+        // append_cards: a pre-stamped block keeps its token verbatim.
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();
+            let added = "aaaaaaaaaaaaaaaaaaaaaaaaap";
+            crate::deck::append_cards(
+                &placed.path,
+                &format!("## added <!-- id: {added} -->\nans\n"),
+            )
+            .unwrap();
+            let text = std::fs::read_to_string(&placed.path).unwrap();
+            assert!(text.contains(added), "appended token preserved");
+            assert_no_duplicate_tokens("d.md", &text);
+        }
+        // promote_virtual: the promoted block keeps its token into the deck.
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();
+            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            let vid = "pvzzzzzzzzzzzzzzzzzzzzzzzzz";
+            store.insert_virtual(crate::store::VirtualCard {
+                id: vid.into(),
+                kind: crate::store::VirtualKind::Tutor,
+                parent: "d.md".into(),
+                text: format!("## promoted <!-- id: {vid} -->\npans\n"),
+                created_ms: 0,
+            });
+            store.get_or_insert(vid, 0);
+            store.save().unwrap();
+            crate::store::promote_virtual(&mut store, vid, &placed.path).unwrap();
+            let text = std::fs::read_to_string(&placed.path).unwrap();
+            assert!(text.contains(vid), "promoted token preserved");
+            assert_no_duplicate_tokens("d.md", &text);
+        }
+    }
+
+    /// A one-element `HashSet<String>` for the topology/orphan helpers.
+    fn once(s: &str) -> HashSet<String> {
+        std::iter::once(s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_trace_rebuild_routes_through_replace_and_wipes_the_old_checkpoints() {
+        let dir = tempfile::tempdir().unwrap();
+        // A built trace deck: frontmatter header + one stamped checkpoint card.
+        let existing = "---\nid: \"da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: c1 -->\nold\n";
+        std::fs::write(dir.path().join("t.md"), existing).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert("c1", 0);
+        store.save().unwrap();
+
+        // The rebuild flow's transform: keep the header, swap the checkpoints.
+        let new_text = crate::deck::trace_checkpoint_text(
+            &dir.path().join("t.md"),
+            existing,
+            "## new cp\nnew\n",
+        )
+        .unwrap();
+        // The header (frontmatter with `trace:`/`source:`) is preserved.
+        assert!(new_text.contains("trace: how x becomes y"));
+        assert!(new_text.contains("source: notes.md"));
+
+        replace_deck(dir.path(), "t", &new_text, &mut store).unwrap();
+
+        // The old checkpoint's progress is gone; the new deck is stamped fresh.
+        assert!(store.get("c1").is_none());
+        let now = std::fs::read_to_string(dir.path().join("t.md")).unwrap();
+        assert!(now.contains("new cp"));
+        assert!(!now.contains("c1"), "old token must not survive");
     }
 
     #[test]
