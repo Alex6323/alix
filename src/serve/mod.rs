@@ -1242,7 +1242,7 @@ pub fn run_review(
                     .session
                     .cards()
                     .iter()
-                    .map(|c| crate::l1::content_fingerprint(&c.front, &c.back))
+                    .map(|c| c.content_fingerprint)
                     .collect();
                 let now = now_ms();
                 match store::mint_tutor_card(

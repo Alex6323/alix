@@ -109,6 +109,16 @@ pub struct Card {
     /// True for the swapped half of a `direction: both`/`reverse` card.
     /// Dormant like `token`.
     pub reversed: bool,
+    /// The §7 canonical-content fingerprint of this card
+    /// ([`crate::l1::content_fingerprint`] over front + answer, with cloze
+    /// markers kept as literal text). NOT part of the identity token: it is the
+    /// content-identity key the remediation/tutor dedup and the deck-side dedup
+    /// baseline compare on. Every sub-card of a cloze block carries the *block*
+    /// fingerprint (the parser sets it), so a multi-hole block dedups and revives
+    /// as one unit; a plain card whose visible words merely repeat a hole's hidden
+    /// text does not collide, because the block's answer carries the literal
+    /// `\cloze{...}` markers and the plain answer does not.
+    pub content_fingerprint: u64,
 }
 
 impl Card {
@@ -120,6 +130,11 @@ impl Card {
         note: Option<String>,
         line: usize,
     ) -> Self {
+        // The default fingerprint is this card's own front + answer, correct for
+        // every non-cloze card. The parser overrides it for cloze sub-cards with
+        // the block-level value (front + raw answer, markers literal) so all holes
+        // of one block share a fingerprint.
+        let content_fingerprint = crate::l1::content_fingerprint(&front, &back);
         Self {
             subject,
             front,
@@ -141,6 +156,7 @@ impl Card {
             token: None,
             hole: None,
             reversed: false,
+            content_fingerprint,
         }
     }
 

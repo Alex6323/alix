@@ -439,11 +439,7 @@ impl Sitting {
         Self {
             kind: SittingKind::Source,
             subject: deck.subject.clone(),
-            deck_fingerprints: deck
-                .cards
-                .iter()
-                .map(|c| crate::l1::content_fingerprint(&c.front, &c.back))
-                .collect(),
+            deck_fingerprints: deck.cards.iter().map(|c| c.content_fingerprint).collect(),
             strictness,
             cfg,
             ask_cfg,

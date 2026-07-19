@@ -1121,6 +1121,13 @@ fn build_card(
     }
     let token: Option<Arc<str>> = directives.token.as_deref().map(Arc::from);
     let structure: Vec<String> = parsed.iter().map(|segments| hash_repr(segments)).collect();
+    // The block-level §7 fingerprint: front + the RAW answer lines, so the
+    // `\cloze{...}` markers count as literal text. Every hole of this block shares
+    // it, so the remediation/tutor dedup treats the block as one content unit (and
+    // a plain card repeating a hole's hidden text, which lacks the markers, does
+    // not collide).
+    let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
+    let block_fingerprint = content_fingerprint(&front, &raw_answer);
     for (n, (hole_line, hole_seg, answer_text)) in holes.iter().enumerate() {
         let context: Vec<String> = parsed
             .iter()
@@ -1152,6 +1159,9 @@ fn build_card(
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
         card.hole = Some(n as u32);
+        // Override the per-sub-card default (front + this hole's hidden text) with
+        // the block fingerprint so all holes of the block dedup as a unit.
+        card.content_fingerprint = block_fingerprint;
         // A cloze sub-card never reverses and keeps no direction; the
         // per-card `input:` still applies to how each hole is answered.
         card.input = directives.input;

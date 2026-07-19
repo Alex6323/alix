@@ -255,8 +255,9 @@ pub struct VirtualCard {
     /// Which trigger produced this card.
     pub kind: VirtualKind,
     /// The deck subject (file name) this card belongs to. **Also the subject
-    /// that `synthesize`/`promote` must parse/append under**, or the id won't
-    /// reproduce (`Card::id` hashes the subject).
+    /// that `synthesize`/`promote` must parse/append under**, so the block
+    /// re-parses to the same sub-card ids (its content-identity fingerprint is
+    /// computed under this parent).
     pub parent: String,
     /// The card's canonical stamped L1 block (`## …` + its lines). For a
     /// cloze card this is the whole multi-hole block; the
@@ -533,15 +534,13 @@ impl Store {
         self.virtual_cards.values()
     }
 
-    /// Every virtual card belonging to deck `subject` (its `parent`), an exact
-    /// match on the deck's file name. Includes derived-retired (archived)
-    /// entries — callers filter those themselves for scheduling/counts (see
-    /// [`crate::session::is_virtual_reviewable`]).
     /// The ids of the virtual cards on `subject` whose canonical content (§7)
     /// matches `fingerprint`. Empty when none do. This is the content-identity
     /// dedup key for remediation/tutor mint: a freshly minted card carries a new
     /// random token, so it can never dedup by id against an earlier mint of the
-    /// same content — only by fingerprint.
+    /// same content, only by fingerprint. A multi-hole cloze block's holes all
+    /// share the block fingerprint, so this returns every hole's id for a matched
+    /// block, letting the caller revive or dedup the block as a unit.
     pub fn virtual_ids_with_content(&self, subject: &str, fingerprint: u64) -> Vec<String> {
         self.virtual_cards
             .values()
@@ -550,6 +549,10 @@ impl Store {
             .collect()
     }
 
+    /// Every virtual card belonging to deck `subject` (its `parent`), an exact
+    /// match on the deck's file name. Includes derived-retired (archived)
+    /// entries: callers filter those themselves for scheduling/counts (see
+    /// [`crate::session::is_virtual_reviewable`]).
     pub fn virtual_cards_for(&self, subject: &str) -> Vec<&VirtualCard> {
         self.virtual_cards
             .values()
@@ -746,7 +749,7 @@ pub fn mint_tutor_card(
         .ok_or_else(|| MintError::Malformed("the minted card has no identity token".to_string()))?;
     // Canonical-content dedup: reject if this exact content is already drillable
     // (a deck card) or already stored as a virtual card on this subject.
-    let fingerprint = crate::l1::content_fingerprint(&card.front, &card.back);
+    let fingerprint = card.content_fingerprint;
     if deck_fingerprints.contains(&fingerprint)
         || !store
             .virtual_ids_with_content(subject, fingerprint)
@@ -926,10 +929,12 @@ pub fn store_remediation_cards(
         let Some(first) = cards.first() else {
             continue;
         };
-        // Every sub-card of a block shares the same canonical content (a cloze
-        // block's holes hold identical front + back), so one fingerprint stands
-        // for the whole block.
-        let fingerprint = crate::l1::content_fingerprint(&first.front, &first.back);
+        // Dedup at BLOCK granularity: the parser stamps every sub-card of a block
+        // with the block's §7 fingerprint (front + raw answer, `\cloze{...}`
+        // markers literal), so all holes share one value. This makes the block
+        // dedup and revive as a unit, and keeps a plain card that merely repeats a
+        // hole's hidden text (its answer has no markers) from colliding with it.
+        let fingerprint = first.content_fingerprint;
         // Already drillable as a deck card: don't shadow it with a virtual.
         if deck_fingerprints.contains(&fingerprint) {
             continue;
@@ -979,7 +984,9 @@ fn virtual_fingerprint(vc: &VirtualCard) -> Option<u64> {
     let card = cards
         .iter()
         .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
-    Some(crate::l1::content_fingerprint(&card.front, &card.back))
+    // The parser carries the block-level fingerprint on every sub-card, so this is
+    // the same value the candidate side compares against.
+    Some(card.content_fingerprint)
 }
 
 /// Appends ` <!-- id: token -->` to a card block's `## ` front line (its first
@@ -2226,7 +2233,86 @@ mod tests {
         assert_eq!(virtuals[0].text, virtuals[1].text);
     }
 
-    // (see the dedup-respec note above)
+    #[test]
+    fn a_retired_multi_hole_block_revives_every_hole() {
+        // A multi-hole cloze block dedups and revives as ONE unit: when every
+        // hole's schedule has retired, re-running the same gap resets EVERY hole,
+        // not just hole 0, because all sub-cards carry the block fingerprint.
+        // (Mutation guard: fingerprinting each hole's hidden text instead lets
+        // only hole 0 match, so hole 1 stays retired and this fails.)
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let text = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n";
+        let cap = Some(30u32);
+
+        let created = store_remediation(&mut store, "d.md", text, 1_000, cap).unwrap();
+        assert_eq!(2, created, "both holes created on the first failure");
+        let ids: Vec<String> = store
+            .virtual_cards_for("d.md")
+            .iter()
+            .map(|vc| vc.id.clone())
+            .collect();
+        assert_eq!(2, ids.len());
+
+        // Retire BOTH holes: give each a Recall schedule at/over the cap.
+        for id in &ids {
+            store.get_or_insert(id, 1_000).recall = Some(FsrsState {
+                scheduled_days: 90,
+                ..Default::default()
+            });
+        }
+        for id in &ids {
+            assert!(
+                crate::session::is_retired_id(id, &store, cap),
+                "precondition: both holes retired"
+            );
+        }
+
+        // Re-run the same gap: every retired hole revives (schedule reset).
+        let revived = store_remediation(&mut store, "d.md", text, 2_000, cap).unwrap();
+        assert_eq!(2, revived, "every retired hole revives, not just hole 0");
+        for id in &ids {
+            assert!(
+                !crate::session::is_retired_id(id, &store, cap),
+                "revived, no longer retired"
+            );
+            assert_eq!(
+                &CardState::new(2_000),
+                store.get(id).unwrap(),
+                "the hole's schedule was reset"
+            );
+        }
+        // No new sidecar entries were minted.
+        assert_eq!(2, store.virtual_cards_for("d.md").len());
+    }
+
+    #[test]
+    fn a_plain_card_matching_a_holes_hidden_text_does_not_suppress_remediation() {
+        // A plain deck card whose answer equals a cloze hole's hidden text must
+        // NOT suppress a cloze remediation block: the block fingerprint includes
+        // the literal `\cloze{...}` markers, which the plain answer lacks, so the
+        // two differ. (Mutation guard: fingerprinting the hole's hidden text makes
+        // them collide, the block is skipped, and this fails.)
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        // The deck already drills a PLAIN card whose answer is a bare "be".
+        let plain =
+            crate::l1::parse_str("d.md", "## Complete the quote <!-- id: p1 -->\nbe\n").unwrap();
+        let deck_fingerprints: std::collections::HashSet<u64> =
+            plain.iter().map(|c| c.content_fingerprint).collect();
+
+        // Remediation emits a CLOZE block hiding "be" under the same heading.
+        let cloze = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n";
+        let created =
+            store_remediation_cards(&mut store, "d.md", &deck_fingerprints, cloze, 1_000, None)
+                .unwrap();
+        assert_eq!(
+            2, created,
+            "the plain card must not suppress the cloze block"
+        );
+        assert_eq!(2, store.virtual_cards_for("d.md").len());
+    }
 
     #[test]
     fn virtual_id_agrees_across_create_synth_and_promote() {
@@ -2270,8 +2356,6 @@ mod tests {
             );
         }
     }
-
-    // (see the dedup-respec note above)
 
     #[test]
     fn remediation_card_reveal_is_carried() {
