@@ -21,20 +21,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   blanks: each schedule follows its hidden word, matching first by word and
   surrounding context, then by word alone. A gap whose word *and* context both
   change starts fresh (it can't be told from a new gap), and a deleted gap's
-  progress is set aside rather than inherited by a different word. Any cached
-  choice-mode distractors and notes move with their gap. And if a whole card
-  loses its `<!-- id: … -->` comment (say a formatter strips it) but its content
-  is unchanged, opening the deck re-adopts the old token so the progress isn't
-  orphaned; `alix doctor` now says whether an orphan's progress can still be
-  reclaimed this way, or its content changed too so it can't.
+  progress is discarded rather than inherited by a different word. Any cached
+  choice-mode distractors and notes move with their gap.
 - **`alix doctor` now lints a decks folder for identity problems, and `alix
   reset --orphans` clears the leftovers it finds.** Over a folder, doctor
   reports duplicate deck and card tokens (naming which copy keeps the earned
   progress), store keys matching no live card or deck (orphans, including
   pre-1.0 numeric ids), a non-canonical token, an unspliceable frontmatter that
-  can't be stamped, the cards still awaiting a token, and any stray `.txt`-era
-  file that no longer parses. Orphans are never auto-pruned (they are evidence
-  and a reclaim pool); `alix reset --orphans` is the explicit opt-in that clears
+  can't be stamped, the entries that are card content still without an id, and
+  any stray `.txt`-era file that no longer parses. Orphans are never auto-pruned
+  (they are evidence); `alix reset --orphans` is the explicit opt-in that clears
   them, scoped to a folder/workspace or the decks root.
 - **A quiet Support line in the About dialog, on both the web and mobile
   clients.** Leads with the free alternative (telling someone who studies),

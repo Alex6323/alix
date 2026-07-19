@@ -250,44 +250,12 @@ pub fn selectable(path: &Path) -> bool {
 }
 
 pub fn stamp_for_session(path: &Path) {
-    stamp_for_session_reclaiming(path, &HashMap::new());
-}
-
-pub fn stamp_for_session_reclaiming(path: &Path, reclaim: &HashMap<u64, String>) {
-    if let Err(e) = stamp::stamp_deck_reclaiming(path, reclaim) {
+    if let Err(e) = stamp::stamp_deck(path) {
         eprintln!(
             "warning: cannot stamp {}: {e}; its unstamped cards are excluded from this session",
             path.display()
         );
     }
-}
-
-pub fn reclaim_map(store: &Store, path: &Path) -> HashMap<u64, String> {
-    let Ok(deck) = Deck::load(path) else {
-        return HashMap::new();
-    };
-    let wanted: HashSet<u64> = deck
-        .cards
-        .iter()
-        .filter(|card| card.token.is_none())
-        .map(|card| card.content_fingerprint)
-        .collect();
-    if wanted.is_empty() {
-        return HashMap::new();
-    }
-    let mut live: HashSet<String> = HashSet::new();
-    if let Some(dir) = path.parent() {
-        for file in workspace::deck_files(dir) {
-            if let Ok(other) = Deck::load(&file) {
-                for card in &other.cards {
-                    if let Some(token) = card.token.as_deref() {
-                        live.insert(token.to_string());
-                    }
-                }
-            }
-        }
-    }
-    store.reclaim_candidates(&live, &wanted)
 }
 
 pub fn resolve_duplicates_at_open(path: &Path) {
@@ -319,9 +287,7 @@ fn realign_and_record(store: &mut Store, augment: &mut AugmentCache, cards: &[Ca
         }
         if card.block_holes.is_empty() {
             store.ensure_records(card);
-        } else if let Some(outcome) =
-            store.realign_card_holes(token, &card.block_holes, card.content_fingerprint)
-        {
+        } else if let Some(outcome) = store.realign_card_holes(token, &card.block_holes) {
             augment.remap_holes(token, &outcome);
             cascaded = true;
         }
@@ -370,8 +336,7 @@ pub fn select(
     if let [path] = paths.as_slice()
         && path.is_file()
     {
-        let reclaim = reclaim_map(store, path);
-        stamp_for_session_reclaiming(path, &reclaim);
+        stamp_for_session(path);
         resolve_duplicates_at_open(path);
     }
 
@@ -807,131 +772,6 @@ it reads line two\n\
 
         assert_eq!(1, store.get("fillcard-1").unwrap().total_reviews, "alpha");
         assert_eq!(2, store.get("fillcard-0").unwrap().total_reviews, "beta");
-        assert!(
-            store.hole_orphans().is_empty(),
-            "a pure swap orphans nothing"
-        );
-    }
-
-    #[test]
-    fn an_unstamped_card_matching_an_orphans_content_fingerprint_readopts_the_token() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("geo.md");
-        std::fs::write(
-            &path,
-            "---\nid: \"deck1\"\n---\n## Capital of France?\nParis\n",
-        )
-        .unwrap();
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-
-        let content_fp =
-            crate::l1::content_fingerprint("Capital of France?", &["Paris".to_string()]);
-        let orphan = "orphantoken0000000000000000";
-        store.ensure_records_raw(orphan, content_fp, &[]);
-        store.get_or_insert(orphan, 0).total_reviews = 5;
-
-        select(
-            vec![path.clone()],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-
-        let stamped = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            stamped.contains(&format!("<!-- id: {orphan} -->")),
-            "expected the reclaimed token in the file: {stamped}"
-        );
-        assert_eq!(5, store.get(orphan).unwrap().total_reviews);
-    }
-
-    #[test]
-    fn a_reverse_only_card_reclaims_its_orphaned_token() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("vocab.md");
-        let token = "revtok00000000000000000000";
-        std::fs::write(
-            &path,
-            format!("---\nid: \"deck1\"\ndirection: reverse\n---\n## Word <!-- id: {token} -->\nAntwort\n"),
-        )
-        .unwrap();
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-
-        select(
-            vec![path.clone()],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-        store.get_or_insert(&format!("{token}-r"), 0).total_reviews = 5;
-
-        std::fs::write(
-            &path,
-            "---\nid: \"deck1\"\ndirection: reverse\n---\n## Word\nAntwort\n",
-        )
-        .unwrap();
-
-        select(
-            vec![path.clone()],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-
-        let stamped = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            stamped.contains(&format!("<!-- id: {token} -->")),
-            "the reverse-only card should re-adopt its orphaned token: {stamped}"
-        );
-        assert_eq!(5, store.get(&format!("{token}-r")).unwrap().total_reviews);
-    }
-
-    #[test]
-    fn a_both_direction_card_reclaims_its_orphaned_token() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("vocab.md");
-        let token = "bothtok0000000000000000000";
-        std::fs::write(
-            &path,
-            format!(
-                "---\nid: \"deck1\"\ndirection: both\n---\n## Word <!-- id: {token} -->\nAntwort\n"
-            ),
-        )
-        .unwrap();
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-
-        select(
-            vec![path.clone()],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-        store.get_or_insert(token, 0).total_reviews = 4;
-
-        std::fs::write(
-            &path,
-            "---\nid: \"deck1\"\ndirection: both\n---\n## Word\nAntwort\n",
-        )
-        .unwrap();
-
-        select(
-            vec![path.clone()],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-
-        let stamped = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            stamped.contains(&format!("<!-- id: {token} -->")),
-            "the both-direction card should re-adopt its orphaned token: {stamped}"
-        );
-        assert_eq!(4, store.get(token).unwrap().total_reviews);
     }
 
     #[test]

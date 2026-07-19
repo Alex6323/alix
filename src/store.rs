@@ -193,16 +193,7 @@ pub struct HoleFingerprint {
 pub struct CardRecords {
     // FP_VERSION at write time; a stale value is ignored and rewritten, not mismatched.
     pub version: u8,
-    pub content_fp: u64,
     pub holes: Vec<HoleFingerprint>,
-}
-
-// Evicted here, not left on a live key, so a new word can never inherit an old schedule.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct OrphanedHole {
-    pub token: String,
-    pub fp: HoleFingerprint,
-    pub state: CardState,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -265,8 +256,6 @@ struct StoreFile {
     cards: HashMap<String, CardState>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     records: HashMap<String, CardRecords>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    hole_orphans: Vec<OrphanedHole>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
     // Raw JSON so a stale/old-shape entry can be dropped without failing the whole load.
@@ -282,7 +271,6 @@ pub struct Store {
     decks: HashMap<String, DeckProgress>,
     virtual_cards: HashMap<String, VirtualCard>,
     records: HashMap<String, CardRecords>,
-    hole_orphans: Vec<OrphanedHole>,
     // None leaves the existing on-disk writer marker untouched (tests/tools
     // don't masquerade as a device).
     pub device: Option<String>,
@@ -316,7 +304,6 @@ impl Store {
                 decks: HashMap::new(),
                 virtual_cards: HashMap::new(),
                 records: HashMap::new(),
-                hole_orphans: Vec::new(),
                 device: None,
                 last_writer: None,
             });
@@ -347,7 +334,6 @@ impl Store {
             decks: file.decks,
             virtual_cards,
             records: file.records,
-            hole_orphans: file.hole_orphans,
             device: None,
             last_writer: file.writer,
         })
@@ -377,7 +363,6 @@ impl Store {
             version: CURRENT_VERSION,
             cards: self.cards.clone(),
             records: self.records.clone(),
-            hole_orphans: self.hole_orphans.clone(),
             decks: self.decks.clone(),
             virtual_cards,
             // No device set: keep the existing marker instead of erasing it.
@@ -440,58 +425,19 @@ impl Store {
         self.records.get(token)
     }
 
-    pub fn hole_orphans(&self) -> &[OrphanedHole] {
-        &self.hole_orphans
-    }
-
-    pub fn reclaim_candidates(
-        &self,
-        live: &HashSet<String>,
-        wanted: &HashSet<u64>,
-    ) -> HashMap<u64, String> {
-        use std::collections::hash_map::Entry;
-        let mut best: HashMap<u64, String> = HashMap::new();
-        for (token, rec) in &self.records {
-            if !wanted.contains(&rec.content_fp) || live.contains(token) {
-                continue;
-            }
-            let prefix = format!("{token}-");
-            let has_schedule = self
-                .cards
-                .keys()
-                .any(|key| key == token || key.starts_with(&prefix));
-            if !has_schedule {
-                continue;
-            }
-            match best.entry(rec.content_fp) {
-                Entry::Vacant(v) => {
-                    v.insert(token.clone());
-                }
-                Entry::Occupied(mut o) => {
-                    // Lower token wins a tie, for a deterministic pick.
-                    if token < o.get() {
-                        o.insert(token.clone());
-                    }
-                }
-            }
-        }
-        best
-    }
-
     // Does not run the hole cascade: callers must read old records via
     // realign_card_holes before this overwrites them.
     pub fn ensure_records(&mut self, card: &Card) {
         if let Some(token) = card.token.as_deref() {
-            self.ensure_records_raw(token, card.content_fingerprint, &card.block_holes);
+            self.ensure_records_raw(token, &card.block_holes);
         }
     }
 
-    pub fn ensure_records_raw(&mut self, token: &str, content_fp: u64, holes: &[HoleFingerprint]) {
+    pub fn ensure_records_raw(&mut self, token: &str, holes: &[HoleFingerprint]) {
         self.records.insert(
             token.to_string(),
             CardRecords {
                 version: FP_VERSION,
-                content_fp,
                 holes: holes.to_vec(),
             },
         );
@@ -501,29 +447,21 @@ impl Store {
         &mut self,
         token: &str,
         file_holes: &[HoleFingerprint],
-        content_fp: u64,
     ) -> Option<CascadeOutcome> {
         let outcome = match self.records.get(token) {
             Some(rec) if rec.version == FP_VERSION && rec.holes != file_holes => {
                 let stored = rec.holes.clone();
                 let outcome = realign_holes(&stored, file_holes);
-                self.apply_hole_cascade(token, &stored, &outcome);
+                self.apply_hole_cascade(token, &outcome);
                 Some(outcome)
             }
             _ => None,
         };
-        self.ensure_records_raw(token, content_fp, file_holes);
+        self.ensure_records_raw(token, file_holes);
         outcome
     }
 
-    fn apply_hole_cascade(
-        &mut self,
-        token: &str,
-        stored_holes: &[HoleFingerprint],
-        outcome: &CascadeOutcome,
-    ) {
-        // Pulls every token-N entry, not just 0..stored_holes.len(): a stray
-        // above the range must not survive to be inherited later.
+    fn apply_hole_cascade(&mut self, token: &str, outcome: &CascadeOutcome) {
         let prefix = format!("{token}-");
         let hole_keys: Vec<(u32, String)> = self
             .cards
@@ -540,26 +478,11 @@ impl Store {
                 old.insert(n, state);
             }
         }
+        // Re-add only remapped entries; a stray token-N schedule must not be inherited.
         for (from, to) in &outcome.remap {
             if let Some(state) = old.remove(from) {
                 let key = crate::token::card_id(token, Some(*to), false);
                 self.cards.insert(key, state);
-            }
-        }
-        let mut leftover: Vec<u32> = old.keys().copied().collect();
-        leftover.sort_unstable();
-        for orphan in leftover {
-            if let Some(state) = old.remove(&orphan) {
-                // A stray (no stored record) carries a default fingerprint here.
-                let fp = stored_holes
-                    .get(orphan as usize)
-                    .copied()
-                    .unwrap_or_default();
-                self.hole_orphans.push(OrphanedHole {
-                    token: token.to_string(),
-                    fp,
-                    state,
-                });
             }
         }
     }
@@ -667,7 +590,6 @@ impl Store {
         self.decks.clear();
         self.virtual_cards.clear();
         self.records.clear();
-        self.hole_orphans.clear();
         n
     }
 
@@ -723,8 +645,7 @@ impl Store {
                 removed += 1;
             }
         }
-        // A pruned token's now-scheduleless records/shelf entries are dead weight and
-        // drop too (uncounted); a still-live token's shelf entry stays as reclaim evidence.
+        // A fully-pruned token's now-scheduleless records are dead weight and drop too (uncounted).
         let pruned_tokens: HashSet<&str> = orphans
             .cards
             .iter()
@@ -740,7 +661,6 @@ impl Store {
                 continue;
             }
             self.records.remove(token);
-            self.hole_orphans.retain(|orphan| orphan.token != token);
         }
         removed
     }
@@ -765,8 +685,6 @@ impl Store {
         for token in tokens {
             self.records.remove(token);
         }
-        self.hole_orphans
-            .retain(|orphan| !tokens.contains(&orphan.token));
         self.decks.remove(subject);
         let virtuals: Vec<String> = self
             .virtual_cards
@@ -1151,7 +1069,7 @@ mod tests {
     }
 
     #[test]
-    fn deleting_a_hole_orphans_exactly_that_record() {
+    fn deleting_a_hole_leaves_exactly_that_record_orphaned() {
         let a = hf(1, 10);
         let b = hf(2, 20);
         let c = hf(3, 30);
@@ -1201,7 +1119,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fresh_hole_always_wins_the_live_key_and_the_orphan_goes_to_the_shelf() {
+    fn a_fresh_hole_wins_the_live_key_and_the_stored_hole_is_orphaned() {
         let stored = hf(1, 10);
         let replacement = hf(8, 80);
         let outcome = realign_holes(&[stored], &[replacement]);
@@ -1217,22 +1135,18 @@ mod tests {
         let token = "tok";
         let a = hf(1, 10);
         let b = hf(2, 20);
-        store.ensure_records_raw(token, 100, &[a, b]);
+        store.ensure_records_raw(token, &[a, b]);
         store.get_or_insert("tok-0", 0).total_reviews = 1;
         store.get_or_insert("tok-1", 0).total_reviews = 2;
 
         let z = hf(8, 80);
-        let outcome = store.realign_card_holes(token, &[z, b], 100).unwrap();
+        let outcome = store.realign_card_holes(token, &[z, b]).unwrap();
         assert_eq!(vec![(1, 1)], outcome.remap);
         assert_eq!(vec![0], outcome.orphaned);
         assert_eq!(vec![0], outcome.fresh);
 
         assert_eq!(2, store.get("tok-1").unwrap().total_reviews);
-        assert!(store.get("tok-0").is_none());
-        assert_eq!(1, store.hole_orphans().len());
-        assert_eq!("tok", store.hole_orphans()[0].token);
-        assert_eq!(a, store.hole_orphans()[0].fp);
-        assert_eq!(1, store.hole_orphans()[0].state.total_reviews);
+        assert!(store.get("tok-0").is_none(), "the orphaned hole is deleted");
         assert_eq!(vec![z, b], store.records(token).unwrap().holes);
     }
 
@@ -1243,26 +1157,19 @@ mod tests {
         let token = "tok";
         let a = hf(1, 10);
         let b = hf(2, 20);
-        store.ensure_records_raw(token, 100, &[a, b]);
+        store.ensure_records_raw(token, &[a, b]);
         store.get_or_insert("tok-0", 0).total_reviews = 1;
         store.get_or_insert("tok-1", 0).total_reviews = 2;
         store.get_or_insert("tok-5", 0).total_reviews = 9;
 
-        let outcome = store.realign_card_holes(token, &[b, a], 100).unwrap();
+        let outcome = store.realign_card_holes(token, &[b, a]).unwrap();
         assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
 
         assert_eq!(2, store.get("tok-0").unwrap().total_reviews, "b -> hole 0");
         assert_eq!(1, store.get("tok-1").unwrap().total_reviews, "a -> hole 1");
         assert!(
             store.get("tok-5").is_none(),
-            "the stray must not survive under a live key"
-        );
-        assert!(
-            store
-                .hole_orphans()
-                .iter()
-                .any(|o| o.token == token && o.state.total_reviews == 9),
-            "the stray's schedule should sit on the shelf"
+            "the stray is deleted, not left under a live key"
         );
     }
 
@@ -1277,16 +1184,14 @@ mod tests {
             token.to_string(),
             CardRecords {
                 version: FP_VERSION.wrapping_add(1),
-                content_fp: 100,
                 holes: vec![a],
             },
         );
         store.get_or_insert("tok-0", 0).total_reviews = 7;
 
-        let outcome = store.realign_card_holes(token, &[a, b], 100);
+        let outcome = store.realign_card_holes(token, &[a, b]);
         assert!(outcome.is_none());
         assert_eq!(7, store.get("tok-0").unwrap().total_reviews);
-        assert!(store.hole_orphans().is_empty());
         let rec = store.records(token).unwrap();
         assert_eq!(FP_VERSION, rec.version);
         assert_eq!(vec![a, b], rec.holes);
@@ -1325,25 +1230,15 @@ mod tests {
     }
 
     #[test]
-    fn reset_orphans_clears_shelf_entries_and_records_of_pruned_tokens() {
+    fn reset_orphans_clears_records_of_pruned_tokens() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let a = hf(1, 10);
 
         store.get_or_insert("gonetoken", 0).total_reviews = 3;
-        store.ensure_records_raw("gonetoken", 100, &[a]);
-        store.hole_orphans.push(OrphanedHole {
-            token: "gonetoken".to_string(),
-            fp: a,
-            state: CardState::new(0),
-        });
+        store.ensure_records_raw("gonetoken", &[a]);
         store.get_or_insert("livetoken", 0).total_reviews = 7;
-        store.ensure_records_raw("livetoken", 200, &[a]);
-        store.hole_orphans.push(OrphanedHole {
-            token: "livetoken".to_string(),
-            fp: a,
-            state: CardState::new(0),
-        });
+        store.ensure_records_raw("livetoken", &[a]);
 
         let known_cards: HashSet<String> = ["livetoken".to_string()].into_iter().collect();
         let orphans = store.orphans(&known_cards, &HashSet::new());
@@ -1353,10 +1248,8 @@ mod tests {
 
         assert!(store.get("gonetoken").is_none());
         assert!(store.records("gonetoken").is_none());
-        assert!(store.hole_orphans().iter().all(|o| o.token != "gonetoken"));
         assert!(store.get("livetoken").is_some());
         assert!(store.records("livetoken").is_some());
-        assert!(store.hole_orphans().iter().any(|o| o.token == "livetoken"));
     }
 
     #[test]
@@ -1367,12 +1260,7 @@ mod tests {
 
         store.get_or_insert("doom", 0);
         store.get_or_insert("doom-0", 0);
-        store.ensure_records_raw("doom", 100, &[a]);
-        store.hole_orphans.push(OrphanedHole {
-            token: "doom".to_string(),
-            fp: a,
-            state: CardState::new(0),
-        });
+        store.ensure_records_raw("doom", &[a]);
         store.set_deck_mastered("doomed.md", 1);
         store.insert_virtual(VirtualCard {
             id: "vdoom".to_string(),
@@ -1383,12 +1271,7 @@ mod tests {
         });
         store.get_or_insert("vdoom", 0);
         store.get_or_insert("keep", 0);
-        store.ensure_records_raw("keep", 200, &[a]);
-        store.hole_orphans.push(OrphanedHole {
-            token: "keep".to_string(),
-            fp: a,
-            state: CardState::new(0),
-        });
+        store.ensure_records_raw("keep", &[a]);
         store.set_deck_mastered("keep.md", 1);
 
         let tokens: HashSet<String> = ["doom".to_string()].into_iter().collect();
@@ -1398,13 +1281,11 @@ mod tests {
         assert!(store.get("doom").is_none());
         assert!(store.get("doom-0").is_none());
         assert!(store.records("doom").is_none());
-        assert!(store.hole_orphans().iter().all(|o| o.token != "doom"));
         assert!(!store.deck_mastered("doomed.md"));
         assert!(store.get_virtual("vdoom").is_none());
         assert!(store.get("vdoom").is_none());
         assert!(store.get("keep").is_some());
         assert!(store.records("keep").is_some());
-        assert!(store.hole_orphans().iter().any(|o| o.token == "keep"));
         assert!(store.deck_mastered("keep.md"));
     }
 

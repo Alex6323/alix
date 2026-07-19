@@ -1,5 +1,4 @@
 use std::{
-    collections::{HashMap, HashSet},
     fs,
     ops::Range,
     path::{Path, PathBuf},
@@ -68,15 +67,6 @@ enum DeckAction {
 }
 
 pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
-    stamp_deck_reclaiming(path, &HashMap::new())
-}
-
-/// Each reclaim token is used at most once: a second card with identical
-/// content mints fresh instead of reusing it.
-pub fn stamp_deck_reclaiming(
-    path: &Path,
-    reclaim: &HashMap<u64, String>,
-) -> Result<StampOutcome, StampError> {
     let original = fs::read_to_string(path).map_err(|source| StampError::Read {
         path: path.to_path_buf(),
         source,
@@ -131,26 +121,9 @@ pub fn stamp_deck_reclaiming(
         DeckAction::None => None,
         _ => Some(mint()?),
     };
-    // A card line's content fingerprint (a cloze block's sub-cards share it).
-    let fp_by_line: HashMap<usize, u64> = deck
-        .cards
-        .iter()
-        .map(|card| (card.line, card.content_fingerprint))
-        .collect();
-    let mut reclaimed_tokens: HashSet<String> = HashSet::new();
     let mut minted_cards = Vec::with_capacity(card_lines.len());
-    for line in &card_lines {
-        let reclaim_token = fp_by_line
-            .get(line)
-            .and_then(|fp| reclaim.get(fp))
-            .filter(|token| !reclaimed_tokens.contains(*token));
-        match reclaim_token {
-            Some(token) => {
-                reclaimed_tokens.insert(token.clone());
-                minted_cards.push(token.clone());
-            }
-            None => minted_cards.push(mint()?),
-        }
+    for _ in &card_lines {
+        minted_cards.push(mint()?);
     }
 
     // Safety: apply insertions right-to-left (sorted below) so an earlier

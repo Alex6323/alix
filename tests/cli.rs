@@ -368,8 +368,8 @@ fn reset_all_clears_virtual_cards() {
 #[test]
 fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     // Orphaned progress: a store key matching no live card or deck (a stripped
-    // id comment, a hand-deleted deck) is evidence and the reclaim pool. A
-    // normal reset never sweeps it; only the explicit `reset --orphans` does.
+    // id comment, a hand-deleted deck) is evidence. A normal reset never sweeps
+    // it; only the explicit `reset --orphans` does.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK); // card id `math1`
     let store_path = dir.path().join("progress.json");

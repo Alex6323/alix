@@ -58,7 +58,6 @@ pub struct Checkpoint {
     pub locator: Option<String>,
     pub at_origin: Option<String>,
     pub card_id: String,
-    pub content_fp: u64,
     pub line: usize,
 }
 
@@ -97,7 +96,6 @@ impl Trace {
                     locator: c.at.clone(),
                     at_origin: c.at_origin.clone(),
                     card_id: c.id()?,
-                    content_fp: c.content_fingerprint,
                     line: c.line,
                 })
             })
@@ -283,7 +281,7 @@ impl Walk {
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
             // The walk grades with no Session, so it's itself an
             // entry-creation site: write records before the schedule entry.
-            store.ensure_records_raw(&checkpoint.card_id, checkpoint.content_fp, &[]);
+            store.ensure_records_raw(&checkpoint.card_id, &[]);
             let state = store.get_or_insert(&checkpoint.card_id, now_ms);
             Fsrs::default().apply(state, Depth::Recall, delta.grade(), now_ms, false);
         }

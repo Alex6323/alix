@@ -340,7 +340,7 @@ mod tests {
         // Deck A: a card schedule, deck-family mastery, records, a parented virtual.
         store.get_or_insert("c1", 0);
         store.set_deck_mastered("a.md", 1);
-        store.ensure_records_raw("c1", 42, &[]);
+        store.ensure_records_raw("c1", &[]);
         store.insert_virtual(crate::store::VirtualCard {
             id: "va1".into(),
             kind: crate::store::VirtualKind::Remediation,
@@ -396,7 +396,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.get_or_insert("c1", 0);
         store.set_deck_mastered("a.md", 1);
-        store.ensure_records_raw("c1", 7, &[]);
+        store.ensure_records_raw("c1", &[]);
         store.save().unwrap();
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
