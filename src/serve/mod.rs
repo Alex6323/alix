@@ -231,6 +231,98 @@ pub fn run_review(
                         break;
                     }
                 };
+                let method = request.method().clone();
+                let path = request_path(&request);
+                if http_log {
+                    eprintln!("[http] {method} {path}");
+                }
+                if !is_authorized(
+                    &path,
+                    header_value(&request, "Authorization"),
+                    query_param(request.url(), "token").as_deref(),
+                    auth.as_deref(),
+                ) {
+                    respond_status(request, 401);
+                    continue;
+                }
+                // Stateless routes are served before the state lock is taken, so a
+                // slow locked handler cannot stall the page shell, its assets, or
+                // the config-derived key endpoints.
+                match (&method, path.as_str()) {
+                    (Method::Get, "/") => {
+                        respond_html(request, app_page(audience));
+                        continue;
+                    }
+                    (Method::Get, "/theme.css") => {
+                        respond_asset(request, THEME_CSS, "text/css; charset=utf-8");
+                        continue;
+                    }
+                    (Method::Get, "/theme.js") => {
+                        respond_asset(
+                            request,
+                            THEME_JS,
+                            "application/javascript; charset=utf-8",
+                        );
+                        continue;
+                    }
+                    (Method::Get, key) if key.starts_with("/fonts/") => {
+                        match font_bytes(&key["/fonts/".len()..]) {
+                            Some(bytes) => respond_font(request, bytes),
+                            None => respond_status(request, 404),
+                        }
+                        continue;
+                    }
+                    (Method::Get, "/alix-logo.js") => {
+                        respond_asset(
+                            request,
+                            ALIX_LOGO_JS,
+                            "application/javascript; charset=utf-8",
+                        );
+                        continue;
+                    }
+                    (Method::Get, "/api/keys") => {
+                        respond_json(request, &keys);
+                        continue;
+                    }
+                    (Method::Get, "/api/version") => {
+                        respond_json(
+                            request,
+                            &VersionDto {
+                                version: env!("CARGO_PKG_VERSION"),
+                            },
+                        );
+                        continue;
+                    }
+                    (Method::Get, "/api/pair") => {
+                        let svg = if pair.lan {
+                            crate::qr::svg(&pair.url)
+                        } else {
+                            None
+                        };
+                        respond_json(
+                            request,
+                            &PairDto {
+                                url: pair.url.clone(),
+                                svg,
+                                lan: pair.lan,
+                            },
+                        );
+                        continue;
+                    }
+                    (Method::Get, "/api/browse-keys") => {
+                        respond_json(request, &browse_keys);
+                        continue;
+                    }
+                    (Method::Get, "/api/picker-keys") => {
+                        respond_json(request, &picker_keys);
+                        continue;
+                    }
+                    (Method::Get, "/api/ask-info") => {
+                        respond_json(request, &ask_info);
+                        continue;
+                    }
+                    _ => {}
+                }
                 let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
                 let ServeState {
                     store,
@@ -251,47 +343,7 @@ pub fn run_review(
                     remote_exam,
                     remote_generate,
                 } = &mut *guard;
-        let method = request.method().clone();
-        let path = request_path(&request);
-        if http_log {
-            eprintln!("[http] {method} {path}");
-        }
-        if !is_authorized(
-            &path,
-            header_value(&request, "Authorization"),
-            query_param(request.url(), "token").as_deref(),
-            auth.as_deref(),
-        ) {
-            respond_status(request, 401);
-            continue;
-        }
         match (&method, path.as_str()) {
-            (Method::Get, "/") => respond_html(request, app_page(audience)),
-            (Method::Get, "/theme.css") => {
-                respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
-            }
-            (Method::Get, "/theme.js") => {
-                respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
-            }
-            (Method::Get, key) if key.starts_with("/fonts/") => {
-                let name = &key["/fonts/".len()..];
-                match font_bytes(name) {
-                    Some(bytes) => respond_font(request, bytes),
-                    None => respond_status(request, 404),
-                }
-            }
-            (Method::Get, "/alix-logo.js") => respond_asset(
-                request,
-                ALIX_LOGO_JS,
-                "application/javascript; charset=utf-8",
-            ),
-            (Method::Get, "/api/keys") => respond_json(request, &keys),
-            (Method::Get, "/api/version") => respond_json(
-                request,
-                &VersionDto {
-                    version: env!("CARGO_PKG_VERSION"),
-                },
-            ),
             (Method::Get, "/api/doctor") => {
                 let (cfg, _) = doctor::check_config(config_path.as_deref());
                 let rows = vec![
@@ -316,24 +368,6 @@ pub fn run_review(
                 .collect();
                 respond_json(request, &DoctorDto { rows })
             }
-            (Method::Get, "/api/pair") => {
-                let svg = if pair.lan {
-                    crate::qr::svg(&pair.url)
-                } else {
-                    None
-                };
-                respond_json(
-                    request,
-                    &PairDto {
-                        url: pair.url.clone(),
-                        svg,
-                        lan: pair.lan,
-                    },
-                )
-            }
-            (Method::Get, "/api/browse-keys") => respond_json(request, &browse_keys),
-            (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
-            (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
                 let catalog = decks_list_dto(
                     scoped,
