@@ -22,9 +22,10 @@ use crate::{
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings},
     depth::{Depth, default_depth},
-    parser,
+    l1,
     scheduler::Fsrs,
     session::{self, DeckInfo, Order, Session, SessionOptions},
+    stamp,
     store::{Store, VirtualCard, default_store_path},
     time::now_ms,
     trace::{SourceBase, Trace, Walk},
@@ -234,7 +235,7 @@ pub const VIRTUAL_LINE_BASE: usize = 1_000_000;
 /// `Card::id` ignores `line`. Returns `None` if the text can't be parsed or no
 /// card matches (defensive — impossible in practice, but no `unwrap` here).
 pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Option<Card> {
-    let mut card = parser::parse_str(subject, &vc.text)
+    let mut card = l1::parse_str(subject, &vc.text)
         .ok()?
         .into_iter()
         .find(|c| c.id() == vc.id)?;
@@ -350,6 +351,39 @@ pub fn selectable(path: &Path) -> bool {
     !workspace::has_decks(path)
 }
 
+/// Stamps `path` (mints identity tokens into any unstamped cards) at the
+/// review/session-open write site (spec §2.1; the listing/doctor/stats scans
+/// are read-only and never call this). A failure is loud but non-fatal: the
+/// deck still loads, and [`exclude_unstamped`] drops the cards the failed
+/// write left tokenless.
+fn stamp_for_session(path: &Path) {
+    if let Err(e) = stamp::stamp_deck(path) {
+        eprintln!(
+            "warning: cannot stamp {}: {e}; its unstamped cards are excluded from this session",
+            path.display()
+        );
+    }
+}
+
+/// The session/store boundary filter: drops cards with no identity token (a
+/// failed stamp write) with a loud warning, so an unstamped card can never
+/// key the progress store through the interim id-0 sentinel.
+fn exclude_unstamped(cards: Vec<Card>, label: &str) -> Vec<Card> {
+    let before = cards.len();
+    let kept: Vec<Card> = cards
+        .into_iter()
+        .filter(|card| card.id_string().is_some())
+        .collect();
+    let dropped = before - kept.len();
+    if dropped > 0 {
+        eprintln!(
+            "warning: {dropped} unstamped card(s) in {label} are excluded from this session \
+             (the deck could not be stamped)"
+        );
+    }
+    kept
+}
+
 /// Turns a deck selection into something reviewable: most selections resolve
 /// to a review session; a lone trace deck resolves to a walk (predict →
 /// verify) instead. `% requires:` prerequisites are NOT pulled in — the
@@ -364,10 +398,22 @@ pub fn select(
     cfg: &AssembleConfig,
     opts: &SelectOptions,
 ) -> Result<Selected> {
+    // Review/session open is an enumerated stamping site (spec §2.1): mint
+    // identity tokens into the selected deck file before anything is built
+    // over it, so its cards carry stable ids when they first touch the store.
+    if let [path] = paths.as_slice()
+        && path.is_file()
+    {
+        stamp_for_session(path);
+    }
+
     // A single trace picked from the picker walks (predict → verify) rather
     // than flattening to a card review — mirrors the terminal picker's
     // trace → walk.
-    if let Some(deck) = single_trace_to_walk(&paths) {
+    if let Some(mut deck) = single_trace_to_walk(&paths) {
+        // The boundary filter: a walk grades into the store by card id, so
+        // tokenless checkpoints (a failed stamp) must not enter it.
+        deck.cards = exclude_unstamped(deck.cards, &deck.subject);
         let trace = Trace::from_deck(&deck)?;
         return Ok(Selected::Walk(WalkBuild {
             walk: Walk::new(trace),
@@ -398,8 +444,10 @@ pub fn select(
     // shared directives). `% requires:` prerequisites are NOT pulled in — the
     // dependency graph gates exams, not what a review session contains.
     let expanded = expand_workspaces(&deck_paths)?;
-    let (mut cards, deck_label, mut decks, settings) =
-        load_decks(&expanded.decks, &expanded.defaults)?;
+    let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
+    // The session/store boundary filter: cards a failed stamp left tokenless
+    // are excluded (loudly) before any store-keyed step sees them.
+    let mut cards = exclude_unstamped(cards, &deck_label);
     // Resolve each deck's effective ask-tutor source access: a deck in a
     // workspace takes that workspace's `source_access` override if it sets one,
     // else the global `[ask] source_access`.
@@ -652,11 +700,11 @@ mod tests {
     #[test]
     fn selectable_is_false_only_for_a_folder_that_contains_decks() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("d.txt");
-        std::fs::write(&file, "# q\n\ta\n").unwrap();
+        let file = dir.path().join("d.md");
+        std::fs::write(&file, "## q <!-- id: q1 -->\na\n").unwrap();
         let ws = dir.path().join("box");
         std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("m.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(ws.join("m.md"), "## q <!-- id: qm -->\na\n").unwrap();
         let empty = dir.path().join("empty");
         std::fs::create_dir(&empty).unwrap();
 
@@ -672,11 +720,11 @@ mod tests {
         let ws = dir.path().join("box");
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
-        let member = ws.join("a.txt");
-        std::fs::write(&member, "# q\n  a\n").unwrap();
+        let member = ws.join("a.md");
+        std::fs::write(&member, "## q <!-- id: q1 -->\na\n").unwrap();
         // a loose deck outside any workspace
-        let loose = dir.path().join("loose.txt");
-        std::fs::write(&loose, "# q\n  a\n").unwrap();
+        let loose = dir.path().join("loose.md");
+        std::fs::write(&loose, "## q <!-- id: q2 -->\na\n").unwrap();
         let instance = dir.path().join("instance-progress.json");
 
         // workspace member -> the workspace's store
@@ -700,41 +748,41 @@ mod tests {
             let ws = dir.path().join(name);
             std::fs::create_dir(&ws).unwrap();
             std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
-            std::fs::write(ws.join("a.txt"), "# a\n\t1\n").unwrap();
-            std::fs::write(ws.join("b.txt"), "# b\n\t1\n").unwrap();
+            std::fs::write(ws.join("a.md"), "## a <!-- id: qa -->\n1\n").unwrap();
+            std::fs::write(ws.join("b.md"), "## b <!-- id: qb -->\n1\n").unwrap();
             ws
         };
         let ws = mk_ws("ws");
         let ws2 = mk_ws("ws2");
         let ws_store = ws.join("progress.json");
-        let loose = dir.path().join("loose.txt");
-        std::fs::write(&loose, "# c\n\t1\n").unwrap();
+        let loose = dir.path().join("loose.md");
+        std::fs::write(&loose, "## c <!-- id: qc -->\n1\n").unwrap();
 
         // a deck (or several) in one workspace → that workspace's store
         assert_eq!(
             Some(ws_store.clone()),
-            store_path_for(&[ws.join("a.txt")], None)
+            store_path_for(&[ws.join("a.md")], None)
         );
         assert_eq!(
             Some(ws_store.clone()),
-            store_path_for(&[ws.join("a.txt"), ws.join("b.txt")], None)
+            store_path_for(&[ws.join("a.md"), ws.join("b.md")], None)
         );
         // loose, mixed loose+workspace, and cross-workspace all → global (None)
         assert_eq!(None, store_path_for(std::slice::from_ref(&loose), None));
         assert_eq!(
             None,
-            store_path_for(&[ws.join("a.txt"), loose.clone()], None)
+            store_path_for(&[ws.join("a.md"), loose.clone()], None)
         );
         assert_eq!(
             None,
-            store_path_for(&[ws.join("a.txt"), ws2.join("a.txt")], None)
+            store_path_for(&[ws.join("a.md"), ws2.join("a.md")], None)
         );
         assert_eq!(None, store_path_for(&[], None));
         // --store wins over everything
         let over = dir.path().join("x.json");
         assert_eq!(
             Some(over.clone()),
-            store_path_for(&[ws.join("a.txt")], Some(&over))
+            store_path_for(&[ws.join("a.md")], Some(&over))
         );
     }
 
@@ -744,14 +792,13 @@ mod tests {
     /// (`Trace::from_deck` reads the source lazily, past the point `select`
     /// only needs to know it's a trace at all for this test's fact-deck arm;
     /// the trace arm below supplies a real source file).
-    const TRACE_DECK: &str = "% trace: how it works\n\
-% source: source.txt\n\
-# Predict the first hop\n\
-\tit reads the first line\n\
-\t% at: 1\n\
-# Predict the second hop\n\
-\tit reads line two\n\
-\t% at: 2\n";
+    const TRACE_DECK: &str = "---\ntrace: how it works\nsource: source.txt\n---\n\
+## Predict the first hop <!-- id: qhop1 -->\n\
+it reads the first line\n\
+<!-- at: 1 -->\n\
+## Predict the second hop <!-- id: qhop2 -->\n\
+it reads line two\n\
+<!-- at: 2 -->\n";
 
     /// The default per-session pacing/config for a `select` test: built-in
     /// `max_new`, no session cap, default review/ask config.
@@ -771,11 +818,11 @@ mod tests {
     #[test]
     fn a_lone_trace_deck_selects_as_a_walk_and_a_fact_deck_as_a_review() {
         let dir = tempfile::tempdir().unwrap();
-        let trace = dir.path().join("t.txt");
+        let trace = dir.path().join("t.md");
         std::fs::write(&trace, TRACE_DECK).unwrap();
         std::fs::write(dir.path().join("source.txt"), "first\nsecond\nthird\n").unwrap();
-        let fact = dir.path().join("f.txt");
-        std::fs::write(&fact, "# q\n  a\n").unwrap();
+        let fact = dir.path().join("f.md");
+        std::fs::write(&fact, "## q <!-- id: qf -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = AssembleConfig {
             trace_auto_grade: false,
@@ -794,14 +841,14 @@ mod tests {
     #[test]
     fn single_trace_to_walk_only_for_a_lone_trace_deck() {
         let dir = tempfile::tempdir().unwrap();
-        let trace = dir.path().join("t.txt");
+        let trace = dir.path().join("t.md");
         std::fs::write(
             &trace,
-            "% trace: how it works\n% source: .\n\n# q\n\tpoint\n\t% at: 1\n",
+            "---\ntrace: how it works\nsource: .\n---\n\n## q <!-- id: qq -->\npoint\n<!-- at: 1 -->\n",
         )
         .unwrap();
-        let fact = dir.path().join("f.txt");
-        std::fs::write(&fact, "# q\n\ta\n").unwrap();
+        let fact = dir.path().join("f.md");
+        std::fs::write(&fact, "## q <!-- id: qf -->\na\n").unwrap();
 
         // A lone trace → walk it.
         assert!(single_trace_to_walk(std::slice::from_ref(&trace)).is_some());
@@ -816,16 +863,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("eng");
         std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        std::fs::write(ws.join("a.md"), "## a <!-- id: qa -->\nb\n").unwrap();
         std::fs::write(ws.join("alix.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
 
         // A member picked as a bare file (a subset selection) still inherits the
         // workspace's directives.
-        let exp = expand_workspaces(&[ws.join("a.txt")]).unwrap();
+        let exp = expand_workspaces(&[ws.join("a.md")]).unwrap();
         assert_eq!(1, exp.decks.len());
         assert_eq!(
             Some(crate::card::Direction::Both),
-            exp.defaults.get("a.txt").unwrap().direction
+            exp.defaults.get("a.md").unwrap().direction
         );
     }
 
@@ -833,8 +880,8 @@ mod tests {
     /// way the substrate does — sidecar content keyed by its `Card::id`, plus a
     /// fresh schedule seeded at `t=0` (so it's due, not treated as unseen).
     fn insert_virtual_card(store: &mut Store, subject: &str) {
-        let text = "# virtual front\n\tvirtual back\n".to_string();
-        let id = parser::parse_str(subject, &text).unwrap()[0].id();
+        let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
+        let id = crate::l1::parse_str(subject, &text).unwrap()[0].id();
         store.insert_virtual(VirtualCard {
             id,
             kind: VirtualKind::Remediation,
@@ -850,8 +897,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("animals");
         std::fs::create_dir(&ws).unwrap();
-        let member = ws.join("m.txt");
-        std::fs::write(&member, "# q\n\ta\n").unwrap();
+        let member = ws.join("m.md");
+        std::fs::write(&member, "## q <!-- id: qm -->\na\n").unwrap();
         // Pin the store explicitly — a bare `None` would fall through to the
         // real global data dir.
         let mut store = store_for(
@@ -875,8 +922,8 @@ mod tests {
     #[test]
     fn select_injects_a_decks_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rust.txt");
-        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
+        let path = dir.path().join("rust.md");
+        std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         // Not a workspace, so pass an explicit `--store`-style override — a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
@@ -884,7 +931,7 @@ mod tests {
             Some(&dir.path().join("store.json")),
         )
         .unwrap();
-        insert_virtual_card(&mut store, "rust.txt");
+        insert_virtual_card(&mut store, "rust.md");
 
         let Selected::Review(build) = select(
             vec![path],
@@ -902,8 +949,8 @@ mod tests {
     #[test]
     fn region_focus_excludes_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rust.txt");
-        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
+        let path = dir.path().join("rust.md");
+        std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         // Not a workspace, so pass an explicit `--store`-style override — a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
@@ -930,7 +977,7 @@ mod tests {
         cache.save().unwrap();
 
         // A matching virtual card for this deck.
-        insert_virtual_card(&mut store, "rust.txt");
+        insert_virtual_card(&mut store, "rust.md");
 
         let Selected::Review(build) = select(
             vec![path],
@@ -954,9 +1001,9 @@ mod tests {
         // A synthesized virtual card has a real `Card::id`, so an existing
         // format-cache entry for that id applies with no change to
         // `apply_format` itself — the "free" half of augment-for-virtuals (§8.1).
-        let subject: Arc<str> = Arc::from("rust.txt");
-        let text = "# List the parts\n\tA, B, C\n".to_string();
-        let id = parser::parse_str(&subject, &text).unwrap()[0].id();
+        let subject: Arc<str> = Arc::from("rust.md");
+        let text = "## List the parts <!-- id: vlist -->\nA, B, C\n".to_string();
+        let id = crate::l1::parse_str(&subject, &text).unwrap()[0].id();
         let vc = VirtualCard {
             id,
             kind: VirtualKind::Remediation,
@@ -990,8 +1037,8 @@ mod tests {
         // arm must reshape an injected synth card the same way it reshapes
         // deck cards.
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rust.txt");
-        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
+        let path = dir.path().join("rust.md");
+        std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         // Not a workspace, so pass an explicit `--store`-style override — a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
@@ -999,9 +1046,13 @@ mod tests {
             Some(&dir.path().join("store.json")),
         )
         .unwrap();
-        insert_virtual_card(&mut store, "rust.txt");
-        let virtual_id =
-            parser::parse_str("rust.txt", "# virtual front\n\tvirtual back\n").unwrap()[0].id();
+        insert_virtual_card(&mut store, "rust.md");
+        let virtual_id = crate::l1::parse_str(
+            "rust.md",
+            "## virtual front <!-- id: vq1 -->\nvirtual back\n",
+        )
+        .unwrap()[0]
+            .id();
 
         let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
         cache.set_format(
@@ -1040,8 +1091,8 @@ mod tests {
         use crate::depth::Depth;
 
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("d.txt");
-        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let deck = dir.path().join("d.md");
+        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
@@ -1052,7 +1103,7 @@ mod tests {
             ..Default::default()
         };
         select(vec![deck.clone()], &mut store, &cfg, &explicit).unwrap();
-        assert_eq!(Some(Depth::Recognize), store.last_depth("d.txt"));
+        assert_eq!(Some(Depth::Recognize), store.last_depth("d.md"));
 
         // No explicit depth this time — falls back to the stored last depth
         // (not the built-in default, Recall).
@@ -1069,8 +1120,8 @@ mod tests {
         use crate::depth::Depth;
 
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("d.txt");
-        std::fs::write(&deck_path, "# q\n\ta\n").unwrap();
+        let deck_path = dir.path().join("d.md");
+        std::fs::write(&deck_path, "## q <!-- id: q1 -->\na\n").unwrap();
         let store_path = dir.path().join("p.json");
         let mut store = open_store(Some(store_path.clone())).unwrap();
         let cfg = test_config();
@@ -1097,8 +1148,8 @@ mod tests {
         use crate::depth::Depth;
 
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("d.txt");
-        std::fs::write(&deck_path, "# q\n\ta\n").unwrap();
+        let deck_path = dir.path().join("d.md");
+        std::fs::write(&deck_path, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
@@ -1114,7 +1165,7 @@ mod tests {
     #[test]
     fn browse_of_a_folder_bails_with_the_workspace_hint() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("a.txt"), "# q\n  a\n").unwrap();
+        std::fs::write(dir.path().join("a.md"), "## q <!-- id: qa -->\na\n").unwrap();
         let err = browse(vec![dir.path().to_path_buf()]).unwrap_err();
         assert!(
             err.to_string().contains("browse a deck inside it"),
@@ -1125,11 +1176,11 @@ mod tests {
     #[test]
     fn browse_loads_from_explicit_paths_including_image_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
+        let path = dir.path().join("d.md");
         // A normal card and an image card — both render in the web frontend.
         std::fs::write(
             &path,
-            "% img-dir: /imgs\n# plain\n\tanswer\n# pic\n% img: a.png\n\tphoto\n",
+            "---\nimg-dir: /imgs\n---\n## plain\nanswer\n## pic <!-- img: a.png -->\nphoto\n",
         )
         .unwrap();
 
@@ -1145,8 +1196,8 @@ mod tests {
         let ws = dir.path().join("eng");
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
-        let path = ws.join("d.txt");
-        std::fs::write(&path, "# List the parts\n\tA, B, C\n").unwrap();
+        let path = ws.join("d.md");
+        std::fs::write(&path, "## List the parts <!-- id: qlist -->\nA, B, C\n").unwrap();
 
         // Without a cached format, browse shows the raw deck answer.
         let raw = browse(vec![path.clone()]).unwrap();
@@ -1180,10 +1231,10 @@ mod tests {
     #[test]
     fn browse_rejects_multiple_decks() {
         let dir = tempfile::tempdir().unwrap();
-        let a = dir.path().join("a.txt");
-        let b = dir.path().join("b.txt");
-        std::fs::write(&a, "# q\n\ta\n").unwrap();
-        std::fs::write(&b, "# q\n\tb\n").unwrap();
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, "## q <!-- id: qa -->\na\n").unwrap();
+        std::fs::write(&b, "## q <!-- id: qb -->\nb\n").unwrap();
         let err = browse(vec![a, b]).err().unwrap();
         assert!(format!("{err}").contains("one deck"), "{err}");
     }
@@ -1191,8 +1242,8 @@ mod tests {
     #[test]
     fn select_returns_the_decks_augment_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("f.txt");
-        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let deck = dir.path().join("f.md");
+        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let store_path = dir.path().join("p.json");
         let mut store = open_store(Some(store_path.clone())).unwrap();
         // Seed the sidecar select will open, next to the store.
@@ -1220,8 +1271,8 @@ mod tests {
         // scheduler `select` builds: with a 1s cooldown a just-acquired card
         // is servable 2s later, which the default cooldown would still block.
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("f.txt");
-        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let deck = dir.path().join("f.md");
+        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
         let t0 = 1_000_000;
@@ -1245,8 +1296,8 @@ mod tests {
     #[test]
     fn select_serves_by_the_injected_clock() {
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("f.txt");
-        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let deck = dir.path().join("f.md");
+        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         // Acquire the card at t0: it cools until t0 + DEFAULT_ACQUIRE_COOLDOWN_MS,
         // so which side of that line the injected clock falls on decides
@@ -1288,8 +1339,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // The deadline overlay only fires inside a real workspace (manifest present).
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
-        let deck = dir.path().join("m.txt");
-        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let deck = dir.path().join("m.md");
+        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
 
@@ -1333,5 +1384,63 @@ mod tests {
             due <= ceiling,
             "due {due} must respect the deadline ceiling {ceiling}"
         );
+    }
+    #[test]
+    fn review_open_stamps_the_deck_and_serves_it() {
+        // Spec §2.1: review/session open is a stamping site. An unstamped
+        // deck file gains its identity tokens at open, and every served card
+        // carries one.
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("fresh.md");
+        std::fs::write(&deck, "## q1\na\n\n## q2\nb\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let Selected::Review(build) = select(
+            vec![deck.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap() else {
+            panic!("expected a review");
+        };
+        let text = std::fs::read_to_string(&deck).unwrap();
+        assert_eq!(2, text.matches("<!-- id: ").count(), "{text}");
+        assert!(!build.session.cards().is_empty());
+        assert!(
+            build
+                .session
+                .cards()
+                .iter()
+                .all(|c| c.id_string().is_some() && c.id() != 0)
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_stamp_failure_excludes_unstamped_cards_loudly() {
+        use std::os::unix::fs::PermissionsExt;
+        // A read-only decks folder makes the stamp write fail; the session
+        // must then serve only the cards that already carry tokens, never a
+        // tokenless card keyed on the id-0 sentinel.
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join("decks");
+        std::fs::create_dir(&decks).unwrap();
+        let deck = decks.join("half.md");
+        std::fs::write(&deck, "## a <!-- id: q1 -->\n1\n\n## b\n2\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        std::fs::set_permissions(&decks, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let result = select(
+            vec![deck.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        );
+        std::fs::set_permissions(&decks, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let Selected::Review(build) = result.unwrap() else {
+            panic!("expected a review");
+        };
+        let cards = build.session.cards();
+        assert_eq!(1, cards.len(), "the tokenless card must be excluded");
+        assert_eq!(Some("q1".to_string()), cards[0].id_string());
     }
 }

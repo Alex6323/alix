@@ -6,11 +6,13 @@
 use std::path::Path;
 
 /// The tutorial deck's file name inside a decks folder. The mobile app seeds
-/// its own bundled copy under the same name, so progress hashes agree.
-pub const TUTORIAL_FILE: &str = "tutorial.txt";
+/// its own bundled copy under the same name.
+pub const TUTORIAL_FILE: &str = "tutorial.md";
 
-/// The tutorial deck, embedded verbatim from `assets/decks/tutorial.txt`.
-pub const TUTORIAL_DECK: &str = include_str!("../assets/decks/tutorial.txt");
+/// The tutorial deck, embedded verbatim from `assets/decks/tutorial.md`. The
+/// repo asset is deliberately UNSTAMPED; seeding stamps it, so every install
+/// mints its own fresh identity tokens.
+pub const TUTORIAL_DECK: &str = include_str!("../assets/decks/tutorial.md");
 
 /// Seeds the tutorial into `dir` **only when `dir` itself does not exist
 /// yet** — the one moment we know this is a first run. An existing folder
@@ -25,7 +27,16 @@ pub fn seed_new_decks_dir(dir: &Path) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
-    std::fs::write(dir.join(TUTORIAL_FILE), TUTORIAL_DECK).is_ok()
+    let path = dir.join(TUTORIAL_FILE);
+    if std::fs::write(&path, TUTORIAL_DECK).is_err() {
+        return false;
+    }
+    // Creation paths stamp at birth (spec §2.1): mint this install's own
+    // tokens into the fresh copy. Best-effort like the write above; a failed
+    // stamp leaves an unstamped (still loadable) tutorial that review-open
+    // stamps later.
+    let _ = crate::stamp::stamp_deck(&path);
+    true
 }
 
 #[cfg(test)]
@@ -33,12 +44,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_missing_decks_dir_is_created_and_seeded() {
+    fn a_missing_decks_dir_is_created_and_seeded_stamped() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("decks");
         assert!(seed_new_decks_dir(&dir));
         let seeded = std::fs::read_to_string(dir.join(TUTORIAL_FILE)).unwrap();
-        assert_eq!(TUTORIAL_DECK, seeded);
+        // The repo asset is deliberately unstamped; the seeded copy is the
+        // asset plus this install's freshly minted identity text.
+        let asset = crate::l1::parse_l1(TUTORIAL_FILE, TUTORIAL_DECK).unwrap();
+        assert!(asset.deck_token.is_none(), "the asset stays unstamped");
+        let deck = crate::l1::parse_l1(TUTORIAL_FILE, &seeded).unwrap();
+        assert!(deck.deck_token.is_some(), "seeding mints a deck id");
+        assert_eq!(asset.cards.len(), deck.cards.len());
+        assert!(deck.cards.iter().all(|c| c.id_string().is_some()));
     }
 
     #[test]
@@ -79,17 +97,18 @@ mod tests {
     /// assets/ only), stated loudly so the skip is never mistaken for a pass.
     #[test]
     fn the_mobile_copy_matches_the_canonical_deck() {
-        let mobile =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("apps/mobile/assets/decks/tutorial.txt");
-        if !mobile.exists() {
+        let mobile_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("apps/mobile");
+        if !mobile_dir.exists() {
             eprintln!("skipping: no apps/mobile tree here (published crate)");
             return;
         }
-        let copy = std::fs::read_to_string(mobile).unwrap();
+        // The guard keys its skip on the TREE, not the deck file, so a
+        // renamed-away copy can never silently skip this test.
+        let copy = std::fs::read_to_string(mobile_dir.join("assets/decks/tutorial.md")).unwrap();
         assert_eq!(
             TUTORIAL_DECK, copy,
-            "apps/mobile/assets/decks/tutorial.txt drifted from \
-             assets/decks/tutorial.txt — copy the canonical file over"
+            "apps/mobile/assets/decks/tutorial.md drifted from \
+             assets/decks/tutorial.md (copy the canonical file over)"
         );
     }
 }
