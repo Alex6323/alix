@@ -60,7 +60,7 @@ pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     let mut decks: Vec<PathBuf> = std::fs::read_dir(path)?
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "txt"))
+        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
         .collect();
     decks.sort();
     if decks.is_empty() {
@@ -199,8 +199,8 @@ mod tests {
     #[test]
     fn store_for_resolves_a_loose_deck_to_the_decks_dir_root_store() {
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("loose.txt");
-        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let deck = dir.path().join("loose.md");
+        std::fs::write(&deck, "## q\na\n").unwrap();
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -214,8 +214,8 @@ mod tests {
     #[test]
     fn store_for_lets_a_cli_override_win_over_the_decks_dir_fallback() {
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("loose.txt");
-        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let deck = dir.path().join("loose.md");
+        std::fs::write(&deck, "## q\na\n").unwrap();
         let override_path = dir.path().join("custom.json");
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
@@ -238,8 +238,8 @@ mod tests {
         let ws = dir.path().join("box");
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
-        let member = ws.join("a.txt");
-        std::fs::write(&member, "# q\n\ta\n").unwrap();
+        let member = ws.join("a.md");
+        std::fs::write(&member, "## q\na\n").unwrap();
         // decks_dir points elsewhere — the workspace store must still win.
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),

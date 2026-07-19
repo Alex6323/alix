@@ -3,7 +3,7 @@
 //! Workspaces let related decks (e.g. all the English-vocab decks) live in one
 //! folder, be reviewed together, and inherit a common set of directives without
 //! repeating them in every file. Membership is **folder-implicit**: a workspace
-//! is any folder containing `*.txt` decks. An optional [`MANIFEST`]
+//! is any folder containing `*.md` decks. An optional [`MANIFEST`]
 //! (`alix.toml`) sets a `title` and a `[defaults]` table of shared directives,
 //! mirroring the local [`Config`](crate::config::Config) (`config.toml`) but
 //! scoped to the folder. The `[defaults]` keys are the deck directive names,
@@ -23,7 +23,7 @@ use serde::Deserialize;
 use crate::deck::DeckSettings;
 
 /// The reserved manifest file in a workspace folder. Its `.toml` extension
-/// keeps it out of the `*.txt` member scan automatically.
+/// keeps it out of the member scan automatically.
 pub const MANIFEST: &str = "alix.toml";
 
 /// The progress store a workspace uses when its manifest declares no `store`
@@ -69,7 +69,7 @@ pub struct Workspace {
     /// Shared directive defaults from the manifest, folded below each member
     /// deck's own directives.
     pub settings: DeckSettings,
-    /// Member deck paths: the folder's `*.txt` files, sorted by name.
+    /// Member deck paths: the folder's `*.md` files, sorted by name.
     pub members: Vec<PathBuf>,
     /// The resolved icon file shown in the picker (manifest `icon`, else a
     /// conventional `assets/icon.*`), or `None` for the chevron fallback.
@@ -77,7 +77,7 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Loads the workspace rooted at `dir`: its `*.txt` members and, if
+    /// Loads the workspace rooted at `dir`: its `*.md` members and, if
     /// present, the `alix.toml` manifest (title + shared directives). A
     /// folder without a manifest — or with a malformed one — is still a
     /// workspace, with default settings, so a bad manifest never stops it
@@ -162,24 +162,39 @@ fn value_to_string(value: &toml::Value) -> String {
         .unwrap_or_else(|| value.to_string())
 }
 
-/// The `*.txt` decks directly inside `dir`, sorted by name (one level deep).
+/// `true` for conventional non-deck file names a repo-adjacent decks folder
+/// carries (`README.md`, `LICENSE.md`, any-case, any extension): excluded from
+/// deck enumeration so a project readme never lists (or gets stamped) as a
+/// deck.
+pub fn is_conventional_non_deck(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name);
+    stem.eq_ignore_ascii_case("readme") || stem.eq_ignore_ascii_case("license")
+}
+
+/// The `*.md` decks directly inside `dir`, sorted by name (one level deep).
+/// Conventional non-deck names (`README.*`, `LICENSE.*`) are excluded.
 fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|r| r.ok().map(|e| e.path()))
-        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "txt"))
+        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
+        .filter(|p| {
+            !p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(is_conventional_non_deck)
+        })
         .collect();
     paths.sort();
     Ok(paths)
 }
 
 /// `true` if `path` is an **explicit workspace**: a directory with an `alix.toml`
-/// manifest *and* at least one `*.txt` deck. A folder of decks without a manifest
+/// manifest *and* at least one `*.md` deck. A folder of decks without a manifest
 /// is a plain "folder" (see [`has_decks`]) — reviewable, but not a workspace.
 pub fn is_workspace(path: &Path) -> bool {
     has_decks(path) && path.join(MANIFEST).is_file()
 }
 
-/// `true` if `path` is a directory holding at least one `*.txt` deck — a
+/// `true` if `path` is a directory holding at least one `*.md` deck — a
 /// drillable folder in the pickers, whether or not it is a workspace.
 pub fn has_decks(path: &Path) -> bool {
     path.is_dir() && members(path).map(|m| !m.is_empty()).unwrap_or(false)
@@ -306,8 +321,8 @@ mod tests {
     #[test]
     fn load_discovers_members_and_parses_manifest() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join("a.txt"), "# a\n\t1\n");
-        write(&dir.path().join("b.txt"), "# b\n\t2\n");
+        write(&dir.path().join("a.md"), "## a\n1\n");
+        write(&dir.path().join("b.md"), "## b\n2\n");
         write(
             &dir.path().join(MANIFEST),
             "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nreveal = \"line\"\ndirection = \"both\"\n",
@@ -318,13 +333,13 @@ mod tests {
         assert_eq!(Some("everyday vocab".to_string()), ws.description);
         assert_eq!("English", ws.display_name());
         assert_eq!(Some(Reveal::Line), ws.settings.reveal);
-        // The manifest is not a `.txt`, so it is never a member.
+        // The manifest is not a `.md`, so it is never a member.
         let names: Vec<_> = ws
             .members
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(vec!["a.txt".to_string(), "b.txt".to_string()], names);
+        assert_eq!(vec!["a.md".to_string(), "b.md".to_string()], names);
     }
 
     #[test]
@@ -332,7 +347,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("rust");
         std::fs::create_dir(&folder).unwrap();
-        write(&folder.join("a.txt"), "# a\n\t1\n");
+        write(&folder.join("a.md"), "## a\n1\n");
 
         let ws = Workspace::load(&folder).unwrap();
         assert_eq!(None, ws.title);
@@ -344,7 +359,7 @@ mod tests {
     #[test]
     fn malformed_manifest_is_forgiving() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join("a.txt"), "# a\n\t1\n");
+        write(&dir.path().join("a.md"), "## a\n1\n");
         write(&dir.path().join(MANIFEST), "this is not = = valid toml\n");
         // A bad manifest doesn't stop the folder from being a workspace.
         let ws = Workspace::load(dir.path()).unwrap();
@@ -360,7 +375,7 @@ mod tests {
         std::fs::create_dir(&empty).unwrap();
         assert!(!is_workspace(&empty)); // no decks
 
-        write(&empty.join("a.txt"), "# a\n\t1\n");
+        write(&empty.join("a.md"), "## a\n1\n");
         assert!(has_decks(&empty)); // a drillable folder...
         assert!(!is_workspace(&empty)); // ...but not a workspace without a manifest
 
@@ -368,8 +383,8 @@ mod tests {
         assert!(is_workspace(&empty)); // manifest present → an explicit workspace
 
         // A plain file is neither.
-        let file = dir.path().join("loose.txt");
-        write(&file, "# a\n\t1\n");
+        let file = dir.path().join("loose.md");
+        write(&file, "## a\n1\n");
         assert!(!is_workspace(&file));
         assert!(!has_decks(&file));
     }
@@ -427,7 +442,7 @@ mod tests {
     fn root_store_path_honors_a_workspace_store_override() {
         let dir = tempfile::tempdir().unwrap();
         // A workspace is a manifest *and* at least one deck, so write both.
-        std::fs::write(dir.path().join("d.txt"), "# Q\n    A\n").unwrap();
+        std::fs::write(dir.path().join("d.md"), "## Q\nA\n").unwrap();
         std::fs::write(
             dir.path().join("alix.toml"),
             "title = \"W\"\nstore = \"custom.json\"\n",
@@ -543,5 +558,23 @@ mod tests {
             !manifest.is_file(),
             "clearing with no manifest must be a true no-op"
         );
+    }
+    #[test]
+    fn readme_and_license_are_not_decks() {
+        // A repo-adjacent decks folder carries conventional `.md` files that
+        // are not decks; the member scan must never list (or later stamp)
+        // them, any case.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        std::fs::write(dir.path().join("README.md"), "about this folder\n").unwrap();
+        std::fs::write(dir.path().join("LICENSE.md"), "MIT\n").unwrap();
+        std::fs::write(dir.path().join("license.md"), "lower-case too\n").unwrap();
+        let ws = Workspace::load(dir.path()).unwrap();
+        let names: Vec<String> = ws
+            .members
+            .iter()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        assert_eq!(vec!["real.md".to_string()], names);
     }
 }

@@ -122,13 +122,13 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
     let mut dirs = 0usize;
     for entry in std::fs::read_dir(decks_dir).into_iter().flatten().flatten() {
         let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
+        if path.is_file() && path.extension().is_some_and(|e| e == "md") {
             deck_files.push(path);
         } else if workspace::has_decks(&path) {
             dirs += 1;
             for sub in std::fs::read_dir(&path).into_iter().flatten().flatten() {
                 let p = sub.path();
-                if p.is_file() && p.extension().is_some_and(|e| e == "txt") {
+                if p.is_file() && p.extension().is_some_and(|e| e == "md") {
                     deck_files.push(p);
                 }
             }
@@ -235,11 +235,11 @@ mod tests {
     #[test]
     fn a_broken_deck_warns_and_points_at_deck_check() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("good.txt"), "# f\n\tb\n").unwrap();
-        std::fs::write(dir.path().join("bad.txt"), "# front with no answer\n").unwrap();
+        std::fs::write(dir.path().join("good.md"), "## f\nb\n").unwrap();
+        std::fs::write(dir.path().join("bad.md"), "## front with no answer\n").unwrap();
         let finding = check_decks(dir.path());
         assert_eq!(Status::Warn, finding.status);
-        assert!(finding.detail.contains("bad.txt"), "{}", finding.detail);
+        assert!(finding.detail.contains("bad.md"), "{}", finding.detail);
         assert!(finding.remedy.as_deref().unwrap().contains("deck check"));
     }
 

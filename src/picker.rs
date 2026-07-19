@@ -17,7 +17,7 @@ use std::{
 #[cfg(test)]
 use crate::deck::DeckState;
 pub use crate::listing::{DeckStatus, deck_status, dependency_forest, member_parents};
-use crate::{parser, recent::RecentDecks, store::Store, title, workspace};
+use crate::{recent::RecentDecks, store::Store, title, workspace};
 
 // ---- deck candidates ----------------------------------------------------
 
@@ -33,8 +33,9 @@ struct Candidate {
     is_workspace: bool,
 }
 
-/// Every `*.txt` deck and every workspace folder directly in `decks_dir`,
-/// sorted by name.
+/// Every `*.md` deck and every workspace folder directly in `decks_dir`,
+/// sorted by name. Conventional non-deck names (`README.*`, `LICENSE.*`,
+/// any-case) are excluded.
 fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
     // A served root that is itself a workspace lists as that one workspace, so
     // `alix <workspace-dir>` opens the picker drilled into it — members keep
@@ -53,13 +54,16 @@ fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
             // Hidden by convention, same rule `share::stays_home` applies: in
             // particular, `alix generate`'s staging dir for a workspace build
             // (`.<name>.building`) is deliberately kept around on a merge
-            // conflict, holding real `.txt` decks — without this filter it
+            // conflict, holding real `.md` decks — without this filter it
             // would show up here as a bogus workspace. An explicitly named
             // dot-dir (`alix share .foo`, `alix stats .foo`) still works —
             // this only filters the directory *scan*.
             .filter(|path| !file_name(path).starts_with('.'))
             .filter_map(|path| {
-                if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
+                let is_deck = path.is_file()
+                    && path.extension().is_some_and(|e| e == "md")
+                    && !workspace::is_conventional_non_deck(&file_name(&path));
+                if is_deck {
                     Some((path, false))
                 } else if workspace::has_decks(&path) {
                     Some((path, true))
@@ -133,9 +137,9 @@ pub fn workspace_last_progress(folder: &Path) -> Option<String> {
     })
 }
 
-/// A deck name without its `.txt` extension, for matching.
+/// A deck name without its `.md` extension, for matching.
 fn stem(name: &str) -> String {
-    name.strip_suffix(".txt").unwrap_or(name).to_string()
+    name.strip_suffix(".md").unwrap_or(name).to_string()
 }
 
 /// A dim location hint for entries that don't live directly in the decks dir
@@ -256,14 +260,16 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
         .collect()
 }
 
-/// A deck's display label, read without a full parse: its explicit `% title:`,
-/// else — for a trace — a condensed form of its `% trace:` path-question (an
-/// `explore` trace's is already short, a `--build`/hand-written one gets cut to
-/// a label-sized head). `None` when it declares neither, so the caller falls
-/// back to the file stem.
+/// A deck's display label: its `# H1` title, else — for a trace — a condensed
+/// form of its `trace:` path-question (an `explore` trace's is already short,
+/// a `--build`/hand-written one gets cut to a label-sized head). `None` when
+/// it declares neither (or does not parse), so the caller falls back to the
+/// file stem. Read-only: listing never stamps.
 fn deck_label(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
-    parser::parse_title(&text).or_else(|| parser::parse_trace(&text).map(|t| title::condense(&t)))
+    let deck = crate::l1::parse_l1("deck.md", &text).ok()?;
+    deck.title
+        .or_else(|| deck.frontmatter.trace.map(|t| title::condense(&t)))
 }
 
 #[cfg(test)]
@@ -273,17 +279,17 @@ mod tests {
     #[test]
     fn build_candidates_orders_recent_first_then_alpha() {
         let dir = tempfile::tempdir().unwrap();
-        for n in ["zeta.txt", "alpha.txt", "mid.txt"] {
-            std::fs::write(dir.path().join(n), "# f\n\tb\n").unwrap();
+        for n in ["zeta.md", "alpha.md", "mid.md"] {
+            std::fs::write(dir.path().join(n), "## f\nb\n").unwrap();
         }
         let recent_path = dir.path().join("recent.json");
         let mut recent = RecentDecks::load(&recent_path);
-        recent.record(&[dir.path().join("mid.txt")], 1000);
+        recent.record(&[dir.path().join("mid.md")], 1000);
 
         let cands = build_candidates(dir.path(), &recent);
         let names: Vec<&str> = cands.iter().map(|c| c.name.as_str()).collect();
         // Recent (mid) first, then the rest alphabetically.
-        assert_eq!(vec!["mid.txt", "alpha.txt", "zeta.txt"], names);
+        assert_eq!(vec!["mid.md", "alpha.md", "zeta.md"], names);
         assert!(cands[0].last_used_ms.is_some());
         assert!(cands[1].last_used_ms.is_none());
     }
@@ -295,7 +301,7 @@ mod tests {
         // into loose decks.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "title = \"T\"\n").unwrap();
-        std::fs::write(dir.path().join("m.txt"), "# f\n\tb\n").unwrap();
+        std::fs::write(dir.path().join("m.md"), "## f\nb\n").unwrap();
         let recent = RecentDecks::load(dir.path().join("recent.json"));
         let entries = catalog(dir.path(), &recent);
         assert_eq!(1, entries.len());
@@ -306,16 +312,16 @@ mod tests {
     #[test]
     fn catalog_mirrors_candidate_order_and_paths() {
         let dir = tempfile::tempdir().unwrap();
-        for n in ["zeta.txt", "alpha.txt"] {
-            std::fs::write(dir.path().join(n), "# f\n\tb\n").unwrap();
+        for n in ["zeta.md", "alpha.md"] {
+            std::fs::write(dir.path().join(n), "## f\nb\n").unwrap();
         }
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        recent.record(&[dir.path().join("zeta.txt")], 1000);
+        recent.record(&[dir.path().join("zeta.md")], 1000);
 
         let entries = catalog(dir.path(), &recent);
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(vec!["zeta.txt", "alpha.txt"], names); // recent first
-        assert_eq!(dir.path().join("zeta.txt"), entries[0].path);
+        assert_eq!(vec!["zeta.md", "alpha.md"], names); // recent first
+        assert_eq!(dir.path().join("zeta.md"), entries[0].path);
         assert!(entries[0].last_used_ms.is_some());
     }
 
@@ -324,11 +330,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // A trace declares its name in `% trace:`, not `% title:` — the label
         // comes from a condensed form of it, never the file stem.
-        let trace = dir.path().join("06-how-a-digest-becomes-verified.txt");
+        let trace = dir.path().join("06-how-a-digest-becomes-verified.md");
         std::fs::write(
             &trace,
-            "% trace: how a transaction digest becomes verified effects and events: \
-             fetch the checkpoint, derive the committee, then verify\n",
+            "---\ntrace: \"how a transaction digest becomes verified effects and events: \
+             fetch the checkpoint, derive the committee, then verify\"\n---\n",
         )
         .unwrap();
         assert_eq!(
@@ -337,13 +343,13 @@ mod tests {
         );
 
         // An explicit `% title:` still wins outright.
-        let titled = dir.path().join("01-the-domain-model.txt");
-        std::fs::write(&titled, "% title: The Domain Model\n# f\n\tb\n").unwrap();
+        let titled = dir.path().join("01-the-domain-model.md");
+        std::fs::write(&titled, "# The Domain Model\n## f\nb\n").unwrap();
         assert_eq!(Some("The Domain Model".to_string()), deck_label(&titled));
 
         // A plain deck with neither yields None (the caller falls back to stem).
-        let plain = dir.path().join("plain.txt");
-        std::fs::write(&plain, "# f\n\tb\n").unwrap();
+        let plain = dir.path().join("plain.md");
+        std::fs::write(&plain, "## f\nb\n").unwrap();
         assert_eq!(None, deck_label(&plain));
     }
 
@@ -355,16 +361,16 @@ mod tests {
             .to_path_buf();
         let decks = home.join("decks");
         // In the decks dir root → no hint (keeps the common listing clean).
-        assert_eq!(None, location_hint(&decks.join("foo.txt"), &decks));
+        assert_eq!(None, location_hint(&decks.join("foo.md"), &decks));
         assert_eq!(None, location_hint(&decks.join("english"), &decks));
         // Elsewhere → the parent dir, home abbreviated to `~`.
         assert_eq!(
             Some("~/other".to_string()),
-            location_hint(&home.join("other").join("x.txt"), &decks)
+            location_hint(&home.join("other").join("x.md"), &decks)
         );
         assert_eq!(
             Some("/tmp".to_string()),
-            location_hint(Path::new("/tmp/x.txt"), &decks)
+            location_hint(Path::new("/tmp/x.md"), &decks)
         );
     }
 
@@ -373,8 +379,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("english");
         std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
-        std::fs::write(ws.join("b.txt"), "# c\n\td\n").unwrap();
+        std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
+        std::fs::write(ws.join("b.md"), "## c\nd\n").unwrap();
         std::fs::write(ws.join(workspace::MANIFEST), "title = \"English\"\n").unwrap();
         let recent = RecentDecks::load(dir.path().join("recent.json"));
 
@@ -387,19 +393,19 @@ mod tests {
         assert_eq!("English", w.label); // manifest title is the display name
         let members: Vec<&str> = w.members.iter().map(|m| m.name.as_str()).collect();
         // Members carry qualified keys so they never collide with top-level decks.
-        assert_eq!(vec!["english/a.txt", "english/b.txt"], members);
+        assert_eq!(vec!["english/a.md", "english/b.md"], members);
     }
 
     #[test]
     fn build_candidates_skips_missing_recent_files() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.txt"), "# f\n\tb\n").unwrap();
+        std::fs::write(dir.path().join("real.md"), "## f\nb\n").unwrap();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        recent.record(&[dir.path().join("deleted.txt")], 1000);
+        recent.record(&[dir.path().join("deleted.md")], 1000);
 
         let cands = build_candidates(dir.path(), &recent);
         let names: Vec<&str> = cands.iter().map(|c| c.name.as_str()).collect();
-        assert_eq!(vec!["real.txt"], names);
+        assert_eq!(vec!["real.md"], names);
     }
 
     #[test]
@@ -408,16 +414,16 @@ mod tests {
         // kept around on a merge conflict, holding real `.txt` decks — it must
         // never surface in the picker as a bogus workspace.
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.txt"), "# f\n\tb\n").unwrap();
+        std::fs::write(dir.path().join("real.md"), "## f\nb\n").unwrap();
         let leftover = dir.path().join(".leftover.building");
         std::fs::create_dir(&leftover).unwrap();
-        std::fs::write(leftover.join("x.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(leftover.join("x.md"), "## q\na\n").unwrap();
 
         let names: Vec<String> = dir_candidates(dir.path())
             .iter()
             .map(|c| c.name.clone())
             .collect();
-        assert_eq!(vec!["real.txt".to_string()], names);
+        assert_eq!(vec!["real.md".to_string()], names);
 
         let recent = RecentDecks::load(dir.path().join("recent.json"));
         let entries = catalog(dir.path(), &recent);
@@ -464,5 +470,19 @@ mod tests {
         let statuses = readiness_fixture();
         let r = workspace_readiness(&statuses);
         assert_eq!((2, 4), (r.ready, r.total));
+    }
+    #[test]
+    fn readme_and_license_are_not_decks() {
+        // The picker scan applies the same conventional-non-deck exclusion as
+        // the workspace member scan.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        std::fs::write(dir.path().join("README.md"), "about\n").unwrap();
+        std::fs::write(dir.path().join("LICENSE.md"), "MIT\n").unwrap();
+        let names: Vec<String> = dir_candidates(dir.path())
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(vec!["real.md".to_string()], names);
     }
 }

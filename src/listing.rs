@@ -28,7 +28,7 @@ use crate::{
 };
 
 /// One row of a folder listing: a loose deck, or a drillable folder of decks
-/// (a workspace, or a plain folder holding `*.txt`).
+/// (a workspace, or a plain folder holding `*.md`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeckSummary {
     /// The deck's `% title:` / the workspace manifest title, else the file
@@ -113,7 +113,8 @@ pub struct DeckDeadline {
 }
 
 /// Lists a decks root: workspaces and plain deck folders as drillable
-/// entries, loose `*.txt` files as decks, name-sorted, dot-names skipped.
+/// entries, loose `*.md` files as decks (conventional non-deck names
+/// excluded), name-sorted, dot-names skipped.
 /// A root that is itself a workspace collapses to that one entry. Unreadable
 /// entries degrade (stem title, `due: false`); they never error.
 pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSummary> {
@@ -137,7 +138,10 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         }
         if path.is_dir() && workspace::has_decks(&path) {
             out.push(folder_summary(root, &path, review, now_ms));
-        } else if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
+        } else if path.is_file()
+            && path.extension().is_some_and(|e| e == "md")
+            && !workspace::is_conventional_non_deck(name)
+        {
             out.push(
                 deck_summary(
                     &path,
@@ -847,10 +851,13 @@ mod tests {
     fn a_trace_deck_lists_flagged_so_a_client_never_opens_a_doomed_review() {
         let dir = tempfile::tempdir().unwrap();
         write(
-            &dir.path().join("walk.txt"),
-            "% trace: How it flows\n# hop?\n\tstep\n",
+            &dir.path().join("walk.md"),
+            "---\ntrace: How it flows\n---\n## hop? <!-- id: qhop -->\nstep\n",
         );
-        write(&dir.path().join("facts.txt"), "# q?\n\ta\n");
+        write(
+            &dir.path().join("facts.md"),
+            "## q? <!-- id: qfacts -->\na\n",
+        );
         let rows = list_root(dir.path(), &ReviewConfig::default(), T0);
         let flags: Vec<(&str, bool)> = rows
             .iter()
@@ -879,15 +886,19 @@ mod tests {
     fn lists_titles_and_kinds_and_skips_dot_names() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("b-loose.txt"), "% title: Loose Deck\n# q\n\ta\n");
+        write(
+            &root.join("b-loose.md"),
+            "# Loose Deck\n## q <!-- id: qloose -->\na\n",
+        );
         std::fs::create_dir(root.join("a-ws")).unwrap();
         write(&root.join("a-ws/alix.toml"), "title = \"My Workspace\"\n");
-        write(&root.join("a-ws/m.txt"), "# q\n\ta\n");
+        write(&root.join("a-ws/m.md"), "## q <!-- id: qm -->\na\n");
         std::fs::create_dir(root.join("c-plain")).unwrap();
-        write(&root.join("c-plain/d.txt"), "# q\n\ta\n");
+        write(&root.join("c-plain/d.md"), "## q <!-- id: qd -->\na\n");
         std::fs::create_dir(root.join(".hidden")).unwrap();
-        write(&root.join(".hidden/x.txt"), "# q\n\ta\n");
-        write(&root.join("notes.md"), "not a deck");
+        write(&root.join(".hidden/x.md"), "## q <!-- id: qx -->\na\n");
+        // Conventional non-deck names are excluded from the scan even as `.md`.
+        write(&root.join("README.md"), "# A Readme\nprose\n");
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let names: Vec<(&str, bool)> = rows
@@ -909,7 +920,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("alix.toml"), "title = \"The Root\"\n");
-        write(&root.join("a.txt"), "# q\n\ta\n");
+        write(&root.join("a.md"), "## q <!-- id: qa -->\na\n");
         let rows = list_root(root, &ReviewConfig::default(), T0);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "The Root");
@@ -923,18 +934,18 @@ mod tests {
     fn due_reads_each_entrys_own_store_and_the_injected_clock() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("loose.txt"), "# q\n\ta\n");
+        write(&root.join("loose.md"), "## q <!-- id: qloose -->\na\n");
         std::fs::create_dir(root.join("ws")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/m.txt"), "# q\n\ta\n");
+        write(&root.join("ws/m.md"), "## q <!-- id: qm -->\na\n");
 
         // Settle the workspace member in the WORKSPACE store and the loose
         // deck in the ROOT store; each entry must read its own.
         settle(
             &workspace::store_path(&root.join("ws")),
-            &root.join("ws/m.txt"),
+            &root.join("ws/m.md"),
         );
-        settle(&workspace::root_store_path(root), &root.join("loose.txt"));
+        settle(&workspace::root_store_path(root), &root.join("loose.md"));
 
         let just_after = list_root(root, &ReviewConfig::default(), T0 + 1_000);
         assert!(
@@ -949,10 +960,10 @@ mod tests {
     fn sync_conflicts_under_covers_the_root_and_workspace_stores() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("loose.txt"), "# q\n\ta\n");
+        write(&root.join("loose.md"), "## q <!-- id: qloose -->\na\n");
         std::fs::create_dir(root.join("ws")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/m.txt"), "# q\n\ta\n");
+        write(&root.join("ws/m.md"), "## q <!-- id: qm -->\na\n");
 
         let root_conflict = root.join("progress.sync-conflict-20260714-101112-AAAAAAA.json");
         let ws_conflict = root.join("ws/progress.sync-conflict-20260715-101112-BBBBBBB.json");
@@ -975,13 +986,12 @@ mod tests {
     fn unreadable_entries_degrade_instead_of_failing() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // A deck file whose content fails to parse (a cloze with no holes):
+        // A deck file whose content fails to parse:
         // listed with its stem, just never due.
-        write(
-            &root.join("broken.txt"),
-            "# q\n\t% reveal: cloze\n\tno holes here\n",
-        );
-        write(&root.join("ok.txt"), "# q\n\ta\n");
+        // A front with no answer is an L1 parse failure: listed with its
+        // stem, just never due.
+        write(&root.join("broken.md"), "## q with no answer\n");
+        write(&root.join("ok.md"), "## q <!-- id: qok -->\na\n");
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let broken = rows.iter().find(|r| r.title == "broken").expect("listed");
         assert!(!broken.due);
@@ -1041,19 +1051,25 @@ mod tests {
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
         // base: sourced (has an exam), no prerequisite — settled to ExamDue.
-        write(&ws.join("base.txt"), "% source: https://x\n# q\n\ta\n");
+        write(
+            &ws.join("base.md"),
+            "---\nsource: https://x\n---\n## q <!-- id: qbase -->\na\n",
+        );
         // advanced: source-less, requires base — locked while base isn't Finished.
-        write(&ws.join("advanced.txt"), "% requires: base\n# q2\n\tb\n");
+        write(
+            &ws.join("advanced.md"),
+            "---\nrequires: base\n---\n## q2 <!-- id: qadv -->\nb\n",
+        );
         // walk: a trace deck (its own kind of exam), independent of the chain.
         write(
-            &ws.join("walk.txt"),
-            "% trace: How it flows\n# hop?\n\tstep\n",
+            &ws.join("walk.md"),
+            "---\ntrace: How it flows\n---\n## hop? <!-- id: qhop -->\nstep\n",
         );
 
         // Graduate base's one card (Recall reaches FSRS Review) without a
         // real drill session, so `deck.state` reads `ExamDue`.
         let store_path = workspace::store_path(&ws);
-        let base_id = Deck::load(ws.join("base.txt")).unwrap().cards[0].id();
+        let base_id = Deck::load(ws.join("base.md")).unwrap().cards[0].id();
         let mut store = Store::open(&store_path).unwrap();
         store.get_or_insert(base_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
@@ -1097,7 +1113,7 @@ mod tests {
 
         // Master base: it unlocks advanced, and every field must still agree.
         let mut store = Store::open(&store_path).unwrap();
-        let base_deck = Deck::load(ws.join("base.txt")).unwrap();
+        let base_deck = Deck::load(ws.join("base.md")).unwrap();
         store.set_deck_mastered(&base_deck.subject, T0 + 1_000);
         store.save().unwrap();
 
@@ -1115,7 +1131,7 @@ mod tests {
     fn last_depth_falls_back_to_default_then_remembers_after_being_set() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
+        write(&root.join("d.md"), "## q <!-- id: qd -->\na\n");
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
@@ -1123,7 +1139,7 @@ mod tests {
 
         let store_path = workspace::root_store_path(root);
         let mut store = Store::open(&store_path).unwrap();
-        store.set_last_depth("d.txt", Depth::Reconstruct);
+        store.set_last_depth("d.md", Depth::Reconstruct);
         store.save().unwrap();
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
@@ -1138,10 +1154,16 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("base.txt"), "# q\n\ta\n");
-        write(&ws.join("mid.txt"), "% requires: base\n# q\n\ta\n");
-        write(&ws.join("tip.txt"), "% requires: mid\n# q\n\ta\n");
-        write(&ws.join("other.txt"), "# q\n\ta\n");
+        write(&ws.join("base.md"), "## q <!-- id: qbase -->\na\n");
+        write(
+            &ws.join("mid.md"),
+            "---\nrequires: base\n---\n## q <!-- id: qmid -->\na\n",
+        );
+        write(
+            &ws.join("tip.md"),
+            "---\nrequires: mid\n---\n## q <!-- id: qtip -->\na\n",
+        );
+        write(&ws.join("other.md"), "## q <!-- id: qother -->\na\n");
 
         let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
         let shape: Vec<(&str, usize, &str)> = rows
@@ -1163,11 +1185,14 @@ mod tests {
     fn list_members_sorts_an_exam_due_sibling_before_a_merely_locked_one() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // Sits outside the workspace at `root`, so it gates `aaa-locked.txt`
+        // Sits outside the workspace at `root`, so it gates `aaa-locked.md`
         // without becoming its dependency-forest parent (it isn't a member
         // of the workspace's own listing) — an unmastered sourced deck, so
         // it has an exam that isn't yet passed.
-        write(&root.join("gate.txt"), "% source: https://x\n# q\n\ta\n");
+        write(
+            &root.join("gate.md"),
+            "---\nsource: https://x\n---\n## q <!-- id: qgate -->\na\n",
+        );
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "");
@@ -1176,12 +1201,12 @@ mod tests {
         // only the fixed `blocked` key correctly ranks the startable
         // exam-due deck ahead of it.
         write(
-            &ws.join("aaa-locked.txt"),
-            "% requires: gate.txt\n# q2\n\tb\n",
+            &ws.join("aaa-locked.md"),
+            "---\nrequires: gate\n---\n## q2 <!-- id: qlocked -->\nb\n",
         );
         write(
-            &ws.join("zzz-examdue.txt"),
-            "% source: https://y\n# q\n\ta\n",
+            &ws.join("zzz-examdue.md"),
+            "---\nsource: https://y\n---\n## q <!-- id: qexamdue -->\na\n",
         );
 
         // Graduate zzz-examdue's card at Recall and settle it at every depth
@@ -1189,7 +1214,7 @@ mod tests {
         // `ExamDue` — the case the web treats as startable but the old
         // `locked || !due` key sorted as blocked.
         let store_path = workspace::store_path(&ws);
-        let examdue_id = Deck::load(ws.join("zzz-examdue.txt")).unwrap().cards[0].id();
+        let examdue_id = Deck::load(ws.join("zzz-examdue.md")).unwrap().cards[0].id();
         let mut store = Store::open(&store_path).unwrap();
         let entry = store.get_or_insert(examdue_id, T0);
         entry.recognized_ms = Some(T0);
@@ -1204,7 +1229,7 @@ mod tests {
         assert!(!examdue.due, "settled at every depth: nothing due");
         assert!(!examdue.locked);
         let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();
-        assert!(locked.locked, "gated by the unmastered gate.txt");
+        assert!(locked.locked, "gated by the unmastered gate.md");
 
         let titles: Vec<&str> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(
@@ -1218,27 +1243,27 @@ mod tests {
     fn list_members_sorts_a_load_failed_member_as_not_blocked() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("gate.txt"), "% source: https://x\n# q\n\ta\n");
+        write(
+            &root.join("gate.md"),
+            "---\nsource: https://x\n---\n## q <!-- id: qgate -->\na\n",
+        );
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "");
-        // A cloze with no holes fails to parse: `Deck::load` errors, so this
+        // A front with no answer fails to parse: `Deck::load` errors, so this
         // member degrades (see `unreadable_entries_degrade_instead_of_failing`).
         // Named to sort AFTER the locked deck alphabetically, so only the
         // fixed `blocked` key (a load failure is not-blocked) puts it first.
+        write(&ws.join("zzz-broken.md"), "## q with no answer\n");
         write(
-            &ws.join("zzz-broken.txt"),
-            "# q\n\t% reveal: cloze\n\tno holes here\n",
-        );
-        write(
-            &ws.join("aaa-locked.txt"),
-            "% requires: gate.txt\n# q2\n\tb\n",
+            &ws.join("aaa-locked.md"),
+            "---\nrequires: gate\n---\n## q2 <!-- id: qlocked -->\nb\n",
         );
 
         let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
         assert_eq!(2, rows.len());
         let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();
-        assert!(locked.locked, "gated by the unmastered gate.txt");
+        assert!(locked.locked, "gated by the unmastered gate.md");
 
         let titles: Vec<&str> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(
@@ -1256,8 +1281,8 @@ mod tests {
         write(&root.join("ws/alix.toml"), "");
         std::fs::create_dir_all(root.join("ws/assets")).unwrap();
         write(&root.join("ws/assets/icon.svg"), "<svg/>");
-        write(&root.join("ws/m.txt"), "# q\n\ta\n");
-        write(&root.join("loose.txt"), "# q\n\ta\n");
+        write(&root.join("ws/m.md"), "## q <!-- id: qm -->\na\n");
+        write(&root.join("loose.md"), "## q <!-- id: qloose -->\na\n");
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let ws_row = rows.iter().find(|r| r.is_workspace).expect("listed");
@@ -1283,8 +1308,8 @@ mod tests {
     /// schedule seeded at t=0 (so any real `now` is well past its acquire
     /// cooldown).
     fn insert_due_virtual_card(store: &mut Store, subject: &str) {
-        let text = "# virtual front\n\tvirtual back\n".to_string();
-        let id = crate::parser::parse_str(subject, &text).unwrap()[0].id();
+        let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
+        let id = crate::l1::parse_str(subject, &text).unwrap()[0].id();
         store.insert_virtual(crate::store::VirtualCard {
             id,
             kind: crate::store::VirtualKind::Remediation,
@@ -1298,8 +1323,8 @@ mod tests {
     #[test]
     fn deck_status_reviewable_true_when_only_a_virtual_card_is_due() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1349,8 +1374,8 @@ mod tests {
         // say no while `reviewable_reconstruct` (and the overall
         // `reviewable`) say yes.
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1378,8 +1403,12 @@ mod tests {
     #[test]
     fn recognize_reviewability_tracks_unrecognized_recognizable_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "## q1 <!-- id: q1 -->\na1\n## q2 <!-- id: q2 -->\na2\n",
+        )
+        .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1423,8 +1452,12 @@ mod tests {
         // is unavailable — reviewable_recognize is false even though its cards
         // are unrecognized, and can_recognize (the cram/greying gate) is false.
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "## q1 <!-- id: q1 -->\na1\n## q2 <!-- id: q2 -->\na2\n",
+        )
+        .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let store = Store::open(dir.path().join("progress.json")).unwrap();
 
@@ -1449,14 +1482,14 @@ mod tests {
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
         // done: source-less and fully drilled — Finished, no exam, so it counts
         // as ready. fresh: untouched, not ready.
-        write(&ws.join("done.txt"), "# q\n\ta\n");
-        write(&ws.join("fresh.txt"), "# q2\n\tb\n");
+        write(&ws.join("done.md"), "## q <!-- id: qdone -->\na\n");
+        write(&ws.join("fresh.md"), "## q2 <!-- id: qfresh -->\nb\n");
         let date = crate::time::local_date(T0) + chrono::Days::new(5);
         write(
             &ws.join("alix.local.toml"),
             &format!("[review]\ndeadline = \"{}\"\n", date.format("%Y-%m-%d")),
         );
-        let done_id = Deck::load(ws.join("done.txt")).unwrap().cards[0].id();
+        let done_id = Deck::load(ws.join("done.md")).unwrap().cards[0].id();
         let mut store = Store::open(workspace::store_path(&ws)).unwrap();
         store.get_or_insert(done_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
@@ -1477,7 +1510,7 @@ mod tests {
         // (only a real workspace does — the web catalog's rule).
         let plain = root.join("plain");
         std::fs::create_dir(&plain).unwrap();
-        write(&plain.join("d.txt"), "# q\n\ta\n");
+        write(&plain.join("d.md"), "## q <!-- id: qd -->\na\n");
         write(
             &plain.join("alix.local.toml"),
             "[review]\ndeadline = \"2027-01-01\"\n",
@@ -1493,8 +1526,8 @@ mod tests {
     #[test]
     fn deck_summary_can_recognize_tracks_augmentation() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("d.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck_path = dir.path().join("d.md");
+        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let store = Store::open(dir.path().join("progress.json")).unwrap();
         let review = ReviewConfig::default();
@@ -1534,8 +1567,8 @@ mod tests {
         // there is nothing to launch — `deck_due` must be false (before
         // pick-only, the bare `has_reviewable(Recognize)` over-reported it).
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
@@ -1560,8 +1593,12 @@ mod tests {
     #[test]
     fn deck_status_total_ignores_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n# q3\n\ta3\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "## q1 <!-- id: q1 -->\na1\n## q2 <!-- id: q2 -->\na2\n## q3 <!-- id: q3 -->\na3\n",
+        )
+        .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1607,8 +1644,8 @@ mod tests {
     #[test]
     fn the_highest_currently_solid_depth_wins_the_badge() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1635,8 +1672,8 @@ mod tests {
     #[test]
     fn an_earned_but_lapsed_badge_shows_dotted() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1664,8 +1701,12 @@ mod tests {
     #[test]
     fn new_cards_flag_fires_without_touching_badges() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.txt");
-        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "## q1 <!-- id: q1 -->\na1\n## q2 <!-- id: q2 -->\na2\n",
+        )
+        .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1687,5 +1728,17 @@ mod tests {
         assert_eq!("1/2", status.badge);
         assert_eq!(None, status.badge_depth);
         assert!(!status.badge_dotted);
+    }
+    #[test]
+    fn a_listing_scan_never_writes() {
+        // Listing is read-only (spec §2.1): scanning a root must not stamp,
+        // rewrite, or otherwise touch an unstamped deck's bytes.
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("fresh.md");
+        let body = "## q\na\n";
+        std::fs::write(&deck, body).unwrap();
+        let summaries = list_root(dir.path(), &ReviewConfig::default(), T0);
+        assert_eq!(1, summaries.len());
+        assert_eq!(body, std::fs::read_to_string(&deck).unwrap());
     }
 }

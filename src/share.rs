@@ -118,7 +118,7 @@ pub fn zip_to(path: &Path, out: &Path) -> Result<usize> {
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "deck.txt".to_string());
+            .unwrap_or_else(|| "deck.md".to_string());
         zip.start_file(name, options)?;
         zip.write_all(&std::fs::read(path)?)?;
         entries = 1;
