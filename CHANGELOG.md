@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.6.0] - 2026-07-20
+
 ### Fixed
 
 - promoting a remediation card to a real one no longer risks a duplicate: the promotion wrote the card into the deck file but the matching removal from the in-session store was not persisted, so the card could reappear as both a real and a virtual card; the store change is now saved with the rest of the session
