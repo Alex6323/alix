@@ -74,8 +74,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `<!-- img-back: -->` directives are removed.** Write a plain Markdown image
   where you want one to appear: position decides the side (the question
   region for a front image, the answer region for a back image), a card can
-  carry more than one per side, and filenames resolve against `image-dir:` in
-  the frontmatter (renamed from `img-dir:`). The payoff over the old markers:
+  carry more than one per side, and the `src` is a standard Markdown path
+  resolved relative to the deck file (the `image-dir:`/`img-dir:` frontmatter
+  key is removed). The payoff over the old markers:
   a deck's images now render in any Markdown viewer that opens the file
   directly (GitHub, Obsidian, a plain preview pane), not just alix's own web
   app. The retired `math:` directive is also removed (it never had any

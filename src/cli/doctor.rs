@@ -233,7 +233,10 @@ fn unknown_key_hint(key: &str) -> String {
         ),
         "math" => "`math:` is retired; it never had any effect, so the line can just be deleted"
             .to_string(),
-        "img-dir" => "`img-dir:` is gone; use `image-dir:` instead".to_string(),
+        "img-dir" | "image-dir" => format!(
+            "`{key}:` is gone; image paths are now standard Markdown, resolved relative to \
+             the deck file (keep the image next to the deck, or use a `sub/name.png` path)"
+        ),
         "occlude" | "audio" | "audio-back" | "img-alt" => {
             format!("`{key}:` was a reserved key that has been removed; it never had any effect")
         }

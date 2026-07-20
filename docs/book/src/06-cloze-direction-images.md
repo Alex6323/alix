@@ -64,10 +64,6 @@ image (otherwise the divider is just more content, and the image lands on
 the back):
 
 ```
----
-image-dir: ~/decks/img
----
-
 ## What phase is the moon in?
 ![](moon-waxing.png)
 
@@ -81,15 +77,15 @@ The open-position shape.
 ![](g-major-tab.png)
 ```
 
-Filenames resolve against an `image-dir:` line in the frontmatter (absolute,
-or relative to the deck file); without one they resolve next to the deck, and
-an absolute path on the card is used as-is. The brackets can carry alt text:
-`![the open-position shape](g-major-tab.png)`.
+An image `src` is a path relative to the deck file, exactly the way a standard
+Markdown viewer resolves it: a bare filename means the image sits next to the
+deck, and `sub/moon.png` means a subdirectory. An absolute path is used as-is.
+The brackets can carry alt text: `![the open-position shape](g-major-tab.png)`.
 
-Images render in the web app, and, being standard Markdown, in any Markdown
-viewer that opens the deck file directly (GitHub, Obsidian, a plain preview
-pane). `alix doctor` warns about an image file it can't find, but doesn't
-fail on it.
+Because the paths are ordinary Markdown, the same deck renders identically in
+the web app and in any Markdown viewer that opens the file directly (GitHub,
+Obsidian, a plain preview pane). `alix doctor` warns about an image file it
+can't find, but doesn't fail on it.
 
 ## Source citations
 

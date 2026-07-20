@@ -1147,11 +1147,7 @@ mod tests {
     }
 
     #[test]
-    fn image_dir_and_origin_follow_the_leniency_model_of_comparable_keys() {
-        let deck = parse("---\nimage-dir: [a, b]\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.image_dir);
-        assert_eq!(vec![bad(2, "image-dir", "a sequence")], deck.lints);
-
+    fn origin_follows_the_leniency_model_of_comparable_keys() {
         let deck = parse("---\norigin: \"   \"\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.origin);
         assert!(deck.lints.is_empty(), "{:?}", deck.lints);
@@ -1162,10 +1158,12 @@ mod tests {
     }
 
     #[test]
-    fn the_old_img_dir_frontmatter_key_is_now_unknown() {
+    fn the_removed_image_folder_keys_are_now_unknown() {
         let deck = parse("---\nimg-dir: assets\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.image_dir);
         assert_eq!(vec![unknown(2, "img-dir")], deck.lints);
+
+        let deck = parse("---\nimage-dir: sub\n---\n## q\na\n");
+        assert_eq!(vec![unknown(2, "image-dir")], deck.lints);
     }
 
     // ── Escapes and bytes ──
@@ -1386,7 +1384,6 @@ reveal: line
 order: sequential
 input: draw
 direction: both
-image-dir: assets
 origin: /crate
 tags: [a, b]
 license: MIT
@@ -1422,7 +1419,6 @@ the answer
                 order: Some(Order::Sequential),
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
-                image_dir: Some(PathBuf::from("assets")),
                 origin: Some("/crate".into()),
                 unspliceable: false,
             },
@@ -1434,7 +1430,7 @@ the answer
             CardDirectives {
                 token: Some("4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(31),
+                reveal_line: Some(30),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 at: Some("29.rs".into()),

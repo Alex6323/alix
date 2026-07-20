@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use yaml_rust2::{Yaml, YamlLoader};
 
 use super::{LineSpan, Lint, LintKind, ParseError, WHITESPACE, trim_ws};
@@ -16,7 +14,6 @@ pub struct Frontmatter {
     pub order: Option<Order>,
     pub input: Option<Input>,
     pub direction: Option<Direction>,
-    pub image_dir: Option<PathBuf>,
     pub origin: Option<String>,
     pub unspliceable: bool,
 }
@@ -132,10 +129,6 @@ fn load_frontmatter(
             "direction" => match value.as_str().and_then(Direction::parse) {
                 Some(direction) => frontmatter.direction = Some(direction),
                 None => lints.push(bad_value(line, key, describe(value))),
-            },
-            "image-dir" => match value {
-                Yaml::String(s) => frontmatter.image_dir = Some(PathBuf::from(s)),
-                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },
             "origin" => match value {
                 Yaml::String(s) => {

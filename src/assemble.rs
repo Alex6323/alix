@@ -1144,7 +1144,7 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nimage-dir: /imgs\n---\n## plain\nanswer\n## pic\n![](a.png)\n\n---\nphoto\n",
+            "## plain\nanswer\n## pic\n![](a.png)\n\n---\nphoto\n",
         )
         .unwrap();
 

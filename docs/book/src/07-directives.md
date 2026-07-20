@@ -16,7 +16,6 @@ taking precedence. Each links to the chapter that explains it in full.
 | `order` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
-| `image-dir` | deck | Base directory image filenames resolve against. [→ ch 6](06-cloze-direction-images.md) |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `link` | deck | [tutor reference](10-tutor.md) URL, tutor-only (repeatable). |
 | `source` | deck | [Exam ground truth](12-the-ai-exam.md) (URL/file, repeatable); also a [trace](13-trace-decks.md)'s path origin, and a tutor reference. |
