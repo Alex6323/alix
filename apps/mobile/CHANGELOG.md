@@ -7,10 +7,12 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-21
+
 ### Added
 
-- **Pair with your desktop's alix for the tutor and the AI exam.** The
-  overflow menu's "Pair with desktop…" sheet takes the URL `alix --lan`
+- **Pair with your desktop's alix for the tutor and the AI exam.** Settings'
+  "Connected devices" sheet takes the URL `alix --lan`
   prints; a bad paste, an unreachable desktop, a too-old server, and a
   rejected token each show one inline line instead of failing silently.
   Once paired, review gains an Ask chip once you've attempted the current
@@ -18,8 +20,7 @@ Release notes, so a release without its section fails loud.
   "Make a card"), and the session summary gains a "Take the exam" chip for
   any deck with a `% source:`. Both borrow the desktop's AI backend over
   your LAN; the phone keeps its own decks and progress, the desktop only
-  computes answers. The same menu item reopens the sheet with an Unpair
-  button.
+  computes answers. The same row reopens the sheet with an Unpair button.
 - The app now declares the INTERNET permission and allows cleartext HTTP,
   both only for talking to a paired desktop on your LAN.
 - **A trace deck now opens a walk on the phone, fully offline, instead of
@@ -33,13 +34,15 @@ Release notes, so a release without its section fails loud.
   the open conversation into up to three lines on the paired desktop, then
   appends them to the deck file on the phone; an empty result says
   "nothing to save" instead of doing nothing silently.
-- **"Generate deck…" in the overflow menu, shown once paired.** Give it a
-  URL and optional guidance; the desktop generates the deck text the same
-  way `alix generate` does, then the phone asks where to save it and
-  writes it under a collision-free file name.
+- **"Generate deck" in Settings, shown when a paired desktop is reachable.**
+  Give it a URL and optional guidance; the desktop generates the deck text
+  the same way `alix generate` does, then the phone asks where to save it and
+  writes it under a collision-free file name. The item probes the paired
+  server for liveness (as review's Ask chip does), so a paired-but-offline
+  desktop hides it rather than offering a button that would only fail.
 - **A theme gallery: 18 named themes**, the alix originals plus the web
-  app's editor and slide palettes, picked live from the overflow menu's
-  "Theme…" item. The whole app re-themes without a restart.
+  app's editor and slide palettes, picked live from Settings' "Theme"
+  row. The whole app re-themes without a restart.
 - **The deck picker grew:** workspace rows show their emblem and the
   dependency tree's branch prefix, a due exam gets its own marker, mastered
   decks tuck behind a "Mastered · N" row, and a deck now opens straight at
@@ -50,9 +53,12 @@ Release notes, so a release without its section fails loud.
   client.
 - **A "Re-pair" action on the pairing-expired notice**, wherever the app can
   show one: it reopens the pairing sheet directly instead of sending you
-  back to the menu.
-- About gained one quiet Support line: the free alternative first, a
-  sponsors link second.
+  back to Settings.
+- A quiet Support row in Settings ("Support alix"): the free alternative
+  first, a sponsors link second.
+- **The empty deck list offers to add the tutorial deck.** A folder that never
+  got the first-run tutorial (a shared folder, or one you emptied) shows an
+  "Add the tutorial deck" button that copies the bundled deck in.
 - **Workspace deadlines, on the phone too.** A workspace's "ready by" date
   shows on its row (date, days left, ready percent, colored when near or
   past) and again once you drill in; long-press the row to set, move, or
@@ -63,6 +69,13 @@ Release notes, so a release without its section fails loud.
 
 ### Changed
 
+- **Breaking: decks are now Markdown `.md` files.** The app reads the new
+  Markdown deck format (`## ` fronts, `> ` notes, `\blank{}` gaps, YAML
+  frontmatter) and no longer lists old `.txt` decks, so any `.txt` decks in a
+  synced folder stop appearing until you convert them (regenerate or
+  hand-convert; there is no bundled converter). The first time you open a deck
+  for review, alix writes a stable id into each card in the file, which is how
+  your review progress now survives edits.
 - **Breaking: the Recognize depth is greyed out on a deck without an
   augmentation.** Recognize is now pick-only (it builds its multiple-choice
   from cached AI distractors, never sampled options), so a deck with none can't
@@ -70,13 +83,19 @@ Release notes, so a release without its section fails loud.
   remembered depth was Recognize opens at Recall instead of an empty session.
   Augment the deck on the desktop (`alix deck augment --target choices`) and
   sync it to enable Recognize.
+- The deck list's controls now live in a Settings page that slides up from a
+  hamburger (☰) at the top left (replacing a corner 3-dot menu): Support and
+  Connected devices up top, then decks folder, generate, theme, and about,
+  each with an icon.
 
 ### Fixed
 
-- **The `alix` wordmark stays put in the picker.** Drilling into a workspace
-  added a back arrow that shoved the wordmark to the right; the leading slot
-  is now reserved on both levels, so the wordmark sits at the same spot with
-  or without a back arrow (and lines up with the review/walk/exam screens).
+- **The `alix` wordmark stays put, in the picker and across screens.**
+  Drilling into a workspace added a back arrow that shoved the wordmark to the
+  right, and moving between the picker, review, and walk screens shifted it
+  too; every wordmark-bearing screen now positions it identically and pins it
+  in place during transitions, so it sits at the same spot with or without a
+  back arrow and no longer slides when a screen changes.
 - **Leaving a trace walk mid-way now asks to confirm, like a fact review.**
   The leave-confirmation only guarded review sessions, so a stray back-swipe
   abandoned a walk silently; both screens now share one guard, so the two

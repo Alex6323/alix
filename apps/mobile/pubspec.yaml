@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # The app's own version stream (independent of the crate): X.Y.Z is the
 # mobile-vX.Y.Z tag, +N the Android versionCode, monotonic forever (never
 # reset it; Android orders installs by it). See RELEASING.md.
-version: 0.1.1+2
+version: 0.2.0+3
 
 environment:
   sdk: ^3.12.2
