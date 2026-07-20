@@ -152,7 +152,7 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
         _ => {}
     }
 
-    inserts.sort_by(|a, b| b.0.cmp(&a.0));
+    inserts.sort_by_key(|b| std::cmp::Reverse(b.0));
     let mut new_body = body.to_string();
     for (offset, text) in inserts {
         new_body.insert_str(offset, &text);

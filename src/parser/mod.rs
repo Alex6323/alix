@@ -405,10 +405,7 @@ fn heading(
 fn split_trailing_comments(text: &str) -> (String, Vec<String>) {
     let mut text = trim_ws(text);
     let mut bodies = Vec::new();
-    loop {
-        let Some(prefix) = text.strip_suffix("-->") else {
-            break;
-        };
+    while let Some(prefix) = text.strip_suffix("-->") {
         let Some(start) = prefix.rfind("<!--") else {
             break;
         };
