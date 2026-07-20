@@ -1290,6 +1290,70 @@ fn doctor_reports_a_broken_config_as_a_failing_finding() {
     assert!(text.contains("config"), "{text}");
 }
 
+#[test]
+fn doctor_hints_the_image_marker_for_a_straggler_img_directive() {
+    // `<!-- img: -->` is gone; it now parses as an unknown key, and doctor
+    // should say so loudly rather than just "unknown key (ignored)".
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "old.md",
+        "## old <!-- id: oldimg01 -->\nphoto\n<!-- img: moon.png -->\n",
+    );
+    let out = alix(&["doctor", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("img:") && err.contains("\\image{...}"),
+        "should hint the \\image marker migration: {err}"
+    );
+}
+
+#[test]
+fn doctor_hints_the_image_marker_for_a_straggler_img_back_directive() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "old.md",
+        "## old <!-- id: oldimgb01 -->\nphoto\n<!-- img-back: moon.png -->\n",
+    );
+    let out = alix(&["doctor", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("img-back:") && err.contains("\\image{...}"),
+        "should hint the \\image marker migration: {err}"
+    );
+}
+
+#[test]
+fn doctor_surfaces_a_malformed_marker_and_a_bad_marker_option() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "marker.md",
+        "## q <!-- id: markerq01 -->\nanswer\n\\image{}\n\\image{x.png}{ALT: caption}\n",
+    );
+    let out = alix(&["doctor", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("malformed") && err.contains("image"), "{err}");
+    assert!(err.contains("ALT"), "{err}");
+}
+
+#[test]
+fn doctor_warns_on_a_missing_image_referenced_by_the_marker() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "pic.md",
+        "## pic <!-- id: picq01 -->\nphoto\n\\image{gone.png}\n",
+    );
+    let out = alix(&["doctor", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("missing image"), "{}", stderr(&out));
+}
+
 // ── `stats`/`list`/`reset` agree with the served root's store ───────────────
 
 #[test]

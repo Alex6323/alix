@@ -200,7 +200,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
 fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
     use alix::parser::LintKind;
     let detail = match &lint.kind {
-        LintKind::UnknownKey { key } => format!("unknown key `{key}` (ignored)"),
+        LintKind::UnknownKey { key } => unknown_key_hint(key),
         LintKind::BadValue { key, value } => format!("`{key}` has an invalid value `{value}`"),
         LintKind::EmptyValue { key } => format!("`{key}` has an empty value"),
         LintKind::RevealOnCloze => {
@@ -218,15 +218,37 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),
-        LintKind::AudioNotSupported => {
-            "`\\audio` is reserved but not yet supported; it stays literal text".to_string()
-        }
-        LintKind::MarkerBadOption { key } => format!("bad marker option `{key}`"),
-        LintKind::MarkerMalformed { name } => {
-            format!("malformed `\\{name}` marker (unclosed or empty argument)")
-        }
+        LintKind::AudioNotSupported => "a `\\audio{}` marker is reserved for a future release; \
+             it stays as literal text, not audio"
+            .to_string(),
+        LintKind::MarkerBadOption { key } if key.is_empty() => "an empty marker option is \
+             ignored; write `alt: ...` or drop the braces"
+            .to_string(),
+        LintKind::MarkerBadOption { key } => format!(
+            "marker option `{key}` is not recognized (the only valid option is `alt: ...`, once)"
+        ),
+        LintKind::MarkerMalformed { name } => format!(
+            "the `\\{name}` marker is malformed (empty or an unclosed argument); \
+             it renders as literal text, not a marker"
+        ),
     };
     format!("{}: line {}: {detail}", path.display(), lint.line)
+}
+
+fn unknown_key_hint(key: &str) -> String {
+    match key {
+        "img" | "img-back" => format!(
+            "`{key}:` is gone; use the `\\image{{...}}` marker instead \
+             (a line in the card's front or answer)"
+        ),
+        "math" => "`math:` is retired; it never had any effect, so the line can just be deleted"
+            .to_string(),
+        "img-dir" => "`img-dir:` is gone; use `image-dir:` instead".to_string(),
+        "occlude" | "audio" | "audio-back" | "img-alt" => {
+            format!("`{key}:` was a reserved key that has been removed; it never had any effect")
+        }
+        _ => format!("unknown key `{key}` (ignored)"),
+    }
 }
 
 fn workspace_findings(dir: &Path) -> Report {
