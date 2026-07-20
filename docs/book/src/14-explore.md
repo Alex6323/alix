@@ -14,8 +14,8 @@ alix generate . --plan --goal "how review scheduling works" # a narrow goal → 
 Each item is tagged `[trace]` or `[deck]`, chosen by the **shape of the
 knowledge**: a *path* you predict hop by hop becomes a trace; a *table of facts* —
 a config's knobs, a store's on-disk format — becomes a facts deck. Each carries its
-`% requires:` prerequisites (the list is a valid dependency order, foundations
-first) and a `% source:` scope. The `--goal` scopes coverage: a broad goal spans
+`requires:` prerequisites (the list is a valid dependency order, foundations
+first) and a `source:` scope. The `--goal` scopes coverage: a broad goal spans
 every subsystem; a narrow one collapses to its slice and traces it in more detail.
 `--plan` is read-only — it prints the plan and stops, so you can author the items
 yourself (`alix generate` [a trace](13-trace-decks.md) or
@@ -35,13 +35,13 @@ explores the source **once** and reuses that single session to fill every item �
 predict-verify checkpoints for the traces, fact cards for the decks — so the
 [workspace](08-workspaces.md) comes out review-ready in one command: an
 `alix.toml` (carrying the goal; `--title` names it) and one deck per item — a
-`% trace:` deck per trace, a `% title:` facts deck per deck — wired together
-with `% requires:` so they unlock in dependency order, each `% source:` pointing
+`trace:` deck per trace, a `# ` facts deck per deck — wired together
+with `requires:` so they unlock in dependency order, each `source:` pointing
 back at the real source. Writing the whole set from one understanding keeps the
 items **coherent** (each builds on its prerequisites instead of repeating them).
 As a final step it [freezes the cited excerpts](13-trace-decks.md) of every
 cited deck — traces and fact decks with
-[`% at:` citations](06-cloze-direction-images.md#source-citations) alike — into
+[`<!-- at: -->` citations](06-cloze-direction-images.md#source-citations) alike — into
 the workspace's `assets/`, so it's self-contained and its locators never drift.
 
 The destination is `--workspace <dir>`, defaulting to a folder named after the
@@ -68,6 +68,6 @@ short **tour of the source's shape**, written as a trace deck: you predict what
 kind of program it is (from the manifest), its domain nouns (from the module
 list), how it's driven (the entry point), its spine (the central file), and
 finally the first paths worth tracing — each hop revealing the real lines. It's
-written to a file (`-o`, default `explore.txt`; `--workspace` places it inside a
+written to a file (`-o`, default `explore.md`; `--workspace` places it inside a
 workspace), and you walk it from the [web picker](15-the-web-app.md): run `alix`
 and pick it.

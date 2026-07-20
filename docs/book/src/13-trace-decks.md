@@ -16,51 +16,53 @@ build that chain yourself.
 
 ## What a trace looks like
 
-A trace is a deck with a `% trace:` (a path description — what it walks, and the
-thing that marks the deck a trace) and a `% source:` (the path's origin), then a
+A trace is a deck with a `trace:` (a path description — what it walks, and the
+thing that marks the deck a trace) and a `source:` (the path's origin), then a
 sequence of **checkpoint** cards. Each checkpoint is an `explain`-style card — an
 open *predict* prompt and the key points a good prediction should hit — plus a
-`% at:` locator pointing at the real lines in the source:
+`<!-- at: -->` locator pointing at the real lines in the source:
 
 ```
-% trace: how `let s2 = s1` moves a String and avoids a double free
-% source: .
+---
+trace: how `let s2 = s1` moves a String and avoids a double free
+source: .
+---
 
-# You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
-    Only the stack data — pointer, length, capacity — is copied.
-    So s1 and s2 point at the *same* heap allocation.
-    % at: src/ch04-01-what-is-ownership.md:290-297
-    ! The heap contents themselves are never copied here.
+## You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
+Only the stack data (pointer, length, capacity) is copied.
+So s1 and s2 point at the *same* heap allocation.
+<!-- at: src/ch04-01-what-is-ownership.md:290-297 -->
+> The heap contents themselves are never copied here.
 
-# So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
-    Both would call drop on that memory — a double free.
-    Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
-    % at: src/ch04-01-what-is-ownership.md:322-343
-    ! Using s1 after the move is a compile-time error.
+## So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
+Both would call drop on that memory (a double free).
+Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
+<!-- at: src/ch04-01-what-is-ownership.md:322-343 -->
+> Using s1 after the move is a compile-time error.
 ```
 
-The `% at:` locator is a single contiguous range `file:start-end` (or just line
-numbers when `% source:` is one file) — never comma-separated, since a stitched
+The `<!-- at: -->` locator is a single contiguous range `file:start-end` (or just line
+numbers when `source:` is one file) — never comma-separated, since a stitched
 excerpt makes disjoint code look adjacent. The lines are **read live from the
 source** each walk, so the excerpt is always current and the deck stays small —
 the source is the oracle, not an invented answer. When a tight excerpt leans on a
-symbol defined off-screen, name it with a `% given:` line (`% given: state — the
-parser's position so far`, repeatable); these show as a list under the question,
+symbol defined off-screen, name it with a `<!-- given: -->` line (`<!-- given: state — the
+parser's position so far -->`, repeatable); these show as a list under the question,
 so the excerpt stays focused without orphaning the names it needs.
 
 ## Building it with the model
 
-You don't have to hand-write checkpoints. Declare just the `% trace:` and
-`% source:`, then name the stub deck as [`alix generate`](11-generating-decks.md)'s
+You don't have to hand-write checkpoints. Declare just the `trace:` and
+`source:`, then name the stub deck as [`alix generate`](11-generating-decks.md)'s
 source:
 
 ```sh
-alix generate mytrace.txt
+alix generate mytrace.md
 ```
 
 The model explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
 its working directory, no write or shell access — finds the single load-bearing
-path, and writes the checkpoints (with their `% at:` locators) back into the deck.
+path, and writes the checkpoints (with their `<!-- at: -->` locators) back into the deck.
 The result is cached and version-controlled there, so review it (especially the
 locators) and edit freely; re-run it to regenerate.
 
@@ -80,7 +82,7 @@ alix generate . --trace --plan
 
 does a single read-only recon pass over a source (a repo `.`, a directory, a file,
 or a URL) and prints a **ranked menu of candidate traces** — each a path-question,
-a one-line spine sketch, and a suggested `% source:` scope. The list is sized by
+a one-line spine sketch, and a suggested `source:` scope. The list is sized by
 **coverage** (the central spine plus one main path per major subsystem), so it's
 as long as the source needs. It also names the *node-shaped* subsystems it skips —
 a config table, a store's on-disk format — as **facts-deck material**, because
@@ -123,7 +125,7 @@ hop by hop:
 
 ## The exam — the compression
 
-A trace's `% trace:` is a *question* ("how X becomes Y"). The **exam** is to
+A trace's `trace:` is a *question* ("how X becomes Y"). The **exam** is to
 answer it: retrace the whole path in a sentence or two, from memory. The model grades
 that compression against the path's checkpoints (AI-graded, exactly like a
 [fact deck's exam](12-the-ai-exam.md)) and
@@ -136,7 +138,7 @@ You reach it in the browser: the **capstone** offered at the end of a walk
 (`Take the exam?`), or the picker's
 **"Take exam"** button. A [paired phone](19-pairing.md) offers the same
 capstone from its own walk. Like a fact deck, you can sit it **early to test
-out** — gated only by `% requires:` (a trace's sourced prerequisites must be
+out** — gated only by `requires:` (a trace's sourced prerequisites must be
 mastered first).
 
 A **failed** trace exam is **re-walked**, not turned into remediation cards (a
@@ -147,30 +149,30 @@ fixed question (`[exam] retry_cooldown_secs`, default one hour; `0` disables it)
 
 ## Snapshotting
 
-Because `% at: file:lines` reads the **live** source, editing a traced file would
+Because `<!-- at: file:lines -->` reads the **live** source, editing a traced file would
 shift every excerpt to the wrong lines. So when you create a workspace by exploring
 a source ([`alix generate <dir>`](14-explore.md)), its final step
 **freezes** the cited excerpts into the workspace's `assets/` folder — one tiny
-snippet per checkpoint — and repoints each `% at:` at them, so they never drift and
+snippet per checkpoint — and repoints each `<!-- at: -->` at them, so they never drift and
 the workspace is self-contained, without copying whole files. The freeze also
-records the live source root in an `% origin:` directive and keeps each snippet's
-original location on its `% at:` line, after ` from ` (`% at: 12.rs from
-scheduler.rs:90-98`) — so the tutor can still reach the real source and
+records the live source root in an `origin:` directive and keeps each snippet's
+original location on its `<!-- at: -->` line, after ` from ` (`<!-- at: 12.rs from
+scheduler.rs:90-98 -->`) — so the tutor can still reach the real source and
 [`alix doctor`](17-command-reference.md) can tell when it has drifted. It's
 automatic for explored workspaces; a loose trace over a live source is left as-is.
 
 ## Checking the locators
 
-For a trace that *isn't* frozen — a loose `.txt` over a live `% source:` —
-[`alix doctor <deck>`](17-command-reference.md) validates that every `% at:` still
+For a trace that *isn't* frozen — a loose `.md` over a live `source:` —
+[`alix doctor <deck>`](17-command-reference.md) validates that every `<!-- at: -->` still
 resolves into its source: it warns about a locator that names a missing file,
 runs past the end of the file, or (for a single-file source) gives bare line
 numbers it can't place. It's a quick structural check — *does this excerpt still
 exist?* — so a moved or trimmed source is caught before you walk into it, not
 mid-hop. (Frozen snapshots don't move, but `alix doctor` still validates each
-snippet — and, via the `% origin:` they were frozen with, warns when the live
+snippet — and, via the `origin:` they were frozen with, warns when the live
 source has **drifted** from the frozen excerpt.)
 
 A trace deck degrades gracefully — even outside a walk it's a valid deck of
-`explain` cards. See `docs/examples/rust-ownership/ownership-move.txt` for a complete
+`explain` cards. See `docs/examples/rust-ownership/ownership-move.md` for a complete
 trace — a frozen snapshot over The Rust Book's ownership chapter, so it walks offline.

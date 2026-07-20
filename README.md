@@ -55,21 +55,19 @@ alix
 ## A deck is a text file
 
 ```text
-% Comments start with %. A card's front sits at column 0.
+## What does a String own?
+A Vec<u8>, its bytes on the heap.
+> Capacity can exceed its length.
 
-# What does a String own?
-    A Vec<u8>, its bytes on the heap.
-    ! Capacity can exceed its length.
-
-# Fill in the blank
-    % reveal: cloze
-    let {{mut}} x = 0;
+## Fill in the blank
+let \blank{mut} x = 0;
 ```
 
-The front is the `#` line; the indented lines below are the answer. An `!` line
-is a note shown after you answer, and a `%` directive on a card tunes it (here
-`reveal: cloze` turns `{{mut}}` into a fill-in-the-blank). Full format and every
-directive: [the deck format](docs/book/src/03-the-deck-format.md),
+The front is the `## ` line; the plain lines below are the answer. A `> ` line
+is a note shown after you answer, and a `<!-- -->` directive on a card tunes it
+(here `\blank{mut}` turns into a fill-in-the-blank, auto-detected as a cloze
+card). Full format and every directive:
+[the deck format](docs/book/src/03-the-deck-format.md),
 [directives](docs/book/src/07-directives.md).
 
 ## Commands
