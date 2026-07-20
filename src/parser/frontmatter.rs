@@ -16,7 +16,7 @@ pub struct Frontmatter {
     pub order: Option<Order>,
     pub input: Option<Input>,
     pub direction: Option<Direction>,
-    pub img_dir: Option<PathBuf>,
+    pub image_dir: Option<PathBuf>,
     pub origin: Option<String>,
     pub unspliceable: bool,
 }
@@ -133,8 +133,8 @@ fn load_frontmatter(
                 Some(direction) => frontmatter.direction = Some(direction),
                 None => lints.push(bad_value(line, key, describe(value))),
             },
-            "img-dir" => match value {
-                Yaml::String(s) => frontmatter.img_dir = Some(PathBuf::from(s)),
+            "image-dir" => match value {
+                Yaml::String(s) => frontmatter.image_dir = Some(PathBuf::from(s)),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },
             "origin" => match value {

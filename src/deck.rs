@@ -21,7 +21,7 @@ pub struct DeckSettings {
     pub input: Option<Input>,
     pub order: Option<Order>,
     pub direction: Option<Direction>,
-    pub img_dir: Option<PathBuf>,
+    pub image_dir: Option<PathBuf>,
     pub exam_strictness: Option<Strictness>,
     pub origin: Option<String>,
 }
@@ -35,7 +35,7 @@ impl DeckSettings {
                 "input" => settings.input = Input::parse(value),
                 "order" => settings.order = Order::parse(value),
                 "direction" => settings.direction = Direction::parse(value),
-                "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
+                "image-dir" => settings.image_dir = Some(PathBuf::from(value)),
                 "strictness" => settings.exam_strictness = Strictness::parse(value),
                 "origin" => {
                     let v = value.trim();
@@ -55,7 +55,7 @@ impl DeckSettings {
             input: frontmatter.input,
             order: frontmatter.order,
             direction: frontmatter.direction,
-            img_dir: frontmatter.img_dir.clone(),
+            image_dir: frontmatter.image_dir.clone(),
             // Learner setting: a deck never ships grading rigor.
             exam_strictness: None,
             origin: frontmatter.origin.clone(),
@@ -67,7 +67,10 @@ impl DeckSettings {
         self.input = self.input.or(defaults.input);
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
-        self.img_dir = self.img_dir.clone().or_else(|| defaults.img_dir.clone());
+        self.image_dir = self
+            .image_dir
+            .clone()
+            .or_else(|| defaults.image_dir.clone());
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
         self.origin = self.origin.clone().or_else(|| defaults.origin.clone());
     }
@@ -150,7 +153,7 @@ impl Deck {
             card.input = card.input.or(settings.input);
         }
         // No filesystem check here: a missing image must not stop the deck from loading.
-        let base_dir = image_base_dir(&path, settings.img_dir.as_deref());
+        let base_dir = image_base_dir(&path, settings.image_dir.as_deref());
         for card in &mut cards {
             for image in card.images.iter_mut().chain(card.images_back.iter_mut()) {
                 image.src = resolve_image(&base_dir, std::mem::take(&mut image.src));
@@ -365,9 +368,9 @@ pub fn dependents(target: &Path, decks_dir: &Path) -> Vec<String> {
     names
 }
 
-fn image_base_dir(deck_path: &Path, img_dir: Option<&Path>) -> PathBuf {
+fn image_base_dir(deck_path: &Path, image_dir: Option<&Path>) -> PathBuf {
     let deck_dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
-    match img_dir {
+    match image_dir {
         Some(dir) if dir.is_absolute() => dir.to_path_buf(),
         Some(dir) => deck_dir.join(dir),
         None => deck_dir.to_path_buf(),
@@ -1344,29 +1347,36 @@ mod tests {
     }
 
     #[test]
-    fn image_resolves_against_img_dir() {
+    fn image_resolves_against_image_dir() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nimg-dir: /assets/imgs\n---\n## q\nWaxing\n\\image{moon.png}\n",
+            "---\nimage-dir: /assets/imgs\n---\n## q\nWaxing\n\\image{moon.png}\n\\image{crescent.png}\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
-            vec![PathBuf::from("/assets/imgs/moon.png")],
+            vec![
+                PathBuf::from("/assets/imgs/moon.png"),
+                PathBuf::from("/assets/imgs/crescent.png"),
+            ],
             resolved_back_images(&deck)
         );
     }
 
     #[test]
-    fn image_resolves_against_deck_dir_without_img_dir() {
+    fn image_resolves_against_deck_dir_without_image_dir() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(&path, "## q\nWaxing\n\\image{moon.png}\n").unwrap();
+        std::fs::write(
+            &path,
+            "## q\nWaxing\n\\image{moon.png}\n\\image{crescent.png}\n",
+        )
+        .unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
-            vec![dir.path().join("moon.png")],
+            vec![dir.path().join("moon.png"), dir.path().join("crescent.png"),],
             resolved_back_images(&deck)
         );
     }
@@ -1377,12 +1387,15 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nimg-dir: /assets\n---\n## q\nWaxing\n\\image{/elsewhere/moon.png}\n",
+            "---\nimage-dir: /assets\n---\n## q\nWaxing\n\\image{/elsewhere/moon.png}\n\\image{crescent.png}\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
-            vec![PathBuf::from("/elsewhere/moon.png")],
+            vec![
+                PathBuf::from("/elsewhere/moon.png"),
+                PathBuf::from("/assets/crescent.png"),
+            ],
             resolved_back_images(&deck)
         );
     }

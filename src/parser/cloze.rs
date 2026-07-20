@@ -269,24 +269,6 @@ pub(super) fn push_image(out: &mut String, src: &str, alt: Option<&str>) {
     }
 }
 
-// The round-trip reconstruction renderer; display paths use seg_display, so only tests reach it.
-#[allow(dead_code)]
-pub(super) fn seg_text(segments: &[Seg]) -> String {
-    let mut out = String::new();
-    for segment in segments {
-        match segment {
-            Seg::Text(text) => out.push_str(text),
-            Seg::Hole(hole) => {
-                out.push_str("\\cloze{");
-                out.push_str(hole);
-                out.push('}');
-            }
-            Seg::Image { src, alt } => push_image(&mut out, src, alt.as_deref()),
-        }
-    }
-    out
-}
-
 pub(super) fn seg_display(segments: &[Seg]) -> String {
     let mut out = String::new();
     for segment in segments {
@@ -674,12 +656,6 @@ mod tests {
         let (segments, lints) = answer("\\image{x}{alt: oops");
         assert_eq!(vec![image("x", None), text("{alt: oops")], segments);
         assert_eq!(vec![malformed_lint("image")], lints);
-    }
-
-    #[test]
-    fn seg_text_round_trips_an_image() {
-        let (segments, _) = answer("see \\image{m.png}{alt: a} here");
-        assert_eq!("see \\image{m.png}{alt: a} here", seg_text(&segments));
     }
 
     #[test]

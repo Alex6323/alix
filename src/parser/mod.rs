@@ -150,13 +150,10 @@ struct CardDirectives {
     reveal_line: Option<usize>,
     input: Option<Input>,
     direction: Option<Direction>,
-    img: Option<String>,
-    img_back: Option<String>,
     at: Option<String>,
     at_origin: Option<String>,
     origin: Option<String>,
     givens: Vec<String>,
-    math: Option<String>,
 }
 
 fn parse_document(text: &str) -> Result<Document, ParseError> {
@@ -451,15 +448,7 @@ fn directive(body: &str) -> Option<(String, String)> {
 fn is_known_card_key(key: &str) -> bool {
     matches!(
         key,
-        "id" | "reveal"
-            | "input"
-            | "direction"
-            | "img"
-            | "img-back"
-            | "at"
-            | "origin"
-            | "given"
-            | "math"
+        "id" | "reveal" | "input" | "direction" | "at" | "origin" | "given"
     )
 }
 
@@ -501,8 +490,6 @@ fn apply_directive(
             Some(direction) => directives.direction = Some(direction),
             None => lints.push(bad_value(line, key, value)),
         },
-        "img" => directives.img = Some(value),
-        "img-back" => directives.img_back = Some(value),
         "at" => {
             let (at, origin) = split_at_origin(&value);
             directives.at = Some(at);
@@ -510,9 +497,6 @@ fn apply_directive(
         }
         "origin" => directives.origin = Some(value),
         "given" => directives.givens.push(value),
-        "math" => directives.math = Some(value),
-        // Reserved for future card media and occlusion: ignored, no lint.
-        "occlude" | "audio" | "audio-back" | "img-alt" => {}
         _ => lints.push(Lint {
             line,
             kind: LintKind::UnknownKey {
@@ -1077,6 +1061,41 @@ mod tests {
     }
 
     #[test]
+    fn retired_content_directive_keys_are_now_unknown_and_yield_no_image() {
+        let deck = parse(
+            "## q\n---\na\n<!-- img: moon.png -->\n<!-- img-back: phase.png -->\n\
+             <!-- math: latex -->\n",
+        );
+        assert_eq!(
+            vec![
+                unknown(4, "img"),
+                unknown(5, "img-back"),
+                unknown(6, "math"),
+            ],
+            deck.lints
+        );
+        assert!(deck.cards[0].images.is_empty());
+        assert!(deck.cards[0].images_back.is_empty());
+    }
+
+    #[test]
+    fn retired_reserved_directive_keys_are_now_unknown() {
+        let deck = parse(
+            "## q\n---\na\n<!-- occlude: soon -->\n<!-- audio: a.mp3 -->\n\
+             <!-- audio-back: b.mp3 -->\n<!-- img-alt: a moon -->\n",
+        );
+        assert_eq!(
+            vec![
+                unknown(4, "occlude"),
+                unknown(5, "audio"),
+                unknown(6, "audio-back"),
+                unknown(7, "img-alt"),
+            ],
+            deck.lints
+        );
+    }
+
+    #[test]
     fn at_keeps_its_asset_from_origin_split() {
         let deck = parse("## q\n---\na\n<!-- at: 29.rs from src/caching.rs:46-66 -->\n");
         assert_eq!(Some("29.rs".to_string()), deck.cards[0].at);
@@ -1130,10 +1149,10 @@ mod tests {
     }
 
     #[test]
-    fn img_dir_and_origin_follow_the_leniency_model_of_comparable_keys() {
-        let deck = parse("---\nimg-dir: [a, b]\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.img_dir);
-        assert_eq!(vec![bad(2, "img-dir", "a sequence")], deck.lints);
+    fn image_dir_and_origin_follow_the_leniency_model_of_comparable_keys() {
+        let deck = parse("---\nimage-dir: [a, b]\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.image_dir);
+        assert_eq!(vec![bad(2, "image-dir", "a sequence")], deck.lints);
 
         let deck = parse("---\norigin: \"   \"\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.origin);
@@ -1142,6 +1161,13 @@ mod tests {
         let deck = parse("---\norigin: 5\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.origin);
         assert_eq!(vec![bad(2, "origin", "an integer")], deck.lints);
+    }
+
+    #[test]
+    fn the_old_img_dir_frontmatter_key_is_now_unknown() {
+        let deck = parse("---\nimg-dir: assets\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.image_dir);
+        assert_eq!(vec![unknown(2, "img-dir")], deck.lints);
     }
 
     // ── Escapes and bytes ──
@@ -1362,7 +1388,7 @@ reveal: line
 order: sequential
 input: draw
 direction: both
-img-dir: assets
+image-dir: assets
 origin: /crate
 tags: [a, b]
 license: MIT
@@ -1381,17 +1407,10 @@ the answer
 <!-- reveal: flip -->
 <!-- input: type -->
 <!-- direction: reverse -->
-<!-- img: moon.png -->
-<!-- img-back: phase.png -->
 <!-- at: 29.rs from src/caching.rs:46-66 -->
 <!-- origin: /crate -->
 <!-- given: state - the parser position -->
 <!-- given: partial - the card -->
-<!-- math: latex -->
-<!-- occlude: soon -->
-<!-- audio: a.mp3 -->
-<!-- audio-back: b.mp3 -->
-<!-- img-alt: a moon -->
 "#;
         let document = parse_document(text).unwrap();
         assert_eq!(
@@ -1405,7 +1424,7 @@ the answer
                 order: Some(Order::Sequential),
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
-                img_dir: Some(PathBuf::from("assets")),
+                image_dir: Some(PathBuf::from("assets")),
                 origin: Some("/crate".into()),
                 unspliceable: false,
             },
@@ -1420,8 +1439,6 @@ the answer
                 reveal_line: Some(31),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
-                img: Some("moon.png".into()),
-                img_back: Some("phase.png".into()),
                 at: Some("29.rs".into()),
                 at_origin: Some("src/caching.rs:46-66".into()),
                 origin: Some("/crate".into()),
@@ -1429,7 +1446,6 @@ the answer
                     "state - the parser position".into(),
                     "partial - the card".into(),
                 ],
-                math: Some("latex".into()),
             },
             document.cards[0].directives
         );
