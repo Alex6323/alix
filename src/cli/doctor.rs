@@ -200,7 +200,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
 fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
     use alix::parser::LintKind;
     let detail = match &lint.kind {
-        LintKind::UnknownKey { key } => unknown_key_hint(key),
+        LintKind::UnknownKey { key } => format!("unknown key `{key}` (ignored)"),
         LintKind::BadValue { key, value } => format!("`{key}` has an invalid value `{value}`"),
         LintKind::EmptyValue { key } => format!("`{key}` has an empty value"),
         LintKind::RevealOnCloze => {
@@ -223,25 +223,6 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
             .to_string(),
     };
     format!("{}: line {}: {detail}", path.display(), lint.line)
-}
-
-fn unknown_key_hint(key: &str) -> String {
-    match key {
-        "img" | "img-back" => format!(
-            "`{key}:` is gone; use the standard markdown image `![](...)` instead \
-             (a line in the card's front or answer)"
-        ),
-        "math" => "`math:` is retired; it never had any effect, so the line can just be deleted"
-            .to_string(),
-        "img-dir" | "image-dir" => format!(
-            "`{key}:` is gone; image paths are now standard Markdown, resolved relative to \
-             the deck file (keep the image next to the deck, or use a `sub/name.png` path)"
-        ),
-        "occlude" | "audio" | "audio-back" | "img-alt" => {
-            format!("`{key}:` was a reserved key that has been removed; it never had any effect")
-        }
-        _ => format!("unknown key `{key}` (ignored)"),
-    }
 }
 
 fn workspace_findings(dir: &Path) -> Report {

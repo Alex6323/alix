@@ -1291,42 +1291,6 @@ fn doctor_reports_a_broken_config_as_a_failing_finding() {
 }
 
 #[test]
-fn doctor_hints_the_image_marker_for_a_straggler_img_directive() {
-    // `<!-- img: -->` is gone; it now parses as an unknown key, and doctor
-    // should say so loudly rather than just "unknown key (ignored)".
-    let dir = TempDir::new().unwrap();
-    let deck = write(
-        dir.path(),
-        "old.md",
-        "## old <!-- id: oldimg01 -->\nphoto\n<!-- img: moon.png -->\n",
-    );
-    let out = alix(&["doctor", &deck]);
-    assert!(out.status.success(), "stderr: {}", stderr(&out));
-    let err = stderr(&out);
-    assert!(
-        err.contains("img:") && err.contains("![](...)"),
-        "should hint the markdown image migration: {err}"
-    );
-}
-
-#[test]
-fn doctor_hints_the_image_marker_for_a_straggler_img_back_directive() {
-    let dir = TempDir::new().unwrap();
-    let deck = write(
-        dir.path(),
-        "old.md",
-        "## old <!-- id: oldimgb01 -->\nphoto\n<!-- img-back: moon.png -->\n",
-    );
-    let out = alix(&["doctor", &deck]);
-    assert!(out.status.success(), "stderr: {}", stderr(&out));
-    let err = stderr(&out);
-    assert!(
-        err.contains("img-back:") && err.contains("![](...)"),
-        "should hint the markdown image migration: {err}"
-    );
-}
-
-#[test]
 fn doctor_surfaces_a_malformed_image_embed() {
     let dir = TempDir::new().unwrap();
     let deck = write(
