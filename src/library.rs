@@ -583,7 +583,17 @@ mod tests {
         assert!(store.get("c1").is_none());
         let now = std::fs::read_to_string(dir.path().join("t.md")).unwrap();
         assert!(now.contains("new cp"));
-        assert!(!now.contains("c1"), "old token must not survive");
+        let rebuilt = crate::parser::parse("t.md", &now).unwrap();
+        assert_eq!(1, rebuilt.cards.len());
+        assert!(
+            rebuilt.cards[0].token.is_some(),
+            "the rebuilt checkpoint is stamped"
+        );
+        assert_ne!(
+            Some("c1"),
+            rebuilt.cards[0].token.as_deref(),
+            "old token must not survive as the rebuilt card id"
+        );
     }
 
     #[test]
