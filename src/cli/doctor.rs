@@ -218,6 +218,13 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),
+        LintKind::AudioNotSupported => {
+            "`\\audio` is reserved but not yet supported; it stays literal text".to_string()
+        }
+        LintKind::MarkerBadOption { key } => format!("bad marker option `{key}`"),
+        LintKind::MarkerMalformed { name } => {
+            format!("malformed `\\{name}` marker (unclosed or empty argument)")
+        }
     };
     format!("{}: line {}: {detail}", path.display(), lint.line)
 }

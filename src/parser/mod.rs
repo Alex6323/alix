@@ -15,7 +15,7 @@ mod frontmatter;
 
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
-use cloze::{Seg, hash_repr, hole_fingerprints, scan_cloze, seg_text};
+use cloze::{Region, Seg, hash_repr, hole_fingerprints, push_image, scan_markers, seg_text};
 pub use frontmatter::{Frontmatter, yaml_quote};
 use frontmatter::{bad_value, parse_frontmatter, parse_reveal};
 
@@ -52,6 +52,9 @@ pub enum LintKind {
     ClozeInHole,
     UnclosedComment,
     UnclosedFence,
+    AudioNotSupported,
+    MarkerBadOption { key: String },
+    MarkerMalformed { name: String },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -561,7 +564,7 @@ fn build_card(
 
     let mut parsed = Vec::with_capacity(answer.len());
     for (lineno, text) in &answer {
-        parsed.push(scan_cloze(text, *lineno, lints)?);
+        parsed.push(scan_markers(text, *lineno, Region::Answer, lints)?);
     }
     let holes: Vec<(usize, usize, &str)> = parsed
         .iter()
@@ -572,7 +575,7 @@ fn build_card(
                 .enumerate()
                 .filter_map(move |(si, segment)| match segment {
                     Seg::Hole(h) => Some((li, si, h.as_str())),
-                    Seg::Text(_) => None,
+                    Seg::Text(_) | Seg::Image { .. } => None,
                 })
         })
         .collect();
@@ -621,6 +624,9 @@ fn build_card(
                             rendered.push_str(BLANK);
                         }
                         Seg::Hole(_) => rendered.push_str(HIDDEN),
+                        Seg::Image { src, alt } => {
+                            push_image(&mut rendered, src, alt.as_deref());
+                        }
                     }
                 }
                 rendered
