@@ -471,9 +471,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
             color: theme.colorScheme.onSurface,
           ),
         ),
-        if (card.image != null) ...[
+        for (final img in card.images) ...[
           const SizedBox(height: 12),
-          Image.file(File(card.image!), height: 180),
+          Image.file(File(img.src), height: 180, semanticLabel: img.alt),
         ],
         for (final line in card.context) ...[
           const SizedBox(height: 8),
@@ -487,10 +487,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
         _divider(tokens),
         const SizedBox(height: 22),
         _body(context, card, tokens),
-        if (answered && card.imageBack != null) ...[
-          const SizedBox(height: 12),
-          Image.file(File(card.imageBack!), height: 180),
-        ],
+        if (answered)
+          for (final img in card.imagesBack) ...[
+            const SizedBox(height: 12),
+            Image.file(File(img.src), height: 180, semanticLabel: img.alt),
+          ],
         if (_state.acquire && !_hasChoices && !_revealed) ...[
           const SizedBox(height: 18),
           Text(

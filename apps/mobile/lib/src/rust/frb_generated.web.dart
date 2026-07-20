@@ -158,6 +158,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
+  ImageView dco_decode_image_view(dynamic raw);
+
+  @protected
   Input dco_decode_input(dynamic raw);
 
   @protected
@@ -165,6 +168,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw);
+
+  @protected
+  List<ImageView> dco_decode_list_image_view(dynamic raw);
 
   @protected
   List<Float32List> dco_decode_list_list_prim_f_32_strict(dynamic raw);
@@ -407,6 +413,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  ImageView sse_decode_image_view(SseDeserializer deserializer);
+
+  @protected
   Input sse_decode_input(SseDeserializer deserializer);
 
   @protected
@@ -414,6 +423,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckEntry> sse_decode_list_deck_entry(SseDeserializer deserializer);
+
+  @protected
+  List<ImageView> sse_decode_list_image_view(SseDeserializer deserializer);
 
   @protected
   List<Float32List> sse_decode_list_list_prim_f_32_strict(
@@ -704,6 +716,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
+  void sse_encode_image_view(ImageView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_input(Input self, SseSerializer serializer);
 
   @protected
@@ -712,6 +727,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_deck_entry(
     List<DeckEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_image_view(
+    List<ImageView> self,
     SseSerializer serializer,
   );
 

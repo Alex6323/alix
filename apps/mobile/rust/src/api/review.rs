@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 pub use alix::answer::{Input, Mode, TypedResult};
 pub use alix::depth::Depth;
 pub use alix::render::NoteUnit;
-pub use alix::review::{CardView, CheckFeedback, ChoiceFeedback, ReviewState};
+pub use alix::review::{CardView, CheckFeedback, ChoiceFeedback, ImageView, ReviewState};
 pub use alix::trace::Phase as WalkPhase;
 
 #[flutter_rust_bridge::frb(mirror(Mode))]
@@ -38,6 +38,12 @@ pub enum _NoteUnit {
     Code { lines: Vec<String> },
 }
 
+#[flutter_rust_bridge::frb(mirror(ImageView))]
+pub struct _ImageView {
+    pub src: String,
+    pub alt: Option<String>,
+}
+
 #[flutter_rust_bridge::frb(mirror(CardView))]
 pub struct _CardView {
     pub front: String,
@@ -45,8 +51,8 @@ pub struct _CardView {
     pub back: Vec<String>,
     pub reshaped: bool,
     pub note: Vec<NoteUnit>,
-    pub image: Option<String>,
-    pub image_back: Option<String>,
+    pub images: Vec<ImageView>,
+    pub images_back: Vec<ImageView>,
     pub at: Option<String>,
 }
 

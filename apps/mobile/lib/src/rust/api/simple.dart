@@ -6,6 +6,4 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-/// The embedded core's version, for the About screen (shown next to the
-/// app's own version, which Dart reads from the installed package).
 String coreVersion() => RustLib.instance.api.crateApiSimpleCoreVersion();

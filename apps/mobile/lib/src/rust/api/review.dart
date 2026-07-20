@@ -11,20 +11,11 @@ part 'review.freezed.dart';
 // These functions are ignored because they are not marked as `pub`: `walk_excerpt`, `walk_state`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
-/// The Explain checklist tally as a grade: none covered fails, all pass,
-/// some is a partial. The rule lives in core (`scheduler::keypoint_grade`);
-/// this is only the bridge.
 Grade keypointGrade({required int covered, required int total}) => RustLib
     .instance
     .api
     .crateApiReviewKeypointGrade(covered: covered, total: total);
 
-/// Test/dev support: cache a full set of choice distractors on every card of
-/// `deck_path`, into the same augment sidecar the review session reads (routed
-/// like [`ReviewSession::open`]). The phone never generates distractors itself
-/// — they sync from the desktop's `alix deck augment` — so a widget or bridge
-/// test uses this to drive the pick-only Recognize path without a live
-/// augmentation, keeping card-id computation in the lib (never in Dart).
 void seedChoiceDistractors({
   required String deckPath,
   required String rootDir,
@@ -35,92 +26,32 @@ void seedChoiceDistractors({
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>>
 abstract class ReviewSession implements RustOpaqueInterface {
-  /// Mark the current never-seen card as acquired (first exposure, no
-  /// grade) and persist, returning the next position.
   ReviewState acquire({BigInt? nowMs});
 
-  /// Appends condensed tutor-note `notes` as `!` lines under the card at
-  /// `line` of this session's deck file (`alix::deck::append_note`, atomic
-  /// tmp+rename), mirroring the web note flow (`jobs.rs`'s `poll_ask`
-  /// condense). Note lines are never hashed, so every card's id, and thus
-  /// its review history, survives the append unchanged. An empty `notes`
-  /// is a no-op, returning `Ok(())` without touching the file, mirroring
-  /// the web's "nothing to save" guard. Mirrors the note onto the live
-  /// session's current card so it shows without a reopen, guarded on the
-  /// anchor line still matching the current card (mirroring the web's own
-  /// card-identity guard, `jobs.rs`'s `poll_ask`); this is a deck-file
-  /// edit, not progress, so the store is never saved here.
   void applyCardNote({required int line, required List<String> notes});
 
-  /// Records a PASSED remote exam sitting as this deck's mastery, mirroring
-  /// the browser exam's own persistence. Callers must never call this on a
-  /// fail: a failed fact-deck exam writes nothing on the phone.
   void applyExamPassed({required BigInt nowMs});
 
-  /// Turns cleaned remediation deck-text (a failed remote exam's gaps)
-  /// into virtual cards in the phone's own store, deduping against this
-  /// deck's own cards and any already-stored virtuals
-  /// (`alix::store::store_remediation_cards`, which saves internally, not
-  /// saved again here). Returns how many cards were created or revived.
-  ///
-  /// `retire_after`: the bridge has no way today to read a session's
-  /// resolved `[review] retire_after` cap back out of `alix::session::Session`
-  /// (it holds no public accessor), so this passes `None`: the phone
-  /// applies no retire cap in v1, rather than guess a value.
   int applyRemediation({required String cardsText, required BigInt nowMs});
 
-  /// Check typed lines against the current card (pure evidence; the
-  /// learner-final grade is still a separate `grade` call).
   CheckFeedback? check({required List<String> lines});
 
-  /// Grade a pick against the same options `state` served; `None` when no
-  /// pick is up. The learner-final grade is still a separate `grade` call.
   ChoiceFeedback? choose({required int chosen});
 
-  /// The "where am I" region breadcrumb, when this session is
-  /// topology-ordered and the current card sits in a region of its
-  /// topology; `None` otherwise (no topology, no current card, or the
-  /// current card isn't grouped into any region). A faithful mirror of the
-  /// web's crumb build (`src/serve/dto.rs`): a shared augment cache can
-  /// hold several like-named topologies (decks sharing a store), so this
-  /// picks the one of the resolved name that actually contains the
-  /// current card. `now_ms` injects the clock behind the strength heatmap
-  /// (tests); `None` is the wall clock.
   CrumbState? crumb({BigInt? nowMs});
 
-  /// Whether this deck sits an AI exam (the flag `open` captured).
   bool deckHasExam();
 
-  /// The device that last wrote this session's store, when it was another
-  /// one within the lib's warn window: the "review on one device at a
-  /// time" banner's data. `now_ms` injects the clock (tests).
   ForeignWriter? foreignWriter({BigInt? nowMs});
 
-  /// Grade the current card and persist, returning the next position.
   ReviewState grade({required Grade grade, BigInt? nowMs});
 
-  /// Mints a free-standing Tutor virtual card from an edited front/back,
-  /// mirroring the web mint handler (`POST /api/ask/card/create`,
-  /// `src/serve/mod.rs`): same validation and the same dedup against the
-  /// session's own deck cards and any already-minted virtuals
-  /// (`alix::store::mint_tutor_card`), then saves. Errors (malformed
-  /// input, a duplicate of an existing card, or no card current to mint
-  /// against) surface as the message text. Returns the new card's id,
-  /// rendered as a string (the handler exposes nothing richer).
   String mintTutorCard({
     required String front,
     required List<String> back,
     required BigInt nowMs,
   });
 
-  /// Open a deck of the decks folder `root_dir` at `depth` (default:
-  /// the deck's last depth, else Recall). The progress store is routed the
-  /// way the web and CLI route it: a workspace member reviews into its
-  /// workspace's own store, everything else into the root's shared store.
-  /// `now_ms` injects the session clock (tests); `None` is the wall clock.
-  /// `device` names this device in the store's last-writer marker (the
-  /// app passes its settings.json label); `None` keeps whatever the core
-  /// derived for this machine.
   static ReviewSession open({
     required String deckPath,
     required String rootDir,
@@ -135,50 +66,23 @@ abstract class ReviewSession implements RustOpaqueInterface {
     device: device,
   );
 
-  /// The current review position, for the screen to render. `now_ms`
-  /// injects the clock behind the restartability check (tests); `None` is
-  /// the wall clock.
   ReviewState state({BigInt? nowMs});
 
-  /// The current card's authored fields for the remote tutor to ground its
-  /// answer on, never the masked [`CardView`] a cloze review renders.
-  /// `None` when no card is current.
   TutorCard? tutorCard();
 }
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<WalkSession>>
 abstract class WalkSession implements RustOpaqueInterface {
-  /// Records a FAILED trace exam so a re-sit waits out the cooldown. The
-  /// phone owns this write; the server never persists a trace-exam fail.
   void applyExamFailed({required BigInt nowMs});
 
-  /// Records a PASSED trace exam as this deck's mastery, mirroring the
-  /// browser exam's own persistence.
   void applyExamPassed({required BigInt nowMs});
 
-  /// Whether this deck sits an AI exam (the flag `open` captured; always
-  /// true for a trace, since its exam is the graded compression).
   bool deckHasExam();
 
-  /// Milliseconds left on a re-sit cooldown after a failed trace exam, or
-  /// `None` if it can be sat now. The cooldown length reads
-  /// `ExamConfig::default()` (the phone carries no `[exam]` config to
-  /// override it in this milestone).
   BigInt? examCooldownMs({required BigInt nowMs});
 
-  /// Records the self-judged delta for the current checkpoint, schedules
-  /// it in the store (the walk's only SRS write), persists, and returns
-  /// the next position.
   WalkState grade({required WalkDelta delta, BigInt? nowMs});
 
-  /// Opens a trace deck of the decks folder `root_dir` for an on-device
-  /// walk. The progress store is routed the same way
-  /// [`ReviewSession::open`] routes it (a workspace member's own store,
-  /// else the root's shared one). `now_ms` injects the session clock
-  /// (tests); `None` is the wall clock. `device` names this device in the
-  /// store's last-writer marker; `None` keeps whatever the core derived
-  /// for this machine. Bails if `deck_path` is not a trace deck: a card
-  /// review opens through [`ReviewSession::open`] instead.
   static WalkSession open({
     required String deckPath,
     required String rootDir,
@@ -191,11 +95,8 @@ abstract class WalkSession implements RustOpaqueInterface {
     device: device,
   );
 
-  /// Commits the learner's prediction for the current checkpoint and moves
-  /// to the reveal.
   void predict({required String text});
 
-  /// The current walk position, for the screen to render.
   WalkState state();
 }
 
@@ -205,8 +106,8 @@ class CardView {
   final List<String> back;
   final bool reshaped;
   final List<NoteUnit> note;
-  final String? image;
-  final String? imageBack;
+  final List<ImageView> images;
+  final List<ImageView> imagesBack;
   final String? at;
 
   const CardView({
@@ -215,8 +116,8 @@ class CardView {
     required this.back,
     required this.reshaped,
     required this.note,
-    this.image,
-    this.imageBack,
+    required this.images,
+    required this.imagesBack,
     this.at,
   });
 
@@ -227,8 +128,8 @@ class CardView {
       back.hashCode ^
       reshaped.hashCode ^
       note.hashCode ^
-      image.hashCode ^
-      imageBack.hashCode ^
+      images.hashCode ^
+      imagesBack.hashCode ^
       at.hashCode;
 
   @override
@@ -241,8 +142,8 @@ class CardView {
           back == other.back &&
           reshaped == other.reshaped &&
           note == other.note &&
-          image == other.image &&
-          imageBack == other.imageBack &&
+          images == other.images &&
+          imagesBack == other.imagesBack &&
           at == other.at;
 }
 
@@ -288,16 +189,9 @@ class ChoiceFeedback {
           passed == other.passed;
 }
 
-/// The "where am I" region breadcrumb for a topology-ordered session: the
-/// topology's region names in walk order, the index of the current card's
-/// region, and each region's per-card strength for a heatmap bar. Mirrors
-/// the web's `CrumbDto` (`src/serve/dto.rs`). See [`ReviewSession::crumb`].
 class CrumbState {
   final List<String> regions;
   final int current;
-
-  /// Per-region, per-card strength (`0..=1`, outer index aligns with
-  /// `regions`), red (weak) to green (strong).
   final List<Float32List> cells;
 
   const CrumbState({
@@ -321,13 +215,8 @@ class CrumbState {
 
 enum Depth { recognize, recall, reconstruct }
 
-/// Another device's recent write of this session's store (see
-/// [`ReviewSession::foreign_writer`]): the roaming-discipline banner's data.
 class ForeignWriter {
-  /// The other device's label.
   final String device;
-
-  /// How long ago it wrote, in ms.
   final BigInt ageMs;
 
   const ForeignWriter({required this.device, required this.ageMs});
@@ -344,15 +233,28 @@ class ForeignWriter {
           ageMs == other.ageMs;
 }
 
-/// The learner's self-grade, mirrored so frb bridges it from this crate.
 enum Grade { fail, partial, pass }
+
+class ImageView {
+  final String src;
+  final String? alt;
+
+  const ImageView({required this.src, this.alt});
+
+  @override
+  int get hashCode => src.hashCode ^ alt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImageView &&
+          runtimeType == other.runtimeType &&
+          src == other.src &&
+          alt == other.alt;
+}
 
 enum Input { type, draw }
 
-/// frb mirrors of the core contract types (they live in the `alix` crate,
-/// which frb does not scan): field-for-field copies that teach the generator
-/// their shape so Dart gets real classes and enums, not opaque handles. Keep
-/// in lock step with `alix::review`, `alix::answer`, and `alix::depth`.
 enum Mode { flip, typing, typeLine, choice, lineByLine, explain }
 
 @freezed
@@ -442,19 +344,11 @@ class ReviewState {
           promotable == other.promotable;
 }
 
-/// The current card's fields exactly as authored, for the remote tutor to
-/// ground its answer on, never the masked [`CardView`] a cloze review
-/// renders (its `context` blanks the hole under review; the tutor needs the
-/// real text). See [`ReviewSession::tutor_card`].
 class TutorCard {
   final String subject;
   final String front;
   final List<String> back;
   final String? at;
-
-  /// The 1-based deck-file line of this card's front (`Card::line`): the
-  /// append anchor [`ReviewSession::apply_card_note`] targets when the
-  /// tutor's condensed note comes back.
   final BigInt line;
 
   const TutorCard({
@@ -509,14 +403,8 @@ class TypedResult {
           passed == other.passed;
 }
 
-/// The learner's self-judged trace-walk delta, mirrored the same way
-/// [`Grade`] is: `alix::trace::Delta` lives in the core crate frb doesn't
-/// scan, so this is a field-for-field bridge copy with explicit conversions
-/// both ways, not a `#[frb(mirror(..))]` teaching shim.
 enum WalkDelta { missed, partly, got }
 
-/// A revealed source excerpt for the walk screen: line-numbered,
-/// contiguous. Mirrors the web's `ExcerptDto` (`src/serve/dto.rs`).
 class WalkExcerpt {
   final String path;
   final List<WalkLine> lines;
@@ -541,7 +429,6 @@ class WalkExcerpt {
           truncated == other.truncated;
 }
 
-/// One line of a revealed excerpt: its file line number and text.
 class WalkLine {
   final int n;
   final String text;
@@ -562,28 +449,17 @@ class WalkLine {
 
 enum WalkPhase { predict, reveal, done }
 
-/// The current position in an on-device trace walk, for the screen to
-/// render. Mirrors the web's `WalkDto` (`src/serve/dto.rs`) minus the hop
-/// rail and the live (`--grade`) fields: the phone walk is always
-/// self-graded, so there is no path rail to draw and no auto-grade to poll.
 class WalkState {
   final WalkPhase phase;
   final String description;
   final String? source;
   final int total;
-
-  /// 1-based index of the hop being walked.
   final int current;
   final String? prompt;
   final List<String> givens;
   final String? locator;
-
-  /// What the learner predicted (shown on reveal).
   final String? prediction;
   final WalkExcerpt? excerpt;
-
-  /// The honest fallback when the checkpoint's source can't be revealed (a
-  /// URL `% source:`, none at all, or a resolution failure).
   final String? excerptError;
   final List<String> points;
   final String? note;
@@ -644,13 +520,10 @@ class WalkState {
           summary == other.summary;
 }
 
-/// The walk tally shown on the done screen. Mirrors the web's `SummaryDto`.
 class WalkSummary {
   final int passed;
   final int partly;
   final int failed;
-
-  /// 1-based hop numbers judged partly or failed.
   final Uint32List weak;
   final int total;
 

@@ -1451,8 +1451,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       back: dco_decode_list_String(arr[2]),
       reshaped: dco_decode_bool(arr[3]),
       note: dco_decode_list_note_unit(arr[4]),
-      image: dco_decode_opt_String(arr[5]),
-      imageBack: dco_decode_opt_String(arr[6]),
+      images: dco_decode_list_image_view(arr[5]),
+      imagesBack: dco_decode_list_image_view(arr[6]),
       at: dco_decode_opt_String(arr[7]),
     );
   }
@@ -1577,6 +1577,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ImageView dco_decode_image_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ImageView(
+      src: dco_decode_String(arr[0]),
+      alt: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
   Input dco_decode_input(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Input.values[raw as int];
@@ -1592,6 +1604,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_deck_entry).toList();
+  }
+
+  @protected
+  List<ImageView> dco_decode_list_image_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_image_view).toList();
   }
 
   @protected
@@ -2095,8 +2113,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_back = sse_decode_list_String(deserializer);
     var var_reshaped = sse_decode_bool(deserializer);
     var var_note = sse_decode_list_note_unit(deserializer);
-    var var_image = sse_decode_opt_String(deserializer);
-    var var_imageBack = sse_decode_opt_String(deserializer);
+    var var_images = sse_decode_list_image_view(deserializer);
+    var var_imagesBack = sse_decode_list_image_view(deserializer);
     var var_at = sse_decode_opt_String(deserializer);
     return CardView(
       front: var_front,
@@ -2104,8 +2122,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       back: var_back,
       reshaped: var_reshaped,
       note: var_note,
-      image: var_image,
-      imageBack: var_imageBack,
+      images: var_images,
+      imagesBack: var_imagesBack,
       at: var_at,
     );
   }
@@ -2237,6 +2255,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ImageView sse_decode_image_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_src = sse_decode_String(deserializer);
+    var var_alt = sse_decode_opt_String(deserializer);
+    return ImageView(src: var_src, alt: var_alt);
+  }
+
+  @protected
   Input sse_decode_input(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -2263,6 +2289,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <DeckEntry>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_deck_entry(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ImageView> sse_decode_list_image_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ImageView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_image_view(deserializer));
     }
     return ans_;
   }
@@ -2930,8 +2968,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.back, serializer);
     sse_encode_bool(self.reshaped, serializer);
     sse_encode_list_note_unit(self.note, serializer);
-    sse_encode_opt_String(self.image, serializer);
-    sse_encode_opt_String(self.imageBack, serializer);
+    sse_encode_list_image_view(self.images, serializer);
+    sse_encode_list_image_view(self.imagesBack, serializer);
     sse_encode_opt_String(self.at, serializer);
   }
 
@@ -3028,6 +3066,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_image_view(ImageView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.src, serializer);
+    sse_encode_opt_String(self.alt, serializer);
+  }
+
+  @protected
   void sse_encode_input(Input self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -3051,6 +3096,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_deck_entry(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_image_view(
+    List<ImageView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_image_view(item, serializer);
     }
   }
 
@@ -3455,22 +3512,9 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
         RustLib.instance.api.rust_arc_decrement_strong_count_ReviewSessionPtr,
   );
 
-  /// Mark the current never-seen card as acquired (first exposure, no
-  /// grade) and persist, returning the next position.
   ReviewState acquire({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionAcquire(that: this, nowMs: nowMs);
 
-  /// Appends condensed tutor-note `notes` as `!` lines under the card at
-  /// `line` of this session's deck file (`alix::deck::append_note`, atomic
-  /// tmp+rename), mirroring the web note flow (`jobs.rs`'s `poll_ask`
-  /// condense). Note lines are never hashed, so every card's id, and thus
-  /// its review history, survives the append unchanged. An empty `notes`
-  /// is a no-op, returning `Ok(())` without touching the file, mirroring
-  /// the web's "nothing to save" guard. Mirrors the note onto the live
-  /// session's current card so it shows without a reopen, guarded on the
-  /// anchor line still matching the current card (mirroring the web's own
-  /// card-identity guard, `jobs.rs`'s `poll_ask`); this is a deck-file
-  /// edit, not progress, so the store is never saved here.
   void applyCardNote({required int line, required List<String> notes}) =>
       RustLib.instance.api.crateApiReviewReviewSessionApplyCardNote(
         that: this,
@@ -3478,22 +3522,9 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
         notes: notes,
       );
 
-  /// Records a PASSED remote exam sitting as this deck's mastery, mirroring
-  /// the browser exam's own persistence. Callers must never call this on a
-  /// fail: a failed fact-deck exam writes nothing on the phone.
   void applyExamPassed({required BigInt nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionApplyExamPassed(that: this, nowMs: nowMs);
 
-  /// Turns cleaned remediation deck-text (a failed remote exam's gaps)
-  /// into virtual cards in the phone's own store, deduping against this
-  /// deck's own cards and any already-stored virtuals
-  /// (`alix::store::store_remediation_cards`, which saves internally, not
-  /// saved again here). Returns how many cards were created or revived.
-  ///
-  /// `retire_after`: the bridge has no way today to read a session's
-  /// resolved `[review] retire_after` cap back out of `alix::session::Session`
-  /// (it holds no public accessor), so this passes `None`: the phone
-  /// applies no retire cap in v1, rather than guess a value.
   int applyRemediation({required String cardsText, required BigInt nowMs}) =>
       RustLib.instance.api.crateApiReviewReviewSessionApplyRemediation(
         that: this,
@@ -3501,52 +3532,26 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
         nowMs: nowMs,
       );
 
-  /// Check typed lines against the current card (pure evidence; the
-  /// learner-final grade is still a separate `grade` call).
   CheckFeedback? check({required List<String> lines}) => RustLib.instance.api
       .crateApiReviewReviewSessionCheck(that: this, lines: lines);
 
-  /// Grade a pick against the same options `state` served; `None` when no
-  /// pick is up. The learner-final grade is still a separate `grade` call.
   ChoiceFeedback? choose({required int chosen}) => RustLib.instance.api
       .crateApiReviewReviewSessionChoose(that: this, chosen: chosen);
 
-  /// The "where am I" region breadcrumb, when this session is
-  /// topology-ordered and the current card sits in a region of its
-  /// topology; `None` otherwise (no topology, no current card, or the
-  /// current card isn't grouped into any region). A faithful mirror of the
-  /// web's crumb build (`src/serve/dto.rs`): a shared augment cache can
-  /// hold several like-named topologies (decks sharing a store), so this
-  /// picks the one of the resolved name that actually contains the
-  /// current card. `now_ms` injects the clock behind the strength heatmap
-  /// (tests); `None` is the wall clock.
   CrumbState? crumb({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionCrumb(that: this, nowMs: nowMs);
 
-  /// Whether this deck sits an AI exam (the flag `open` captured).
   bool deckHasExam() =>
       RustLib.instance.api.crateApiReviewReviewSessionDeckHasExam(that: this);
 
-  /// The device that last wrote this session's store, when it was another
-  /// one within the lib's warn window: the "review on one device at a
-  /// time" banner's data. `now_ms` injects the clock (tests).
   ForeignWriter? foreignWriter({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionForeignWriter(that: this, nowMs: nowMs);
 
-  /// Grade the current card and persist, returning the next position.
   ReviewState grade({required Grade grade, BigInt? nowMs}) => RustLib
       .instance
       .api
       .crateApiReviewReviewSessionGrade(that: this, grade: grade, nowMs: nowMs);
 
-  /// Mints a free-standing Tutor virtual card from an edited front/back,
-  /// mirroring the web mint handler (`POST /api/ask/card/create`,
-  /// `src/serve/mod.rs`): same validation and the same dedup against the
-  /// session's own deck cards and any already-minted virtuals
-  /// (`alix::store::mint_tutor_card`), then saves. Errors (malformed
-  /// input, a duplicate of an existing card, or no card current to mint
-  /// against) surface as the message text. Returns the new card's id,
-  /// rendered as a string (the handler exposes nothing richer).
   String mintTutorCard({
     required String front,
     required List<String> back,
@@ -3558,15 +3563,9 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
     nowMs: nowMs,
   );
 
-  /// The current review position, for the screen to render. `now_ms`
-  /// injects the clock behind the restartability check (tests); `None` is
-  /// the wall clock.
   ReviewState state({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionState(that: this, nowMs: nowMs);
 
-  /// The current card's authored fields for the remote tutor to ground its
-  /// answer on, never the masked [`CardView`] a cloze review renders.
-  /// `None` when no card is current.
   TutorCard? tutorCard() =>
       RustLib.instance.api.crateApiReviewReviewSessionTutorCard(that: this);
 }
@@ -3590,42 +3589,26 @@ class WalkSessionImpl extends RustOpaque implements WalkSession {
         RustLib.instance.api.rust_arc_decrement_strong_count_WalkSessionPtr,
   );
 
-  /// Records a FAILED trace exam so a re-sit waits out the cooldown. The
-  /// phone owns this write; the server never persists a trace-exam fail.
   void applyExamFailed({required BigInt nowMs}) => RustLib.instance.api
       .crateApiReviewWalkSessionApplyExamFailed(that: this, nowMs: nowMs);
 
-  /// Records a PASSED trace exam as this deck's mastery, mirroring the
-  /// browser exam's own persistence.
   void applyExamPassed({required BigInt nowMs}) => RustLib.instance.api
       .crateApiReviewWalkSessionApplyExamPassed(that: this, nowMs: nowMs);
 
-  /// Whether this deck sits an AI exam (the flag `open` captured; always
-  /// true for a trace, since its exam is the graded compression).
   bool deckHasExam() =>
       RustLib.instance.api.crateApiReviewWalkSessionDeckHasExam(that: this);
 
-  /// Milliseconds left on a re-sit cooldown after a failed trace exam, or
-  /// `None` if it can be sat now. The cooldown length reads
-  /// `ExamConfig::default()` (the phone carries no `[exam]` config to
-  /// override it in this milestone).
   BigInt? examCooldownMs({required BigInt nowMs}) => RustLib.instance.api
       .crateApiReviewWalkSessionExamCooldownMs(that: this, nowMs: nowMs);
 
-  /// Records the self-judged delta for the current checkpoint, schedules
-  /// it in the store (the walk's only SRS write), persists, and returns
-  /// the next position.
   WalkState grade({required WalkDelta delta, BigInt? nowMs}) => RustLib
       .instance
       .api
       .crateApiReviewWalkSessionGrade(that: this, delta: delta, nowMs: nowMs);
 
-  /// Commits the learner's prediction for the current checkpoint and moves
-  /// to the reveal.
   void predict({required String text}) => RustLib.instance.api
       .crateApiReviewWalkSessionPredict(that: this, text: text);
 
-  /// The current walk position, for the screen to render.
   WalkState state() =>
       RustLib.instance.api.crateApiReviewWalkSessionState(that: this);
 }

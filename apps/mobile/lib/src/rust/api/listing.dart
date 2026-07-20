@@ -9,9 +9,6 @@ import 'review.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
 
-/// The workspace's "ready by" readout, fetched on its own so the drilled-in
-/// picker can refresh it after a review changes mastery, without re-listing
-/// the root. `None` for a plain folder or when no deadline is set.
 Deadline? workspaceDeadline({
   required String root,
   required String dir,
@@ -22,26 +19,17 @@ Deadline? workspaceDeadline({
   nowMs: nowMs,
 );
 
-/// Sets, moves, or clears (`None`) the workspace's "ready by" date in its
-/// `alix.local.toml` — the same file the desktop edits, so a synced folder
-/// carries the change both ways. The date parse (and its error) lives in the
-/// lib (`workspace::set_deadline_str`).
 void setWorkspaceDeadline({required String dir, String? date}) => RustLib
     .instance
     .api
     .crateApiListingSetWorkspaceDeadline(dir: dir, date: date);
 
-/// Lists the decks root. `now_ms` injects the clock (tests); `None` is now.
 List<DeckEntry> listRoot({required String root, BigInt? nowMs}) =>
     RustLib.instance.api.crateApiListingListRoot(root: root, nowMs: nowMs);
 
-/// Syncthing conflict copies next to any store under `root`: non-empty
-/// means two devices wrote concurrently and the picker should warn before
-/// the user reviews on top of a fork.
 List<String> syncConflicts({required String root}) =>
     RustLib.instance.api.crateApiListingSyncConflicts(root: root);
 
-/// Lists one drillable folder of the root.
 List<DeckEntry> listMembers({
   required String root,
   required String dir,
@@ -52,20 +40,10 @@ List<DeckEntry> listMembers({
   nowMs: nowMs,
 );
 
-/// A workspace's "ready by" target as the picker renders it — the bridge
-/// mirror of `alix::listing::DeckDeadline`, with the date in its wire
-/// `YYYY-MM-DD` form.
 class Deadline {
-  /// The target date, `YYYY-MM-DD`.
   final String date;
-
-  /// Whole days until the date in local time; negative once it has passed.
   final PlatformInt64 daysLeft;
-
-  /// Member decks currently ready (mastered, or finished with no exam).
   final int ready;
-
-  /// Member decks counted.
   final int total;
 
   const Deadline({
@@ -90,61 +68,21 @@ class Deadline {
           total == other.total;
 }
 
-/// One row of a folder listing, as the picker screen renders it.
 class DeckEntry {
   final String title;
   final String path;
-
-  /// Drillable: list its members with [`list_members`].
   final bool isWorkspace;
-
-  /// Anything to do right now, against the store this entry reviews into.
   final bool due;
-
-  /// The deck has at least one recognizable card (cached distractors that
-  /// build a pick). Recognize is pick-only, so the picker greys the Recognize
-  /// depth out for a deck without it. Deck rows only; group rows aggregate.
   final bool canRecognize;
-
-  /// A trace deck (`% trace:`): opens a walk (`WalkSession`), not a card
-  /// review; the flag lets the picker route the row to the walk screen
-  /// instead of a review session.
   final bool isTrace;
-
-  /// The session depth remembered for this deck, else its fresh-session
-  /// default. Deck rows only.
   final Depth lastDepth;
-
-  /// Finished and exam-passed, mirroring the web picker's mastered badge.
-  /// Deck rows only.
   final bool mastered;
-
-  /// Drilled and awaiting its AI exam. Deck rows only.
   final bool examDue;
-
-  /// The deck has an AI exam at all (a sourced fact deck, or a trace).
-  /// Deck rows only.
   final bool hasExam;
-
-  /// A `% requires:` prerequisite isn't finished, mirroring the web
-  /// picker's lock icon. Deck rows only.
   final bool locked;
-
-  /// The workspace's resolved picker icon file, mirroring the web
-  /// picker's emblem. Workspace/folder rows only; `None` otherwise.
   final String? icon;
-
-  /// Nesting depth in the workspace's dependency tree. Member rows only;
-  /// `0` otherwise.
   final int indent;
-
-  /// The branch-line prefix (`├─`/`└─`/`│`) for this row in the
-  /// workspace's dependency tree. Member rows only; empty otherwise.
   final String tree;
-
-  /// The workspace's "ready by" target with live readiness, mirroring the
-  /// web picker's deadline chip. Real-workspace rows with a set deadline
-  /// only; `None` otherwise.
   final Deadline? deadline;
 
   const DeckEntry({
