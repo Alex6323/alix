@@ -52,9 +52,7 @@ pub enum LintKind {
     ClozeInHole,
     UnclosedComment,
     UnclosedFence,
-    MarkerNotSupported { name: String },
-    MarkerBadOption { key: String },
-    MarkerMalformed { name: String },
+    ImageMalformed,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -1467,7 +1465,7 @@ the answer
         assert_eq!(Some("4jkya9q3m8z0tw5v9y2b4n6d8f"), card.token.as_deref());
     }
 
-    // ── Inline image markers ──
+    // ── Inline Markdown images ──
 
     fn img_srcs(images: &[CardImage]) -> Vec<PathBuf> {
         images.iter().map(|i| i.src.clone()).collect()
@@ -1475,28 +1473,28 @@ the answer
 
     #[test]
     fn an_undivided_back_image_fills_images_back_and_leaves_the_text() {
-        let deck = parse("## q\nWaxing\n\\image{moon.png}\n");
+        let deck = parse("## q\nWaxing\n![](moon.png)\n");
         let card = &deck.cards[0];
         assert_eq!(vec![PathBuf::from("moon.png")], img_srcs(&card.images_back));
         assert!(card.images.is_empty());
         assert_eq!(vec!["Waxing"], card.back);
-        assert!(!card.back.join("\n").contains("\\image"));
+        assert!(!card.back.join("\n").contains("!["));
     }
 
     #[test]
     fn a_divided_front_image_fills_images_and_cleans_the_answer() {
-        let deck = parse("## What phase?\n\\image{moon.png}\n\n---\nWaxing\n");
+        let deck = parse("## What phase?\n![](moon.png)\n\n---\nWaxing\n");
         let card = &deck.cards[0];
         assert_eq!(vec![PathBuf::from("moon.png")], img_srcs(&card.images));
         assert!(card.images_back.is_empty());
         assert_eq!("What phase?", card.front);
         assert_eq!(vec!["Waxing"], card.back);
-        assert!(!card.front.contains("\\image"));
+        assert!(!card.front.contains("!["));
     }
 
     #[test]
     fn without_a_blank_line_the_divider_is_content_and_the_image_lands_on_the_back() {
-        let deck = parse("## q\n\\image{x.png}\n---\nWaxing\n");
+        let deck = parse("## q\n![](x.png)\n---\nWaxing\n");
         let card = &deck.cards[0];
         assert!(card.images.is_empty());
         assert_eq!(vec![PathBuf::from("x.png")], img_srcs(&card.images_back));
@@ -1504,7 +1502,7 @@ the answer
 
     #[test]
     fn two_answer_images_fill_images_back_in_order() {
-        let deck = parse("## q\nSee both\n\\image{a.png}\n\\image{b.png}\n");
+        let deck = parse("## q\nSee both\n![](a.png)\n![](b.png)\n");
         let card = &deck.cards[0];
         assert_eq!(
             vec![PathBuf::from("a.png"), PathBuf::from("b.png")],
@@ -1516,8 +1514,7 @@ the answer
 
     #[test]
     fn a_divided_front_is_not_scanned_for_cloze_but_yields_images() {
-        let deck =
-            parse("## front\n\\cloze[pin] stays literal\n\\image{f.png}\n\n---\nthe answer\n");
+        let deck = parse("## front\n\\cloze[pin] stays literal\n![](f.png)\n\n---\nthe answer\n");
         let card = &deck.cards[0];
         assert!(card.front.contains("\\cloze[pin]"));
         assert_eq!(vec![PathBuf::from("f.png")], img_srcs(&card.images));
@@ -1526,8 +1523,7 @@ the answer
 
     #[test]
     fn a_cloze_card_carries_front_and_back_images() {
-        let deck =
-            parse("## front\n\\image{f.png}\n\n---\nthe \\cloze{answer} here\n\\image{b.png}\n");
+        let deck = parse("## front\n![](f.png)\n\n---\nthe \\cloze{answer} here\n![](b.png)\n");
         assert_eq!(1, deck.cards.len());
         let card = &deck.cards[0];
         assert_eq!(Some(0), card.hole);
@@ -1536,10 +1532,32 @@ the answer
     }
 
     #[test]
+    fn an_image_on_a_fenced_line_is_still_recognized() {
+        let deck = parse("## q\n---\nbefore\n```\n![a diagram](d.png)\n```\n");
+        let card = &deck.cards[0];
+        assert_eq!(vec![PathBuf::from("d.png")], img_srcs(&card.images_back));
+        assert_eq!(vec!["before", "```", "```"], card.back);
+    }
+
+    #[test]
+    fn a_malformed_image_embed_lints_but_the_deck_still_parses() {
+        let deck = parse("## q\n---\nsee ![alt](oops\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["see ![alt](oops"], deck.cards[0].back);
+        assert!(deck.cards[0].images_back.is_empty());
+        assert_eq!(
+            vec![Lint {
+                line: 3,
+                kind: LintKind::ImageMalformed
+            }],
+            deck.lints
+        );
+    }
+
+    #[test]
     fn adding_an_image_preserves_the_card_token() {
         let base = parse("## q <!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\nWaxing\n");
-        let with =
-            parse("## q <!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\nWaxing\n\\image{moon.png}\n");
+        let with = parse("## q <!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\nWaxing\n![](moon.png)\n");
         let card_base = &base.cards[0];
         let card_with = &with.cards[0];
         assert_eq!(card_base.id(), card_with.id());

@@ -1352,7 +1352,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nimage-dir: /assets/imgs\n---\n## q\nWaxing\n\\image{moon.png}\n\\image{crescent.png}\n",
+            "---\nimage-dir: /assets/imgs\n---\n## q\nWaxing\n![](moon.png)\n![](crescent.png)\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1369,11 +1369,7 @@ mod tests {
     fn image_resolves_against_deck_dir_without_image_dir() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "## q\nWaxing\n\\image{moon.png}\n\\image{crescent.png}\n",
-        )
-        .unwrap();
+        std::fs::write(&path, "## q\nWaxing\n![](moon.png)\n![](crescent.png)\n").unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
             vec![dir.path().join("moon.png"), dir.path().join("crescent.png"),],
@@ -1387,7 +1383,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nimage-dir: /assets\n---\n## q\nWaxing\n\\image{/elsewhere/moon.png}\n\\image{crescent.png}\n",
+            "---\nimage-dir: /assets\n---\n## q\nWaxing\n![](/elsewhere/moon.png)\n![](crescent.png)\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();

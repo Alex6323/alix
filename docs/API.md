@@ -539,8 +539,8 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 
 ### ImageDto
 
-`src: string` (a `/img/<key>` URL, see §5), `alt: string?` (the `\image{}`
-marker's `alt:` text, null when the marker set none).
+`src: string` (a `/img/<key>` URL, see §5), `alt: string?` (the `![alt](src)`
+embed's alt text, null when the embed set none).
 
 ### NoteUnitDto *(tagged union — its `kind` is unrelated to StateDto's)*
 

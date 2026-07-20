@@ -72,8 +72,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking (web API): a card's images are now lists, not single fields.** The
   `CardDto` wire shape drops the scalar `img` / `img_back` strings and replaces
   them with `images` / `images_back`, each an ordered list of `{ src, alt }`
-  (`src` the same `/img/<key>` URL as before, `alt` the `\image{}` marker's
-  `alt:` text or null). This lets a card carry several images per side, in
+  (`src` the same `/img/<key>` URL as before, `alt` the `![alt](src)` embed's
+  alt text or null). This lets a card carry several images per side, in
   source order, with alt text. Empty list when a side has no image. Both web
   clients render every image in the list.
 - Grading no longer rewrites the progress store on every answer: in-session

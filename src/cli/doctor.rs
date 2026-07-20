@@ -218,20 +218,9 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),
-        LintKind::MarkerNotSupported { name } => format!(
-            "a `\\{name}{{}}` marker is reserved for a future release; \
-             it stays as literal text, not {name}"
-        ),
-        LintKind::MarkerBadOption { key } if key.is_empty() => "an empty marker option is \
-             ignored; write `alt: ...` or drop the braces"
+        LintKind::ImageMalformed => "an image embed here is malformed; write \
+             `![alt](file.png)` (or escape a literal `![` as `\\![`)"
             .to_string(),
-        LintKind::MarkerBadOption { key } => format!(
-            "marker option `{key}` is not recognized (the only valid option is `alt: ...`, once)"
-        ),
-        LintKind::MarkerMalformed { name } => format!(
-            "the `\\{name}` marker is malformed (empty or an unclosed argument); \
-             it renders as literal text, not a marker"
-        ),
     };
     format!("{}: line {}: {detail}", path.display(), lint.line)
 }
@@ -574,7 +563,7 @@ mod tests {
         w(
             dir,
             "imgcard.md",
-            "## pic <!-- id: img1 -->\nphoto\n\\image{missing.png}\n",
+            "## pic <!-- id: img1 -->\nphoto\n![](missing.png)\n",
         );
         w(dir, "fresh.md", "## q\na\n");
         w(

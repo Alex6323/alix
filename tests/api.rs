@@ -1080,12 +1080,12 @@ fn post_api_browse_with_an_unknown_deck_yields_400() {
 
 #[test]
 fn post_api_browse_serializes_card_images_as_lists_with_alt() {
-    // A back card carries two `\image` markers (the second without an alt); a
+    // A back card carries two image embeds (the second without an alt); a
     // divided front card carries one. Both sides serialize as ordered
     // `{ src, alt }` lists, and the old scalar `img`/`img_back` keys are gone.
     const IMG_DECK: &str = "## Back images <!-- id: bi1 -->\nWaxing\n\
-                            \\image{moon.png}{alt: a moon}\n\\image{crescent.png}\n\n\
-                            ## Front image <!-- id: fi1 -->\n\\image{sun.png}{alt: the sun}\n\n\
+                            ![a moon](moon.png)\n![](crescent.png)\n\n\
+                            ## Front image <!-- id: fi1 -->\n![the sun](sun.png)\n\n\
                             ---\nThe sun\n";
     let (base, _guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(dir.join("images.md"), IMG_DECK).unwrap();

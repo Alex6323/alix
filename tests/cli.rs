@@ -1327,27 +1327,26 @@ fn doctor_hints_the_image_marker_for_a_straggler_img_back_directive() {
 }
 
 #[test]
-fn doctor_surfaces_a_malformed_marker_and_a_bad_marker_option() {
+fn doctor_surfaces_a_malformed_image_embed() {
     let dir = TempDir::new().unwrap();
     let deck = write(
         dir.path(),
         "marker.md",
-        "## q <!-- id: markerq01 -->\nanswer\n\\image{}\n\\image{x.png}{ALT: caption}\n",
+        "## q <!-- id: markerq01 -->\nanswer\n![]()\n![x](oops\n",
     );
     let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let err = stderr(&out);
     assert!(err.contains("malformed") && err.contains("image"), "{err}");
-    assert!(err.contains("ALT"), "{err}");
 }
 
 #[test]
-fn doctor_warns_on_a_missing_image_referenced_by_the_marker() {
+fn doctor_warns_on_a_missing_image_referenced_by_the_embed() {
     let dir = TempDir::new().unwrap();
     let deck = write(
         dir.path(),
         "pic.md",
-        "## pic <!-- id: picq01 -->\nphoto\n\\image{gone.png}\n",
+        "## pic <!-- id: picq01 -->\nphoto\n![](gone.png)\n",
     );
     let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));

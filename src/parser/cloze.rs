@@ -1,4 +1,4 @@
-use super::{Lint, LintKind, ParseError, canonical::hash64, collapse, trim_ws};
+use super::{Lint, LintKind, ParseError, WHITESPACE, canonical::hash64, collapse, trim_ws};
 use crate::store::HoleFingerprint;
 
 // A NUL is safe here: the parser rejects C0 controls outside the whitespace
@@ -63,14 +63,8 @@ pub(super) fn scan_markers(
         if let Some(after) = rest.strip_prefix("\\\\cloze") {
             text.push_str("\\cloze");
             rest = after;
-        } else if let Some(after) = rest.strip_prefix("\\\\image") {
-            text.push_str("\\image");
-            rest = after;
-        } else if let Some(after) = rest.strip_prefix("\\\\audio") {
-            text.push_str("\\audio");
-            rest = after;
-        } else if let Some(after) = rest.strip_prefix("\\\\video") {
-            text.push_str("\\video");
+        } else if let Some(after) = rest.strip_prefix("\\![") {
+            text.push_str("![");
             rest = after;
         } else if region == Region::Answer
             && let Some(after) = rest.strip_prefix("\\cloze")
@@ -99,12 +93,8 @@ pub(super) fn scan_markers(
                 text.push_str("\\cloze");
                 rest = after;
             }
-        } else if let Some(after) = rest.strip_prefix("\\image") {
-            rest = scan_image(rest, after, lineno, &mut text, &mut segments, lints);
-        } else if let Some(after) = rest.strip_prefix("\\audio") {
-            rest = scan_reserved(rest, after, lineno, "audio", &mut text, lints);
-        } else if let Some(after) = rest.strip_prefix("\\video") {
-            rest = scan_reserved(rest, after, lineno, "video", &mut text, lints);
+        } else if let Some(after) = rest.strip_prefix("![") {
+            rest = scan_image(after, lineno, &mut text, &mut segments, lints);
         } else if let Some(ch) = rest.chars().next() {
             text.push(ch);
             rest = &rest[ch.len_utf8()..];
@@ -117,112 +107,45 @@ pub(super) fn scan_markers(
 }
 
 fn scan_image<'a>(
-    start: &'a str,
-    after_name: &'a str,
+    inner: &'a str,
     lineno: usize,
     text: &mut String,
     segments: &mut Vec<Seg>,
     lints: &mut Vec<Lint>,
 ) -> &'a str {
-    let Some(arg) = after_name.strip_prefix('{') else {
-        text.push_str("\\image");
-        return after_name;
-    };
-    let Ok((content, mut rest)) = scan_group(arg, lineno) else {
-        malformed(lints, lineno, "image");
-        text.push_str(start);
-        return "";
-    };
-    let src = trim_ws(&content);
-    let dropped = src.is_empty();
-    if dropped {
-        malformed(lints, lineno, "image");
-    }
-    let mut alt: Option<String> = None;
-    while let Some(arg) = rest.strip_prefix('{') {
-        let Ok((group, after_group)) = scan_group(arg, lineno) else {
-            malformed(lints, lineno, "image");
-            break;
-        };
-        rest = after_group;
-        if dropped {
-            continue;
+    if let Some((raw_alt, after_alt)) = inner.split_once(']')
+        && let Some(paren) = after_alt.strip_prefix('(')
+        && let Some((raw_src, after)) = paren.split_once(')')
+    {
+        let src = trim_ws(raw_src);
+        if src.is_empty() {
+            lints.push(image_malformed(lineno));
+            return after;
         }
-        let Some((raw_key, raw_value)) = group.split_once(':') else {
-            bad_option(lints, lineno, trim_ws(&group));
-            continue;
-        };
-        let key = trim_ws(raw_key);
-        if key == "alt" && alt.is_none() {
-            alt = Some(trim_ws(raw_value).to_string());
-        } else {
-            bad_option(lints, lineno, key);
-        }
-    }
-    if !dropped {
-        if !text.is_empty() {
-            segments.push(Seg::Text(std::mem::take(text)));
-        }
-        segments.push(Seg::Image {
-            src: src.to_string(),
-            alt,
-        });
-    }
-    rest
-}
-
-fn scan_reserved<'a>(
-    start: &'a str,
-    after_name: &'a str,
-    lineno: usize,
-    name: &str,
-    text: &mut String,
-    lints: &mut Vec<Lint>,
-) -> &'a str {
-    if !after_name.starts_with('{') {
-        text.push('\\');
-        text.push_str(name);
-        return after_name;
-    }
-    lints.push(Lint {
-        line: lineno,
-        kind: LintKind::MarkerNotSupported {
-            name: name.to_string(),
-        },
-    });
-    let mut rest = after_name;
-    let mut primary = true;
-    while let Some(arg) = rest.strip_prefix('{') {
-        match scan_group(arg, lineno) {
-            Ok((content, after_group)) => {
-                if primary && trim_ws(&content).is_empty() {
-                    malformed(lints, lineno, name);
-                }
-                primary = false;
-                rest = after_group;
+        // Inner whitespace in the src (a Markdown title, a spaced filename) is
+        // a deliberate exclusion, kept open for a later release.
+        if !src.contains(&WHITESPACE[..]) {
+            if !text.is_empty() {
+                segments.push(Seg::Text(std::mem::take(text)));
             }
-            Err(_) => {
-                malformed(lints, lineno, name);
-                rest = "";
-            }
+            let alt = trim_ws(raw_alt);
+            segments.push(Seg::Image {
+                src: src.to_string(),
+                alt: (!alt.is_empty()).then(|| alt.to_string()),
+            });
+            return after;
         }
     }
-    text.push_str(&start[..start.len() - rest.len()]);
-    rest
+    lints.push(image_malformed(lineno));
+    text.push_str("![");
+    inner
 }
 
-fn malformed(lints: &mut Vec<Lint>, lineno: usize, name: &str) {
-    lints.push(Lint {
+fn image_malformed(lineno: usize) -> Lint {
+    Lint {
         line: lineno,
-        kind: LintKind::MarkerMalformed { name: name.into() },
-    });
-}
-
-fn bad_option(lints: &mut Vec<Lint>, lineno: usize, key: &str) {
-    lints.push(Lint {
-        line: lineno,
-        kind: LintKind::MarkerBadOption { key: key.into() },
-    });
+        kind: LintKind::ImageMalformed,
+    }
 }
 
 fn scan_group(arg: &str, lineno: usize) -> Result<(String, &str), ParseError> {
@@ -267,6 +190,8 @@ fn scan_group(arg: &str, lineno: usize) -> Result<(String, &str), ParseError> {
     Err(ParseError::UnclosedHole(lineno))
 }
 
+// A stable hash preimage (feeds line_fp), not deck syntax; changing it would
+// churn stored hole fingerprints.
 pub(super) fn push_image(out: &mut String, src: &str, alt: Option<&str>) {
     out.push_str("\\image{");
     out.push_str(src);
@@ -354,253 +279,159 @@ mod tests {
         }
     }
 
-    fn bad_option_lint(key: &str) -> Lint {
+    fn image_malformed() -> Lint {
         Lint {
             line: 7,
-            kind: LintKind::MarkerBadOption { key: key.into() },
-        }
-    }
-
-    fn malformed_lint(name: &str) -> Lint {
-        Lint {
-            line: 7,
-            kind: LintKind::MarkerMalformed { name: name.into() },
-        }
-    }
-
-    fn marker_unsupported(name: &str) -> Lint {
-        Lint {
-            line: 7,
-            kind: LintKind::MarkerNotSupported { name: name.into() },
+            kind: LintKind::ImageMalformed,
         }
     }
 
     #[test]
-    fn image_with_one_group_yields_src_and_no_alt() {
-        let (segments, lints) = answer("\\image{moon.png}");
-        assert_eq!(vec![image("moon.png", None)], segments);
-        assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn image_alt_option_is_captured() {
-        let (segments, lints) = answer("\\image{moon.png}{alt: a moon}");
+    fn a_markdown_image_yields_src_and_alt() {
+        let (segments, lints) = answer("![a moon](moon.png)");
         assert_eq!(vec![image("moon.png", Some("a moon"))], segments);
         assert!(lints.is_empty());
     }
 
     #[test]
-    fn image_src_is_trimmed() {
-        let (segments, _) = answer("\\image{ moon.png }");
+    fn an_empty_bracket_yields_no_alt() {
+        let (segments, lints) = answer("![](moon.png)");
+        assert_eq!(vec![image("moon.png", None)], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn the_image_src_is_trimmed() {
+        let (segments, _) = answer("![](  moon.png  )");
         assert_eq!(vec![image("moon.png", None)], segments);
     }
 
     #[test]
-    fn option_value_splits_on_the_first_colon_only() {
-        let (segments, _) = answer("\\image{x.png}{alt: 3:2 ratio}");
-        assert_eq!(vec![image("x.png", Some("3:2 ratio"))], segments);
+    fn the_image_alt_is_trimmed() {
+        let (segments, _) = answer("![ a moon ](x.png)");
+        assert_eq!(vec![image("x.png", Some("a moon"))], segments);
     }
 
     #[test]
-    fn option_value_unescapes_braces() {
-        let (segments, _) = answer("\\image{x.png}{alt: a \\{b\\} c}");
-        assert_eq!(vec![image("x.png", Some("a {b} c"))], segments);
-    }
-
-    #[test]
-    fn escaped_image_marker_stays_literal() {
-        let (segments, lints) = answer("\\\\image{x}");
-        assert_eq!(vec![text("\\image{x}")], segments);
-        assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn image_without_a_group_is_literal() {
-        let (segments, lints) = answer("\\image");
-        assert_eq!(vec![text("\\image")], segments);
-        assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn separated_group_is_literal_text_not_an_option() {
-        let (segments, lints) = answer("\\image{a.png} {alt: x}");
-        assert_eq!(vec![image("a.png", None), text(" {alt: x}")], segments);
-        assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn option_without_a_colon_lints_and_the_image_still_yields() {
-        let (segments, lints) = answer("\\image{x.png}{center}");
+    fn a_whitespace_only_alt_counts_as_no_alt() {
+        let (segments, _) = answer("![   ](x.png)");
         assert_eq!(vec![image("x.png", None)], segments);
-        assert_eq!(vec![bad_option_lint("center")], lints);
     }
 
     #[test]
-    fn empty_option_group_lints() {
-        let (segments, lints) = answer("\\image{x.png}{}");
-        assert_eq!(vec![image("x.png", None)], segments);
-        assert_eq!(vec![bad_option_lint("")], lints);
-    }
-
-    #[test]
-    fn unknown_option_key_lints() {
-        let (segments, lints) = answer("\\image{x.png}{title: t}");
-        assert_eq!(vec![image("x.png", None)], segments);
-        assert_eq!(vec![bad_option_lint("title")], lints);
-    }
-
-    #[test]
-    fn duplicate_option_key_lints_and_the_first_value_wins() {
-        let (segments, lints) = answer("\\image{x.png}{alt: a}{alt: b}");
-        assert_eq!(vec![image("x.png", Some("a"))], segments);
-        assert_eq!(vec![bad_option_lint("alt")], lints);
-    }
-
-    #[test]
-    fn text_around_a_marker_is_preserved() {
-        let (segments, _) = answer("see \\image{x} here");
+    fn text_around_an_image_is_preserved() {
+        let (segments, _) = answer("see ![](x.png) here");
         assert_eq!(
-            vec![text("see "), image("x", None), text(" here")],
+            vec![text("see "), image("x.png", None), text(" here")],
             segments
         );
     }
 
     #[test]
-    fn unclosed_image_degrades_to_literal_with_a_lint() {
-        let (segments, lints) = answer("\\image{oops");
-        assert_eq!(vec![text("\\image{oops")], segments);
-        assert_eq!(vec![malformed_lint("image")], lints);
+    fn an_image_needs_no_word_boundary() {
+        let (segments, _) = answer("wow![](x.png)");
+        assert_eq!(vec![text("wow"), image("x.png", None)], segments);
     }
 
     #[test]
-    fn empty_image_is_dropped_with_a_lint() {
-        let (segments, lints) = answer("\\image{}");
+    fn two_images_yield_in_order() {
+        let (segments, _) = answer("![](a.png) ![](b.png)");
+        assert_eq!(
+            vec![image("a.png", None), text(" "), image("b.png", None)],
+            segments
+        );
+    }
+
+    #[test]
+    fn an_image_is_recognized_in_the_front_region_too() {
+        let (segments, _) = scan("![](x.png)", Region::Front);
+        assert_eq!(vec![image("x.png", None)], segments);
+    }
+
+    #[test]
+    fn an_unclosed_paren_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![alt](moon.png");
+        assert_eq!(vec![text("![alt](moon.png")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn a_bracket_without_parens_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![alt]");
+        assert_eq!(vec![text("![alt]")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn an_unclosed_bracket_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![oops");
+        assert_eq!(vec![text("![oops")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn a_space_between_bracket_and_parens_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![alt] (x.png)");
+        assert_eq!(vec![text("![alt] (x.png)")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn an_empty_src_lints_and_drops_the_image() {
+        let (segments, lints) = answer("![alt]()");
         assert!(segments.is_empty());
-        assert_eq!(vec![malformed_lint("image")], lints);
+        assert_eq!(vec![image_malformed()], lints);
     }
 
     #[test]
-    fn whitespace_only_image_src_counts_as_empty() {
-        let (segments, lints) = answer("\\image{  }");
+    fn a_whitespace_only_src_counts_as_empty() {
+        let (segments, lints) = answer("![](  )");
         assert!(segments.is_empty());
-        assert_eq!(vec![malformed_lint("image")], lints);
+        assert_eq!(vec![image_malformed()], lints);
     }
 
     #[test]
-    fn a_dropped_image_consumes_its_option_groups() {
-        let (segments, lints) = answer("\\image{}{alt: x}");
-        assert!(segments.is_empty());
-        assert_eq!(vec![malformed_lint("image")], lints);
+    fn a_markdown_title_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![a](moon.png \"the moon\")");
+        assert_eq!(vec![text("![a](moon.png \"the moon\")")], segments);
+        assert_eq!(vec![image_malformed()], lints);
     }
 
     #[test]
-    fn audio_lints_unsupported_and_stays_literal() {
-        let (segments, lints) = answer("\\audio{x.mp3}");
-        assert_eq!(vec![text("\\audio{x.mp3}")], segments);
-        assert_eq!(vec![marker_unsupported("audio")], lints);
+    fn a_src_with_inner_whitespace_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![](my moon.png)");
+        assert_eq!(vec![text("![](my moon.png)")], segments);
+        assert_eq!(vec![image_malformed()], lints);
     }
 
     #[test]
-    fn audio_claims_its_groups_without_validating_options() {
-        let (segments, lints) = answer("\\audio{a.mp3}{from: 0:10}");
-        assert_eq!(vec![text("\\audio{a.mp3}{from: 0:10}")], segments);
-        assert_eq!(vec![marker_unsupported("audio")], lints);
+    fn a_reference_style_image_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![alt][ref]");
+        assert_eq!(vec![text("![alt][ref]")], segments);
+        assert_eq!(vec![image_malformed()], lints);
     }
 
     #[test]
-    fn audio_without_a_group_is_literal_without_a_lint() {
-        let (segments, lints) = answer("\\audio");
-        assert_eq!(vec![text("\\audio")], segments);
+    fn a_trailing_option_map_after_an_image_is_literal_text() {
+        let (segments, lints) = answer("![](x.png){crop: 10,20}");
+        assert_eq!(vec![image("x.png", None), text("{crop: 10,20}")], segments);
         assert!(lints.is_empty());
     }
 
     #[test]
-    fn unclosed_audio_stays_literal_and_lints_malformed_too() {
-        let (segments, lints) = answer("\\audio{oops");
-        assert_eq!(vec![text("\\audio{oops")], segments);
-        assert_eq!(
-            vec![marker_unsupported("audio"), malformed_lint("audio")],
-            lints
-        );
-    }
-
-    #[test]
-    fn empty_audio_lints_unsupported_and_malformed_too() {
-        let (segments, lints) = answer("\\audio{}");
-        assert_eq!(vec![text("\\audio{}")], segments);
-        assert_eq!(
-            vec![marker_unsupported("audio"), malformed_lint("audio")],
-            lints
-        );
-    }
-
-    #[test]
-    fn audio_is_recognized_in_the_front_region_too() {
-        let (segments, lints) = scan("\\audio{x.mp3}", Region::Front);
-        assert_eq!(vec![text("\\audio{x.mp3}")], segments);
-        assert_eq!(vec![marker_unsupported("audio")], lints);
-    }
-
-    #[test]
-    fn escaped_audio_marker_stays_literal_without_a_lint() {
-        let (segments, lints) = answer("\\\\audio{x.mp3}");
-        assert_eq!(vec![text("\\audio{x.mp3}")], segments);
+    fn an_escaped_image_start_is_literal() {
+        let (segments, lints) = answer("\\![alt](x)");
+        assert_eq!(vec![text("![alt](x)")], segments);
         assert!(lints.is_empty());
     }
 
     #[test]
-    fn video_lints_unsupported_and_stays_literal() {
-        let (segments, lints) = answer("\\video{clip.mp4}");
-        assert_eq!(vec![text("\\video{clip.mp4}")], segments);
-        assert_eq!(vec![marker_unsupported("video")], lints);
-    }
-
-    #[test]
-    fn video_claims_its_groups_without_validating_options() {
-        let (segments, lints) = answer("\\video{a.mp4}{from: 0:10}");
-        assert_eq!(vec![text("\\video{a.mp4}{from: 0:10}")], segments);
-        assert_eq!(vec![marker_unsupported("video")], lints);
-    }
-
-    #[test]
-    fn video_without_a_group_is_literal_without_a_lint() {
-        let (segments, lints) = answer("\\video");
-        assert_eq!(vec![text("\\video")], segments);
-        assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn unclosed_video_stays_literal_and_lints_malformed_too() {
-        let (segments, lints) = answer("\\video{oops");
-        assert_eq!(vec![text("\\video{oops")], segments);
+    fn a_markdown_image_can_share_a_line_with_a_hole() {
+        let (segments, _) = answer("\\cloze{a} and ![](x.png)");
         assert_eq!(
-            vec![marker_unsupported("video"), malformed_lint("video")],
-            lints
+            vec![hole("a"), text(" and "), image("x.png", None)],
+            segments
         );
-    }
-
-    #[test]
-    fn empty_video_lints_unsupported_and_malformed_too() {
-        let (segments, lints) = answer("\\video{}");
-        assert_eq!(vec![text("\\video{}")], segments);
-        assert_eq!(
-            vec![marker_unsupported("video"), malformed_lint("video")],
-            lints
-        );
-    }
-
-    #[test]
-    fn video_is_recognized_in_the_front_region_too() {
-        let (segments, lints) = scan("\\video{x.mp4}", Region::Front);
-        assert_eq!(vec![text("\\video{x.mp4}")], segments);
-        assert_eq!(vec![marker_unsupported("video")], lints);
-    }
-
-    #[test]
-    fn escaped_video_marker_stays_literal_without_a_lint() {
-        let (segments, lints) = answer("\\\\video{x.mp4}");
-        assert_eq!(vec![text("\\video{x.mp4}")], segments);
-        assert!(lints.is_empty());
     }
 
     #[test]
@@ -611,10 +442,12 @@ mod tests {
     }
 
     #[test]
-    fn a_marker_name_typo_stays_literal() {
-        let (segments, lints) = answer("\\imagee{x}");
-        assert_eq!(vec![text("\\imagee{x}")], segments);
-        assert!(lints.is_empty());
+    fn the_retired_backslash_markers_are_now_plain_text() {
+        for line in ["\\image{moon.png}", "\\audio{x.mp3}", "\\video{x.mp4}"] {
+            let (segments, lints) = answer(line);
+            assert_eq!(vec![text(line)], segments);
+            assert!(lints.is_empty());
+        }
     }
 
     #[test]
@@ -665,72 +498,8 @@ mod tests {
     }
 
     #[test]
-    fn image_in_the_front_region_yields() {
-        let (segments, _) = scan("\\image{x}", Region::Front);
-        assert_eq!(vec![image("x", None)], segments);
-    }
-
-    #[test]
-    fn two_adjacent_images_both_yield() {
-        let (segments, _) = answer("\\image{a}\\image{b}");
-        assert_eq!(vec![image("a", None), image("b", None)], segments);
-    }
-
-    #[test]
-    fn an_image_can_share_a_line_with_a_hole() {
-        let (segments, _) = answer("\\cloze{a} and \\image{x}");
-        assert_eq!(vec![hole("a"), text(" and "), image("x", None)], segments);
-    }
-
-    #[test]
-    fn capitalized_alt_key_lints_and_no_alt_is_set() {
-        let (segments, lints) = answer("\\image{x}{Alt: y}");
-        assert_eq!(vec![image("x", None)], segments);
-        assert_eq!(vec![bad_option_lint("Alt")], lints);
-    }
-
-    #[test]
-    fn all_caps_alt_key_lints_and_no_alt_is_set() {
-        let (segments, lints) = answer("\\image{x}{ALT: y}");
-        assert_eq!(vec![image("x", None)], segments);
-        assert_eq!(vec![bad_option_lint("ALT")], lints);
-    }
-
-    #[test]
-    fn option_key_is_trimmed_but_case_sensitive() {
-        let (segments, lints) = answer("\\image{x}{ alt : y}");
-        assert_eq!(vec![image("x", Some("y"))], segments);
-        assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn option_values_are_trimmed_on_both_ends() {
-        let (segments, _) = answer("\\image{x}{alt:  y  }");
-        assert_eq!(vec![image("x", Some("y"))], segments);
-    }
-
-    #[test]
-    fn an_empty_option_value_stays_an_empty_alt() {
-        let (segments, _) = answer("\\image{x}{alt:}");
-        assert_eq!(vec![image("x", Some(""))], segments);
-    }
-
-    #[test]
-    fn escaped_braces_in_the_src_are_unescaped() {
-        let (segments, _) = answer("\\image{a\\{b\\}.png}");
-        assert_eq!(vec![image("a{b}.png", None)], segments);
-    }
-
-    #[test]
-    fn an_unclosed_option_group_stays_literal_and_lints_malformed() {
-        let (segments, lints) = answer("\\image{x}{alt: oops");
-        assert_eq!(vec![image("x", None), text("{alt: oops")], segments);
-        assert_eq!(vec![malformed_lint("image")], lints);
-    }
-
-    #[test]
     fn hash_repr_wraps_an_image_in_sentinels() {
-        let (segments, _) = answer("\\image{m.png}");
+        let (segments, _) = answer("![](m.png)");
         assert_eq!("\u{1f}image\u{1f}m.png\u{1f}", hash_repr(&segments));
     }
 
@@ -740,7 +509,7 @@ mod tests {
             src: "x".into(),
             alt: None,
         }];
-        let literal_segments = vec![Seg::Text("\\image{x}".into())];
+        let literal_segments = vec![Seg::Text("![](x)".into())];
         assert_ne!(hash_repr(&image_segments), hash_repr(&literal_segments));
     }
 
@@ -757,7 +526,7 @@ mod tests {
     #[test]
     fn hole_fingerprints_see_an_image_on_the_hole_line() {
         let holes = vec![(0usize, 0usize, "a")];
-        let (with_image, _) = answer("\\cloze{a} \\image{x}");
+        let (with_image, _) = answer("\\cloze{a} ![](x.png)");
         let (without_image, _) = answer("\\cloze{a}");
         let with_image = hole_fingerprints(&[with_image], &holes);
         let without_image = hole_fingerprints(&[without_image], &holes);
