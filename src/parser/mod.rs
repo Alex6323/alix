@@ -52,7 +52,7 @@ pub enum LintKind {
     ClozeInHole,
     UnclosedComment,
     UnclosedFence,
-    AudioNotSupported,
+    MarkerNotSupported { name: String },
     MarkerBadOption { key: String },
     MarkerMalformed { name: String },
 }

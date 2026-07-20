@@ -69,6 +69,9 @@ pub(super) fn scan_markers(
         } else if let Some(after) = rest.strip_prefix("\\\\audio") {
             text.push_str("\\audio");
             rest = after;
+        } else if let Some(after) = rest.strip_prefix("\\\\video") {
+            text.push_str("\\video");
+            rest = after;
         } else if region == Region::Answer
             && let Some(after) = rest.strip_prefix("\\cloze")
         {
@@ -99,7 +102,9 @@ pub(super) fn scan_markers(
         } else if let Some(after) = rest.strip_prefix("\\image") {
             rest = scan_image(rest, after, lineno, &mut text, &mut segments, lints);
         } else if let Some(after) = rest.strip_prefix("\\audio") {
-            rest = scan_audio(rest, after, lineno, &mut text, lints);
+            rest = scan_reserved(rest, after, lineno, "audio", &mut text, lints);
+        } else if let Some(after) = rest.strip_prefix("\\video") {
+            rest = scan_reserved(rest, after, lineno, "video", &mut text, lints);
         } else if let Some(ch) = rest.chars().next() {
             text.push(ch);
             rest = &rest[ch.len_utf8()..];
@@ -166,20 +171,24 @@ fn scan_image<'a>(
     rest
 }
 
-fn scan_audio<'a>(
+fn scan_reserved<'a>(
     start: &'a str,
     after_name: &'a str,
     lineno: usize,
+    name: &str,
     text: &mut String,
     lints: &mut Vec<Lint>,
 ) -> &'a str {
     if !after_name.starts_with('{') {
-        text.push_str("\\audio");
+        text.push('\\');
+        text.push_str(name);
         return after_name;
     }
     lints.push(Lint {
         line: lineno,
-        kind: LintKind::AudioNotSupported,
+        kind: LintKind::MarkerNotSupported {
+            name: name.to_string(),
+        },
     });
     let mut rest = after_name;
     let mut primary = true;
@@ -187,13 +196,13 @@ fn scan_audio<'a>(
         match scan_group(arg, lineno) {
             Ok((content, after_group)) => {
                 if primary && trim_ws(&content).is_empty() {
-                    malformed(lints, lineno, "audio");
+                    malformed(lints, lineno, name);
                 }
                 primary = false;
                 rest = after_group;
             }
             Err(_) => {
-                malformed(lints, lineno, "audio");
+                malformed(lints, lineno, name);
                 rest = "";
             }
         }
@@ -359,10 +368,10 @@ mod tests {
         }
     }
 
-    fn audio_unsupported() -> Lint {
+    fn marker_unsupported(name: &str) -> Lint {
         Lint {
             line: 7,
-            kind: LintKind::AudioNotSupported,
+            kind: LintKind::MarkerNotSupported { name: name.into() },
         }
     }
 
@@ -488,14 +497,14 @@ mod tests {
     fn audio_lints_unsupported_and_stays_literal() {
         let (segments, lints) = answer("\\audio{x.mp3}");
         assert_eq!(vec![text("\\audio{x.mp3}")], segments);
-        assert_eq!(vec![audio_unsupported()], lints);
+        assert_eq!(vec![marker_unsupported("audio")], lints);
     }
 
     #[test]
     fn audio_claims_its_groups_without_validating_options() {
         let (segments, lints) = answer("\\audio{a.mp3}{from: 0:10}");
         assert_eq!(vec![text("\\audio{a.mp3}{from: 0:10}")], segments);
-        assert_eq!(vec![audio_unsupported()], lints);
+        assert_eq!(vec![marker_unsupported("audio")], lints);
     }
 
     #[test]
@@ -509,27 +518,88 @@ mod tests {
     fn unclosed_audio_stays_literal_and_lints_malformed_too() {
         let (segments, lints) = answer("\\audio{oops");
         assert_eq!(vec![text("\\audio{oops")], segments);
-        assert_eq!(vec![audio_unsupported(), malformed_lint("audio")], lints);
+        assert_eq!(
+            vec![marker_unsupported("audio"), malformed_lint("audio")],
+            lints
+        );
     }
 
     #[test]
     fn empty_audio_lints_unsupported_and_malformed_too() {
         let (segments, lints) = answer("\\audio{}");
         assert_eq!(vec![text("\\audio{}")], segments);
-        assert_eq!(vec![audio_unsupported(), malformed_lint("audio")], lints);
+        assert_eq!(
+            vec![marker_unsupported("audio"), malformed_lint("audio")],
+            lints
+        );
     }
 
     #[test]
     fn audio_is_recognized_in_the_front_region_too() {
         let (segments, lints) = scan("\\audio{x.mp3}", Region::Front);
         assert_eq!(vec![text("\\audio{x.mp3}")], segments);
-        assert_eq!(vec![audio_unsupported()], lints);
+        assert_eq!(vec![marker_unsupported("audio")], lints);
     }
 
     #[test]
     fn escaped_audio_marker_stays_literal_without_a_lint() {
         let (segments, lints) = answer("\\\\audio{x.mp3}");
         assert_eq!(vec![text("\\audio{x.mp3}")], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn video_lints_unsupported_and_stays_literal() {
+        let (segments, lints) = answer("\\video{clip.mp4}");
+        assert_eq!(vec![text("\\video{clip.mp4}")], segments);
+        assert_eq!(vec![marker_unsupported("video")], lints);
+    }
+
+    #[test]
+    fn video_claims_its_groups_without_validating_options() {
+        let (segments, lints) = answer("\\video{a.mp4}{from: 0:10}");
+        assert_eq!(vec![text("\\video{a.mp4}{from: 0:10}")], segments);
+        assert_eq!(vec![marker_unsupported("video")], lints);
+    }
+
+    #[test]
+    fn video_without_a_group_is_literal_without_a_lint() {
+        let (segments, lints) = answer("\\video");
+        assert_eq!(vec![text("\\video")], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn unclosed_video_stays_literal_and_lints_malformed_too() {
+        let (segments, lints) = answer("\\video{oops");
+        assert_eq!(vec![text("\\video{oops")], segments);
+        assert_eq!(
+            vec![marker_unsupported("video"), malformed_lint("video")],
+            lints
+        );
+    }
+
+    #[test]
+    fn empty_video_lints_unsupported_and_malformed_too() {
+        let (segments, lints) = answer("\\video{}");
+        assert_eq!(vec![text("\\video{}")], segments);
+        assert_eq!(
+            vec![marker_unsupported("video"), malformed_lint("video")],
+            lints
+        );
+    }
+
+    #[test]
+    fn video_is_recognized_in_the_front_region_too() {
+        let (segments, lints) = scan("\\video{x.mp4}", Region::Front);
+        assert_eq!(vec![text("\\video{x.mp4}")], segments);
+        assert_eq!(vec![marker_unsupported("video")], lints);
+    }
+
+    #[test]
+    fn escaped_video_marker_stays_literal_without_a_lint() {
+        let (segments, lints) = answer("\\\\video{x.mp4}");
+        assert_eq!(vec![text("\\video{x.mp4}")], segments);
         assert!(lints.is_empty());
     }
 

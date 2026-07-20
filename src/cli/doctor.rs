@@ -218,9 +218,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),
-        LintKind::AudioNotSupported => "a `\\audio{}` marker is reserved for a future release; \
-             it stays as literal text, not audio"
-            .to_string(),
+        LintKind::MarkerNotSupported { name } => format!(
+            "a `\\{name}{{}}` marker is reserved for a future release; \
+             it stays as literal text, not {name}"
+        ),
         LintKind::MarkerBadOption { key } if key.is_empty() => "an empty marker option is \
              ignored; write `alt: ...` or drop the braces"
             .to_string(),
