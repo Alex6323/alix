@@ -136,6 +136,7 @@ fn scan_image<'a>(
     let mut alt: Option<String> = None;
     while let Some(arg) = rest.strip_prefix('{') {
         let Ok((group, after_group)) = scan_group(arg, lineno) else {
+            malformed(lints, lineno, "image");
             break;
         };
         rest = after_group;
@@ -147,7 +148,7 @@ fn scan_image<'a>(
             continue;
         };
         let key = trim_ws(raw_key);
-        if key.eq_ignore_ascii_case("alt") && alt.is_none() {
+        if key == "alt" && alt.is_none() {
             alt = Some(trim_ws(raw_value).to_string());
         } else {
             bad_option(lints, lineno, key);
@@ -294,7 +295,17 @@ pub(super) fn hash_repr(segments: &[Seg]) -> String {
                 out.push_str(hole);
                 out.push('\u{1f}');
             }
-            Seg::Image { src, alt } => push_image(&mut out, src, alt.as_deref()),
+            Seg::Image { src, alt } => {
+                out.push('\u{1f}');
+                out.push_str("image");
+                out.push('\u{1f}');
+                out.push_str(src);
+                if let Some(alt) = alt {
+                    out.push('\u{1f}');
+                    out.push_str(alt);
+                }
+                out.push('\u{1f}');
+            }
         }
     }
     out
@@ -502,6 +513,13 @@ mod tests {
     }
 
     #[test]
+    fn empty_audio_lints_unsupported_and_malformed_too() {
+        let (segments, lints) = answer("\\audio{}");
+        assert_eq!(vec![text("\\audio{}")], segments);
+        assert_eq!(vec![audio_unsupported(), malformed_lint("audio")], lints);
+    }
+
+    #[test]
     fn audio_is_recognized_in_the_front_region_too() {
         let (segments, lints) = scan("\\audio{x.mp3}", Region::Front);
         assert_eq!(vec![text("\\audio{x.mp3}")], segments);
@@ -595,8 +613,22 @@ mod tests {
     }
 
     #[test]
-    fn option_keys_are_trimmed_and_case_insensitive() {
-        let (segments, lints) = answer("\\image{x}{ Alt : y}");
+    fn capitalized_alt_key_lints_and_no_alt_is_set() {
+        let (segments, lints) = answer("\\image{x}{Alt: y}");
+        assert_eq!(vec![image("x", None)], segments);
+        assert_eq!(vec![bad_option_lint("Alt")], lints);
+    }
+
+    #[test]
+    fn all_caps_alt_key_lints_and_no_alt_is_set() {
+        let (segments, lints) = answer("\\image{x}{ALT: y}");
+        assert_eq!(vec![image("x", None)], segments);
+        assert_eq!(vec![bad_option_lint("ALT")], lints);
+    }
+
+    #[test]
+    fn option_key_is_trimmed_but_case_sensitive() {
+        let (segments, lints) = answer("\\image{x}{ alt : y}");
         assert_eq!(vec![image("x", Some("y"))], segments);
         assert!(lints.is_empty());
     }
@@ -620,10 +652,10 @@ mod tests {
     }
 
     #[test]
-    fn an_unclosed_option_group_stays_literal_and_the_image_yields() {
+    fn an_unclosed_option_group_stays_literal_and_lints_malformed() {
         let (segments, lints) = answer("\\image{x}{alt: oops");
         assert_eq!(vec![image("x", None), text("{alt: oops")], segments);
-        assert!(lints.is_empty());
+        assert_eq!(vec![malformed_lint("image")], lints);
     }
 
     #[test]
@@ -633,9 +665,29 @@ mod tests {
     }
 
     #[test]
-    fn hash_repr_renders_an_image_as_its_marker_text() {
+    fn hash_repr_wraps_an_image_in_sentinels() {
         let (segments, _) = answer("\\image{m.png}");
-        assert_eq!("\\image{m.png}", hash_repr(&segments));
+        assert_eq!("\u{1f}image\u{1f}m.png\u{1f}", hash_repr(&segments));
+    }
+
+    #[test]
+    fn hash_repr_image_does_not_collide_with_the_escaped_literal_text() {
+        let image_segments = vec![Seg::Image {
+            src: "x".into(),
+            alt: None,
+        }];
+        let literal_segments = vec![Seg::Text("\\image{x}".into())];
+        assert_ne!(hash_repr(&image_segments), hash_repr(&literal_segments));
+    }
+
+    #[test]
+    fn hash_repr_image_does_not_collide_with_a_hole_that_mentions_image() {
+        let image_segments = vec![Seg::Image {
+            src: "x".into(),
+            alt: None,
+        }];
+        let hole_segments = vec![Seg::Hole("image x".into())];
+        assert_ne!(hash_repr(&image_segments), hash_repr(&hole_segments));
     }
 
     #[test]
