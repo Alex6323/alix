@@ -95,9 +95,10 @@ noisy diff the way you'd treat a failing test: not done yet.
 is mentioned quietly where it fits (a Support link), and the copy always leads
 with the free alternative (telling someone about alix). Never print concrete
 cost figures (they go stale and are never quite true). No banners, no nags, no
-guilt. In-app, exactly one quiet Support line lives in the About dialog (free
-alternative first, then the sponsors link; user decision 2026-07-17), never on
-a study surface. If a sentence reads like an ask for money, cut it.
+guilt. In-app, exactly one quiet Support touchpoint (free alternative first,
+then the sponsors link), never on a study surface: on mobile it is the
+"Support alix" row in the Settings page (user decision 2026-07-21, moved there
+from the About dialog). If a sentence reads like an ask for money, cut it.
 
 ## Dev commands — use the Makefile
 

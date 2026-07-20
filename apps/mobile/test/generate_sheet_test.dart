@@ -1,5 +1,5 @@
-// Widget tests for the generate sheet (PickerScreen's overflow menu ->
-// "Generate deck..."): the pairing-gated menu item, the local http(s)-only
+// Widget tests for the generate sheet (PickerScreen's hamburger drawer ->
+// "Generate deck"): the reachability-gated menu item, the local http(s)-only
 // URL gate, the poll -> dest pick -> apply_generated_deck happy path, and
 // the error/cancel paths' generateClose bookkeeping. Driven with an injected
 // fake ServerClient, a real temp support Directory (settings.json), and a
@@ -35,6 +35,22 @@ void main() {
         support: support,
       );
 
+  // A paired desktop that answers the picker's mount-time liveness probe with
+  // a compatible version, so the "Generate deck" item (gated on a live probe,
+  // not merely a saved config) is present. A test that wants the item absent
+  // uses a plain FakeServerClient (version null) and/or omits the pairing.
+  FakeServerClient reachable({
+    List<RemoteGenerate>? generateGetReplies,
+    bool expireOnGenerateStart = false,
+    bool expireOnGenerateGet = false,
+  }) =>
+      FakeServerClient(
+        versionReply: minServerVersion,
+        generateGetReplies: generateGetReplies,
+        expireOnGenerateStart: expireOnGenerateStart,
+        expireOnGenerateGet: expireOnGenerateGet,
+      );
+
   Future<void> openPicker(
     WidgetTester tester, {
     required String root,
@@ -53,41 +69,56 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> openGenerateSheet(WidgetTester tester) async {
-    await tester.tap(find.byType(PopupMenuButton<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Generate deck…'));
+  Future<void> openMenu(WidgetTester tester) async {
+    await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('the Generate deck… item is absent when unpaired', (tester) async {
+  Future<void> openGenerateSheet(WidgetTester tester) async {
+    await openMenu(tester);
+    await tester.tap(find.text('Generate deck'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('the Generate deck item is absent when unpaired', (tester) async {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => FakeServerClient());
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
-    await tester.pumpAndSettle();
+    await openMenu(tester);
 
-    expect(find.text('Generate deck…'), findsNothing);
+    expect(find.text('Generate deck'), findsNothing);
   });
 
-  testWidgets('the Generate deck… item appears when paired', (tester) async {
+  testWidgets('the Generate deck item is absent when paired but the desktop is unreachable', (tester) async {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
+    // A saved pairing but a dead server (version null): the live-probe gate
+    // hides the item rather than offering a dead button.
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => FakeServerClient());
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
-    await tester.pumpAndSettle();
+    await openMenu(tester);
 
-    expect(find.text('Generate deck…'), findsOneWidget);
+    expect(find.text('Generate deck'), findsNothing);
+  });
+
+  testWidgets('the Generate deck item appears when paired and the desktop is reachable', (tester) async {
+    final support = temp('alix-gen-support-');
+    final root = temp('alix-gen-decks-');
+    await pair(support);
+    await openPicker(tester, root: root.path, support: support, buildClient: (_) => reachable());
+
+    await openMenu(tester);
+
+    expect(find.text('Generate deck'), findsOneWidget);
   });
 
   testWidgets('a non-http URL is refused locally: no generateStart call, a calm message shown', (tester) async {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    final client = FakeServerClient();
+    final client = reachable();
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
     await openGenerateSheet(tester);
 
@@ -106,7 +137,7 @@ void main() {
     final root = temp('alix-gen-decks-');
     await pair(support);
     const deckText = '## capital of testland?\nTestville\n';
-    final client = FakeServerClient(
+    final client = reachable(
       generateGetReplies: const [
         RemoteGenerate(phase: 'done', deck: deckText, filename: 'generated.md', cards: 1),
       ],
@@ -146,7 +177,7 @@ void main() {
     final root = temp('alix-gen-decks-');
     await pair(support);
     const deckText = '## q\na\n';
-    final client = FakeServerClient(
+    final client = reachable(
       generateGetReplies: const [
         RemoteGenerate(phase: 'generating', elapsed: 2),
         RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.md', cards: 1),
@@ -179,7 +210,7 @@ void main() {
     final root = temp('alix-gen-decks-');
     await pair(support);
     const deckText = '## q\na\n';
-    final client = FakeServerClient(
+    final client = reachable(
       generateGetReplies: const [RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.md', cards: 1)],
     );
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
@@ -201,7 +232,7 @@ void main() {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    final client = FakeServerClient(
+    final client = reachable(
       generateGetReplies: const [RemoteGenerate(phase: 'error', error: 'the model returned no deck content')],
     );
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
@@ -227,7 +258,7 @@ void main() {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    final client = FakeServerClient();
+    final client = reachable();
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
     await openGenerateSheet(tester);
 
@@ -246,7 +277,7 @@ void main() {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    final client = FakeServerClient(expireOnGenerateStart: true);
+    final client = reachable(expireOnGenerateStart: true);
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
     await openGenerateSheet(tester);
 
@@ -269,7 +300,7 @@ void main() {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    final client = FakeServerClient(expireOnGenerateGet: true);
+    final client = reachable(expireOnGenerateGet: true);
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
     await openGenerateSheet(tester);
 

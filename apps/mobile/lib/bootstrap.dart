@@ -134,6 +134,18 @@ Future<String> _appPrivate(Directory support) async {
   return root.path;
 }
 
+/// Copies the bundled tutorial deck into [root] (the current decks folder)
+/// unless a `tutorial.md` is already there. The first-run seed only ever fills
+/// a brand-new app-private dir, so this is how a folder that never got it (a
+/// shared folder, or an emptied one) can still start the tutorial from the
+/// picker's empty state.
+Future<void> addTutorialDeck(String root) async {
+  final file = File('$root/tutorial.md');
+  if (await file.exists()) return;
+  final content = await rootBundle.loadString('assets/decks/tutorial.md');
+  await file.writeAsString(content);
+}
+
 File _settingsFile(Directory support) => File('${support.path}/settings.json');
 
 /// The app's persisted choices (`settings.json` in the support dir), e.g.

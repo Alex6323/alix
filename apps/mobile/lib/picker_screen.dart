@@ -11,6 +11,7 @@ import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/settings_screen.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/src/rust/api/generate.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
@@ -119,10 +120,11 @@ class _PickerScreenState extends State<PickerScreen> {
   /// [PickerScreen.mastered]), not the ordinary root/drill-in listing.
   bool get _isMasteredView => widget.masteredEntries != null;
 
-  /// The paired desktop, if any: gates the "Generate deck…" menu item.
-  /// Loaded once on mount and refreshed after the pairing sheet closes (a
-  /// pair/unpair while this screen is up must not leave a stale gate).
-  ServerConfig? _pairedConfig;
+  /// Whether a paired desktop is reachable right now: gates the "Generate
+  /// deck" menu item on a live probe (as review's Ask chip does), so a
+  /// paired-but-offline desktop hides the item instead of offering a dead
+  /// button. Probed on mount and re-probed after the pairing sheet closes.
+  bool _serverReachable = false;
 
   /// The drilled-into workspace's "ready by" target, if one is set; null at
   /// the root level (each workspace row carries its own there).
@@ -137,8 +139,93 @@ class _PickerScreenState extends State<PickerScreen> {
 
   Future<void> _loadPairing() async {
     final support = await _support();
-    if (!mounted) return;
-    setState(() => _pairedConfig = readServer(support));
+    final config = readServer(support);
+    if (config == null) {
+      if (mounted) setState(() => _serverReachable = false);
+      return;
+    }
+    final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    String? version;
+    try {
+      version = await client.version();
+    } on PairingExpired {
+      version = null;
+    } finally {
+      client.close();
+    }
+    final live =
+        version != null && compareVersions(version, minServerVersion) >= 0;
+    if (mounted) setState(() => _serverReachable = live);
+  }
+
+  /// Opens the Settings page (the root's rare controls), pushed up from the
+  /// bottom Signal-style; its own back arrow returns it. "Generate deck" is
+  /// present only when a paired server is reachable (see [_serverReachable]).
+  /// Each Settings row opens its sheet over the page; the picker keeps the
+  /// state, so nothing is threaded back except these action closures.
+  void _openSettings() {
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 240),
+        pageBuilder: (_, _, _) => SettingsScreen(
+          onSupport: _supportSheet,
+          onConnectedDevices: _pairSheet,
+          onDecksFolder: _folderSheet,
+          onTheme: _themeSheet,
+          onAbout: _about,
+          onGenerate: _serverReachable ? _generateSheet : null,
+        ),
+        transitionsBuilder: (_, animation, _, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
+  /// The one quiet Support touchpoint (the Settings heart row): the free
+  /// alternative first, then the sponsors link. Never on a study surface.
+  Future<void> _supportSheet() async {
+    final dimStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: Theme.of(context).alix.dim);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Support alix', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              Text(
+                'Free and open source. Telling someone who studies is the best '
+                'support.',
+                style: dimStyle,
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                'https://github.com/sponsors/Alex6323',
+                style: dimStyle,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _load() {
@@ -315,6 +402,9 @@ class _PickerScreenState extends State<PickerScreen> {
   @override
   Widget build(BuildContext context) {
     final isRoot = widget.dir == null;
+    // The rare controls live behind a hamburger at the root only; a drill-in
+    // shows the back arrow in the same leading slot instead.
+    final showMenu = isRoot && widget.onSetDecksDir != null;
     // Only the root loose-deck list tucks mastered decks away (item 13); a
     // workspace drill-in (item 14) keeps them in their dependency tree, and
     // the Mastered window itself is already the filtered list.
@@ -326,51 +416,21 @@ class _PickerScreenState extends State<PickerScreen> {
         ? _entries.where((e) => e.mastered).toList()
         : const <DeckEntry>[];
     return Scaffold(
-      appBar: AppBar(
-        // Keep the `alix` wordmark at a fixed x whether or not a back arrow is
-        // present: reserve the leading slot even at the root (which can't pop),
-        // so drilling into a workspace doesn't shove the wordmark to the right.
-        // This also lines the root up with the always-pushed review/walk/exam
-        // screens, which already carry a back arrow.
-        automaticallyImplyLeading: false,
-        leadingWidth: 56,
+      // The root shows the hamburger (opens Settings), a drill-in shows the
+      // back arrow, and an unpopped non-menu level reserves an empty slot;
+      // alixAppBar holds the wordmark at a fixed x for all three (and pins it
+      // across transitions).
+      appBar: alixAppBar(
+        context,
         leading: Navigator.of(context).canPop()
             ? const BackButton()
+            : showMenu
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                tooltip: 'Settings',
+                onPressed: _openSettings,
+              )
             : const SizedBox(width: 56),
-        titleSpacing: 0,
-        title: const AlixWordmark(),
-        actions: [
-          if (isRoot && widget.onSetDecksDir != null)
-            PopupMenuButton<String>(
-              onSelected: (choice) {
-                if (choice == 'folder') _folderSheet();
-                if (choice == 'pair') _pairSheet();
-                if (choice == 'generate') _generateSheet();
-                if (choice == 'theme') _themeSheet();
-                if (choice == 'about') _about();
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'folder',
-                  child: Text('Decks folder…'),
-                ),
-                const PopupMenuItem(
-                  value: 'pair',
-                  child: Text('Pair with desktop…'),
-                ),
-                // Generate needs the paired desktop's AI; an unpaired phone
-                // has nothing to ask, so the item is absent rather than a
-                // dead button that would only fail (item T5.5).
-                if (_pairedConfig != null)
-                  const PopupMenuItem(
-                    value: 'generate',
-                    child: Text('Generate deck…'),
-                  ),
-                const PopupMenuItem(value: 'theme', child: Text('Theme…')),
-                const PopupMenuItem(value: 'about', child: Text('About')),
-              ],
-            ),
-        ],
       ),
       body: Column(
         children: [
@@ -708,13 +768,41 @@ class _PickerScreenState extends State<PickerScreen> {
 
   Widget _emptyHint(BuildContext context) {
     final theme = Theme.of(context);
-    return Text(
-      widget.dir == null
-          ? 'No decks here yet. Put .txt decks in this folder, or choose a '
-                'shared folder from the menu.'
-          : 'no decks here',
-      style: theme.textTheme.bodyMedium?.copyWith(color: theme.alix.dim),
+    final atRoot = widget.dir == null && !_isMasteredView;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          atRoot
+              ? 'No decks here yet. Put Markdown (.md) decks in this folder, or '
+                    'choose a shared folder from Settings.'
+              : 'no decks here',
+          style: theme.textTheme.bodyMedium?.copyWith(color: theme.alix.dim),
+        ),
+        if (atRoot) ...[
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _addTutorial,
+            icon: const Icon(Icons.school_outlined),
+            label: const Text('Add the tutorial deck'),
+          ),
+        ],
+      ],
     );
+  }
+
+  /// Copies the bundled tutorial deck into the current folder from the empty
+  /// state, then re-lists so its row appears; a write that fails (an
+  /// unwritable shared folder) says so instead of doing nothing.
+  Future<void> _addTutorial() async {
+    try {
+      await addTutorialDeck(widget.root);
+    } catch (_) {
+      if (mounted) _snack('could not add the tutorial deck here.');
+      return;
+    }
+    if (!mounted) return;
+    setState(_load);
   }
 
   /// A quiet one-line notice (per-launch state, not dismissible).
@@ -951,10 +1039,11 @@ class _PickerScreenState extends State<PickerScreen> {
       buildClient: widget.buildClient ?? HttpServerClient.new,
     );
     if (!mounted) return;
-    // A pair/unpair here changes whether "Generate deck…" belongs in the
-    // menu; re-read it so the gate never goes stale for this open screen.
-    setState(() => _pairedConfig = readServer(support));
     if (message != null) _snack(message);
+    // A pair/unpair changes whether the server is reachable, so re-probe it;
+    // the "Generate deck" gate must not go stale for this open screen. Runs
+    // in the background so the snack shows without waiting on the probe.
+    unawaited(_loadPairing());
   }
 
   /// The generate sheet: URL + optional guidance, generated on the paired
@@ -1057,10 +1146,6 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _about() async {
     final app = await widget.access?.appVersion();
     if (!mounted) return;
-    final tokens = Theme.of(context).alix;
-    final dimStyle = Theme.of(
-      context,
-    ).textTheme.bodySmall?.copyWith(color: tokens.dim);
     showAboutDialog(
       context: context,
       applicationName: 'alix',
@@ -1071,14 +1156,6 @@ class _PickerScreenState extends State<PickerScreen> {
         height: 48,
       ),
       applicationLegalese: 'MIT or Apache-2.0, at your option.',
-      children: [
-        const SizedBox(height: 16),
-        Text(
-          'Free and open source. Telling someone who studies is the best support.',
-          style: dimStyle,
-        ),
-        SelectableText('https://github.com/sponsors/Alex6323', style: dimStyle),
-      ],
     );
   }
 }

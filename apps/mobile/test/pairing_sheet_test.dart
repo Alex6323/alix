@@ -1,5 +1,5 @@
-// Widget tests for the pairing sheet (PickerScreen's overflow menu ->
-// "Pair with desktop..."), driven with an injected fake ServerClient and a
+// Widget tests for the pairing sheet (PickerScreen's Settings page ->
+// "Connected devices"), driven with an injected fake ServerClient and a
 // real temp support Directory (settings.json). PickerScreen's own listing
 // calls the real bridge in initState, so RustLib.init() is required to
 // mount it at all, same as bridge_test.dart's own screens.
@@ -47,9 +47,9 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Pair with desktop…'));
+    await tester.tap(find.text('Connected devices'));
     await tester.pumpAndSettle();
   }
 

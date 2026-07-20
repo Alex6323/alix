@@ -132,7 +132,7 @@ class _PairSheetState extends State<_PairSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Pair with desktop', style: theme.textTheme.titleMedium),
+            Text('Pair with an alix server', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             if (current != null) ...[
               Text(

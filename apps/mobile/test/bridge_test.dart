@@ -259,9 +259,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Loose'), findsOneWidget);
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Decks folder…'));
+    await tester.tap(find.text('Decks folder'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Choose shared folder…'));
     await tester.pumpAndSettle();
@@ -287,9 +287,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Decks folder…'));
+    await tester.tap(find.text('Decks folder'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Choose shared folder…'));
     await tester.pumpAndSettle();
@@ -312,14 +312,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
     await tester.tap(find.text('About'));
     await tester.pumpAndSettle();
     expect(find.text('mobile 9.9.9+9 / core ${coreVersion()}'), findsOneWidget);
   });
 
-  testWidgets('About carries the one quiet Support line, and only About', (
+  testWidgets('the one quiet Support line lives behind the Settings heart, not on a study surface', (
     tester,
   ) async {
     final root = makeRoot();
@@ -334,12 +334,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Not on the picker (a study surface) before About is opened.
+    // Not on the picker (a study surface).
     expect(find.textContaining('sponsors/Alex6323'), findsNothing);
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('About'));
+
+    // Opening Settings shows only the row's label, not the ask copy/link.
+    expect(find.text('Support alix'), findsOneWidget);
+    expect(find.textContaining('sponsors/Alex6323'), findsNothing);
+
+    await tester.tap(find.text('Support alix'));
     await tester.pumpAndSettle();
 
     expect(
@@ -425,9 +430,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byType(PopupMenuButton<String>));
+        await tester.tap(find.byIcon(Icons.menu));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Theme…'));
+        await tester.tap(find.text('Theme'));
         await tester.pumpAndSettle();
 
         // Grouped under the two mode headers.
