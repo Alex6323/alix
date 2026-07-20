@@ -1304,8 +1304,8 @@ fn doctor_hints_the_image_marker_for_a_straggler_img_directive() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let err = stderr(&out);
     assert!(
-        err.contains("img:") && err.contains("\\image{...}"),
-        "should hint the \\image marker migration: {err}"
+        err.contains("img:") && err.contains("![](...)"),
+        "should hint the markdown image migration: {err}"
     );
 }
 
@@ -1321,8 +1321,8 @@ fn doctor_hints_the_image_marker_for_a_straggler_img_back_directive() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let err = stderr(&out);
     assert!(
-        err.contains("img-back:") && err.contains("\\image{...}"),
-        "should hint the \\image marker migration: {err}"
+        err.contains("img-back:") && err.contains("![](...)"),
+        "should hint the markdown image migration: {err}"
     );
 }
 

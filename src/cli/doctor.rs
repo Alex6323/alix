@@ -228,7 +228,7 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
 fn unknown_key_hint(key: &str) -> String {
     match key {
         "img" | "img-back" => format!(
-            "`{key}:` is gone; use the `\\image{{...}}` marker instead \
+            "`{key}:` is gone; use the standard markdown image `![](...)` instead \
              (a line in the card's front or answer)"
         ),
         "math" => "`math:` is retired; it never had any effect, so the line can just be deleted"
