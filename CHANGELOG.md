@@ -69,6 +69,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The mobile app seeds the same deck into a fresh app-private folder.
 
 ### Changed
+- **Breaking: media embedding is now standard Markdown `![alt](src)`; the
+  `\image`/`\audio`/`\video` markers and the `<!-- img: -->`/
+  `<!-- img-back: -->` directives are removed.** Write a plain Markdown image
+  where you want one to appear: position decides the side (the question
+  region for a front image, the answer region for a back image), a card can
+  carry more than one per side, and filenames resolve against `image-dir:` in
+  the frontmatter (renamed from `img-dir:`). The payoff over the old markers:
+  a deck's images now render in any Markdown viewer that opens the file
+  directly (GitHub, Obsidian, a plain preview pane), not just alix's own web
+  app. The retired `math:` directive is also removed (it never had any
+  effect). `\cloze{…}` text occlusion is unchanged.
 - **Breaking (web API): a card's images are now lists, not single fields.** The
   `CardDto` wire shape drops the scalar `img` / `img_back` strings and replaces
   them with `images` / `images_back`, each an ordered list of `{ src, alt }`

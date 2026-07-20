@@ -32,7 +32,7 @@
 
 - [The web app](15-the-web-app.md)
 - [Pairing a device](19-pairing.md)
-- [alix on your phone](18-the-phone-app.md)
+- [The mobile app](18-the-mobile-app.md)
 - [Configuration](16-configuration.md)
 - [Command reference](17-command-reference.md)
 

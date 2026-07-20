@@ -145,8 +145,8 @@ Two ways to reach it:
 - **Draw-only cards.** Set it deck-wide with `input: draw` in the frontmatter, or
   per card with `<!-- input: draw -->`, when the answer *can't* be typed (a
   diagram, a circuit, a piece of notation). The reveal is whatever the card
-  already uses: an `<!-- img-back: ... -->` image, or an explain card's key
-  points. An authored draw card always uses the canvas; the per-device toggle
+  already uses: a `![](...)` image on the answer side, or an explain card's
+  key points. An authored draw card always uses the canvas; the per-device toggle
   below can't turn it off (you can't type a diagram).
 - **The per-device toggle.** For a card that *can* be typed, the web ☰ menu's
   **Draw answers** switch lets you answer on the canvas anyway, for the retention

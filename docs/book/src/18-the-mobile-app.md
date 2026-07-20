@@ -1,4 +1,4 @@
-# alix on your phone
+# 18 · The mobile app
 
 There is a native Android app: the same review loop as the web app, running
 the same core (parser, scheduler, progress store) compiled into the app, so

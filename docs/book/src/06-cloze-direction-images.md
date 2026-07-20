@@ -53,35 +53,43 @@ cards, and it doesn't apply to cloze cards. When a reversed card's question side
 comes from several answer lines, they render as separate centred lines rather than
 running together.
 
-## Image cards: `img:`, `img-back:`
+## Image cards
 
-A card can carry an image on the question side, the answer side, or both. Set the
-folder images live in with an `img-dir:` line in the frontmatter, then cite a file
-per card with `<!-- img: ... -->` (front) or `<!-- img-back: ... -->` (back):
+Write a standard Markdown image where you want one to appear, and its
+position decides the side: an image in the question is a front image, one
+in the answer is a back image, and a card can carry more than one per side.
+
+A one-line front needs a blank line before the `---` divider to carry an
+image (otherwise the divider is just more content, and the image lands on
+the back):
 
 ```
 ---
-img-dir: ~/decks/img
+image-dir: ~/decks/img
 ---
 
 ## What phase is the moon in?
+![](moon-waxing.png)
+
+---
 Waxing gibbous
-<!-- img: moon-waxing.png -->
 
 ## Play this chord:
 G major
 ---
 The open-position shape.
-<!-- img-back: g-major-tab.png -->
+![](g-major-tab.png)
 ```
 
-`<!-- img: -->` shows on the front, `<!-- img-back: -->` on the back (revealed with
-the answer), one image per side. Filenames resolve against `img-dir:` (absolute, or
-relative to the deck file); without one they resolve next to the deck, and an
-absolute path on the card is used as-is.
+Filenames resolve against an `image-dir:` line in the frontmatter (absolute,
+or relative to the deck file); without one they resolve next to the deck, and
+an absolute path on the card is used as-is. The brackets can carry alt text:
+`![the open-position shape](g-major-tab.png)`.
 
-Images render in the web app. `alix doctor` warns about an image file it can't
-find, but doesn't fail on it.
+Images render in the web app, and, being standard Markdown, in any Markdown
+viewer that opens the deck file directly (GitHub, Obsidian, a plain preview
+pane). `alix doctor` warns about an image file it can't find, but doesn't
+fail on it.
 
 ## Source citations
 

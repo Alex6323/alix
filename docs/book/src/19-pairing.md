@@ -36,10 +36,10 @@ or the deck file, never the server.
 The server side of this ships from 0.6.0; see `docs/API.md`, section 4.10,
 for the wire contract if you're building against it.
 
-## Pairing the phone app
+## Pairing the mobile app
 
 On your computer, run `alix --lan` and note the URL it prints (the same one
-`[serve] token` can pin, above). On the [phone app](18-the-phone-app.md):
+`[serve] token` can pin, above). On the [mobile app](18-the-mobile-app.md):
 
 1. Open the deck list's overflow menu and choose **Pair with desktop…**.
 2. Paste the printed URL into the sheet and tap **Pair**.
