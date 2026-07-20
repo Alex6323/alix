@@ -115,30 +115,110 @@ fn scan_image<'a>(
 ) -> &'a str {
     if let Some((raw_alt, after_alt)) = inner.split_once(']')
         && let Some(paren) = after_alt.strip_prefix('(')
-        && let Some((raw_src, after)) = paren.split_once(')')
+        && let Some((src, after)) = scan_src(paren)
     {
-        let src = trim_ws(raw_src);
         if src.is_empty() {
             lints.push(image_malformed(lineno));
             return after;
         }
-        // Inner whitespace in the src (a Markdown title, a spaced filename) is
-        // a deliberate exclusion, kept open for a later release.
-        if !src.contains(&WHITESPACE[..]) {
-            if !text.is_empty() {
-                segments.push(Seg::Text(std::mem::take(text)));
-            }
-            let alt = trim_ws(raw_alt);
-            segments.push(Seg::Image {
-                src: src.to_string(),
-                alt: (!alt.is_empty()).then(|| alt.to_string()),
-            });
-            return after;
+        if !text.is_empty() {
+            segments.push(Seg::Text(std::mem::take(text)));
         }
+        let alt = trim_ws(raw_alt);
+        segments.push(Seg::Image {
+            src,
+            alt: (!alt.is_empty()).then(|| alt.to_string()),
+        });
+        return after;
     }
     lints.push(image_malformed(lineno));
     text.push_str("![");
     inner
+}
+
+fn scan_src(paren: &str) -> Option<(String, &str)> {
+    match paren.strip_prefix('<') {
+        Some(bracketed) => bracketed_src(bracketed),
+        None => unbracketed_src(paren),
+    }
+}
+
+fn bracketed_src(arg: &str) -> Option<(String, &str)> {
+    let mut src = String::new();
+    let mut rest = arg;
+    while let Some(ch) = rest.chars().next() {
+        match ch {
+            '\\' => {
+                let after = &rest[1..];
+                if let Some(escaped) = after
+                    .chars()
+                    .next()
+                    .filter(|c| matches!(c, '<' | '>' | '\\'))
+                {
+                    src.push(escaped);
+                    rest = &after[escaped.len_utf8()..];
+                } else {
+                    src.push('\\');
+                    rest = after;
+                }
+            }
+            '<' | '\n' => return None,
+            '>' => return rest[1..].strip_prefix(')').map(|after| (src, after)),
+            _ => {
+                src.push(ch);
+                rest = &rest[ch.len_utf8()..];
+            }
+        }
+    }
+    None
+}
+
+fn unbracketed_src(arg: &str) -> Option<(String, &str)> {
+    let mut src = String::new();
+    let mut depth = 1usize;
+    let mut rest = arg;
+    while let Some(ch) = rest.chars().next() {
+        match ch {
+            '\\' => {
+                let after = &rest[1..];
+                if let Some(escaped) = after
+                    .chars()
+                    .next()
+                    .filter(|c| matches!(c, '(' | ')' | '\\'))
+                {
+                    src.push(escaped);
+                    rest = &after[escaped.len_utf8()..];
+                } else {
+                    src.push('\\');
+                    rest = after;
+                }
+            }
+            '(' => {
+                depth += 1;
+                src.push('(');
+                rest = &rest[1..];
+            }
+            ')' => {
+                depth -= 1;
+                rest = &rest[1..];
+                if depth == 0 {
+                    let trimmed = trim_ws(&src);
+                    // Inner whitespace would start a Markdown title
+                    // (unsupported); the bracketed <src> form carries spaces.
+                    if trimmed.contains(&WHITESPACE[..]) {
+                        return None;
+                    }
+                    return Some((trimmed.to_string(), rest));
+                }
+                src.push(')');
+            }
+            _ => {
+                src.push(ch);
+                rest = &rest[ch.len_utf8()..];
+            }
+        }
+    }
+    None
 }
 
 fn image_malformed(lineno: usize) -> Lint {
@@ -401,6 +481,68 @@ mod tests {
     fn a_src_with_inner_whitespace_degrades_to_literal_with_a_lint() {
         let (segments, lints) = answer("![](my moon.png)");
         assert_eq!(vec![text("![](my moon.png)")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn balanced_inner_parens_stay_in_the_src() {
+        let (segments, lints) = answer("![](a(b)c.png)");
+        assert_eq!(vec![image("a(b)c.png", None)], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn real_filenames_with_parens_parse_to_their_exact_srcs() {
+        for name in [
+            "Bremen_Wappen(Klein).svg.png",
+            "Coat_of_arms_of_Mecklenburg-Western_Pomerania_(small).svg.png",
+        ] {
+            let (segments, lints) = answer(&format!("![]({name})"));
+            assert_eq!(vec![image(name, None)], segments);
+            assert!(lints.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_non_ascii_filename_parses() {
+        let name = "Lesser_coat_of_arms_of_Baden-Württemberg.svg.png";
+        let (segments, lints) = answer(&format!("![]({name})"));
+        assert_eq!(vec![image(name, None)], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn a_bracketed_src_keeps_a_space_verbatim() {
+        let (segments, lints) = answer("![](<a b.png>)");
+        assert_eq!(vec![image("a b.png", None)], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn a_bracketed_src_keeps_parens_verbatim() {
+        let (segments, lints) = answer("![](<a(b).png>)");
+        assert_eq!(vec![image("a(b).png", None)], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn escaped_parens_in_the_src_are_literal_and_do_not_count_for_depth() {
+        let (segments, lints) = answer("![](a\\(b\\).png)");
+        assert_eq!(vec![image("a(b).png", None)], segments);
+        assert!(lints.is_empty());
+    }
+
+    #[test]
+    fn unbalanced_parens_in_the_src_degrade_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![](a(b.png)");
+        assert_eq!(vec![text("![](a(b.png)")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn an_unclosed_angle_bracket_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![](<a b.png)");
+        assert_eq!(vec![text("![](<a b.png)")], segments);
         assert_eq!(vec![image_malformed()], lints);
     }
 
