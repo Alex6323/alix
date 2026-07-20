@@ -333,7 +333,7 @@ mod tests {
 
     /// The trailing space after `## First question` is deliberate: a mutation
     /// that trims the line before inserting would silently normalize it away.
-    const FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\cloze{alpha} and \\cloze{beta} here\n> cloze note\n";
+    const FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\blank{alpha} and \\blank{beta} here\n> cloze note\n";
 
     fn write(dir: &tempfile::TempDir, name: &str, text: &str) -> PathBuf {
         let path = dir.path().join(name);
@@ -707,8 +707,8 @@ mod tests {
     #[test]
     fn identical_cloze_fronts_on_different_lines_each_get_their_own_token() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe \\cloze{a} note\n\n\
-             ## Foo\n---\nthe \\cloze{b} note\n";
+        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe \\blank{a} note\n\n\
+             ## Foo\n---\nthe \\blank{b} note\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -720,7 +720,7 @@ mod tests {
             1,
             stamped
                 .matches(&format!(
-                    "the \\cloze{{a}} note\n<!-- id: {} -->\n",
+                    "the \\blank{{a}} note\n<!-- id: {} -->\n",
                     outcome.minted_cards[0]
                 ))
                 .count(),
@@ -730,7 +730,7 @@ mod tests {
             1,
             stamped
                 .matches(&format!(
-                    "the \\cloze{{b}} note\n<!-- id: {} -->\n",
+                    "the \\blank{{b}} note\n<!-- id: {} -->\n",
                     outcome.minted_cards[1]
                 ))
                 .count(),

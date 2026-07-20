@@ -1320,7 +1320,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\ndirection: both\n---\n## fill\nThe \\cloze{x} thing.\n",
+            "---\ndirection: both\n---\n## fill\nThe \\blank{x} thing.\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();

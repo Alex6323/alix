@@ -5,21 +5,24 @@ from chapter 3.
 
 ## Cloze cards: fill in the blank
 
-Wrap any span of an answer in `\cloze{...}` and the card becomes a **cloze**: each
-`\cloze{...}` is a blank, and the card expands into one sub-card per blank. No
+A cloze card hides part of the answer; you create one by wrapping the hidden
+text in `\blank{...}`.
+
+Wrap any span of an answer in `\blank{...}` and the card becomes a **cloze**: each
+`\blank{...}` is a blank, and the card expands into one sub-card per blank. No
 directive is needed; the marker itself is the trigger.
 
 ```
 ## Complete the Rust declaration
-let \cloze{mut} x: \cloze{u64} = 0;
+let \blank{mut} x: \blank{u64} = 0;
 ```
 
 This makes two cards. One blanks `mut` and shows the rest; the other blanks `u64`.
 The asked blank shows as `____`; the *other* blanks are hidden as `[…]`, so no card
 gives away its siblings' answers. You only produce the hidden text.
 
-Braces outside a `\cloze{}` are ordinary text, so `let p = Foo {};` is fine in a
-cloze answer. If you need a literal brace *inside* a `\cloze{...}`, escape it as
+Braces outside a `\blank{}` are ordinary text, so `let p = Foo {};` is fine in a
+cloze answer. If you need a literal brace *inside* a `\blank{...}`, escape it as
 `\{` or `\}`.
 
 `alix` keeps a card's cloze siblings apart in the queue when other cards are

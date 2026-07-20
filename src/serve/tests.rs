@@ -621,7 +621,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
 fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     let dir = tempfile::tempdir().unwrap();
     // An unclosed cloze hole fails to parse: `Deck::load` errors.
-    std::fs::write(dir.path().join("broken.md"), "## front\nbad \\cloze{oops\n").unwrap();
+    std::fs::write(dir.path().join("broken.md"), "## front\nbad \\blank{oops\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let entry = picker::catalog(dir.path(), &recent, &mut DeckCache::default())
         .into_iter()
@@ -760,7 +760,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
 fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## where <!-- id: q1 -->\nThe \\cloze{cat} sat here\n";
+    let text = "## where <!-- id: q1 -->\nThe \\blank{cat} sat here\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     assert_eq!(vec!["cat".to_string()], cards[0].back);

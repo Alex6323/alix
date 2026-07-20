@@ -26,11 +26,11 @@ brief elaboration, a concrete example, a mnemonic, or why it matters — one or 
 two short lines, never just restating the answer. Put each note line on its \
 own `> ` line, after the answer lines.
 - A fill-in-the-blank (cloze) card hides spans of its answer: wrap each hidden \
-span as `\\cloze{...}` inside the answer line. The front is a short \
+span as `\\blank{...}` inside the answer line. The front is a short \
 instruction; the answer line(s) hold the full sentence with the hidden spans \
-wrapped. Braces outside a `\\cloze{...}` marker are literal, so code with `{}` \
+wrapped. Braces outside a `\\blank{...}` marker are literal, so code with `{}` \
 is fine. The blanks live in the answer lines, NEVER on the front. Use \
-`\\cloze{...}` only when there is a natural word to blank out; otherwise write \
+`\\blank{...}` only when there is a natural word to blank out; otherwise write \
 a plain question-and-answer card. Example of one plain card followed by one \
 cloze card:
 
@@ -39,7 +39,7 @@ Exactly one owner at a time.
 > This is what lets Rust free memory deterministically, with no garbage collector.
 
 ## Fill in the ownership rule about scope.
-When the owner goes out of scope, the value is \\cloze{dropped}.
+When the owner goes out of scope, the value is \\blank{dropped}.
 > \"Dropped\" means its destructor runs and its memory is freed.
 
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
@@ -54,7 +54,7 @@ The `link:` key lets the learner ask follow-up questions against the source.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\cloze{...}` holes) here.
+  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\blank{...}` holes) here.
   2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
   3. Application — \"given X, what happens / what would you do?\" (plain cards).
   4. Connections — how ideas relate, contrast, or build on each other.
@@ -74,7 +74,7 @@ its front and one item per answer line.
 meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
 card that recalls the whole table at once, and never use `<!-- reveal: line -->` \
 for one; make it ONE cloze card, one line per pair with the recalled half in \
-`\\cloze{...}`, so every pair is drilled on its own.
+`\\blank{...}`, so every pair is drilled on its own.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
 later by `alix deck augment --target format`); keep an atomic answer atomic — \
@@ -115,11 +115,11 @@ answer. Keep answers short — one fact or a few words; several lines are allowe
 brief elaboration, a concrete example, a mnemonic, or why it matters — one or \
 two short lines, never just restating the answer.
 - A fill-in-the-blank (cloze) card hides spans of its answer: wrap each hidden \
-span as `\\cloze{...}` inside the answer line. The front is a short \
+span as `\\blank{...}` inside the answer line. The front is a short \
 instruction; the answer line(s) hold the full sentence with the hidden spans \
 wrapped — the blanks live in the answer lines, NEVER on the front. Braces \
-outside a `\\cloze{...}` marker are literal, so code with `{}` is fine. Use \
-`\\cloze{...}` only when there is a natural word to blank out.
+outside a `\\blank{...}` marker are literal, so code with `{}` is fine. Use \
+`\\blank{...}` only when there is a natural word to blank out.
 - A `<!-- at: file:start-end -->` line under a card cites where its answer \
 lives in the source (e.g. `<!-- at: src/string.rs:120-128 -->`; the path is \
 relative to the source root — your working directory). Add one to every card \
@@ -139,7 +139,7 @@ your understanding against it.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\cloze{...}` holes) here.
+  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\blank{...}` holes) here.
   2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
   3. Application — \"given X, what happens / what would you do?\" (plain cards).
   4. Connections — how the pieces relate, contrast, or build on each other.
@@ -159,7 +159,7 @@ its front and one item per answer line.
 meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
 card that recalls the whole table at once, and never use `<!-- reveal: line -->` \
 for one; make it ONE cloze card, one line per pair with the recalled half in \
-`\\cloze{...}`, so every pair is drilled on its own.
+`\\blank{...}`, so every pair is drilled on its own.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
 later by `alix deck augment --target format`); keep an atomic answer atomic — \
@@ -193,12 +193,12 @@ answer to the question, move the extra fact to the `> ` note, or split it into \
 distinct cards. A front and its answer must ask and tell the same thing.
 - Rewrite any card that recalls a whole mapping or table of pairs at once \
 (\"match each X to its Y\") as one cloze card: one line per pair, the recalled \
-half in `\\cloze{...}`. Ordered steps may stay a `<!-- reveal: line -->` card; \
+half in `\\blank{...}`. Ordered steps may stay a `<!-- reveal: line -->` card; \
 unordered pairs never.
 - Keep the EXACT same file format: the leading `---` frontmatter block, `## ` \
 card fronts at column 0, plain answer lines below each front, `> ` notes, and \
 any `<!-- key: value -->` directive lines. A cloze card keeps its \
-`\\cloze{...}` holes in its answer lines.
+`\\blank{...}` holes in its answer lines.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -431,8 +431,8 @@ mod tests {
         assert!(p.contains("four layers"));
         assert!(!p.contains("{url}"));
         assert!(!p.contains("{max_cards}"));
-        assert!(p.contains("\\cloze{...}"));
-        assert!(p.contains("\\cloze{dropped}"));
+        assert!(p.contains("\\blank{...}"));
+        assert!(p.contains("\\blank{dropped}"));
         assert!(p.contains("NEVER on the front"));
         assert!(p.contains("never write a front with no answer"));
         assert!(p.contains("Add a note to most cards"));

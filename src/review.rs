@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn card_view_carries_context_note_and_images() {
         let (mut store, augment, _dir) = fixtures();
-        let mut cards = parse("## q\nthe \\cloze{answer} is here\n> a note line\n");
+        let mut cards = parse("## q\nthe \\blank{answer} is here\n> a note line\n");
         cards[0].images = vec![crate::card::CardImage {
             src: "/pics/front.png".into(),
             alt: None,

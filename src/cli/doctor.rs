@@ -210,7 +210,7 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
             "an indented `##` line is content, not a card front (likely a mistype)".to_string()
         }
         LintKind::ClozeInHole => {
-            "a `\\cloze` inside a cloze hole is literal text, not a nested hole".to_string()
+            "a `\\blank` inside a cloze hole is literal text, not a nested hole".to_string()
         }
         LintKind::UnclosedComment => {
             "a `<!--` line that never closes with `-->` stays content".to_string()
@@ -537,7 +537,7 @@ mod tests {
         w(
             dir,
             "cloze.md",
-            "## Fill <!-- id: clz1 -->\n<!-- reveal: line -->\nthe \\cloze{a} gap\n",
+            "## Fill <!-- id: clz1 -->\n<!-- reveal: line -->\nthe \\blank{a} gap\n",
         );
         w(
             dir,

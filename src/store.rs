@@ -1856,7 +1856,7 @@ mod tests {
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
 
-        let text = "## Complete the quote <!-- id: vcz1 -->\nTo \\cloze{be} or not to \\cloze{be}\n> Hamlet\n";
+        let text = "## Complete the quote <!-- id: vcz1 -->\nTo \\blank{be} or not to \\blank{be}\n> Hamlet\n";
         let cards = crate::parser::parse_str("rust.md", text).unwrap();
         assert_eq!(2, cards.len());
         let id0 = cards[0].id().unwrap();
@@ -2247,7 +2247,7 @@ mod tests {
         store_remediation(
             &mut store,
             "d.md",
-            "## Fill\nthe \\cloze{a} and \\cloze{b}\n",
+            "## Fill\nthe \\blank{a} and \\blank{b}\n",
             300,
             None,
         )
@@ -2255,7 +2255,7 @@ mod tests {
         let cloze_id = store
             .virtual_cards_for("d.md")
             .into_iter()
-            .find(|v| v.text.contains("\\cloze"))
+            .find(|v| v.text.contains("\\blank"))
             .unwrap()
             .id
             .clone();
@@ -2349,11 +2349,11 @@ mod tests {
     #[test]
     fn split_card_blocks_is_one_block_for_a_cloze_and_drops_preamble() {
         let text =
-            "---\nsource: x\n---\n\n## Complete the quote\nTo \\cloze{be} or not to \\cloze{be}\n";
+            "---\nsource: x\n---\n\n## Complete the quote\nTo \\blank{be} or not to \\blank{be}\n";
         let blocks = split_card_blocks(text);
         assert_eq!(1, blocks.len());
         assert!(blocks[0].starts_with("## Complete the quote"));
-        assert!(blocks[0].contains("\\cloze{be}"));
+        assert!(blocks[0].contains("\\blank{be}"));
     }
 
     fn store_remediation(
@@ -2393,7 +2393,7 @@ mod tests {
     fn distinct_answer_cloze_holes_stay_distinct() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{be}\n";
+        let text = "## Complete the quote\nTo \\blank{be} or not to \\blank{be}\n";
 
         let n = store_remediation(&mut store, "d.md", text, 1_000, None).unwrap();
         assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
@@ -2410,7 +2410,7 @@ mod tests {
     fn a_retired_multi_hole_block_revives_every_hole() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n";
+        let text = "## Complete the quote\nTo \\blank{be} or not to \\blank{bee}\n";
         let cap = Some(30u32);
 
         let created = store_remediation(&mut store, "d.md", text, 1_000, cap).unwrap();
@@ -2461,7 +2461,7 @@ mod tests {
         let deck_fingerprints: std::collections::HashSet<u64> =
             plain.iter().map(|c| c.content_fingerprint).collect();
 
-        let cloze = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n";
+        let cloze = "## Complete the quote\nTo \\blank{be} or not to \\blank{bee}\n";
         let created =
             store_remediation_cards(&mut store, "d.md", &deck_fingerprints, cloze, 1_000, None)
                 .unwrap();
@@ -2476,7 +2476,7 @@ mod tests {
     fn virtual_id_agrees_across_create_synth_and_promote() {
         for text in [
             "## Why does X?\npoint one\n",
-            "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n",
+            "## Complete the quote\nTo \\blank{be} or not to \\blank{bee}\n",
         ] {
             let dir = tempfile::tempdir().unwrap();
             let deck_path = dir.path().join("d.md");

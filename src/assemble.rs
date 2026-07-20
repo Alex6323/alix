@@ -717,7 +717,7 @@ it reads line two\n\
         std::fs::write(
             &path,
             "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\
-             the \\cloze{alpha} and \\cloze{beta}\n## Plain <!-- id: plaincard -->\nanswer\n",
+             the \\blank{alpha} and \\blank{beta}\n## Plain <!-- id: plaincard -->\nanswer\n",
         )
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
@@ -742,7 +742,7 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\cloze{alpha} then \\cloze{beta}\n",
+            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\blank{alpha} then \\blank{beta}\n",
         )
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
@@ -759,7 +759,7 @@ it reads line two\n\
 
         std::fs::write(
             &path,
-            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\cloze{beta} then \\cloze{alpha}\n",
+            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\blank{beta} then \\blank{alpha}\n",
         )
         .unwrap();
         select(

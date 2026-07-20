@@ -22,7 +22,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **A cloze card's blanks now keep their progress when you edit its gaps.**
-  Inserting, deleting, or reordering `\cloze{…}` gaps, or rewording the text
+  Inserting, deleting, or reordering `\blank{…}` gaps, or rewording the text
   around one, no longer shuffles or resets the review schedules across a card's
   blanks: each schedule follows its hidden word, matching first by word and
   surrounding context, then by word alone. A gap whose word *and* context both
@@ -80,7 +80,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a deck's images now render in any Markdown viewer that opens the file
   directly (GitHub, Obsidian, a plain preview pane), not just alix's own web
   app. The retired `math:` directive is also removed (it never had any
-  effect). `\cloze{…}` text occlusion is unchanged.
+  effect). `\blank{…}` text occlusion is unchanged.
 - **Breaking (web API): a card's images are now lists, not single fields.** The
   `CardDto` wire shape drops the scalar `img` / `img_back` strings and replaces
   them with `images` / `images_back`, each an ordered list of `{ src, alt }`
@@ -102,7 +102,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   identity is a minted token, not a content hash.** A card front is `## `, its
   answer lines follow plainly, a note is `> `, deck metadata (`source:`,
   `requires:`, `link:`, `trace:`, `reveal:`, `direction:`, …) lives in a `---`
-  YAML frontmatter block, and a cloze gap is `\cloze{…}`. The old `.txt` format
+  YAML frontmatter block, and a cloze gap is `\blank{…}`. The old `.txt` format
   (`# ` fronts, tab-indented answers, `! ` notes, `% key:` directives, `{{…}}`
   clozes) is **removed**: `.txt` files no longer enumerate or parse. Every
   card and deck carries a minted identity token, written into the file the first
@@ -117,7 +117,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   regenerates, because a topology-carrying cache fails the stricter load and is
   rebuilt while a topology-free one loads with now-unreachable keys (harmless);
   the internal `% requires:` rewriter (`set_requires`) is gone; and a lone
-  whole-answer cloze (`\cloze{…}` with no surrounding text) now parses, where the
+  whole-answer cloze (`\blank{…}` with no surrounding text) now parses, where the
   old format errored. There is no bundled converter: existing decks must be
   regenerated or hand-converted before opening. When alix writes an id it now
   goes on its own line at the end of the card's block (after its last answer

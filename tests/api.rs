@@ -1509,7 +1509,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     // state re-pulled (the tutor-close pull). The order must hold on both the
     // Recognize path (seen card) and the acquire path (unseen card).
     const CLOZE_DECK: &str = "## What is frb, in one sentence? <!-- id: frb1 -->\n\
-        A \\cloze{code-generation} tool generating the \\cloze{FFI} glue on both sides.\n";
+        A \\blank{code-generation} tool generating the \\blank{FFI} glue on both sides.\n";
     for seed_store in [true, false] {
         let (base, _guard) = spawn_full_server_fixture(None, |dir| {
             std::fs::write(dir.join("frb.md"), CLOZE_DECK).unwrap();

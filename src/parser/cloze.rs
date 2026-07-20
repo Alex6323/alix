@@ -60,21 +60,21 @@ pub(super) fn scan_markers(
     let mut text = String::new();
     let mut rest = line_text;
     while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix("\\\\cloze") {
-            text.push_str("\\cloze");
+        if let Some(after) = rest.strip_prefix("\\\\blank") {
+            text.push_str("\\blank");
             rest = after;
         } else if let Some(after) = rest.strip_prefix("\\![") {
             text.push_str("![");
             rest = after;
         } else if region == Region::Answer
-            && let Some(after) = rest.strip_prefix("\\cloze")
+            && let Some(after) = rest.strip_prefix("\\blank")
         {
             if let Some(arg) = after.strip_prefix('{') {
                 let (content, after_hole) = scan_group(arg, lineno)?;
                 if trim_ws(&content).is_empty() {
                     return Err(ParseError::EmptyHole(lineno));
                 }
-                if content.contains("\\cloze") {
+                if content.contains("\\blank") {
                     // Hole content is never re-scanned; the inner marker is
                     // literal text.
                     lints.push(Lint {
@@ -90,7 +90,7 @@ pub(super) fn scan_markers(
             } else if after.starts_with('[') {
                 return Err(ParseError::ClozeBracketReserved(lineno));
             } else {
-                text.push_str("\\cloze");
+                text.push_str("\\blank");
                 rest = after;
             }
         } else if let Some(after) = rest.strip_prefix("![") {
@@ -289,7 +289,7 @@ pub(super) fn seg_display(segments: &[Seg]) -> String {
         match segment {
             Seg::Text(text) => out.push_str(text),
             Seg::Hole(hole) => {
-                out.push_str("\\cloze{");
+                out.push_str("\\blank{");
                 out.push_str(hole);
                 out.push('}');
             }
@@ -569,7 +569,7 @@ mod tests {
 
     #[test]
     fn a_markdown_image_can_share_a_line_with_a_hole() {
-        let (segments, _) = answer("\\cloze{a} and ![](x.png)");
+        let (segments, _) = answer("\\blank{a} and ![](x.png)");
         assert_eq!(
             vec![hole("a"), text(" and "), image("x.png", None)],
             segments
@@ -594,49 +594,49 @@ mod tests {
 
     #[test]
     fn cloze_hole_in_the_answer_region_is_unchanged() {
-        let (segments, lints) = answer("\\cloze{mut}");
+        let (segments, lints) = answer("\\blank{mut}");
         assert_eq!(vec![hole("mut")], segments);
         assert!(lints.is_empty());
     }
 
     #[test]
     fn a_second_group_after_a_cloze_hole_stays_literal() {
-        let (segments, _) = answer("\\cloze{a}{b: c}");
+        let (segments, _) = answer("\\blank{a}{b: c}");
         assert_eq!(vec![hole("a"), text("{b: c}")], segments);
     }
 
     #[test]
     fn empty_cloze_hole_stays_fatal() {
-        assert_eq!(ParseError::EmptyHole(7), fatal("\\cloze{}"));
+        assert_eq!(ParseError::EmptyHole(7), fatal("\\blank{}"));
     }
 
     #[test]
     fn unclosed_cloze_hole_stays_fatal() {
-        assert_eq!(ParseError::UnclosedHole(7), fatal("\\cloze{oops"));
+        assert_eq!(ParseError::UnclosedHole(7), fatal("\\blank{oops"));
     }
 
     #[test]
     fn cloze_bracket_stays_reserved_in_the_answer_region() {
-        assert_eq!(ParseError::ClozeBracketReserved(7), fatal("\\cloze[pin]"));
+        assert_eq!(ParseError::ClozeBracketReserved(7), fatal("\\blank[pin]"));
     }
 
     #[test]
     fn cloze_in_the_front_region_stays_literal() {
-        let (segments, lints) = scan("\\cloze{mut}", Region::Front);
-        assert_eq!(vec![text("\\cloze{mut}")], segments);
+        let (segments, lints) = scan("\\blank{mut}", Region::Front);
+        assert_eq!(vec![text("\\blank{mut}")], segments);
         assert!(lints.is_empty());
     }
 
     #[test]
     fn cloze_bracket_in_the_front_region_stays_literal() {
-        let (segments, _) = scan("\\cloze[pin]", Region::Front);
-        assert_eq!(vec![text("\\cloze[pin]")], segments);
+        let (segments, _) = scan("\\blank[pin]", Region::Front);
+        assert_eq!(vec![text("\\blank[pin]")], segments);
     }
 
     #[test]
     fn escaped_cloze_unescapes_in_the_front_region_too() {
-        let (segments, _) = scan("\\\\cloze{x}", Region::Front);
-        assert_eq!(vec![text("\\cloze{x}")], segments);
+        let (segments, _) = scan("\\\\blank{x}", Region::Front);
+        assert_eq!(vec![text("\\blank{x}")], segments);
     }
 
     #[test]
@@ -668,8 +668,8 @@ mod tests {
     #[test]
     fn hole_fingerprints_see_an_image_on_the_hole_line() {
         let holes = vec![(0usize, 0usize, "a")];
-        let (with_image, _) = answer("\\cloze{a} ![](x.png)");
-        let (without_image, _) = answer("\\cloze{a}");
+        let (with_image, _) = answer("\\blank{a} ![](x.png)");
+        let (without_image, _) = answer("\\blank{a}");
         let with_image = hole_fingerprints(&[with_image], &holes);
         let without_image = hole_fingerprints(&[without_image], &holes);
         assert_ne!(with_image[0].line_fp, without_image[0].line_fp);

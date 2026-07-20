@@ -890,7 +890,7 @@ fn remediation_prompt(gaps: &[String]) -> String {
          - A missed FACT or TERM (a definition, a value, what lives where) -> a \
          cheap recall card. Prefer a cloze: a `## ` front with a short \
          instruction, then an answer line that states the fact with each hidden \
-         span wrapped as `\\cloze{...}` (braces outside the marker are literal). \
+         span wrapped as `\\blank{...}` (braces outside the marker are literal). \
          If there is no natural word to blank out, use a plain `## ` card with \
          the answer on the line below instead.\n\
          - A missed CONCEPT, MECHANISM or CONNECTION (a \"why\", \"how\" or \"what \
@@ -912,8 +912,8 @@ fn remediation_prompt(gaps: &[String]) -> String {
          note (a caveat, example or why it matters). No frontmatter, no \
          headings other than the `## ` fronts. One example of each card type:\n\
          ## Recall how a String is laid out in memory.\n\
-         A String stores a \\cloze{pointer}, \\cloze{length} and \
-         \\cloze{capacity} on the stack, and its bytes live on the \\cloze{heap}.\n\
+         A String stores a \\blank{pointer}, \\blank{length} and \
+         \\blank{capacity} on the stack, and its bytes live on the \\blank{heap}.\n\
          ## What does `drop` do for a String, and when?\n\
          It returns the String's heap buffer to the allocator, at the end of the \
          owning scope.\n\
@@ -1077,7 +1077,7 @@ mod tests {
         let p = remediation_prompt(&["x".to_string()]);
         assert!(p.contains("missed FACT or TERM"));
         assert!(p.contains("missed CONCEPT"));
-        assert!(p.contains("\\cloze{...}"));
+        assert!(p.contains("\\blank{...}"));
         assert!(p.contains("understanding card"));
         assert!(!p.contains("indented answer"));
         assert!(p.contains("## "));

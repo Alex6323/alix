@@ -457,7 +457,7 @@ mod tests {
 
     /// One fixture: frontmatter without `id:`, a divided card (fence + note +
     /// escaped divider + trailing-space front), and a two-hole cloze card.
-    const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\cloze{alpha} and \\cloze{beta} here\n> cloze note\n";
+    const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\blank{alpha} and \\blank{beta} here\n> cloze note\n";
 
     fn all_tokens(subject: &str, text: &str) -> Vec<String> {
         let deck = crate::parser::parse(subject, text).unwrap();

@@ -62,7 +62,7 @@ const STRUCTURAL: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
 // \cloze is escaped anywhere in the line (unlike the leading-only structural markers) since
 // imported prose is never a deliberate hole.
 fn escape_structure(line: &str) -> String {
-    let line = line.replace("\\cloze", "\\\\cloze");
+    let line = line.replace("\\blank", "\\\\blank");
     if STRUCTURAL.iter().any(|marker| line.starts_with(marker)) {
         format!("\\{line}")
     } else {
@@ -116,11 +116,11 @@ mod tests {
 
     #[test]
     fn a_literal_cloze_marker_is_doubled_not_a_hole() {
-        let deck = tsv_to_deck("q\tthe \\cloze{x} marker\n").unwrap();
+        let deck = tsv_to_deck("q\tthe \\blank{x} marker\n").unwrap();
         let cards = parse_str("d.md", &deck).unwrap();
         assert_eq!(1, cards.len());
         assert!(cards[0].hole.is_none(), "no hole from imported prose");
-        assert_eq!(vec!["the \\cloze{x} marker".to_string()], cards[0].back);
+        assert_eq!(vec!["the \\blank{x} marker".to_string()], cards[0].back);
     }
 
     #[test]

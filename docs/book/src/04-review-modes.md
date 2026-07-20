@@ -25,7 +25,7 @@ frontmatter, or per card with a `<!-- reveal: ... -->` directive (default `flip`
   frontmatter to walk the deck top to bottom.
 
 A card becomes **cloze** (a gap to fill) automatically when its answer contains
-`\cloze{...}` blanks; that is triggered by the markup, not set as a `reveal:`
+`\blank{...}` markers; that is triggered by the markup, not set as a `reveal:`
 value. See [cloze cards](06-cloze-direction-images.md).
 
 ```

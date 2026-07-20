@@ -917,7 +917,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "## capital?\nParis is the capital of \\cloze{France}\n",
+            "## capital?\nParis is the capital of \\blank{France}\n",
         );
         let authored = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let authored_back = authored.cards[0].back.clone();

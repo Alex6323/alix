@@ -2003,7 +2003,7 @@ fn augment_questions_on_a_cloze_only_deck_errors() {
     let deck = write(
         dir.path(),
         "c.md",
-        "## Complete <!-- id: c1 -->\nThe capital of France is \\cloze{Paris}.\n",
+        "## Complete <!-- id: c1 -->\nThe capital of France is \\blank{Paris}.\n",
     );
     let config = write(
         dir.path(),

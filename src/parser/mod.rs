@@ -71,7 +71,7 @@ pub enum ParseError {
     EmptyFront(usize),
     #[error("line {0}: card front without an answer")]
     FrontWithoutAnswer(usize),
-    #[error("line {0}: `\\cloze[` is reserved for a future per-hole pin; write `\\cloze{{...}}`")]
+    #[error("line {0}: `\\blank[` is reserved for a future per-hole pin; write `\\blank{{...}}`")]
     ClozeBracketReserved(usize),
     #[error("line {0}: unclosed cloze hole (missing the closing `}}`)")]
     UnclosedHole(usize),
@@ -925,7 +925,7 @@ mod tests {
 
     #[test]
     fn a_cloze_hole_on_a_fenced_line_is_still_a_hole() {
-        let deck = parse("## q\n---\n```\nlet x = \\cloze{5};\n```\n");
+        let deck = parse("## q\n---\n```\nlet x = \\blank{5};\n```\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(Some(0), deck.cards[0].hole);
         assert_eq!(vec!["5"], deck.cards[0].back);
@@ -1241,7 +1241,7 @@ mod tests {
 
     #[test]
     fn a_cloze_marker_makes_the_card_cloze_and_numbers_holes_in_document_order() {
-        let deck = parse("## fill\n---\nthe \\cloze{quick} fox\njumps \\cloze{over}\n");
+        let deck = parse("## fill\n---\nthe \\blank{quick} fox\njumps \\blank{over}\n");
         assert_eq!(2, deck.cards.len());
 
         assert_eq!("fill", deck.cards[0].front);
@@ -1256,43 +1256,43 @@ mod tests {
 
     #[test]
     fn bare_cloze_without_a_brace_is_literal() {
-        let deck = parse("## q\n---\na \\cloze marker\n");
+        let deck = parse("## q\n---\na \\blank marker\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(None, deck.cards[0].hole);
-        assert_eq!(vec!["a \\cloze marker"], deck.cards[0].back);
+        assert_eq!(vec!["a \\blank marker"], deck.cards[0].back);
     }
 
     #[test]
     fn double_backslash_cloze_is_a_literal_marker() {
-        let deck = parse("## q\n---\na \\\\cloze{x} b\n");
+        let deck = parse("## q\n---\na \\\\blank{x} b\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(None, deck.cards[0].hole);
-        assert_eq!(vec!["a \\cloze{x} b"], deck.cards[0].back);
+        assert_eq!(vec!["a \\blank{x} b"], deck.cards[0].back);
     }
 
     #[test]
     fn cloze_bracket_is_a_reserved_parse_error() {
         assert_eq!(
             ParseError::ClozeBracketReserved(3),
-            err("## q\n---\na \\cloze[x]{y} b\n")
+            err("## q\n---\na \\blank[x]{y} b\n")
         );
     }
 
     #[test]
     fn escaped_braces_inside_a_hole_are_stripped_and_do_not_count() {
-        let deck = parse("## q\n---\nw \\cloze{a \\{b\\} c} z\n");
+        let deck = parse("## q\n---\nw \\blank{a \\{b\\} c} z\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["a {b} c"], deck.cards[0].back);
         assert_eq!(vec!["w ____ z"], deck.cards[0].context);
 
-        let deck = parse("## q\n---\nw \\cloze{a \\{b} c\n");
+        let deck = parse("## q\n---\nw \\blank{a \\{b} c\n");
         assert_eq!(vec!["a {b"], deck.cards[0].back);
         assert_eq!(vec!["w ____ c"], deck.cards[0].context);
     }
 
     #[test]
     fn backslash_backslash_inside_a_hole_is_a_literal_backslash() {
-        let deck = parse("## q\n---\nw \\cloze{a\\\\b} z\n");
+        let deck = parse("## q\n---\nw \\blank{a\\\\b} z\n");
         assert_eq!(vec!["a\\b"], deck.cards[0].back);
     }
 
@@ -1300,24 +1300,24 @@ mod tests {
     fn an_unclosed_hole_is_a_line_numbered_error() {
         assert_eq!(
             ParseError::UnclosedHole(3),
-            err("## q\n---\nw \\cloze{oops\n")
+            err("## q\n---\nw \\blank{oops\n")
         );
     }
 
     #[test]
     fn an_empty_hole_is_an_error() {
-        assert_eq!(ParseError::EmptyHole(3), err("## q\n---\nw \\cloze{} z\n"));
+        assert_eq!(ParseError::EmptyHole(3), err("## q\n---\nw \\blank{} z\n"));
         assert_eq!(
             ParseError::EmptyHole(3),
-            err("## q\n---\nw \\cloze{  } z\n")
+            err("## q\n---\nw \\blank{  } z\n")
         );
     }
 
     #[test]
     fn hole_content_is_not_rescanned() {
-        let deck = parse("## q\n---\nw \\cloze{x \\cloze{y}} z\n");
+        let deck = parse("## q\n---\nw \\blank{x \\blank{y}} z\n");
         assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["x \\cloze{y}"], deck.cards[0].back);
+        assert_eq!(vec!["x \\blank{y}"], deck.cards[0].back);
         assert_eq!(
             vec![Lint {
                 line: 3,
@@ -1329,13 +1329,13 @@ mod tests {
 
     #[test]
     fn nested_balanced_braces_stay_inside_the_hole() {
-        let deck = parse("## q\n---\nw \\cloze{f{g}h} z\n");
+        let deck = parse("## q\n---\nw \\blank{f{g}h} z\n");
         assert_eq!(vec!["f{g}h"], deck.cards[0].back);
     }
 
     #[test]
     fn a_reveal_directive_on_a_cloze_card_is_linted_not_obeyed() {
-        let deck = parse("## q\n---\na \\cloze{b} c\n<!-- reveal: line -->\n");
+        let deck = parse("## q\n---\na \\blank{b} c\n<!-- reveal: line -->\n");
         assert_eq!(None, deck.cards[0].reveal);
         assert_eq!(
             vec![Lint {
@@ -1349,7 +1349,7 @@ mod tests {
     #[test]
     fn cloze_cards_never_produce_a_reversed_twin() {
         let deck = parse(
-            "---\ndirection: both\n---\n## q\n---\na \\cloze{b} c\n<!-- direction: both -->\n",
+            "---\ndirection: both\n---\n## q\n---\na \\blank{b} c\n<!-- direction: both -->\n",
         );
         assert_eq!(Some(Direction::Both), deck.frontmatter.direction);
         assert_eq!(1, deck.cards.len());
@@ -1510,16 +1510,16 @@ the answer
 
     #[test]
     fn a_divided_front_is_not_scanned_for_cloze_but_yields_images() {
-        let deck = parse("## front\n\\cloze[pin] stays literal\n![](f.png)\n\n---\nthe answer\n");
+        let deck = parse("## front\n\\blank[pin] stays literal\n![](f.png)\n\n---\nthe answer\n");
         let card = &deck.cards[0];
-        assert!(card.front.contains("\\cloze[pin]"));
+        assert!(card.front.contains("\\blank[pin]"));
         assert_eq!(vec![PathBuf::from("f.png")], img_srcs(&card.images));
         assert!(card.hole.is_none());
     }
 
     #[test]
     fn a_cloze_card_carries_front_and_back_images() {
-        let deck = parse("## front\n![](f.png)\n\n---\nthe \\cloze{answer} here\n![](b.png)\n");
+        let deck = parse("## front\n![](f.png)\n\n---\nthe \\blank{answer} here\n![](b.png)\n");
         assert_eq!(1, deck.cards.len());
         let card = &deck.cards[0];
         assert_eq!(Some(0), card.hole);
