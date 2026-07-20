@@ -473,8 +473,12 @@ void main() {
         await tester.pumpAndSettle();
 
         // The sheet closed; the whole app re-themed live, with no restart.
+        // (The picker is offstage under the Settings page now that Theme dwells
+        // there, but it re-themes all the same.)
         expect(find.byKey(const ValueKey('theme-sheet-list')), findsNothing);
-        final theme = Theme.of(tester.element(find.byType(PickerScreen)));
+        final theme = Theme.of(
+          tester.element(find.byType(PickerScreen, skipOffstage: false)),
+        );
         expect(
           theme.colorScheme.surface,
           themeById('dracula').colorScheme.surface,

@@ -29,10 +29,12 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Choosing a row returns to the picker (Settings slides back down), then
-    // runs its action there, so a folder/generate change lands you back on the
-    // list that now shows the result.
-    void choose(VoidCallback action) {
+    // The content-changing rows return to the picker first (Settings slides
+    // back down), then act, so you see the result on the list; Decks folder
+    // MUST, since choosing one remounts the picker (its state, which these
+    // callbacks are bound to, is disposed). The config rows below just open a
+    // sheet over Settings and leave you here (Signal-style dwell).
+    void popThen(VoidCallback action) {
       Navigator.of(context).pop();
       action();
     }
@@ -46,12 +48,12 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: Icon(Icons.favorite, color: theme.colorScheme.primary),
               title: const Text('Support alix'),
-              onTap: () => choose(onSupport),
+              onTap: onSupport,
             ),
             ListTile(
               leading: const Icon(Icons.devices),
               title: const Text('Connected devices'),
-              onTap: () => choose(onConnectedDevices),
+              onTap: onConnectedDevices,
             ),
             Divider(
               height: 24,
@@ -63,23 +65,23 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.folder_outlined),
               title: const Text('Decks folder'),
-              onTap: () => choose(onDecksFolder),
+              onTap: () => popThen(onDecksFolder),
             ),
             if (onGenerate != null)
               ListTile(
                 leading: const Icon(Icons.auto_awesome_outlined),
                 title: const Text('Generate deck'),
-                onTap: () => choose(onGenerate!),
+                onTap: () => popThen(onGenerate!),
               ),
             ListTile(
               leading: const Icon(Icons.palette_outlined),
               title: const Text('Theme'),
-              onTap: () => choose(onTheme),
+              onTap: onTheme,
             ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
-              onTap: () => choose(onAbout),
+              onTap: onAbout,
             ),
           ],
         ),

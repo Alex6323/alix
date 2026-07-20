@@ -7,6 +7,13 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Changed
+
+- Settings' Support, Connected devices, Theme, and About rows now stay in
+  Settings (their sheet opens over it) instead of returning to the deck list;
+  Decks folder and Generate deck still take you back to the list so you see the
+  result.
+
 ## [0.2.0] - 2026-07-21
 
 ### Added
