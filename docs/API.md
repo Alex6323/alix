@@ -486,9 +486,9 @@ first, same as a double `POST`.
 |---|---|---|
 | GET | `/img/<key>` | image bytes (content type by extension); 404 unknown key |
 
-`<key>` is an opaque 16-hex hash; the URLs arrive inside `CardDto.img` /
-`img_back` and `DeckItemDto.icon`. Unauthenticated (see §2). Part of the
-contract — native clients need it to show card images.
+`<key>` is an opaque 16-hex hash; the URLs arrive inside `CardDto.images[]` /
+`images_back[]` `src` and `DeckItemDto.icon`. Unauthenticated (see §2). Part of
+the contract. Native clients need it to show card images.
 
 ## 6. DTO reference
 
@@ -531,11 +531,16 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `back` | [string] | Answer lines as displayed (may be a reshaped view). |
 | `reshaped` | bool | `back` is the `format` augment's display shape. |
 | `note` | [NoteUnitDto] | Post-answer note, as a tagged union. |
-| `img` / `img_back` | string? | `/img/<key>` URLs. |
+| `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `at` | string? | `% at:` citation locator. |
 | `citation` | ExcerptDto? | Resolved citation excerpt. |
 | `citation_error` | string? | Why `at` failed to resolve. |
 | `crumb` | CrumbDto? | Topology breadcrumb (region heatmap). |
+
+### ImageDto
+
+`src: string` (a `/img/<key>` URL, see §5), `alt: string?` (the `\image{}`
+marker's `alt:` text, null when the marker set none).
 
 ### NoteUnitDto *(tagged union — its `kind` is unrelated to StateDto's)*
 

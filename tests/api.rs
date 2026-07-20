@@ -1078,6 +1078,59 @@ fn post_api_browse_with_an_unknown_deck_yields_400() {
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
 }
 
+#[test]
+fn post_api_browse_serializes_card_images_as_lists_with_alt() {
+    // A back card carries two `\image` markers (the second without an alt); a
+    // divided front card carries one. Both sides serialize as ordered
+    // `{ src, alt }` lists, and the old scalar `img`/`img_back` keys are gone.
+    const IMG_DECK: &str = "## Back images <!-- id: bi1 -->\nWaxing\n\
+                            \\image{moon.png}{alt: a moon}\n\\image{crescent.png}\n\n\
+                            ## Front image <!-- id: fi1 -->\n\\image{sun.png}{alt: the sun}\n\n\
+                            ---\nThe sun\n";
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(dir.join("images.md"), IMG_DECK).unwrap();
+    });
+
+    let resp = post_json(&base, "/api/browse", r#"{"deck":"images.md"}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let cards = body["cards"].as_array().expect("cards is an array");
+    assert_eq!(2, cards.len(), "body: {body}");
+
+    // Card 0: two back images, no front image; each is a `{ src, alt }` object,
+    // the src a `/img/<key>` URL as before.
+    let back = cards[0]["images_back"]
+        .as_array()
+        .expect("images_back is a list");
+    assert_eq!(2, back.len(), "two back images: {body}");
+    assert!(
+        back[0]["src"].as_str().unwrap().starts_with("/img/"),
+        "src is an /img/ url: {body}"
+    );
+    assert_eq!("a moon", back[0]["alt"], "first image's alt: {body}");
+    assert!(back[1]["alt"].is_null(), "second image has no alt: {body}");
+    assert!(
+        cards[0]["images"].as_array().unwrap().is_empty(),
+        "back card has no front image: {body}"
+    );
+
+    // Card 1: one front image, no back image.
+    let front = cards[1]["images"].as_array().expect("images is a list");
+    assert_eq!(1, front.len(), "one front image: {body}");
+    assert_eq!("the sun", front[0]["alt"], "front image alt: {body}");
+    assert!(
+        cards[1]["images_back"].as_array().unwrap().is_empty(),
+        "front card has no back image: {body}"
+    );
+
+    // The old scalar keys are gone from the wire.
+    assert!(cards[0].get("img").is_none(), "old img key removed: {body}");
+    assert!(
+        cards[0].get("img_back").is_none(),
+        "old img_back key removed: {body}"
+    );
+}
+
 // ── Deck topology ───────────────────────────────────────────────────────
 
 #[test]

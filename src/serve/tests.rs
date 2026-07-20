@@ -132,8 +132,8 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
     }];
 
     let dto = card_dto((&card).into());
-    let img = dto.img.expect("front image url");
-    let img_back = dto.img_back.expect("back image url");
+    let img = &dto.images.first().expect("front image url").src;
+    let img_back = &dto.images_back.first().expect("back image url").src;
     assert!(img.starts_with("/img/"));
     assert!(img_back.starts_with("/img/") && img_back != img);
 
@@ -158,7 +158,7 @@ fn plain_card_has_no_image_urls() {
         1,
     );
     let dto = card_dto((&card).into());
-    assert!(dto.img.is_none() && dto.img_back.is_none());
+    assert!(dto.images.is_empty() && dto.images_back.is_empty());
     assert!(collect_images(std::slice::from_ref(&card)).is_empty());
 }
 

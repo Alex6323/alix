@@ -3014,7 +3014,7 @@ function renderCard() {
   }
   q.appendChild(frontEl(c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
-  if (c.img) q.appendChild(cardImage(c.img));
+  appendImages(q, c.images);
 
   // The answer region (id="ansRegion") is filled by fillBottom(); the note region
   // and its divider are added only once the note is shown (see setNote); the answer
@@ -3044,14 +3044,14 @@ function renderBrowse() {
 
   q.appendChild(frontEl(c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
-  if (c.img) q.appendChild(cardImage(c.img));
+  appendImages(q, c.images);
 
   // Match the review path: any multi-line answer is a left-aligned block (centered
   // as a whole); only a reshaped-list answer gets bullets.
   const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
   appendReveal(sec, c.back, isReshapedList(c));
   a.appendChild(sec);
-  if (c.img_back) a.appendChild(cardImage(c.img_back));
+  appendImages(a, c.images_back);
   a.classList.add("has-body"); // browse always shows the full answer
 
   if (hasNote) {
@@ -3598,7 +3598,7 @@ function fillAcquire(a) {
   const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
   appendReveal(sec, c.back, isReshapedList(c));
   a.appendChild(sec);
-  if (c.img_back) a.appendChild(cardImage(c.img_back));
+  appendImages(a, c.images_back);
   a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in about a minute."));
 }
 
@@ -3615,14 +3615,18 @@ function fillAnswer(a) {
   a.appendChild(sec);
   // Attach the answer image to the region itself (a flex column), not to the
   // `.reveal` block, so it can be bounded by the region and scaled to fit.
-  if (c.img_back) a.appendChild(cardImage(c.img_back));
+  appendImages(a, c.images_back);
 }
 
-// An <img> for a card image side. The src is a server `/img/<key>` URL.
-function cardImage(src) {
+// A card side's images render as ordered blocks; `im` is a `{ src, alt }` from
+// the card's `images` / `images_back` list, its src a server `/img/<key>` URL.
+function appendImages(parent, images) {
+  for (const im of (images || [])) parent.appendChild(cardImage(im));
+}
+function cardImage(im) {
   const img = el("img", "card-img");
-  img.src = src;
-  img.alt = "";
+  img.src = im.src;
+  img.alt = im.alt || "";
   return img;
 }
 

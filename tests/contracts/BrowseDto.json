@@ -10,8 +10,8 @@
       "context": [],
       "crumb": null,
       "front": "q",
-      "img": null,
-      "img_back": null,
+      "images": [],
+      "images_back": [],
       "note": [],
       "reshaped": false
     }

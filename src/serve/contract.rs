@@ -87,8 +87,20 @@ fn statedto_review_phase_wire_shape() {
                     lines: vec!["let s = String::new();".to_string()],
                 },
             ],
-            img: Some("/img/0123456789abcdef".to_string()),
-            img_back: Some("/img/0123456789abcdef".to_string()),
+            images: vec![ImageDto {
+                src: "/img/0123456789abcdef".to_string(),
+                alt: Some("a heap-allocated String".to_string()),
+            }],
+            images_back: vec![
+                ImageDto {
+                    src: "/img/0123456789abcdef".to_string(),
+                    alt: Some("the stack pointer".to_string()),
+                },
+                ImageDto {
+                    src: "/img/fedcba9876543210".to_string(),
+                    alt: None,
+                },
+            ],
             at: Some("string.rs:120-128".to_string()),
             citation: Some(ExcerptDto {
                 path: "src/string.rs".to_string(),
@@ -137,8 +149,13 @@ fn statedto_review_phase_wire_shape() {
                     {"kind": "sentence", "text": "Ownership frees memory deterministically."},
                     {"kind": "code", "lines": ["let s = String::new();"]}
                 ],
-                "img": "/img/0123456789abcdef",
-                "img_back": "/img/0123456789abcdef",
+                "images": [
+                    {"src": "/img/0123456789abcdef", "alt": "a heap-allocated String"}
+                ],
+                "images_back": [
+                    {"src": "/img/0123456789abcdef", "alt": "the stack pointer"},
+                    {"src": "/img/fedcba9876543210", "alt": null}
+                ],
                 "at": "string.rs:120-128",
                 "citation": {
                     "path": "src/string.rs",
@@ -642,8 +659,8 @@ fn browsedto_wire_shape() {
             back: vec!["a".to_string()],
             reshaped: false,
             note: Vec::new(),
-            img: None,
-            img_back: None,
+            images: Vec::new(),
+            images_back: Vec::new(),
             at: None,
             citation: None,
             citation_error: None,
@@ -662,8 +679,8 @@ fn browsedto_wire_shape() {
                 "back": ["a"],
                 "reshaped": false,
                 "note": [],
-                "img": null,
-                "img_back": null,
+                "images": [],
+                "images_back": [],
                 "at": null,
                 "citation": null,
                 "citation_error": null,

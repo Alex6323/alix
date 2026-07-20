@@ -12,15 +12,31 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImageView {
+    pub src: String,
+    pub alt: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CardView {
     pub front: String,
     pub context: Vec<String>,
     pub back: Vec<String>,
     pub reshaped: bool,
     pub note: Vec<NoteUnit>,
-    pub image: Option<String>,
-    pub image_back: Option<String>,
+    pub images: Vec<ImageView>,
+    pub images_back: Vec<ImageView>,
     pub at: Option<String>,
+}
+
+fn image_views(images: &[crate::card::CardImage]) -> Vec<ImageView> {
+    images
+        .iter()
+        .map(|i| ImageView {
+            src: i.src.display().to_string(),
+            alt: i.alt.clone(),
+        })
+        .collect()
 }
 
 impl From<&Card> for CardView {
@@ -31,11 +47,8 @@ impl From<&Card> for CardView {
             back: card.back_for_display().to_vec(),
             reshaped: card.display_back.is_some(),
             note: render::note_units(card),
-            image: card.images.first().map(|i| i.src.display().to_string()),
-            image_back: card
-                .images_back
-                .first()
-                .map(|i| i.src.display().to_string()),
+            images: image_views(&card.images),
+            images_back: image_views(&card.images_back),
             at: card.at.clone(),
         }
     }
@@ -322,8 +335,20 @@ mod tests {
                 text: "a note line".into()
             }]
         );
-        assert_eq!(card.image.as_deref(), Some("/pics/front.png"));
-        assert_eq!(card.image_back.as_deref(), Some("/pics/back.png"));
+        assert_eq!(
+            card.images
+                .iter()
+                .map(|i| i.src.as_str())
+                .collect::<Vec<_>>(),
+            ["/pics/front.png"]
+        );
+        assert_eq!(
+            card.images_back
+                .iter()
+                .map(|i| i.src.as_str())
+                .collect::<Vec<_>>(),
+            ["/pics/back.png"]
+        );
     }
 
     #[test]

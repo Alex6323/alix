@@ -939,7 +939,7 @@ function renderReview() {
   const cardEl = el("div", "rev-card");
 
   cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, acquire)));
-  if (card.img) cardEl.appendChild(cardImg(card.img));
+  appendImages(cardEl, card.images);
   cardEl.appendChild(el("div", "rev-prompt", card.front));
   for (const ctx of (card.context || [])) cardEl.appendChild(el("div", "rev-context", ctx));
 
@@ -951,7 +951,7 @@ function renderReview() {
     // Fill-in-the-blank: a blank before reveal, the green answer after.
     cardEl.appendChild(done ? answerFill(card) : blankEl());
   }
-  if (done && card.img_back) cardEl.appendChild(cardImg(card.img_back));
+  if (done) appendImages(cardEl, card.images_back);
 
   // Reserve the why-slot whenever the card has a note, so filling it on reveal
   // doesn't resize the card (the shell must not jump).
@@ -974,11 +974,17 @@ function eyebrowFor(s, acquire) {
   return "Fill in the blank ✏️";
 }
 
-function cardImg(src) {
+// Each side's images render as ordered blocks; `im` is a `{ src, alt }` from
+// the card's `images` / `images_back` list.
+function appendImages(parent, images) {
+  for (const im of (images || [])) parent.appendChild(cardImg(im));
+}
+
+function cardImg(im) {
   const img = document.createElement("img");
   img.className = "rev-img";
-  img.src = src;
-  img.alt = "";
+  img.src = im.src;
+  img.alt = im.alt || "";
   return img;
 }
 

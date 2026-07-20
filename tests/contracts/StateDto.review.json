@@ -37,8 +37,22 @@
       ]
     },
     "front": "What is ownership?",
-    "img": "/img/0123456789abcdef",
-    "img_back": "/img/0123456789abcdef",
+    "images": [
+      {
+        "alt": "a heap-allocated String",
+        "src": "/img/0123456789abcdef"
+      }
+    ],
+    "images_back": [
+      {
+        "alt": "the stack pointer",
+        "src": "/img/0123456789abcdef"
+      },
+      {
+        "alt": null,
+        "src": "/img/fedcba9876543210"
+      }
+    ],
     "note": [
       {
         "kind": "sentence",

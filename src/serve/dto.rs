@@ -31,12 +31,18 @@ pub(super) struct CardDto {
     pub(super) back: Vec<String>,
     pub(super) reshaped: bool,
     pub(super) note: Vec<NoteUnit>,
-    pub(super) img: Option<String>,
-    pub(super) img_back: Option<String>,
+    pub(super) images: Vec<ImageDto>,
+    pub(super) images_back: Vec<ImageDto>,
     pub(super) at: Option<String>,
     pub(super) citation: Option<ExcerptDto>,
     pub(super) citation_error: Option<String>,
     pub(super) crumb: Option<CrumbDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct ImageDto {
+    pub(super) src: String,
+    pub(super) alt: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1037,10 +1043,13 @@ pub(super) fn deck_topology_dto(
 }
 
 pub(super) fn card_dto(view: CardView) -> CardDto {
-    let img_url = |p: &str| format!("/img/{}", img_key(Path::new(p)));
+    let img_dto = |i: &review::ImageView| ImageDto {
+        src: format!("/img/{}", img_key(Path::new(&i.src))),
+        alt: i.alt.clone(),
+    };
     CardDto {
-        img: view.image.as_deref().map(img_url),
-        img_back: view.image_back.as_deref().map(img_url),
+        images: view.images.iter().map(&img_dto).collect(),
+        images_back: view.images_back.iter().map(&img_dto).collect(),
         front: view.front,
         context: view.context,
         back: view.back,
