@@ -250,8 +250,8 @@ class _WalkScreenState extends State<WalkScreen> {
       finished: done,
       confirm: () => _confirmLeave(context),
       child: Scaffold(
-        appBar: AppBar(
-          title: const AlixWordmark(),
+        appBar: alixAppBar(
+          context,
           actions: [
             if (!done)
               Padding(

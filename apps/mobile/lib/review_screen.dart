@@ -303,7 +303,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final theme = Theme.of(context);
     final tokens = theme.alix;
     return Scaffold(
-      appBar: AppBar(title: const AlixWordmark()),
+      appBar: alixAppBar(context),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -351,8 +351,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       finished: _state.finished,
       confirm: () => _confirmLeave(context),
       child: Scaffold(
-        appBar: AppBar(
-          title: const AlixWordmark(),
+        appBar: alixAppBar(
+          context,
           actions: [
             if (!_state.finished)
               Padding(

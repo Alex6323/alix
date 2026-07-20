@@ -118,10 +118,48 @@ class AlixWordmark extends StatelessWidget {
         fontWeight: FontWeight.w700,
         fontSize: 20,
         letterSpacing: 0.5,
+        // A tight line box (no extra leading below the baseline) so the
+        // wordmark's glyphs center with the leading icon instead of sitting a
+        // few pixels low; 'alix' has no descenders, so 1.0 never clips.
+        height: 1.0,
+        // Explicit so the Hero flight (which lifts this into the transition
+        // overlay, outside any DefaultTextStyle) can't fall back to Flutter's
+        // debug double-yellow-underline.
+        decoration: TextDecoration.none,
         color: _brand,
       ),
     );
   }
+}
+
+/// The wordmark's Hero tag: shared by every wordmark-bearing AppBar so the
+/// `alix` logo stays pinned across a route transition (identical source and
+/// destination rects, so its Hero flight has no movement) while the page body
+/// slides beneath. The drawer's own wordmark stays a plain [AlixWordmark] on
+/// purpose: a single route must not hold two Heroes with one tag.
+const _wordmarkHeroTag = 'alix-wordmark';
+
+/// Every wordmark-bearing screen's AppBar, built one way so the logo sits at
+/// the same x on all of them (a reserved 56px leading slot, no title spacing)
+/// and does not shift during transitions (the wordmark Hero). [leading]
+/// overrides the default, which is a back button when the route can pop, else
+/// an empty reserved slot; [actions] are the right-side controls.
+AppBar alixAppBar(
+  BuildContext context, {
+  Widget? leading,
+  List<Widget>? actions,
+}) {
+  return AppBar(
+    automaticallyImplyLeading: false,
+    leadingWidth: 56,
+    leading: leading ??
+        (Navigator.of(context).canPop()
+            ? const BackButton()
+            : const SizedBox(width: 56)),
+    titleSpacing: 0,
+    title: const Hero(tag: _wordmarkHeroTag, child: AlixWordmark()),
+    actions: actions,
+  );
 }
 
 /// --brand / --brand-ink: the one primary action's fill, never reskinned.
