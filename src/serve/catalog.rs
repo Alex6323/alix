@@ -596,8 +596,8 @@ pub(super) fn img_key(path: &Path) -> String {
 pub(super) fn collect_images(cards: &[Card]) -> HashMap<String, PathBuf> {
     let mut images = HashMap::new();
     for card in cards {
-        for path in [&card.image, &card.image_back].into_iter().flatten() {
-            images.insert(img_key(path), path.clone());
+        for image in card.images.iter().chain(&card.images_back) {
+            images.insert(img_key(&image.src), image.src.clone());
         }
     }
     images

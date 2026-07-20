@@ -152,8 +152,9 @@ impl Deck {
         // No filesystem check here: a missing image must not stop the deck from loading.
         let base_dir = image_base_dir(&path, settings.img_dir.as_deref());
         for card in &mut cards {
-            card.image = card.image.take().map(|p| resolve_image(&base_dir, p));
-            card.image_back = card.image_back.take().map(|p| resolve_image(&base_dir, p));
+            for image in card.images.iter_mut().chain(card.images_back.iter_mut()) {
+                image.src = resolve_image(&base_dir, std::mem::take(&mut image.src));
+            }
         }
         let mut expanded = Vec::with_capacity(cards.len());
         for card in cards {
@@ -1334,19 +1335,27 @@ mod tests {
         assert!(!deck.cards[0].reversed);
     }
 
+    fn resolved_back_images(deck: &Deck) -> Vec<PathBuf> {
+        deck.cards[0]
+            .images_back
+            .iter()
+            .map(|i| i.src.clone())
+            .collect()
+    }
+
     #[test]
     fn image_resolves_against_img_dir() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nimg-dir: /assets/imgs\n---\n## q <!-- img: moon.png -->\nWaxing\n",
+            "---\nimg-dir: /assets/imgs\n---\n## q\nWaxing\n\\image{moon.png}\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
-            Some(PathBuf::from("/assets/imgs/moon.png")),
-            deck.cards[0].image
+            vec![PathBuf::from("/assets/imgs/moon.png")],
+            resolved_back_images(&deck)
         );
     }
 
@@ -1354,9 +1363,12 @@ mod tests {
     fn image_resolves_against_deck_dir_without_img_dir() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(&path, "## q <!-- img: moon.png -->\nWaxing\n").unwrap();
+        std::fs::write(&path, "## q\nWaxing\n\\image{moon.png}\n").unwrap();
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(dir.path().join("moon.png")), deck.cards[0].image);
+        assert_eq!(
+            vec![dir.path().join("moon.png")],
+            resolved_back_images(&deck)
+        );
     }
 
     #[test]
@@ -1365,13 +1377,13 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nimg-dir: /assets\n---\n## q <!-- img: /elsewhere/moon.png -->\nWaxing\n",
+            "---\nimg-dir: /assets\n---\n## q\nWaxing\n\\image{/elsewhere/moon.png}\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
-            Some(PathBuf::from("/elsewhere/moon.png")),
-            deck.cards[0].image
+            vec![PathBuf::from("/elsewhere/moon.png")],
+            resolved_back_images(&deck)
         );
     }
 

@@ -139,13 +139,13 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
 fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     // Advisory only: the deck still works, the web server just 404s the image.
     for card in &deck.cards {
-        for image in [&card.image, &card.image_back].into_iter().flatten() {
-            if !image.exists() {
+        for image in card.images.iter().chain(&card.images_back) {
+            if !image.src.exists() {
                 report.warn(format!(
                     "{}: card at line {} references a missing image: {}",
                     deck.subject,
                     card.line,
-                    image.display()
+                    image.src.display()
                 ));
             }
         }
@@ -551,7 +551,7 @@ mod tests {
         w(
             dir,
             "imgcard.md",
-            "## pic <!-- id: img1 -->\n<!-- img: missing.png -->\nphoto\n",
+            "## pic <!-- id: img1 -->\nphoto\n\\image{missing.png}\n",
         );
         w(dir, "fresh.md", "## q\na\n");
         w(

@@ -22,6 +22,12 @@ impl Direction {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardImage {
+    pub src: PathBuf,
+    pub alt: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Card {
     pub subject: Arc<str>,
@@ -34,8 +40,8 @@ pub struct Card {
     pub reveal: Option<Reveal>,
     pub input: Option<Input>,
     pub direction: Option<Direction>,
-    pub image: Option<PathBuf>,
-    pub image_back: Option<PathBuf>,
+    pub images: Vec<CardImage>,
+    pub images_back: Vec<CardImage>,
     pub at: Option<String>,
     pub at_origin: Option<String>,
     pub origin: Option<String>,
@@ -70,8 +76,8 @@ impl Card {
             reveal: None,
             input: None,
             direction: None,
-            image: None,
-            image_back: None,
+            images: Vec::new(),
+            images_back: Vec::new(),
             at: None,
             at_origin: None,
             origin: None,
@@ -99,8 +105,8 @@ impl Card {
         );
         card.reveal = self.reveal;
         card.input = self.input;
-        card.image = self.image_back.clone();
-        card.image_back = self.image.clone();
+        card.images = self.images_back.clone();
+        card.images_back = self.images.clone();
         // The reversed half keeps the same token so id() can compose the "-r" suffix from it.
         card.token = self.token.clone();
         card.reversed = true;
@@ -245,17 +251,26 @@ mod tests {
     #[test]
     fn reversed_swaps_image_sides() {
         let mut fwd = card("g.md", "name this chord", &["G major"], None);
-        fwd.image_back = Some(PathBuf::from("/tabs/g.png"));
+        fwd.images_back = vec![CardImage {
+            src: PathBuf::from("/tabs/g.png"),
+            alt: None,
+        }];
         let rev = fwd.reversed();
-        assert_eq!(Some(PathBuf::from("/tabs/g.png")), rev.image);
-        assert_eq!(None, rev.image_back);
+        assert_eq!(
+            vec![PathBuf::from("/tabs/g.png")],
+            rev.images.iter().map(|i| i.src.clone()).collect::<Vec<_>>()
+        );
+        assert!(rev.images_back.is_empty());
     }
 
     #[test]
     fn id_ignores_image() {
         let mut a = stamped("s", "f", &["b"], None, "q1");
         let b = stamped("s", "f", &["b"], None, "q1");
-        a.image = Some(PathBuf::from("/imgs/a.png"));
+        a.images = vec![CardImage {
+            src: PathBuf::from("/imgs/a.png"),
+            alt: None,
+        }];
         a.at = Some("card.rs:1-9".to_string());
         a.givens = vec!["state — the parser position".to_string()];
         assert_eq!(a.id(), b.id());

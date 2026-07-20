@@ -31,8 +31,11 @@ impl From<&Card> for CardView {
             back: card.back_for_display().to_vec(),
             reshaped: card.display_back.is_some(),
             note: render::note_units(card),
-            image: card.image.as_ref().map(|p| p.display().to_string()),
-            image_back: card.image_back.as_ref().map(|p| p.display().to_string()),
+            image: card.images.first().map(|i| i.src.display().to_string()),
+            image_back: card
+                .images_back
+                .first()
+                .map(|i| i.src.display().to_string()),
             at: card.at.clone(),
         }
     }
@@ -294,8 +297,14 @@ mod tests {
     fn card_view_carries_context_note_and_images() {
         let (mut store, augment, _dir) = fixtures();
         let mut cards = parse("## q\nthe \\cloze{answer} is here\n> a note line\n");
-        cards[0].image = Some("/pics/front.png".into());
-        cards[0].image_back = Some("/pics/back.png".into());
+        cards[0].images = vec![crate::card::CardImage {
+            src: "/pics/front.png".into(),
+            alt: None,
+        }];
+        cards[0].images_back = vec![crate::card::CardImage {
+            src: "/pics/back.png".into(),
+            alt: None,
+        }];
         seen(&mut store, &cards);
         let session = session_at(cards, &store, Depth::Recall, NOW);
         let card = state(&session, &store, &augment, Some(NOW))

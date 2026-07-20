@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::{
     answer::Input,
-    card::{Card, Direction},
+    card::{Card, CardImage, Direction},
     depth::Reveal,
     token,
 };
@@ -15,7 +15,7 @@ mod frontmatter;
 
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
-use cloze::{Region, Seg, hash_repr, hole_fingerprints, push_image, scan_markers, seg_text};
+use cloze::{Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
 pub use frontmatter::{Frontmatter, yaml_quote};
 use frontmatter::{bad_value, parse_frontmatter, parse_reveal};
 
@@ -533,6 +533,22 @@ fn split_at_origin(value: &str) -> (String, Option<String>) {
 
 // ── Card building and cloze ──
 
+fn card_images(segments: &[Seg]) -> impl Iterator<Item = CardImage> + '_ {
+    segments.iter().filter_map(|segment| match segment {
+        Seg::Image { src, alt } => Some(CardImage {
+            src: PathBuf::from(src),
+            alt: alt.clone(),
+        }),
+        Seg::Text(_) | Seg::Hole(_) => None,
+    })
+}
+
+// The empty guard is load-bearing: an all-image line drops, but a blank content line (a fence's
+// blank, which yields no segments) must stay.
+fn image_only(segments: &[Seg]) -> bool {
+    !segments.is_empty() && segments.iter().all(|s| matches!(s, Seg::Image { .. }))
+}
+
 fn build_card(
     subject: &Arc<str>,
     raw: RawCard,
@@ -548,13 +564,17 @@ fn build_card(
         note,
         directives,
     } = raw;
+    let mut images: Vec<CardImage> = Vec::new();
     let (front, answer) = if divided {
-        let mut front = heading;
-        for (_, text) in &front_extra {
-            front.push('\n');
-            front.push_str(text);
+        let mut front_lines = vec![heading];
+        for (lineno, text) in &front_extra {
+            let segments = scan_markers(text, *lineno, Region::Front, lints)?;
+            images.extend(card_images(&segments));
+            if !image_only(&segments) {
+                front_lines.push(seg_display(&segments));
+            }
         }
-        (front, back)
+        (front_lines.join("\n"), back)
     } else {
         (heading, front_extra)
     };
@@ -565,6 +585,10 @@ fn build_card(
     let mut parsed = Vec::with_capacity(answer.len());
     for (lineno, text) in &answer {
         parsed.push(scan_markers(text, *lineno, Region::Answer, lints)?);
+    }
+    let mut images_back: Vec<CardImage> = Vec::new();
+    for segments in &parsed {
+        images_back.extend(card_images(segments));
     }
     let holes: Vec<(usize, usize, &str)> = parsed
         .iter()
@@ -581,14 +605,18 @@ fn build_card(
         .collect();
 
     if holes.is_empty() {
-        let back_lines: Vec<String> = parsed.iter().map(|segments| seg_text(segments)).collect();
+        let back_lines: Vec<String> = parsed
+            .iter()
+            .filter(|segments| !image_only(segments))
+            .map(|segments| seg_display(segments))
+            .collect();
         let mut card = Card::plain(Arc::clone(subject), front, back_lines, note, line);
         card.token = directives.token.as_deref().map(Arc::from);
         card.reveal = directives.reveal;
         card.input = directives.input;
         card.direction = directives.direction;
-        card.image = directives.img.map(PathBuf::from);
-        card.image_back = directives.img_back.map(PathBuf::from);
+        card.images = images;
+        card.images_back = images_back;
         card.at = directives.at;
         card.at_origin = directives.at_origin;
         card.origin = directives.origin;
@@ -615,6 +643,7 @@ fn build_card(
         let context: Vec<String> = parsed
             .iter()
             .enumerate()
+            .filter(|(_, segments)| !image_only(segments))
             .map(|(li, segments)| {
                 let mut rendered = String::new();
                 for (si, segment) in segments.iter().enumerate() {
@@ -624,9 +653,7 @@ fn build_card(
                             rendered.push_str(BLANK);
                         }
                         Seg::Hole(_) => rendered.push_str(HIDDEN),
-                        Seg::Image { src, alt } => {
-                            push_image(&mut rendered, src, alt.as_deref());
-                        }
+                        Seg::Image { .. } => {}
                     }
                 }
                 rendered
@@ -646,6 +673,8 @@ fn build_card(
         card.token = token.clone();
         card.hole = Some(n as u32);
         card.block_holes = block_holes.clone();
+        card.images = images.clone();
+        card.images_back = images_back.clone();
         card.content_fingerprint = block_fingerprint;
         // A cloze sub-card never reverses and keeps no direction: only the
         // per-card `input:` still applies here.
@@ -1413,13 +1442,99 @@ the answer
         assert_eq!(Some(Reveal::Flip), card.reveal);
         assert_eq!(Some(Input::Type), card.input);
         assert_eq!(Some(Direction::Reverse), card.direction);
-        assert_eq!(Some(PathBuf::from("moon.png")), card.image);
-        assert_eq!(Some(PathBuf::from("phase.png")), card.image_back);
+        assert!(card.images.is_empty());
+        assert!(card.images_back.is_empty());
         assert_eq!(Some("29.rs".to_string()), card.at);
         assert_eq!(Some("src/caching.rs:46-66".to_string()), card.at_origin);
         assert_eq!(Some("/crate".to_string()), card.origin);
         assert_eq!(2, card.givens.len());
         assert_eq!(Some("4jkya9q3m8z0tw5v9y2b4n6d8f"), card.token.as_deref());
+    }
+
+    // ── Inline image markers ──
+
+    fn img_srcs(images: &[CardImage]) -> Vec<PathBuf> {
+        images.iter().map(|i| i.src.clone()).collect()
+    }
+
+    #[test]
+    fn an_undivided_back_image_fills_images_back_and_leaves_the_text() {
+        let deck = parse("## q\nWaxing\n\\image{moon.png}\n");
+        let card = &deck.cards[0];
+        assert_eq!(vec![PathBuf::from("moon.png")], img_srcs(&card.images_back));
+        assert!(card.images.is_empty());
+        assert_eq!(vec!["Waxing"], card.back);
+        assert!(!card.back.join("\n").contains("\\image"));
+    }
+
+    #[test]
+    fn a_divided_front_image_fills_images_and_cleans_the_answer() {
+        let deck = parse("## What phase?\n\\image{moon.png}\n\n---\nWaxing\n");
+        let card = &deck.cards[0];
+        assert_eq!(vec![PathBuf::from("moon.png")], img_srcs(&card.images));
+        assert!(card.images_back.is_empty());
+        assert_eq!("What phase?", card.front);
+        assert_eq!(vec!["Waxing"], card.back);
+        assert!(!card.front.contains("\\image"));
+    }
+
+    #[test]
+    fn without_a_blank_line_the_divider_is_content_and_the_image_lands_on_the_back() {
+        let deck = parse("## q\n\\image{x.png}\n---\nWaxing\n");
+        let card = &deck.cards[0];
+        assert!(card.images.is_empty());
+        assert_eq!(vec![PathBuf::from("x.png")], img_srcs(&card.images_back));
+    }
+
+    #[test]
+    fn two_answer_images_fill_images_back_in_order() {
+        let deck = parse("## q\nSee both\n\\image{a.png}\n\\image{b.png}\n");
+        let card = &deck.cards[0];
+        assert_eq!(
+            vec![PathBuf::from("a.png"), PathBuf::from("b.png")],
+            img_srcs(&card.images_back)
+        );
+        assert!(card.images.is_empty());
+        assert_eq!(vec!["See both"], card.back);
+    }
+
+    #[test]
+    fn a_divided_front_is_not_scanned_for_cloze_but_yields_images() {
+        let deck =
+            parse("## front\n\\cloze[pin] stays literal\n\\image{f.png}\n\n---\nthe answer\n");
+        let card = &deck.cards[0];
+        assert!(card.front.contains("\\cloze[pin]"));
+        assert_eq!(vec![PathBuf::from("f.png")], img_srcs(&card.images));
+        assert!(card.hole.is_none());
+    }
+
+    #[test]
+    fn a_cloze_card_carries_front_and_back_images() {
+        let deck =
+            parse("## front\n\\image{f.png}\n\n---\nthe \\cloze{answer} here\n\\image{b.png}\n");
+        assert_eq!(1, deck.cards.len());
+        let card = &deck.cards[0];
+        assert_eq!(Some(0), card.hole);
+        assert_eq!(vec![PathBuf::from("f.png")], img_srcs(&card.images));
+        assert_eq!(vec![PathBuf::from("b.png")], img_srcs(&card.images_back));
+    }
+
+    #[test]
+    fn adding_an_image_preserves_the_card_token() {
+        let base = parse("## q <!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\nWaxing\n");
+        let with =
+            parse("## q <!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\nWaxing\n\\image{moon.png}\n");
+        let card_base = &base.cards[0];
+        let card_with = &with.cards[0];
+        assert_eq!(card_base.id(), card_with.id());
+        assert_eq!(
+            Some("9w2c7x4k1m8q3z5t0v6b2n4d8f".to_string()),
+            card_with.id()
+        );
+        assert_eq!(
+            vec![PathBuf::from("moon.png")],
+            img_srcs(&card_with.images_back)
+        );
     }
 
     // ── Canonical content ──

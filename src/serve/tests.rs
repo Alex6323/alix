@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     answer::{Input, Mode, mode_name},
     ask::{self, Reply},
-    card::Card,
+    card::{Card, CardImage},
     choice,
     config::{AskConfig, ReviewConfig},
     depth::Depth,
@@ -122,8 +122,14 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
         None,
         1,
     );
-    card.image = Some(PathBuf::from("/imgs/moon.png"));
-    card.image_back = Some(PathBuf::from("/imgs/tab.png"));
+    card.images = vec![CardImage {
+        src: PathBuf::from("/imgs/moon.png"),
+        alt: None,
+    }];
+    card.images_back = vec![CardImage {
+        src: PathBuf::from("/imgs/tab.png"),
+        alt: None,
+    }];
 
     let dto = card_dto((&card).into());
     let img = dto.img.expect("front image url");
