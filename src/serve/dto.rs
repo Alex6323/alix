@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
+use std::{collections::HashSet, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -9,16 +6,12 @@ use super::{Browsing, Examining, Reviewing, Walking, catalog::img_key};
 use crate::{
     answer::{Input, Mode, mode_name},
     augment::AugmentCache,
-    card::Card,
-    config::{
-        AskConfig, Bindings, BrowseBindings, Key, KeyPattern, PickerKeys, ReviewConfig, Strictness,
-    },
+    config::{AskConfig, Bindings, BrowseBindings, Key, KeyPattern, PickerKeys, Strictness},
     deck::{self, Deck, DeckState},
     depth::{Depth, depth_name},
     doctor, exam,
     render::NoteUnit,
     review::{self, CardView},
-    scheduler::Fsrs,
     session::now_ms,
     store::Store,
     trace::{self, Delta, Excerpt, Phase},
@@ -53,9 +46,10 @@ pub(super) struct CrumbDto {
 }
 
 #[derive(Debug, Serialize, Default)]
-pub(super) struct DeckTopologyDto {
+pub(super) struct DeckDrawerDto {
+    pub(super) preamble: Option<String>,
+    pub(super) heatmap: Vec<f32>,
     pub(super) topologies: Vec<TopologyInfoDto>,
-    pub(super) deck_due: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,7 +63,6 @@ pub(super) struct TopologyInfoDto {
 pub(super) struct RegionInfoDto {
     pub(super) name: String,
     pub(super) cells: Vec<f32>,
-    pub(super) due: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -969,56 +962,18 @@ pub(super) fn state_name(s: DeckState) -> &'static str {
     }
 }
 
-pub(super) fn deck_topology_dto(
+pub(super) fn deck_drawer_dto(
     augment: &AugmentCache,
     store: &Store,
     deck: &Deck,
-    review: ReviewConfig,
-) -> DeckTopologyDto {
-    let parent = deck.path.parent().unwrap_or_else(|| Path::new(""));
-    let review = review.for_workspace(parent);
-    let by_id: HashMap<String, &Card> = deck
-        .cards
-        .iter()
-        .filter_map(|c| Some((c.id()?, c)))
-        .collect();
+) -> DeckDrawerDto {
     let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
-    let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
     let now = now_ms();
-    // Ids absent from the deck (a topology built before an edit) are skipped.
-    // Pinned to Recall: a deck-wide signal, not per-session.
-    let due_of = |ids: &[String]| {
-        let cards: Vec<&Card> = ids.iter().filter_map(|id| by_id.get(id).copied()).collect();
-        crate::session::count_reviewable(
-            &cards,
-            store,
-            &scheduler,
-            Depth::Recall,
-            now,
-            review.retire_after_days,
-        )
-    };
-    let deck_due = deck
-        .cards
-        .iter()
-        .filter(|c| {
-            crate::session::is_reviewable(
-                c,
-                store,
-                &scheduler,
-                Depth::Recall,
-                now,
-                review.retire_after_days,
-            )
-        })
-        .count()
-        + crate::session::count_reviewable_virtual(
-            store,
-            &deck.subject,
-            &scheduler,
-            now,
-            review.retire_after_days,
-        );
+    // A flat per-card heatmap over the whole deck, in file order; a topology (if
+    // any) re-groups the same signal into named regions below. Retrievability is
+    // pinned to Recall: a deck-wide signal, not per-session.
+    let ids: Vec<String> = deck.cards.iter().filter_map(|c| c.id()).collect();
+    let heatmap = crate::session::card_strengths(&ids, store, now);
     let topologies = augment
         .topologies_for(&deck_tokens)
         .into_iter()
@@ -1031,14 +986,14 @@ pub(super) fn deck_topology_dto(
                 .map(|r| RegionInfoDto {
                     name: r.name.clone(),
                     cells: crate::session::card_strengths(&r.cards, store, now),
-                    due: due_of(&r.cards),
                 })
                 .collect(),
         })
         .collect();
-    DeckTopologyDto {
+    DeckDrawerDto {
+        preamble: deck.preamble.clone(),
+        heatmap,
         topologies,
-        deck_due,
     }
 }
 

@@ -1374,42 +1374,25 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
 }
 
 #[test]
-fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
+fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
     let dir = tempfile::tempdir().unwrap();
     let deck_path = dir.path().join("rust.md");
-    std::fs::write(&deck_path, "## q1 <!-- id: qa -->\na1\n").unwrap();
+    std::fs::write(
+        &deck_path,
+        "# Rust\nA short intro.\n\n## q1 <!-- id: qa -->\na1\n## q2 <!-- id: qb -->\na2\n",
+    )
+    .unwrap();
     let deck = Deck::load(&deck_path).unwrap();
 
-    let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-    let now = now_ms();
-    store
-        .get_or_insert(&deck.cards[0].id().unwrap(), now)
-        .recall = Some(crate::store::FsrsState {
-        state: 2,
-        scheduled_days: 30,
-        due_ms: now + 30 * 86_400_000,
-        ..Default::default()
-    });
+    let store = Store::open(dir.path().join("progress.json")).unwrap();
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
 
-    let before = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
-    assert_eq!(0, before.deck_due);
-
-    let vtext = "## virtual front <!-- id: v1 -->\nvirtual back\n".to_string();
-    let vid = crate::parser::parse_str(&deck.subject, &vtext).unwrap()[0]
-        .id()
-        .unwrap();
-    store.insert_virtual(crate::store::VirtualCard {
-        id: vid.clone(),
-        kind: crate::store::VirtualKind::Remediation,
-        parent: deck.subject.clone(),
-        text: vtext,
-        created_ms: 0,
-    });
-    store.get_or_insert(&vid, 0);
-
-    let after = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
-    assert_eq!(1, after.deck_due);
+    let dto = deck_drawer_dto(&augment, &store, &deck);
+    assert_eq!(Some("A short intro."), dto.preamble.as_deref());
+    // One cell per stamped card; a never-reviewed card reads as the neutral
+    // sentinel (-1.0), not 0.0.
+    assert_eq!(vec![-1.0, -1.0], dto.heatmap);
+    assert!(dto.topologies.is_empty());
 }
 
 #[test]

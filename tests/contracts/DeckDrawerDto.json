@@ -1,5 +1,10 @@
 {
-  "deck_due": 3,
+  "heatmap": [
+    0.5,
+    1.0,
+    -1.0
+  ],
+  "preamble": "A short intro under the H1.",
   "topologies": [
     {
       "name": "north-south",
@@ -10,7 +15,6 @@
             0.5,
             1.0
           ],
-          "due": 2,
           "name": "north"
         }
       ]

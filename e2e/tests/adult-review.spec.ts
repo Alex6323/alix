@@ -45,6 +45,20 @@ test("clicking a deck row fires POST /api/select, and a card front renders", asy
   await expect(page.locator("#hist .left-token")).toHaveText(/^\d+ left$/);
 });
 
+test("focusing a deck opens the drawer with its preamble and heatmap, no due count", async ({ page }) => {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click(); // focuses the row → opens the drawer
+
+  // A sibling row's drawer may still be animating closed as wild's opens, so
+  // wait for a single stable drawer before asserting on it.
+  await expect(page.locator(".drawer")).toHaveCount(1);
+  const drawer = page.locator(".drawer");
+  await expect(drawer.locator(".drawer-preamble")).toHaveText(/wild animals/i);
+  await expect(drawer.locator(".crumb-cell")).toHaveCount(2); // one per stamped card
+  await expect(page.locator(".drawer-due")).toHaveCount(0); // the old due count is gone
+  await drawer.screenshot({ path: "/tmp/claude-1000/-home-me-dev-developer-alex6323-projects-flashcard2-claude-agent-2/ea6ad9c5-47cc-4ff1-9a0d-b19dd66cad08/scratchpad/drawer.png" });
+});
+
 test("the ☰ menu opens without error", async ({ page }) => {
   await page.locator("#kebab").click();
   await expect(page.locator("#menu")).toHaveClass(/open/);

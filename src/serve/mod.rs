@@ -477,7 +477,7 @@ pub fn run_review(
                     None => respond_status(request, 400),
                 }
             }
-            (Method::Post, "/api/deck-topology") => {
+            (Method::Post, "/api/deck-drawer") => {
                 let dto = match read_selection(&mut request, decks_dir, recent, &mut *cache) {
                     Some(sel) => {
                         match (
@@ -490,12 +490,12 @@ pub fn run_review(
                             (Ok(deck), Ok(s)) => {
                                 let augment =
                                     AugmentCache::open(augment::augment_path_for(s.path()));
-                                deck_topology_dto(&augment, &s, &deck, review_cfg)
+                                deck_drawer_dto(&augment, &s, &deck)
                             }
-                            _ => DeckTopologyDto::default(),
+                            _ => DeckDrawerDto::default(),
                         }
                     }
-                    None => DeckTopologyDto::default(),
+                    None => DeckDrawerDto::default(),
                 };
                 respond_json(request, &dto);
             }

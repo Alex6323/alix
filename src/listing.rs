@@ -1090,6 +1090,32 @@ mod tests {
     }
 
     #[test]
+    fn an_unstamped_deck_is_reviewable_so_a_hand_authored_deck_can_be_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        // No `<!-- id: -->` lines: a hand-authored deck that has never been
+        // opened (stamping happens at review-open). Its cards are brand new, so
+        // the deck must read drillable; opening it is what stamps it.
+        std::fs::write(&deck_path, "## q1\na1\n## q2\na2\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        assert!(
+            deck.cards.iter().all(|c| c.id().is_none()),
+            "fixture must be unstamped"
+        );
+
+        let store = Store::open(dir.path().join("progress.json")).unwrap();
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
+        assert!(status.reviewable, "a fresh unstamped deck must be drillable");
+    }
+
+    #[test]
     fn a_recall_settled_deck_is_still_reviewable_at_reconstruct() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.md");

@@ -554,12 +554,15 @@ pub fn card_strengths(card_ids: &[String], store: &Store, now_ms: u64) -> Vec<f3
         .collect()
 }
 
+// -1.0 marks a card with no retrievability signal yet (never reviewed at
+// Recall); clients render it as a neutral cell, distinct from a decayed card
+// near 0.0.
 fn retrievability(store: &Store, card_id: &str, now_ms: u64) -> f32 {
     let Some(f) = store.get(card_id).and_then(|s| s.schedule(Depth::Recall)) else {
-        return 0.0;
+        return -1.0;
     };
     if f.stability <= 0.0 {
-        return 0.0;
+        return -1.0;
     }
     let elapsed_days = now_ms.saturating_sub(f.last_review_ms) as f64 / 86_400_000.0;
     Parameters::forgetting_curve(elapsed_days, f.stability).clamp(0.0, 1.0) as f32
@@ -576,8 +579,12 @@ pub fn is_reviewable(
     if is_retired(card, store, retire_after_days) {
         return false;
     }
+    // An unstamped card is brand new: it gets its id (and its first review) when
+    // a session opens. Treat it as due here, like a stamped card with no
+    // progress yet, so a fresh hand-authored deck reads as drillable in the
+    // picker instead of being greyed out.
     let Some(id) = card.id() else {
-        return false;
+        return true;
     };
     if depth == Depth::Recognize {
         return store.get(&id).is_none_or(|s| s.recognized_ms.is_none());
@@ -1743,9 +1750,9 @@ mod tests {
     }
 
     #[test]
-    fn card_with_no_fsrs_has_zero_strength() {
+    fn card_with_no_fsrs_has_no_retrievability_signal() {
         let (store, _dir) = empty_store();
-        assert_eq!(vec![0.0], card_strengths(&[7.to_string()], &store, 0));
+        assert_eq!(vec![-1.0], card_strengths(&[7.to_string()], &store, 0));
         assert!(card_strengths(&[], &store, 0).is_empty());
     }
 

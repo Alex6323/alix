@@ -8,9 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- the picker's focus drawer now shows a deck's preamble (the prose written under its `#` title), which was parsed but never surfaced before
+
 ### Changed
 
+- the picker's focus drawer now opens for every deck, not only decks with a topology augmentation, and shows a per-card retrievability heatmap: a single whole-deck bar for a plain deck, split into named regions when the deck has a topology. Cards you have never reviewed render as a neutral cell rather than red, so a fresh deck reads as unlearned instead of failing
+- **Breaking (web API):** the drawer no longer shows a raw due count. `POST /api/deck-topology` is renamed `POST /api/deck-drawer`; its response `DeckTopologyDto` becomes `DeckDrawerDto` (gains `preamble` and a flat `heatmap`, drops `deck_due`), and `RegionInfoDto` drops its `due` field
+
 ### Fixed
+
+- a hand-authored deck that had never been opened (its cards not yet stamped with ids) showed greyed out and refused to launch in the picker; an unstamped card now reads as a new, due card, so a fresh deck is drillable (opening it stamps it) instead of being stuck
 
 ## [0.6.0] - 2026-07-20
 

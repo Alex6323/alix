@@ -195,8 +195,9 @@ As you go, a thin **region breadcrumb** sits above each card (e.g.
 emphasized) so you see *where you are* in the material, not just what's in front
 of you. The names are deliberately coarse: they orient without giving away any
 card's answer. Under each region is a **strength heatmap**: one small bar per
-card, red (weak) → green (learned), so a region visibly greens up as you master
-it. The breadcrumb doubles as a progress map.
+card, red (weak) → green (learned), neutral for a card you have not reviewed yet,
+so a region visibly greens up as you master it. The breadcrumb doubles as a
+progress map.
 
 To **drill one weak region** on its own, tap its heatmap in the focus drawer to
 scope the launch to it.

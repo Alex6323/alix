@@ -225,14 +225,15 @@
   /* The orientation breadcrumb is pinned just below the header hairline, centered. */
   .crumb-strip { display: flex; justify-content: center; flex: none; padding: 14px 24px 2px; }
   .crumb-strip:empty { display: none; }
-  /* The picker's focus drawer: opens under a selected deck that has a topology.
-     Pick the ordering (a topology) and, optionally, one region to drill — the
-     heatmap shows where each region is weak (red) or learned (green), and the
-     right end shows how many cards that selection has due. The reveal is a single
-     `height` transition on the clipping wrapper: the drawer's content is laid out
-     once and `overflow: hidden` just moves the clip line, so opening and closing
-     stay smooth, and it always animates to height 0 *before* it's removed (never
-     a snap). */
+  /* The picker's focus drawer: opens under any selected deck. It shows the
+     deck's preamble (the prose under its H1, if any) and a per-card
+     retrievability heatmap — red (weak) → green (learned), neutral where a card
+     has no data yet. A deck with a topology augmentation splits that heatmap
+     into named regions you can pick to drill; a deck without one shows a single
+     whole-deck bar. The reveal is a single `height` transition on the clipping
+     wrapper: the drawer's content is laid out once and `overflow: hidden` just
+     moves the clip line, so opening and closing stay smooth, and it always
+     animates to height 0 *before* it's removed (never a snap). */
   .drawer-wrap { margin-left: 22px; overflow: hidden; flex: 0 0 auto; }
                  /* height animated via the Web Animations API; flex:0 0 auto stops the
                     flex column shrinking it to 0 (overflow:hidden ⇒ min-height:0) */
@@ -254,11 +255,10 @@
   .drawer-region .crumb-name { font-size: 0.68rem; opacity: 0.8; }
   .drawer-region.sel .crumb-name { opacity: 1; font-weight: 600; }
   .drawer-region.all { justify-content: center; min-width: 0; }
-  .drawer-due { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end;
-                line-height: 1.02; }
-  .drawer-due .n { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
-  .drawer-due .l { font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint); }
-  .drawer-due.zero .n { color: var(--dim); }
+  .drawer-preamble { font-size: 0.8rem; color: var(--dim); line-height: 1.45; max-width: 640px;
+                     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .crumb-cell.empty { background: color-mix(in srgb, var(--dim) 26%, transparent); }
+  .drawer-flat { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
   .context .muted-hole { color: var(--dim); }                     /* sibling holes, hidden */
@@ -393,8 +393,6 @@
   /* marks a deck whose focus drawer will open below it — a quiet ▾ tucked at the
      bottom-centre of the box (out of flow, so it never nudges the badge column),
      pointing down at where the drawer drops open; accent-lit on the focused row. */
-  .deckrow .drawer-hint { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); color: var(--dim); font-size: 0.72rem; line-height: 1; pointer-events: none; }
-  .deckrow:focus .drawer-hint { color: var(--bolt); }
   /* dependency-tree branch lines (├─ └─ │) — muted, monospace; the trailing
      space separates them from the title, so cancel the row gap. */
   .deckrow .tree { flex: none; display: flex; align-self: stretch; margin-right: -3px; }
@@ -862,7 +860,7 @@ let lastWorkspace = null; // name of the workspace you launched from, to return 
 // The focus drawer's current pick for the deck under the cursor: which topology
 // orders the session and (optionally) which one region to drill. `deck` tracks
 // the focused deck so launch only applies the pick to that deck. `topoCache`
-// memoizes each deck's `/api/deck-topology` payload across picker re-renders.
+// memoizes each deck's `/api/deck-drawer` payload across picker re-renders.
 let drawerSel = { deck: null, topology: null, region: null };
 let topoCache = {};
 let explainInput = ""; // the typed reconstruction on an explain card (client-side)
@@ -946,6 +944,14 @@ function acquire() { api("/api/acquire", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
 function promote() { api("/api/promote", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
+
+// One heatmap cell's fill: retrievability 0 (red) → 1 (green). A negative value
+// is the "no data yet" sentinel (never reviewed) and renders as a neutral cell,
+// so a fresh deck reads as unlearned rather than failing.
+function paintHeatCell(cellEl, s) {
+  if (s < 0) { cellEl.classList.add("empty"); return; }
+  cellEl.style.background = `hsl(${Math.round(120 * s)}, 62%, ${40 + 12 * s}%)`;
+}
 // A trace picked from the picker returns a WalkDto (kind "walk"); a fact deck
 // returns a review StateDto (kind "review"). `isWalk` is the single place the two
 // responses are told apart — by the `kind` tag, not by sniffing phase values.
@@ -2386,15 +2392,8 @@ async function renderSelect(preloaded) {
     // 🕒 nothing due — at the line end with the status, so the left gutter stays
     // tree + title. (A finished deck shows its 🎉 in the badge instead.)
     if (gated && !it.reviewable && it.state !== "finished") row.appendChild(el("span", "glyph", "\u{1F552}"));
-    // A quiet ▾ marks a deck with a focus drawer, so you can see at a glance which
-    // rows expand on focus (rather than discovering it only after selecting).
-    if (it.has_topology) {
-      const hint = el("span", "drawer-hint", "▾");
-      hint.title = "opens a focus drawer";
-      row.appendChild(hint);
-    }
-    // Click selects (focuses) the deck — opening the focus drawer when it has a
-    // topology — rather than launching outright; Review / Enter then launches.
+    // Click selects (focuses) the deck, opening its focus drawer, rather than
+    // launching outright; Review / Enter then launches.
     row.addEventListener("click", () => row.focus());
     row._item = it; row._gated = gated; row._wsName = wsName;
     row._search = (it.label || it.name).toLowerCase();
@@ -2668,76 +2667,87 @@ async function renderSelect(preloaded) {
     // wrapper animates its height open.
     function renderDrawer(row, data) {
       const topologies = data.topologies || [];
-      if (!topologies.length) return; // no topology → no drawer
-      drawerSel = { deck: row._item.name, topology: topologies[0].name, region: null };
+      const heatmap = data.heatmap || [];
+      const preamble = data.preamble || "";
+      // Nothing worth showing → no drawer.
+      if (!preamble && !heatmap.length && !topologies.length) return;
+      drawerSel = { deck: row._item.name, topology: topologies[0] ? topologies[0].name : null, region: null };
+      drawerCycle = null;
       const wrap = el("div", "drawer-wrap");
       const box = el("div", "drawer");
 
+      if (preamble) box.appendChild(el("div", "drawer-preamble", preamble));
+
       const regions = el("div", "drawer-regions");
-      const due = el("div", "drawer-due");
-      const dueN = el("span", "n", "0");
-      due.appendChild(dueN);
-      due.appendChild(el("span", "l", "due"));
 
-      const topoOf = () => topologies.find(t => t.name === drawerSel.topology) || topologies[0];
-      const paint = () => {
-        const topo = topoOf();
-        regions.innerHTML = "";
-        // mousedown preventDefault keeps focus on the deck row, so Enter/b and
-        // ← / → keep working after a region is picked by mouse.
-        const all = el("div", "drawer-region all" + (drawerSel.region ? "" : " sel"));
-        all.appendChild(el("div", "crumb-name", "Whole deck"));
-        all.addEventListener("mousedown", e => e.preventDefault());
-        all.addEventListener("click", () => { drawerSel.region = null; paint(); });
-        regions.appendChild(all);
-        for (const reg of topo.regions) {
-          const cell = el("div", "drawer-region" + (drawerSel.region === reg.name ? " sel" : ""));
-          cell.appendChild(el("div", "crumb-name", reg.name));
-          const bar = el("div", "crumb-bar");
-          for (const s of reg.cells || []) {
-            const c = el("span", "crumb-cell");
-            c.style.background = `hsl(${Math.round(120 * s)}, 62%, ${40 + 12 * s}%)`;
-            bar.appendChild(c);
+      if (topologies.length) {
+        const topoOf = () => topologies.find(t => t.name === drawerSel.topology) || topologies[0];
+        const paint = () => {
+          const topo = topoOf();
+          regions.innerHTML = "";
+          // mousedown preventDefault keeps focus on the deck row, so Enter/b and
+          // ← / → keep working after a region is picked by mouse.
+          const all = el("div", "drawer-region all" + (drawerSel.region ? "" : " sel"));
+          all.appendChild(el("div", "crumb-name", "Whole deck"));
+          all.addEventListener("mousedown", e => e.preventDefault());
+          all.addEventListener("click", () => { drawerSel.region = null; paint(); });
+          regions.appendChild(all);
+          for (const reg of topo.regions) {
+            const cell = el("div", "drawer-region" + (drawerSel.region === reg.name ? " sel" : ""));
+            cell.appendChild(el("div", "crumb-name", reg.name));
+            const bar = el("div", "crumb-bar");
+            for (const s of reg.cells || []) {
+              const c = el("span", "crumb-cell");
+              paintHeatCell(c, s);
+              bar.appendChild(c);
+            }
+            cell.appendChild(bar);
+            cell.addEventListener("mousedown", e => e.preventDefault());
+            cell.addEventListener("click", () => { drawerSel.region = reg.name; paint(); });
+            regions.appendChild(cell);
           }
-          cell.appendChild(bar);
-          cell.addEventListener("mousedown", e => e.preventDefault());
-          cell.addEventListener("click", () => { drawerSel.region = reg.name; paint(); });
-          regions.appendChild(cell);
+        };
+        // Move the selection left/right through [Whole deck, …regions], wrapping.
+        drawerCycle = (dir) => {
+          const names = [null, ...topoOf().regions.map(r => r.name)];
+          const i = Math.max(0, names.indexOf(drawerSel.region));
+          drawerSel.region = names[(i + dir + names.length) % names.length];
+          paint();
+        };
+        if (topologies.length > 1) {
+          const head = el("div", "drawer-head");
+          head.appendChild(el("span", "drawer-label", "Order"));
+          const sel = el("select", "drawer-topo");
+          for (const t of topologies) {
+            const o = el("option", "", t.principle ? `${t.name} · ${t.principle}` : t.name);
+            o.value = t.name;
+            sel.appendChild(o);
+          }
+          sel.value = drawerSel.topology;
+          sel.addEventListener("change", () => { drawerSel.topology = sel.value; drawerSel.region = null; paint(); });
+          head.appendChild(sel);
+          box.appendChild(head);
         }
-        // The due readout tracks the selection: a region's own count, else the deck's.
-        const sel = drawerSel.region ? topo.regions.find(r => r.name === drawerSel.region) : null;
-        const n = sel ? sel.due : (data.deck_due || 0);
-        dueN.textContent = n;
-        due.classList.toggle("zero", n === 0);
-      };
-
-      // Move the selection left/right through [Whole deck, …regions], wrapping.
-      drawerCycle = (dir) => {
-        const names = [null, ...topoOf().regions.map(r => r.name)];
-        const i = Math.max(0, names.indexOf(drawerSel.region));
-        drawerSel.region = names[(i + dir + names.length) % names.length];
         paint();
-      };
-
-      if (topologies.length > 1) {
-        const head = el("div", "drawer-head");
-        head.appendChild(el("span", "drawer-label", "Order"));
-        const sel = el("select", "drawer-topo");
-        for (const t of topologies) {
-          const o = el("option", "", t.principle ? `${t.name} — ${t.principle}` : t.name);
-          o.value = t.name;
-          sel.appendChild(o);
+      } else if (heatmap.length) {
+        // No topology: a single full-width whole-deck heatmap (not a drill target).
+        const flat = el("div", "drawer-flat");
+        flat.appendChild(el("div", "crumb-name", "Whole deck"));
+        const bar = el("div", "crumb-bar");
+        for (const s of heatmap) {
+          const c = el("span", "crumb-cell");
+          paintHeatCell(c, s);
+          bar.appendChild(c);
         }
-        sel.value = drawerSel.topology;
-        sel.addEventListener("change", () => { drawerSel.topology = sel.value; drawerSel.region = null; paint(); });
-        head.appendChild(sel);
-        box.appendChild(head);
+        flat.appendChild(bar);
+        regions.appendChild(flat);
       }
-      paint();
-      const body = el("div", "drawer-body");
-      body.appendChild(regions);
-      body.appendChild(due);
-      box.appendChild(body);
+
+      if (regions.childNodes.length) {
+        const body = el("div", "drawer-body");
+        body.appendChild(regions);
+        box.appendChild(body);
+      }
       wrap.appendChild(box);
       drawerEl = wrap;
       row.after(wrap);
@@ -2764,8 +2774,8 @@ async function renderSelect(preloaded) {
       drawerSel = { deck: name, topology: null, region: null };
       const cached = topoCache[name];
       if (cached) { renderDrawer(row, cached); return; }
-      api("/api/deck-topology", post({ deck: name })).then(d => {
-        const data = d || { topologies: [], deck_due: 0 };
+      api("/api/deck-drawer", post({ deck: name })).then(d => {
+        const data = d || { preamble: null, heatmap: [], topologies: [] };
         topoCache[name] = data;
         if (focusedEl === row) renderDrawer(row, data);
       });
@@ -3003,8 +3013,7 @@ function renderCard() {
       const bar = el("div", "crumb-bar");
       for (const s of (cr.cells && cr.cells[i]) || []) {
         const cell = el("span", "crumb-cell");
-        const h = Math.round(120 * s);                       // 0 red → 120 green
-        cell.style.background = `hsl(${h}, 62%, ${40 + 12 * s}%)`;
+        paintHeatCell(cell, s);
         bar.appendChild(cell);
       }
       reg.appendChild(bar);

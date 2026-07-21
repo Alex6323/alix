@@ -1131,13 +1131,13 @@ fn post_api_browse_serializes_card_images_as_lists_with_alt() {
     );
 }
 
-// ── Deck topology ───────────────────────────────────────────────────────
+// ── Deck drawer ─────────────────────────────────────────────────────────
 
 #[test]
-fn post_api_deck_topology_reports_the_fixture_decks_due_count() {
+fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"sample.md"}"#);
+    let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"sample.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1145,18 +1145,20 @@ fn post_api_deck_topology_reports_the_fixture_decks_due_count() {
         body["topologies"].as_array().unwrap().is_empty(),
         "no augmentation was ever generated: body: {body}"
     );
-    // Both fixture cards are new (a fresh store), and a new card counts as
-    // reviewable (`session::is_reviewable`'s `None => true` arm).
-    assert_eq!(2, body["deck_due"], "body: {body}");
+    // Both fixture cards are stamped but unreviewed (a fresh store), so each
+    // reads as the neutral no-data sentinel (-1.0): one heatmap cell per card.
+    assert_eq!(serde_json::json!([-1.0, -1.0]), body["heatmap"], "body: {body}");
+    assert!(body.get("deck_due").is_none(), "deck_due removed: {body}");
+    assert!(body["preamble"].is_null(), "no preamble in the fixture: {body}");
 }
 
 #[test]
-fn post_api_deck_topology_with_an_unknown_deck_still_returns_the_empty_default_dto() {
-    // `/api/deck-topology` never errors (docs/API.md §5) — an unresolvable
-    // name still gets 200 with the empty default, not a 400.
+fn post_api_deck_drawer_with_an_unknown_deck_still_returns_the_empty_default_dto() {
+    // `/api/deck-drawer` never errors (docs/API.md): an unresolvable name still
+    // gets 200 with the empty default, not a 400.
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"nope.md"}"#);
+    let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"nope.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1164,7 +1166,8 @@ fn post_api_deck_topology_with_an_unknown_deck_still_returns_the_empty_default_d
         body["topologies"].as_array().unwrap().is_empty(),
         "body: {body}"
     );
-    assert_eq!(0, body["deck_due"], "body: {body}");
+    assert!(body["heatmap"].as_array().unwrap().is_empty(), "body: {body}");
+    assert!(body["preamble"].is_null(), "body: {body}");
 }
 
 // ── Reset ───────────────────────────────────────────────────────────────

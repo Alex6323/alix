@@ -21,11 +21,12 @@ decks; a **search box in the header** filters the list (focus it with **`/`**).
 Focus a deck and **Learn** it with **Enter** (a facts deck opens a
 review, a [trace](13-trace-decks.md) opens a walk) one deck per session. **Browse**
 on **`b`** opens a read-only, in-page read-through instead: step the cards with
-Prev/Next, Esc to leave. Selecting a deck that has a
-[review order](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
-which order runs the session, and pick a region to drill (click it or step
-through with **← / →**) its strength heatmap and the number of cards **due** in
-it shown as you go ("Whole deck" is the default). On a workspace row instead,
+Prev/Next, Esc to leave. Focusing any deck opens an inline **focus drawer**
+beneath it: it shows the deck's preamble (the prose under its title, if any) and
+a per-card **strength heatmap**, red (weak) → green (learned), neutral where a
+card has no data yet. When the deck has a [review order](05-scheduling.md) that
+heatmap splits into named regions you can pick to drill (click one or step
+through with **← / →**); otherwise it is a single whole-deck bar. On a workspace row instead,
 ← / → enter and leave it. After a session, "Choose other decks" (on the summary)
 or **Esc** (also the footer's **Back** chip while inside a drill-in) returns
 here, so you can switch decks without restarting. Every review starts from

@@ -88,6 +88,7 @@ pub struct Deck {
     pub sources: Vec<String>,
     pub settings: DeckSettings,
     pub title: Option<String>,
+    pub preamble: Option<String>,
     pub trace: Option<String>,
 }
 
@@ -136,6 +137,7 @@ impl Deck {
         let requires = parsed.frontmatter.requires.clone();
         let sources = parsed.frontmatter.source.clone();
         let title = parsed.title.clone();
+        let preamble = parsed.preamble.clone();
         let trace = parsed.frontmatter.trace.clone();
         let deck_token = parsed.deck_token.clone();
         let mut settings = DeckSettings::from_frontmatter(&parsed.frontmatter);
@@ -182,6 +184,7 @@ impl Deck {
             sources,
             settings,
             title,
+            preamble,
             trace,
         })
     }

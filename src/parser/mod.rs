@@ -30,6 +30,7 @@ pub type LineSpan = (usize, usize);
 pub struct ParsedDeck {
     pub deck_token: Option<String>,
     pub title: Option<String>,
+    pub preamble: Option<String>,
     pub frontmatter: Frontmatter,
     pub cards: Vec<Card>,
     pub lints: Vec<Lint>,
@@ -91,6 +92,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     Ok(ParsedDeck {
         deck_token: document.frontmatter.id.clone(),
         title: document.title,
+        preamble: document.preamble,
         frontmatter: document.frontmatter,
         cards,
         lints,
@@ -126,6 +128,7 @@ pub fn is_deck_content(text: &str) -> bool {
 struct Document {
     frontmatter: Frontmatter,
     title: Option<String>,
+    preamble: Option<String>,
     cards: Vec<RawCard>,
     lints: Vec<Lint>,
     frontmatter_span: Option<LineSpan>,
@@ -159,10 +162,11 @@ fn parse_document(text: &str) -> Result<Document, ParseError> {
     let lines = prepare(text)?;
     let mut lints = Vec::new();
     let (frontmatter, body_start, frontmatter_span) = parse_frontmatter(&lines, &mut lints)?;
-    let (title, cards) = scan(&lines, body_start, &mut lints)?;
+    let (title, preamble, cards) = scan(&lines, body_start, &mut lints)?;
     Ok(Document {
         frontmatter,
         title,
+        preamble,
         cards,
         lints,
         frontmatter_span,
@@ -216,12 +220,12 @@ pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
 
 // ── The line scanner ──
 
-fn scan(
-    lines: &[&str],
-    start: usize,
-    lints: &mut Vec<Lint>,
-) -> Result<(Option<String>, Vec<RawCard>), ParseError> {
+// `(title, preamble, cards)` from the body above the first card.
+type ScannedBody = (Option<String>, Option<String>, Vec<RawCard>);
+
+fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
     let mut title: Option<String> = None;
+    let mut preamble_lines: Vec<String> = Vec::new();
     let mut cards: Vec<RawCard> = Vec::new();
     let mut current: Option<RawCard> = None;
     let mut fence: Option<(char, usize)> = None;
@@ -342,6 +346,8 @@ fn scan(
                 && let Some(rest) = raw.strip_prefix("# ")
             {
                 title = Some(strip_trailing_hashes(trim_ws(rest)).to_string());
+            } else {
+                preamble_lines.push(t.to_string());
             }
             prev_blank = false;
             prev_heading = false;
@@ -362,7 +368,8 @@ fn scan(
     if let Some(card) = current.take() {
         cards.push(card);
     }
-    Ok((title, cards))
+    let preamble = (!preamble_lines.is_empty()).then(|| preamble_lines.join(" "));
+    Ok((title, preamble, cards))
 }
 
 fn push_content(current: &mut Option<RawCard>, lineno: usize, text: String) {
@@ -872,9 +879,29 @@ mod tests {
     fn preamble_prose_and_h1_title_precede_the_first_card() {
         let deck = parse("# My Deck\nsome intro prose\n\n## q\n---\na\n");
         assert_eq!(Some("My Deck"), deck.title.as_deref());
+        assert_eq!(Some("some intro prose"), deck.preamble.as_deref());
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(vec!["a"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn preamble_joins_multiple_lines_and_stops_at_the_first_card() {
+        let deck = parse("# T\nline one\nline two\n\n## q\na\n");
+        assert_eq!(Some("line one line two"), deck.preamble.as_deref());
+    }
+
+    #[test]
+    fn a_deck_without_preamble_prose_has_none() {
+        let deck = parse("# T\n\n## q\na\n");
+        assert_eq!(None, deck.preamble);
+    }
+
+    #[test]
+    fn preamble_is_captured_even_without_a_title() {
+        let deck = parse("just an intro\n\n## q\na\n");
+        assert_eq!(None, deck.title);
+        assert_eq!(Some("just an intro"), deck.preamble.as_deref());
     }
 
     #[test]

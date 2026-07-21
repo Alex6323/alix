@@ -354,7 +354,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 |---|---|---|---|---|
 | POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, max_new?, limit?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
-| POST | `/api/deck-topology` | `{deck}` | `DeckTopologyDto` | never errors — empty DTO on any failure |
+| POST | `/api/deck-drawer` | `{deck}` | `DeckDrawerDto` | never errors; empty DTO on any failure |
 | POST | `/api/reset` | `{deck}` | `ResetDto` | 400 bad body / unknown deck / load failure |
 | POST | `/api/workspace/deadline` | `{name, date}` (`date`: `"YYYY-MM-DD"` \| `null`, required) | `DeckListDto` (refreshed) | 400 bad body / missing or bad date / not a workspace row; 500 write failure |
 | POST | `/api/deselect` | – | `StateDto` | – |
@@ -611,10 +611,14 @@ per region per card) *(presentational)*.
 `selectable` is always `true` here — a member row is always a deck file,
 never a group.
 
-### DeckTopologyDto
+### DeckDrawerDto
 
-`topologies: [{name, principle, regions: [{name, cells: [number],
-due: number}]}]`, `deck_due: number`.
+`preamble: string | null` (the prose under the deck's `#` H1, if any),
+`heatmap: [number]` (per-card Recall retrievability in file order, `0` weak to
+`1` learned; a negative value marks a card with no data yet, rendered neutral),
+`topologies: [{name, principle, regions: [{name, cells: [number]}]}]` (present
+only when the deck has a topology augmentation; `cells` use the same scale as
+`heatmap`). Powers the picker's focus drawer.
 
 ### CheckFeedbackDto
 

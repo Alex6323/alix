@@ -621,29 +621,30 @@ fn decklistdto_wire_shape() {
 }
 
 #[test]
-fn decktopologydto_wire_shape() {
-    let dto = DeckTopologyDto {
+fn deckdrawerdto_wire_shape() {
+    let dto = DeckDrawerDto {
+        preamble: Some("A short intro under the H1.".to_string()),
+        heatmap: vec![0.5, 1.0, -1.0],
         topologies: vec![TopologyInfoDto {
             name: "north-south".to_string(),
             principle: "north to south".to_string(),
             regions: vec![RegionInfoDto {
                 name: "north".to_string(),
                 cells: vec![0.5, 1.0],
-                due: 2,
             }],
         }],
-        deck_due: 3,
     };
     pin(
-        "DeckTopologyDto",
+        "DeckDrawerDto",
         &dto,
         json!({
+            "preamble": "A short intro under the H1.",
+            "heatmap": [0.5, 1.0, -1.0],
             "topologies": [{
                 "name": "north-south",
                 "principle": "north to south",
-                "regions": [{"name": "north", "cells": [0.5, 1.0], "due": 2}]
-            }],
-            "deck_due": 3
+                "regions": [{"name": "north", "cells": [0.5, 1.0]}]
+            }]
         }),
     );
 }

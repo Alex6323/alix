@@ -985,6 +985,7 @@ mod tests {
             sources: srcs.iter().map(|s| s.to_string()).collect(),
             settings: Default::default(),
             title: None,
+            preamble: None,
             trace: None,
         }
     }
@@ -1433,6 +1434,7 @@ mod tests {
             sources: vec!["notes.md".to_string()],
             settings: Default::default(),
             title: None,
+            preamble: None,
             trace: None,
         };
         let section = source_section(&deck.sources, deck.path.parent()).unwrap();
