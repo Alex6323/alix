@@ -526,9 +526,11 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 
 | Key | Type | Meaning |
 |---|---|---|
-| `front` | string | The question. Plain text — a planned highlight feature will add a parallel field, not markup here. |
+| `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
+| `front_runs` | [InlineRun] | Display projection of `front`. |
 | `context` | [string] | Cloze context lines. |
-| `back` | [string] | Answer lines as displayed (may be a reshaped view). |
+| `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
+| `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. |
 | `note` | [NoteUnitDto] | Post-answer note, as a tagged union. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
@@ -542,9 +544,17 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 `src: string` (a `/img/<key>` URL, see §5), `alt: string?` (the `![alt](src)`
 embed's alt text, null when the embed set none).
 
+### InlineRun
+
+`{text: string, bold?: bool, italic?: bool, code?: bool}`. False style flags
+are omitted. Concatenating `text` produces the matching plain-text content;
+clients render the runs in order for inline formatting.
+
 ### NoteUnitDto *(tagged union — its `kind` is unrelated to StateDto's)*
 
-`{"kind":"sentence", "text": string}` or `{"kind":"code", "lines": [string]}`.
+`{"kind":"sentence", "text": string, "runs": [InlineRun]}` or
+`{"kind":"code", "lines": [string]}`. Sentence `text` remains the authored
+text; `runs` is its display projection.
 
 ### ExcerptDto / LineDto
 

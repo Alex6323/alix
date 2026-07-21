@@ -76,12 +76,17 @@ fn statedto_review_phase_wire_shape() {
         phase: "review",
         card: Some(CardDto {
             front: "What is ownership?".to_string(),
+            front_runs: crate::inline::parse_inline("What is **ownership**?"),
             context: vec!["Chapter 4".to_string()],
             back: vec!["every value has one owner".to_string()],
+            back_runs: vec![crate::inline::parse_inline("every value has one owner")],
             reshaped: true,
             note: vec![
                 NoteUnit::Sentence {
                     text: "Ownership frees memory deterministically.".to_string(),
+                    runs: crate::inline::parse_inline(
+                        "Ownership frees memory deterministically.",
+                    ),
                 },
                 NoteUnit::Code {
                     lines: vec!["let s = String::new();".to_string()],
@@ -142,11 +147,21 @@ fn statedto_review_phase_wire_shape() {
             "phase": "review",
             "card": {
                 "front": "What is ownership?",
+                "front_runs": [
+                    {"text": "What is "},
+                    {"text": "ownership", "bold": true},
+                    {"text": "?"}
+                ],
                 "context": ["Chapter 4"],
                 "back": ["every value has one owner"],
+                "back_runs": [[{"text": "every value has one owner"}]],
                 "reshaped": true,
                 "note": [
-                    {"kind": "sentence", "text": "Ownership frees memory deterministically."},
+                    {
+                        "kind": "sentence",
+                        "text": "Ownership frees memory deterministically.",
+                        "runs": [{"text": "Ownership frees memory deterministically."}]
+                    },
                     {"kind": "code", "lines": ["let s = String::new();"]}
                 ],
                 "images": [
@@ -429,6 +444,49 @@ fn examdto_cooldown_phase_wire_shape() {
 }
 
 #[test]
+fn carddto_wire_shape() {
+    let dto = card_dto(crate::review::CardView {
+        front: "**Paris**".to_string(),
+        context: Vec::new(),
+        back: vec!["Use `**x**`".to_string(), "*France*".to_string()],
+        reshaped: false,
+        note: vec![NoteUnit::Sentence {
+            text: "A **city**.".to_string(),
+            runs: crate::inline::parse_inline("A **city**."),
+        }],
+        images: Vec::new(),
+        images_back: Vec::new(),
+        at: None,
+    });
+    pin(
+        "CardDto",
+        &dto,
+        json!({
+            "front": "Paris",
+            "front_runs": [{"text": "Paris", "bold": true}],
+            "context": [],
+            "back": ["Use **x**", "France"],
+            "back_runs": [
+                [{"text": "Use "}, {"text": "**x**", "code": true}],
+                [{"text": "France", "italic": true}]
+            ],
+            "reshaped": false,
+            "note": [{
+                "kind": "sentence",
+                "text": "A **city**.",
+                "runs": [{"text": "A "}, {"text": "city", "bold": true}, {"text": "."}]
+            }],
+            "images": [],
+            "images_back": [],
+            "at": null,
+            "citation": null,
+            "citation_error": null,
+            "crumb": null
+        }),
+    );
+}
+
+#[test]
 fn decklistdto_wire_shape() {
     let dto = DeckListDto {
         workspaces: vec![DeckItemDto {
@@ -656,8 +714,10 @@ fn browsedto_wire_shape() {
         label: "rust.md".to_string(),
         cards: vec![CardDto {
             front: "q".to_string(),
+            front_runs: crate::inline::parse_inline("q"),
             context: Vec::new(),
             back: vec!["a".to_string()],
+            back_runs: vec![crate::inline::parse_inline("a")],
             reshaped: false,
             note: Vec::new(),
             images: Vec::new(),
@@ -676,8 +736,10 @@ fn browsedto_wire_shape() {
             "label": "rust.md",
             "cards": [{
                 "front": "q",
+                "front_runs": [{"text": "q"}],
                 "context": [],
                 "back": ["a"],
+                "back_runs": [[{"text": "a"}]],
                 "reshaped": false,
                 "note": [],
                 "images": [],

@@ -7,6 +7,13 @@
     "back": [
       "every value has one owner"
     ],
+    "back_runs": [
+      [
+        {
+          "text": "every value has one owner"
+        }
+      ]
+    ],
     "citation": {
       "lines": [
         {
@@ -37,6 +44,18 @@
       ]
     },
     "front": "What is ownership?",
+    "front_runs": [
+      {
+        "text": "What is "
+      },
+      {
+        "bold": true,
+        "text": "ownership"
+      },
+      {
+        "text": "?"
+      }
+    ],
     "images": [
       {
         "alt": "a heap-allocated String",
@@ -56,6 +75,11 @@
     "note": [
       {
         "kind": "sentence",
+        "runs": [
+          {
+            "text": "Ownership frees memory deterministically."
+          }
+        ],
         "text": "Ownership frees memory deterministically."
       },
       {

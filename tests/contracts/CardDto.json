@@ -1,0 +1,56 @@
+{
+  "at": null,
+  "back": [
+    "Use **x**",
+    "France"
+  ],
+  "back_runs": [
+    [
+      {
+        "text": "Use "
+      },
+      {
+        "code": true,
+        "text": "**x**"
+      }
+    ],
+    [
+      {
+        "italic": true,
+        "text": "France"
+      }
+    ]
+  ],
+  "citation": null,
+  "citation_error": null,
+  "context": [],
+  "crumb": null,
+  "front": "Paris",
+  "front_runs": [
+    {
+      "bold": true,
+      "text": "Paris"
+    }
+  ],
+  "images": [],
+  "images_back": [],
+  "note": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "text": "A "
+        },
+        {
+          "bold": true,
+          "text": "city"
+        },
+        {
+          "text": "."
+        }
+      ],
+      "text": "A **city**."
+    }
+  ],
+  "reshaped": false
+}

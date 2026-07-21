@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 fn is_false(value: &bool) -> bool {
     !*value
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct InlineRun {
     pub text: String,
     #[serde(skip_serializing_if = "is_false")]

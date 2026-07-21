@@ -5,11 +5,23 @@
       "back": [
         "a"
       ],
+      "back_runs": [
+        [
+          {
+            "text": "a"
+          }
+        ]
+      ],
       "citation": null,
       "citation_error": null,
       "context": [],
       "crumb": null,
       "front": "q",
+      "front_runs": [
+        {
+          "text": "q"
+        }
+      ],
       "images": [],
       "images_back": [],
       "note": [],

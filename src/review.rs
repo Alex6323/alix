@@ -337,7 +337,8 @@ mod tests {
         assert_eq!(
             card.note,
             [NoteUnit::Sentence {
-                text: "a note line".into()
+                text: "a note line".into(),
+                runs: crate::inline::parse_inline("a note line"),
             }]
         );
         assert_eq!(
@@ -364,7 +365,8 @@ mod tests {
             plain.note,
             [
                 NoteUnit::Sentence {
-                    text: "Intro here.".into()
+                    text: "Intro here.".into(),
+                    runs: crate::inline::parse_inline("Intro here."),
                 },
                 NoteUnit::Code {
                     lines: vec!["let x = 1;".into()]

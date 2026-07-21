@@ -10,6 +10,7 @@ use crate::{
     deck::{self, Deck, DeckState},
     depth::{Depth, depth_name},
     doctor, exam,
+    inline::{InlineRun, parse_inline},
     render::NoteUnit,
     review::{self, CardView},
     session::now_ms,
@@ -20,8 +21,10 @@ use crate::{
 #[derive(Debug, Serialize)]
 pub(super) struct CardDto {
     pub(super) front: String,
+    pub(super) front_runs: Vec<InlineRun>,
     pub(super) context: Vec<String>,
     pub(super) back: Vec<String>,
+    pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) reshaped: bool,
     pub(super) note: Vec<NoteUnit>,
     pub(super) images: Vec<ImageDto>,
@@ -1002,12 +1005,16 @@ pub(super) fn card_dto(view: CardView) -> CardDto {
         src: format!("/img/{}", img_key(Path::new(&i.src))),
         alt: i.alt.clone(),
     };
+    let (front, front_runs) = inline_parts(view.front);
+    let (back, back_runs) = inline_lines(view.back);
     CardDto {
         images: view.images.iter().map(&img_dto).collect(),
         images_back: view.images_back.iter().map(&img_dto).collect(),
-        front: view.front,
+        front,
+        front_runs,
         context: view.context,
-        back: view.back,
+        back,
+        back_runs,
         reshaped: view.reshaped,
         note: view.note,
         at: view.at,
@@ -1015,6 +1022,47 @@ pub(super) fn card_dto(view: CardView) -> CardDto {
         citation_error: None,
         crumb: None,
     }
+}
+
+fn inline_parts(text: String) -> (String, Vec<InlineRun>) {
+    let runs = parse_inline(&text);
+    let mut content = String::new();
+    for run in &runs {
+        content.push_str(&run.text);
+    }
+    (content, runs)
+}
+
+fn literal_parts(text: String) -> (String, Vec<InlineRun>) {
+    let runs = if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![InlineRun {
+            text: text.clone(),
+            ..InlineRun::default()
+        }]
+    };
+    (text, runs)
+}
+
+fn inline_lines(lines: Vec<String>) -> (Vec<String>, Vec<Vec<InlineRun>>) {
+    let mut content = Vec::with_capacity(lines.len());
+    let mut display = Vec::with_capacity(lines.len());
+    let mut in_code = false;
+    for line in lines {
+        let fence = line.trim_start().starts_with("```");
+        let (plain, runs) = if in_code || fence {
+            literal_parts(line)
+        } else {
+            inline_parts(line)
+        };
+        content.push(plain);
+        display.push(runs);
+        if fence {
+            in_code = !in_code;
+        }
+    }
+    (content, display)
 }
 
 pub(super) fn input_name(input: Input) -> &'static str {

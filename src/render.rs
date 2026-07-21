@@ -10,7 +10,10 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum NoteUnit {
-    Sentence { text: String },
+    Sentence {
+        text: String,
+        runs: Vec<crate::inline::InlineRun>,
+    },
     Code { lines: Vec<String> },
 }
 
@@ -64,7 +67,11 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
 fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>) {
     for sentence in split_sentences(prose) {
         if !sentence.is_empty() {
-            units.push(NoteUnit::Sentence { text: sentence });
+            let runs = crate::inline::parse_inline(&sentence);
+            units.push(NoteUnit::Sentence {
+                text: sentence,
+                runs,
+            });
         }
     }
     prose.clear();
@@ -146,6 +153,13 @@ mod tests {
         )
     }
 
+    fn sentence(text: &str) -> NoteUnit {
+        NoteUnit::Sentence {
+            text: text.into(),
+            runs: crate::inline::parse_inline(text),
+        }
+    }
+
     #[test]
     fn no_note_yields_no_units() {
         let card = Card::plain(Arc::from("s.txt"), "f".into(), vec!["b".into()], None, 1);
@@ -157,14 +171,7 @@ mod tests {
         let units = note_units(&card_with_note("First one. Second one."));
         assert_eq!(
             units,
-            vec![
-                NoteUnit::Sentence {
-                    text: "First one.".into()
-                },
-                NoteUnit::Sentence {
-                    text: "Second one.".into()
-                },
-            ]
+            vec![sentence("First one."), sentence("Second one.")]
         );
     }
 
@@ -173,9 +180,7 @@ mod tests {
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
         assert_eq!(
             units,
-            vec![NoteUnit::Sentence {
-                text: "A sentence spread across two lines.".into()
-            }]
+            vec![sentence("A sentence spread across two lines.")]
         );
     }
 
@@ -186,9 +191,7 @@ mod tests {
         assert_eq!(
             units,
             vec![
-                NoteUnit::Sentence {
-                    text: "Intro here.".into()
-                },
+                sentence("Intro here."),
                 NoteUnit::Code {
                     lines: vec!["fn main() {".into(), "    let x = 1;".into(), "}".into(),]
                 },
@@ -206,9 +209,7 @@ mod tests {
                 NoteUnit::Code {
                     lines: vec!["code".into()]
                 },
-                NoteUnit::Sentence {
-                    text: "After the block.".into()
-                },
+                sentence("After the block."),
             ]
         );
     }
@@ -229,9 +230,7 @@ mod tests {
         let units = note_units(&card_with_note("See section 2.1 for details."));
         assert_eq!(
             units,
-            vec![NoteUnit::Sentence {
-                text: "See section 2.1 for details.".into()
-            }]
+            vec![sentence("See section 2.1 for details.")]
         );
     }
 
@@ -240,6 +239,7 @@ mod tests {
         let units = vec![
             NoteUnit::Sentence {
                 text: "One owner.".into(),
+                runs: crate::inline::parse_inline("One owner."),
             },
             NoteUnit::Code {
                 lines: vec!["let s;".into()],
@@ -247,7 +247,7 @@ mod tests {
         ];
         assert_eq!(
             serde_json::json!([
-                {"kind": "sentence", "text": "One owner."},
+                {"kind": "sentence", "text": "One owner.", "runs": [{"text": "One owner."}]},
                 {"kind": "code", "lines": ["let s;"]},
             ]),
             serde_json::to_value(&units).unwrap()

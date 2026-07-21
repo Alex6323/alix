@@ -104,7 +104,7 @@ fn card_dto_structures_the_note() {
     assert_eq!(dto.back, vec!["the back".to_string()]);
     assert_eq!(dto.note.len(), 2);
     match &dto.note[0] {
-        NoteUnit::Sentence { text } => assert_eq!(text, "Intro here."),
+        NoteUnit::Sentence { text, .. } => assert_eq!(text, "Intro here."),
         other => panic!("expected a sentence, got {other:?}"),
     }
     match &dto.note[1] {
