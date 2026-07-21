@@ -180,10 +180,15 @@ pub fn choose(
 pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback> {
     let card = session.current()?;
     let mode = depth::check_for(card.reveal.unwrap_or_default(), session.depth(), card);
+    let expected: Vec<String> = card
+        .back
+        .iter()
+        .map(|line| crate::inline::strip_inline(line))
+        .collect();
     let results = if mode == Mode::TypeLine {
-        answer::grade_lines_ordered(lines, &card.back)
+        answer::grade_lines_ordered(lines, &expected)
     } else {
-        answer::grade_lines_unordered(lines, &card.back)
+        answer::grade_lines_unordered(lines, &expected)
     };
     let passed = results.iter().all(|r| r.passed);
     Some(CheckFeedback { results, passed })
@@ -469,6 +474,29 @@ mod tests {
         let unordered = check_typed(&unordered_session, &swapped).expect("feedback");
         assert!(unordered.passed, "any order matches the same lines");
         assert_eq!(unordered.results.len(), 2);
+    }
+
+    #[test]
+    fn typed_grading_accepts_plain_content_for_a_formatted_answer() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## capital\n**Paris**\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &store, Depth::Reconstruct, NOW);
+        let feedback = check_typed(&session, &["Paris".to_string()]).expect("feedback");
+        assert!(feedback.passed);
+        assert_eq!("Paris", feedback.results[0].expected);
+    }
+
+    #[test]
+    fn cloze_grading_uses_the_formatted_holes_plain_content() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## capital\n\\blank{**Paris**}\n");
+        assert_eq!(["**Paris**"], cards[0].back.as_slice());
+        seen(&mut store, &cards);
+        let session = session_at(cards, &store, Depth::Reconstruct, NOW);
+        let feedback = check_typed(&session, &["Paris".to_string()]).expect("feedback");
+        assert!(feedback.passed);
+        assert_eq!("Paris", feedback.results[0].expected);
     }
 
     #[test]
