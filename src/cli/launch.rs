@@ -38,7 +38,7 @@ fn resolve_serve_token(cli: Option<String>, lan: bool, config: &Config) -> Resul
     Ok(None)
 }
 
-fn generate_token() -> Result<String> {
+pub(crate) fn generate_token() -> Result<String> {
     let mut buf = [0u8; 16];
     getrandom::getrandom(&mut buf)
         .map_err(|e| anyhow::anyhow!("could not generate a serve pairing token: {e}"))?;

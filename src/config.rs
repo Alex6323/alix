@@ -869,6 +869,11 @@ pub fn default_config_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.config_dir().join("config.toml"))
 }
 
+/// The directory holding launch-profile configs: `<config-dir>/profiles`.
+pub fn profiles_dir() -> Option<PathBuf> {
+    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.config_dir().join("profiles"))
+}
+
 pub fn default_decks_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join("decks"))
 }
