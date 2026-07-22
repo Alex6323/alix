@@ -82,6 +82,10 @@ placeholder so you can see what a steer is good for; a batch carries each
 ticked card's own guidance. It writes the same `augment.json` review reads, so
 this only saves you the trip to the terminal.
 
+Cached per-card augmentations are tied to the question and answer they were
+generated from. Editing either makes that card reappear as a gap, so its
+augmentations regenerate on the next augment run.
+
 The action also works on a **workspace or folder row**: the same screen opens
 over all its decks at once, so a Generate fills a target's gaps across every
 member, Remove clears it across every member, and an Order generated here is

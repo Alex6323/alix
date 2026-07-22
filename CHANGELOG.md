@@ -20,6 +20,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Editing a card's content now invalidates its cached AI augmentations (distractors, note, questions, key points, and the reshaped answer). Previously a cached output generated from the old content was served until you cleared or regenerated it.
 - a hand-authored deck that had never been opened (its cards not yet stamped with ids) showed greyed out and refused to launch in the picker; an unstamped card now reads as a new, due card, so a fresh deck is drillable (opening it stamps it) instead of being stuck
 
 ## [0.6.0] - 2026-07-20
