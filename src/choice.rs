@@ -163,7 +163,10 @@ mod tests {
         let q = build_authored(&c, 1, &c.authored_distractors).unwrap();
         assert_eq!(3, q.options.len());
         assert_eq!("Paris", q.options[q.correct]);
-        assert_eq!(1, q.options.iter().filter(|option| *option == "Paris").count());
+        assert_eq!(
+            1,
+            q.options.iter().filter(|option| *option == "Paris").count()
+        );
     }
 
     #[test]

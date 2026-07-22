@@ -14,8 +14,12 @@ pub enum NoteUnit {
         text: String,
         runs: Vec<crate::inline::InlineRun>,
     },
-    Code { lines: Vec<String> },
-    Checklist { items: Vec<ChecklistItem> },
+    Code {
+        lines: Vec<String>,
+    },
+    Checklist {
+        items: Vec<ChecklistItem>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,19 +217,13 @@ mod tests {
     #[test]
     fn prose_splits_into_sentences() {
         let units = note_units(&card_with_note("First one. Second one."));
-        assert_eq!(
-            units,
-            vec![sentence("First one."), sentence("Second one.")]
-        );
+        assert_eq!(units, vec![sentence("First one."), sentence("Second one.")]);
     }
 
     #[test]
     fn hard_wrapped_prose_joins_before_splitting() {
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
-        assert_eq!(
-            units,
-            vec![sentence("A sentence spread across two lines.")]
-        );
+        assert_eq!(units, vec![sentence("A sentence spread across two lines.")]);
     }
 
     #[test]
@@ -300,10 +298,7 @@ mod tests {
     #[test]
     fn period_in_number_does_not_split() {
         let units = note_units(&card_with_note("See section 2.1 for details."));
-        assert_eq!(
-            units,
-            vec![sentence("See section 2.1 for details.")]
-        );
+        assert_eq!(units, vec![sentence("See section 2.1 for details.")]);
     }
 
     #[test]

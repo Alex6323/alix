@@ -359,10 +359,7 @@ mod tests {
 
     #[test]
     fn backslash_escapes_a_marker() {
-        assert_eq!(
-            vec![plain("*literal*")],
-            parse_inline("\\*literal\\*")
-        );
+        assert_eq!(vec![plain("*literal*")], parse_inline("\\*literal\\*"));
     }
 
     #[test]

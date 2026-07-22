@@ -487,7 +487,12 @@ mod tests {
         let question = current_question(&session, &store, &augment).expect("an authored pick");
         assert_eq!(3, question.options.len());
         assert_eq!("Paris", question.options[question.correct]);
-        assert!(question.options.iter().all(|option| !option.starts_with('w')));
+        assert!(
+            question
+                .options
+                .iter()
+                .all(|option| !option.starts_with('w'))
+        );
     }
 
     #[test]

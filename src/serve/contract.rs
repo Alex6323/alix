@@ -87,9 +87,7 @@ fn statedto_review_phase_wire_shape() {
             note: vec![
                 NoteUnit::Sentence {
                     text: "Ownership frees memory deterministically.".to_string(),
-                    runs: crate::inline::parse_inline(
-                        "Ownership frees memory deterministically.",
-                    ),
+                    runs: crate::inline::parse_inline("Ownership frees memory deterministically."),
                 },
                 NoteUnit::Code {
                     lines: vec!["let s = String::new();".to_string()],

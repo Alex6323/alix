@@ -1186,10 +1186,7 @@ mod tests {
     #[test]
     fn a_duplicate_option_lints_and_keeps_first() {
         let deck = parse("## q\n- [x] a\n- [ ] b\n- [ ] b\n");
-        assert_eq!(
-            vec!["b".to_string()],
-            deck.cards[0].authored_distractors
-        );
+        assert_eq!(vec!["b".to_string()], deck.cards[0].authored_distractors);
         assert!(
             deck.lints
                 .iter()
@@ -1201,10 +1198,7 @@ mod tests {
     fn a_fenced_task_list_answer_stays_a_plain_card() {
         let deck = parse("## q\n---\n```\n- [x] a\n- [ ] b\n```\n");
         assert!(deck.cards[0].authored_distractors.is_empty());
-        assert_eq!(
-            vec!["```", "- [x] a", "- [ ] b", "```"],
-            deck.cards[0].back
-        );
+        assert_eq!(vec!["```", "- [x] a", "- [ ] b", "```"], deck.cards[0].back);
         assert!(deck.lints.is_empty(), "{:?}", deck.lints);
     }
 
@@ -1220,12 +1214,10 @@ mod tests {
 
     #[test]
     fn editing_only_a_distractor_preserves_identity_and_fingerprint() {
-        let before = parse(
-            "## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] wrong\n",
-        );
-        let after = parse(
-            "## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] different\n",
-        );
+        let before =
+            parse("## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] wrong\n");
+        let after =
+            parse("## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] different\n");
         assert_eq!(before.cards[0].id(), after.cards[0].id());
         assert_eq!(
             before.cards[0].content_fingerprint,
