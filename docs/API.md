@@ -528,6 +528,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 |---|---|---|
 | `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
+| `front_units` | [NoteUnitDto]? | Present only when the front contains a task-list line. When present, clients render the front from these units instead of `front` / `front_runs`. |
 | `context` | [string] | Cloze context lines. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |

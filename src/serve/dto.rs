@@ -22,6 +22,8 @@ use crate::{
 pub(super) struct CardDto {
     pub(super) front: String,
     pub(super) front_runs: Vec<InlineRun>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) front_units: Option<Vec<NoteUnit>>,
     pub(super) context: Vec<String>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
@@ -1001,6 +1003,7 @@ pub(super) fn card_dto(view: CardView) -> CardDto {
         src: format!("/img/{}", img_key(Path::new(&i.src))),
         alt: i.alt.clone(),
     };
+    let front_units = crate::render::front_units(&view.front);
     let (front, front_runs) = inline_parts(view.front);
     let (back, back_runs) = inline_lines(view.back);
     CardDto {
@@ -1008,6 +1011,7 @@ pub(super) fn card_dto(view: CardView) -> CardDto {
         images_back: view.images_back.iter().map(&img_dto).collect(),
         front,
         front_runs,
+        front_units,
         context: view.context,
         back,
         back_runs,

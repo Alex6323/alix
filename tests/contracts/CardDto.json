@@ -25,11 +25,52 @@
   "citation_error": null,
   "context": [],
   "crumb": null,
-  "front": "Paris",
+  "front": "Pick a city:\n- [x] Paris\n- [ ] Rome",
   "front_runs": [
+    {
+      "text": "Pick a city:\n- [x] "
+    },
     {
       "bold": true,
       "text": "Paris"
+    },
+    {
+      "text": "\n- [ ] Rome"
+    }
+  ],
+  "front_units": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "text": "Pick a city:"
+        }
+      ],
+      "text": "Pick a city:"
+    },
+    {
+      "items": [
+        {
+          "checked": true,
+          "runs": [
+            {
+              "bold": true,
+              "text": "Paris"
+            }
+          ],
+          "text": "Paris"
+        },
+        {
+          "checked": false,
+          "runs": [
+            {
+              "text": "Rome"
+            }
+          ],
+          "text": "Rome"
+        }
+      ],
+      "kind": "checklist"
     }
   ],
   "images": [],

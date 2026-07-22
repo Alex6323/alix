@@ -80,6 +80,7 @@ fn statedto_review_phase_wire_shape() {
         card: Some(CardDto {
             front: "What is ownership?".to_string(),
             front_runs: crate::inline::parse_inline("What is **ownership**?"),
+            front_units: None,
             context: vec!["Chapter 4".to_string()],
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
@@ -476,7 +477,7 @@ fn examdto_cooldown_phase_wire_shape() {
 #[test]
 fn carddto_wire_shape() {
     let dto = card_dto(crate::review::CardView {
-        front: "**Paris**".to_string(),
+        front: "Pick a city:\n- [x] **Paris**\n- [ ] Rome".to_string(),
         context: Vec::new(),
         back: vec!["Use `**x**`".to_string(), "*France*".to_string()],
         reshaped: false,
@@ -492,8 +493,34 @@ fn carddto_wire_shape() {
         "CardDto",
         &dto,
         json!({
-            "front": "Paris",
-            "front_runs": [{"text": "Paris", "bold": true}],
+            "front": "Pick a city:\n- [x] Paris\n- [ ] Rome",
+            "front_runs": [
+                {"text": "Pick a city:\n- [x] "},
+                {"text": "Paris", "bold": true},
+                {"text": "\n- [ ] Rome"}
+            ],
+            "front_units": [
+                {
+                    "kind": "sentence",
+                    "text": "Pick a city:",
+                    "runs": [{"text": "Pick a city:"}]
+                },
+                {
+                    "kind": "checklist",
+                    "items": [
+                        {
+                            "checked": true,
+                            "text": "Paris",
+                            "runs": [{"text": "Paris", "bold": true}]
+                        },
+                        {
+                            "checked": false,
+                            "text": "Rome",
+                            "runs": [{"text": "Rome"}]
+                        }
+                    ]
+                }
+            ],
             "context": [],
             "back": ["Use **x**", "France"],
             "back_runs": [
@@ -745,6 +772,7 @@ fn browsedto_wire_shape() {
         cards: vec![CardDto {
             front: "q".to_string(),
             front_runs: crate::inline::parse_inline("q"),
+            front_units: None,
             context: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
