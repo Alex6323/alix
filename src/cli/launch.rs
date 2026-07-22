@@ -162,7 +162,7 @@ fn abbreviate_home(path: &Path) -> String {
 // table via a live UDP socket, which is not deterministic across CI network
 // sandboxes even with a server harness.
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn local_lan_ip() -> Option<std::net::IpAddr> {
+pub(crate) fn local_lan_ip() -> Option<std::net::IpAddr> {
     let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
     socket.connect(("8.8.8.8", 80)).ok()?;
     Some(socket.local_addr().ok()?.ip())

@@ -69,6 +69,11 @@ struct LaunchArgs {
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
+
+    /// Launch every profile at once, each on its own port and bound to the LAN.
+    /// Runs in the foreground; Ctrl-C (or closing the window) stops them all.
+    #[arg(long, conflicts_with_all = ["dir", "config"])]
+    launch_all: bool,
 }
 
 #[derive(Subcommand)]
@@ -540,7 +545,18 @@ struct ResetArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        None => launch(cli.launch),
+        None => {
+            if cli.launch.launch_all {
+                profile::launch_all()
+            } else if cli.launch.dir.is_none() && cli.launch.config.is_none() {
+                match profile::resolve_default()? {
+                    Some(name) => profile::launch_profile(&name),
+                    None => launch(cli.launch),
+                }
+            } else {
+                launch(cli.launch)
+            }
+        }
         Some(Command::Profile(cmd)) => profile::run(cmd),
         Some(Command::Stats(args)) => progress::stats(args),
         Some(Command::List(args)) => progress::list(args),

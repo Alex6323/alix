@@ -1,6 +1,7 @@
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use alix::config::{Audience, Config};
@@ -243,7 +244,100 @@ fn write_atomic(path: &Path, contents: &str) -> Result<()> {
 }
 
 fn launch_named(args: Vec<String>) -> Result<()> {
-    bail!("profile launch is not implemented yet: {}", args.join(" "))
+    if args.len() != 1 {
+        bail!("unknown profile command `{}`", args.join(" "));
+    }
+    launch_profile(&args[0])
+}
+
+pub(crate) fn launch_profile(name: &str) -> Result<()> {
+    validate_name(name)?;
+    let path = config_path_in(&profiles_dir()?, name);
+    if !path.exists() {
+        bail!("no profile `{name}` (looked in {})", path.display());
+    }
+    crate::launch::launch(crate::LaunchArgs {
+        dir: None,
+        port: None,
+        lan: true,
+        token: None,
+        new: None,
+        limit: None,
+        config: Some(path),
+        launch_all: false,
+    })
+}
+
+pub(crate) fn resolve_default() -> Result<Option<String>> {
+    resolve_default_in(&profiles_dir()?)
+}
+
+fn resolve_default_in(dir: &Path) -> Result<Option<String>> {
+    let Some(name) = read_default_in(dir)? else {
+        return Ok(None);
+    };
+    validate_name(&name)?;
+    let path = config_path_in(dir, &name);
+    if !path.exists() {
+        bail!(
+            "default profile `{name}` does not exist (looked in {})",
+            path.display()
+        );
+    }
+    Ok(Some(name))
+}
+
+pub(crate) fn launch_all() -> Result<()> {
+    let dir = profiles_dir()?;
+    let plan = plan_launch_all(&dir)?;
+    if plan.is_empty() {
+        println!("no profiles to launch; create one with `alix profile add <name>`");
+        return Ok(());
+    }
+
+    let name_width = plan
+        .iter()
+        .map(|(name, _)| name.len())
+        .max()
+        .unwrap_or_default();
+    let host = crate::launch::local_lan_ip()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| "<this-machine's-IP>".to_string());
+    let executable = env::current_exe().context("cannot determine the alix executable")?;
+    let mut children = Vec::new();
+    for (name, port) in plan {
+        println!("{name:<name_width$} -> http://{host}:{port}");
+        match Command::new(&executable).arg("profile").arg(&name).spawn() {
+            Ok(child) => children.push((name, child)),
+            Err(error) => eprintln!("profile `{name}` failed to launch: {error}"),
+        }
+    }
+
+    // The children share the terminal's process group, so Ctrl-C reaches every server.
+    for (name, mut child) in children {
+        match child.wait() {
+            Ok(status) if !status.success() => {
+                eprintln!("profile `{name}` exited with {status}");
+            }
+            Err(error) => eprintln!("could not wait for profile `{name}`: {error}"),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn plan_launch_all(dir: &Path) -> Result<Vec<(String, u16)>> {
+    let mut plan = Vec::new();
+    for path in profile_paths_in(dir)? {
+        let name = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .context("a profile filename is not valid UTF-8")?
+            .to_string();
+        let config = Config::load(Some(&path))?;
+        plan.push((name, config.serve.port));
+    }
+    Ok(plan)
 }
 
 #[cfg(test)]
@@ -367,5 +461,43 @@ mod tests {
         )
         .unwrap();
         assert_eq!(None, read_default_in(&dir).unwrap());
+    }
+
+    #[test]
+    fn default_resolution_handles_absent_valid_and_missing_profiles() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("profiles");
+        assert_eq!(None, resolve_default_in(&dir).unwrap());
+
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(config_path_in(&dir, "timmy"), "").unwrap();
+        fs::write(default_marker_in(&dir), "timmy\n").unwrap();
+        assert_eq!(Some("timmy".to_string()), resolve_default_in(&dir).unwrap());
+
+        fs::remove_file(config_path_in(&dir, "timmy")).unwrap();
+        assert!(resolve_default_in(&dir).is_err());
+    }
+
+    #[test]
+    fn launch_all_plan_reads_each_profile_name_and_port_in_order() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("profiles");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            config_path_in(&dir, "timmy"),
+            "decks_dir = \"/tmp/timmy\"\n[serve]\nport = 7002\n",
+        )
+        .unwrap();
+        fs::write(
+            config_path_in(&dir, "anna"),
+            "decks_dir = \"/tmp/anna\"\n[serve]\nport = 7001\n",
+        )
+        .unwrap();
+        fs::write(default_marker_in(&dir), "timmy\n").unwrap();
+
+        assert_eq!(
+            vec![("anna".to_string(), 7001), ("timmy".to_string(), 7002)],
+            plan_launch_all(&dir).unwrap()
+        );
     }
 }
