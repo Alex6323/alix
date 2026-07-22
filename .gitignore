@@ -16,6 +16,9 @@ PLAN.md
 /*.png
 /assets/ignore/
 
+# Codex CLI agent's per-repo scratch (its `rules/` + session state).
+.codex/
+
 # mdBook build output (`make book` / `mdbook build`)
 /docs/book/book/
 
