@@ -39,28 +39,51 @@ pub fn parse_inline(text: &str) -> Vec<InlineRun> {
     let mut bold = vec![false; glyphs.len()];
     let mut italic = vec![false; glyphs.len()];
     let mut removed = vec![false; glyphs.len()];
+    let mut remaining: Vec<usize> = delimiters.iter().map(|delimiter| delimiter.len).collect();
+    let mut consumed_left = vec![0; delimiters.len()];
+    let mut consumed_right = vec![0; delimiters.len()];
     let mut open: Vec<usize> = Vec::new();
 
     for (delimiter_index, delimiter) in delimiters.iter().enumerate() {
-        let mut matched = false;
-        if delimiter.can_close
-            && let Some(open_pos) = open.iter().rposition(|candidate| {
+        while delimiter.can_close && remaining[delimiter_index] > 0 {
+            let Some(open_pos) = open.iter().rposition(|candidate| {
                 let opener = delimiters[*candidate];
-                opener.marker == delimiter.marker && opener.len == delimiter.len
-            })
-        {
-            let opener = delimiters[open.remove(open_pos)];
-            removed[opener.start..opener.start + opener.len].fill(true);
-            removed[delimiter.start..delimiter.start + delimiter.len].fill(true);
-            let coverage = opener.start + opener.len..delimiter.start;
-            if delimiter.len == 2 {
-                bold[coverage].fill(true);
-            } else {
-                italic[coverage].fill(true);
+                opener.marker == delimiter.marker && remaining[*candidate] > 0
+            }) else {
+                break;
+            };
+            let opener_index = open[open_pos];
+            while remaining[opener_index] >= 2 && remaining[delimiter_index] >= 2 {
+                consume_delimiters(
+                    &delimiters,
+                    opener_index,
+                    delimiter_index,
+                    2,
+                    &mut remaining,
+                    &mut consumed_left,
+                    &mut consumed_right,
+                    &mut removed,
+                    &mut bold,
+                );
             }
-            matched = true;
+            if remaining[opener_index] > 0 && remaining[delimiter_index] > 0 {
+                consume_delimiters(
+                    &delimiters,
+                    opener_index,
+                    delimiter_index,
+                    1,
+                    &mut remaining,
+                    &mut consumed_left,
+                    &mut consumed_right,
+                    &mut removed,
+                    &mut italic,
+                );
+            }
+            if remaining[opener_index] == 0 {
+                open.remove(open_pos);
+            }
         }
-        if !matched && delimiter.can_open {
+        if delimiter.can_open && remaining[delimiter_index] > 0 {
             open.push(delimiter_index);
         }
     }
@@ -85,6 +108,36 @@ pub fn parse_inline(text: &str) -> Vec<InlineRun> {
         }
     }
     runs
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "delimiter state updates stay atomic"
+)]
+fn consume_delimiters(
+    delimiters: &[Delimiter],
+    opener_index: usize,
+    closer_index: usize,
+    count: usize,
+    remaining: &mut [usize],
+    consumed_left: &mut [usize],
+    consumed_right: &mut [usize],
+    removed: &mut [bool],
+    style: &mut [bool],
+) {
+    let opener = delimiters[opener_index];
+    let opener_end = opener.start + opener.len - consumed_right[opener_index];
+    removed[opener_end - count..opener_end].fill(true);
+    consumed_right[opener_index] += count;
+    remaining[opener_index] -= count;
+
+    let closer = delimiters[closer_index];
+    let closer_start = closer.start + consumed_left[closer_index];
+    removed[closer_start..closer_start + count].fill(true);
+    consumed_left[closer_index] += count;
+    remaining[closer_index] -= count;
+
+    style[opener_end..closer_start].fill(true);
 }
 
 pub fn strip_inline(text: &str) -> String {
@@ -151,21 +204,18 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
             end += 1;
         }
         let len = end - index;
-        if len <= 2 && (glyph.ch == '*' || len == 1) {
-            let previous = index.checked_sub(1).and_then(|pos| glyphs.get(pos));
-            let next = glyphs.get(end);
-            let intraword = glyph.ch == '_'
-                && previous.is_some_and(|item| item.ch.is_alphanumeric())
-                && next.is_some_and(|item| item.ch.is_alphanumeric());
-            delimiters.push(Delimiter {
-                start: index,
-                len,
-                marker: glyph.ch,
-                can_open: !intraword && next.is_some_and(|item| !item.ch.is_whitespace()),
-                can_close: !intraword
-                    && previous.is_some_and(|item| !item.ch.is_whitespace()),
-            });
-        }
+        let previous = index.checked_sub(1).and_then(|pos| glyphs.get(pos));
+        let next = glyphs.get(end);
+        let intraword = glyph.ch == '_'
+            && previous.is_some_and(|item| item.ch.is_alphanumeric())
+            && next.is_some_and(|item| item.ch.is_alphanumeric());
+        delimiters.push(Delimiter {
+            start: index,
+            len,
+            marker: glyph.ch,
+            can_open: !intraword && next.is_some_and(|item| !item.ch.is_whitespace()),
+            can_close: !intraword && previous.is_some_and(|item| !item.ch.is_whitespace()),
+        });
         index = end;
     }
     delimiters
@@ -264,6 +314,38 @@ mod tests {
         assert_eq!(
             vec![plain("snake_case_word")],
             parse_inline("snake_case_word")
+        );
+    }
+
+    #[test]
+    fn double_underscore_is_bold() {
+        assert_eq!(vec![bold("bold")], parse_inline("__bold__"));
+    }
+
+    #[test]
+    fn intraword_double_underscore_is_literal() {
+        assert_eq!(vec![plain("a__b__c")], parse_inline("a__b__c"));
+    }
+
+    #[test]
+    fn triple_marker_is_bold_and_italic() {
+        assert_eq!(vec![bold_italic("x")], parse_inline("***x***"));
+        assert_eq!(vec![bold_italic("x")], parse_inline("___x___"));
+    }
+
+    #[test]
+    fn strong_and_emphasis_still_compose() {
+        assert_eq!(
+            vec![bold("bold "), bold_italic("and italic")],
+            parse_inline("**bold _and italic_**"),
+        );
+        assert_eq!(
+            vec![italic("a "), bold_italic("b"), italic(" c")],
+            parse_inline("*a **b** c*"),
+        );
+        assert_eq!(
+            vec![plain("a"), bold("b"), plain("c")],
+            parse_inline("a**b**c"),
         );
     }
 
