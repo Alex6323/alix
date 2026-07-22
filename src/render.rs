@@ -47,17 +47,17 @@ pub fn checklist_items(lines: &[&str]) -> Option<Vec<ChecklistItem>> {
 }
 
 pub fn note_units(card: &Card) -> Vec<NoteUnit> {
-    let Some(note) = &card.note else {
-        return Vec::new();
-    };
+    card.note.as_deref().map(text_units).unwrap_or_default()
+}
 
+fn text_units(text: &str) -> Vec<NoteUnit> {
     let mut units = Vec::new();
     let mut in_code = false;
     let mut code: Vec<String> = Vec::new();
     let mut prose = String::new();
     let mut checklist = Vec::new();
 
-    for logical in note.lines() {
+    for logical in text.lines() {
         if logical.trim_start().starts_with("```") {
             // Empty code blocks produce no unit.
             if in_code {
@@ -102,6 +102,14 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
         units.push(NoteUnit::Code { lines: code });
     }
     units
+}
+
+pub fn front_units(front: &str) -> Option<Vec<NoteUnit>> {
+    let units = text_units(front);
+    units
+        .iter()
+        .any(|unit| matches!(unit, NoteUnit::Checklist { .. }))
+        .then_some(units)
 }
 
 fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>) {
@@ -224,6 +232,35 @@ mod tests {
     fn hard_wrapped_prose_joins_before_splitting() {
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
         assert_eq!(units, vec![sentence("A sentence spread across two lines.")]);
+    }
+
+    #[test]
+    fn front_units_are_some_only_when_a_task_list_is_present() {
+        assert_eq!(None, front_units("What is the capital of France?"));
+        let units = front_units("Given this list:\n- [x] keep\n- [ ] drop").unwrap();
+        assert_eq!(
+            units,
+            vec![
+                NoteUnit::Sentence {
+                    text: "Given this list:".into(),
+                    runs: crate::inline::parse_inline("Given this list:"),
+                },
+                NoteUnit::Checklist {
+                    items: vec![
+                        ChecklistItem {
+                            checked: true,
+                            text: "keep".into(),
+                            runs: crate::inline::parse_inline("keep"),
+                        },
+                        ChecklistItem {
+                            checked: false,
+                            text: "drop".into(),
+                            runs: crate::inline::parse_inline("drop"),
+                        },
+                    ],
+                },
+            ]
+        );
     }
 
     #[test]
