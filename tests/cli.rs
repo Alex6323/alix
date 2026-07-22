@@ -64,6 +64,41 @@ fn stderr(out: &Output) -> String {
 const VALID_DECK: &str = "## What is 2 + 2? <!-- id: math1 -->\n4\n";
 
 #[test]
+fn profile_add_list_and_remove_are_hermetic() {
+    let home = TempDir::new().unwrap();
+    let decks = home.path().join("decks-x");
+    let decks = decks.to_str().unwrap();
+
+    let added = alix_env(
+        &["profile", "add", "x", "--decks", decks, "--port", "7002"],
+        home.path(),
+        &[],
+    );
+    assert!(added.status.success(), "stderr: {}", stderr(&added));
+    assert!(home.path().join("alix/profiles/x.toml").exists());
+
+    let listed = alix_env(&["profile", "list"], home.path(), &[]);
+    assert!(listed.status.success(), "stderr: {}", stderr(&listed));
+    assert!(stdout(&listed).contains("x"), "stdout: {}", stdout(&listed));
+    assert!(
+        stdout(&listed).contains("7002"),
+        "stdout: {}",
+        stdout(&listed)
+    );
+
+    let removed = alix_env(&["profile", "remove", "x", "--yes"], home.path(), &[]);
+    assert!(removed.status.success(), "stderr: {}", stderr(&removed));
+
+    let listed = alix_env(&["profile", "list"], home.path(), &[]);
+    assert!(listed.status.success(), "stderr: {}", stderr(&listed));
+    assert!(
+        stdout(&listed).contains("no profiles yet"),
+        "stdout: {}",
+        stdout(&listed)
+    );
+}
+
+#[test]
 fn check_accepts_a_valid_deck() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

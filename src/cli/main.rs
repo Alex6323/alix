@@ -7,6 +7,7 @@ mod deck;
 mod doctor;
 mod generate;
 mod launch;
+mod profile;
 mod progress;
 mod share;
 
@@ -72,6 +73,9 @@ struct LaunchArgs {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Define and launch named per-person instances (their decks, port, adult/kids flavor).
+    #[command(subcommand)]
+    Profile(ProfileCommand),
     /// Check this setup's health, with a one-line fix per problem.
     ///
     /// Covers the config, the progress store, the decks folder, and the
@@ -130,6 +134,56 @@ enum Command {
         #[arg(long)]
         init: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum ProfileCommand {
+    /// Create a profile: a named config for one person's instance.
+    Add(ProfileAddArgs),
+    /// List profiles (name, flavor, port, decks).
+    List,
+    /// Delete a profile's config.
+    Remove(ProfileNameArgs),
+    /// Set, show (no name), or clear (--clear) the default profile that bare `alix` launches.
+    Default(ProfileDefaultArgs),
+    /// Launch the named profile (bound to the LAN with its stored token).
+    #[command(external_subcommand)]
+    Launch(Vec<String>),
+}
+
+#[derive(Args)]
+struct ProfileAddArgs {
+    /// The profile name (also the config filename). Not add/list/remove/default.
+    name: String,
+    /// The decks folder this profile serves. Default: the configured decks dir.
+    #[arg(long)]
+    decks: Option<PathBuf>,
+    /// The port this profile's server listens on. Default: the `[serve]` default (7777).
+    #[arg(long)]
+    port: Option<u16>,
+    /// Serve the kids frontend for this profile (default: the adult frontend).
+    #[arg(long, conflicts_with = "adult")]
+    kids: bool,
+    /// Serve the adult frontend for this profile (the default; explicit form).
+    #[arg(long)]
+    adult: bool,
+}
+
+#[derive(Args)]
+struct ProfileNameArgs {
+    name: String,
+    /// Skip the confirmation prompt.
+    #[arg(short = 'y', long)]
+    yes: bool,
+}
+
+#[derive(Args)]
+struct ProfileDefaultArgs {
+    /// The profile to make default. Omit to print the current default.
+    name: Option<String>,
+    /// Clear the default (bare `alix` reverts to the global config).
+    #[arg(long, conflicts_with = "name")]
+    clear: bool,
 }
 
 #[derive(Args)]
@@ -487,6 +541,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         None => launch(cli.launch),
+        Some(Command::Profile(cmd)) => profile::run(cmd),
         Some(Command::Stats(args)) => progress::stats(args),
         Some(Command::List(args)) => progress::list(args),
         Some(Command::Reset(args)) => progress::reset(args),
