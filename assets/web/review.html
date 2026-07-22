@@ -210,6 +210,10 @@
   /* A multi-line front (a reversed card's alternatives) reads as centred lines
      rather than one run-on where the browser collapsed the newlines. */
   .front-text.multi { display: flex; flex-direction: column; gap: 0.4em; }
+  .front-text .checklist { display: grid; gap: 6px; margin: 4px auto 0; text-align: left; }
+  .front-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+  .front-text .checklist-box { flex: none; font-family: var(--mono); }
+  .front-text pre { margin: 4px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.25); border-radius: 8px; font: 0.82rem/1.45 var(--mono); }
   /* The topological orientation breadcrumb: each region is its name over a thin
      per-card heatmap bar. Two channels, kept apart: name weight/opacity = where
      you are; bar color (red→green) = how solid each card in the area is. Clips
@@ -1142,7 +1146,24 @@ function appendChecklist(parent, items) {
 // original answer's lines joined with "\n" (Card::reversed, src/card.rs). Split
 // on them so a multi-line front reads as centred lines instead of a run-on where
 // the browser collapsed the breaks. A plain single-line front is unchanged.
-function frontEl(text, runs) {
+function frontEl(text, runs, units) {
+  if (units) {
+    const wrap = el("div", "front-text multi");
+    for (const unit of units) {
+      if (unit.kind === "sentence") {
+        const line = el("div", "front-line");
+        if (unit.runs) appendRuns(line, unit.runs); else line.textContent = unit.text || "";
+        wrap.appendChild(line);
+      } else if (unit.kind === "code") {
+        const pre = el("pre");
+        pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
+        wrap.appendChild(pre);
+      } else if (unit.kind === "checklist") {
+        appendChecklist(wrap, unit.items);
+      }
+    }
+    return wrap;
+  }
   const s = text == null ? "" : String(text);
   if (!s.includes("\n")) {
     const front = el("div", "front-text");
@@ -3068,7 +3089,7 @@ function renderCard() {
     }
     crumbStrip.appendChild(bc);
   }
-  q.appendChild(frontEl(c.front, c.front_runs));
+  q.appendChild(frontEl(c.front, c.front_runs, c.front_units));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   appendImages(q, c.images);
 
@@ -3098,7 +3119,7 @@ function renderBrowse() {
     moreHint: false, // browse has no overflow marker
   });
 
-  q.appendChild(frontEl(c.front, c.front_runs));
+  q.appendChild(frontEl(c.front, c.front_runs, c.front_units));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   appendImages(q, c.images);
 

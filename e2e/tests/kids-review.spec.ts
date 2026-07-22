@@ -96,6 +96,19 @@ test('clicking "Say it yourself" shows a reveal control, not options', async ({ 
   await expect(page.locator(".opt-btn")).toHaveCount(0);
 });
 
+test("a task-list front renders as static checkboxes", async ({ page }) => {
+  await openApp(page);
+  await page.locator(".box", { hasText: "Animals" }).click();
+  await kidsDeckRow(page, "fronts").click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: "Say it yourself" }).click(),
+  ]);
+
+  await expect(page.locator(".rev-prompt .checklist-row")).toHaveCount(2);
+  await expect(page.locator(".rev-prompt .checklist-box")).toHaveText(["☑", "☐"]);
+});
+
 test("tapping an option on a never-seen card records the pick and offers only the ungraded next step", async ({
   page,
 }) => {

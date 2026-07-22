@@ -45,6 +45,18 @@ test("clicking a deck row fires POST /api/select, and a card front renders", asy
   await expect(page.locator("#hist .left-token")).toHaveText(/^\d+ left$/);
 });
 
+test("a task-list front renders as static checkboxes", async ({ page }) => {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "fronts").click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: "Learn" }).click(),
+  ]);
+
+  await expect(page.locator(".region.q .checklist-row")).toHaveCount(2);
+  await expect(page.locator(".region.q .checklist-box")).toHaveText(["☑", "☐"]);
+});
+
 test("revealed inline formatting renders as safe DOM elements", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click();

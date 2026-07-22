@@ -300,6 +300,10 @@ body {
    applies uniformly to the fill-blank answer, the line reveal, and the
    tap-the-answer options that follow. */
 .rev-prompt { font-weight: 700; font-size: 32px; line-height: 1.32; color: var(--ink); margin: 16px 0 38px; }
+.rev-prompt .checklist { display: grid; gap: 6px; width: fit-content; margin: 10px auto 0; text-align: left; }
+.rev-prompt .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+.rev-prompt .checklist-box { flex: none; font-family: ui-monospace, monospace; }
+.rev-prompt pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: #fff3e6; border-radius: 12px; font: 16px/1.45 ui-monospace, monospace; }
 .rev-context { font-weight: 600; font-size: 19px; line-height: 1.4; color: var(--muted); margin: 4px 0; }
 
 /* Fill-in-the-blank: an underlined blank before reveal, a green answer after.
@@ -702,6 +706,28 @@ function appendChecklist(parent, items) {
   parent.appendChild(checklist);
 }
 
+function frontPrompt(card) {
+  const prompt = el("div", "rev-prompt");
+  if (!card.front_units) {
+    prompt.textContent = card.front || "";
+    return prompt;
+  }
+  for (const unit of card.front_units) {
+    if (unit.kind === "sentence") {
+      const line = el("div", "rev-prompt-line");
+      if (unit.runs) appendRuns(line, unit.runs); else line.textContent = unit.text || "";
+      prompt.appendChild(line);
+    } else if (unit.kind === "code") {
+      const pre = el("pre", "why-code");
+      pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
+      prompt.appendChild(pre);
+    } else if (unit.kind === "checklist") {
+      appendChecklist(prompt, unit.items);
+    }
+  }
+  return prompt;
+}
+
 // The CSS-drawn Alix face. `extra` adds a modifier class (e.g. "mascot-sm" for
 // the smaller face in the reveal row).
 function mascotEl(extra) {
@@ -966,7 +992,7 @@ function renderReview() {
 
   cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, acquire)));
   appendImages(cardEl, card.images);
-  cardEl.appendChild(el("div", "rev-prompt", card.front));
+  cardEl.appendChild(frontPrompt(card));
   for (const ctx of (card.context || [])) cardEl.appendChild(el("div", "rev-context", ctx));
 
   if (choiceMode) {
