@@ -420,8 +420,9 @@ impl AugmentCache {
         let plain: Vec<&Card> = cards.iter().filter(|c| c.hash_lines.is_none()).collect();
         CoverageSummary {
             choices: coverage(&all, &|c| {
-                c.id()
-                    .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
+                !c.authored_distractors.is_empty()
+                    || c.id()
+                        .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
             }),
             notes: coverage(&all, &|c| {
                 c.id()
@@ -468,8 +469,9 @@ impl AugmentCache {
             cards,
             |_| true,
             |c| {
-                c.id()
-                    .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
+                !c.authored_distractors.is_empty()
+                    || c.id()
+                        .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
             },
         )
     }
@@ -1181,6 +1183,25 @@ mod tests {
             .map(|w| w.id.clone())
             .collect();
         assert_eq!(mq, [cid(&cards[0]), cid(&cards[1])]);
+    }
+
+    #[test]
+    fn a_card_with_authored_distractors_is_not_a_choices_gap() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut authored = plain_card("a");
+        authored.authored_distractors = vec!["x".into(), "y".into()];
+        let cards = vec![authored, plain_card("b")];
+        let missing: Vec<String> = cache
+            .missing_choices(&cards)
+            .iter()
+            .map(|item| item.answer.clone())
+            .collect();
+        assert_eq!(["b"], missing.as_slice());
+
+        let summary = cache.summarize(&cards, &HashSet::new());
+        assert_eq!(1, summary.choices.covered);
+        assert_eq!(2, summary.choices.eligible);
     }
 
     #[test]
