@@ -20,6 +20,18 @@ Green
 Blue
 ```
 
+## Inline formatting
+
+Card fronts, answer lines, and note prose support `**bold**`, `*italic*` or
+`_italic_`, and inline `` `code` ``. Inline code is verbatim, so
+`` `**literal**` `` displays the asterisks instead of bold text.
+
+Formatting has two projections: styled display and plain content. Grading uses
+the plain content, so type `Paris`, not `**Paris**`. To keep emphasis markers
+literal, escape them with backslashes such as `2\*3\*4`, or wrap the text in
+inline code such as `` `2*3*4` ``. Run `alix doctor <deck>` to find card text
+that will render as emphasis.
+
 A `##` only starts a card *at column 0 and outside a code fence*. A `##` that is
 indented, or sits inside a fenced block, is ordinary answer content, so a Markdown
 heading in a sample, a shell comment, or a Dockerfile line needs no escaping:

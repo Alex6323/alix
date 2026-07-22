@@ -11,7 +11,10 @@ use alix::{
 };
 use anyhow::{Context, Result, bail};
 
-use crate::DoctorArgs;
+use crate::{
+    DoctorArgs,
+    common::{one_line, truncate},
+};
 
 fn val_name<T: clap::ValueEnum>(value: T) -> String {
     value
@@ -24,6 +27,7 @@ fn val_name<T: clap::ValueEnum>(value: T) -> String {
 struct Report {
     errors: Vec<String>,
     warnings: Vec<String>,
+    notes: Vec<String>,
 }
 
 impl Report {
@@ -33,12 +37,18 @@ impl Report {
     fn warn(&mut self, msg: impl Into<String>) {
         self.warnings.push(msg.into());
     }
+    fn note(&mut self, msg: impl Into<String>) {
+        self.notes.push(msg.into());
+    }
     fn render(&self) -> bool {
         for e in &self.errors {
             eprintln!("error: {e}");
         }
         for w in &self.warnings {
             eprintln!("warning: {w}");
+        }
+        for note in &self.notes {
+            eprintln!("note: {note}");
         }
         if !self.errors.is_empty() || !self.warnings.is_empty() {
             eprintln!(
@@ -75,6 +85,8 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
             return;
         }
     };
+
+    inline_emphasis_findings(&deck.cards, report);
 
     for lint in &deck.lints {
         let msg = lint_message(path, lint);
@@ -133,6 +145,27 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
 
     if let Ok(deck) = Deck::load(path) {
         deck_resource_findings(&deck, report);
+    }
+}
+
+fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
+    let mut seen_lines = HashSet::new();
+    for card in cards {
+        if !seen_lines.insert(card.line) {
+            continue;
+        }
+        let emphasized = std::iter::once(&card.front)
+            .chain(card.back.iter())
+            .flat_map(|text| alix::inline::parse_inline(text))
+            .find(|run| run.bold || run.italic);
+        if let Some(run) = emphasized {
+            let front = truncate(&one_line(&card.front), 72);
+            let snippet = truncate(&one_line(&run.text), 72);
+            report.note(format!(
+                "inline emphasis will render in \"{front}\": {snippet} \
+                 (escape or backtick if unintended)"
+            ));
+        }
     }
 }
 
@@ -496,6 +529,29 @@ mod tests {
 
     fn w(dir: &Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
+    }
+
+    #[test]
+    fn doctor_notes_inline_emphasis_but_not_plain_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let affected = dir.path().join("affected.md");
+        let plain = dir.path().join("plain.md");
+        w(
+            dir.path(),
+            "affected.md",
+            "## Multiply three numbers\n2*3*4\n",
+        );
+        w(dir.path(), "plain.md", "## Add two numbers\n2 + 3 + 4\n");
+
+        let mut affected_report = Report::default();
+        deck_findings(&affected, true, &mut affected_report);
+        assert_eq!(affected_report.notes.len(), 1);
+        assert!(affected_report.notes[0].contains("Multiply three numbers"));
+        assert!(affected_report.notes[0].contains(": 3 "));
+
+        let mut plain_report = Report::default();
+        deck_findings(&plain, true, &mut plain_report);
+        assert!(plain_report.notes.is_empty());
     }
 
     #[test]

@@ -8,10 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- card text now renders inline Markdown: `**bold**`, `*italic*`/`_italic_`, and `` `code` ``.
 - the picker's focus drawer now shows a deck's preamble (the prose written under its `#` title), which was parsed but never surfaced before
 
 ### Changed
 
+- **Breaking (pre-1.0):** inline `*`/`_`/`**` in existing card text now renders as emphasis; a deck that used them literally (e.g. `2*3*4`) will render/grade with the markers stripped. Escape with a backslash (`\*`) or wrap in inline code (`` `2*3*4` ``) to keep them literal. Run `alix doctor <deck>` to find affected cards.
+- **Breaking (web API):** `CardDto.front` and `CardDto.back` now contain inline-marker-stripped content, while the new `front_runs` and `back_runs` fields carry display formatting. Sentence-shaped `NoteUnit` values also gain `runs`.
 - the picker's focus drawer now opens for every deck, not only decks with a topology augmentation, and shows a per-card retrievability heatmap: a single whole-deck bar for a plain deck, split into named regions when the deck has a topology. Cards you have never reviewed render as a neutral cell rather than red, so a fresh deck reads as unlearned instead of failing
 - **Breaking (web API):** the drawer no longer shows a raw due count. `POST /api/deck-topology` is renamed `POST /api/deck-drawer`; its response `DeckTopologyDto` becomes `DeckDrawerDto` (gains `preamble` and a flat `heatmap`, drops `deck_due`), and `RegionInfoDto` drops its `due` field
 
