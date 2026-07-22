@@ -392,6 +392,41 @@ mod tests {
     }
 
     #[test]
+    fn an_edited_card_ignores_its_stale_format_reshape() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut card = parse("## q\nthe authored answer\n").remove(0);
+        let id = card.id().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        cache.set_format(
+            &id,
+            crate::augment::Format {
+                back: vec!["a stale reshaped line".into()],
+                ..Default::default()
+            },
+            card.content_fingerprint ^ 1,
+        );
+
+        cache.apply_format(&mut card);
+        let stale = CardView::from(&card);
+        assert!(!stale.reshaped);
+        assert_eq!(["the authored answer"], stale.back.as_slice());
+
+        let mut fresh = card.clone();
+        cache.set_format(
+            &id,
+            crate::augment::Format {
+                back: vec!["a fresh reshaped line".into()],
+                ..Default::default()
+            },
+            fresh.content_fingerprint,
+        );
+        cache.apply_format(&mut fresh);
+        let fresh = CardView::from(&fresh);
+        assert!(fresh.reshaped);
+        assert_eq!(["a fresh reshaped line"], fresh.back.as_slice());
+    }
+
+    #[test]
     fn card_view_carries_the_raw_at_locator() {
         let cards = parse("## q\n<!-- at: src/lib.rs:10-20 -->\na\n");
         let view = CardView::from(&cards[0]);
