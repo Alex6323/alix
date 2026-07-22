@@ -52,6 +52,7 @@ pub struct Card {
     pub block_holes: Vec<crate::store::HoleFingerprint>,
     pub reversed: bool,
     pub content_fingerprint: u64,
+    pub authored_distractors: Vec<String>,
 }
 
 impl Card {
@@ -88,6 +89,7 @@ impl Card {
             block_holes: Vec::new(),
             reversed: false,
             content_fingerprint,
+            authored_distractors: Vec::new(),
         }
     }
 

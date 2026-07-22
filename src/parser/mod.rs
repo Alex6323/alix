@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use thiserror::Error;
 
@@ -10,6 +10,7 @@ use crate::{
 };
 
 mod canonical;
+pub(crate) mod checklist;
 mod cloze;
 mod frontmatter;
 
@@ -54,6 +55,10 @@ pub enum LintKind {
     UnclosedComment,
     UnclosedFence,
     ImageMalformed,
+    ChoiceAnswerMixed,
+    ChoiceNeedsBothSides,
+    DuplicateChoiceOption,
+    ChoiceMultiCorrectUnsupported,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -576,6 +581,88 @@ fn build_card(
     for segments in &parsed {
         images_back.extend(card_images(segments));
     }
+
+    let mut task_lines = Vec::new();
+    let mut has_other = false;
+    let mut fence = None;
+    for ((lineno, text), segments) in answer.iter().zip(&parsed) {
+        if let Some(ch) = fence {
+            if closes_fence(text, ch) {
+                fence = None;
+            }
+            has_other = true;
+            continue;
+        }
+        if let Some(ch) = fence_opener(text) {
+            fence = Some(ch);
+            has_other = true;
+            continue;
+        }
+        if trim_ws(text).is_empty() || image_only(segments) {
+            continue;
+        }
+        match checklist::parse_line(text) {
+            Some((checked, option)) => task_lines.push((*lineno, checked, option)),
+            None => has_other = true,
+        }
+    }
+    if !task_lines.is_empty() && has_other {
+        lints.push(Lint {
+            line: task_lines[0].0,
+            kind: LintKind::ChoiceAnswerMixed,
+        });
+    } else if !task_lines.is_empty() {
+        let choice_line = task_lines[0].0;
+        let mut seen = HashSet::new();
+        let mut options = Vec::new();
+        let mut duplicate_line = None;
+        for (lineno, checked, raw_option) in task_lines {
+            let option = crate::inline::strip_inline(raw_option.trim());
+            if seen.insert(option.clone()) {
+                options.push((checked, option));
+            } else if duplicate_line.is_none() {
+                duplicate_line = Some(lineno);
+            }
+        }
+        if let Some(line) = duplicate_line {
+            lints.push(Lint {
+                line,
+                kind: LintKind::DuplicateChoiceOption,
+            });
+        }
+        let checked_count = options.iter().filter(|(checked, _)| *checked).count();
+        if checked_count > 1 {
+            lints.push(Lint {
+                line: choice_line,
+                kind: LintKind::ChoiceMultiCorrectUnsupported,
+            });
+        } else {
+            let distractors: Vec<String> = options
+                .iter()
+                .filter(|(checked, _)| !checked)
+                .map(|(_, text)| text.clone())
+                .collect();
+            if checked_count == 0 || distractors.is_empty() {
+                lints.push(Lint {
+                    line: choice_line,
+                    kind: LintKind::ChoiceNeedsBothSides,
+                });
+            } else if let Some((_, correct)) = options.into_iter().find(|(checked, _)| *checked) {
+                let mut card = Card::plain(Arc::clone(subject), front, vec![correct], note, line);
+                card.token = directives.token.as_deref().map(Arc::from);
+                card.images = images;
+                card.images_back = images_back;
+                card.at = directives.at;
+                card.at_origin = directives.at_origin;
+                card.origin = directives.origin;
+                card.givens = directives.givens;
+                card.authored_distractors = distractors;
+                cards.push(card);
+                return Ok(());
+            }
+        }
+    }
+
     let holes: Vec<(usize, usize, &str)> = parsed
         .iter()
         .enumerate()
@@ -1041,6 +1128,109 @@ mod tests {
     fn consecutive_quote_lines_concatenate_into_the_note() {
         let deck = parse("## q\n---\nans\n> one\n> two\n");
         assert_eq!(Some("one\ntwo".to_string()), deck.cards[0].note);
+    }
+
+    #[test]
+    fn an_all_task_list_answer_is_a_single_correct_checkbox_card() {
+        let deck = parse("## Which is prime?\n- [ ] 4\n- [x] 5\n- [ ] 6\n");
+        let card = &deck.cards[0];
+        assert_eq!(vec!["5"], card.back);
+        assert_eq!(
+            vec!["4".to_string(), "6".to_string()],
+            card.authored_distractors
+        );
+        assert!(card.hole.is_none());
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+    }
+
+    #[test]
+    fn a_divided_checkbox_card_takes_options_from_the_answer_region() {
+        let deck = parse("## Pick one\nsome stimulus\n\n---\n- [x] yes\n- [ ] no\n");
+        let card = &deck.cards[0];
+        assert_eq!("Pick one\nsome stimulus", card.front);
+        assert_eq!(vec!["yes"], card.back);
+        assert_eq!(vec!["no".to_string()], card.authored_distractors);
+    }
+
+    #[test]
+    fn a_mix_of_task_list_and_prose_is_a_plain_card_and_lints() {
+        let deck = parse("## q\n- [x] a\nnot an option\n");
+        assert!(deck.cards[0].authored_distractors.is_empty());
+        assert_eq!(vec!["- [x] a", "not an option"], deck.cards[0].back);
+        assert!(
+            deck.lints
+                .iter()
+                .any(|lint| lint.kind == LintKind::ChoiceAnswerMixed)
+        );
+    }
+
+    #[test]
+    fn all_checked_or_no_distractor_lints_needs_both_sides_and_is_plain() {
+        let deck = parse("## q\n- [x] a\n- [x] b\n");
+        assert!(deck.cards[0].authored_distractors.is_empty());
+        assert!(
+            deck.lints
+                .iter()
+                .any(|lint| lint.kind == LintKind::ChoiceMultiCorrectUnsupported)
+        );
+
+        let deck = parse("## q\n- [ ] a\n- [ ] b\n");
+        assert!(deck.cards[0].authored_distractors.is_empty());
+        assert!(
+            deck.lints
+                .iter()
+                .any(|lint| lint.kind == LintKind::ChoiceNeedsBothSides)
+        );
+    }
+
+    #[test]
+    fn a_duplicate_option_lints_and_keeps_first() {
+        let deck = parse("## q\n- [x] a\n- [ ] b\n- [ ] b\n");
+        assert_eq!(
+            vec!["b".to_string()],
+            deck.cards[0].authored_distractors
+        );
+        assert!(
+            deck.lints
+                .iter()
+                .any(|lint| lint.kind == LintKind::DuplicateChoiceOption)
+        );
+    }
+
+    #[test]
+    fn a_fenced_task_list_answer_stays_a_plain_card() {
+        let deck = parse("## q\n---\n```\n- [x] a\n- [ ] b\n```\n");
+        assert!(deck.cards[0].authored_distractors.is_empty());
+        assert_eq!(
+            vec!["```", "- [x] a", "- [ ] b", "```"],
+            deck.cards[0].back
+        );
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+    }
+
+    #[test]
+    fn option_text_is_content_projected_for_grading() {
+        let deck = parse("## q\n- [x] **Paris**\n- [ ] London\n");
+        assert_eq!(vec!["Paris"], deck.cards[0].back);
+        assert_eq!(
+            vec!["London".to_string()],
+            deck.cards[0].authored_distractors
+        );
+    }
+
+    #[test]
+    fn editing_only_a_distractor_preserves_identity_and_fingerprint() {
+        let before = parse(
+            "## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] wrong\n",
+        );
+        let after = parse(
+            "## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] different\n",
+        );
+        assert_eq!(before.cards[0].id(), after.cards[0].id());
+        assert_eq!(
+            before.cards[0].content_fingerprint,
+            after.cards[0].content_fingerprint
+        );
     }
 
     // ── Directives ──

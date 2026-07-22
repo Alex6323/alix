@@ -254,6 +254,20 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::ImageMalformed => "an image embed here is malformed; write \
              `![alt](file.png)` (or escape a literal `![` as `\\![`)"
             .to_string(),
+        LintKind::ChoiceAnswerMixed => {
+            "task-list choices are mixed with other answer content; treating the card as plain"
+                .to_string()
+        }
+        LintKind::ChoiceNeedsBothSides => {
+            "a checkbox card needs one checked answer and at least one unchecked distractor"
+                .to_string()
+        }
+        LintKind::DuplicateChoiceOption => {
+            "a checkbox option repeats earlier option text; keeping the first".to_string()
+        }
+        LintKind::ChoiceMultiCorrectUnsupported => {
+            "multiple checked answers are not supported yet; treating the card as plain".to_string()
+        }
     };
     format!("{}: line {}: {detail}", path.display(), lint.line)
 }
