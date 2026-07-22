@@ -61,6 +61,27 @@ and without the `---` alix couldn't tell where the question stops and the answer
 starts. (A one-line question needs no divider: the answer just follows on the next
 line, as in the cards above.)
 
+## Multiple-choice (checkbox) cards
+
+Write the answer as a GitHub task list to supply your own Recognize options:
+
+```
+## Which number is prime?
+- [ ] 4
+- [x] 5
+- [ ] 6
+```
+
+The single `[x]` item is the correct answer. Alix shows only that answer at
+Recall and expects it at Reconstruct; the `[ ]` items are distractors shown with
+it at Recognize. Every option is used, so the card needs no AI `choices`
+augmentation and is skipped by that augment target.
+
+A checkbox card needs exactly one checked item and at least one unchecked item.
+Use `-`, `*`, or `+` bullets, with `[x]` or `[X]` for the answer. Put a literal
+task list inside a fenced code block to keep it a plain card answer. Task lists
+inside notes render as static checkboxes rather than interactive choices.
+
 ## Notes
 
 A line beginning with `>` is a **note**: shown *after* you answer, never part of
