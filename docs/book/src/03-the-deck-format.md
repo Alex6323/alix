@@ -80,7 +80,8 @@ augmentation and is skipped by that augment target.
 A checkbox card needs exactly one checked item and at least one unchecked item.
 Use `-`, `*`, or `+` bullets, with `[x]` or `[X]` for the answer. Put a literal
 task list inside a fenced code block to keep it a plain card answer. Task lists
-inside notes render as static checkboxes rather than interactive choices.
+inside notes or a card's front before the `---` divider render as static
+checkboxes rather than interactive choices.
 
 ## Notes
 
