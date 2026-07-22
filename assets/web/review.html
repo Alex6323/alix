@@ -1111,15 +1111,47 @@ function el(tag, cls, text) {
   if (text !== undefined) n.textContent = text;
   return n;
 }
+// Render inline-formatted text: one node per run. Bold/italic/code map to
+// <strong>/<em>/<code>; combined flags nest. textContent only, so card text
+// can never inject markup.
+function appendRuns(parent, runs) {
+  for (const r of runs || []) {
+    let node = document.createTextNode(r.text);
+    if (r.code)   { const c = document.createElement("code"); c.appendChild(node); node = c; }
+    if (r.italic) { const e = document.createElement("em");   e.appendChild(node); node = e; }
+    if (r.bold)   { const b = document.createElement("strong"); b.appendChild(node); node = b; }
+    parent.appendChild(node);
+  }
+}
 // The front can carry newlines: a reversed dual-direction card's front is the
 // original answer's lines joined with "\n" (Card::reversed, src/card.rs). Split
 // on them so a multi-line front reads as centred lines instead of a run-on where
 // the browser collapsed the breaks. A plain single-line front is unchanged.
-function frontEl(text) {
+function frontEl(text, runs) {
   const s = text == null ? "" : String(text);
-  if (!s.includes("\n")) return el("div", "front-text", s);
+  if (!s.includes("\n")) {
+    const front = el("div", "front-text");
+    if (runs) appendRuns(front, runs); else front.textContent = s;
+    return front;
+  }
   const wrap = el("div", "front-text multi");
-  for (const line of s.split("\n")) wrap.appendChild(el("div", "front-line", line));
+  if (!runs) {
+    for (const line of s.split("\n")) wrap.appendChild(el("div", "front-line", line));
+    return wrap;
+  }
+  const lineRuns = [[]];
+  for (const run of runs) {
+    const parts = String(run.text).split("\n");
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i]) lineRuns[lineRuns.length - 1].push({ ...run, text: parts[i] });
+      if (i < parts.length - 1) lineRuns.push([]);
+    }
+  }
+  for (const line of lineRuns) {
+    const lineEl = el("div", "front-line");
+    appendRuns(lineEl, line);
+    wrap.appendChild(lineEl);
+  }
   return wrap;
 }
 // The drawer's open/close height animation: quick.
@@ -3021,7 +3053,7 @@ function renderCard() {
     }
     crumbStrip.appendChild(bc);
   }
-  q.appendChild(frontEl(c.front));
+  q.appendChild(frontEl(c.front, c.front_runs));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   appendImages(q, c.images);
 
@@ -3051,14 +3083,14 @@ function renderBrowse() {
     moreHint: false, // browse has no overflow marker
   });
 
-  q.appendChild(frontEl(c.front));
+  q.appendChild(frontEl(c.front, c.front_runs));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   appendImages(q, c.images);
 
   // Match the review path: any multi-line answer is a left-aligned block (centered
   // as a whole); only a reshaped-list answer gets bullets.
   const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
-  appendReveal(sec, c.back, isReshapedList(c));
+  appendReveal(sec, c.back, c.back_runs, isReshapedList(c));
   a.appendChild(sec);
   appendImages(a, c.images_back);
   a.classList.add("has-body"); // browse always shows the full answer
@@ -3569,7 +3601,7 @@ function isReshapedList(c) { return !!(c && c.reshaped && c.back.length > 1); }
 // Render revealed answer lines: a fenced ```code``` block becomes a <pre>
 // (monospace, indentation preserved); other lines are .answer divs, bulleted
 // when it's a reshaped list.
-function appendReveal(sec, lines, isList) {
+function appendReveal(sec, lines, runs, isList) {
   let i = 0;
   while (i < lines.length) {
     if (/^```/.test(lines[i].trim())) {
@@ -3581,7 +3613,10 @@ function appendReveal(sec, lines, isList) {
       pre.textContent = code.join("\n");
       sec.appendChild(pre);
     } else {
-      sec.appendChild(el("div", "answer", isList ? "• " + lines[i] : lines[i]));
+      const line = el("div", "answer");
+      if (isList) line.appendChild(document.createTextNode("• "));
+      if (runs && runs[i]) appendRuns(line, runs[i]); else line.appendChild(document.createTextNode(lines[i]));
+      sec.appendChild(line);
       i++;
     }
   }
@@ -3605,7 +3640,7 @@ function fillAcquire(a) {
   if (!a) return;
   const c = state.card;
   const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
-  appendReveal(sec, c.back, isReshapedList(c));
+  appendReveal(sec, c.back, c.back_runs, isReshapedList(c));
   a.appendChild(sec);
   appendImages(a, c.images_back);
   a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in about a minute."));
@@ -3619,7 +3654,7 @@ function fillAnswer(a) {
   const c = state.card;
   const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
   const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
-  appendReveal(sec, c.back.slice(0, shown), isReshapedList(c));
+  appendReveal(sec, c.back.slice(0, shown), c.back_runs && c.back_runs.slice(0, shown), isReshapedList(c));
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);
   // Attach the answer image to the region itself (a flex column), not to the
@@ -3656,7 +3691,11 @@ function renderNote(parent, units) {
   if (!units || units.length === 0) return;
   const note = el("div", "note");
   for (const u of units) {
-    if (u.kind === "sentence") note.appendChild(el("p", null, u.text));
+    if (u.kind === "sentence") {
+      const paragraph = el("p");
+      if (u.runs) appendRuns(paragraph, u.runs); else paragraph.textContent = u.text;
+      note.appendChild(paragraph);
+    }
     else if (u.kind === "code") {
       const pre = el("pre");
       pre.appendChild(el("code", null, u.lines.join("\n")));

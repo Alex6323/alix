@@ -45,6 +45,62 @@ test("clicking a deck row fires POST /api/select, and a card front renders", asy
   await expect(page.locator("#hist .left-token")).toHaveText(/^\d+ left$/);
 });
 
+test("revealed inline formatting renders as safe DOM elements", async ({ page }) => {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+
+  await expect(page.locator(".front-text")).toHaveText("Which animal is the tallest in the world?");
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/choose")),
+    page.getByRole("button", { name: /Giraffe/ }).click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/acquire")),
+    page.getByRole("button", { name: "Seen" }).click(),
+  ]);
+
+  await expect(page.locator(".front-text")).toHaveText("What is the fastest animal on land?");
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/choose")),
+    page.getByRole("button", { name: /Cheetah/ }).click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/acquire")),
+    page.getByRole("button", { name: "Seen" }).click(),
+  ]);
+
+  await expect(page.getByText("session complete", { exact: true })).toBeVisible();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/deselect")),
+    page.getByRole("button", { name: /^Leave/ }).click(),
+  ]);
+
+  await adultDeckRow(page, "wild").click();
+  await page.getByTitle("choose a depth").click();
+  await page.getByRole("button", { name: /cram/i }).click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+
+  await expect(page.locator(".front-text")).toHaveText("Which animal is the tallest in the world?");
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/skip")),
+    page.getByRole("button", { name: /^Skip/ }).click(),
+  ]);
+  await expect(page.locator(".front-text")).toHaveText("What is the fastest animal on land?");
+  await page.getByRole("button", { name: "Reveal" }).click();
+
+  const answer = page.locator(".reveal .answer");
+  await expect(answer.locator("strong")).toHaveText("Cheetah");
+  await expect(answer).toHaveText("Cheetah");
+});
+
 test("focusing a deck opens the drawer with its preamble and heatmap, no due count", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click(); // focuses the row → opens the drawer
