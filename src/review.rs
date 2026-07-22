@@ -509,7 +509,11 @@ mod tests {
         let session = session_at(cards, &store, Depth::Recall, NOW);
         let question =
             current_question(&session, &store, &augment).expect("acquire MC from authored options");
-        assert_eq!(3, question.options.len(), "authored options, not padded to the AI four");
+        assert_eq!(
+            3,
+            question.options.len(),
+            "authored options, not padded to the AI four"
+        );
         assert_eq!("Paris", question.options[question.correct]);
     }
 
