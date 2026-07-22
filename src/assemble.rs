@@ -399,7 +399,7 @@ pub fn select(
         augment.apply_format(card);
         if let Some(note) = card
             .id()
-            .and_then(|id| augment.note(&id))
+            .and_then(|id| augment.note(&id, card.content_fingerprint))
             .map(str::to_string)
         {
             card.append_note(&[note]);
@@ -450,7 +450,7 @@ pub fn select(
                 augment.apply_format(&mut card);
                 if let Some(note) = card
                     .id()
-                    .and_then(|id| augment.note(&id))
+                    .and_then(|id| augment.note(&id, card.content_fingerprint))
                     .map(str::to_string)
                 {
                     card.append_note(&[note]);
@@ -571,7 +571,7 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
         augment.apply_format(card);
         if let Some(note) = card
             .id()
-            .and_then(|id| augment.note(&id))
+            .and_then(|id| augment.note(&id, card.content_fingerprint))
             .map(str::to_string)
         {
             card.append_note(&[note]);
@@ -997,6 +997,7 @@ it reads line two\n\
                 note: None,
                 mode: Some(Mode::LineByLine),
             },
+            synth.content_fingerprint,
         );
         cache.apply_format(&mut synth);
 
@@ -1018,13 +1019,13 @@ it reads line two\n\
         )
         .unwrap();
         insert_virtual_card(&mut store, "rust.md");
-        let virtual_id = crate::parser::parse_str(
+        let virtual_card = crate::parser::parse_str(
             "rust.md",
             "## virtual front <!-- id: vq1 -->\nvirtual back\n",
         )
-        .unwrap()[0]
-            .id()
-            .unwrap();
+        .unwrap()
+        .remove(0);
+        let virtual_id = virtual_card.id().unwrap();
 
         let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
         cache.set_format(
@@ -1035,6 +1036,7 @@ it reads line two\n\
                 note: None,
                 mode: None,
             },
+            virtual_card.content_fingerprint,
         );
         cache.save().unwrap();
 
@@ -1096,9 +1098,14 @@ it reads line two\n\
 
         // Distractor set keyed by the real id, read from the loaded deck
         // (never hand-computed).
-        let card_id = Deck::load(&deck_path).unwrap().cards[0].id().unwrap();
+        let loaded = Deck::load(&deck_path).unwrap();
+        let card_id = loaded.cards[0].id().unwrap();
         let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
-        cache.set_distractors(&card_id, vec!["w1".into(), "w2".into(), "w3".into()]);
+        cache.set_distractors(
+            &card_id,
+            vec!["w1".into(), "w2".into(), "w3".into()],
+            loaded.cards[0].content_fingerprint,
+        );
         cache.save().unwrap();
 
         let Selected::Review(build) =
@@ -1175,8 +1182,13 @@ it reads line two\n\
                 note: None,
                 mode: None,
             },
+            raw.cards[0].content_fingerprint,
         );
-        cache.set_note(&id, "the parts are well known".to_string());
+        cache.set_note(
+            &id,
+            "the parts are well known".to_string(),
+            raw.cards[0].content_fingerprint,
+        );
         cache.save().unwrap();
 
         let merged = browse(vec![path]).unwrap();
@@ -1204,11 +1216,11 @@ it reads line two\n\
         std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let store_path = dir.path().join("p.json");
         let mut store = open_store(Some(store_path.clone())).unwrap();
-        let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
-            .id()
-            .unwrap();
+        let loaded = crate::deck::Deck::load(&deck).unwrap();
+        let id = loaded.cards[0].id().unwrap();
+        let fingerprint = loaded.cards[0].content_fingerprint;
         let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
-        cache.set_note(&id, "seeded".to_string());
+        cache.set_note(&id, "seeded".to_string(), fingerprint);
         cache.save().unwrap();
 
         match select(
@@ -1219,7 +1231,9 @@ it reads line two\n\
         )
         .unwrap()
         {
-            Selected::Review(build) => assert_eq!(build.augment.note(&id), Some("seeded")),
+            Selected::Review(build) => {
+                assert_eq!(build.augment.note(&id, fingerprint), Some("seeded"));
+            }
             Selected::Walk(_) => panic!("a fact deck must review"),
         }
     }

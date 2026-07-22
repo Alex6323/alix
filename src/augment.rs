@@ -45,6 +45,16 @@ pub struct Augmentation {
     pub keypoints: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<Format>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distractors_fp: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_fp: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variants_fp: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keypoints_fp: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format_fp: Option<u64>,
 }
 
 impl Augmentation {
@@ -200,51 +210,66 @@ impl AugmentCache {
 
     /// `None` when absent or empty, so the caller can fall back to offline
     /// sampling with one check.
-    pub fn distractors(&self, card_id: &str) -> Option<&[String]> {
-        self.cards
-            .get(card_id)
-            .map(|aug| aug.distractors.as_slice())
-            .filter(|d| !d.is_empty())
+    pub fn distractors(&self, card_id: &str, fingerprint: u64) -> Option<&[String]> {
+        self.cards.get(card_id).and_then(|aug| {
+            (aug.distractors_fp == Some(fingerprint) && !aug.distractors.is_empty())
+                .then_some(aug.distractors.as_slice())
+        })
     }
 
     pub fn contains(&self, card_id: &str) -> bool {
         self.cards.contains_key(card_id)
     }
 
-    pub fn set_distractors(&mut self, card_id: &str, distractors: Vec<String>) {
-        self.cards
-            .entry(card_id.to_string())
-            .or_default()
-            .distractors = distractors;
+    pub fn set_distractors(&mut self, card_id: &str, distractors: Vec<String>, fingerprint: u64) {
+        let aug = self.cards.entry(card_id.to_string()).or_default();
+        aug.distractors = distractors;
+        aug.distractors_fp = Some(fingerprint);
     }
 
-    pub fn note(&self, card_id: &str) -> Option<&str> {
-        self.cards.get(card_id).and_then(|aug| aug.note.as_deref())
-    }
-
-    pub fn set_note(&mut self, card_id: &str, note: String) {
-        self.cards.entry(card_id.to_string()).or_default().note = Some(note);
-    }
-
-    pub fn format(&self, card_id: &str) -> Option<&Format> {
-        self.cards.get(card_id).and_then(|aug| aug.format.as_ref())
-    }
-
-    pub fn set_format(&mut self, card_id: &str, format: Format) {
-        self.cards.entry(card_id.to_string()).or_default().format = Some(format);
-    }
-
-    pub fn variants(&self, card_id: &str) -> Option<&[String]> {
+    pub fn note(&self, card_id: &str, fingerprint: u64) -> Option<&str> {
         self.cards
             .get(card_id)
-            .map(|aug| aug.variants.as_slice())
-            .filter(|v| !v.is_empty())
+            .filter(|aug| aug.note_fp == Some(fingerprint))
+            .and_then(|aug| aug.note.as_deref())
+    }
+
+    pub fn set_note(&mut self, card_id: &str, note: String, fingerprint: u64) {
+        let aug = self.cards.entry(card_id.to_string()).or_default();
+        aug.note = Some(note);
+        aug.note_fp = Some(fingerprint);
+    }
+
+    pub fn format(&self, card_id: &str, fingerprint: u64) -> Option<&Format> {
+        self.cards
+            .get(card_id)
+            .filter(|aug| aug.format_fp == Some(fingerprint))
+            .and_then(|aug| aug.format.as_ref())
+    }
+
+    pub fn set_format(&mut self, card_id: &str, format: Format, fingerprint: u64) {
+        let aug = self.cards.entry(card_id.to_string()).or_default();
+        aug.format = Some(format);
+        aug.format_fp = Some(fingerprint);
+    }
+
+    pub fn variants(&self, card_id: &str, fingerprint: u64) -> Option<&[String]> {
+        self.cards.get(card_id).and_then(|aug| {
+            (aug.variants_fp == Some(fingerprint) && !aug.variants.is_empty())
+                .then_some(aug.variants.as_slice())
+        })
     }
 
     /// The pool is `original` at index 0 plus the cached variants; picks by
     /// `seed % pool_len`. `None` when no variants are cached.
-    pub fn pick_front(&self, card_id: &str, original: &str, seed: u64) -> Option<String> {
-        let variants = self.variants(card_id)?;
+    pub fn pick_front(
+        &self,
+        card_id: &str,
+        original: &str,
+        seed: u64,
+        fingerprint: u64,
+    ) -> Option<String> {
+        let variants = self.variants(card_id, fingerprint)?;
         let pool_len = variants.len() + 1; // + the original at index 0
         let idx = (seed % pool_len as u64) as usize;
         Some(if idx == 0 {
@@ -254,19 +279,23 @@ impl AugmentCache {
         })
     }
 
-    pub fn set_variants(&mut self, card_id: &str, variants: Vec<String>) {
-        self.cards.entry(card_id.to_string()).or_default().variants = variants;
+    pub fn set_variants(&mut self, card_id: &str, variants: Vec<String>, fingerprint: u64) {
+        let aug = self.cards.entry(card_id.to_string()).or_default();
+        aug.variants = variants;
+        aug.variants_fp = Some(fingerprint);
     }
 
-    pub fn keypoints(&self, card_id: &str) -> Option<&[String]> {
-        self.cards
-            .get(card_id)
-            .map(|aug| aug.keypoints.as_slice())
-            .filter(|k| !k.is_empty())
+    pub fn keypoints(&self, card_id: &str, fingerprint: u64) -> Option<&[String]> {
+        self.cards.get(card_id).and_then(|aug| {
+            (aug.keypoints_fp == Some(fingerprint) && !aug.keypoints.is_empty())
+                .then_some(aug.keypoints.as_slice())
+        })
     }
 
-    pub fn set_keypoints(&mut self, card_id: &str, keypoints: Vec<String>) {
-        self.cards.entry(card_id.to_string()).or_default().keypoints = keypoints;
+    pub fn set_keypoints(&mut self, card_id: &str, keypoints: Vec<String>, fingerprint: u64) {
+        let aug = self.cards.entry(card_id.to_string()).or_default();
+        aug.keypoints = keypoints;
+        aug.keypoints_fp = Some(fingerprint);
     }
 
     pub fn topologies(&self) -> &[Topology] {
@@ -383,21 +412,33 @@ impl AugmentCache {
     /// Coverage per target, scoped to `cards`: the cache file may be shared by
     /// other decks on the same store.
     pub fn summarize(&self, cards: &[Card], deck_tokens: &HashSet<String>) -> CoverageSummary {
-        let coverage = |eligible: &[&Card], covered: &dyn Fn(&str) -> bool| Coverage {
-            covered: eligible
-                .iter()
-                .filter(|c| c.id().is_some_and(|id| covered(&id)))
-                .count(),
+        let coverage = |eligible: &[&Card], covered: &dyn Fn(&Card) -> bool| Coverage {
+            covered: eligible.iter().filter(|c| covered(c)).count(),
             eligible: eligible.len(),
         };
         let all: Vec<&Card> = cards.iter().collect();
         let plain: Vec<&Card> = cards.iter().filter(|c| c.hash_lines.is_none()).collect();
         CoverageSummary {
-            choices: coverage(&all, &|id| self.distractors(id).is_some()),
-            notes: coverage(&all, &|id| self.note(id).is_some()),
-            questions: coverage(&plain, &|id| self.variants(id).is_some()),
-            keypoints: coverage(&all, &|id| self.keypoints(id).is_some()),
-            format: coverage(&plain, &|id| self.format(id).is_some()),
+            choices: coverage(&all, &|c| {
+                c.id()
+                    .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
+            }),
+            notes: coverage(&all, &|c| {
+                c.id()
+                    .is_some_and(|id| self.note(&id, c.content_fingerprint).is_some())
+            }),
+            questions: coverage(&plain, &|c| {
+                c.id()
+                    .is_some_and(|id| self.variants(&id, c.content_fingerprint).is_some())
+            }),
+            keypoints: coverage(&all, &|c| {
+                c.id()
+                    .is_some_and(|id| self.keypoints(&id, c.content_fingerprint).is_some())
+            }),
+            format: coverage(&plain, &|c| {
+                c.id()
+                    .is_some_and(|id| self.format(&id, c.content_fingerprint).is_some())
+            }),
             topologies: self
                 .topologies_for(deck_tokens)
                 .iter()
@@ -413,40 +454,67 @@ impl AugmentCache {
         &self,
         cards: &[Card],
         eligible: impl Fn(&Card) -> bool,
-        covered: impl Fn(&str) -> bool,
+        covered: impl Fn(&Card) -> bool,
     ) -> Vec<WarmItem> {
         cards
             .iter()
-            .filter(|c| eligible(c) && c.id().is_some_and(|id| !covered(&id)))
+            .filter(|c| eligible(c) && !covered(c))
             .map(WarmItem::from_card)
             .collect()
     }
 
     pub fn missing_choices(&self, cards: &[Card]) -> Vec<WarmItem> {
-        self.missing(cards, |_| true, |id| self.distractors(id).is_some())
+        self.missing(
+            cards,
+            |_| true,
+            |c| {
+                c.id()
+                    .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
+            },
+        )
     }
 
     pub fn missing_notes(&self, cards: &[Card]) -> Vec<WarmItem> {
-        self.missing(cards, |_| true, |id| self.note(id).is_some())
+        self.missing(
+            cards,
+            |_| true,
+            |c| {
+                c.id()
+                    .is_some_and(|id| self.note(&id, c.content_fingerprint).is_some())
+            },
+        )
     }
 
     pub fn missing_questions(&self, cards: &[Card]) -> Vec<WarmItem> {
         self.missing(
             cards,
             |c| c.hash_lines.is_none(),
-            |id| self.variants(id).is_some(),
+            |c| {
+                c.id()
+                    .is_some_and(|id| self.variants(&id, c.content_fingerprint).is_some())
+            },
         )
     }
 
     pub fn missing_keypoints(&self, cards: &[Card]) -> Vec<WarmItem> {
-        self.missing(cards, |_| true, |id| self.keypoints(id).is_some())
+        self.missing(
+            cards,
+            |_| true,
+            |c| {
+                c.id()
+                    .is_some_and(|id| self.keypoints(&id, c.content_fingerprint).is_some())
+            },
+        )
     }
 
     pub fn missing_format(&self, cards: &[Card]) -> Vec<WarmItem> {
         self.missing(
             cards,
             |c| c.hash_lines.is_none(),
-            |id| self.format(id).is_some(),
+            |c| {
+                c.id()
+                    .is_some_and(|id| self.format(&id, c.content_fingerprint).is_some())
+            },
         )
     }
 
@@ -498,7 +566,10 @@ impl AugmentCache {
 
     /// Never touches `card.back`, so applying a reshape never changes `card.id()`.
     pub fn apply_format(&self, card: &mut Card) {
-        let Some(fmt) = card.id().and_then(|id| self.format(&id)) else {
+        let Some(fmt) = card
+            .id()
+            .and_then(|id| self.format(&id, card.content_fingerprint))
+        else {
             return;
         };
         if let Some(front) = &fmt.front {
@@ -622,6 +693,8 @@ impl WarmItem {
 mod tests {
     use super::*;
 
+    const FP: u64 = 1;
+
     #[test]
     fn reveal_from_suggested_maps_only_flip_and_line() {
         assert_eq!(Some(Reveal::Flip), reveal_from_suggested(Mode::Flip));
@@ -642,8 +715,8 @@ mod tests {
         use crate::store::CascadeOutcome;
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
-        cache.set_distractors("tok-0", vec!["wrong x".into(), "wrong y".into()]);
-        cache.set_note("tok-0", "a note about the old hole 0".into());
+        cache.set_distractors("tok-0", vec!["wrong x".into(), "wrong y".into()], FP);
+        cache.set_note("tok-0", "a note about the old hole 0".into(), FP);
 
         let outcome = CascadeOutcome {
             remap: vec![(0, 1)],
@@ -654,11 +727,11 @@ mod tests {
 
         assert_eq!(
             Some(["wrong x".to_string(), "wrong y".to_string()].as_slice()),
-            cache.distractors("tok-1")
+            cache.distractors("tok-1", FP)
         );
-        assert_eq!(Some("a note about the old hole 0"), cache.note("tok-1"));
-        assert!(cache.distractors("tok-0").is_none());
-        assert!(cache.note("tok-0").is_none());
+        assert_eq!(Some("a note about the old hole 0"), cache.note("tok-1", FP));
+        assert!(cache.distractors("tok-0", FP).is_none());
+        assert!(cache.note("tok-0", FP).is_none());
     }
 
     #[test]
@@ -666,14 +739,14 @@ mod tests {
         use crate::store::CascadeOutcome;
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
-        cache.set_distractors("tok-0", vec!["a".into()]);
+        cache.set_distractors("tok-0", vec!["a".into()], FP);
         let outcome = CascadeOutcome {
             remap: vec![],
             orphaned: vec![0],
             fresh: vec![0],
         };
         assert!(cache.remap_holes("tok", &outcome));
-        assert!(cache.distractors("tok-0").is_none());
+        assert!(cache.distractors("tok-0", FP).is_none());
         assert!(cache.is_empty());
     }
 
@@ -683,14 +756,14 @@ mod tests {
         let path = dir.path().join("augment.json");
 
         let mut cache = AugmentCache::open(&path);
-        cache.set_distractors("c42", vec!["wrong a".into(), "wrong b".into()]);
+        cache.set_distractors("c42", vec!["wrong a".into(), "wrong b".into()], FP);
         cache.save().unwrap();
 
         let reloaded = AugmentCache::open(&path);
         assert_eq!(1, reloaded.len());
         assert_eq!(
             Some(["wrong a".to_string(), "wrong b".to_string()].as_slice()),
-            reloaded.distractors("c42")
+            reloaded.distractors("c42", FP)
         );
     }
 
@@ -698,9 +771,9 @@ mod tests {
     fn distractors_is_none_when_absent_or_empty() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
-        assert_eq!(None, cache.distractors("c1"));
-        cache.set_distractors("c1", Vec::new());
-        assert_eq!(None, cache.distractors("c1"));
+        assert_eq!(None, cache.distractors("c1", FP));
+        cache.set_distractors("c1", Vec::new(), FP);
+        assert_eq!(None, cache.distractors("c1", FP));
         assert!(cache.contains("c1"));
     }
 
@@ -733,11 +806,10 @@ mod tests {
         .unwrap();
         let cache = AugmentCache::open(&path);
         assert_eq!(2, cache.len());
-        assert_eq!(Some(["y".to_string()].as_slice()), cache.distractors("q7"));
-        assert_eq!(
-            Some(["x".to_string()].as_slice()),
-            cache.distractors("not-a-token")
-        );
+        assert!(cache.contains("q7"));
+        assert!(cache.contains("not-a-token"));
+        assert_eq!(None, cache.distractors("q7", FP));
+        assert_eq!(None, cache.distractors("not-a-token", FP));
     }
 
     #[test]
@@ -746,7 +818,8 @@ mod tests {
         let path = dir.path().join("augment.json");
         std::fs::write(&path, r#"{"cards":{"c3":{"distractors":["z"]}}}"#).unwrap();
         let cache = AugmentCache::open(&path);
-        assert_eq!(Some(["z".to_string()].as_slice()), cache.distractors("c3"));
+        assert!(cache.contains("c3"));
+        assert_eq!(None, cache.distractors("c3", FP));
     }
 
     #[test]
@@ -759,11 +832,11 @@ mod tests {
     fn set_distractors_replaces_previous() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
-        cache.set_distractors("c1", vec!["old".into()]);
-        cache.set_distractors("c1", vec!["new a".into(), "new b".into()]);
+        cache.set_distractors("c1", vec!["old".into()], FP);
+        cache.set_distractors("c1", vec!["new a".into(), "new b".into()], FP);
         assert_eq!(
             Some(["new a".to_string(), "new b".to_string()].as_slice()),
-            cache.distractors("c1")
+            cache.distractors("c1", FP)
         );
     }
 
@@ -772,11 +845,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("augment.json");
         let mut cache = AugmentCache::open(&path);
-        cache.set_note("c7", "a memorable fact".into());
+        cache.set_note("c7", "a memorable fact".into(), FP);
         cache.save().unwrap();
         let reloaded = AugmentCache::open(&path);
-        assert_eq!(Some("a memorable fact"), reloaded.note("c7"));
-        assert_eq!(None, reloaded.note("c8"));
+        assert_eq!(Some("a memorable fact"), reloaded.note("c7", FP));
+        assert_eq!(None, reloaded.note("c8", FP));
     }
 
     #[test]
@@ -784,23 +857,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("augment.json");
         let mut cache = AugmentCache::open(&path);
-        cache.set_variants("c5", vec!["one".into(), "two".into(), "three".into()]);
+        cache.set_variants("c5", vec!["one".into(), "two".into(), "three".into()], FP);
         cache.save().unwrap();
         let reloaded = AugmentCache::open(&path);
-        assert_eq!(3, reloaded.variants("c5").unwrap().len());
+        assert_eq!(3, reloaded.variants("c5", FP).unwrap().len());
         assert_eq!(
             Some("ORIG".to_string()),
-            reloaded.pick_front("c5", "ORIG", 0)
+            reloaded.pick_front("c5", "ORIG", 0, FP)
         );
         assert_eq!(
             Some("one".to_string()),
-            reloaded.pick_front("c5", "ORIG", 1)
+            reloaded.pick_front("c5", "ORIG", 1, FP)
         );
         assert_eq!(
             Some("ORIG".to_string()),
-            reloaded.pick_front("c5", "ORIG", 4)
+            reloaded.pick_front("c5", "ORIG", 4, FP)
         );
-        assert_eq!(None, reloaded.pick_front("c6", "ORIG", 0));
+        assert_eq!(None, reloaded.pick_front("c6", "ORIG", 0, FP));
     }
 
     #[test]
@@ -808,14 +881,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("augment.json");
         let mut cache = AugmentCache::open(&path);
-        cache.set_keypoints("c9", vec!["claim a".into(), "claim b".into()]);
+        cache.set_keypoints("c9", vec!["claim a".into(), "claim b".into()], FP);
         cache.save().unwrap();
         let reloaded = AugmentCache::open(&path);
         assert_eq!(
             Some(["claim a".to_string(), "claim b".to_string()].as_slice()),
-            reloaded.keypoints("c9")
+            reloaded.keypoints("c9", FP)
         );
-        assert_eq!(None, reloaded.keypoints("c10"));
+        assert_eq!(None, reloaded.keypoints("c10", FP));
     }
 
     fn tokens(ts: &[&str]) -> HashSet<String> {
@@ -1029,11 +1102,27 @@ mod tests {
             plain_card("c"),
             cloze_card("z"),
         ];
-        cache.set_distractors(&cid(&cards[0]), vec!["x".into()]);
-        cache.set_distractors(&cid(&cards[1]), vec!["y".into()]);
-        cache.set_note(&cid(&cards[0]), "n".into());
-        cache.set_variants(&cid(&cards[0]), vec!["v".into()]);
-        cache.set_keypoints(&cid(&cards[2]), vec!["k1".into(), "k2".into()]);
+        cache.set_distractors(
+            &cid(&cards[0]),
+            vec!["x".into()],
+            cards[0].content_fingerprint,
+        );
+        cache.set_distractors(
+            &cid(&cards[1]),
+            vec!["y".into()],
+            cards[1].content_fingerprint,
+        );
+        cache.set_note(&cid(&cards[0]), "n".into(), cards[0].content_fingerprint);
+        cache.set_variants(
+            &cid(&cards[0]),
+            vec!["v".into()],
+            cards[0].content_fingerprint,
+        );
+        cache.set_keypoints(
+            &cid(&cards[2]),
+            vec!["k1".into(), "k2".into()],
+            cards[2].content_fingerprint,
+        );
         cache.add_topology(topo_over("auto", "d1", &cid(&cards[0])));
 
         let s = cache.summarize(&cards, &tokens(&["d1"]));
@@ -1073,7 +1162,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
         let cards = vec![plain_card("a"), plain_card("b"), cloze_card("z")];
-        cache.set_distractors(&cid(&cards[0]), vec!["x".into()]);
+        cache.set_distractors(
+            &cid(&cards[0]),
+            vec!["x".into()],
+            cards[0].content_fingerprint,
+        );
 
         let miss: Vec<String> = cache
             .missing_choices(&cards)
@@ -1096,17 +1189,20 @@ mod tests {
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
         let mine = plain_card("a");
         let other = plain_card("other-deck-card");
-        cache.set_distractors(&cid(&mine), vec!["x".into()]);
-        cache.set_distractors(&cid(&other), vec!["y".into()]);
+        cache.set_distractors(&cid(&mine), vec!["x".into()], mine.content_fingerprint);
+        cache.set_distractors(&cid(&other), vec!["y".into()], other.content_fingerprint);
 
         let deck_ids: HashSet<String> = [cid(&mine)].into_iter().collect();
         cache.clear_distractors(&deck_ids);
 
-        assert_eq!(None, cache.distractors(&cid(&mine)));
+        assert_eq!(
+            None,
+            cache.distractors(&cid(&mine), mine.content_fingerprint)
+        );
         assert!(!cache.contains(&cid(&mine)));
         assert_eq!(
             Some(["y".to_string()].as_slice()),
-            cache.distractors(&cid(&other))
+            cache.distractors(&cid(&other), other.content_fingerprint)
         );
     }
 
@@ -1115,16 +1211,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
         let c = plain_card("a");
-        cache.set_note(&cid(&c), "n".into());
-        cache.set_distractors(&cid(&c), vec!["x".into()]);
+        cache.set_note(&cid(&c), "n".into(), c.content_fingerprint);
+        cache.set_distractors(&cid(&c), vec!["x".into()], c.content_fingerprint);
 
         let deck_ids: HashSet<String> = [cid(&c)].into_iter().collect();
         cache.clear_notes(&deck_ids);
 
-        assert_eq!(None, cache.note(&cid(&c)));
+        assert_eq!(None, cache.note(&cid(&c), c.content_fingerprint));
         assert_eq!(
             Some(["x".to_string()].as_slice()),
-            cache.distractors(&cid(&c))
+            cache.distractors(&cid(&c), c.content_fingerprint)
         );
         assert!(cache.contains(&cid(&c)));
     }
@@ -1150,10 +1246,10 @@ mod tests {
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
         let mine = plain_card("a");
         let other = plain_card("other");
-        cache.set_distractors(&cid(&mine), vec!["x".into()]);
-        cache.set_note(&cid(&mine), "n".into());
+        cache.set_distractors(&cid(&mine), vec!["x".into()], mine.content_fingerprint);
+        cache.set_note(&cid(&mine), "n".into(), mine.content_fingerprint);
         cache.add_topology(topo_over("auto", "dA", &cid(&mine)));
-        cache.set_distractors(&cid(&other), vec!["y".into()]);
+        cache.set_distractors(&cid(&other), vec!["y".into()], other.content_fingerprint);
         cache.add_topology(topo_over("auto", "dB", &cid(&other)));
 
         let deck_ids: HashSet<String> = [cid(&mine)].into_iter().collect();
@@ -1163,7 +1259,7 @@ mod tests {
         assert!(cache.topologies_for(&tokens(&["dA"])).is_empty());
         assert_eq!(
             Some(["y".to_string()].as_slice()),
-            cache.distractors(&cid(&other))
+            cache.distractors(&cid(&other), other.content_fingerprint)
         );
         assert_eq!(1, cache.topologies_for(&tokens(&["dB"])).len());
     }
@@ -1189,6 +1285,7 @@ mod tests {
                 note: None,
                 mode: Some(Mode::LineByLine),
             },
+            card.content_fingerprint,
         );
         cache.apply_format(&mut card);
         assert_eq!(card.front, "Name the parts");
@@ -1213,8 +1310,93 @@ mod tests {
                 note: None,
                 mode: Some(Mode::LineByLine),
             },
+            card.content_fingerprint,
         );
         cache.apply_format(&mut card);
         assert_eq!(card.reveal, Some(Reveal::Flip));
+    }
+
+    #[test]
+    fn a_distractor_read_with_a_changed_fingerprint_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        cache.set_distractors("c1", vec!["w1".into(), "w2".into()], 100);
+        assert_eq!(
+            Some(["w1".to_string(), "w2".to_string()].as_slice()),
+            cache.distractors("c1", 100)
+        );
+        assert_eq!(None, cache.distractors("c1", 200));
+    }
+
+    #[test]
+    fn every_target_gates_on_its_own_fingerprint() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        cache.set_note("c1", "a fact".into(), 7);
+        cache.set_variants("c1", vec!["v1".into()], 7);
+        cache.set_keypoints("c1", vec!["k1".into()], 7);
+        cache.set_format(
+            "c1",
+            Format {
+                back: vec!["reshaped".into()],
+                ..Default::default()
+            },
+            7,
+        );
+        assert!(cache.note("c1", 7).is_some());
+        assert!(cache.variants("c1", 7).is_some());
+        assert!(cache.keypoints("c1", 7).is_some());
+        assert!(cache.format("c1", 7).is_some());
+        assert_eq!(None, cache.note("c1", 8));
+        assert!(cache.variants("c1", 8).is_none());
+        assert!(cache.keypoints("c1", 8).is_none());
+        assert!(cache.format("c1", 8).is_none());
+    }
+
+    #[test]
+    fn a_legacy_entry_without_a_fingerprint_reads_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("augment.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"cards":{"c1":{"distractors":["old"]}}}"#,
+        )
+        .unwrap();
+        let cache = AugmentCache::open(&path);
+        assert_eq!(None, cache.distractors("c1", 42));
+    }
+
+    #[test]
+    fn a_stale_target_drops_out_of_coverage_and_into_the_gap_list() {
+        let deck = crate::parser::parse_str(
+            "d.md",
+            "## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n---\na\n",
+        )
+        .unwrap();
+        let card = &deck[0];
+        let id = card.id().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        cache.set_format(
+            &id,
+            Format {
+                back: vec!["reshaped".into()],
+                ..Default::default()
+            },
+            card.content_fingerprint ^ 1,
+        );
+        let summary = cache.summarize(
+            std::slice::from_ref(card),
+            &std::collections::HashSet::new(),
+        );
+        assert_eq!(
+            0, summary.format.covered,
+            "a stale reshape must not count as covered"
+        );
+        assert_eq!(
+            1,
+            cache.missing_format(std::slice::from_ref(card)).len(),
+            "it must resurface as a gap"
+        );
     }
 }

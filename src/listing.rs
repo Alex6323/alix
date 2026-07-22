@@ -613,6 +613,7 @@ mod tests {
             augment.set_distractors(
                 &card.id().unwrap(),
                 vec!["w1".into(), "w2".into(), "w3".into()],
+                card.content_fingerprint,
             );
         }
     }

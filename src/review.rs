@@ -117,7 +117,11 @@ pub fn state(
     let keypoints = if !acquire && mode == Mode::Explain {
         card.map(|c| {
             c.id()
-                .and_then(|id| augment.keypoints(&id).map(<[String]>::to_vec))
+                .and_then(|id| {
+                    augment
+                        .keypoints(&id, c.content_fingerprint)
+                        .map(<[String]>::to_vec)
+                })
                 .unwrap_or_else(|| c.back.clone())
         })
     } else {
@@ -152,7 +156,7 @@ pub fn current_question(
 ) -> Option<ChoiceQuestion> {
     let card = session.current()?;
     let id = card.id()?;
-    let ai = augment.distractors(&id);
+    let ai = augment.distractors(&id, card.content_fingerprint);
     let seed = choice::seed_for(&id, session.appearance(&id));
     if session.depth() == Depth::Recognize {
         return choice::build(card, seed, ai?);
@@ -260,6 +264,7 @@ mod tests {
             augment.set_distractors(
                 &card.id().unwrap(),
                 vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+                card.content_fingerprint,
             );
         }
     }
@@ -516,7 +521,11 @@ mod tests {
             Some(vec!["first fact".to_string(), "second fact".to_string()])
         );
 
-        augment.set_keypoints(&cards[0].id().unwrap(), vec!["one claim".to_string()]);
+        augment.set_keypoints(
+            &cards[0].id().unwrap(),
+            vec!["one claim".to_string()],
+            cards[0].content_fingerprint,
+        );
         let cached = state(&session, &store, &augment, Some(NOW));
         assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
 

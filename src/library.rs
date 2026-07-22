@@ -357,13 +357,13 @@ mod tests {
         // Augment cache beside the store: A's card entry + A's topology, plus B's.
         let cache_path = augment::augment_path_for(&store_path);
         let mut cache = AugmentCache::open(&cache_path);
-        cache.set_distractors("c1", vec!["x".into()]);
+        cache.set_distractors("c1", vec!["x".into()], 1);
         cache.add_topology(crate::augment::Topology {
             name: "auto".into(),
             deck_token: "da1".into(),
             ..Default::default()
         });
-        cache.set_distractors("cb1", vec!["y".into()]);
+        cache.set_distractors("cb1", vec!["y".into()], 1);
         cache.add_topology(crate::augment::Topology {
             name: "auto".into(),
             deck_token: "db1".into(),
@@ -383,9 +383,9 @@ mod tests {
         assert!(store.deck_mastered("b.md"));
 
         let cache = AugmentCache::open(&cache_path);
-        assert!(cache.distractors("c1").is_none());
+        assert!(cache.distractors("c1", 1).is_none());
         assert!(!cache.has_topology_for(&once("da1")));
-        assert!(cache.distractors("cb1").is_some());
+        assert!(cache.distractors("cb1", 1).is_some());
         assert!(cache.has_topology_for(&once("db1")));
     }
 

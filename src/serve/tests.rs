@@ -750,8 +750,11 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
         Some(vec!["first fact".to_string(), "second fact".to_string()])
     );
 
-    r.augment
-        .set_keypoints(&cards[0].id().unwrap(), vec!["one claim".to_string()]);
+    r.augment.set_keypoints(
+        &cards[0].id().unwrap(),
+        vec!["one claim".to_string()],
+        cards[0].content_fingerprint,
+    );
     let cached = review_state(Some(&r), &store);
     assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
 }
@@ -765,12 +768,14 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     assert_eq!(vec!["cat".to_string()], cards[0].back);
     let id = cards[0].id().unwrap();
+    let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
         vec!["dog".to_string(), "fish".to_string(), "bird".to_string()],
+        fingerprint,
     );
 
     let dto = review_state(Some(&r), &store);
@@ -792,6 +797,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
+    let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
@@ -802,6 +808,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
             "third\nsecond\nfirst".to_string(),
             "first\nthird\nsecond".to_string(),
         ],
+        fingerprint,
     );
 
     let dto = review_state(Some(&r), &store);
@@ -847,6 +854,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
+    let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
@@ -857,6 +865,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
             "wrong two".to_string(),
             "wrong three".to_string(),
         ],
+        fingerprint,
     );
 
     let first = review_state(Some(&r), &store)
@@ -1271,8 +1280,16 @@ fn augmenting_reports_coverage_and_removal_persists() {
     let cards = vec![aug_card("Q1", "a"), aug_card("Q2", "b")];
 
     let mut seed = AugmentCache::open(&cache_path);
-    seed.set_distractors(&cards[0].id().unwrap(), vec!["x".into()]);
-    seed.set_note(&cards[1].id().unwrap(), "n".into());
+    seed.set_distractors(
+        &cards[0].id().unwrap(),
+        vec!["x".into()],
+        cards[0].content_fingerprint,
+    );
+    seed.set_note(
+        &cards[1].id().unwrap(),
+        "n".into(),
+        cards[1].content_fingerprint,
+    );
     seed.save().unwrap();
 
     let mut aug = Augmenting::open(
@@ -1301,8 +1318,14 @@ fn augmenting_reports_coverage_and_removal_persists() {
             .covered
     );
     let reloaded = AugmentCache::open(&cache_path);
-    assert_eq!(None, reloaded.distractors(&cards[0].id().unwrap()));
-    assert_eq!(Some("n"), reloaded.note(&cards[1].id().unwrap()));
+    assert_eq!(
+        None,
+        reloaded.distractors(&cards[0].id().unwrap(), cards[0].content_fingerprint)
+    );
+    assert_eq!(
+        Some("n"),
+        reloaded.note(&cards[1].id().unwrap(), cards[1].content_fingerprint)
+    );
 
     assert!(!aug.remove("bogus", None));
 }
@@ -1314,7 +1337,11 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     let cards = vec![aug_card("Q", "a")];
 
     let mut seed = AugmentCache::open(&cache_path);
-    seed.set_distractors(&cards[0].id().unwrap(), vec!["x".into()]);
+    seed.set_distractors(
+        &cards[0].id().unwrap(),
+        vec!["x".into()],
+        cards[0].content_fingerprint,
+    );
     seed.save().unwrap();
 
     let mut aug = Augmenting::open("d.md".into(), cards, vec![], cache_path, None);

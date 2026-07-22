@@ -32,6 +32,11 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
     )?;
     let cache_path = augment::augment_path_for(store.path());
     let mut cache = AugmentCache::open(&cache_path);
+    let fp_by_id: std::collections::HashMap<String, u64> = deck
+        .cards
+        .iter()
+        .filter_map(|card| card.id().map(|id| (id, card.content_fingerprint)))
+        .collect();
 
     let what = match args.target {
         AugmentTarget::Choices => "multiple-choice distractors",
@@ -63,7 +68,9 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             let map =
                 augment_ai::generate(&items, config.ai.distractor_count, guidance, &ask_cfg, None)?;
             for (id, distractors) in &map {
-                cache.set_distractors(id, distractors.clone());
+                if let Some(&fingerprint) = fp_by_id.get(id) {
+                    cache.set_distractors(id, distractors.clone(), fingerprint);
+                }
             }
             (map.len(), total, "distractors")
         }
@@ -75,7 +82,9 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             let total = items.len();
             let map = augment_ai::generate_notes(&items, guidance, &ask_cfg, None)?;
             for (id, note) in &map {
-                cache.set_note(id, note.clone());
+                if let Some(&fingerprint) = fp_by_id.get(id) {
+                    cache.set_note(id, note.clone(), fingerprint);
+                }
             }
             (map.len(), total, "notes")
         }
@@ -101,7 +110,9 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 None,
             )?;
             for (id, variants) in &map {
-                cache.set_variants(id, variants.clone());
+                if let Some(&fingerprint) = fp_by_id.get(id) {
+                    cache.set_variants(id, variants.clone(), fingerprint);
+                }
             }
             (map.len(), total, "question variants")
         }
@@ -119,7 +130,9 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 None,
             )?;
             for (id, keypoints) in &map {
-                cache.set_keypoints(id, keypoints.clone());
+                if let Some(&fingerprint) = fp_by_id.get(id) {
+                    cache.set_keypoints(id, keypoints.clone(), fingerprint);
+                }
             }
             (map.len(), total, "key points")
         }
@@ -181,8 +194,14 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             }
             let total = items.len();
             let map = augment_ai::generate_format(&items, guidance, &ask_cfg, None)?;
+            let format_fp_by_id: std::collections::HashMap<String, u64> = plain
+                .iter()
+                .filter_map(|card| card.id().map(|id| (id, card.content_fingerprint)))
+                .collect();
             for (id, fmt) in &map {
-                cache.set_format(id, fmt.clone());
+                if let Some(&fingerprint) = format_fp_by_id.get(id) {
+                    cache.set_format(id, fmt.clone(), fingerprint);
+                }
             }
             (map.len(), total, "card formats")
         }

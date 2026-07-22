@@ -901,8 +901,13 @@ mod tests {
         let store_path = dir.path().join("progress.json");
         let cache_path = crate::augment::augment_path_for(&store_path);
         let mut cache = crate::augment::AugmentCache::open(&cache_path);
+        let fp_by_id: HashMap<String, u64> = deck
+            .cards
+            .iter()
+            .filter_map(|card| card.id().map(|id| (id, card.content_fingerprint)))
+            .collect();
         for (id, distractors) in &map {
-            cache.set_distractors(id, distractors.clone());
+            cache.set_distractors(id, distractors.clone(), fp_by_id[id]);
         }
         cache.save().unwrap();
 

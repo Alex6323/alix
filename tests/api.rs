@@ -371,6 +371,7 @@ fn spawn_full_server_fixture(
             aug.set_distractors(
                 &card.id().unwrap(),
                 vec!["wrong a".into(), "wrong b".into(), "wrong c".into()],
+                card.content_fingerprint,
             );
         }
         seed.save().unwrap();
@@ -1524,6 +1525,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
                 cache.set_distractors(
                     &c.id().unwrap(),
                     vec!["IPC".into(), "RPC".into(), "a REST API".into()],
+                    c.content_fingerprint,
                 );
             }
             cache.save().unwrap();

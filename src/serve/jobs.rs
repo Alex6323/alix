@@ -492,10 +492,14 @@ impl Reviewing {
     }
 
     pub(super) fn rotate_variant(&mut self) {
-        let Some(id) = self.session.current().and_then(|c| c.id()) else {
+        let Some((id, fingerprint)) = self
+            .session
+            .current()
+            .and_then(|c| c.id().map(|id| (id, c.content_fingerprint)))
+        else {
             return;
         };
-        if self.augment.variants(&id).is_none() {
+        if self.augment.variants(&id, fingerprint).is_none() {
             return;
         }
         if !self.original_fronts.contains_key(&id)
@@ -506,7 +510,7 @@ impl Reviewing {
         let original = self.original_fronts.get(&id).cloned().unwrap_or_default();
         let seed = self.present_seq;
         self.present_seq = self.present_seq.wrapping_add(1);
-        if let Some(chosen) = self.augment.pick_front(&id, &original, seed)
+        if let Some(chosen) = self.augment.pick_front(&id, &original, seed, fingerprint)
             && let Some(card) = self.session.current_mut()
         {
             card.front = chosen;
@@ -977,31 +981,46 @@ impl Augmenting {
 
     // writes to the cache; does not save
     fn apply(&mut self, outcome: augment_ai::Outcome) {
+        let fp_by_id: HashMap<String, u64> = self
+            .cards
+            .iter()
+            .filter_map(|c| c.id().map(|id| (id, c.content_fingerprint)))
+            .collect();
         match outcome {
             augment_ai::Outcome::Choices(map) => {
                 for (id, v) in map {
-                    self.cache.set_distractors(&id, v);
+                    if let Some(&fingerprint) = fp_by_id.get(&id) {
+                        self.cache.set_distractors(&id, v, fingerprint);
+                    }
                 }
             }
             augment_ai::Outcome::Notes(map) => {
                 for (id, v) in map {
-                    self.cache.set_note(&id, v);
+                    if let Some(&fingerprint) = fp_by_id.get(&id) {
+                        self.cache.set_note(&id, v, fingerprint);
+                    }
                 }
             }
             augment_ai::Outcome::Questions(map) => {
                 for (id, v) in map {
-                    self.cache.set_variants(&id, v);
+                    if let Some(&fingerprint) = fp_by_id.get(&id) {
+                        self.cache.set_variants(&id, v, fingerprint);
+                    }
                 }
             }
             augment_ai::Outcome::Keypoints(map) => {
                 for (id, v) in map {
-                    self.cache.set_keypoints(&id, v);
+                    if let Some(&fingerprint) = fp_by_id.get(&id) {
+                        self.cache.set_keypoints(&id, v, fingerprint);
+                    }
                 }
             }
             augment_ai::Outcome::Topology(t) => self.cache.add_topology(t),
             augment_ai::Outcome::Format(map) => {
                 for (id, v) in map {
-                    self.cache.set_format(&id, v);
+                    if let Some(&fingerprint) = fp_by_id.get(&id) {
+                        self.cache.set_format(&id, v, fingerprint);
+                    }
                 }
             }
             // nothing to cache: the file on disk is the result

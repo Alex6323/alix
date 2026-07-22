@@ -82,7 +82,7 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
 
 pub fn card_recognizable(card: &Card, cache: &AugmentCache) -> bool {
     card.id()
-        .and_then(|id| cache.distractors(&id))
+        .and_then(|id| cache.distractors(&id, card.content_fingerprint))
         .is_some_and(|ai| crate::choice::can_build(card, ai))
 }
 
@@ -122,6 +122,7 @@ mod tests {
         cache.set_distractors(
             &covered.id().unwrap(),
             vec!["x".into(), "y".into(), "z".into()],
+            covered.content_fingerprint,
         );
         let cards = vec![covered, uncovered];
         assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
@@ -132,7 +133,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
         let covered = card("a");
-        cache.set_distractors(&covered.id().unwrap(), vec!["x".into(), "y".into()]);
+        cache.set_distractors(
+            &covered.id().unwrap(),
+            vec!["x".into(), "y".into()],
+            covered.content_fingerprint,
+        );
         let cards = vec![covered];
         assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }
