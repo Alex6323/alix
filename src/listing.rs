@@ -1113,7 +1113,10 @@ mod tests {
             false,
             ReviewConfig::default(),
         );
-        assert!(status.reviewable, "a fresh unstamped deck must be drillable");
+        assert!(
+            status.reviewable,
+            "a fresh unstamped deck must be drillable"
+        );
     }
 
     #[test]

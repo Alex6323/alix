@@ -1148,9 +1148,16 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
     );
     // Both fixture cards are stamped but unreviewed (a fresh store), so each
     // reads as the neutral no-data sentinel (-1.0): one heatmap cell per card.
-    assert_eq!(serde_json::json!([-1.0, -1.0]), body["heatmap"], "body: {body}");
+    assert_eq!(
+        serde_json::json!([-1.0, -1.0]),
+        body["heatmap"],
+        "body: {body}"
+    );
     assert!(body.get("deck_due").is_none(), "deck_due removed: {body}");
-    assert!(body["preamble"].is_null(), "no preamble in the fixture: {body}");
+    assert!(
+        body["preamble"].is_null(),
+        "no preamble in the fixture: {body}"
+    );
 }
 
 #[test]
@@ -1167,7 +1174,10 @@ fn post_api_deck_drawer_with_an_unknown_deck_still_returns_the_empty_default_dto
         body["topologies"].as_array().unwrap().is_empty(),
         "body: {body}"
     );
-    assert!(body["heatmap"].as_array().unwrap().is_empty(), "body: {body}");
+    assert!(
+        body["heatmap"].as_array().unwrap().is_empty(),
+        "body: {body}"
+    );
     assert!(body["preamble"].is_null(), "body: {body}");
 }
 

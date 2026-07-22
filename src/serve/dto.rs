@@ -965,11 +965,7 @@ pub(super) fn state_name(s: DeckState) -> &'static str {
     }
 }
 
-pub(super) fn deck_drawer_dto(
-    augment: &AugmentCache,
-    store: &Store,
-    deck: &Deck,
-) -> DeckDrawerDto {
+pub(super) fn deck_drawer_dto(augment: &AugmentCache, store: &Store, deck: &Deck) -> DeckDrawerDto {
     let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
     let now = now_ms();
     // A flat per-card heatmap over the whole deck, in file order; a topology (if
