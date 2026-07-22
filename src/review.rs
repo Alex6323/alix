@@ -164,8 +164,11 @@ pub fn current_question(
         let ai = augment.distractors(&id, card.content_fingerprint)?;
         return choice::build(card, seed, ai);
     }
-    let ai = augment.distractors(&id, card.content_fingerprint);
     if store.get(&id).is_none() {
+        if !card.authored_distractors.is_empty() {
+            return choice::build_authored(card, seed, &card.authored_distractors);
+        }
+        let ai = augment.distractors(&id, card.content_fingerprint);
         return choice::recognition_question(card, seed, ai);
     }
     None
@@ -493,6 +496,21 @@ mod tests {
                 .iter()
                 .all(|option| !option.starts_with('w'))
         );
+    }
+
+    #[test]
+    fn authored_distractors_drive_the_never_seen_acquire_attempt() {
+        let (store, mut augment, _dir) = fixtures();
+        let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+        // AI distractors exist in the cache but must be ignored for an authored card.
+        arm(&mut augment, &cards);
+        // Never seen (no `seen(...)`) and depth is Recall, not Recognize: this is the
+        // first-meeting acquire attempt, which must still use the authored options.
+        let session = session_at(cards, &store, Depth::Recall, NOW);
+        let question =
+            current_question(&session, &store, &augment).expect("acquire MC from authored options");
+        assert_eq!(3, question.options.len(), "authored options, not padded to the AI four");
+        assert_eq!("Paris", question.options[question.correct]);
     }
 
     #[test]
