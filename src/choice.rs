@@ -58,6 +58,31 @@ pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<Choice
     Some(ChoiceQuestion { options, correct })
 }
 
+pub fn build_authored(
+    card: &Card,
+    seed: u64,
+    authored_distractors: &[String],
+) -> Option<ChoiceQuestion> {
+    let correct_text = answer_text(card);
+    let mut seen = HashSet::new();
+    seen.insert(correct_text.clone());
+    let mut options = Vec::new();
+    for distractor in authored_distractors {
+        let trimmed = distractor.trim();
+        if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
+            options.push(trimmed.to_string());
+        }
+    }
+    if options.is_empty() {
+        return None;
+    }
+    options.push(correct_text.clone());
+    let mut rng = Rng::new(seed);
+    shuffle(&mut options, &mut rng);
+    let correct = options.iter().position(|option| *option == correct_text)?;
+    Some(ChoiceQuestion { options, correct })
+}
+
 pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
     distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
 }
@@ -129,6 +154,22 @@ mod tests {
         assert_eq!(NUM_OPTIONS, q.options.len());
         assert_eq!(1, q.options.iter().filter(|o| *o == "alpha").count());
         assert_eq!("alpha", q.options[q.correct]);
+    }
+
+    #[test]
+    fn authored_build_uses_all_options_no_padding() {
+        let mut c = card(1, "Paris");
+        c.authored_distractors = vec!["London".into(), "Berlin".into()];
+        let q = build_authored(&c, 1, &c.authored_distractors).unwrap();
+        assert_eq!(3, q.options.len());
+        assert_eq!("Paris", q.options[q.correct]);
+        assert_eq!(1, q.options.iter().filter(|option| *option == "Paris").count());
+    }
+
+    #[test]
+    fn authored_build_needs_at_least_one_distractor() {
+        let c = card(1, "Paris");
+        assert!(build_authored(&c, 1, &[]).is_none());
     }
 
     #[test]

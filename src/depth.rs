@@ -81,6 +81,9 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
 }
 
 pub fn card_recognizable(card: &Card, cache: &AugmentCache) -> bool {
+    if !card.authored_distractors.is_empty() {
+        return true;
+    }
     card.id()
         .and_then(|id| cache.distractors(&id, card.content_fingerprint))
         .is_some_and(|ai| crate::choice::can_build(card, ai))
@@ -148,6 +151,15 @@ mod tests {
         let cache = AugmentCache::open(dir.path().join("augment.json"));
         let cards = vec![card("a"), card("b")];
         assert_eq!(Depth::Recall, default_depth(&cards, &cache));
+    }
+
+    #[test]
+    fn default_depth_is_recognize_for_authored_distractors_without_a_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut authored = card("a");
+        authored.authored_distractors = vec!["b".into()];
+        assert_eq!(Depth::Recognize, default_depth(&[authored], &cache));
     }
 
     #[test]

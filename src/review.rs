@@ -156,11 +156,15 @@ pub fn current_question(
 ) -> Option<ChoiceQuestion> {
     let card = session.current()?;
     let id = card.id()?;
-    let ai = augment.distractors(&id, card.content_fingerprint);
     let seed = choice::seed_for(&id, session.appearance(&id));
     if session.depth() == Depth::Recognize {
-        return choice::build(card, seed, ai?);
+        if !card.authored_distractors.is_empty() {
+            return choice::build_authored(card, seed, &card.authored_distractors);
+        }
+        let ai = augment.distractors(&id, card.content_fingerprint)?;
+        return choice::build(card, seed, ai);
     }
+    let ai = augment.distractors(&id, card.content_fingerprint);
     if store.get(&id).is_none() {
         return choice::recognition_question(card, seed, ai);
     }
@@ -471,6 +475,19 @@ mod tests {
         let s = state(&recognize, &store, &augment, Some(NOW));
         assert_eq!(s.choices, None, "no siblings, no pick");
         assert_eq!(s.mode, Mode::Flip, "a choiceless Recognize card is a flip");
+    }
+
+    #[test]
+    fn authored_distractors_replace_ai_choices_at_recognize() {
+        let (mut store, mut augment, _dir) = fixtures();
+        let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+        seen(&mut store, &cards);
+        arm(&mut augment, &cards);
+        let session = session_at(cards, &store, Depth::Recognize, NOW);
+        let question = current_question(&session, &store, &augment).expect("an authored pick");
+        assert_eq!(3, question.options.len());
+        assert_eq!("Paris", question.options[question.correct]);
+        assert!(question.options.iter().all(|option| !option.starts_with('w')));
     }
 
     #[test]
