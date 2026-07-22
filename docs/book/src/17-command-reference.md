@@ -17,7 +17,7 @@ deck read-only, sitting the AI exam, and walking a [trace](13-trace-decks.md)
 are all reached from the web picker rather than as their own commands (see
 [the web app](15-the-web-app.md)).
 
-The launcher's flags, its only ones: `--lan` / `--port` / `--token`
+The single-instance launcher's flags: `--lan` / `--port` / `--token`
 ([the web app](15-the-web-app.md)), `--new N` / `--limit N` (session pacing,
 overriding the `[review]` config), and `--config <path>`. The session depth is
 picked in the picker's split Learn ▾ menu, an order or region in its focus
@@ -25,6 +25,29 @@ drawer ([scheduling](05-scheduling.md)), and the card order is the deck's
 `order:` directive.
 How each card is checked comes from its `reveal:` combined with the
 session's depth ([reveal & session depths](04-review-modes.md)), not a flag.
+
+## Launch profiles
+
+Launch profiles make it easy to run one named alix instance per person in a
+household, with its own decks folder, port, and adult or kids frontend. Each
+profile is a normal config file under the platform config directory's
+`profiles/` folder.
+
+```sh
+alix profile add timmy --decks ~/decks-timmy --port 7002 --kids
+alix profile list
+alix profile timmy
+alix profile default timmy
+alix --launch-all
+alix profile remove timmy
+```
+
+`alix profile <name>` launches that profile on the LAN and reuses the stable
+token generated when it was added, so a phone can bookmark the printed URL.
+`alix profile default` shows the current default, names one when given a
+profile, and clears it with `--clear`; bare `alix` launches that default.
+`alix --launch-all` starts every profile in the foreground on its configured
+port. Ctrl-C or closing the terminal stops them together.
 
 ## Progress
 

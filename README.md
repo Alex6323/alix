@@ -75,6 +75,7 @@ card). Full format and every directive:
 | Command | What it does |
 |---|---|
 | `alix` | Open the web app to pick a deck or workspace |
+| `alix profile` | Define and launch a named instance per person (decks, port, kids/adult) |
 | `alix generate <source>` | Draft a deck, a trace (`--trace`), or a whole workspace |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix workspace init <dir>` | Scaffold an empty workspace to grow into |
