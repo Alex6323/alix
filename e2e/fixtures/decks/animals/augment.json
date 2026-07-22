@@ -6,14 +6,16 @@
         "African elephant",
         "Ostrich",
         "Moose"
-      ]
+      ],
+      "distractors_fp": 7025184473304531062
     },
     "wild2": {
       "distractors": [
         "Pronghorn antelope",
         "Lion",
         "Greyhound"
-      ]
+      ],
+      "distractors_fp": 15102136998614189736
     }
   }
 }

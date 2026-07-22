@@ -122,6 +122,8 @@ test("tapping an option on a never-seen card records the pick and offers only th
   // Exactly one option is ever marked correct, regardless of what was tapped
   // (the response body names it — see ChooseFeedbackDto.correct).
   await expect(page.locator(".opt-correct")).toHaveCount(1);
+  await expect(page.locator(".rev-why .checklist-row")).toHaveCount(2);
+  await expect(page.locator(".rev-why .checklist-box")).toHaveText(["☑", "☐"]);
 
   // Bug #2's shape, pinned directly: a never-seen card is *attempted* (the
   // pick above), never skipped — but it's still ungraded on a first meeting.

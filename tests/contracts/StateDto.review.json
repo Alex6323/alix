@@ -87,6 +87,33 @@
         "lines": [
           "let s = String::new();"
         ]
+      },
+      {
+        "items": [
+          {
+            "checked": true,
+            "runs": [
+              {
+                "text": "Own the "
+              },
+              {
+                "bold": true,
+                "text": "value"
+              }
+            ],
+            "text": "Own the value"
+          },
+          {
+            "checked": false,
+            "runs": [
+              {
+                "text": "Borrow forever"
+              }
+            ],
+            "text": "Borrow forever"
+          }
+        ],
+        "kind": "checklist"
       }
     ],
     "reshaped": true

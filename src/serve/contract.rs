@@ -1,7 +1,10 @@
 use serde_json::json;
 
 use super::*;
-use crate::{answer::TypedResult, render::NoteUnit};
+use crate::{
+    answer::TypedResult,
+    render::{ChecklistItem, NoteUnit},
+};
 
 fn pin<T: serde::Serialize>(anchor: &str, dto: &T, expected: serde_json::Value) {
     let actual = serde_json::to_value(dto).unwrap();
@@ -91,6 +94,20 @@ fn statedto_review_phase_wire_shape() {
                 NoteUnit::Code {
                     lines: vec!["let s = String::new();".to_string()],
                 },
+                NoteUnit::Checklist {
+                    items: vec![
+                        ChecklistItem {
+                            checked: true,
+                            text: "Own the value".to_string(),
+                            runs: crate::inline::parse_inline("Own the **value**"),
+                        },
+                        ChecklistItem {
+                            checked: false,
+                            text: "Borrow forever".to_string(),
+                            runs: crate::inline::parse_inline("Borrow forever"),
+                        },
+                    ],
+                },
             ],
             images: vec![ImageDto {
                 src: "/img/0123456789abcdef".to_string(),
@@ -162,7 +179,22 @@ fn statedto_review_phase_wire_shape() {
                         "text": "Ownership frees memory deterministically.",
                         "runs": [{"text": "Ownership frees memory deterministically."}]
                     },
-                    {"kind": "code", "lines": ["let s = String::new();"]}
+                    {"kind": "code", "lines": ["let s = String::new();"]},
+                    {
+                        "kind": "checklist",
+                        "items": [
+                            {
+                                "checked": true,
+                                "text": "Own the value",
+                                "runs": [{"text": "Own the "}, {"text": "value", "bold": true}]
+                            },
+                            {
+                                "checked": false,
+                                "text": "Borrow forever",
+                                "runs": [{"text": "Borrow forever"}]
+                            }
+                        ]
+                    }
                 ],
                 "images": [
                     {"src": "/img/0123456789abcdef", "alt": "a heap-allocated String"}

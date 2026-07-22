@@ -59,6 +59,8 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
     page.waitForResponse((res) => res.url().includes("/api/choose")),
     page.getByRole("button", { name: /Giraffe/ }).click(),
   ]);
+  await expect(page.locator(".note .checklist-row")).toHaveCount(2);
+  await expect(page.locator(".note .checklist-box")).toHaveText(["☑", "☐"]);
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/acquire")),
     page.getByRole("button", { name: "Seen" }).click(),

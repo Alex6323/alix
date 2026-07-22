@@ -552,9 +552,12 @@ clients render the runs in order for inline formatting.
 
 ### NoteUnitDto *(tagged union — its `kind` is unrelated to StateDto's)*
 
-`{"kind":"sentence", "text": string, "runs": [InlineRun]}` or
-`{"kind":"code", "lines": [string]}`. Sentence `text` remains the authored
-text; `runs` is its display projection.
+`{"kind":"sentence", "text": string, "runs": [InlineRun]}`,
+`{"kind":"code", "lines": [string]}`, or
+`{"kind":"checklist", "items": [ChecklistItemDto]}`. Sentence `text` remains
+the authored text; `runs` is its display projection. `ChecklistItemDto` is
+`{checked: bool, text: string, runs: [InlineRun]}`; `text` is the content
+projection and `runs` preserves inline formatting for display.
 
 ### ExcerptDto / LineDto
 

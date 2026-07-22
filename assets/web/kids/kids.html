@@ -348,6 +348,9 @@ body {
   margin: 8px 0; padding: 10px 12px; border-radius: 10px; overflow-x: auto;
   background: rgba(58, 42, 30, 0.06); font: 14px/1.45 ui-monospace, monospace; color: #5a4a3a;
 }
+.rev-why-text .checklist { display: grid; gap: 5px; margin: 8px 0; }
+.rev-why-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+.rev-why-text .checklist-box { flex: none; font-family: ui-monospace, monospace; }
 
 /* A smaller Alix face for the reveal row (the standard cell is 64px). */
 .mascot.mascot-sm { width: 48px; height: 48px; box-shadow: 0 6px 14px rgba(255, 138, 61, 0.28); }
@@ -674,6 +677,29 @@ function el(tag, cls, text) {
   if (cls) n.className = cls;
   if (text != null) n.textContent = text;
   return n;
+}
+
+function appendRuns(parent, runs) {
+  for (const run of runs || []) {
+    let node = document.createTextNode(run.text);
+    if (run.code) { const code = document.createElement("code"); code.appendChild(node); node = code; }
+    if (run.italic) { const italic = document.createElement("em"); italic.appendChild(node); node = italic; }
+    if (run.bold) { const bold = document.createElement("strong"); bold.appendChild(node); node = bold; }
+    parent.appendChild(node);
+  }
+}
+
+function appendChecklist(parent, items) {
+  const checklist = el("div", "checklist");
+  for (const item of items || []) {
+    const row = el("div", "checklist-row");
+    row.appendChild(el("span", "checklist-box", item.checked ? "☑" : "☐"));
+    const text = el("span", "checklist-text");
+    if (item.runs) appendRuns(text, item.runs); else text.textContent = item.text || "";
+    row.appendChild(text);
+    checklist.appendChild(row);
+  }
+  parent.appendChild(checklist);
 }
 
 // The CSS-drawn Alix face. `extra` adds a modifier class (e.g. "mascot-sm" for
@@ -1055,6 +1081,7 @@ function renderWhy(parent, card) {
       pre.appendChild(el("code", null, (u.lines || []).join("\n")));
       txt.appendChild(pre);
     }
+    else if (u.kind === "checklist") appendChecklist(txt, u.items);
   }
   row.appendChild(txt);
   parent.appendChild(row);

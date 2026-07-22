@@ -15,6 +15,31 @@ pub enum NoteUnit {
         runs: Vec<crate::inline::InlineRun>,
     },
     Code { lines: Vec<String> },
+    Checklist { items: Vec<ChecklistItem> },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChecklistItem {
+    pub checked: bool,
+    pub text: String,
+    pub runs: Vec<crate::inline::InlineRun>,
+}
+
+pub fn checklist_items(lines: &[&str]) -> Option<Vec<ChecklistItem>> {
+    let mut items = Vec::new();
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (checked, raw) = crate::parser::checklist::parse_line(line)?;
+        let raw = raw.trim();
+        items.push(ChecklistItem {
+            checked,
+            text: crate::inline::strip_inline(raw),
+            runs: crate::inline::parse_inline(raw),
+        });
+    }
+    (!items.is_empty()).then_some(items)
 }
 
 pub fn note_units(card: &Card) -> Vec<NoteUnit> {
@@ -26,6 +51,7 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
     let mut in_code = false;
     let mut code: Vec<String> = Vec::new();
     let mut prose = String::new();
+    let mut checklist = Vec::new();
 
     for logical in note.lines() {
         if logical.trim_start().starts_with("```") {
@@ -37,6 +63,7 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
                 }
                 in_code = false;
             } else {
+                flush_checklist(&mut checklist, &mut units);
                 flush_prose(&mut prose, &mut units);
                 in_code = true;
                 code.clear();
@@ -48,20 +75,37 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
             continue;
         }
         let trimmed = logical.trim();
-        if !trimmed.is_empty() {
-            if !prose.is_empty() {
-                prose.push(' ');
-            }
-            prose.push_str(trimmed);
+        if trimmed.is_empty() {
+            flush_checklist(&mut checklist, &mut units);
+            continue;
         }
+        if let Some(mut items) = checklist_items(&[logical]) {
+            flush_prose(&mut prose, &mut units);
+            checklist.append(&mut items);
+            continue;
+        }
+        flush_checklist(&mut checklist, &mut units);
+        if !prose.is_empty() {
+            prose.push(' ');
+        }
+        prose.push_str(trimmed);
     }
 
+    flush_checklist(&mut checklist, &mut units);
     flush_prose(&mut prose, &mut units);
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
         units.push(NoteUnit::Code { lines: code });
     }
     units
+}
+
+fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>) {
+    if !checklist.is_empty() {
+        units.push(NoteUnit::Checklist {
+            items: std::mem::take(checklist),
+        });
+    }
 }
 
 fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>) {
@@ -185,6 +229,34 @@ mod tests {
     }
 
     #[test]
+    fn a_task_list_note_becomes_a_checklist_unit() {
+        let units = note_units(&card_with_note("Recall:\n- [x] do this\n- [ ] not that"));
+        assert_eq!(
+            units,
+            vec![
+                NoteUnit::Sentence {
+                    text: "Recall:".into(),
+                    runs: crate::inline::parse_inline("Recall:"),
+                },
+                NoteUnit::Checklist {
+                    items: vec![
+                        ChecklistItem {
+                            checked: true,
+                            text: "do this".into(),
+                            runs: crate::inline::parse_inline("do this"),
+                        },
+                        ChecklistItem {
+                            checked: false,
+                            text: "not that".into(),
+                            runs: crate::inline::parse_inline("not that"),
+                        },
+                    ],
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn code_block_is_verbatim() {
         let note = "Intro here.\n```\nfn main() {\n    let x = 1;\n}\n```";
         let units = note_units(&card_with_note(note));
@@ -244,11 +316,23 @@ mod tests {
             NoteUnit::Code {
                 lines: vec!["let s;".into()],
             },
+            NoteUnit::Checklist {
+                items: vec![ChecklistItem {
+                    checked: true,
+                    text: "Own it".into(),
+                    runs: crate::inline::parse_inline("**Own** it"),
+                }],
+            },
         ];
         assert_eq!(
             serde_json::json!([
                 {"kind": "sentence", "text": "One owner.", "runs": [{"text": "One owner."}]},
                 {"kind": "code", "lines": ["let s;"]},
+                {"kind": "checklist", "items": [{
+                    "checked": true,
+                    "text": "Own it",
+                    "runs": [{"text": "Own", "bold": true}, {"text": " it"}]
+                }]},
             ]),
             serde_json::to_value(&units).unwrap()
         );

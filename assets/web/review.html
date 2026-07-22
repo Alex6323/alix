@@ -321,6 +321,9 @@
   }
   .note p { margin: 0 0 10px; } .note p:last-child { margin-bottom: 0; }
   .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: var(--note-code); }
+  .note .checklist { display: grid; gap: 6px; margin: 8px 0; }
+  .note .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+  .note .checklist-box { flex: none; font-family: var(--mono); }
 
   /* multiple-choice options */
   .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: min(96vw, 1040px); margin: 0 auto; }
@@ -1122,6 +1125,18 @@ function appendRuns(parent, runs) {
     if (r.bold)   { const b = document.createElement("strong"); b.appendChild(node); node = b; }
     parent.appendChild(node);
   }
+}
+function appendChecklist(parent, items) {
+  const checklist = el("div", "checklist");
+  for (const item of items || []) {
+    const row = el("div", "checklist-row");
+    row.appendChild(el("span", "checklist-box", item.checked ? "☑" : "☐"));
+    const text = el("span", "checklist-text");
+    if (item.runs) appendRuns(text, item.runs); else text.textContent = item.text || "";
+    row.appendChild(text);
+    checklist.appendChild(row);
+  }
+  parent.appendChild(checklist);
 }
 // The front can carry newlines: a reversed dual-direction card's front is the
 // original answer's lines joined with "\n" (Card::reversed, src/card.rs). Split
@@ -3701,6 +3716,7 @@ function renderNote(parent, units) {
       pre.appendChild(el("code", null, u.lines.join("\n")));
       note.appendChild(pre);
     }
+    else if (u.kind === "checklist") appendChecklist(note, u.items);
   }
   parent.appendChild(note);
 }
