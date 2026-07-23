@@ -305,6 +305,20 @@ body {
 .rev-prompt .checklist-box { flex: none; font-family: ui-monospace, monospace; }
 .rev-prompt pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: #fff3e6; border-radius: 12px; font: 16px/1.45 ui-monospace, monospace; }
 .rev-context { font-weight: 600; font-size: 19px; line-height: 1.4; color: var(--muted); margin: 4px 0; }
+.math-run { color: inherit; background: none; }
+.math-run[role="img"] { outline: none; }
+.math-inline { display: inline-flex; align-items: baseline; max-width: 100%; line-height: 1; vertical-align: -0.16em; }
+.math-inline svg { display: inline-block; width: auto; height: 1.12em; max-width: 100%; overflow: visible; }
+.math-display { display: flex; justify-content: center; width: 100%; max-width: 100%; margin: 0.35em auto; overflow: hidden; }
+.math-display svg { display: block; width: auto; height: auto; max-width: 100%; }
+.math-run svg :where([fill]:not([fill="none"])) { fill: currentColor; }
+.math-run svg :where([stroke]:not([stroke="none"])) { stroke: currentColor; }
+.math-error { display: inline-flex; align-items: baseline; gap: 0.5em; max-width: 100%; color: #d9544a; }
+.math-error.math-display { justify-content: center; }
+.math-error-source { overflow-wrap: anywhere; font-family: ui-monospace, monospace; color: inherit; }
+.math-error-label { font: 0.7em/1.2 'Baloo 2', system-ui, sans-serif; color: var(--muted); white-space: nowrap; }
+.rev-context .hole { color: var(--accent); font-weight: 800; }
+.rev-context .muted-hole { color: var(--muted-2); }
 
 /* Fill-in-the-blank: an underlined blank before reveal, a green answer after.
    A reserved min-height keeps the region the same size across the swap. */
@@ -321,6 +335,11 @@ body {
 .rev-answer-stack { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .rev-lines { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 4px; }
 .rev-line { font-weight: 700; font-size: 24px; color: var(--ink); }
+.rev-answer-stack > .why-code, .rev-lines > .why-code {
+  max-width: 100%; margin: 0; padding: 10px 12px; overflow-x: auto;
+  background: rgba(58, 42, 30, 0.06); border-radius: 10px;
+  font: 14px/1.45 ui-monospace, monospace; color: var(--ink); text-align: left;
+}
 
 /* Tap-the-answer: big option buttons; a pick greens the correct one, reds a
    wrong pick, dims the rest. */
@@ -355,6 +374,8 @@ body {
 .rev-why-text .checklist { display: grid; gap: 5px; margin: 8px 0; }
 .rev-why-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
 .rev-why-text .checklist-box { flex: none; font-family: ui-monospace, monospace; }
+.rev-keypoints { margin: 10px 0 0; padding-left: 20px; }
+.rev-keypoints li { margin: 4px 0; }
 
 /* A smaller Alix face for the reveal row (the standard cell is 64px). */
 .mascot.mascot-sm { width: 48px; height: 48px; box-shadow: 0 6px 14px rgba(255, 138, 61, 0.28); }
@@ -683,14 +704,74 @@ function el(tag, cls, text) {
   return n;
 }
 
+function styledRunNode(run, text) {
+  let node = document.createTextNode(text);
+  if (run.code) { const code = document.createElement("code"); code.appendChild(node); node = code; }
+  if (run.italic) { const italic = document.createElement("em"); italic.appendChild(node); node = italic; }
+  if (run.bold) { const bold = document.createElement("strong"); bold.appendChild(node); node = bold; }
+  return node;
+}
+
+function mathErrorNode(run, display) {
+  const wrap = el("span", "math-run math-error " + (display ? "math-display" : "math-inline"));
+  wrap.setAttribute("role", "img");
+  wrap.setAttribute("aria-label", run.text);
+  wrap.appendChild(el("code", "math-error-source", run.text));
+  wrap.appendChild(el("span", "math-error-label", "math could not render"));
+  return wrap;
+}
+
+function mathRunNode(run) {
+  const math = run.math || {};
+  const display = !!math.display;
+  if (!math.svg || math.error) return mathErrorNode(run, display);
+  const parsed = new DOMParser().parseFromString(math.svg, "image/svg+xml");
+  const root = parsed.documentElement;
+  if (root.localName !== "svg" || root.namespaceURI !== "http://www.w3.org/2000/svg" ||
+      parsed.querySelector("parsererror")) {
+    return mathErrorNode(run, display);
+  }
+  const wrap = el("span", "math-run " + (display ? "math-display" : "math-inline"));
+  wrap.setAttribute("role", "img");
+  wrap.setAttribute("aria-label", run.text);
+  const svg = document.importNode(root, true);
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  wrap.appendChild(svg);
+  return wrap;
+}
+
 function appendRuns(parent, runs) {
   for (const run of runs || []) {
-    let node = document.createTextNode(run.text);
-    if (run.code) { const code = document.createElement("code"); code.appendChild(node); node = code; }
-    if (run.italic) { const italic = document.createElement("em"); italic.appendChild(node); node = italic; }
-    if (run.bold) { const bold = document.createElement("strong"); bold.appendChild(node); node = bold; }
-    parent.appendChild(node);
+    parent.appendChild(run.math ? mathRunNode(run) : styledRunNode(run, run.text));
   }
+}
+
+function appendContextText(parent, run) {
+  const parts = String(run.text).split(/(____|\[…\])/);
+  for (const part of parts) {
+    if (!part) continue;
+    if (part === "____" || part === "[…]") {
+      const marker = el("span", part === "____" ? "hole" : "muted-hole");
+      marker.appendChild(styledRunNode(run, part));
+      parent.appendChild(marker);
+    } else {
+      parent.appendChild(styledRunNode(run, part));
+    }
+  }
+}
+
+function contextLine(text, runs) {
+  const line = el("div", "rev-context");
+  if (!runs) {
+    appendContextText(line, { text: text || "" });
+    return line;
+  }
+  for (const run of runs) {
+    if (run.math) line.appendChild(mathRunNode(run));
+    else appendContextText(line, run);
+  }
+  return line;
 }
 
 function appendChecklist(parent, items) {
@@ -709,7 +790,8 @@ function appendChecklist(parent, items) {
 function frontPrompt(card) {
   const prompt = el("div", "rev-prompt");
   if (!card.front_units) {
-    prompt.textContent = card.front || "";
+    if (card.front_runs) appendRuns(prompt, card.front_runs);
+    else prompt.textContent = card.front || "";
     return prompt;
   }
   for (const unit of card.front_units) {
@@ -993,7 +1075,9 @@ function renderReview() {
   cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, acquire)));
   appendImages(cardEl, card.images);
   cardEl.appendChild(frontPrompt(card));
-  for (const ctx of (card.context || [])) cardEl.appendChild(el("div", "rev-context", ctx));
+  for (let i = 0; i < (card.context || []).length; i++) {
+    cardEl.appendChild(contextLine(card.context[i], card.context_runs && card.context_runs[i]));
+  }
 
   if (choiceMode) {
     cardEl.appendChild(renderOptions());
@@ -1007,7 +1091,7 @@ function renderReview() {
 
   // Reserve the why-slot whenever the card has a note, so filling it on reveal
   // doesn't resize the card (the shell must not jump).
-  if (card.note && card.note.length > 0) {
+  if ((card.note && card.note.length > 0) || (state.keypoints && state.keypoints.length > 0)) {
     const slot = el("div", "rev-why-slot");
     if (done) renderWhy(slot, card);
     cardEl.appendChild(slot);
@@ -1048,10 +1132,13 @@ function answerFill(card) {
   const lines = card.back || [];
   if (lines.length > 1) {
     const stack = el("div", "rev-answer-stack");
-    for (const line of lines) stack.appendChild(el("span", "rev-answer-fill", line));
+    appendBackLines(stack, card, lines.length, "span", "rev-answer-fill");
     a.appendChild(stack);
   } else {
-    a.appendChild(el("span", "rev-answer-fill", lines[0] || ""));
+    const answer = el("span", "rev-answer-fill");
+    if (card.back_runs && card.back_runs[0]) appendRuns(answer, card.back_runs[0]);
+    else answer.textContent = lines[0] || "";
+    a.appendChild(answer);
   }
   return a;
 }
@@ -1066,8 +1153,35 @@ function renderLines(card) {
   const wrap = el("div", "rev-lines");
   const lines = card.back || [];
   const shown = Math.min(revealed, lines.length);
-  for (let i = 0; i < shown; i++) wrap.appendChild(el("div", "rev-line", lines[i]));
+  appendBackLines(wrap, card, shown, "div", "rev-line");
   return wrap;
+}
+
+function appendBackLines(parent, card, shown, tag, cls) {
+  const lines = card.back || [];
+  const runs = card.back_runs || [];
+  let i = 0;
+  while (i < shown) {
+    const fence = lines[i].trim().match(/^(```|~~~)/);
+    if (fence) {
+      const marker = fence[1];
+      const code = [];
+      i++;
+      while (i < shown && lines[i].trim() !== marker) {
+        code.push(lines[i]);
+        i++;
+      }
+      if (i < shown) i++;
+      const pre = el("pre", "why-code");
+      pre.appendChild(el("code", null, code.join("\n")));
+      parent.appendChild(pre);
+      continue;
+    }
+    const line = el(tag, cls);
+    if (runs[i]) appendRuns(line, runs[i]); else line.textContent = lines[i];
+    parent.appendChild(line);
+    i++;
+  }
 }
 
 // Tap-the-answer options. Before a pick each is tappable; after a pick (chosen
@@ -1076,8 +1190,10 @@ function renderOptions() {
   const wrap = el("div", "rev-options");
   const opts = state.choices || [];
   opts.forEach((label, i) => {
-    const b = el("button", "opt-btn", label);
+    const b = el("button", "opt-btn");
     b.type = "button";
+    if (state.choice_runs && state.choice_runs[i]) appendRuns(b, state.choice_runs[i]);
+    else b.textContent = label;
     if (chosen) {
       b.disabled = true;
       if (i === chosen.correct) b.classList.add("opt-correct");
@@ -1096,18 +1212,33 @@ function renderOptions() {
 // An empty/absent note shows nothing (no empty bubble).
 function renderWhy(parent, card) {
   const units = card.note || [];
-  if (!units.length) return;
+  const keypoints = state.keypoints || [];
+  if (!units.length && !keypoints.length) return;
   const row = el("div", "rev-why");
   row.appendChild(mascotEl("mascot-sm"));
   const txt = el("div", "rev-why-text");
   for (const u of units) {
-    if (u.kind === "sentence") txt.appendChild(el("p", null, u.text));
+    if (u.kind === "sentence") {
+      const paragraph = el("p");
+      if (u.runs) appendRuns(paragraph, u.runs); else paragraph.textContent = u.text;
+      txt.appendChild(paragraph);
+    }
     else if (u.kind === "code") {
       const pre = el("pre", "why-code");
       pre.appendChild(el("code", null, (u.lines || []).join("\n")));
       txt.appendChild(pre);
     }
     else if (u.kind === "checklist") appendChecklist(txt, u.items);
+  }
+  if (keypoints.length) {
+    const list = el("ul", "rev-keypoints");
+    keypoints.forEach((point, i) => {
+      const item = el("li");
+      if (state.keypoint_runs && state.keypoint_runs[i]) appendRuns(item, state.keypoint_runs[i]);
+      else item.textContent = point;
+      list.appendChild(item);
+    });
+    txt.appendChild(list);
   }
   row.appendChild(txt);
   parent.appendChild(row);

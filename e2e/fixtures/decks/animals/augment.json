@@ -16,6 +16,13 @@
         "Greyhound"
       ],
       "distractors_fp": 15102136998614189736
+    },
+    "mathexplain": {
+      "keypoints": [
+        "The discriminant is $b^2 - 4ac$",
+        "The denominator is $2a$"
+      ],
+      "keypoints_fp": 6339166044165714001
     }
   }
 }

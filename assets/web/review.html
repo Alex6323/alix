@@ -287,6 +287,18 @@
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   code { font-family: var(--mono); color: var(--code); }
   pre code { color: inherit; font-family: inherit; }
+  .math-run { color: inherit; background: none; }
+  .math-run[role="img"] { outline: none; }
+  .math-inline { display: inline-flex; align-items: baseline; max-width: 100%; line-height: 1; vertical-align: -0.16em; }
+  .math-inline svg { display: inline-block; width: auto; height: 1.12em; max-width: 100%; overflow: visible; }
+  .math-display { display: flex; justify-content: center; width: 100%; max-width: 100%; margin: 0.35em auto; overflow: hidden; }
+  .math-display svg { display: block; width: auto; height: auto; max-width: 100%; }
+  .math-run svg :where([fill]:not([fill="none"])) { fill: currentColor; }
+  .math-run svg :where([stroke]:not([stroke="none"])) { stroke: currentColor; }
+  .math-error { display: inline-flex; align-items: baseline; gap: 0.5em; max-width: 100%; color: var(--again); }
+  .math-error.math-display { justify-content: center; }
+  .math-error-source { overflow-wrap: anywhere; font-family: var(--mono); color: inherit; }
+  .math-error-label { font: 0.7em/1.2 var(--sans); color: var(--dim); white-space: nowrap; }
   @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   /* revealed answer: neutral ink in Plex Mono (green is reserved for a genuinely
      correct check — a passed typed line, a correct option, a ✓ key point). */
@@ -1120,16 +1132,46 @@ function el(tag, cls, text) {
   if (text !== undefined) n.textContent = text;
   return n;
 }
+function styledRunNode(run, text) {
+  let node = document.createTextNode(text);
+  if (run.code)   { const code = document.createElement("code"); code.appendChild(node); node = code; }
+  if (run.italic) { const italic = document.createElement("em"); italic.appendChild(node); node = italic; }
+  if (run.bold)   { const bold = document.createElement("strong"); bold.appendChild(node); node = bold; }
+  return node;
+}
+function mathErrorNode(run, display) {
+  const wrap = el("span", "math-run math-error " + (display ? "math-display" : "math-inline"));
+  wrap.setAttribute("role", "img");
+  wrap.setAttribute("aria-label", run.text);
+  wrap.appendChild(el("code", "math-error-source", run.text));
+  wrap.appendChild(el("span", "math-error-label", "math could not render"));
+  return wrap;
+}
+function mathRunNode(run) {
+  const math = run.math || {};
+  const display = !!math.display;
+  if (!math.svg || math.error) return mathErrorNode(run, display);
+  const parsed = new DOMParser().parseFromString(math.svg, "image/svg+xml");
+  const root = parsed.documentElement;
+  if (root.localName !== "svg" || root.namespaceURI !== "http://www.w3.org/2000/svg" ||
+      parsed.querySelector("parsererror")) {
+    return mathErrorNode(run, display);
+  }
+  const wrap = el("span", "math-run " + (display ? "math-display" : "math-inline"));
+  wrap.setAttribute("role", "img");
+  wrap.setAttribute("aria-label", run.text);
+  const svg = document.importNode(root, true);
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  wrap.appendChild(svg);
+  return wrap;
+}
 // Render inline-formatted text: one node per run. Bold/italic/code map to
-// <strong>/<em>/<code>; combined flags nest. textContent only, so card text
-// can never inject markup.
+// <strong>/<em>/<code>; combined flags nest. Authored text always enters via
+// textContent/text nodes; only the core-generated SVG is parsed as XML.
 function appendRuns(parent, runs) {
-  for (const r of runs || []) {
-    let node = document.createTextNode(r.text);
-    if (r.code)   { const c = document.createElement("code"); c.appendChild(node); node = c; }
-    if (r.italic) { const e = document.createElement("em");   e.appendChild(node); node = e; }
-    if (r.bold)   { const b = document.createElement("strong"); b.appendChild(node); node = b; }
-    parent.appendChild(node);
+  for (const run of runs || []) {
+    parent.appendChild(run.math ? mathRunNode(run) : styledRunNode(run, run.text));
   }
 }
 function appendChecklist(parent, items) {
@@ -1474,9 +1516,18 @@ function renderAsk(subject) {
     const c = state.card;
     if (c) {
       const ref = el("div", "ask-card");
-      ref.appendChild(el("div", "ask-card-q", c.front));
-      for (const ctx of c.context || []) ref.appendChild(el("div", "ask-card-ctx", ctx));
-      for (const b of c.back) ref.appendChild(el("div", "ask-card-a", b));
+      const front = el("div", "ask-card-q");
+      if (c.front_runs) appendRuns(front, c.front_runs); else front.textContent = c.front;
+      ref.appendChild(front);
+      for (let i = 0; i < (c.context || []).length; i++) {
+        ref.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i], "ask-card-ctx"));
+      }
+      for (let i = 0; i < c.back.length; i++) {
+        const answer = el("div", "ask-card-a");
+        if (c.back_runs && c.back_runs[i]) appendRuns(answer, c.back_runs[i]);
+        else answer.textContent = c.back[i];
+        ref.appendChild(answer);
+      }
       scroll.appendChild(ref);
     }
   }
@@ -3092,7 +3143,9 @@ function renderCard() {
     crumbStrip.appendChild(bc);
   }
   q.appendChild(frontEl(c.front, c.front_runs, c.front_units));
-  for (const ctx of c.context) q.appendChild(contextLine(ctx));
+  for (let i = 0; i < c.context.length; i++) {
+    q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
+  }
   appendImages(q, c.images);
 
   // The answer region (id="ansRegion") is filled by fillBottom(); the note region
@@ -3122,7 +3175,9 @@ function renderBrowse() {
   });
 
   q.appendChild(frontEl(c.front, c.front_runs, c.front_units));
-  for (const ctx of c.context) q.appendChild(contextLine(ctx));
+  for (let i = 0; i < c.context.length; i++) {
+    q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
+  }
   appendImages(q, c.images);
 
   // Match the review path: any multi-line answer is a left-aligned block (centered
@@ -3349,7 +3404,10 @@ function renderChoices(a) {
   state.choices.forEach((opt, i) => {
     const b = el("button", "option");
     b.appendChild(el("span", "num", String(i + 1)));
-    b.appendChild(el("span", "opt", opt));
+    const text = el("span", "opt");
+    if (state.choice_runs && state.choice_runs[i]) appendRuns(text, state.choice_runs[i]);
+    else text.textContent = opt;
+    b.appendChild(text);
     b.addEventListener("click", () => choose(i));
     wrap.appendChild(b);
   });
@@ -3417,7 +3475,10 @@ function renderChoiceFeedback(a) {
     else cls += " dim";
     const row = el("div", cls);
     row.appendChild(el("span", "num", String(i + 1)));
-    row.appendChild(el("span", "opt", opt));
+    const text = el("span", "opt");
+    if (state.choice_runs && state.choice_runs[i]) appendRuns(text, state.choice_runs[i]);
+    else text.textContent = opt;
+    row.appendChild(text);
     wrap.appendChild(row);
   });
   a.appendChild(wrap);
@@ -3456,7 +3517,12 @@ function renderExplain(a) {
     // claims it makes — the key points are a decomposition, not a replacement.
     a.appendChild(el("div", "explain-label", "the answer"));
     const ans = el("div", "reveal");
-    for (const p of state.card.back) ans.appendChild(el("div", "answer", p));
+    for (let i = 0; i < state.card.back.length; i++) {
+      const answer = el("div", "answer");
+      if (state.card.back_runs && state.card.back_runs[i]) appendRuns(answer, state.card.back_runs[i]);
+      else answer.textContent = state.card.back[i];
+      ans.appendChild(answer);
+    }
     a.appendChild(ans);
     const ul = el("ul", "kp-list reveal");
     ul.appendChild(el("li", "lbl", "did your answer cover these?"));
@@ -3465,7 +3531,9 @@ function renderExplain(a) {
       if (marks[i] === true) cls += " yes";
       else if (marks[i] === false) cls += " no";
       if (i === kpCur) cls += " cur";
-      const li = el("li", cls, p);
+      const li = el("li", cls);
+      if (state.keypoint_runs && state.keypoint_runs[i]) appendRuns(li, state.keypoint_runs[i]);
+      else li.textContent = p;
       // A cited card's whole answer region also toggles answer<->source on
       // click (see onCiteClick, `fillBottom`) — without stopping it here, a
       // keypoint click bubbles up and swaps the view out from under the
@@ -3478,7 +3546,13 @@ function renderExplain(a) {
   }
   a.appendChild(el("div", "explain-label", "your answer should cover"));
   const pts = el("div", "reveal");
-  for (const p of state.card.back) pts.appendChild(el("div", "answer", "• " + p));
+  for (let i = 0; i < state.card.back.length; i++) {
+    const point = el("div", "answer");
+    point.appendChild(document.createTextNode("• "));
+    if (state.card.back_runs && state.card.back_runs[i]) appendRuns(point, state.card.back_runs[i]);
+    else point.appendChild(document.createTextNode(state.card.back[i]));
+    pts.appendChild(point);
+  }
   a.appendChild(pts);
 }
 // Walk the key-point list: mark the current point yes/no and advance; move the
@@ -3642,11 +3716,13 @@ function isReshapedList(c) { return !!(c && c.reshaped && c.back.length > 1); }
 function appendReveal(sec, lines, runs, isList) {
   let i = 0;
   while (i < lines.length) {
-    if (/^```/.test(lines[i].trim())) {
+    const fence = lines[i].trim().match(/^(```|~~~)/);
+    if (fence) {
+      const marker = fence[1];
       const code = [];
       i++;
-      while (i < lines.length && lines[i].trim() !== "```") { code.push(lines[i]); i++; }
-      i++; // skip the closing fence
+      while (i < lines.length && lines[i].trim() !== marker) { code.push(lines[i]); i++; }
+      if (i < lines.length) i++;
       const pre = el("pre", "code-block");
       pre.textContent = code.join("\n");
       sec.appendChild(pre);
@@ -3712,17 +3788,33 @@ function cardImage(im) {
   return img;
 }
 
-// A cloze context line, with the active blank brightened and hidden holes
-// dimmed. Markers come from the server (cloze BLANK "____" and HIDDEN "[…]").
-function contextLine(text) {
-  const div = el("div", "context");
-  div.innerHTML = escapeHtml(text)
-    .split("____").join('<span class="hole">____</span>')
-    .split("[…]").join('<span class="muted-hole">[…]</span>');
-  return div;
+function appendContextText(parent, run) {
+  const parts = String(run.text).split(/(____|\[…\])/);
+  for (const part of parts) {
+    if (!part) continue;
+    if (part === "____" || part === "[…]") {
+      const marker = el("span", part === "____" ? "hole" : "muted-hole");
+      marker.appendChild(styledRunNode(run, part));
+      parent.appendChild(marker);
+    } else {
+      parent.appendChild(styledRunNode(run, part));
+    }
+  }
 }
-function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// A cloze context line, with ordinary styled text split around active and
+// hidden markers. Math runs remain intact because their SVG already contains
+// the core's display-only underline or ellipsis substitution.
+function contextLine(text, runs, cls) {
+  const div = el("div", cls || "context");
+  if (!runs) {
+    appendContextText(div, { text: text || "" });
+    return div;
+  }
+  for (const run of runs) {
+    if (run.math) div.appendChild(mathRunNode(run));
+    else appendContextText(div, run);
+  }
+  return div;
 }
 
 function renderNote(parent, units) {
