@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -61,7 +61,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: lint test
+check: lint test site-media-check
 
 # Full CI parity, run the way GitHub does (see .github/workflows/ci.yml): the
 # nightly fmt check, then clippy + tests under `-Dwarnings`, then coverage with
@@ -234,7 +234,7 @@ slides:
 # a generated copy too. Rather than write into the tracked site/ directory,
 # this copies it into gitignored _site/ first (the same scratch directory
 # name and pattern the pages workflow uses) and serves that.
-site:
+site: site-media-check
 	@echo "Landing page -> http://localhost:8000  (Ctrl-C to stop)"
 	rm -rf _site
 	mkdir -p _site
@@ -280,18 +280,26 @@ e2e:
 	npx --prefix e2e playwright install --with-deps chromium || npx --prefix e2e playwright install chromium
 	npx --prefix e2e playwright test --config=e2e/playwright.config.ts
 
-# Regenerate the landing-page carousel screenshots (site/img/shot-*.png) from
+# Regenerate the landing-page carousel screenshots (site/img/shot-*.webp) from
 # a fresh copy of ~/alix-demo and ~/alix-kids — never the originals directly
 # (see e2e/shots/capture.cjs's own header). Makes real Claude calls (deck
 # augmentation, the tutor, the exam): a few minutes, and needs the `claude`
-# CLI logged in. Not part of `make e2e`/CI — run it deliberately, around a
-# release, when the app's look has changed enough that the carousel is
-# stale. `make shots ONLY=6` re-shoots one slide (comma-separated for
-# several); ARGS="--fresh" forces a clean re-copy of the demo/kids dirs.
+# CLI logged in plus `cwebp` installed. Not part of `make e2e`/CI — run it
+# deliberately, around a release, when the app's look has changed enough that
+# the carousel is stale. `make shots ONLY=6` re-shoots one slide
+# (comma-separated for several); ARGS="--fresh" forces a clean re-copy of the
+# demo/kids dirs.
 shots:
+	@command -v cwebp >/dev/null 2>&1 || { echo "shots: cwebp required (apt install webp / brew install webp)"; exit 1; }
 	npm --prefix e2e ci
 	npx --prefix e2e playwright install chromium
 	node e2e/shots/capture.cjs $(if $(ONLY),--only=$(ONLY)) $(ARGS)
+	$(MAKE) site-media-check
+
+# Keep generated landing-page media small enough that routine refreshes do not
+# quietly turn Git history into an image archive.
+site-media-check:
+	@python3 scripts/check-site-media.py
 
 # Download numbers: GitHub release assets + crates.io, in a terminal table.
 # Read-only, no auth needed, stdlib python3. Run deliberately (network call),

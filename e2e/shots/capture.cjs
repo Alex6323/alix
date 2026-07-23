@@ -10,6 +10,10 @@
  *
  *   node e2e/shots/capture.cjs [--fresh] [--only=1,2,3,...]
  *
+ * Requires `cwebp` (Debian/Ubuntu: `apt install webp`; macOS:
+ * `brew install webp`). Playwright captures a temporary PNG; this script
+ * encodes it as lossless WebP and keeps only the WebP in site/img/.
+ *
  * See docs/product/2026-07-01-web-screenshots.md for the shot list and the
  * conventions this follows (viewport, theme-per-shot, captions).
  *
@@ -39,11 +43,11 @@ const DEMO_BASE = `http://127.0.0.1:${DEMO_PORT}`;
 const KIDS_BASE = `http://127.0.0.1:${KIDS_PORT}`;
 
 // The one demo source (spec: "one demo deck for every shot"): the rust-book
-// workspace. The hero fact deck (01) is the entry point of its `% requires:`
+// workspace. The hero fact deck (01) is the entry point of its `requires:`
 // chain, pre-augmented (choices/notes/keypoints/topology) by ensureAugmented().
-const HERO_DECK = "rust-book/01-the-stack-the-heap-and-the.txt";
-const HERO_FILE = path.join(DEMO_DIR, "rust-book", "01-the-stack-the-heap-and-the.txt");
-const TRACE_DECK = "rust-book/02-how-let-s2-s1-moves-a.txt";
+const HERO_DECK = "rust-book/01-the-stack-the-heap-and-the.md";
+const HERO_FILE = path.join(DEMO_DIR, "rust-book", "01-the-stack-the-heap-and-the.md");
+const TRACE_DECK = "rust-book/02-how-let-s2-s1-moves-a.md";
 // runAugment("topology") passes no `--with`, so `alix deck augment` auto-names
 // the generated topology "auto" (see AugmentTarget::Topology's default when
 // no guidance is given) — this must match, or shot 8's topology-scoped
@@ -71,6 +75,16 @@ function log(...a) {
 }
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function requireWebpEncoder() {
+  try {
+    execFileSync("cwebp", ["-version"], { stdio: "ignore" });
+  } catch {
+    throw new Error(
+      "cwebp is required to capture site screenshots (Debian/Ubuntu: apt install webp; macOS: brew install webp)",
+    );
+  }
 }
 
 // ---- fixtures: copy once, never touch the originals -----------------------
@@ -117,7 +131,7 @@ function diffSnapshots(before, after) {
   return changed;
 }
 
-// ---- deck parsing (plain-text card format) --------------------------------
+// ---- deck parsing (CommonMark card format) --------------------------------
 
 function parseDeck(file) {
   const lines = fs.readFileSync(file, "utf8").split("\n");
@@ -125,11 +139,11 @@ function parseDeck(file) {
   let cur = null;
   for (const raw of lines) {
     const line = raw.trim();
-    if (line.startsWith("# ")) {
-      cur = { front: line.slice(2).trim(), back: [] };
+    if (line.startsWith("## ")) {
+      cur = { front: line.slice(3).trim(), back: [] };
       cards.push(cur);
-    } else if (!line || line.startsWith("%") || line.startsWith("!")) {
-      // directive / note / blank — skip
+    } else if (!line || line.startsWith(">") || line.startsWith("<!--") || line.startsWith("---")) {
+      // machine directive / note / frontmatter / blank — skip
     } else if (cur) {
       cur.back.push(line);
     }
@@ -165,26 +179,29 @@ function runAugment(target) {
   });
 }
 
-// `% source: assets` (a bare directory, the "frozen snapshot" convention —
+// `source: assets` (a bare directory, the "frozen snapshot" convention —
 // see src/deck.rs Deck::is_frozen) makes exam generation fail outright:
-// exam.rs's source_section() reads each `% source:` value as a single file
+// exam.rs's source_section() reads each `source:` value as a single file
 // path and only supports " + "-joined multi-file lists, so a directory just
 // errors ("Is a directory") and, with no readable source left, the exam
-// bails with "none of the deck's `% source:` paths could be read to examine
+// bails with "none of the deck's `source:` paths could be read to examine
 // against" — confirmed via a direct /api/exam/start probe. That looks like a
 // real product gap (source_section doesn't expand a directory the way the
 // citation/trace resolvers do), not something to patch in the app from a
 // capture script — flagged in the report instead. Worked around HERE, in the
-// scratch copy only, by pointing the header at the exact per-card files its
-// own `% at:` citations already name (01.md..10.md), which source_paths()
+// scratch copy only, by pointing the frontmatter at the exact per-card files
+// its own `at:` citations already name (01.md..10.md), which source_paths()
 // already supports via " + ". Never touches ~/alix-demo.
 function fixHeroSourceForExam() {
   const text = fs.readFileSync(HERO_FILE, "utf8");
-  const files = Array.from({ length: 10 }, (_, i) => `assets/${String(i + 1).padStart(2, "0")}.md`).join(" + ");
-  const fixed = text.replace(/^% source: assets\s*$/m, `% source: ${files}`);
+  const files = Array.from(
+    { length: 10 },
+    (_, i) => `  - "assets/${String(i + 1).padStart(2, "0")}.md"`,
+  ).join("\n");
+  const fixed = text.replace(/^source:\s*["']?assets["']?\s*$/m, `source:\n${files}`);
   if (fixed !== text) {
     fs.writeFileSync(HERO_FILE, fixed);
-    log("worked around the `% source: assets` exam bug in the scratch copy (see comment above)");
+    log("worked around the `source: assets` exam bug in the scratch copy (see comment above)");
   }
 }
 
@@ -334,9 +351,12 @@ async function settleAnimations(page) {
 // client-side-only JS state, so the reload silently rendered the picker
 // underneath instead) is exactly why this is enforced here, in one place,
 // rather than left to each shot function to remember. A screen mismatch
-// throws — never writes a PNG of the wrong screen; the caller's try/catch
+// throws — never writes a WebP of the wrong screen; the caller's try/catch
 // turns that into an honest SKIP in the summary.
 async function shot(page, filename, ready) {
+  if (path.extname(filename) !== ".webp") {
+    throw new Error(`screenshot output must be .webp: ${filename}`);
+  }
   await page
     .locator(ready)
     .first()
@@ -345,7 +365,17 @@ async function shot(page, filename, ready) {
   await settleAnimations(page);
   await page.waitForTimeout(200);
   const out = path.join(OUT_DIR, filename);
-  await page.screenshot({ path: out });
+  const stem = path.basename(filename, ".webp");
+  const png = path.join(WORK, `${stem}.png`);
+  const webp = path.join(WORK, filename);
+  try {
+    await page.screenshot({ path: png, type: "png" });
+    execFileSync("cwebp", ["-quiet", "-lossless", "-z", "9", png, "-o", webp]);
+    fs.renameSync(webp, out);
+  } finally {
+    fs.rmSync(png, { force: true });
+    fs.rmSync(webp, { force: true });
+  }
   log("wrote", path.relative(REPO_ROOT, out));
 }
 
@@ -450,7 +480,7 @@ async function shot1(page) {
   await page.waitForTimeout(400);
   // Mark every point via the legend's "Yes" chip (`answerKeypoint`), not by
   // clicking the `.kp-list li.pt` items directly: on a cited card (this deck's
-  // cards all carry `% at:`) the answer region ALSO has its own onclick
+  // cards all carry `at:` directives) the answer region ALSO has its own onclick
   // (source<->answer swap, review.html's `onCiteClick`), and a keypoint <li>
   // click bubbles into it — the first click silently swaps the whole panel to
   // the citation excerpt instead of marking the point. The legend chip lives
@@ -462,7 +492,7 @@ async function shot1(page) {
     await page.waitForTimeout(120);
   }
   await page.waitForTimeout(300);
-  await shot(page, "shot-1-verify.png", ".kp-list");
+  await shot(page, "shot-1-verify.webp", ".kp-list");
   return true;
 }
 
@@ -510,7 +540,7 @@ async function shot2(page) {
     .waitFor({ state: "visible", timeout: 120_000 })
     .catch(() => log("WARNING: no .ask-a appeared within 120s — capturing current state anyway"));
   await page.waitForTimeout(400);
-  await shot(page, "shot-2-tutor.png", ".ask-a");
+  await shot(page, "shot-2-tutor.webp", ".ask-a");
   return true;
 }
 
@@ -540,7 +570,7 @@ async function shot3(page) {
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
-  await shot(page, "shot-3-modes.png", ".options .option");
+  await shot(page, "shot-3-modes.webp", ".options .option");
   return true;
 }
 
@@ -649,7 +679,7 @@ async function shot4(page) {
     return false;
   }
   log("exam verdict: passed =", e.passed);
-  await shot(page, "shot-4-exam.png", ".exam-pass, .exam-fail");
+  await shot(page, "shot-4-exam.webp", ".exam-pass, .exam-fail");
   return true;
 }
 
@@ -674,7 +704,7 @@ async function shot5(page) {
   }
   await augBtn.first().click();
   await page.waitForTimeout(400);
-  await shot(page, "shot-5-augment.png", ".aug-row");
+  await shot(page, "shot-5-augment.webp", ".aug-card");
   return true;
 }
 
@@ -713,7 +743,7 @@ async function shot6(page) {
     log("SKIP shot 6: no .wexcerpt rendered — walk did not reach the reveal phase");
     return false;
   }
-  await shot(page, "shot-6-trace.png", ".wexcerpt");
+  await shot(page, "shot-6-trace.webp", ".wexcerpt");
   return true;
 }
 
@@ -730,7 +760,7 @@ async function shot7(page) {
   await page.waitForTimeout(400);
   // .tree: the dependency-tree branch-line guides only render once drilled
   // INTO the workspace — confirms this isn't still the collapsed list.
-  await shot(page, "shot-7-picker.png", ".deckrow .tree");
+  await shot(page, "shot-7-picker.webp", ".deckrow .tree");
   return true;
 }
 
@@ -757,7 +787,7 @@ async function shot8(page) {
     log("SKIP shot 8: no #crumbStrip rendered for this session");
     return false;
   }
-  await shot(page, "shot-8-topology.png", "#crumbStrip");
+  await shot(page, "shot-8-topology.webp", "#crumbStrip");
   return true;
 }
 
@@ -774,7 +804,7 @@ async function shot9(page) {
   await page.waitForTimeout(200);
   await page.locator("#theme-open").click();
   await page.waitForTimeout(250);
-  await shot(page, "shot-9-themes.png", ".theme-panel.show");
+  await shot(page, "shot-9-themes.webp", ".theme-panel.show");
   return true;
 }
 
@@ -793,11 +823,11 @@ async function shot10(page) {
   await box.click();
   await page.waitForTimeout(400);
   // Not just .first(): the Animals box's alphabetically-first deck
-  // (life-cycles.txt) is an ORDERED-SEQUENCE answer (Egg/Caterpillar/
+  // (life-cycles.md) is an ORDERED-SEQUENCE answer (Egg/Caterpillar/
   // Chrysalis/Butterfly) that Recognize can't build real MC distractors for
   // (`choices` comes back null, an honest fallback — see isRecognizeFallback
   // in review.html), so it renders a reveal prompt, not tap options.
-  // wild-animals.txt has real cached distractors on its first card.
+  // wild-animals.md has authored distractors on its first card.
   let deckRow = page.locator(".deck-row", { hasText: "wild-animals" }).first();
   if (!(await deckRow.count())) deckRow = page.locator(".deck-row").first();
   if (!(await deckRow.count())) {
@@ -832,13 +862,14 @@ async function shot10(page) {
   }
   await target.click();
   await page.waitForTimeout(500);
-  await shot(page, "shot-10-kids.png", ".opt-correct");
+  await shot(page, "shot-10-kids.webp", ".opt-correct");
   return true;
 }
 
 // ---- main ------------------------------------------------------------------
 
 async function main() {
+  requireWebpEncoder();
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(WORK, { recursive: true });
 
@@ -849,7 +880,7 @@ async function main() {
   copyOnce(KIDS_SRC, KIDS_DIR, "alix-kids");
 
   fixHeroSourceForExam();
-  ensureAugmented();
+  if (wants(1) || wants(2) || wants(3) || wants(8)) ensureAugmented();
 
   freePort(DEMO_PORT);
   freePort(KIDS_PORT);

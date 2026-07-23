@@ -11,6 +11,7 @@ on:
       - "docs/book/**"
       - "assets/alix.svg"
       - ".github/workflows/pages.yml"
+      - "scripts/check-site-media.py"
       - "scripts/site-changelog.py"
       # whatsnew.html and the landing teaser are generated from this file
       # (see scripts/site-changelog.py) — without it here, a changelog-only
@@ -51,6 +52,8 @@ jobs:
           tool: mdbook
       - name: Build the book
         run: mdbook build docs/book # → docs/book/book
+      - name: Check site media budget
+        run: python3 scripts/check-site-media.py
       - name: Assemble the site (landing at /, book under /book/)
         run: |
           mkdir -p _site
