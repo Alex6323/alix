@@ -18,6 +18,10 @@ fn answer_text(card: &Card) -> String {
     card.back.join("\n")
 }
 
+fn content(text: &str) -> String {
+    crate::inline::strip_inline(text.trim())
+}
+
 // Seeded by appearance, not wall-clock: appearance only advances on a
 // genuine re-serve, so this is stable across polls of one appearance.
 pub fn seed_for(card_id: &str, appearance: u32) -> u64 {
@@ -31,14 +35,15 @@ fn distinct_distractors(card: &Card, ai_distractors: &[String]) -> Vec<String> {
     let needed = NUM_OPTIONS - 1;
     // Seed with the answer so no AI distractor can duplicate it.
     let mut seen: HashSet<String> = HashSet::new();
-    seen.insert(answer_text(card));
+    seen.insert(content(&answer_text(card)));
     let mut chosen: Vec<String> = Vec::new();
     for option in ai_distractors {
         if chosen.len() == needed {
             break;
         }
         let trimmed = option.trim();
-        if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
+        let content = content(trimmed);
+        if !content.is_empty() && seen.insert(content) {
             chosen.push(trimmed.to_string());
         }
     }
@@ -65,11 +70,12 @@ pub fn build_authored(
 ) -> Option<ChoiceQuestion> {
     let correct_text = answer_text(card);
     let mut seen = HashSet::new();
-    seen.insert(correct_text.clone());
+    seen.insert(content(&correct_text));
     let mut options = Vec::new();
     for distractor in authored_distractors {
         let trimmed = distractor.trim();
-        if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
+        let content = content(trimmed);
+        if !content.is_empty() && seen.insert(content) {
             options.push(trimmed.to_string());
         }
     }
@@ -185,6 +191,31 @@ mod tests {
     fn duplicate_distractors_count_once() {
         let c = card(1, "alpha");
         assert!(build(&c, 42, &ai(&["beta", "beta", "alpha"])).is_none());
+    }
+
+    #[test]
+    fn ai_distractors_deduplicate_by_content_but_keep_source() {
+        let c = card(1, "$x$");
+        let q = build(&c, 42, &ai(&["x", "$y$", "z", "w"])).unwrap();
+        assert_eq!("$x$", q.options[q.correct]);
+        assert!(!q.options.iter().any(|option| option == "x"));
+        assert!(q.options.iter().any(|option| option == "$y$"));
+    }
+
+    #[test]
+    fn authored_distractors_deduplicate_by_content_but_keep_source() {
+        let mut c = card(1, "$x^2$");
+        c.authored_distractors = vec![
+            "x^2".into(),
+            "$x^3$".into(),
+            "**four**".into(),
+            "four".into(),
+        ];
+        let q = build_authored(&c, 1, &c.authored_distractors).unwrap();
+        assert_eq!("$x^2$", q.options[q.correct]);
+        assert!(!q.options.iter().any(|option| option == "x^2"));
+        assert!(q.options.iter().any(|option| option == "$x^3$"));
+        assert_eq!(1, q.options.iter().filter(|option| content(option) == "four").count());
     }
 
     #[test]

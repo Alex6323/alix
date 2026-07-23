@@ -617,8 +617,9 @@ fn build_card(
         let mut options = Vec::new();
         let mut duplicate_line = None;
         for (lineno, checked, raw_option) in task_lines {
-            let option = crate::inline::strip_inline(raw_option.trim());
-            if seen.insert(option.clone()) {
+            let option = raw_option.trim().to_string();
+            let content = crate::inline::strip_inline(&option);
+            if seen.insert(content) {
                 options.push((checked, option));
             } else if duplicate_line.is_none() {
                 duplicate_line = Some(lineno);
@@ -1203,12 +1204,39 @@ mod tests {
     }
 
     #[test]
-    fn option_text_is_content_projected_for_grading() {
+    fn option_text_preserves_source_while_grading_uses_content() {
         let deck = parse("## q\n- [x] **Paris**\n- [ ] London\n");
-        assert_eq!(vec!["Paris"], deck.cards[0].back);
+        assert_eq!(vec!["**Paris**"], deck.cards[0].back);
+        assert_eq!(
+            "Paris",
+            crate::inline::strip_inline(&deck.cards[0].back[0])
+        );
         assert_eq!(
             vec!["London".to_string()],
             deck.cards[0].authored_distractors
+        );
+    }
+
+    #[test]
+    fn math_checkbox_options_preserve_authored_source() {
+        let deck = parse("## q\n- [x] $x^2$\n- [ ] $x^3$\n");
+        assert_eq!(vec!["$x^2$"], deck.cards[0].back);
+        assert_eq!(
+            vec!["$x^3$".to_string()],
+            deck.cards[0].authored_distractors
+        );
+        assert_eq!("x^2", crate::inline::strip_inline(&deck.cards[0].back[0]));
+    }
+
+    #[test]
+    fn formatted_and_plain_checkbox_options_are_content_duplicates() {
+        let deck = parse("## q\n- [x] $x$\n- [ ] x\n- [ ] y\n");
+        assert_eq!(vec!["$x$"], deck.cards[0].back);
+        assert_eq!(vec!["y".to_string()], deck.cards[0].authored_distractors);
+        assert!(
+            deck.lints
+                .iter()
+                .any(|lint| lint.kind == LintKind::DuplicateChoiceOption)
         );
     }
 

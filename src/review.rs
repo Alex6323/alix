@@ -574,6 +574,17 @@ mod tests {
     }
 
     #[test]
+    fn typed_grading_accepts_latex_source_without_math_delimiters() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## square\n$x^2$\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &store, Depth::Reconstruct, NOW);
+        let feedback = check_typed(&session, &["x^2".to_string()]).expect("feedback");
+        assert!(feedback.passed);
+        assert_eq!("x^2", feedback.results[0].expected);
+    }
+
+    #[test]
     fn cloze_grading_uses_the_formatted_holes_plain_content() {
         let (mut store, _augment, _dir) = fixtures();
         let cards = parse("## capital\n\\blank{**Paris**}\n");
