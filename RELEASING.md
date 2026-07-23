@@ -130,6 +130,10 @@ Local `make apk` builds are debug-signed while `android/key.properties` is
 absent; that file (gitignored) can point at the keystore for local signed
 builds if ever needed.
 
+For Google Play, run `make aab` and upload
+`apps/mobile/build/app/outputs/bundle/release/app-release.aab`. Keep `make apk`
+for GitHub releases and real-phone smoke tests.
+
 ## After a release
 
 Resync the local (gitignored) planning files: strike shipped items in `ROADMAP.md`
