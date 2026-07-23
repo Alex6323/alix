@@ -215,7 +215,13 @@ mod tests {
         assert_eq!("$x^2$", q.options[q.correct]);
         assert!(!q.options.iter().any(|option| option == "x^2"));
         assert!(q.options.iter().any(|option| option == "$x^3$"));
-        assert_eq!(1, q.options.iter().filter(|option| content(option) == "four").count());
+        assert_eq!(
+            1,
+            q.options
+                .iter()
+                .filter(|option| content(option) == "four")
+                .count()
+        );
     }
 
     #[test]

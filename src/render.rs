@@ -155,11 +155,10 @@ pub(crate) fn front_units_with(
 
 fn fence_marker(line: &str) -> Option<char> {
     let trimmed = line.trim_start();
-    trimmed.starts_with("```").then_some('`').or_else(|| {
-        trimmed
-            .starts_with("~~~")
-            .then_some('~')
-    })
+    trimmed
+        .starts_with("```")
+        .then_some('`')
+        .or_else(|| trimmed.starts_with("~~~").then_some('~'))
 }
 
 fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>) {
@@ -170,11 +169,7 @@ fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>
     }
 }
 
-fn flush_prose(
-    prose: &mut String,
-    units: &mut Vec<NoteUnit>,
-    projector: &mut DisplayProjector,
-) {
+fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>, projector: &mut DisplayProjector) {
     for sentence in split_sentences(prose) {
         if !sentence.is_empty() {
             let runs = projector.project(&sentence);

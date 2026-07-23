@@ -652,7 +652,11 @@ mod tests {
         assert_eq!(runs[1].text, "a^2 + b^2 = c^2");
         let math = runs[1].math.as_ref().unwrap();
         assert!(!math.display);
-        assert!(math.svg.as_deref().is_some_and(|svg| svg.starts_with("<svg")));
+        assert!(
+            math.svg
+                .as_deref()
+                .is_some_and(|svg| svg.starts_with("<svg"))
+        );
         assert!(math.error.is_none());
         assert!(!runs[1].bold && !runs[1].italic && !runs[1].code);
     }
@@ -731,7 +735,10 @@ mod tests {
     #[test]
     fn strip_inline_never_invokes_ratex() {
         let before = crate::math::thread_render_count();
-        assert_eq!(strip_inline(r"Answer $x^2$ and $$y^2$$"), r"Answer x^2 and $$y^2$$");
+        assert_eq!(
+            strip_inline(r"Answer $x^2$ and $$y^2$$"),
+            r"Answer x^2 and $$y^2$$"
+        );
         assert_eq!(crate::math::thread_render_count(), before);
     }
 

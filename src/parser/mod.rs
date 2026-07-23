@@ -1207,10 +1207,7 @@ mod tests {
     fn option_text_preserves_source_while_grading_uses_content() {
         let deck = parse("## q\n- [x] **Paris**\n- [ ] London\n");
         assert_eq!(vec!["**Paris**"], deck.cards[0].back);
-        assert_eq!(
-            "Paris",
-            crate::inline::strip_inline(&deck.cards[0].back[0])
-        );
+        assert_eq!("Paris", crate::inline::strip_inline(&deck.cards[0].back[0]));
         assert_eq!(
             vec!["London".to_string()],
             deck.cards[0].authored_distractors
