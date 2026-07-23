@@ -1873,6 +1873,123 @@ fn generate_single_deck_refuses_to_clobber_without_force_then_force_overwrites()
 }
 
 #[test]
+fn generate_single_deck_rejects_invalid_math_without_touching_the_destination() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Generated Q\n$\\frac{1$\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let target = write(&ws, "gen.md", "original bytes\n");
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+        "--force",
+    ]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("invalid LaTeX math"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert_eq!("original bytes\n", std::fs::read_to_string(target).unwrap());
+    assert_eq!(1, std::fs::read_dir(&ws).unwrap().count());
+}
+
+#[test]
+fn generate_single_deck_invalid_math_creates_no_new_destination() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Generated Q\n$\\frac{1$\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+    ]);
+
+    assert!(!out.status.success());
+    assert!(!ws.join("gen.md").exists());
+}
+
+#[test]
+fn generate_single_deck_prints_invalid_math_with_a_warning_without_writing() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Generated Q\n$\\frac{1$\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--print",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("$\\frac{1$"));
+    assert!(
+        stderr(&out).contains("invalid LaTeX math"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn generate_single_deck_still_saves_text_that_does_not_parse() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## missing answer\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "draft",
+    ]);
+
+    assert!(!out.status.success());
+    assert!(ws.join("draft.md").exists());
+    assert!(
+        stderr(&out).contains("Saved the generated deck"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
     // A one-item (unparseable-as-a-plan) exploration result routes to a single
     // deck rather than a multi-item workspace build.

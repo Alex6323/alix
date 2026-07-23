@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -> Result<String> {
@@ -16,6 +16,13 @@ pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -
     while dir.join(format!("{candidate}.md")).exists() {
         candidate = format!("{stem}-{n}");
         n += 1;
+    }
+
+    let deck_name = format!("{candidate}.md");
+    if let Ok(deck) = alix::parser::parse(&deck_name, &text) {
+        if let Err(diagnostic) = alix::math::validate_generated(&deck.cards) {
+            bail!("generated deck `{deck_name}` has invalid LaTeX math: {diagnostic}");
+        }
     }
 
     let placed = alix::library::place_deck(dir, &candidate, &text)?;
@@ -71,13 +78,67 @@ mod tests {
     #[test]
     fn text_without_a_trailing_newline_gets_one() {
         let dir = tempfile::tempdir().unwrap();
-        let name = apply_generated_deck(
-            dir_str(&dir),
-            "nolf.txt".to_string(),
-            "## q\na".to_string(),
-        )
-        .unwrap();
+        let name =
+            apply_generated_deck(dir_str(&dir), "nolf.txt".to_string(), "## q\na".to_string())
+                .unwrap();
         let written = std::fs::read_to_string(dir.path().join(&name)).unwrap();
         assert!(written.ends_with('\n'));
+    }
+
+    #[test]
+    fn invalid_math_leaves_an_existing_candidate_unchanged_and_creates_no_new_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("topic.md");
+        std::fs::write(&existing, "original bytes\n").unwrap();
+
+        let error = apply_generated_deck(
+            dir_str(&dir),
+            "topic.txt".to_string(),
+            "## q\n$\\frac{1$\n".to_string(),
+        )
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("invalid LaTeX math"),
+            "{error:#}"
+        );
+        assert_eq!(
+            "original bytes\n",
+            std::fs::read_to_string(existing).unwrap()
+        );
+        assert!(!dir.path().join("topic-2.md").exists());
+    }
+
+    #[test]
+    fn invalid_math_creates_no_new_destination() {
+        let dir = tempfile::tempdir().unwrap();
+
+        assert!(
+            apply_generated_deck(
+                dir_str(&dir),
+                "topic.txt".to_string(),
+                "## q\n$\\frac{1$\n".to_string(),
+            )
+            .is_err()
+        );
+        assert!(!dir.path().join("topic.md").exists());
+    }
+
+    #[test]
+    fn text_that_does_not_parse_keeps_the_existing_lenient_placement_behavior() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let name = apply_generated_deck(
+            dir_str(&dir),
+            "draft.txt".to_string(),
+            "## missing answer\n".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!("draft.md", name);
+        assert_eq!(
+            "## missing answer\n",
+            std::fs::read_to_string(dir.path().join(name)).unwrap()
+        );
     }
 }

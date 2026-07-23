@@ -21,7 +21,7 @@ use crate::{
     augment_ai,
     card::Card,
     config::{AiConfig, AskConfig, Audience, GenerateDeckConfig},
-    exam, generate, parser,
+    exam, generate, math, parser,
     session::{Session, now_ms},
     share,
     trace::{self, Delta, SourceBase, Walk},
@@ -1107,6 +1107,11 @@ impl Generating {
         };
         self.outcome = Some(text.and_then(|t| {
             let name = generate::deck_name(&self.url);
+            if let Ok(deck) = parser::parse(&name, &t) {
+                math::validate_generated(&deck.cards).map_err(|diagnostic| {
+                    format!("generated deck `{name}` has invalid LaTeX math: {diagnostic}")
+                })?;
+            }
             match crate::library::place_deck(&self.dest, &name, &t) {
                 Ok(p) => {
                     let deck = p

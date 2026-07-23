@@ -427,6 +427,66 @@ fn a_drained_job_ignores_further_messages_without_replacing() {
 }
 
 #[test]
+fn generation_rejects_invalid_math_before_creating_or_replacing_a_deck() {
+    let dest = tempfile::tempdir().unwrap();
+    let existing = dest.path().join("some-article.md");
+    std::fs::write(&existing, "original bytes\n").unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    tx.send(Ok("## q\n$\\frac{1$\n".to_string())).unwrap();
+    let mut generating = Generating {
+        rx,
+        url: "https://example.com/some-article".to_string(),
+        dest: dest.path().to_path_buf(),
+        started: Instant::now(),
+        outcome: None,
+    };
+
+    generating.poll();
+
+    let outcome = generating.outcome.unwrap().unwrap_err();
+    assert!(outcome.contains("invalid LaTeX math"), "{outcome}");
+    assert_eq!(
+        "original bytes\n",
+        std::fs::read_to_string(existing).unwrap()
+    );
+    assert_eq!(1, std::fs::read_dir(dest.path()).unwrap().count());
+
+    let empty = tempfile::tempdir().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    tx.send(Ok("## q\n$\\frac{1$\n".to_string())).unwrap();
+    let mut generating = Generating {
+        rx,
+        url: "https://example.com/new-deck".to_string(),
+        dest: empty.path().to_path_buf(),
+        started: Instant::now(),
+        outcome: None,
+    };
+    generating.poll();
+    assert!(generating.outcome.unwrap().is_err());
+    assert_eq!(0, std::fs::read_dir(empty.path()).unwrap().count());
+}
+
+#[test]
+fn generation_still_places_text_that_does_not_parse() {
+    let dest = tempfile::tempdir().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    tx.send(Ok("## missing answer\n".to_string())).unwrap();
+    let mut generating = Generating {
+        rx,
+        url: "https://example.com/draft".to_string(),
+        dest: dest.path().to_path_buf(),
+        started: Instant::now(),
+        outcome: None,
+    };
+
+    generating.poll();
+
+    let outcome = generating.outcome.unwrap().unwrap_err();
+    assert!(outcome.contains("saved draft.md, but it does not parse yet"));
+    assert!(dest.path().join("draft.md").exists());
+}
+
+#[test]
 fn the_zip_upload_cap_accepts_the_boundary_and_rejects_one_past_it() {
     const CAP: usize = 8;
     let at_cap = read_capped(&[7u8; CAP][..], CAP);

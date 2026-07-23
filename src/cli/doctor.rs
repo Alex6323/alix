@@ -86,6 +86,14 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
         }
     };
 
+    let augment = path.parent().map(|dir| {
+        alix::augment::AugmentCache::open(alix::augment::augment_path_for(
+            &alix::workspace::root_store_path(dir),
+        ))
+    });
+    for diagnostic in alix::math::diagnostics(&deck.cards, augment.as_ref()) {
+        report.warn(format!("{}: {diagnostic}", path.display()));
+    }
     inline_emphasis_findings(&deck.cards, report);
 
     for lint in &deck.lints {
@@ -566,6 +574,92 @@ mod tests {
         let mut plain_report = Report::default();
         deck_findings(&plain, true, &mut plain_report);
         assert!(plain_report.notes.is_empty());
+    }
+
+    #[test]
+    fn doctor_reports_each_malformed_formula_but_not_valid_or_literal_dollars() {
+        let dir = tempfile::tempdir().unwrap();
+        let malformed = dir.path().join("malformed.md");
+        let valid = dir.path().join("valid.md");
+        w(
+            dir.path(),
+            "malformed.md",
+            "## Front $\\frac{1$\n\
+             - [x] $\\sqrt{$\n\
+             - [ ] $\\left($\n\
+             > note $\\begin{pmatrix}$\n",
+        );
+        w(
+            dir.path(),
+            "valid.md",
+            "## Valid $x^2$ and literal prices\n$5 and $10 with unmatched $x\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&malformed, true, &mut report);
+        deck_findings(&valid, true, &mut report);
+
+        let math_warnings: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("malformed LaTeX math"))
+            .collect();
+        assert_eq!(4, math_warnings.len(), "{:#?}", report.warnings);
+        assert!(
+            math_warnings
+                .iter()
+                .all(|warning| warning.contains("malformed.md: card at line 1"))
+        );
+        assert!(
+            math_warnings
+                .iter()
+                .any(|warning| warning.contains("\\frac{1"))
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("valid.md: card at line"))
+        );
+    }
+
+    #[test]
+    fn doctor_reports_malformed_cached_choices_and_keypoints() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cached.md");
+        w(
+            dir.path(),
+            "cached.md",
+            "## q <!-- id: doctormath1 -->\na\n",
+        );
+        let parsed =
+            alix::parser::parse("cached.md", &std::fs::read_to_string(&path).unwrap()).unwrap();
+        let card = &parsed.cards[0];
+        let id = card.id().unwrap();
+        let mut augment = alix::augment::AugmentCache::open(dir.path().join("augment.json"));
+        augment.set_distractors(
+            &id,
+            vec![r"$\frac{1$".to_string()],
+            card.content_fingerprint,
+        );
+        augment.set_keypoints(&id, vec![r"$\sqrt{$".to_string()], card.content_fingerprint);
+        augment.save().unwrap();
+
+        let mut report = Report::default();
+        deck_findings(&path, true, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("generated choice"))
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("generated keypoint"))
+        );
     }
 
     #[test]

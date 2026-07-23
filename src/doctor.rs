@@ -121,23 +121,35 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             }
         }
     }
-    let broken: Vec<String> = deck_files
-        .iter()
-        .filter(|p| Deck::load(p).is_err())
-        .map(|p| {
-            p.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
+    let mut broken = Vec::new();
+    let mut malformed_math = Vec::new();
+    for path in &deck_files {
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        match Deck::load(path) {
+            Ok(deck) => {
+                let augment = path.parent().map(|dir| {
+                    crate::augment::AugmentCache::open(crate::augment::augment_path_for(
+                        &workspace::root_store_path(dir),
+                    ))
+                });
+                for diagnostic in crate::math::diagnostics(&deck.cards, augment.as_ref()) {
+                    malformed_math.push(format!("{name}: {diagnostic}"));
+                }
+            }
+            Err(_) => broken.push(name),
+        }
+    }
     let counts = format!(
         "{} decks across {} folders/workspaces — {}",
         deck_files.len(),
         dirs,
         decks_dir.display()
     );
-    if broken.is_empty() {
+    if broken.is_empty() && malformed_math.is_empty() {
         Finding::ok("decks", counts)
     } else {
         let named = broken
@@ -146,11 +158,27 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             .cloned()
             .collect::<Vec<_>>()
             .join(", ");
+        let math_detail = malformed_math
+            .first()
+            .map(|diagnostic| {
+                format!(
+                    "; {} malformed LaTeX formula(s), first: {diagnostic}",
+                    malformed_math.len()
+                )
+            })
+            .unwrap_or_default();
         Finding::bad(
             "decks",
             Status::Warn,
-            format!("{counts}; {} won't parse: {named}", broken.len()),
-            "run `alix deck check <file>` on each for the exact line",
+            if broken.is_empty() {
+                format!("{counts}{math_detail}")
+            } else {
+                format!(
+                    "{counts}; {} won't parse: {named}{math_detail}",
+                    broken.len()
+                )
+            },
+            "run `alix doctor <file>` for the exact deck diagnostics",
         )
     }
 }
@@ -225,7 +253,28 @@ mod tests {
         let finding = check_decks(dir.path());
         assert_eq!(Status::Warn, finding.status);
         assert!(finding.detail.contains("bad.md"), "{}", finding.detail);
-        assert!(finding.remedy.as_deref().unwrap().contains("deck check"));
+        assert!(finding.remedy.as_deref().unwrap().contains("doctor"));
+    }
+
+    #[test]
+    fn malformed_math_warns_with_a_bounded_formula_and_valid_or_literal_math_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("good.md"),
+            "## valid $x^2$\n$5 and $10 with unmatched $x\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("bad.md"), "## q\n$\\frac{1$\n> $\\sqrt{$\n").unwrap();
+
+        let finding = check_decks(dir.path());
+        assert_eq!(Status::Warn, finding.status);
+        assert!(
+            finding.detail.contains("2 malformed LaTeX formula(s)"),
+            "{}",
+            finding.detail
+        );
+        assert!(finding.detail.contains("bad.md: card at line 1"));
+        assert!(finding.detail.contains("\\frac{1"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use alix::{config::Config, deck::Deck, generate, library, parser};
+use alix::{config::Config, deck::Deck, generate, library, math, parser};
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -248,6 +248,7 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     } else {
         format!("{name}.md")
     };
+    let parsed = parser::parse(&name, &text);
 
     if args.print {
         print!("{text}");
@@ -258,7 +259,18 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
             Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
             Err(e) => eprintln!("(warning: does not parse yet — {e})"),
         }
+        if let Ok(deck) = &parsed
+            && let Err(diagnostic) = math::validate_generated(&deck.cards)
+        {
+            eprintln!("(warning: generated deck has invalid LaTeX math: {diagnostic})");
+        }
         return Ok(());
+    }
+
+    if let Ok(deck) = &parsed
+        && let Err(diagnostic) = math::validate_generated(&deck.cards)
+    {
+        bail!("generated deck `{name}` has invalid LaTeX math: {diagnostic}");
     }
 
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
