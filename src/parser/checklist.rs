@@ -14,13 +14,11 @@ pub fn parse_line(line: &str) -> Option<(bool, &str)> {
     let rest = rest.strip_prefix(' ')?;
     let (checked, after) = if let Some(after) = rest.strip_prefix("[ ] ") {
         (false, after)
-    } else if let Some(after) = rest
-        .strip_prefix("[x] ")
-        .or_else(|| rest.strip_prefix("[X] "))
-    {
-        (true, after)
     } else {
-        return None;
+        let after = rest
+            .strip_prefix("[x] ")
+            .or_else(|| rest.strip_prefix("[X] "))?;
+        (true, after)
     };
     if after.is_empty() {
         return None;
