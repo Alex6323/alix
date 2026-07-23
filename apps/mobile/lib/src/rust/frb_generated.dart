@@ -1416,6 +1416,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MathView dco_decode_box_autoadd_math_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_math_view(raw);
+  }
+
+  @protected
   TutorCard dco_decode_box_autoadd_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_tutor_card(raw);
@@ -1443,17 +1449,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CardView dco_decode_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return CardView(
       front: dco_decode_String(arr[0]),
-      context: dco_decode_list_String(arr[1]),
-      back: dco_decode_list_String(arr[2]),
-      reshaped: dco_decode_bool(arr[3]),
-      note: dco_decode_list_note_unit(arr[4]),
-      images: dco_decode_list_image_view(arr[5]),
-      imagesBack: dco_decode_list_image_view(arr[6]),
-      at: dco_decode_opt_String(arr[7]),
+      frontRuns: dco_decode_list_inline_run(arr[1]),
+      frontUnits: dco_decode_opt_list_note_unit(arr[2]),
+      context: dco_decode_list_String(arr[3]),
+      contextRuns: dco_decode_list_list_inline_run(arr[4]),
+      back: dco_decode_list_String(arr[5]),
+      backRuns: dco_decode_list_list_inline_run(arr[6]),
+      reshaped: dco_decode_bool(arr[7]),
+      note: dco_decode_list_note_unit(arr[8]),
+      images: dco_decode_list_image_view(arr[9]),
+      imagesBack: dco_decode_list_image_view(arr[10]),
+      at: dco_decode_opt_String(arr[11]),
     );
   }
 
@@ -1466,6 +1476,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return CheckFeedback(
       results: dco_decode_list_typed_result(arr[0]),
       passed: dco_decode_bool(arr[1]),
+    );
+  }
+
+  @protected
+  ChecklistItem dco_decode_checklist_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ChecklistItem(
+      checked: dco_decode_bool(arr[0]),
+      text: dco_decode_String(arr[1]),
+      runs: dco_decode_list_inline_run(arr[2]),
     );
   }
 
@@ -1589,6 +1612,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  InlineRun dco_decode_inline_run(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return InlineRun(
+      text: dco_decode_String(arr[0]),
+      bold: dco_decode_bool(arr[1]),
+      italic: dco_decode_bool(arr[2]),
+      code: dco_decode_bool(arr[3]),
+      math: dco_decode_opt_box_autoadd_math_view(arr[4]),
+    );
+  }
+
+  @protected
   Input dco_decode_input(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Input.values[raw as int];
@@ -1601,6 +1639,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ChecklistItem> dco_decode_list_checklist_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_checklist_item).toList();
+  }
+
+  @protected
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_deck_entry).toList();
@@ -1610,6 +1654,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<ImageView> dco_decode_list_image_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_image_view).toList();
+  }
+
+  @protected
+  List<InlineRun> dco_decode_list_inline_run(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_inline_run).toList();
+  }
+
+  @protected
+  List<List<InlineRun>> dco_decode_list_list_inline_run(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_list_inline_run).toList();
   }
 
   @protected
@@ -1657,6 +1713,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MathView dco_decode_math_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return MathView(
+      display: dco_decode_bool(arr[0]),
+      svg: dco_decode_opt_String(arr[1]),
+      error: dco_decode_opt_String(arr[2]),
+    );
+  }
+
+  @protected
   Mode dco_decode_mode(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Mode.values[raw as int];
@@ -1667,9 +1736,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
       case 0:
-        return NoteUnit_Sentence(text: dco_decode_String(raw[1]));
+        return NoteUnit_Sentence(
+          text: dco_decode_String(raw[1]),
+          runs: dco_decode_list_inline_run(raw[2]),
+        );
       case 1:
         return NoteUnit_Code(lines: dco_decode_list_String(raw[1]));
+      case 2:
+        return NoteUnit_Checklist(
+          items: dco_decode_list_checklist_item(raw[1]),
+        );
       default:
         throw Exception("unreachable");
     }
@@ -1724,6 +1800,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MathView? dco_decode_opt_box_autoadd_math_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_math_view(raw);
+  }
+
+  @protected
   TutorCard? dco_decode_opt_box_autoadd_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_tutor_card(raw);
@@ -1754,28 +1836,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<List<InlineRun>>? dco_decode_opt_list_list_inline_run(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_list_inline_run(raw);
+  }
+
+  @protected
+  List<NoteUnit>? dco_decode_opt_list_note_unit(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_note_unit(raw);
+  }
+
+  @protected
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
       depth: dco_decode_depth(arr[2]),
       acquire: dco_decode_bool(arr[3]),
       choices: dco_decode_opt_list_String(arr[4]),
-      keypoints: dco_decode_opt_list_String(arr[5]),
-      input: dco_decode_input(arr[6]),
-      finished: dco_decode_bool(arr[7]),
-      remaining: dco_decode_u_32(arr[8]),
-      initial: dco_decode_u_32(arr[9]),
-      reviews: dco_decode_u_32(arr[10]),
-      passed: dco_decode_u_32(arr[11]),
-      failed: dco_decode_u_32(arr[12]),
-      acquired: dco_decode_u_32(arr[13]),
-      canRestart: dco_decode_bool(arr[14]),
-      promotable: dco_decode_bool(arr[15]),
+      choiceRuns: dco_decode_opt_list_list_inline_run(arr[5]),
+      keypoints: dco_decode_opt_list_String(arr[6]),
+      keypointRuns: dco_decode_opt_list_list_inline_run(arr[7]),
+      input: dco_decode_input(arr[8]),
+      finished: dco_decode_bool(arr[9]),
+      remaining: dco_decode_u_32(arr[10]),
+      initial: dco_decode_u_32(arr[11]),
+      reviews: dco_decode_u_32(arr[12]),
+      passed: dco_decode_u_32(arr[13]),
+      failed: dco_decode_u_32(arr[14]),
+      acquired: dco_decode_u_32(arr[15]),
+      canRestart: dco_decode_bool(arr[16]),
+      promotable: dco_decode_bool(arr[17]),
     );
   }
 
@@ -2078,6 +2174,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_math_view(deserializer));
+  }
+
+  @protected
   TutorCard sse_decode_box_autoadd_tutor_card(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_tutor_card(deserializer));
@@ -2109,8 +2211,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CardView sse_decode_card_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_front = sse_decode_String(deserializer);
+    var var_frontRuns = sse_decode_list_inline_run(deserializer);
+    var var_frontUnits = sse_decode_opt_list_note_unit(deserializer);
     var var_context = sse_decode_list_String(deserializer);
+    var var_contextRuns = sse_decode_list_list_inline_run(deserializer);
     var var_back = sse_decode_list_String(deserializer);
+    var var_backRuns = sse_decode_list_list_inline_run(deserializer);
     var var_reshaped = sse_decode_bool(deserializer);
     var var_note = sse_decode_list_note_unit(deserializer);
     var var_images = sse_decode_list_image_view(deserializer);
@@ -2118,8 +2224,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_at = sse_decode_opt_String(deserializer);
     return CardView(
       front: var_front,
+      frontRuns: var_frontRuns,
+      frontUnits: var_frontUnits,
       context: var_context,
+      contextRuns: var_contextRuns,
       back: var_back,
+      backRuns: var_backRuns,
       reshaped: var_reshaped,
       note: var_note,
       images: var_images,
@@ -2134,6 +2244,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_results = sse_decode_list_typed_result(deserializer);
     var var_passed = sse_decode_bool(deserializer);
     return CheckFeedback(results: var_results, passed: var_passed);
+  }
+
+  @protected
+  ChecklistItem sse_decode_checklist_item(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_checked = sse_decode_bool(deserializer);
+    var var_text = sse_decode_String(deserializer);
+    var var_runs = sse_decode_list_inline_run(deserializer);
+    return ChecklistItem(checked: var_checked, text: var_text, runs: var_runs);
   }
 
   @protected
@@ -2263,6 +2382,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  InlineRun sse_decode_inline_run(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_text = sse_decode_String(deserializer);
+    var var_bold = sse_decode_bool(deserializer);
+    var var_italic = sse_decode_bool(deserializer);
+    var var_code = sse_decode_bool(deserializer);
+    var var_math = sse_decode_opt_box_autoadd_math_view(deserializer);
+    return InlineRun(
+      text: var_text,
+      bold: var_bold,
+      italic: var_italic,
+      code: var_code,
+      math: var_math,
+    );
+  }
+
+  @protected
   Input sse_decode_input(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -2277,6 +2413,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ChecklistItem> sse_decode_list_checklist_item(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ChecklistItem>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_checklist_item(deserializer));
     }
     return ans_;
   }
@@ -2301,6 +2451,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <ImageView>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_image_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<InlineRun> sse_decode_list_inline_run(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <InlineRun>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_inline_run(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<List<InlineRun>> sse_decode_list_list_inline_run(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <List<InlineRun>>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_list_inline_run(deserializer));
     }
     return ans_;
   }
@@ -2377,6 +2553,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MathView sse_decode_math_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_display = sse_decode_bool(deserializer);
+    var var_svg = sse_decode_opt_String(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
+    return MathView(display: var_display, svg: var_svg, error: var_error);
+  }
+
+  @protected
   Mode sse_decode_mode(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -2391,10 +2576,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     switch (tag_) {
       case 0:
         var var_text = sse_decode_String(deserializer);
-        return NoteUnit_Sentence(text: var_text);
+        var var_runs = sse_decode_list_inline_run(deserializer);
+        return NoteUnit_Sentence(text: var_text, runs: var_runs);
       case 1:
         var var_lines = sse_decode_list_String(deserializer);
         return NoteUnit_Code(lines: var_lines);
+      case 2:
+        var var_items = sse_decode_list_checklist_item(deserializer);
+        return NoteUnit_Checklist(items: var_items);
       default:
         throw UnimplementedError('');
     }
@@ -2497,6 +2686,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MathView? sse_decode_opt_box_autoadd_math_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_math_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   TutorCard? sse_decode_opt_box_autoadd_tutor_card(
     SseDeserializer deserializer,
   ) {
@@ -2558,6 +2758,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<List<InlineRun>>? sse_decode_opt_list_list_inline_run(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_list_inline_run(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  List<NoteUnit>? sse_decode_opt_list_note_unit(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_note_unit(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_card = sse_decode_opt_box_autoadd_card_view(deserializer);
@@ -2565,7 +2789,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_depth = sse_decode_depth(deserializer);
     var var_acquire = sse_decode_bool(deserializer);
     var var_choices = sse_decode_opt_list_String(deserializer);
+    var var_choiceRuns = sse_decode_opt_list_list_inline_run(deserializer);
     var var_keypoints = sse_decode_opt_list_String(deserializer);
+    var var_keypointRuns = sse_decode_opt_list_list_inline_run(deserializer);
     var var_input = sse_decode_input(deserializer);
     var var_finished = sse_decode_bool(deserializer);
     var var_remaining = sse_decode_u_32(deserializer);
@@ -2582,7 +2808,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       depth: var_depth,
       acquire: var_acquire,
       choices: var_choices,
+      choiceRuns: var_choiceRuns,
       keypoints: var_keypoints,
+      keypointRuns: var_keypointRuns,
       input: var_input,
       finished: var_finished,
       remaining: var_remaining,
@@ -2928,6 +3156,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_math_view(
+    MathView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_math_view(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_tutor_card(
     TutorCard self,
     SseSerializer serializer,
@@ -2964,8 +3201,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_card_view(CardView self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.front, serializer);
+    sse_encode_list_inline_run(self.frontRuns, serializer);
+    sse_encode_opt_list_note_unit(self.frontUnits, serializer);
     sse_encode_list_String(self.context, serializer);
+    sse_encode_list_list_inline_run(self.contextRuns, serializer);
     sse_encode_list_String(self.back, serializer);
+    sse_encode_list_list_inline_run(self.backRuns, serializer);
     sse_encode_bool(self.reshaped, serializer);
     sse_encode_list_note_unit(self.note, serializer);
     sse_encode_list_image_view(self.images, serializer);
@@ -2978,6 +3219,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_typed_result(self.results, serializer);
     sse_encode_bool(self.passed, serializer);
+  }
+
+  @protected
+  void sse_encode_checklist_item(ChecklistItem self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.checked, serializer);
+    sse_encode_String(self.text, serializer);
+    sse_encode_list_inline_run(self.runs, serializer);
   }
 
   @protected
@@ -3073,6 +3322,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_inline_run(InlineRun self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.bold, serializer);
+    sse_encode_bool(self.italic, serializer);
+    sse_encode_bool(self.code, serializer);
+    sse_encode_opt_box_autoadd_math_view(self.math, serializer);
+  }
+
+  @protected
   void sse_encode_input(Input self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -3084,6 +3343,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_checklist_item(
+    List<ChecklistItem> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_checklist_item(item, serializer);
     }
   }
 
@@ -3108,6 +3379,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_image_view(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_inline_run(
+    List<InlineRun> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_inline_run(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_list_inline_run(
+    List<List<InlineRun>> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_list_inline_run(item, serializer);
     }
   }
 
@@ -3190,6 +3485,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_math_view(MathView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.display, serializer);
+    sse_encode_opt_String(self.svg, serializer);
+    sse_encode_opt_String(self.error, serializer);
+  }
+
+  @protected
   void sse_encode_mode(Mode self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -3199,12 +3502,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_note_unit(NoteUnit self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
-      case NoteUnit_Sentence(text: final text):
+      case NoteUnit_Sentence(text: final text, runs: final runs):
         sse_encode_i_32(0, serializer);
         sse_encode_String(text, serializer);
+        sse_encode_list_inline_run(runs, serializer);
       case NoteUnit_Code(lines: final lines):
         sse_encode_i_32(1, serializer);
         sse_encode_list_String(lines, serializer);
+      case NoteUnit_Checklist(items: final items):
+        sse_encode_i_32(2, serializer);
+        sse_encode_list_checklist_item(items, serializer);
     }
   }
 
@@ -3307,6 +3614,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_math_view(
+    MathView? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_math_view(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_tutor_card(
     TutorCard? self,
     SseSerializer serializer,
@@ -3369,6 +3689,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_list_list_inline_run(
+    List<List<InlineRun>>? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_list_inline_run(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_note_unit(
+    List<NoteUnit>? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_note_unit(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_box_autoadd_card_view(self.card, serializer);
@@ -3376,7 +3722,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_depth(self.depth, serializer);
     sse_encode_bool(self.acquire, serializer);
     sse_encode_opt_list_String(self.choices, serializer);
+    sse_encode_opt_list_list_inline_run(self.choiceRuns, serializer);
     sse_encode_opt_list_String(self.keypoints, serializer);
+    sse_encode_opt_list_list_inline_run(self.keypointRuns, serializer);
     sse_encode_input(self.input, serializer);
     sse_encode_bool(self.finished, serializer);
     sse_encode_u_32(self.remaining, serializer);

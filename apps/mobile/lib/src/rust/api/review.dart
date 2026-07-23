@@ -102,8 +102,12 @@ abstract class WalkSession implements RustOpaqueInterface {
 
 class CardView {
   final String front;
+  final List<InlineRun> frontRuns;
+  final List<NoteUnit>? frontUnits;
   final List<String> context;
+  final List<List<InlineRun>> contextRuns;
   final List<String> back;
+  final List<List<InlineRun>> backRuns;
   final bool reshaped;
   final List<NoteUnit> note;
   final List<ImageView> images;
@@ -112,8 +116,12 @@ class CardView {
 
   const CardView({
     required this.front,
+    required this.frontRuns,
+    this.frontUnits,
     required this.context,
+    required this.contextRuns,
     required this.back,
+    required this.backRuns,
     required this.reshaped,
     required this.note,
     required this.images,
@@ -124,8 +132,12 @@ class CardView {
   @override
   int get hashCode =>
       front.hashCode ^
+      frontRuns.hashCode ^
+      frontUnits.hashCode ^
       context.hashCode ^
+      contextRuns.hashCode ^
       back.hashCode ^
+      backRuns.hashCode ^
       reshaped.hashCode ^
       note.hashCode ^
       images.hashCode ^
@@ -138,8 +150,12 @@ class CardView {
       other is CardView &&
           runtimeType == other.runtimeType &&
           front == other.front &&
+          frontRuns == other.frontRuns &&
+          frontUnits == other.frontUnits &&
           context == other.context &&
+          contextRuns == other.contextRuns &&
           back == other.back &&
+          backRuns == other.backRuns &&
           reshaped == other.reshaped &&
           note == other.note &&
           images == other.images &&
@@ -163,6 +179,30 @@ class CheckFeedback {
           runtimeType == other.runtimeType &&
           results == other.results &&
           passed == other.passed;
+}
+
+class ChecklistItem {
+  final bool checked;
+  final String text;
+  final List<InlineRun> runs;
+
+  const ChecklistItem({
+    required this.checked,
+    required this.text,
+    required this.runs,
+  });
+
+  @override
+  int get hashCode => checked.hashCode ^ text.hashCode ^ runs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChecklistItem &&
+          runtimeType == other.runtimeType &&
+          checked == other.checked &&
+          text == other.text &&
+          runs == other.runs;
 }
 
 class ChoiceFeedback {
@@ -253,7 +293,62 @@ class ImageView {
           alt == other.alt;
 }
 
+class InlineRun {
+  final String text;
+  final bool bold;
+  final bool italic;
+  final bool code;
+  final MathView? math;
+
+  const InlineRun({
+    required this.text,
+    required this.bold,
+    required this.italic,
+    required this.code,
+    this.math,
+  });
+
+  @override
+  int get hashCode =>
+      text.hashCode ^
+      bold.hashCode ^
+      italic.hashCode ^
+      code.hashCode ^
+      math.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is InlineRun &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          bold == other.bold &&
+          italic == other.italic &&
+          code == other.code &&
+          math == other.math;
+}
+
 enum Input { type, draw }
+
+class MathView {
+  final bool display;
+  final String? svg;
+  final String? error;
+
+  const MathView({required this.display, this.svg, this.error});
+
+  @override
+  int get hashCode => display.hashCode ^ svg.hashCode ^ error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MathView &&
+          runtimeType == other.runtimeType &&
+          display == other.display &&
+          svg == other.svg &&
+          error == other.error;
+}
 
 enum Mode { flip, typing, typeLine, choice, lineByLine, explain }
 
@@ -261,8 +356,13 @@ enum Mode { flip, typing, typeLine, choice, lineByLine, explain }
 sealed class NoteUnit with _$NoteUnit {
   const NoteUnit._();
 
-  const factory NoteUnit.sentence({required String text}) = NoteUnit_Sentence;
+  const factory NoteUnit.sentence({
+    required String text,
+    required List<InlineRun> runs,
+  }) = NoteUnit_Sentence;
   const factory NoteUnit.code({required List<String> lines}) = NoteUnit_Code;
+  const factory NoteUnit.checklist({required List<ChecklistItem> items}) =
+      NoteUnit_Checklist;
 }
 
 class ReviewState {
@@ -271,7 +371,9 @@ class ReviewState {
   final Depth depth;
   final bool acquire;
   final List<String>? choices;
+  final List<List<InlineRun>>? choiceRuns;
   final List<String>? keypoints;
+  final List<List<InlineRun>>? keypointRuns;
   final Input input;
   final bool finished;
   final int remaining;
@@ -289,7 +391,9 @@ class ReviewState {
     required this.depth,
     required this.acquire,
     this.choices,
+    this.choiceRuns,
     this.keypoints,
+    this.keypointRuns,
     required this.input,
     required this.finished,
     required this.remaining,
@@ -309,7 +413,9 @@ class ReviewState {
       depth.hashCode ^
       acquire.hashCode ^
       choices.hashCode ^
+      choiceRuns.hashCode ^
       keypoints.hashCode ^
+      keypointRuns.hashCode ^
       input.hashCode ^
       finished.hashCode ^
       remaining.hashCode ^
@@ -331,7 +437,9 @@ class ReviewState {
           depth == other.depth &&
           acquire == other.acquire &&
           choices == other.choices &&
+          choiceRuns == other.choiceRuns &&
           keypoints == other.keypoints &&
+          keypointRuns == other.keypointRuns &&
           input == other.input &&
           finished == other.finished &&
           remaining == other.remaining &&

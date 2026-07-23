@@ -5,6 +5,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
@@ -77,6 +78,23 @@ void acquireAll(String deck, String root) {
   }
 }
 
+InlineRun expectMathRun(
+  List<InlineRun> runs,
+  String source, {
+  bool display = false,
+}) {
+  final run = runs.firstWhere(
+    (candidate) => candidate.math != null && candidate.text == source,
+  );
+  expect(run.text, source);
+  expect(run.math!.display, display);
+  expect(run.math!.error, isNull);
+  expect(run.math!.svg, startsWith('<svg'));
+  expect(run.math!.svg, contains('<path'));
+  expect(run.math!.svg, isNot(contains('<text')));
+  return run;
+}
+
 void main() {
   setUpAll(() async => RustLib.init());
 
@@ -94,6 +112,106 @@ void main() {
       nowMs: t0,
     );
     expect(members.single.title, 'm');
+  });
+
+  test('review bridge carries shared math runs across every card surface', () {
+    final root = Directory.systemTemp.createTempSync('alix-math-bridge-');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final choiceDeck = '${root.path}/choice.md';
+    File(choiceDeck).writeAsStringSync(
+      '## What does \$E = mc^2\$ describe? <!-- id: choice -->\n'
+      '- [x] **\$E = mc^2\$**\n'
+      '- [ ] \$F = ma\$\n'
+      '> Energy and mass use \$E = mc^2\$.\n'
+      '> - [x] Includes \$c^2\$\n',
+    );
+    final choice = ReviewSession.open(
+      deckPath: choiceDeck,
+      rootDir: root.path,
+      nowMs: t0,
+    ).state();
+    final choiceCard = choice.card!;
+    expectMathRun(choiceCard.frontRuns, 'E = mc^2');
+    expectMathRun(
+      choice.choiceRuns!.expand((runs) => runs).toList(),
+      'E = mc^2',
+    );
+    final noteRuns = <InlineRun>[];
+    for (final unit in choiceCard.note) {
+      switch (unit) {
+        case NoteUnit_Sentence(:final runs):
+          noteRuns.addAll(runs);
+        case NoteUnit_Checklist(:final items):
+          noteRuns.addAll(items.expand((item) => item.runs));
+        case NoteUnit_Code():
+          break;
+      }
+    }
+    expectMathRun(noteRuns, 'E = mc^2');
+    expectMathRun(noteRuns, 'c^2');
+
+    final displayDeck = '${root.path}/display.md';
+    File(displayDeck).writeAsStringSync(
+      '## Evaluate <!-- id: display -->\n'
+      '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
+    );
+    final display = ReviewSession.open(
+      deckPath: displayDeck,
+      rootDir: root.path,
+      nowMs: t0,
+    ).state().card!;
+    expectMathRun(
+      display.backRuns.single,
+      r'\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}',
+      display: true,
+    );
+
+    final clozeDeck = '${root.path}/cloze.md';
+    File(clozeDeck).writeAsStringSync(
+      '## Complete <!-- id: cloze -->\n'
+      '\$x = \\blank{alpha} + \\blank{beta}\$\n',
+    );
+    final cloze = ReviewSession.open(
+      deckPath: clozeDeck,
+      rootDir: root.path,
+      nowMs: t0,
+    ).state().card!;
+    final clozeRun = cloze.contextRuns.single.firstWhere(
+      (run) => run.math != null,
+    );
+    expect(clozeRun.text, contains('____'));
+    expect(clozeRun.text, contains('[…]'));
+    expect(clozeRun.text, isNot(contains('alpha')));
+    expect(clozeRun.text, isNot(contains('beta')));
+    expect(clozeRun.math!.svg, contains('<path'));
+    expect(clozeRun.math!.svg, isNot(contains('<text')));
+    expect(clozeRun.math!.error, isNull);
+
+    final explainDeck = '${root.path}/explain.md';
+    File(explainDeck).writeAsStringSync(
+      '## Explain <!-- id: explain -->\n'
+      'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
+      'The discriminant is \$b^2 - 4ac\$.\n',
+    );
+    final acquire = ReviewSession.open(
+      deckPath: explainDeck,
+      rootDir: root.path,
+      depth: Depth.reconstruct,
+      nowMs: t0,
+    );
+    acquire.acquire(nowMs: t0);
+    final explain = ReviewSession.open(
+      deckPath: explainDeck,
+      rootDir: root.path,
+      depth: Depth.reconstruct,
+      nowMs: later,
+    ).state();
+    expect(explain.mode, Mode.explain);
+    expectMathRun(
+      explain.keypointRuns!.expand((runs) => runs).toList(),
+      r'x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}',
+    );
   });
 
   test('a grade persists into the workspace store, on injected time', () {
@@ -628,6 +746,142 @@ void main() {
       store,
       contains('"Pass"'),
       reason: 'all keypoints ticked grades as a Pass, not a Fail',
+    );
+  });
+
+  testWidgets('review screen renders shared math on every review surface', (
+    tester,
+  ) async {
+    final root = Directory.systemTemp.createTempSync('alix-math-screen-');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final choiceDeck = '${root.path}/choice.md';
+    File(choiceDeck).writeAsStringSync(
+      '## What does \$E = mc^2\$ describe? <!-- id: choice -->\n'
+      '- [x] **\$E = mc^2\$**\n'
+      '- [ ] \$F = ma\$\n'
+      '> Energy and mass use \$E = mc^2\$.\n'
+      '> - [x] Includes \$c^2\$\n',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixDark(),
+        home: ReviewScreen(
+          key: UniqueKey(),
+          deckPath: choiceDeck,
+          rootDir: root.path,
+          depth: Depth.recall,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SvgPicture), findsAtLeast(3));
+    final beforeNote = find.byType(SvgPicture).evaluate().length;
+    await tester.tap(find.byKey(const ValueKey('option-0')));
+    await tester.pump();
+    expect(find.byType(SvgPicture), findsAtLeast(beforeNote + 2));
+
+    final displayDeck = '${root.path}/display.md';
+    File(displayDeck).writeAsStringSync(
+      '## Evaluate <!-- id: display -->\n'
+      '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixLight(),
+        home: ReviewScreen(
+          key: UniqueKey(),
+          deckPath: displayDeck,
+          rootDir: root.path,
+          depth: Depth.recall,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reveal'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SvgPicture), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is FittedBox && widget.fit == BoxFit.scaleDown,
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    final clozeDeck = '${root.path}/cloze.md';
+    File(clozeDeck).writeAsStringSync(
+      '## Complete <!-- id: cloze -->\n'
+      '\$x = \\blank{alpha} + \\blank{beta}\$\n',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixDark(),
+        home: ReviewScreen(
+          key: UniqueKey(),
+          deckPath: clozeDeck,
+          rootDir: root.path,
+          depth: Depth.recall,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SvgPicture), findsOneWidget);
+    expect(find.textContaining('alpha', findRichText: true), findsNothing);
+    expect(find.textContaining('beta', findRichText: true), findsNothing);
+
+    final explainDeck = '${root.path}/explain.md';
+    File(explainDeck).writeAsStringSync(
+      '## Explain <!-- id: explain -->\n'
+      'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
+      'The discriminant is \$b^2 - 4ac\$.\n',
+    );
+    final backdated = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch - 600000,
+    );
+    ReviewSession.open(
+      deckPath: explainDeck,
+      rootDir: root.path,
+      depth: Depth.reconstruct,
+      nowMs: backdated,
+    ).acquire(nowMs: backdated);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixDark(),
+        home: ReviewScreen(
+          key: UniqueKey(),
+          deckPath: explainDeck,
+          rootDir: root.path,
+          depth: Depth.reconstruct,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reveal'));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('kp-0')), findsOneWidget);
+    expect(find.byType(SvgPicture), findsAtLeast(4));
+
+    final malformedDeck = '${root.path}/malformed.md';
+    File(malformedDeck).writeAsStringSync(
+      '## Broken \$\\frac{1\$ <!-- id: malformed -->\n'
+      'still reviewable\n',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixLight(),
+        home: ReviewScreen(
+          key: UniqueKey(),
+          deckPath: malformedDeck,
+          rootDir: root.path,
+          depth: Depth.recall,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.textContaining('math could not render', findRichText: true),
+      findsOneWidget,
     );
   });
 

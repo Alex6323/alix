@@ -1487,8 +1487,12 @@ const _: fn() = || {
     {
         let CardView = None::<crate::api::review::CardView>.unwrap();
         let _: String = CardView.front;
+        let _: Vec<crate::api::review::InlineRun> = CardView.front_runs;
+        let _: Option<Vec<crate::api::review::NoteUnit>> = CardView.front_units;
         let _: Vec<String> = CardView.context;
+        let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.context_runs;
         let _: Vec<String> = CardView.back;
+        let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.back_runs;
         let _: bool = CardView.reshaped;
         let _: Vec<crate::api::review::NoteUnit> = CardView.note;
         let _: Vec<crate::api::review::ImageView> = CardView.images;
@@ -1501,6 +1505,12 @@ const _: fn() = || {
         let _: bool = CheckFeedback.passed;
     }
     {
+        let ChecklistItem = None::<crate::api::review::ChecklistItem>.unwrap();
+        let _: bool = ChecklistItem.checked;
+        let _: String = ChecklistItem.text;
+        let _: Vec<crate::api::review::InlineRun> = ChecklistItem.runs;
+    }
+    {
         let ChoiceFeedback = None::<crate::api::review::ChoiceFeedback>.unwrap();
         let _: usize = ChoiceFeedback.chosen;
         let _: usize = ChoiceFeedback.correct;
@@ -1511,12 +1521,30 @@ const _: fn() = || {
         let _: String = ImageView.src;
         let _: Option<String> = ImageView.alt;
     }
+    {
+        let InlineRun = None::<crate::api::review::InlineRun>.unwrap();
+        let _: String = InlineRun.text;
+        let _: bool = InlineRun.bold;
+        let _: bool = InlineRun.italic;
+        let _: bool = InlineRun.code;
+        let _: Option<crate::api::review::MathView> = InlineRun.math;
+    }
+    {
+        let MathView = None::<crate::api::review::MathView>.unwrap();
+        let _: bool = MathView.display;
+        let _: Option<String> = MathView.svg;
+        let _: Option<String> = MathView.error;
+    }
     match None::<crate::api::review::NoteUnit>.unwrap() {
-        crate::api::review::NoteUnit::Sentence { text } => {
+        crate::api::review::NoteUnit::Sentence { text, runs } => {
             let _: String = text;
+            let _: Vec<crate::api::review::InlineRun> = runs;
         }
         crate::api::review::NoteUnit::Code { lines } => {
             let _: Vec<String> = lines;
+        }
+        crate::api::review::NoteUnit::Checklist { items } => {
+            let _: Vec<crate::api::review::ChecklistItem> = items;
         }
     }
     {
@@ -1526,7 +1554,9 @@ const _: fn() = || {
         let _: crate::api::review::Depth = ReviewState.depth;
         let _: bool = ReviewState.acquire;
         let _: Option<Vec<String>> = ReviewState.choices;
+        let _: Option<Vec<Vec<crate::api::review::InlineRun>>> = ReviewState.choice_runs;
         let _: Option<Vec<String>> = ReviewState.keypoints;
+        let _: Option<Vec<Vec<crate::api::review::InlineRun>>> = ReviewState.keypoint_runs;
         let _: crate::api::review::Input = ReviewState.input;
         let _: bool = ReviewState.finished;
         let _: u32 = ReviewState.remaining;
@@ -1624,8 +1654,14 @@ impl SseDecode for crate::api::review::CardView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_front = <String>::sse_decode(deserializer);
+        let mut var_frontRuns = <Vec<crate::api::review::InlineRun>>::sse_decode(deserializer);
+        let mut var_frontUnits =
+            <Option<Vec<crate::api::review::NoteUnit>>>::sse_decode(deserializer);
         let mut var_context = <Vec<String>>::sse_decode(deserializer);
+        let mut var_contextRuns =
+            <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
+        let mut var_backRuns = <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_reshaped = <bool>::sse_decode(deserializer);
         let mut var_note = <Vec<crate::api::review::NoteUnit>>::sse_decode(deserializer);
         let mut var_images = <Vec<crate::api::review::ImageView>>::sse_decode(deserializer);
@@ -1633,8 +1669,12 @@ impl SseDecode for crate::api::review::CardView {
         let mut var_at = <Option<String>>::sse_decode(deserializer);
         return crate::api::review::CardView {
             front: var_front,
+            front_runs: var_frontRuns,
+            front_units: var_frontUnits,
             context: var_context,
+            context_runs: var_contextRuns,
             back: var_back,
+            back_runs: var_backRuns,
             reshaped: var_reshaped,
             note: var_note,
             images: var_images,
@@ -1652,6 +1692,20 @@ impl SseDecode for crate::api::review::CheckFeedback {
         return crate::api::review::CheckFeedback {
             results: var_results,
             passed: var_passed,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::ChecklistItem {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_checked = <bool>::sse_decode(deserializer);
+        let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_runs = <Vec<crate::api::review::InlineRun>>::sse_decode(deserializer);
+        return crate::api::review::ChecklistItem {
+            checked: var_checked,
+            text: var_text,
+            runs: var_runs,
         };
     }
 }
@@ -1809,6 +1863,24 @@ impl SseDecode for crate::api::review::ImageView {
     }
 }
 
+impl SseDecode for crate::api::review::InlineRun {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_bold = <bool>::sse_decode(deserializer);
+        let mut var_italic = <bool>::sse_decode(deserializer);
+        let mut var_code = <bool>::sse_decode(deserializer);
+        let mut var_math = <Option<crate::api::review::MathView>>::sse_decode(deserializer);
+        return crate::api::review::InlineRun {
+            text: var_text,
+            bold: var_bold,
+            italic: var_italic,
+            code: var_code,
+            math: var_math,
+        };
+    }
+}
+
 impl SseDecode for crate::api::review::Input {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1833,6 +1905,20 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::api::review::ChecklistItem> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::review::ChecklistItem>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::listing::DeckEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1852,6 +1938,32 @@ impl SseDecode for Vec<crate::api::review::ImageView> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::review::ImageView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::review::InlineRun> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::review::InlineRun>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<Vec<crate::api::review::InlineRun>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<Vec<crate::api::review::InlineRun>>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -1941,6 +2053,20 @@ impl SseDecode for Vec<crate::api::review::WalkLine> {
     }
 }
 
+impl SseDecode for crate::api::review::MathView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_display = <bool>::sse_decode(deserializer);
+        let mut var_svg = <Option<String>>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        return crate::api::review::MathView {
+            display: var_display,
+            svg: var_svg,
+            error: var_error,
+        };
+    }
+}
+
 impl SseDecode for crate::api::review::Mode {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1964,11 +2090,20 @@ impl SseDecode for crate::api::review::NoteUnit {
         match tag_ {
             0 => {
                 let mut var_text = <String>::sse_decode(deserializer);
-                return crate::api::review::NoteUnit::Sentence { text: var_text };
+                let mut var_runs = <Vec<crate::api::review::InlineRun>>::sse_decode(deserializer);
+                return crate::api::review::NoteUnit::Sentence {
+                    text: var_text,
+                    runs: var_runs,
+                };
             }
             1 => {
                 let mut var_lines = <Vec<String>>::sse_decode(deserializer);
                 return crate::api::review::NoteUnit::Code { lines: var_lines };
+            }
+            2 => {
+                let mut var_items =
+                    <Vec<crate::api::review::ChecklistItem>>::sse_decode(deserializer);
+                return crate::api::review::NoteUnit::Checklist { items: var_items };
             }
             _ => {
                 unimplemented!("");
@@ -2071,6 +2206,17 @@ impl SseDecode for Option<crate::api::review::ForeignWriter> {
     }
 }
 
+impl SseDecode for Option<crate::api::review::MathView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::MathView>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::review::TutorCard> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2126,6 +2272,32 @@ impl SseDecode for Option<Vec<String>> {
     }
 }
 
+impl SseDecode for Option<Vec<Vec<crate::api::review::InlineRun>>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<Vec<crate::api::review::NoteUnit>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<Vec<crate::api::review::NoteUnit>>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for crate::api::review::ReviewState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2134,7 +2306,11 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_depth = <crate::api::review::Depth>::sse_decode(deserializer);
         let mut var_acquire = <bool>::sse_decode(deserializer);
         let mut var_choices = <Option<Vec<String>>>::sse_decode(deserializer);
+        let mut var_choiceRuns =
+            <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_decode(deserializer);
         let mut var_keypoints = <Option<Vec<String>>>::sse_decode(deserializer);
+        let mut var_keypointRuns =
+            <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_decode(deserializer);
         let mut var_input = <crate::api::review::Input>::sse_decode(deserializer);
         let mut var_finished = <bool>::sse_decode(deserializer);
         let mut var_remaining = <u32>::sse_decode(deserializer);
@@ -2151,7 +2327,9 @@ impl SseDecode for crate::api::review::ReviewState {
             depth: var_depth,
             acquire: var_acquire,
             choices: var_choices,
+            choice_runs: var_choiceRuns,
             keypoints: var_keypoints,
+            keypoint_runs: var_keypointRuns,
             input: var_input,
             finished: var_finished,
             remaining: var_remaining,
@@ -2461,8 +2639,12 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.0.front.into_into_dart().into_dart(),
+            self.0.front_runs.into_into_dart().into_dart(),
+            self.0.front_units.into_into_dart().into_dart(),
             self.0.context.into_into_dart().into_dart(),
+            self.0.context_runs.into_into_dart().into_dart(),
             self.0.back.into_into_dart().into_dart(),
+            self.0.back_runs.into_into_dart().into_dart(),
             self.0.reshaped.into_into_dart().into_dart(),
             self.0.note.into_into_dart().into_dart(),
             self.0.images.into_into_dart().into_dart(),
@@ -2501,6 +2683,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::CheckFeedb
     for crate::api::review::CheckFeedback
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::CheckFeedback> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ChecklistItem> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.checked.into_into_dart().into_dart(),
+            self.0.text.into_into_dart().into_dart(),
+            self.0.runs.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::ChecklistItem>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ChecklistItem>>
+    for crate::api::review::ChecklistItem
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::ChecklistItem> {
         self.into()
     }
 }
@@ -2684,6 +2888,30 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ImageView>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::InlineRun> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.text.into_into_dart().into_dart(),
+            self.0.bold.into_into_dart().into_dart(),
+            self.0.italic.into_into_dart().into_dart(),
+            self.0.code.into_into_dart().into_dart(),
+            self.0.math.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::InlineRun>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::InlineRun>>
+    for crate::api::review::InlineRun
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::InlineRun> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::Input> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -2701,6 +2929,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::Input>>
     for crate::api::review::Input
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::Input> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::MathView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.display.into_into_dart().into_dart(),
+            self.0.svg.into_into_dart().into_dart(),
+            self.0.error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::MathView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::MathView>>
+    for crate::api::review::MathView
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::MathView> {
         self.into()
     }
 }
@@ -2733,11 +2983,17 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::Mode>>
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::NoteUnit> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
-            crate::api::review::NoteUnit::Sentence { text } => {
-                [0.into_dart(), text.into_into_dart().into_dart()].into_dart()
-            }
+            crate::api::review::NoteUnit::Sentence { text, runs } => [
+                0.into_dart(),
+                text.into_into_dart().into_dart(),
+                runs.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::review::NoteUnit::Code { lines } => {
                 [1.into_dart(), lines.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::review::NoteUnit::Checklist { items } => {
+                [2.into_dart(), items.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -2765,7 +3021,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.depth.into_into_dart().into_dart(),
             self.0.acquire.into_into_dart().into_dart(),
             self.0.choices.into_into_dart().into_dart(),
+            self.0.choice_runs.into_into_dart().into_dart(),
             self.0.keypoints.into_into_dart().into_dart(),
+            self.0.keypoint_runs.into_into_dart().into_dart(),
             self.0.input.into_into_dart().into_dart(),
             self.0.finished.into_into_dart().into_dart(),
             self.0.remaining.into_into_dart().into_dart(),
@@ -3031,8 +3289,12 @@ impl SseEncode for crate::api::review::CardView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.front, serializer);
+        <Vec<crate::api::review::InlineRun>>::sse_encode(self.front_runs, serializer);
+        <Option<Vec<crate::api::review::NoteUnit>>>::sse_encode(self.front_units, serializer);
         <Vec<String>>::sse_encode(self.context, serializer);
+        <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.context_runs, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);
+        <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.back_runs, serializer);
         <bool>::sse_encode(self.reshaped, serializer);
         <Vec<crate::api::review::NoteUnit>>::sse_encode(self.note, serializer);
         <Vec<crate::api::review::ImageView>>::sse_encode(self.images, serializer);
@@ -3046,6 +3308,15 @@ impl SseEncode for crate::api::review::CheckFeedback {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<crate::api::review::TypedResult>>::sse_encode(self.results, serializer);
         <bool>::sse_encode(self.passed, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::ChecklistItem {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.checked, serializer);
+        <String>::sse_encode(self.text, serializer);
+        <Vec<crate::api::review::InlineRun>>::sse_encode(self.runs, serializer);
     }
 }
 
@@ -3169,6 +3440,17 @@ impl SseEncode for crate::api::review::ImageView {
     }
 }
 
+impl SseEncode for crate::api::review::InlineRun {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.text, serializer);
+        <bool>::sse_encode(self.bold, serializer);
+        <bool>::sse_encode(self.italic, serializer);
+        <bool>::sse_encode(self.code, serializer);
+        <Option<crate::api::review::MathView>>::sse_encode(self.math, serializer);
+    }
+}
+
 impl SseEncode for crate::api::review::Input {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3195,6 +3477,16 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::api::review::ChecklistItem> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::review::ChecklistItem>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::listing::DeckEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3211,6 +3503,26 @@ impl SseEncode for Vec<crate::api::review::ImageView> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::review::ImageView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::review::InlineRun> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::review::InlineRun>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<Vec<crate::api::review::InlineRun>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <Vec<crate::api::review::InlineRun>>::sse_encode(item, serializer);
         }
     }
 }
@@ -3285,6 +3597,15 @@ impl SseEncode for Vec<crate::api::review::WalkLine> {
     }
 }
 
+impl SseEncode for crate::api::review::MathView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.display, serializer);
+        <Option<String>>::sse_encode(self.svg, serializer);
+        <Option<String>>::sse_encode(self.error, serializer);
+    }
+}
+
 impl SseEncode for crate::api::review::Mode {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3309,13 +3630,18 @@ impl SseEncode for crate::api::review::NoteUnit {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         match self {
-            crate::api::review::NoteUnit::Sentence { text } => {
+            crate::api::review::NoteUnit::Sentence { text, runs } => {
                 <i32>::sse_encode(0, serializer);
                 <String>::sse_encode(text, serializer);
+                <Vec<crate::api::review::InlineRun>>::sse_encode(runs, serializer);
             }
             crate::api::review::NoteUnit::Code { lines } => {
                 <i32>::sse_encode(1, serializer);
                 <Vec<String>>::sse_encode(lines, serializer);
+            }
+            crate::api::review::NoteUnit::Checklist { items } => {
+                <i32>::sse_encode(2, serializer);
+                <Vec<crate::api::review::ChecklistItem>>::sse_encode(items, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -3404,6 +3730,16 @@ impl SseEncode for Option<crate::api::review::ForeignWriter> {
     }
 }
 
+impl SseEncode for Option<crate::api::review::MathView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::MathView>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::review::TutorCard> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3454,6 +3790,26 @@ impl SseEncode for Option<Vec<String>> {
     }
 }
 
+impl SseEncode for Option<Vec<Vec<crate::api::review::InlineRun>>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<Vec<crate::api::review::NoteUnit>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <Vec<crate::api::review::NoteUnit>>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::api::review::ReviewState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3462,7 +3818,12 @@ impl SseEncode for crate::api::review::ReviewState {
         <crate::api::review::Depth>::sse_encode(self.depth, serializer);
         <bool>::sse_encode(self.acquire, serializer);
         <Option<Vec<String>>>::sse_encode(self.choices, serializer);
+        <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(self.choice_runs, serializer);
         <Option<Vec<String>>>::sse_encode(self.keypoints, serializer);
+        <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(
+            self.keypoint_runs,
+            serializer,
+        );
         <crate::api::review::Input>::sse_encode(self.input, serializer);
         <bool>::sse_encode(self.finished, serializer);
         <u32>::sse_encode(self.remaining, serializer);

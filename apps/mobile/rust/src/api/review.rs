@@ -5,7 +5,9 @@ use anyhow::{Result, bail};
 
 pub use alix::answer::{Input, Mode, TypedResult};
 pub use alix::depth::Depth;
-pub use alix::render::NoteUnit;
+pub use alix::inline::InlineRun;
+pub use alix::math::MathView;
+pub use alix::render::{ChecklistItem, NoteUnit};
 pub use alix::review::{CardView, CheckFeedback, ChoiceFeedback, ImageView, ReviewState};
 pub use alix::trace::Phase as WalkPhase;
 
@@ -32,10 +34,37 @@ pub enum _Input {
     Draw,
 }
 
+#[flutter_rust_bridge::frb(mirror(MathView))]
+pub struct _MathView {
+    pub display: bool,
+    pub svg: Option<String>,
+    pub error: Option<String>,
+}
+
+#[flutter_rust_bridge::frb(mirror(InlineRun))]
+pub struct _InlineRun {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub code: bool,
+    pub math: Option<MathView>,
+}
+
+#[flutter_rust_bridge::frb(mirror(ChecklistItem))]
+pub struct _ChecklistItem {
+    pub checked: bool,
+    pub text: String,
+    pub runs: Vec<InlineRun>,
+}
+
 #[flutter_rust_bridge::frb(mirror(NoteUnit))]
 pub enum _NoteUnit {
-    Sentence { text: String },
+    Sentence {
+        text: String,
+        runs: Vec<InlineRun>,
+    },
     Code { lines: Vec<String> },
+    Checklist { items: Vec<ChecklistItem> },
 }
 
 #[flutter_rust_bridge::frb(mirror(ImageView))]
@@ -47,8 +76,12 @@ pub struct _ImageView {
 #[flutter_rust_bridge::frb(mirror(CardView))]
 pub struct _CardView {
     pub front: String,
+    pub front_runs: Vec<InlineRun>,
+    pub front_units: Option<Vec<NoteUnit>>,
     pub context: Vec<String>,
+    pub context_runs: Vec<Vec<InlineRun>>,
     pub back: Vec<String>,
+    pub back_runs: Vec<Vec<InlineRun>>,
     pub reshaped: bool,
     pub note: Vec<NoteUnit>,
     pub images: Vec<ImageView>,
@@ -63,7 +96,9 @@ pub struct _ReviewState {
     pub depth: Depth,
     pub acquire: bool,
     pub choices: Option<Vec<String>>,
+    pub choice_runs: Option<Vec<Vec<InlineRun>>>,
     pub keypoints: Option<Vec<String>>,
+    pub keypoint_runs: Option<Vec<Vec<InlineRun>>>,
     pub input: Input,
     pub finished: bool,
     pub remaining: u32,
@@ -175,6 +210,7 @@ pub fn seed_choice_distractors(deck_path: String, root_dir: String) -> Result<()
             cache.set_distractors(
                 &id,
                 vec!["one".to_string(), "two".to_string(), "three".to_string()],
+                card.content_fingerprint,
             );
         }
     }
@@ -704,6 +740,64 @@ mod tests {
         .unwrap()
     }
 
+    fn math_run<'a>(runs: &'a [InlineRun], source: &str) -> &'a InlineRun {
+        runs.iter()
+            .find(|run| run.text == source && run.math.is_some())
+            .expect("the projected surface carries the formula")
+    }
+
+    #[test]
+    fn review_bridge_state_carries_math_runs_without_reparsing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("math.md"),
+            "## What does $E = mc^2$ describe? <!-- id: math -->\n\
+             - [x] **$E = mc^2$**\n\
+             - [ ] $F = ma$\n\
+             > Energy and mass use $E = mc^2$.\n\
+             > - [x] Includes $c^2$\n",
+        );
+
+        let session = ReviewSession::open(
+            root.join("math.md").to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(Depth::Recall),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        let state = session.state(Some(T0));
+        let card = state.card.as_ref().expect("the card is served");
+        let front = math_run(&card.front_runs, "E = mc^2");
+        assert!(front.math.as_ref().is_some_and(|math| {
+            math.svg.as_deref().is_some_and(|svg| svg.contains("<path"))
+                && math.error.is_none()
+        }));
+        assert!(
+            state
+                .choice_runs
+                .as_deref()
+                .expect("authored choices carry runs")
+                .iter()
+                .flatten()
+                .any(|run| run.text == "E = mc^2" && run.math.is_some())
+        );
+        let note_runs: Vec<&InlineRun> = card
+            .note
+            .iter()
+            .flat_map(|unit| match unit {
+                NoteUnit::Sentence { runs, .. } => runs.iter().collect(),
+                NoteUnit::Checklist { items } => {
+                    items.iter().flat_map(|item| item.runs.iter()).collect()
+                }
+                NoteUnit::Code { .. } => Vec::new(),
+            })
+            .collect();
+        assert!(note_runs.iter().any(|run| run.text == "E = mc^2"));
+        assert!(note_runs.iter().any(|run| run.text == "c^2"));
+    }
+
     #[test]
     fn grades_route_to_the_workspace_and_root_stores() {
         let dir = tempfile::tempdir().unwrap();
@@ -802,6 +896,7 @@ mod tests {
             cache.set_distractors(
                 &card.id().expect("the fixture stamps its own id"),
                 vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+                card.content_fingerprint,
             );
         }
         cache.save().unwrap();
@@ -850,6 +945,7 @@ mod tests {
         cache.set_keypoints(
             &deck.cards[0].id().expect("the fixture stamps its own id"),
             vec!["one claim".to_string()],
+            deck.cards[0].content_fingerprint,
         );
         cache.save().unwrap();
         let s = ReviewSession::open(

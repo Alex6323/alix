@@ -55,12 +55,13 @@ extension NoteUnitPatterns on NoteUnit {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( NoteUnit_Sentence value)?  sentence,TResult Function( NoteUnit_Code value)?  code,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( NoteUnit_Sentence value)?  sentence,TResult Function( NoteUnit_Code value)?  code,TResult Function( NoteUnit_Checklist value)?  checklist,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
 return sentence(_that);case NoteUnit_Code() when code != null:
-return code(_that);case _:
+return code(_that);case NoteUnit_Checklist() when checklist != null:
+return checklist(_that);case _:
   return orElse();
 
 }
@@ -78,12 +79,13 @@ return code(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( NoteUnit_Sentence value)  sentence,required TResult Function( NoteUnit_Code value)  code,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( NoteUnit_Sentence value)  sentence,required TResult Function( NoteUnit_Code value)  code,required TResult Function( NoteUnit_Checklist value)  checklist,}){
 final _that = this;
 switch (_that) {
 case NoteUnit_Sentence():
 return sentence(_that);case NoteUnit_Code():
-return code(_that);}
+return code(_that);case NoteUnit_Checklist():
+return checklist(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -97,12 +99,13 @@ return code(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( NoteUnit_Sentence value)?  sentence,TResult? Function( NoteUnit_Code value)?  code,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( NoteUnit_Sentence value)?  sentence,TResult? Function( NoteUnit_Code value)?  code,TResult? Function( NoteUnit_Checklist value)?  checklist,}){
 final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
 return sentence(_that);case NoteUnit_Code() when code != null:
-return code(_that);case _:
+return code(_that);case NoteUnit_Checklist() when checklist != null:
+return checklist(_that);case _:
   return null;
 
 }
@@ -119,11 +122,12 @@ return code(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  sentence,TResult Function( List<String> lines)?  code,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text,  List<InlineRun> runs)?  sentence,TResult Function( List<String> lines)?  code,TResult Function( List<ChecklistItem> items)?  checklist,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
-return sentence(_that.text);case NoteUnit_Code() when code != null:
-return code(_that.lines);case _:
+return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
+return code(_that.lines);case NoteUnit_Checklist() when checklist != null:
+return checklist(_that.items);case _:
   return orElse();
 
 }
@@ -141,11 +145,12 @@ return code(_that.lines);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  sentence,required TResult Function( List<String> lines)  code,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text,  List<InlineRun> runs)  sentence,required TResult Function( List<String> lines)  code,required TResult Function( List<ChecklistItem> items)  checklist,}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence():
-return sentence(_that.text);case NoteUnit_Code():
-return code(_that.lines);}
+return sentence(_that.text,_that.runs);case NoteUnit_Code():
+return code(_that.lines);case NoteUnit_Checklist():
+return checklist(_that.items);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -159,11 +164,12 @@ return code(_that.lines);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  sentence,TResult? Function( List<String> lines)?  code,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text,  List<InlineRun> runs)?  sentence,TResult? Function( List<String> lines)?  code,TResult? Function( List<ChecklistItem> items)?  checklist,}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
-return sentence(_that.text);case NoteUnit_Code() when code != null:
-return code(_that.lines);case _:
+return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
+return code(_that.lines);case NoteUnit_Checklist() when checklist != null:
+return checklist(_that.items);case _:
   return null;
 
 }
@@ -175,10 +181,17 @@ return code(_that.lines);case _:
 
 
 class NoteUnit_Sentence extends NoteUnit {
-  const NoteUnit_Sentence({required this.text}): super._();
+  const NoteUnit_Sentence({required this.text, required final  List<InlineRun> runs}): _runs = runs,super._();
   
 
  final  String text;
+ final  List<InlineRun> _runs;
+ List<InlineRun> get runs {
+  if (_runs is EqualUnmodifiableListView) return _runs;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_runs);
+}
+
 
 /// Create a copy of NoteUnit
 /// with the given fields replaced by the non-null parameter values.
@@ -190,16 +203,16 @@ $NoteUnit_SentenceCopyWith<NoteUnit_Sentence> get copyWith => _$NoteUnit_Sentenc
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Sentence&&(identical(other.text, text) || other.text == text));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Sentence&&(identical(other.text, text) || other.text == text)&&const DeepCollectionEquality().equals(other._runs, _runs));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,text);
+int get hashCode => Object.hash(runtimeType,text,const DeepCollectionEquality().hash(_runs));
 
 @override
 String toString() {
-  return 'NoteUnit.sentence(text: $text)';
+  return 'NoteUnit.sentence(text: $text, runs: $runs)';
 }
 
 
@@ -210,7 +223,7 @@ abstract mixin class $NoteUnit_SentenceCopyWith<$Res> implements $NoteUnitCopyWi
   factory $NoteUnit_SentenceCopyWith(NoteUnit_Sentence value, $Res Function(NoteUnit_Sentence) _then) = _$NoteUnit_SentenceCopyWithImpl;
 @useResult
 $Res call({
- String text
+ String text, List<InlineRun> runs
 });
 
 
@@ -227,10 +240,11 @@ class _$NoteUnit_SentenceCopyWithImpl<$Res>
 
 /// Create a copy of NoteUnit
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? text = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? text = null,Object? runs = null,}) {
   return _then(NoteUnit_Sentence(
 text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
-as String,
+as String,runs: null == runs ? _self._runs : runs // ignore: cast_nullable_to_non_nullable
+as List<InlineRun>,
   ));
 }
 
@@ -303,6 +317,78 @@ class _$NoteUnit_CodeCopyWithImpl<$Res>
   return _then(NoteUnit_Code(
 lines: null == lines ? _self._lines : lines // ignore: cast_nullable_to_non_nullable
 as List<String>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class NoteUnit_Checklist extends NoteUnit {
+  const NoteUnit_Checklist({required final  List<ChecklistItem> items}): _items = items,super._();
+
+
+ final  List<ChecklistItem> _items;
+ List<ChecklistItem> get items {
+  if (_items is EqualUnmodifiableListView) return _items;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_items);
+}
+
+
+/// Create a copy of NoteUnit
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$NoteUnit_ChecklistCopyWith<NoteUnit_Checklist> get copyWith => _$NoteUnit_ChecklistCopyWithImpl<NoteUnit_Checklist>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Checklist&&const DeepCollectionEquality().equals(other._items, _items));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_items));
+
+@override
+String toString() {
+  return 'NoteUnit.checklist(items: $items)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $NoteUnit_ChecklistCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
+  factory $NoteUnit_ChecklistCopyWith(NoteUnit_Checklist value, $Res Function(NoteUnit_Checklist) _then) = _$NoteUnit_ChecklistCopyWithImpl;
+@useResult
+$Res call({
+ List<ChecklistItem> items
+});
+
+
+
+
+}
+/// @nodoc
+class _$NoteUnit_ChecklistCopyWithImpl<$Res>
+    implements $NoteUnit_ChecklistCopyWith<$Res> {
+  _$NoteUnit_ChecklistCopyWithImpl(this._self, this._then);
+
+  final NoteUnit_Checklist _self;
+  final $Res Function(NoteUnit_Checklist) _then;
+
+/// Create a copy of NoteUnit
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? items = null,}) {
+  return _then(NoteUnit_Checklist(
+items: null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable
+as List<ChecklistItem>,
   ));
 }
 

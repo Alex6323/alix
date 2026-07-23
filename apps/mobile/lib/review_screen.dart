@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/inline_runs.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
@@ -460,27 +461,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
         const SizedBox(height: 8),
         _modeTag(_modeLabel(), tokens),
         const SizedBox(height: 12),
-        Text(
-          card.front,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: _sans,
-            fontWeight: FontWeight.w600,
-            fontSize: 23,
-            height: 1.4,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
+        _front(context, card, tokens),
         for (final img in card.images) ...[
           const SizedBox(height: 12),
           Image.file(File(img.src), height: 180, semanticLabel: img.alt),
         ],
-        for (final line in card.context) ...[
+        for (final (index, line) in card.context.indexed) ...[
           const SizedBox(height: 8),
-          Text(
+          _runsOrText(
+            index < card.contextRuns.length ? card.contextRuns[index] : null,
             line,
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
+            contextHoles: true,
+            tokens: tokens,
           ),
         ],
         const SizedBox(height: 14),
@@ -505,6 +499,128 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
         ],
         if (answered && card.note.isNotEmpty) _note(card, tokens),
+      ],
+    );
+  }
+
+  Widget _front(BuildContext context, CardView card, AlixTokens tokens) {
+    final style = TextStyle(
+      fontFamily: _sans,
+      fontWeight: FontWeight.w600,
+      fontSize: 23,
+      height: 1.4,
+      color: Theme.of(context).colorScheme.onSurface,
+    );
+    final units = card.frontUnits;
+    if (units == null) {
+      return _runsOrText(
+        card.frontRuns,
+        card.front,
+        style: style,
+        textAlign: TextAlign.center,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (index, unit) in units.indexed) ...[
+          if (index > 0) const SizedBox(height: 10),
+          _unit(unit, tokens, style, TextAlign.center),
+        ],
+      ],
+    );
+  }
+
+  Widget _runsOrText(
+    List<InlineRun>? runs,
+    String text, {
+    required TextStyle? style,
+    TextAlign textAlign = TextAlign.start,
+    bool contextHoles = false,
+    AlixTokens? tokens,
+  }) {
+    final effectiveStyle = style ?? const TextStyle();
+    if (runs == null) {
+      return Text(text, textAlign: textAlign, style: effectiveStyle);
+    }
+    return InlineRuns(
+      runs: runs,
+      style: effectiveStyle,
+      textAlign: textAlign,
+      contextHoles: contextHoles,
+      holeColor: tokens?.boltHi,
+      mutedHoleColor: tokens?.dim,
+    );
+  }
+
+  Widget _unit(
+    NoteUnit unit,
+    AlixTokens tokens,
+    TextStyle style,
+    TextAlign textAlign,
+  ) {
+    return switch (unit) {
+      NoteUnit_Sentence(:final text, :final runs) => _runsOrText(
+        runs,
+        text,
+        style: style,
+        textAlign: textAlign,
+      ),
+      NoteUnit_Code(:final lines) => _codeBlock(
+        lines,
+        style.color ?? tokens.text,
+      ),
+      NoteUnit_Checklist(:final items) => _checklist(items, tokens, style),
+    };
+  }
+
+  Widget _codeBlock(List<String> lines, Color foreground) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        lines.join('\n'),
+        style: TextStyle(
+          fontFamily: _mono,
+          fontSize: 13,
+          height: 1.45,
+          color: foreground,
+        ),
+      ),
+    );
+  }
+
+  Widget _checklist(
+    List<ChecklistItem> items,
+    AlixTokens tokens,
+    TextStyle style,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.checked ? '☑' : '☐',
+                  style: style.copyWith(
+                    color: item.checked ? tokens.good : tokens.dim,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _runsOrText(item.runs, item.text, style: style),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -557,6 +673,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return _revealLines(
         context,
         card.back.take(_revealedLines).toList(),
+        card.backRuns.take(_revealedLines).toList(),
         tokens,
         stanza: false,
       );
@@ -564,7 +681,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_isTyping && !_state.acquire) return _typing(context, card, tokens);
     if (_isExplain) return _explainBody(context, card, tokens);
     if (_revealed || _check != null) {
-      return _revealLines(context, card.back, tokens);
+      return _revealLines(context, card.back, card.backRuns, tokens);
     }
     return const SizedBox.shrink();
   }
@@ -575,6 +692,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Widget _revealLines(
     BuildContext context,
     List<String> lines,
+    List<List<InlineRun>> runLines,
     AlixTokens tokens, {
     bool stanza = true,
   }) {
@@ -590,7 +708,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
       children: [
         for (final (i, line) in lines.indexed) ...[
           if (i > 0) SizedBox(height: gap),
-          Text(line, textAlign: TextAlign.center, style: style),
+          _runsOrText(
+            i < runLines.length ? runLines[i] : null,
+            line,
+            textAlign: TextAlign.center,
+            style: style,
+          ),
         ],
       ],
     );
@@ -600,17 +723,28 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _options(AlixTokens tokens) {
     final options = _state.choices ?? const [];
+    final optionRuns = _state.choiceRuns;
     return Column(
       children: [
         for (final (i, opt) in options.indexed) ...[
           if (i > 0) const SizedBox(height: 10),
-          _optionRow(i, opt, tokens),
+          _optionRow(
+            i,
+            opt,
+            optionRuns != null && i < optionRuns.length ? optionRuns[i] : null,
+            tokens,
+          ),
         ],
       ],
     );
   }
 
-  Widget _optionRow(int i, String opt, AlixTokens tokens) {
+  Widget _optionRow(
+    int i,
+    String opt,
+    List<InlineRun>? runs,
+    AlixTokens tokens,
+  ) {
     final choice = _choice;
     final locked = choice != null;
     Color numColor = tokens.faint;
@@ -652,7 +786,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(
+            child: _runsOrText(
+              runs,
               opt,
               style: TextStyle(
                 fontFamily: _mono,
@@ -862,11 +997,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ],
         _explainLabel('the answer', tokens.dim),
         const SizedBox(height: 6),
-        _revealLines(context, card.back, tokens, stanza: false),
+        _revealLines(context, card.back, card.backRuns, tokens, stanza: false),
         const SizedBox(height: 16),
         _explainLabel('did your answer cover these?', tokens.good, small: true),
         const SizedBox(height: 6),
-        for (final (i, pt) in points.indexed) _keypointRow(i, pt, tokens),
+        for (final (i, pt) in points.indexed)
+          _keypointRow(
+            i,
+            pt,
+            _state.keypointRuns != null && i < _state.keypointRuns!.length
+                ? _state.keypointRuns![i]
+                : null,
+            tokens,
+          ),
       ],
     );
   }
@@ -884,7 +1027,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   /// A keypoint row: tap to mark it covered (green ✓) or not (green ▸).
-  Widget _keypointRow(int i, String pt, AlixTokens tokens) {
+  Widget _keypointRow(
+    int i,
+    String pt,
+    List<InlineRun>? runs,
+    AlixTokens tokens,
+  ) {
     final ticked = _ticked.contains(i);
     return InkWell(
       key: ValueKey('kp-$i'),
@@ -907,7 +1055,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ),
             ),
             Expanded(
-              child: Text(
+              child: _runsOrText(
+                runs,
                 pt,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurface,
@@ -946,7 +1095,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
               for (final (i, note) in card.note.indexed) ...[
                 if (i > 0) const SizedBox(height: 10),
                 switch (note) {
-                  NoteUnit_Sentence(:final text) => Text(
+                  NoteUnit_Sentence(:final text, :final runs) => _runsOrText(
+                    runs,
                     text,
                     style: TextStyle(
                       color: tokens.noteInk,
@@ -954,25 +1104,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       height: 1.4,
                     ),
                   ),
-                  NoteUnit_Code(:final lines) => Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.32),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      lines.join('\n'),
-                      style: TextStyle(
-                        fontFamily: _mono,
-                        fontSize: 13,
-                        height: 1.45,
-                        color: tokens.text,
-                      ),
-                    ),
+                  NoteUnit_Code(:final lines) => _codeBlock(lines, tokens.text),
+                  NoteUnit_Checklist(:final items) => _checklist(
+                    items,
+                    tokens,
+                    TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
                   ),
                 },
               ],

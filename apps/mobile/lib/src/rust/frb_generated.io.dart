@@ -108,6 +108,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ForeignWriter dco_decode_box_autoadd_foreign_writer(dynamic raw);
 
   @protected
+  MathView dco_decode_box_autoadd_math_view(dynamic raw);
+
+  @protected
   TutorCard dco_decode_box_autoadd_tutor_card(dynamic raw);
 
   @protected
@@ -124,6 +127,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CheckFeedback dco_decode_check_feedback(dynamic raw);
+
+  @protected
+  ChecklistItem dco_decode_checklist_item(dynamic raw);
 
   @protected
   ChoiceFeedback dco_decode_choice_feedback(dynamic raw);
@@ -159,16 +165,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImageView dco_decode_image_view(dynamic raw);
 
   @protected
+  InlineRun dco_decode_inline_run(dynamic raw);
+
+  @protected
   Input dco_decode_input(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<ChecklistItem> dco_decode_list_checklist_item(dynamic raw);
+
+  @protected
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw);
 
   @protected
   List<ImageView> dco_decode_list_image_view(dynamic raw);
+
+  @protected
+  List<InlineRun> dco_decode_list_inline_run(dynamic raw);
+
+  @protected
+  List<List<InlineRun>> dco_decode_list_list_inline_run(dynamic raw);
 
   @protected
   List<Float32List> dco_decode_list_list_prim_f_32_strict(dynamic raw);
@@ -190,6 +208,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<WalkLine> dco_decode_list_walk_line(dynamic raw);
+
+  @protected
+  MathView dco_decode_math_view(dynamic raw);
 
   @protected
   Mode dco_decode_mode(dynamic raw);
@@ -222,6 +243,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ForeignWriter? dco_decode_opt_box_autoadd_foreign_writer(dynamic raw);
 
   @protected
+  MathView? dco_decode_opt_box_autoadd_math_view(dynamic raw);
+
+  @protected
   TutorCard? dco_decode_opt_box_autoadd_tutor_card(dynamic raw);
 
   @protected
@@ -235,6 +259,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String>? dco_decode_opt_list_String(dynamic raw);
+
+  @protected
+  List<List<InlineRun>>? dco_decode_opt_list_list_inline_run(dynamic raw);
+
+  @protected
+  List<NoteUnit>? dco_decode_opt_list_note_unit(dynamic raw);
 
   @protected
   ReviewState dco_decode_review_state(dynamic raw);
@@ -363,6 +393,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer);
+
+  @protected
   TutorCard sse_decode_box_autoadd_tutor_card(SseDeserializer deserializer);
 
   @protected
@@ -379,6 +412,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CheckFeedback sse_decode_check_feedback(SseDeserializer deserializer);
+
+  @protected
+  ChecklistItem sse_decode_checklist_item(SseDeserializer deserializer);
 
   @protected
   ChoiceFeedback sse_decode_choice_feedback(SseDeserializer deserializer);
@@ -414,16 +450,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImageView sse_decode_image_view(SseDeserializer deserializer);
 
   @protected
+  InlineRun sse_decode_inline_run(SseDeserializer deserializer);
+
+  @protected
   Input sse_decode_input(SseDeserializer deserializer);
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<ChecklistItem> sse_decode_list_checklist_item(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<DeckEntry> sse_decode_list_deck_entry(SseDeserializer deserializer);
 
   @protected
   List<ImageView> sse_decode_list_image_view(SseDeserializer deserializer);
+
+  @protected
+  List<InlineRun> sse_decode_list_inline_run(SseDeserializer deserializer);
+
+  @protected
+  List<List<InlineRun>> sse_decode_list_list_inline_run(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<Float32List> sse_decode_list_list_prim_f_32_strict(
@@ -447,6 +499,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<WalkLine> sse_decode_list_walk_line(SseDeserializer deserializer);
+
+  @protected
+  MathView sse_decode_math_view(SseDeserializer deserializer);
 
   @protected
   Mode sse_decode_mode(SseDeserializer deserializer);
@@ -487,6 +542,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MathView? sse_decode_opt_box_autoadd_math_view(SseDeserializer deserializer);
+
+  @protected
   TutorCard? sse_decode_opt_box_autoadd_tutor_card(
     SseDeserializer deserializer,
   );
@@ -506,6 +564,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<List<InlineRun>>? sse_decode_opt_list_list_inline_run(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NoteUnit>? sse_decode_opt_list_note_unit(SseDeserializer deserializer);
 
   @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer);
@@ -654,6 +720,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_math_view(
+    MathView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_tutor_card(
     TutorCard self,
     SseSerializer serializer,
@@ -679,6 +751,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_check_feedback(CheckFeedback self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_checklist_item(ChecklistItem self, SseSerializer serializer);
 
   @protected
   void sse_encode_choice_feedback(
@@ -717,10 +792,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_image_view(ImageView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_inline_run(InlineRun self, SseSerializer serializer);
+
+  @protected
   void sse_encode_input(Input self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_checklist_item(
+    List<ChecklistItem> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_deck_entry(
@@ -731,6 +815,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_image_view(
     List<ImageView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_inline_run(
+    List<InlineRun> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_list_inline_run(
+    List<List<InlineRun>> self,
     SseSerializer serializer,
   );
 
@@ -769,6 +865,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_walk_line(List<WalkLine> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_math_view(MathView self, SseSerializer serializer);
 
   @protected
   void sse_encode_mode(Mode self, SseSerializer serializer);
@@ -819,6 +918,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_math_view(
+    MathView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_tutor_card(
     TutorCard? self,
     SseSerializer serializer,
@@ -841,6 +946,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_list_list_inline_run(
+    List<List<InlineRun>>? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_list_note_unit(
+    List<NoteUnit>? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer);
