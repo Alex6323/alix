@@ -41,6 +41,7 @@ pub mod import;
 pub mod inline;
 pub mod library;
 pub mod listing;
+pub mod math;
 pub mod parser;
 #[cfg(feature = "full")]
 pub mod picker;

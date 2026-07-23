@@ -46,6 +46,9 @@ clap = { version = "4", features = ["derive"], optional = true }
 directories = "6"
 getrandom = "0.2" # portable OS CSPRNG: identity-token minting + the serve pairing token
 qrcodegen = { version = "1.8.0", optional = true } # zero-dep QR encoder for the terminal pairing QR (`--lan`)
+ratex-layout = "=0.1.13"
+ratex-parser = "=0.1.13"
+ratex-svg = { version = "=0.1.13", features = ["standalone", "embed-fonts"] }
 rs-fsrs = { version = "1.2.1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
