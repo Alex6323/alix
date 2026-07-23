@@ -96,6 +96,23 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('standalone inline math is larger than math inside prose', (
+    tester,
+  ) async {
+    await tester.pumpWidget(testApp([mathRun(r'x^2 + y^2 = 1')]));
+    await tester.pumpAndSettle();
+    final standalone = tester.widget<SvgPicture>(find.byType(SvgPicture));
+
+    await tester.pumpWidget(
+      testApp([textRun('Use '), mathRun(r'x^2 + y^2 = 1'), textRun('.')]),
+    );
+    await tester.pumpAndSettle();
+    final inProse = tester.widget<SvgPicture>(find.byType(SvgPicture));
+
+    expect(standalone.height, 29);
+    expect(inProse.height, 24);
+  });
+
   testWidgets('display math centers and scales within a phone width', (
     tester,
   ) async {

@@ -118,6 +118,16 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
     return box.width >= root.width * 0.95 && box.height >= root.height * 0.95;
   }).length)).toBe(0);
 
+  const standalone = page.locator(".surface-context .math-inline.math-standalone");
+  await expect(standalone).toBeVisible();
+  expect(await standalone.evaluate((node) => {
+    const svg = node.querySelector("svg");
+    if (!svg) return false;
+    return svg.getBoundingClientRect().height >=
+      Number.parseFloat(getComputedStyle(node).fontSize) * 1.4;
+  })).toBeTruthy();
+  await expect(page.locator(".surface-front .math-standalone")).toHaveCount(0);
+
   const display = page.locator(".surface-answer .math-display");
   await expect(display).toBeVisible();
   expect(await display.evaluate((node) => getComputedStyle(node).display)).toBe("flex");

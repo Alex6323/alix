@@ -291,6 +291,7 @@
   .math-run[role="img"] { outline: none; }
   .math-inline { display: inline-flex; align-items: baseline; max-width: 100%; line-height: 1; vertical-align: -0.16em; }
   .math-inline svg { display: inline-block; width: auto; height: 1.12em; max-width: 100%; overflow: visible; }
+  .math-inline.math-standalone svg { height: 1.45em; }
   .math-display { display: flex; justify-content: center; width: 100%; max-width: 100%; margin: 0.35em auto; overflow: hidden; }
   .math-display svg { display: block; width: auto; height: auto; max-width: 100%; }
   .math-run svg :where([fill]:not([fill="none"])) { fill: currentColor; }
@@ -1170,9 +1171,16 @@ function mathRunNode(run) {
 // <strong>/<em>/<code>; combined flags nest. Authored text always enters via
 // textContent/text nodes; only the core-generated SVG is parsed as XML.
 function appendRuns(parent, runs) {
+  const standaloneMath = isStandaloneInlineMath(runs);
   for (const run of runs || []) {
-    parent.appendChild(run.math ? mathRunNode(run) : styledRunNode(run, run.text));
+    const node = run.math ? mathRunNode(run) : styledRunNode(run, run.text);
+    if (standaloneMath && run.math) node.classList.add("math-standalone");
+    parent.appendChild(node);
   }
+}
+function isStandaloneInlineMath(runs) {
+  return Array.isArray(runs) && runs.length === 1 &&
+    !!runs[0].math && !runs[0].math.display;
 }
 function appendChecklist(parent, items) {
   const checklist = el("div", "checklist");
@@ -3810,8 +3818,13 @@ function contextLine(text, runs, cls) {
     appendContextText(div, { text: text || "" });
     return div;
   }
+  const standaloneMath = isStandaloneInlineMath(runs);
   for (const run of runs) {
-    if (run.math) div.appendChild(mathRunNode(run));
+    if (run.math) {
+      const node = mathRunNode(run);
+      if (standaloneMath) node.classList.add("math-standalone");
+      div.appendChild(node);
+    }
     else appendContextText(div, run);
   }
   return div;

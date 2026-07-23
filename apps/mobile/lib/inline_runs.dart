@@ -59,17 +59,21 @@ class InlineRuns extends StatelessWidget {
   }
 
   Widget _inlineText(List<InlineRun> inline) {
+    final standaloneMath = inline.length == 1 && inline.single.math != null;
     return Text.rich(
       TextSpan(
         style: style,
-        children: [for (final run in inline) ..._inlineSpans(run)],
+        children: [
+          for (final run in inline)
+            ..._inlineSpans(run, standaloneMath: standaloneMath),
+        ],
       ),
       textAlign: textAlign,
       softWrap: true,
     );
   }
 
-  List<InlineSpan> _inlineSpans(InlineRun run) {
+  List<InlineSpan> _inlineSpans(InlineRun run, {required bool standaloneMath}) {
     final math = run.math;
     if (math != null) {
       final svg = math.svg;
@@ -83,7 +87,8 @@ class InlineRuns extends StatelessWidget {
               child: ExcludeSemantics(
                 child: SvgPicture.string(
                   svg,
-                  height: (style.fontSize ?? 14) * 1.2,
+                  height:
+                      (style.fontSize ?? 14) * (standaloneMath ? 1.45 : 1.2),
                   fit: BoxFit.contain,
                   colorFilter: ColorFilter.mode(
                     style.color ?? Colors.black,
