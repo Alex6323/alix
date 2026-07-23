@@ -174,5 +174,5 @@ snippet — and, via the `origin:` they were frozen with, warns when the live
 source has **drifted** from the frozen excerpt.)
 
 A trace deck degrades gracefully — even outside a walk it's a valid deck of
-`explain` cards. See `docs/examples/rust-ownership/ownership-move.md` for a complete
+`explain` cards. See `docs/examples/workspace-showcase/ownership-move.md` for a complete
 trace — a frozen snapshot over The Rust Book's ownership chapter, so it walks offline.
