@@ -68,4 +68,13 @@ mod tests {
             "inline markup must not change the content fingerprint"
         );
     }
+
+    #[test]
+    fn math_delimiters_do_not_change_the_content_fingerprint() {
+        let inline = content_fingerprint("q", &["$x^2$".to_string()]);
+        let display = content_fingerprint("q", &["$$x^2$$".to_string()]);
+        let plain = content_fingerprint("q", &["x^2".to_string()]);
+        assert_eq!(inline, plain);
+        assert_eq!(display, plain);
+    }
 }

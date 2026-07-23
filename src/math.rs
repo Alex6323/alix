@@ -22,14 +22,14 @@ pub struct MathView {
 }
 
 #[derive(Default)]
-pub struct MathRenderer {
+pub(crate) struct MathRenderer {
     cache: HashMap<String, Result<String, String>>,
     #[cfg(test)]
     render_count: usize,
 }
 
 impl MathRenderer {
-    pub fn view(&mut self, source: &str, display: bool, context: bool) -> MathView {
+    pub(crate) fn view(&mut self, source: &str, display: bool, context: bool) -> MathView {
         let rendered_source = if context {
             substitute_context_holes(source)
         } else {

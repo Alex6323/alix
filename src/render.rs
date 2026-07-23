@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     card::Card,
+    inline::DisplayProjector,
     parser::{BLANK, HIDDEN},
 };
 
@@ -30,6 +31,14 @@ pub struct ChecklistItem {
 }
 
 pub fn checklist_items(lines: &[&str]) -> Option<Vec<ChecklistItem>> {
+    let mut projector = DisplayProjector::default();
+    checklist_items_with(lines, &mut projector)
+}
+
+fn checklist_items_with(
+    lines: &[&str],
+    projector: &mut DisplayProjector,
+) -> Option<Vec<ChecklistItem>> {
     let mut items = Vec::new();
     for line in lines {
         if line.trim().is_empty() {
@@ -40,17 +49,25 @@ pub fn checklist_items(lines: &[&str]) -> Option<Vec<ChecklistItem>> {
         items.push(ChecklistItem {
             checked,
             text: crate::inline::strip_inline(raw),
-            runs: crate::inline::parse_inline(raw),
+            runs: projector.project(raw),
         });
     }
     (!items.is_empty()).then_some(items)
 }
 
 pub fn note_units(card: &Card) -> Vec<NoteUnit> {
-    card.note.as_deref().map(text_units).unwrap_or_default()
+    let mut projector = DisplayProjector::default();
+    note_units_with(card, &mut projector)
 }
 
-fn text_units(text: &str) -> Vec<NoteUnit> {
+pub(crate) fn note_units_with(card: &Card, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
+    card.note
+        .as_deref()
+        .map(|note| text_units_with(note, projector))
+        .unwrap_or_default()
+}
+
+fn text_units_with(text: &str, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
     let mut units = Vec::new();
     let mut in_code = false;
     let mut code: Vec<String> = Vec::new();
@@ -68,7 +85,7 @@ fn text_units(text: &str) -> Vec<NoteUnit> {
                 in_code = false;
             } else {
                 flush_checklist(&mut checklist, &mut units);
-                flush_prose(&mut prose, &mut units);
+                flush_prose(&mut prose, &mut units, projector);
                 in_code = true;
                 code.clear();
             }
@@ -83,9 +100,18 @@ fn text_units(text: &str) -> Vec<NoteUnit> {
             flush_checklist(&mut checklist, &mut units);
             continue;
         }
-        if let Some(mut items) = checklist_items(&[logical]) {
-            flush_prose(&mut prose, &mut units);
+        if let Some(mut items) = checklist_items_with(&[logical], projector) {
+            flush_prose(&mut prose, &mut units, projector);
             checklist.append(&mut items);
+            continue;
+        }
+        if crate::inline::is_display_math_line(trimmed) {
+            flush_checklist(&mut checklist, &mut units);
+            flush_prose(&mut prose, &mut units, projector);
+            units.push(NoteUnit::Sentence {
+                text: trimmed.to_string(),
+                runs: projector.project(trimmed),
+            });
             continue;
         }
         flush_checklist(&mut checklist, &mut units);
@@ -96,7 +122,7 @@ fn text_units(text: &str) -> Vec<NoteUnit> {
     }
 
     flush_checklist(&mut checklist, &mut units);
-    flush_prose(&mut prose, &mut units);
+    flush_prose(&mut prose, &mut units, projector);
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
         units.push(NoteUnit::Code { lines: code });
@@ -105,10 +131,24 @@ fn text_units(text: &str) -> Vec<NoteUnit> {
 }
 
 pub fn front_units(front: &str) -> Option<Vec<NoteUnit>> {
-    let units = text_units(front);
+    let mut projector = DisplayProjector::default();
+    front_units_with(front, &mut projector)
+}
+
+pub(crate) fn front_units_with(
+    front: &str,
+    projector: &mut DisplayProjector,
+) -> Option<Vec<NoteUnit>> {
+    let units = text_units_with(front, projector);
     units
         .iter()
-        .any(|unit| matches!(unit, NoteUnit::Checklist { .. }))
+        .any(|unit| match unit {
+            NoteUnit::Checklist { .. } => true,
+            NoteUnit::Sentence { runs, .. } => runs
+                .iter()
+                .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
+            NoteUnit::Code { .. } => false,
+        })
         .then_some(units)
 }
 
@@ -120,10 +160,14 @@ fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>
     }
 }
 
-fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>) {
+fn flush_prose(
+    prose: &mut String,
+    units: &mut Vec<NoteUnit>,
+    projector: &mut DisplayProjector,
+) {
     for sentence in split_sentences(prose) {
         if !sentence.is_empty() {
-            let runs = crate::inline::parse_inline(&sentence);
+            let runs = projector.project(&sentence);
             units.push(NoteUnit::Sentence {
                 text: sentence,
                 runs,
@@ -232,6 +276,41 @@ mod tests {
     fn hard_wrapped_prose_joins_before_splitting() {
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
         assert_eq!(units, vec![sentence("A sentence spread across two lines.")]);
+    }
+
+    #[test]
+    fn display_math_line_flushes_surrounding_prose() {
+        let units = note_units(&card_with_note("Before.\n$$x^2$$\nAfter."));
+        assert_eq!(units.len(), 3);
+        assert_eq!(units[0], sentence("Before."));
+        let NoteUnit::Sentence { text, runs } = &units[1] else {
+            panic!("display math should be a sentence unit");
+        };
+        assert_eq!(text, "$$x^2$$");
+        assert_eq!(runs.len(), 1);
+        assert!(runs[0].math.as_ref().unwrap().display);
+        assert_eq!(units[2], sentence("After."));
+    }
+
+    #[test]
+    fn display_math_makes_front_units_structural() {
+        let units = front_units("Before\n$$x^2$$\nAfter").unwrap();
+        assert_eq!(units.len(), 3);
+        let NoteUnit::Sentence { runs, .. } = &units[1] else {
+            panic!("display math should be a sentence unit");
+        };
+        assert!(runs[0].math.as_ref().unwrap().display);
+    }
+
+    #[test]
+    fn dollars_in_fenced_code_never_render_as_math() {
+        let units = note_units(&card_with_note("```\n$x^2$\n```"));
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["$x^2$".into()]
+            }]
+        );
     }
 
     #[test]
