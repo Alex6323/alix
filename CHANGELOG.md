@@ -15,6 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Additive (web API):** card display projection now comes from the shared Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`, and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays in index lockstep with its existing text field. `CardDto` continues to expose text fallback for clients that ignore the new fields.
 - Inline code (`` `like this` ``) now renders with a distinct, theme-aware color for readability.
 - **Breaking (pre-1.0):** inline `*`/`_`/`**` in existing card text now renders as emphasis; a deck that used them literally (e.g. `2*3*4`) will render/grade with the markers stripped. Escape with a backslash (`\*`) or wrap in inline code (`` `2*3*4` ``) to keep them literal. Run `alix doctor <deck>` to find affected cards.
 - **Breaking (web API):** `CardDto.front` and `CardDto.back` now contain inline-marker-stripped content, while the new `front_runs` and `back_runs` fields carry display formatting. Sentence-shaped `NoteUnit` values also gain `runs`.

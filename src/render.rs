@@ -69,29 +69,30 @@ pub(crate) fn note_units_with(card: &Card, projector: &mut DisplayProjector) -> 
 
 fn text_units_with(text: &str, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
     let mut units = Vec::new();
-    let mut in_code = false;
+    let mut code_fence = None;
     let mut code: Vec<String> = Vec::new();
     let mut prose = String::new();
     let mut checklist = Vec::new();
 
     for logical in text.lines() {
-        if logical.trim_start().starts_with("```") {
-            // Empty code blocks produce no unit.
-            if in_code {
+        if let Some(marker) = fence_marker(logical) {
+            if code_fence == Some(marker) {
                 let block = std::mem::take(&mut code);
                 if !block.is_empty() {
                     units.push(NoteUnit::Code { lines: block });
                 }
-                in_code = false;
-            } else {
+                code_fence = None;
+            } else if code_fence.is_none() {
                 flush_checklist(&mut checklist, &mut units);
                 flush_prose(&mut prose, &mut units, projector);
-                in_code = true;
+                code_fence = Some(marker);
                 code.clear();
+            } else {
+                code.push(logical.to_string());
             }
             continue;
         }
-        if in_code {
+        if code_fence.is_some() {
             code.push(logical.to_string());
             continue;
         }
@@ -147,9 +148,18 @@ pub(crate) fn front_units_with(
             NoteUnit::Sentence { runs, .. } => runs
                 .iter()
                 .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
-            NoteUnit::Code { .. } => false,
+            NoteUnit::Code { .. } => true,
         })
         .then_some(units)
+}
+
+fn fence_marker(line: &str) -> Option<char> {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("```").then_some('`').or_else(|| {
+        trimmed
+            .starts_with("~~~")
+            .then_some('~')
+    })
 }
 
 fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>) {
@@ -304,13 +314,16 @@ mod tests {
 
     #[test]
     fn dollars_in_fenced_code_never_render_as_math() {
-        let units = note_units(&card_with_note("```\n$x^2$\n```"));
-        assert_eq!(
-            units,
-            vec![NoteUnit::Code {
-                lines: vec!["$x^2$".into()]
-            }]
-        );
+        for fence in ["```", "~~~"] {
+            let note = format!("{fence}\n$x^2$\n{fence}");
+            let units = note_units(&card_with_note(&note));
+            assert_eq!(
+                units,
+                vec![NoteUnit::Code {
+                    lines: vec!["$x^2$".into()]
+                }]
+            );
+        }
     }
 
     #[test]

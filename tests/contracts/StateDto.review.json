@@ -28,6 +28,13 @@
     "context": [
       "Chapter 4"
     ],
+    "context_runs": [
+      [
+        {
+          "text": "Chapter 4"
+        }
+      ]
+    ],
     "crumb": {
       "cells": [
         [
@@ -118,6 +125,18 @@
     ],
     "reshaped": true
   },
+  "choice_runs": [
+    [
+      {
+        "text": "owner"
+      }
+    ],
+    [
+      {
+        "text": "borrower"
+      }
+    ]
+  ],
   "choices": [
     "owner",
     "borrower"
@@ -129,6 +148,13 @@
   "failed": 1,
   "initial": 5,
   "input": "type",
+  "keypoint_runs": [
+    [
+      {
+        "text": "one owner per value"
+      }
+    ]
+  ],
   "keypoints": [
     "one owner per value"
   ],

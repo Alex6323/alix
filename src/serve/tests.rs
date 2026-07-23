@@ -659,6 +659,97 @@ fn browse_payload_select_phase_has_no_cards() {
 }
 
 #[test]
+fn browse_payload_renders_a_repeated_formula_once() {
+    let card = Card::plain(
+        Arc::from("s.md"),
+        "$x^2$".to_string(),
+        vec!["$x^2$".to_string()],
+        Some("$x^2$".to_string()),
+        1,
+    );
+    let browsing = Browsing {
+        cards: vec![card.clone(), card],
+        label: "math".to_string(),
+        images: HashMap::new(),
+    };
+    let before = crate::math::thread_render_count();
+    let dto = browse_payload(Some(&browsing));
+    assert_eq!(dto.cards.len(), 2);
+    assert_eq!(crate::math::thread_render_count() - before, 1);
+}
+
+#[test]
+#[ignore = "manual release-build math payload measurement"]
+fn measure_math_state_and_browse_payloads() {
+    let fixtures = [
+        r"x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}",
+        r"\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}",
+        r"\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}",
+        r"\begin{pmatrix} a & b \\ c & d \end{pmatrix}",
+        r"\alpha_i^2 + \beta_j",
+        r"\lim_{x \to 0} \frac{\sin x}{x} = 1",
+        r"\nabla \times \mathbf{E} = -\frac{\partial \mathbf{B}}{\partial t}",
+    ];
+    let front = fixtures
+        .iter()
+        .map(|source| format!("${source}$"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let current = Card::plain(
+        Arc::from("math.md"),
+        front,
+        vec!["answer".to_string()],
+        None,
+        1,
+    );
+    let before = crate::math::thread_render_count();
+    let started = Instant::now();
+    let view = crate::review::CardView::from(&current);
+    let projection = started.elapsed();
+    let started = Instant::now();
+    let current_bytes = serde_json::to_vec(&view).unwrap().len();
+    let serialization = started.elapsed();
+    assert_eq!(crate::math::thread_render_count() - before, fixtures.len());
+    eprintln!(
+        "current formulas={} projection_us={} serialization_us={} bytes={current_bytes}",
+        fixtures.len(),
+        projection.as_micros(),
+        serialization.as_micros()
+    );
+
+    let cards = (0..500)
+        .map(|index| {
+            let formula = format!("$x_{{{index}}}^2$");
+            Card::plain(
+                Arc::from("math.md"),
+                formula.clone(),
+                vec![formula],
+                None,
+                index + 1,
+            )
+        })
+        .collect();
+    let browsing = Browsing {
+        cards,
+        label: "500 math cards".to_string(),
+        images: HashMap::new(),
+    };
+    let before = crate::math::thread_render_count();
+    let started = Instant::now();
+    let dto = browse_payload(Some(&browsing));
+    let projection = started.elapsed();
+    let started = Instant::now();
+    let browse_bytes = serde_json::to_vec(&dto).unwrap().len();
+    let serialization = started.elapsed();
+    assert_eq!(crate::math::thread_render_count() - before, 500);
+    eprintln!(
+        "browse cards=500 formulas=1000 unique=500 projection_us={} serialization_us={} bytes={browse_bytes}",
+        projection.as_micros(),
+        serialization.as_micros()
+    );
+}
+
+#[test]
 fn review_state_select_phase_has_no_card() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("p.json")).unwrap();

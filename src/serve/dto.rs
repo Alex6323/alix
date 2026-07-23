@@ -10,7 +10,7 @@ use crate::{
     deck::{self, Deck, DeckState},
     depth::{Depth, depth_name},
     doctor, exam,
-    inline::{InlineRun, parse_inline},
+    inline::{DisplayProjector, InlineRun},
     render::NoteUnit,
     review::{self, CardView},
     session::now_ms,
@@ -25,6 +25,7 @@ pub(super) struct CardDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) front_units: Option<Vec<NoteUnit>>,
     pub(super) context: Vec<String>,
+    pub(super) context_runs: Vec<Vec<InlineRun>>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) reshaped: bool,
@@ -77,7 +78,9 @@ pub(super) struct StateDto {
     pub(super) phase: &'static str,
     pub(super) card: Option<CardDto>,
     pub(super) choices: Option<Vec<String>>,
+    pub(super) choice_runs: Option<Vec<Vec<InlineRun>>>,
     pub(super) keypoints: Option<Vec<String>>,
+    pub(super) keypoint_runs: Option<Vec<Vec<InlineRun>>>,
     pub(super) acquire: bool,
     pub(super) mode: &'static str,
     pub(super) depth: &'static str,
@@ -824,11 +827,18 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
 
 pub(super) fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
     match browsing {
-        Some(b) => BrowseDto {
-            phase: "browse",
-            label: b.label.clone(),
-            cards: b.cards.iter().map(|c| card_dto(c.into())).collect(),
-        },
+        Some(b) => {
+            let mut projector = DisplayProjector::default();
+            BrowseDto {
+                phase: "browse",
+                label: b.label.clone(),
+                cards: b
+                    .cards
+                    .iter()
+                    .map(|card| card_dto(CardView::project(card, &mut projector)))
+                    .collect(),
+            }
+        }
         None => BrowseDto {
             phase: "select",
             label: "select decks".to_string(),
@@ -847,7 +857,9 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
             phase: "select",
             card: None,
             choices: None,
+            choice_runs: None,
             keypoints: None,
+            keypoint_runs: None,
             acquire: false,
             mode: mode_name(Mode::default()),
             depth: depth_name(Depth::default()),
@@ -940,7 +952,9 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
         phase: if s.finished { "done" } else { "review" },
         card: card_with_citation,
         choices: s.choices,
+        choice_runs: s.choice_runs,
         keypoints: s.keypoints,
+        keypoint_runs: s.keypoint_runs,
         acquire: s.acquire,
         mode: mode_name(s.mode),
         depth: depth_name(s.depth),
@@ -1003,18 +1017,16 @@ pub(super) fn card_dto(view: CardView) -> CardDto {
         src: format!("/img/{}", img_key(Path::new(&i.src))),
         alt: i.alt.clone(),
     };
-    let front_units = crate::render::front_units(&view.front);
-    let (front, front_runs) = inline_parts(view.front);
-    let (back, back_runs) = inline_lines(view.back);
     CardDto {
         images: view.images.iter().map(&img_dto).collect(),
         images_back: view.images_back.iter().map(&img_dto).collect(),
-        front,
-        front_runs,
-        front_units,
+        front: view.front,
+        front_runs: view.front_runs,
+        front_units: view.front_units,
         context: view.context,
-        back,
-        back_runs,
+        context_runs: view.context_runs,
+        back: view.back,
+        back_runs: view.back_runs,
         reshaped: view.reshaped,
         note: view.note,
         at: view.at,
@@ -1022,47 +1034,6 @@ pub(super) fn card_dto(view: CardView) -> CardDto {
         citation_error: None,
         crumb: None,
     }
-}
-
-fn inline_parts(text: String) -> (String, Vec<InlineRun>) {
-    let runs = parse_inline(&text);
-    let mut content = String::new();
-    for run in &runs {
-        content.push_str(&run.text);
-    }
-    (content, runs)
-}
-
-fn literal_parts(text: String) -> (String, Vec<InlineRun>) {
-    let runs = if text.is_empty() {
-        Vec::new()
-    } else {
-        vec![InlineRun {
-            text: text.clone(),
-            ..InlineRun::default()
-        }]
-    };
-    (text, runs)
-}
-
-fn inline_lines(lines: Vec<String>) -> (Vec<String>, Vec<Vec<InlineRun>>) {
-    let mut content = Vec::with_capacity(lines.len());
-    let mut display = Vec::with_capacity(lines.len());
-    let mut in_code = false;
-    for line in lines {
-        let fence = line.trim_start().starts_with("```");
-        let (plain, runs) = if in_code || fence {
-            literal_parts(line)
-        } else {
-            inline_parts(line)
-        };
-        content.push(plain);
-        display.push(runs);
-        if fence {
-            in_code = !in_code;
-        }
-    }
-    (content, display)
 }
 
 pub(super) fn input_name(input: Input) -> &'static str {

@@ -6,6 +6,7 @@ use crate::{
     card::Card,
     choice::{self, ChoiceQuestion},
     depth::{self, Depth},
+    inline::{DisplayProjector, InlineRun},
     render::{self, NoteUnit},
     session::{self, Session},
     store::Store,
@@ -20,8 +21,16 @@ pub struct ImageView {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CardView {
     pub front: String,
+    #[serde(default)]
+    pub front_runs: Vec<InlineRun>,
+    #[serde(default)]
+    pub front_units: Option<Vec<NoteUnit>>,
     pub context: Vec<String>,
+    #[serde(default)]
+    pub context_runs: Vec<Vec<InlineRun>>,
     pub back: Vec<String>,
+    #[serde(default)]
+    pub back_runs: Vec<Vec<InlineRun>>,
     pub reshaped: bool,
     pub note: Vec<NoteUnit>,
     pub images: Vec<ImageView>,
@@ -41,16 +50,94 @@ fn image_views(images: &[crate::card::CardImage]) -> Vec<ImageView> {
 
 impl From<&Card> for CardView {
     fn from(card: &Card) -> Self {
+        let mut projector = DisplayProjector::default();
+        CardView::project(card, &mut projector)
+    }
+}
+
+impl CardView {
+    pub fn project(card: &Card, projector: &mut DisplayProjector) -> Self {
+        let (front, front_runs) = project_block(&card.front, projector);
+        let front_units = render::front_units_with(&card.front, projector);
+        let context_runs = card
+            .context
+            .iter()
+            .map(|line| projector.project_context(line))
+            .collect();
+        let (back, back_runs) = project_lines(card.back_for_display(), projector);
         CardView {
-            front: card.front.clone(),
+            front,
+            front_runs,
+            front_units,
             context: card.context.clone(),
-            back: card.back_for_display().to_vec(),
+            context_runs,
+            back,
+            back_runs,
             reshaped: card.display_back.is_some(),
-            note: render::note_units(card),
+            note: render::note_units_with(card, projector),
             images: image_views(&card.images),
             images_back: image_views(&card.images_back),
             at: card.at.clone(),
         }
+    }
+}
+
+fn project_block(text: &str, projector: &mut DisplayProjector) -> (String, Vec<InlineRun>) {
+    let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    let (content_lines, line_runs) = project_lines(&lines, projector);
+    let mut runs = Vec::new();
+    for (index, mut projected) in line_runs.into_iter().enumerate() {
+        if index > 0 {
+            runs.push(InlineRun {
+                text: "\n".to_string(),
+                ..InlineRun::default()
+            });
+        }
+        runs.append(&mut projected);
+    }
+    (content_lines.join("\n"), runs)
+}
+
+fn project_lines(
+    lines: &[String],
+    projector: &mut DisplayProjector,
+) -> (Vec<String>, Vec<Vec<InlineRun>>) {
+    let mut content = Vec::with_capacity(lines.len());
+    let mut display = Vec::with_capacity(lines.len());
+    let mut code_fence = None;
+    for line in lines {
+        let marker = fence_marker(line);
+        let fence = marker.is_some_and(|marker| code_fence.is_none() || code_fence == Some(marker));
+        let runs = if code_fence.is_some() || fence {
+            literal_runs(line)
+        } else {
+            projector.project(line)
+        };
+        content.push(runs.iter().map(|run| run.text.as_str()).collect());
+        display.push(runs);
+        if fence {
+            code_fence = if code_fence.is_some() { None } else { marker };
+        }
+    }
+    (content, display)
+}
+
+fn fence_marker(line: &str) -> Option<char> {
+    let trimmed = line.trim_start();
+    trimmed
+        .starts_with("```")
+        .then_some('`')
+        .or_else(|| trimmed.starts_with("~~~").then_some('~'))
+}
+
+fn literal_runs(text: &str) -> Vec<InlineRun> {
+    if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![InlineRun {
+            text: text.to_string(),
+            ..InlineRun::default()
+        }]
     }
 }
 
@@ -63,7 +150,11 @@ pub struct ReviewState {
     /// The correct index is deliberately absent here: it only travels in
     /// [`ChoiceFeedback`], so this payload can never leak the answer.
     pub choices: Option<Vec<String>>,
+    #[serde(default)]
+    pub choice_runs: Option<Vec<Vec<InlineRun>>>,
     pub keypoints: Option<Vec<String>>,
+    #[serde(default)]
+    pub keypoint_runs: Option<Vec<Vec<InlineRun>>>,
     pub input: Input,
     pub finished: bool,
     pub remaining: u32,
@@ -127,13 +218,29 @@ pub fn state(
     } else {
         None
     };
+    let mut projector = DisplayProjector::default();
+    let card_view = card.map(|card| CardView::project(card, &mut projector));
+    let choice_runs = choices.as_ref().map(|choices| {
+        choices
+            .iter()
+            .map(|choice| projector.project(choice))
+            .collect()
+    });
+    let keypoint_runs = keypoints.as_ref().map(|keypoints| {
+        keypoints
+            .iter()
+            .map(|keypoint| projector.project(keypoint))
+            .collect()
+    });
     ReviewState {
-        card: card.map(CardView::from),
+        card: card_view,
         mode,
         depth,
         acquire,
         choices,
+        choice_runs,
         keypoints,
+        keypoint_runs,
         input: card.and_then(|c| c.input).unwrap_or_default(),
         finished: session.is_finished(),
         remaining: session.remaining() as u32,
@@ -370,6 +477,58 @@ mod tests {
     }
 
     #[test]
+    fn card_view_projects_math_across_every_card_surface() {
+        let mut card = Card::plain(
+            std::sync::Arc::from("deck.md"),
+            "Find $x^2$".to_string(),
+            vec![
+                "$$x^2$$".to_string(),
+                "```".to_string(),
+                "$x^2$".to_string(),
+                "```".to_string(),
+            ],
+            Some("Remember $x^2$.".to_string()),
+            1,
+        );
+        card.context = vec!["Use $____ + […]$".to_string()];
+
+        let view = CardView::from(&card);
+        assert_eq!(view.front, "Find x^2");
+        assert!(view.front_runs[1].math.is_some());
+        assert_eq!(view.context, ["Use $____ + […]$"]);
+        let context_math = view.context_runs[0]
+            .iter()
+            .find(|run| run.math.is_some())
+            .unwrap();
+        assert_eq!(context_math.text, "____ + […]");
+        assert!(context_math.math.as_ref().unwrap().svg.is_some());
+        assert_eq!(view.back[0], "x^2");
+        assert!(view.back_runs[0][0].math.as_ref().unwrap().display);
+        assert_eq!(view.back[2], "$x^2$");
+        assert!(view.back_runs[2].iter().all(|run| run.math.is_none()));
+        let NoteUnit::Sentence { runs, .. } = &view.note[0] else {
+            panic!("note should remain a sentence");
+        };
+        assert!(runs.iter().any(|run| run.math.is_some()));
+    }
+
+    #[test]
+    fn one_card_view_renders_one_copy_of_a_repeated_formula() {
+        let mut card = Card::plain(
+            std::sync::Arc::from("deck.md"),
+            "$x^2$".to_string(),
+            vec!["$x^2$".to_string()],
+            Some("$x^2$".to_string()),
+            1,
+        );
+        card.context = vec!["$x^2$".to_string()];
+        let before = crate::math::thread_render_count();
+        let view = CardView::from(&card);
+        assert_eq!(crate::math::thread_render_count() - before, 1);
+        assert!(view.front_runs[0].math.is_some());
+    }
+
+    #[test]
     fn card_view_structures_the_note_and_flags_a_reshape() {
         let mut cards = parse("## q\nan answer\n> Intro here.\n> ```\n> let x = 1;\n> ```\n");
         let plain = CardView::from(&cards[0]);
@@ -526,10 +685,13 @@ mod tests {
         let session = session_at(cards, &store, Depth::Recognize, NOW);
 
         let question = current_question(&session, &store, &augment).expect("a pick");
-        let shown = state(&session, &store, &augment, Some(NOW))
-            .choices
-            .expect("options");
-        assert_eq!(shown, question.options, "state serves the same options");
+        let served = state(&session, &store, &augment, Some(NOW));
+        let shown = served.choices.as_ref().expect("options");
+        assert_eq!(shown, &question.options, "state serves the same options");
+        assert_eq!(
+            served.choice_runs.as_ref().map(Vec::len),
+            Some(question.options.len())
+        );
         assert_eq!(
             state(&session, &store, &augment, Some(NOW)).choices,
             Some(question.options.clone())
@@ -610,6 +772,7 @@ mod tests {
             fallback.keypoints,
             Some(vec!["first fact".to_string(), "second fact".to_string()])
         );
+        assert_eq!(fallback.keypoint_runs.as_ref().map(Vec::len), Some(2));
 
         augment.set_keypoints(
             &cards[0].id().unwrap(),
@@ -618,6 +781,7 @@ mod tests {
         );
         let cached = state(&session, &store, &augment, Some(NOW));
         assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
+        assert_eq!(cached.keypoint_runs.as_ref().map(Vec::len), Some(1));
 
         let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
         assert_eq!(state(&recall, &store, &augment, Some(NOW)).keypoints, None);

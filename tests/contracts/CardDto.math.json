@@ -1,0 +1,48 @@
+{
+  "at": null,
+  "back": [
+    "\\frac{1"
+  ],
+  "back_runs": [
+    [
+      {
+        "math": {
+          "display": false,
+          "error": "ParseError: unexpected end"
+        },
+        "text": "\\frac{1"
+      }
+    ]
+  ],
+  "citation": null,
+  "citation_error": null,
+  "context": [
+    "$$y^2$$"
+  ],
+  "context_runs": [
+    [
+      {
+        "math": {
+          "display": true,
+          "svg": "<svg><path d=\"M1 1\"/></svg>"
+        },
+        "text": "y^2"
+      }
+    ]
+  ],
+  "crumb": null,
+  "front": "x^2",
+  "front_runs": [
+    {
+      "math": {
+        "display": false,
+        "svg": "<svg><path d=\"M0 0\"/></svg>"
+      },
+      "text": "x^2"
+    }
+  ],
+  "images": [],
+  "images_back": [],
+  "note": [],
+  "reshaped": false
+}

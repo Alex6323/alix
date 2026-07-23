@@ -3,6 +3,8 @@ use serde_json::json;
 use super::*;
 use crate::{
     answer::TypedResult,
+    inline::InlineRun,
+    math::MathView,
     render::{ChecklistItem, NoteUnit},
 };
 
@@ -29,7 +31,9 @@ fn statedto_select_phase_wire_shape() {
         phase: "select",
         card: None,
         choices: None,
+        choice_runs: None,
         keypoints: None,
+        keypoint_runs: None,
         acquire: false,
         mode: "flip",
         depth: "recall",
@@ -53,7 +57,9 @@ fn statedto_select_phase_wire_shape() {
             "phase": "select",
             "card": null,
             "choices": null,
+            "choice_runs": null,
             "keypoints": null,
+            "keypoint_runs": null,
             "acquire": false,
             "mode": "flip",
             "depth": "recall",
@@ -82,6 +88,7 @@ fn statedto_review_phase_wire_shape() {
             front_runs: crate::inline::parse_inline("What is **ownership**?"),
             front_units: None,
             context: vec!["Chapter 4".to_string()],
+            context_runs: vec![crate::inline::parse_inline("Chapter 4")],
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
             reshaped: true,
@@ -139,7 +146,12 @@ fn statedto_review_phase_wire_shape() {
             }),
         }),
         choices: Some(vec!["owner".to_string(), "borrower".to_string()]),
+        choice_runs: Some(vec![
+            crate::inline::parse_inline("owner"),
+            crate::inline::parse_inline("borrower"),
+        ]),
         keypoints: Some(vec!["one owner per value".to_string()]),
+        keypoint_runs: Some(vec![crate::inline::parse_inline("one owner per value")]),
         acquire: false,
         mode: "flip",
         depth: "recall",
@@ -169,6 +181,7 @@ fn statedto_review_phase_wire_shape() {
                     {"text": "?"}
                 ],
                 "context": ["Chapter 4"],
+                "context_runs": [[{"text": "Chapter 4"}]],
                 "back": ["every value has one owner"],
                 "back_runs": [[{"text": "every value has one owner"}]],
                 "reshaped": true,
@@ -216,7 +229,9 @@ fn statedto_review_phase_wire_shape() {
                 }
             },
             "choices": ["owner", "borrower"],
+            "choice_runs": [[{"text": "owner"}], [{"text": "borrower"}]],
             "keypoints": ["one owner per value"],
+            "keypoint_runs": [[{"text": "one owner per value"}]],
             "acquire": false,
             "mode": "flip",
             "depth": "recall",
@@ -477,9 +492,16 @@ fn examdto_cooldown_phase_wire_shape() {
 #[test]
 fn carddto_wire_shape() {
     let dto = card_dto(crate::review::CardView {
-        front: "Pick a city:\n- [x] **Paris**\n- [ ] Rome".to_string(),
+        front: "Pick a city:\n- [x] Paris\n- [ ] Rome".to_string(),
+        front_runs: crate::inline::parse_inline("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
+        front_units: crate::render::front_units("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
         context: Vec::new(),
-        back: vec!["Use `**x**`".to_string(), "*France*".to_string()],
+        context_runs: Vec::new(),
+        back: vec!["Use **x**".to_string(), "France".to_string()],
+        back_runs: vec![
+            crate::inline::parse_inline("Use `**x**`"),
+            crate::inline::parse_inline("*France*"),
+        ],
         reshaped: false,
         note: vec![NoteUnit::Sentence {
             text: "A **city**.".to_string(),
@@ -522,6 +544,7 @@ fn carddto_wire_shape() {
                 }
             ],
             "context": [],
+            "context_runs": [],
             "back": ["Use **x**", "France"],
             "back_runs": [
                 [{"text": "Use "}, {"text": "**x**", "code": true}],
@@ -533,6 +556,92 @@ fn carddto_wire_shape() {
                 "text": "A **city**.",
                 "runs": [{"text": "A "}, {"text": "city", "bold": true}, {"text": "."}]
             }],
+            "images": [],
+            "images_back": [],
+            "at": null,
+            "citation": null,
+            "citation_error": null,
+            "crumb": null
+        }),
+    );
+}
+
+#[test]
+fn carddto_math_wire_shape() {
+    let inline = InlineRun {
+        text: "x^2".to_string(),
+        math: Some(MathView {
+            display: false,
+            svg: Some("<svg><path d=\"M0 0\"/></svg>".to_string()),
+            error: None,
+        }),
+        ..InlineRun::default()
+    };
+    let display = InlineRun {
+        text: "y^2".to_string(),
+        math: Some(MathView {
+            display: true,
+            svg: Some("<svg><path d=\"M1 1\"/></svg>".to_string()),
+            error: None,
+        }),
+        ..InlineRun::default()
+    };
+    let error = InlineRun {
+        text: r"\frac{1".to_string(),
+        math: Some(MathView {
+            display: false,
+            svg: None,
+            error: Some("ParseError: unexpected end".to_string()),
+        }),
+        ..InlineRun::default()
+    };
+    let dto = CardDto {
+        front: "x^2".to_string(),
+        front_runs: vec![inline],
+        front_units: None,
+        context: vec!["$$y^2$$".to_string()],
+        context_runs: vec![vec![display]],
+        back: vec![r"\frac{1".to_string()],
+        back_runs: vec![vec![error]],
+        reshaped: false,
+        note: Vec::new(),
+        images: Vec::new(),
+        images_back: Vec::new(),
+        at: None,
+        citation: None,
+        citation_error: None,
+        crumb: None,
+    };
+    pin(
+        "CardDto.math",
+        &dto,
+        json!({
+            "front": "x^2",
+            "front_runs": [{
+                "text": "x^2",
+                "math": {
+                    "display": false,
+                    "svg": "<svg><path d=\"M0 0\"/></svg>"
+                }
+            }],
+            "context": ["$$y^2$$"],
+            "context_runs": [[{
+                "text": "y^2",
+                "math": {
+                    "display": true,
+                    "svg": "<svg><path d=\"M1 1\"/></svg>"
+                }
+            }]],
+            "back": ["\\frac{1"],
+            "back_runs": [[{
+                "text": "\\frac{1",
+                "math": {
+                    "display": false,
+                    "error": "ParseError: unexpected end"
+                }
+            }]],
+            "reshaped": false,
+            "note": [],
             "images": [],
             "images_back": [],
             "at": null,
@@ -774,6 +883,7 @@ fn browsedto_wire_shape() {
             front_runs: crate::inline::parse_inline("q"),
             front_units: None,
             context: Vec::new(),
+            context_runs: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
             reshaped: false,
@@ -796,6 +906,7 @@ fn browsedto_wire_shape() {
                 "front": "q",
                 "front_runs": [{"text": "q"}],
                 "context": [],
+                "context_runs": [],
                 "back": ["a"],
                 "back_runs": [[{"text": "a"}]],
                 "reshaped": false,
