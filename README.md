@@ -70,6 +70,11 @@ card). Full format and every directive:
 [the deck format](docs/book/src/03-the-deck-format.md),
 [directives](docs/book/src/07-directives.md).
 
+Math stays editable LaTeX in the deck: write `$a^2 + b^2 = c^2$` inline, or put
+`$$\int_0^1 x\,dx = \frac{1}{2}$$` on a whole line for a centered equation.
+The web and mobile review clients render the same self-contained formula, while
+grading and card identity keep using the source text.
+
 ## Commands
 
 | Command | What it does |

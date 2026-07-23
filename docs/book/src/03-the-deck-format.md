@@ -32,6 +32,40 @@ literal, escape them with backslashes such as `2\*3\*4`, or wrap the text in
 inline code such as `` `2*3*4` ``. Run `alix doctor <deck>` to find card text
 that will render as emphasis.
 
+## LaTeX math
+
+Use `$...$` for a formula inside prose:
+
+```markdown
+## Why does $a^2 + b^2 = c^2$ describe a right triangle?
+It is the Pythagorean theorem.
+```
+
+Use `$$...$$` for display math. The two delimiters and the formula must occupy
+one whole logical line; a multi-line `$$` block is not supported:
+
+```markdown
+## What is the Gaussian integral?
+$$\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}$$
+```
+
+An opening dollar must touch the first formula character, and a closing dollar
+must touch the last one. A closing inline `$` cannot be followed by a digit, so
+`$5 and $10` stays literal currency. Escape a literal dollar as `\$`. Unmatched
+dollars and `$$...$$` surrounded by prose also stay literal. Dollars inside
+inline code or fenced code are always verbatim.
+
+Graphical clients render recognized math with the shared RaTeX renderer. If the
+delimiters are valid but the LaTeX is malformed, the card still loads and shows
+the source with a visible "math could not render" message. `alix doctor <deck>`
+reports the card line, formula snippet, and renderer error. The terminal
+interface continues to show the authored LaTeX source.
+
+Grading uses the content between the delimiters, so type `x^2`, not `$x^2$`.
+Adding or removing math delimiters does not change a card token or stale its
+cached augmentations. Generated output that otherwise parses as a deck is
+checked before placement; malformed math cannot replace an existing deck.
+
 A `##` only starts a card *at column 0 and outside a code fence*. A `##` that is
 indented, or sits inside a fenced block, is ordinary answer content, so a Markdown
 heading in a sample, a shell comment, or a Dockerfile line needs no escaping:

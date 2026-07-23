@@ -99,6 +99,27 @@ feeding FSRS *Again* / *Hard* / *Good*. See the [scheduling
 chapter](05-scheduling.md) for how Recall and Reconstruct's independent schedules
 work, and how badges summarize a deck's progress at each depth.
 
+## Math during review
+
+The adult web app, kids web app, and mobile app all display the same
+Rust-rendered SVG for authored [LaTeX math](03-the-deck-format.md#latex-math).
+Inline formulas follow the text baseline and display formulas are centered and
+scaled to the card width. They inherit the current text color and add no
+background rectangle.
+
+A cloze marker may sit inside math:
+
+```markdown
+## Complete the identity.
+$$a^2 - b^2 = \blank{(a-b)}\blank{(a+b)}$$
+```
+
+During review, the active hole becomes an underline and another hidden hole
+becomes an ellipsis inside the rendered formula. The substitution is display
+only and never reveals either answer. If RaTeX rejects a recognized formula,
+review shows its source plus "math could not render" rather than a blank or a
+plausible substitute.
+
 ### explain: the self-graded Reconstruct check
 
 The Reconstruct check for a rich (multi-line) answer is an open prompt: the back

@@ -11,11 +11,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix profile`: define and launch a named alix instance per person (its own decks, port, and adult/kids frontend), reachable on your LAN with a stable token so phones can bookmark it. `alix profile add/list/remove`, `alix profile <name>` to launch, `alix profile default` to pick what bare `alix` launches, and `alix --launch-all` to boot every profile at once.
 - Multiple-choice cards you author directly: write the answer as a GitHub task list (`- [x]` correct, `- [ ]` distractors). It renders as a checklist in any Markdown previewer and drives the Recognize quiz from your own options, with no AI distractor pass needed. Task lists in notes and card fronts render as checkboxes too.
 - card text now renders inline Markdown: `**bold**`, `*italic*`/`_italic_`, and `` `code` ``.
+- LaTeX math in cards: `$...$` renders inline and a whole-line `$$...$$` renders as centered display math in adult web, kids web, and mobile. The Rust core produces one self-contained RaTeX SVG shared by every graphical client while decks, grading, fingerprints, and progress retain only the authored source.
 - the picker's focus drawer now shows a deck's preamble (the prose written under its `#` title), which was parsed but never surfaced before
 
 ### Changed
 
 - **Additive (web API):** card display projection now comes from the shared Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`, and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays in index lockstep with its existing text field. `CardDto` continues to expose text fallback for clients that ignore the new fields.
+- Mobile review now consumes the core's shared inline runs for bold, italic, code, and LaTeX math instead of rendering raw card strings separately.
 - Inline code (`` `like this` ``) now renders with a distinct, theme-aware color for readability.
 - **Breaking (pre-1.0):** inline `*`/`_`/`**` in existing card text now renders as emphasis; a deck that used them literally (e.g. `2*3*4`) will render/grade with the markers stripped. Escape with a backslash (`\*`) or wrap in inline code (`` `2*3*4` ``) to keep them literal. Run `alix doctor <deck>` to find affected cards.
 - **Breaking (web API):** `CardDto.front` and `CardDto.back` now contain inline-marker-stripped content, while the new `front_runs` and `back_runs` fields carry display formatting. Sentence-shaped `NoteUnit` values also gain `runs`.
@@ -24,6 +26,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix doctor` now reports malformed recognized LaTeX with its deck, card line, source snippet, and renderer error. CLI, desktop-server, and paired-mobile generation reject malformed math before placement without damaging an existing deck; generated text that does not parse as a deck keeps the previous lenient saved-draft behavior.
+- Authored checkbox answers and distractors now retain their inline formatting source for display while duplicate detection and typed grading continue to use delimiter-free content.
 - Editing a card's content now invalidates its cached AI augmentations (distractors, note, questions, key points, and the reshaped answer). Previously a cached output generated from the old content was served until you cleared or regenerated it.
 - a hand-authored deck that had never been opened (its cards not yet stamped with ids) showed greyed out and refused to launch in the picker; an unstamped card now reads as a new, due card, so a fresh deck is drillable (opening it stamps it) instead of being stuck
 

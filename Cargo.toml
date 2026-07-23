@@ -18,6 +18,7 @@ categories = ["command-line-utilities"]
 include = [
     "src/**",
     "assets/decks/**",
+    "assets/licenses/**",
     "assets/web/**",
     "/README.md",
     "/CHANGELOG.md",
