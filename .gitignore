@@ -12,6 +12,7 @@ PLAN.md
 /docs/dev/
 /docs/bugs/
 /docs/results/
+/docs/deps/
 # transient screenshots dropped at the repo root (current.png, crates-io.png, …)
 /*.png
 /assets/ignore/
