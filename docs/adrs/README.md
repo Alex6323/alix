@@ -40,7 +40,14 @@ fine.
 # NNNN: Decision title
 
 - Status: Proposed
-- Date: YYYY-MM-DD
+- Recorded: YYYY-MM-DD
+- Retrospective: No
+
+## Decision history
+
+Retrospective records use this optional section to identify when the decision
+was introduced, the commits that verify that history, and any uncertainty.
+Contemporaneous records may omit it.
 
 ## Context
 

@@ -1,7 +1,23 @@
 # 0001: Local-first plain files
 
 - Status: Accepted
-- Date: 2026-07-24
+- Recorded: 2026-07-24
+- Retrospective: Yes
+
+## Decision history
+
+This record reconstructs a direction introduced incrementally before the ADR
+convention existed:
+
+- `9b2755c` (2026-06-16) established local deck and progress files in the
+  initial application.
+- `ec01769` (2026-06-21) gave each workspace its own progress store.
+- `80f2bd7` (2026-07-12) made the decks folder self-contained for bare
+  `alix` use.
+- `cde778c` (2026-07-15) added writer and synchronization-conflict guards.
+
+The placement and ownership decision predates those later durability guards.
+ADR 0005 records the detailed store-write and concurrency model.
 
 ## Context
 
@@ -64,9 +80,11 @@ personal history unless every export scrubbed it.
 ## Compatibility
 
 Markdown syntax, card identity directives, and the versioned `progress.json`
-shape are compatibility surfaces. Changes must preserve existing authored
-content and review history or provide an explicit migration with backup and
-rollback behavior.
+shape are persisted surfaces. The current pre-1.0 store deliberately provides
+best-effort loading rather than a forward-version fence; ADR 0005 records that
+temporary limitation. A stable compatibility promise must preserve existing
+authored content and review history or provide an explicit migration with
+backup and rollback behavior.
 
 Personal-state file names are also part of the sharing boundary. A new personal
 file must be excluded both when staging a share and when receiving one.
