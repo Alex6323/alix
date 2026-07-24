@@ -89,6 +89,7 @@ discussion are usually closed unread.
 | --- | --- |
 | `make build` | Compile. |
 | `make test` | Run the test suite (the primary gate). |
+| `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
 | `make lint` | `cargo clippy --all-targets`. |
 | `make docs-audit` | Live semantic audit of all public text and visual assets; required before a release. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |

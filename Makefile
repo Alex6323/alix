@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js docs-audit fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test test-inventory lint lint-js docs-audit fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -21,6 +21,11 @@ build-core:
 # Run the test suite — the primary gate.
 test:
 	cargo test
+
+# Derive the live host-side Rust test inventory instead of copying a count into
+# prose, where normal suite growth makes it stale immediately.
+test-inventory:
+	@sh scripts/test-inventory.sh
 
 # Lint, including tests and examples.
 lint:

@@ -107,6 +107,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | --- | --- |
 | `make build` | Compile. |
 | `make test` | Run the test suite (the primary gate). |
+| `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
 | `make lint` | `cargo clippy --all-targets`. |
 | `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
