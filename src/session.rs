@@ -82,6 +82,7 @@ pub struct Session {
     remaining_now: usize,
     floors: HashMap<String, u64>,
     appearances: Vec<u32>,
+    choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
     options: SessionOptions,
     pub initial_size: usize,
@@ -107,6 +108,7 @@ impl Session {
             remaining_now: 0,
             floors: HashMap::new(),
             appearances,
+            choice_seed: now_ms,
             scheduler,
             options,
             initial_size,
@@ -126,6 +128,7 @@ impl Session {
         self.roster = roster;
         self.stats = SessionStats::default();
         self.floors.clear();
+        self.choice_seed = now_ms;
         self.advance(store, now_ms);
         true
     }
@@ -193,6 +196,10 @@ impl Session {
             .position(|c| c.id().as_deref() == Some(id))
             .map(|i| self.appearances[i])
             .unwrap_or(0)
+    }
+
+    pub fn choice_seed(&self) -> u64 {
+        self.choice_seed
     }
 
     pub fn grade(&mut self, store: &mut Store, grade: Grade, now_ms: u64) {

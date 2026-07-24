@@ -109,7 +109,10 @@ Write the answer as a GitHub task list to supply your own Recognize options:
 The single `[x]` item is the correct answer. Alix shows only that answer at
 Recall and expects it at Reconstruct; the `[ ]` items are distractors shown with
 it at Recognize. Every option is used, so the card needs no AI `choices`
-augmentation and is skipped by that augment target.
+augmentation and is skipped by that augment target. The Rust core shuffles the
+options: their order stays fixed while one question is on screen, then receives
+a fresh seed when the card reappears or a new study session starts. As with any
+shuffle, two appearances can still produce the same order by chance.
 
 A checkbox card needs exactly one checked item and at least one unchecked item.
 Use `-`, `*`, or `+` bullets, with `[x]` or `[X]` for the answer. Put a literal

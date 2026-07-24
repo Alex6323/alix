@@ -22,11 +22,12 @@ fn content(text: &str) -> String {
     crate::inline::strip_inline(text.trim())
 }
 
-// Seeded by appearance, not wall-clock: appearance only advances on a
-// genuine re-serve, so this is stable across polls of one appearance.
-pub fn seed_for(card_id: &str, appearance: u32) -> u64 {
+// Stable across polls of one appearance, but a fresh study session receives a
+// new session seed so a remembered option position does not carry between runs.
+pub fn seed_for(card_id: &str, session_seed: u64, appearance: u32) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     card_id.hash(&mut hasher);
+    session_seed.hash(&mut hasher);
     appearance.hash(&mut hasher);
     hasher.finish()
 }
@@ -291,8 +292,8 @@ mod tests {
         let d = ai(&["beta", "gamma", "delta"]);
         let id = "q42";
 
-        let first = build(&c, seed_for(id, 1), &d).unwrap();
-        let first_again = build(&c, seed_for(id, 1), &d).unwrap();
+        let first = build(&c, seed_for(id, 100, 1), &d).unwrap();
+        let first_again = build(&c, seed_for(id, 100, 1), &d).unwrap();
         assert_eq!(
             first.options, first_again.options,
             "the same appearance must not reshuffle mid-poll"
@@ -301,7 +302,7 @@ mod tests {
         // Allow for the rare same-permutation collision across a couple of
         // seeds by checking a handful of later appearances.
         let later_orders_differ = (2..12)
-            .map(|appearance| build(&c, seed_for(id, appearance), &d).unwrap())
+            .map(|appearance| build(&c, seed_for(id, 100, appearance), &d).unwrap())
             .any(|q| q.options != first.options);
         assert!(
             later_orders_differ,

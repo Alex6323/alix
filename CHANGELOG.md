@@ -28,6 +28,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Multiple-choice options now receive a fresh shuffle seed for each study session, so a card's correct answer does not return to the same memorized position every time the app is reopened; repeated state polls still keep the current question stable.
 - `alix doctor` now reports malformed recognized LaTeX with its deck, card line, source snippet, and renderer error. CLI, desktop-server, and paired-mobile generation reject malformed math before placement without damaging an existing deck; generated text that does not parse as a deck keeps the previous lenient saved-draft behavior.
 - Authored checkbox answers and distractors now retain their inline formatting source for display while duplicate detection and typed grading continue to use delimiter-free content.
 - A formula that is the only inline run on its logical line now renders larger across adult web, kids web, and mobile, while math embedded in prose keeps its previous text-sized scale.

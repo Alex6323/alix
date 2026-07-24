@@ -263,7 +263,7 @@ pub fn current_question(
 ) -> Option<ChoiceQuestion> {
     let card = session.current()?;
     let id = card.id()?;
-    let seed = choice::seed_for(&id, session.appearance(&id));
+    let seed = choice::seed_for(&id, session.choice_seed(), session.appearance(&id));
     if session.depth() == Depth::Recognize {
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
@@ -654,6 +654,35 @@ mod tests {
                 .options
                 .iter()
                 .all(|option| !option.starts_with('w'))
+        );
+    }
+
+    #[test]
+    fn authored_choices_vary_between_study_sessions() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+        seen(&mut store, &cards);
+        let first = current_question(
+            &session_at(cards.clone(), &store, Depth::Recognize, NOW),
+            &store,
+            &augment,
+        )
+        .expect("an authored pick")
+        .options;
+
+        let later_session_varies = (1..12).any(|offset| {
+            current_question(
+                &session_at(cards.clone(), &store, Depth::Recognize, NOW + offset),
+                &store,
+                &augment,
+            )
+            .expect("an authored pick")
+            .options
+                != first
+        });
+        assert!(
+            later_session_varies,
+            "a fresh study session must not repeat a memorized option order"
         );
     }
 
