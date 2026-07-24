@@ -43,6 +43,9 @@ Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
 
 The trace description, checkpoint prompt, `given` values, key points, and note
 all support the same inline Markdown and LaTeX rendering as ordinary cards.
+Inline-code terms in a checkpoint's key points are also highlighted wherever
+they occur in its revealed source excerpt. Matching is exact and case-sensitive,
+so the author controls the emphasis by choosing which terms to put in backticks.
 
 The `<!-- at: -->` locator is a single contiguous range `file:start-end` (or just line
 numbers when `source:` is one file) — never comma-separated, since a stitched

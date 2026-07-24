@@ -79,6 +79,23 @@ void main() {
     return root;
   }
 
+  Directory highlightedRoot() {
+    final root = tempRoot('alix-walk-highlighted-');
+    File(
+      '${root.path}/source.txt',
+    ).writeAsStringSync('origin calls resolve_source_root\n');
+    File('${root.path}/t.md').writeAsStringSync(
+      '---\n'
+      'trace: a highlighted path\n'
+      'source: source.txt\n'
+      '---\n'
+      '## Predict the source lookup\n'
+      '`origin` flows through `resolve_source_root`.\n'
+      '<!-- at: 1 -->\n',
+    );
+    return root;
+  }
+
   /// A trace whose checkpoint locator has nothing to resolve against (no
   /// `% source:` at all): the excerpt-error fallback path.
   Directory noSourceRoot() {
@@ -186,6 +203,56 @@ void main() {
         // The honest excerpt_error fallback (a line-only locator with no
         // `% source:` to resolve it against), not a silent gap.
         expect(find.textContaining('is not a single file'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'inline-code key-point terms are highlighted in the source excerpt',
+      (tester) async {
+        final root = highlightedRoot();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: alixDark(),
+            home: WalkScreen(
+              deckPath: '${root.path}/t.md',
+              rootDir: root.path,
+              supportDir: tempSupport(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'a guess');
+        await tester.tap(find.text('Reveal'));
+        await tester.pumpAndSettle();
+
+        final sourceLine = find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText &&
+              widget.text.toPlainText() == 'origin calls resolve_source_root',
+        );
+        expect(sourceLine, findsOneWidget);
+        final richText = tester.widget<RichText>(sourceLine);
+
+        Iterable<TextSpan> flatten(TextSpan span) sync* {
+          yield span;
+          for (final child in span.children ?? const <InlineSpan>[]) {
+            if (child is TextSpan) yield* flatten(child);
+          }
+        }
+
+        final spans = flatten(richText.text as TextSpan);
+        expect(
+          spans
+              .where(
+                (span) =>
+                    span.style?.fontWeight == FontWeight.w600 &&
+                    (span.text == 'origin' ||
+                        span.text == 'resolve_source_root'),
+              )
+              .map((span) => span.text),
+          ['origin', 'resolve_source_root'],
+        );
       },
     );
   });

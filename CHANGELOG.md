@@ -17,6 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Trace source excerpts now highlight exact, case-sensitive terms that the checkpoint author marked as inline code in its key points.
 - **Additive (web API):** card display projection now comes from the shared Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`, and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays in index lockstep with its existing text field. `CardDto` continues to expose text fallback for clients that ignore the new fields.
 - **Additive (web/mobile APIs):** trace walk state now carries inline-run projections for its description, checkpoint prompt, givens, key points, and note alongside the existing raw strings.
 - Mobile review now consumes the core's shared inline runs for bold, italic, code, and LaTeX math instead of rendering raw card strings separately.

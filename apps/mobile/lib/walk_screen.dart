@@ -493,6 +493,7 @@ class _WalkScreenState extends State<WalkScreen> {
         ),
       );
     }
+    final terms = _sourceTerms();
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: tokens.line),
@@ -520,7 +521,8 @@ class _WalkScreenState extends State<WalkScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final line in excerpt.lines) _gutterLine(line, tokens),
+                for (final line in excerpt.lines)
+                  _gutterLine(line, terms, tokens),
                 if (excerpt.truncated)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -541,7 +543,71 @@ class _WalkScreenState extends State<WalkScreen> {
     );
   }
 
-  Widget _gutterLine(WalkLine line, AlixTokens tokens) {
+  List<String> _sourceTerms() {
+    final terms = <String>{};
+    for (final runs in _state.pointRuns) {
+      for (final run in runs) {
+        if (run.code && run.text.trim().isNotEmpty) terms.add(run.text);
+      }
+    }
+    return terms.toList()..sort((left, right) {
+      final byLength = right.length.compareTo(left.length);
+      return byLength != 0 ? byLength : left.compareTo(right);
+    });
+  }
+
+  List<TextSpan>? _sourceSpans(
+    String text,
+    List<String> terms,
+    AlixTokens tokens,
+  ) {
+    final spans = <TextSpan>[];
+    var cursor = 0;
+    var matched = false;
+    while (cursor < text.length) {
+      var nextAt = -1;
+      var nextTerm = '';
+      for (final term in terms) {
+        final at = text.indexOf(term, cursor);
+        if (at >= 0 &&
+            (nextAt < 0 ||
+                at < nextAt ||
+                (at == nextAt && term.length > nextTerm.length))) {
+          nextAt = at;
+          nextTerm = term;
+        }
+      }
+      if (nextAt < 0) {
+        spans.add(TextSpan(text: text.substring(cursor)));
+        break;
+      }
+      if (nextAt > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, nextAt)));
+      }
+      spans.add(
+        TextSpan(
+          text: nextTerm,
+          style: TextStyle(
+            color: tokens.bolt,
+            fontWeight: FontWeight.w600,
+            decoration: TextDecoration.underline,
+            decorationColor: tokens.bolt.withValues(alpha: 0.55),
+          ),
+        ),
+      );
+      matched = true;
+      cursor = nextAt + nextTerm.length;
+    }
+    return matched ? spans : null;
+  }
+
+  Widget _gutterLine(WalkLine line, List<String> terms, AlixTokens tokens) {
+    final style = TextStyle(
+      fontFamily: _mono,
+      fontSize: 13,
+      color: tokens.text,
+    );
+    final spans = _sourceSpans(line.text, terms, tokens);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
@@ -559,14 +625,9 @@ class _WalkScreenState extends State<WalkScreen> {
             ),
           ),
           Expanded(
-            child: Text(
-              line.text,
-              style: TextStyle(
-                fontFamily: _mono,
-                fontSize: 13,
-                color: tokens.text,
-              ),
-            ),
+            child: spans == null
+                ? Text(line.text, style: style)
+                : Text.rich(TextSpan(style: style, children: spans)),
           ),
         ],
       ),

@@ -29,4 +29,6 @@ test("trace checkpoints render authored inline code", async ({ page }) => {
   await expect(page.locator(".wpoints .wpt")).not.toContainText("`");
   await expect(page.locator(".source-excerpt .source-file")).toContainText("trace-source.txt");
   await expect(page.locator(".source-line")).toHaveCount(1);
+  await expect(page.locator(".source-term")).toHaveText("reserve");
+  await expect(page.locator(".source-term")).not.toContainText("push");
 });

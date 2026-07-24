@@ -24,5 +24,6 @@ test("fact citations use the editor-style source panel", async ({ page }) => {
   await expect(panel.locator(".source-line")).toHaveCount(4);
   await expect(panel.locator(".source-number")).toHaveText(["1", "2", "3", "4"]);
   await expect(panel.locator(".source-text").nth(1)).toContainText("reserve(1)");
+  await expect(panel.locator(".source-term")).toHaveCount(0);
   await expect(page.locator(".excerpt, .wexcerpt")).toHaveCount(0);
 });

@@ -727,6 +727,7 @@
   .source-line { display: flex; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; }
   .source-number { flex: none; width: 3.2em; padding-right: 13px; text-align: right; color: var(--dim); opacity: 0.55; user-select: none; }
   .source-text { white-space: pre; color: var(--ink); padding-right: 16px; }
+  mark.source-term { color: var(--bolt-hi); background: transparent; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--bolt) 55%, transparent); text-underline-offset: 0.18em; }
   .source-truncated { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 5px 13px 0; }
   .excerpt-miss { color: var(--dim); font-size: 0.86rem; font-style: italic; padding: 13px 15px; border: 1px dashed var(--line); border-radius: 12px; }
   /* key points the revealed truth makes */
@@ -3382,15 +3383,51 @@ function setNote(show) {
   }
 }
 
+// Inline-code runs in key points are an explicit author signal: highlight those
+// exact, case-sensitive terms in the source without guessing from prose.
+function sourceTerms(runGroups) {
+  const terms = new Set();
+  for (const runs of runGroups || []) {
+    for (const run of runs || []) {
+      if (run && run.code && run.text && run.text.trim()) terms.add(run.text);
+    }
+  }
+  return Array.from(terms).sort((a, b) => b.length - a.length || a.localeCompare(b));
+}
+
+function appendSourceText(parent, text, terms) {
+  let cursor = 0;
+  while (cursor < text.length) {
+    let nextAt = -1;
+    let nextTerm = "";
+    for (const term of terms || []) {
+      const at = text.indexOf(term, cursor);
+      if (at >= 0 && (nextAt < 0 || at < nextAt || (at === nextAt && term.length > nextTerm.length))) {
+        nextAt = at;
+        nextTerm = term;
+      }
+    }
+    if (nextAt < 0) {
+      parent.appendChild(document.createTextNode(text.slice(cursor)));
+      return;
+    }
+    if (nextAt > cursor) parent.appendChild(document.createTextNode(text.slice(cursor, nextAt)));
+    parent.appendChild(el("mark", "source-term", nextTerm));
+    cursor = nextAt + nextTerm.length;
+  }
+}
+
 // One editor-style source excerpt shared by fact citations and trace reveals.
-function renderSourceExcerpt(parent, ex) {
+function renderSourceExcerpt(parent, ex, terms) {
   const panel = el("div", "source-excerpt");
   panel.appendChild(el("div", "source-file", ex.path));
   const code = el("div", "source-code");
   for (const ln of ex.lines) {
     const row = el("div", "source-line");
     row.appendChild(el("span", "source-number", String(ln.n)));
-    row.appendChild(el("span", "source-text", ln.text));
+    const text = el("span", "source-text");
+    appendSourceText(text, ln.text, terms);
+    row.appendChild(text);
     code.appendChild(row);
   }
   panel.appendChild(code);
@@ -4179,7 +4216,7 @@ function renderWalkReveal() {
   if (walkData.locator) head.appendChild(el("span", "at", "at " + walkData.locator));
   a.appendChild(head);
   if (walkData.excerpt) {
-    renderSourceExcerpt(a, walkData.excerpt);
+    renderSourceExcerpt(a, walkData.excerpt, sourceTerms(walkData.point_runs));
   } else {
     a.appendChild(el("div", "excerpt-miss", walkData.excerpt_error || "no excerpt for this checkpoint"));
   }
