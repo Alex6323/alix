@@ -2,9 +2,21 @@
   "auto_grade": false,
   "current": 2,
   "description": "how a String grows",
+  "description_runs": [
+    {
+      "text": "how a String grows"
+    }
+  ],
   "excerpt": null,
   "excerpt_error": null,
   "feedback": null,
+  "given_runs": [
+    [
+      {
+        "text": "a String at capacity"
+      }
+    ]
+  ],
   "givens": [
     "a String at capacity"
   ],
@@ -12,6 +24,7 @@
   "kind": "walk",
   "locator": "lib.rs:40-52",
   "note": null,
+  "note_runs": null,
   "path": [
     {
       "current": false,
@@ -25,9 +38,15 @@
     }
   ],
   "phase": "predict",
+  "point_runs": [],
   "points": [],
   "prediction": null,
   "prompt": "what does push do when full?",
+  "prompt_runs": [
+    {
+      "text": "what does push do when full?"
+    }
+  ],
   "source": "src/lib.rs",
   "summary": null,
   "thinking": false,

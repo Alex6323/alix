@@ -686,18 +686,23 @@ pub(super) struct WalkDto {
     pub(super) kind: &'static str,
     pub(super) phase: &'static str,
     pub(super) description: String,
+    pub(super) description_runs: Vec<InlineRun>,
     pub(super) source: Option<String>,
     pub(super) total: usize,
     pub(super) current: usize,
     pub(super) path: Vec<HopDto>,
     pub(super) prompt: Option<String>,
+    pub(super) prompt_runs: Option<Vec<InlineRun>>,
     pub(super) givens: Vec<String>,
+    pub(super) given_runs: Vec<Vec<InlineRun>>,
     pub(super) locator: Option<String>,
     pub(super) prediction: Option<String>,
     pub(super) excerpt: Option<ExcerptDto>,
     pub(super) excerpt_error: Option<String>,
     pub(super) points: Vec<String>,
+    pub(super) point_runs: Vec<Vec<InlineRun>>,
     pub(super) note: Option<String>,
+    pub(super) note_runs: Option<Vec<InlineRun>>,
     pub(super) auto_grade: bool,
     pub(super) thinking: bool,
     pub(super) verdict: Option<&'static str>,
@@ -742,6 +747,7 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
     let trace = walk.trace();
     let phase = walk.phase();
     let on_a_hop = matches!(phase, Phase::Predict | Phase::Reveal);
+    let mut projector = DisplayProjector::default();
 
     let path = trace
         .checkpoints
@@ -758,18 +764,23 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
         kind: "walk",
         phase: walk_phase_name(phase),
         description: trace.description.clone(),
+        description_runs: projector.project(&trace.description),
         source: trace.source.clone(),
         total: walk.total(),
         current: walk.current_index() + 1,
         path,
         prompt: None,
+        prompt_runs: None,
         givens: Vec::new(),
+        given_runs: Vec::new(),
         locator: None,
         prediction: None,
         excerpt: None,
         excerpt_error: None,
         points: Vec::new(),
+        point_runs: Vec::new(),
         note: None,
+        note_runs: None,
         auto_grade: w.grade.is_some(),
         thinking: w.pending.is_some(),
         verdict: w.grade_result.as_ref().map(|(d, _)| delta_name(*d)),
@@ -782,17 +793,35 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
         Phase::Predict => {
             if let Some(c) = walk.checkpoint() {
                 dto.prompt = Some(c.prompt.clone());
+                dto.prompt_runs = Some(projector.project(&c.prompt));
                 dto.givens = c.givens.clone();
+                dto.given_runs = c
+                    .givens
+                    .iter()
+                    .map(|given| projector.project(given))
+                    .collect();
                 dto.locator = c.locator.clone();
             }
         }
         Phase::Reveal => {
             if let Some(c) = walk.checkpoint() {
                 dto.prompt = Some(c.prompt.clone());
+                dto.prompt_runs = Some(projector.project(&c.prompt));
                 dto.givens = c.givens.clone();
+                dto.given_runs = c
+                    .givens
+                    .iter()
+                    .map(|given| projector.project(given))
+                    .collect();
                 dto.locator = c.locator.clone();
                 dto.points = c.points.clone();
+                dto.point_runs = c
+                    .points
+                    .iter()
+                    .map(|point| projector.project(point))
+                    .collect();
                 dto.note = c.note.clone();
+                dto.note_runs = c.note.as_deref().map(|note| projector.project(note));
                 match trace.excerpt(c) {
                     Ok(ex) => {
                         // For a frozen-snapshot asset, relabel to the ORIGINAL

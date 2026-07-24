@@ -1300,10 +1300,11 @@ fn walk_deck(dir: &Path) -> crate::trace::Trace {
     let path = dir.join("t.md");
     std::fs::write(
         &path,
-        "---\ntrace: how it works\nsource: source.txt\n---\n\
-         ## Predict the first hop <!-- id: t1 -->\n\
-         <!-- given: line — the input line -->\n\
-         it reads the first line\n\
+        "---\ntrace: how `it` works\nsource: source.txt\n---\n\
+         ## Predict the `first` hop <!-- id: t1 -->\n\
+         <!-- given: line — the `input` line -->\n\
+         it reads the `first` line\n\
+         > call `read`\n\
          <!-- at: 1 -->\n\
          ## Predict the second hop <!-- id: t2 -->\n\
          it reads line two\n\
@@ -1326,8 +1327,23 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
     assert_eq!("predict", d.phase);
     assert_eq!(1, d.current);
     assert_eq!(2, d.total);
-    assert_eq!(Some("Predict the first hop".to_string()), d.prompt);
-    assert_eq!(vec!["line — the input line".to_string()], d.givens);
+    assert_eq!(Some("Predict the `first` hop".to_string()), d.prompt);
+    assert_eq!(vec!["line — the `input` line".to_string()], d.givens);
+    assert!(
+        d.description_runs
+            .iter()
+            .any(|run| run.code && run.text == "it")
+    );
+    assert!(
+        d.prompt_runs
+            .as_ref()
+            .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "first"))
+    );
+    assert!(
+        d.given_runs[0]
+            .iter()
+            .any(|run| run.code && run.text == "input")
+    );
     assert!(d.excerpt.is_none());
     assert!(!d.auto_grade);
     assert!(d.path[0].current && d.path[0].delta.is_none());
@@ -1344,7 +1360,17 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
             .map(|l| (l.n, l.text.clone()))
             .collect::<Vec<_>>()
     );
-    assert_eq!(vec!["it reads the first line".to_string()], d.points);
+    assert_eq!(vec!["it reads the `first` line".to_string()], d.points);
+    assert!(
+        d.point_runs[0]
+            .iter()
+            .any(|run| run.code && run.text == "first")
+    );
+    assert!(
+        d.note_runs
+            .as_ref()
+            .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "read"))
+    );
 
     w.walk.grade(&mut store, Delta::Passed, 1000);
     let d = walk_dto(&w);

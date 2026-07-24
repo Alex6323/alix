@@ -2272,6 +2272,19 @@ impl SseDecode for Option<Vec<String>> {
     }
 }
 
+impl SseDecode for Option<Vec<crate::api::review::InlineRun>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<Vec<crate::api::review::InlineRun>>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<Vec<Vec<crate::api::review::InlineRun>>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2466,32 +2479,45 @@ impl SseDecode for crate::api::review::WalkState {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_phase = <crate::api::review::WalkPhase>::sse_decode(deserializer);
         let mut var_description = <String>::sse_decode(deserializer);
+        let mut var_descriptionRuns =
+            <Vec<crate::api::review::InlineRun>>::sse_decode(deserializer);
         let mut var_source = <Option<String>>::sse_decode(deserializer);
         let mut var_total = <u32>::sse_decode(deserializer);
         let mut var_current = <u32>::sse_decode(deserializer);
         let mut var_prompt = <Option<String>>::sse_decode(deserializer);
+        let mut var_promptRuns =
+            <Option<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_givens = <Vec<String>>::sse_decode(deserializer);
+        let mut var_givenRuns = <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_locator = <Option<String>>::sse_decode(deserializer);
         let mut var_prediction = <Option<String>>::sse_decode(deserializer);
         let mut var_excerpt = <Option<crate::api::review::WalkExcerpt>>::sse_decode(deserializer);
         let mut var_excerptError = <Option<String>>::sse_decode(deserializer);
         let mut var_points = <Vec<String>>::sse_decode(deserializer);
+        let mut var_pointRuns = <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_note = <Option<String>>::sse_decode(deserializer);
+        let mut var_noteRuns =
+            <Option<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_summary = <Option<crate::api::review::WalkSummary>>::sse_decode(deserializer);
         return crate::api::review::WalkState {
             phase: var_phase,
             description: var_description,
+            description_runs: var_descriptionRuns,
             source: var_source,
             total: var_total,
             current: var_current,
             prompt: var_prompt,
+            prompt_runs: var_promptRuns,
             givens: var_givens,
+            given_runs: var_givenRuns,
             locator: var_locator,
             prediction: var_prediction,
             excerpt: var_excerpt,
             excerpt_error: var_excerptError,
             points: var_points,
+            point_runs: var_pointRuns,
             note: var_note,
+            note_runs: var_noteRuns,
             summary: var_summary,
         };
     }
@@ -3179,17 +3205,22 @@ impl flutter_rust_bridge::IntoDart for crate::api::review::WalkState {
         [
             self.phase.into_into_dart().into_dart(),
             self.description.into_into_dart().into_dart(),
+            self.description_runs.into_into_dart().into_dart(),
             self.source.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
             self.current.into_into_dart().into_dart(),
             self.prompt.into_into_dart().into_dart(),
+            self.prompt_runs.into_into_dart().into_dart(),
             self.givens.into_into_dart().into_dart(),
+            self.given_runs.into_into_dart().into_dart(),
             self.locator.into_into_dart().into_dart(),
             self.prediction.into_into_dart().into_dart(),
             self.excerpt.into_into_dart().into_dart(),
             self.excerpt_error.into_into_dart().into_dart(),
             self.points.into_into_dart().into_dart(),
+            self.point_runs.into_into_dart().into_dart(),
             self.note.into_into_dart().into_dart(),
+            self.note_runs.into_into_dart().into_dart(),
             self.summary.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -3790,6 +3821,16 @@ impl SseEncode for Option<Vec<String>> {
     }
 }
 
+impl SseEncode for Option<Vec<crate::api::review::InlineRun>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <Vec<crate::api::review::InlineRun>>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<Vec<Vec<crate::api::review::InlineRun>>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3949,17 +3990,22 @@ impl SseEncode for crate::api::review::WalkState {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::review::WalkPhase>::sse_encode(self.phase, serializer);
         <String>::sse_encode(self.description, serializer);
+        <Vec<crate::api::review::InlineRun>>::sse_encode(self.description_runs, serializer);
         <Option<String>>::sse_encode(self.source, serializer);
         <u32>::sse_encode(self.total, serializer);
         <u32>::sse_encode(self.current, serializer);
         <Option<String>>::sse_encode(self.prompt, serializer);
+        <Option<Vec<crate::api::review::InlineRun>>>::sse_encode(self.prompt_runs, serializer);
         <Vec<String>>::sse_encode(self.givens, serializer);
+        <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.given_runs, serializer);
         <Option<String>>::sse_encode(self.locator, serializer);
         <Option<String>>::sse_encode(self.prediction, serializer);
         <Option<crate::api::review::WalkExcerpt>>::sse_encode(self.excerpt, serializer);
         <Option<String>>::sse_encode(self.excerpt_error, serializer);
         <Vec<String>>::sse_encode(self.points, serializer);
+        <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.point_runs, serializer);
         <Option<String>>::sse_encode(self.note, serializer);
+        <Option<Vec<crate::api::review::InlineRun>>>::sse_encode(self.note_runs, serializer);
         <Option<crate::api::review::WalkSummary>>::sse_encode(self.summary, serializer);
     }
 }

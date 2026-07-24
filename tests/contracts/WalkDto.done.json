@@ -2,6 +2,11 @@
   "auto_grade": true,
   "current": 3,
   "description": "how a String grows",
+  "description_runs": [
+    {
+      "text": "how a String grows"
+    }
+  ],
   "excerpt": {
     "lines": [
       {
@@ -14,11 +19,17 @@
   },
   "excerpt_error": null,
   "feedback": "half right",
+  "given_runs": [],
   "givens": [],
   "grade_error": null,
   "kind": "walk",
   "locator": null,
   "note": "see also Vec",
+  "note_runs": [
+    {
+      "text": "see also Vec"
+    }
+  ],
   "path": [
     {
       "current": false,
@@ -27,11 +38,19 @@
     }
   ],
   "phase": "done",
+  "point_runs": [
+    [
+      {
+        "text": "amortized doubling"
+      }
+    ]
+  ],
   "points": [
     "amortized doubling"
   ],
   "prediction": "it reallocates",
   "prompt": null,
+  "prompt_runs": null,
   "source": null,
   "summary": {
     "failed": 1,

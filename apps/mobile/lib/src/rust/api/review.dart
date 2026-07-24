@@ -9,7 +9,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `walk_excerpt`, `walk_state`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 Grade keypointGrade({required int covered, required int total}) => RustLib
     .instance
@@ -560,33 +560,43 @@ enum WalkPhase { predict, reveal, done }
 class WalkState {
   final WalkPhase phase;
   final String description;
+  final List<InlineRun> descriptionRuns;
   final String? source;
   final int total;
   final int current;
   final String? prompt;
+  final List<InlineRun>? promptRuns;
   final List<String> givens;
+  final List<List<InlineRun>> givenRuns;
   final String? locator;
   final String? prediction;
   final WalkExcerpt? excerpt;
   final String? excerptError;
   final List<String> points;
+  final List<List<InlineRun>> pointRuns;
   final String? note;
+  final List<InlineRun>? noteRuns;
   final WalkSummary? summary;
 
   const WalkState({
     required this.phase,
     required this.description,
+    required this.descriptionRuns,
     this.source,
     required this.total,
     required this.current,
     this.prompt,
+    this.promptRuns,
     required this.givens,
+    required this.givenRuns,
     this.locator,
     this.prediction,
     this.excerpt,
     this.excerptError,
     required this.points,
+    required this.pointRuns,
     this.note,
+    this.noteRuns,
     this.summary,
   });
 
@@ -594,17 +604,22 @@ class WalkState {
   int get hashCode =>
       phase.hashCode ^
       description.hashCode ^
+      descriptionRuns.hashCode ^
       source.hashCode ^
       total.hashCode ^
       current.hashCode ^
       prompt.hashCode ^
+      promptRuns.hashCode ^
       givens.hashCode ^
+      givenRuns.hashCode ^
       locator.hashCode ^
       prediction.hashCode ^
       excerpt.hashCode ^
       excerptError.hashCode ^
       points.hashCode ^
+      pointRuns.hashCode ^
       note.hashCode ^
+      noteRuns.hashCode ^
       summary.hashCode;
 
   @override
@@ -614,17 +629,22 @@ class WalkState {
           runtimeType == other.runtimeType &&
           phase == other.phase &&
           description == other.description &&
+          descriptionRuns == other.descriptionRuns &&
           source == other.source &&
           total == other.total &&
           current == other.current &&
           prompt == other.prompt &&
+          promptRuns == other.promptRuns &&
           givens == other.givens &&
+          givenRuns == other.givenRuns &&
           locator == other.locator &&
           prediction == other.prediction &&
           excerpt == other.excerpt &&
           excerptError == other.excerptError &&
           points == other.points &&
+          pointRuns == other.pointRuns &&
           note == other.note &&
+          noteRuns == other.noteRuns &&
           summary == other.summary;
 }
 

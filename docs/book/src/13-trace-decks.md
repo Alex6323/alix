@@ -41,6 +41,9 @@ Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
 > Using s1 after the move is a compile-time error.
 ```
 
+The trace description, checkpoint prompt, `given` values, key points, and note
+all support the same inline Markdown and LaTeX rendering as ordinary cards.
+
 The `<!-- at: -->` locator is a single contiguous range `file:start-end` (or just line
 numbers when `source:` is one file) — never comma-separated, since a stitched
 excerpt makes disjoint code look adjacent. The lines are **read live from the

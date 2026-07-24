@@ -495,17 +495,22 @@ pub struct WalkSummary {
 pub struct WalkState {
     pub phase: WalkPhase,
     pub description: String,
+    pub description_runs: Vec<InlineRun>,
     pub source: Option<String>,
     pub total: u32,
     pub current: u32,
     pub prompt: Option<String>,
+    pub prompt_runs: Option<Vec<InlineRun>>,
     pub givens: Vec<String>,
+    pub given_runs: Vec<Vec<InlineRun>>,
     pub locator: Option<String>,
     pub prediction: Option<String>,
     pub excerpt: Option<WalkExcerpt>,
     pub excerpt_error: Option<String>,
     pub points: Vec<String>,
+    pub point_runs: Vec<Vec<InlineRun>>,
     pub note: Option<String>,
+    pub note_runs: Option<Vec<InlineRun>>,
     pub summary: Option<WalkSummary>,
 }
 
@@ -527,21 +532,27 @@ fn walk_excerpt(excerpt: &alix::trace::Excerpt) -> WalkExcerpt {
 fn walk_state(walk: &alix::trace::Walk) -> WalkState {
     let trace = walk.trace();
     let phase = walk.phase();
+    let mut projector = alix::inline::DisplayProjector::default();
 
     let mut state = WalkState {
         phase,
         description: trace.description.clone(),
+        description_runs: projector.project(&trace.description),
         source: trace.source.clone(),
         total: walk.total() as u32,
         current: walk.current_index() as u32 + 1,
         prompt: None,
+        prompt_runs: None,
         givens: Vec::new(),
+        given_runs: Vec::new(),
         locator: None,
         prediction: None,
         excerpt: None,
         excerpt_error: None,
         points: Vec::new(),
+        point_runs: Vec::new(),
         note: None,
+        note_runs: None,
         summary: None,
     };
 
@@ -549,17 +560,35 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
         WalkPhase::Predict => {
             if let Some(c) = walk.checkpoint() {
                 state.prompt = Some(c.prompt.clone());
+                state.prompt_runs = Some(projector.project(&c.prompt));
                 state.givens = c.givens.clone();
+                state.given_runs = c
+                    .givens
+                    .iter()
+                    .map(|given| projector.project(given))
+                    .collect();
                 state.locator = c.locator.clone();
             }
         }
         WalkPhase::Reveal => {
             if let Some(c) = walk.checkpoint() {
                 state.prompt = Some(c.prompt.clone());
+                state.prompt_runs = Some(projector.project(&c.prompt));
                 state.givens = c.givens.clone();
+                state.given_runs = c
+                    .givens
+                    .iter()
+                    .map(|given| projector.project(given))
+                    .collect();
                 state.locator = c.locator.clone();
                 state.points = c.points.clone();
+                state.point_runs = c
+                    .points
+                    .iter()
+                    .map(|point| projector.project(point))
+                    .collect();
                 state.note = c.note.clone();
+                state.note_runs = c.note.as_deref().map(|note| projector.project(note));
                 match trace.excerpt(c) {
                     Ok(ex) => {
                         let (ex, label) =
@@ -1386,11 +1415,13 @@ mod tests {
         write(
             &path,
             "---\n\
-             trace: how it works\n\
+             trace: how `it` works\n\
              source: source.txt\n\
              ---\n\
-             ## Predict the first hop\n\
-             it reads the first line\n\
+             ## Predict the `first` hop\n\
+             <!-- given: line — the `input` line -->\n\
+             it reads the `first` line\n\
+             > call `read`\n\
              <!-- at: 1 -->\n\
              \n\
              ## Predict the second hop\n\
@@ -1415,12 +1446,23 @@ mod tests {
 
         let state = s.state();
         assert_eq!(state.phase, WalkPhase::Predict);
-        assert_eq!(state.description, "how it works");
+        assert_eq!(state.description, "how `it` works");
+        assert!(state
+            .description_runs
+            .iter()
+            .any(|run| run.code && run.text == "it"));
         assert_eq!(state.source.as_deref(), Some("source.txt"));
         assert_eq!(state.total, 2);
         assert_eq!(state.current, 1);
-        assert_eq!(state.prompt.as_deref(), Some("Predict the first hop"));
-        assert!(state.givens.is_empty());
+        assert_eq!(state.prompt.as_deref(), Some("Predict the `first` hop"));
+        assert!(state
+            .prompt_runs
+            .as_ref()
+            .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "first")));
+        assert_eq!(state.givens, vec!["line — the `input` line".to_string()]);
+        assert!(state.given_runs[0]
+            .iter()
+            .any(|run| run.code && run.text == "input"));
 
         s.predict("guess1".to_string());
         let state = s.state();
@@ -1436,7 +1478,14 @@ mod tests {
                 text: "first".to_string()
             }]
         );
-        assert_eq!(state.points, vec!["it reads the first line".to_string()]);
+        assert_eq!(state.points, vec!["it reads the `first` line".to_string()]);
+        assert!(state.point_runs[0]
+            .iter()
+            .any(|run| run.code && run.text == "first"));
+        assert!(state
+            .note_runs
+            .as_ref()
+            .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "read")));
 
         let state = s.grade(WalkDelta::Got, Some(T0)).unwrap();
         assert_eq!(state.phase, WalkPhase::Predict);

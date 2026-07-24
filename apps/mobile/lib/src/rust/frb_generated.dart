@@ -1836,6 +1836,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<InlineRun>? dco_decode_opt_list_inline_run(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_inline_run(raw);
+  }
+
+  @protected
   List<List<InlineRun>>? dco_decode_opt_list_list_inline_run(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_list_list_inline_run(raw);
@@ -1974,23 +1980,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalkState dco_decode_walk_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return WalkState(
       phase: dco_decode_walk_phase(arr[0]),
       description: dco_decode_String(arr[1]),
-      source: dco_decode_opt_String(arr[2]),
-      total: dco_decode_u_32(arr[3]),
-      current: dco_decode_u_32(arr[4]),
-      prompt: dco_decode_opt_String(arr[5]),
-      givens: dco_decode_list_String(arr[6]),
-      locator: dco_decode_opt_String(arr[7]),
-      prediction: dco_decode_opt_String(arr[8]),
-      excerpt: dco_decode_opt_box_autoadd_walk_excerpt(arr[9]),
-      excerptError: dco_decode_opt_String(arr[10]),
-      points: dco_decode_list_String(arr[11]),
-      note: dco_decode_opt_String(arr[12]),
-      summary: dco_decode_opt_box_autoadd_walk_summary(arr[13]),
+      descriptionRuns: dco_decode_list_inline_run(arr[2]),
+      source: dco_decode_opt_String(arr[3]),
+      total: dco_decode_u_32(arr[4]),
+      current: dco_decode_u_32(arr[5]),
+      prompt: dco_decode_opt_String(arr[6]),
+      promptRuns: dco_decode_opt_list_inline_run(arr[7]),
+      givens: dco_decode_list_String(arr[8]),
+      givenRuns: dco_decode_list_list_inline_run(arr[9]),
+      locator: dco_decode_opt_String(arr[10]),
+      prediction: dco_decode_opt_String(arr[11]),
+      excerpt: dco_decode_opt_box_autoadd_walk_excerpt(arr[12]),
+      excerptError: dco_decode_opt_String(arr[13]),
+      points: dco_decode_list_String(arr[14]),
+      pointRuns: dco_decode_list_list_inline_run(arr[15]),
+      note: dco_decode_opt_String(arr[16]),
+      noteRuns: dco_decode_opt_list_inline_run(arr[17]),
+      summary: dco_decode_opt_box_autoadd_walk_summary(arr[18]),
     );
   }
 
@@ -2758,6 +2769,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<InlineRun>? sse_decode_opt_list_inline_run(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_inline_run(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   List<List<InlineRun>>? sse_decode_opt_list_list_inline_run(
     SseDeserializer deserializer,
   ) {
@@ -2923,32 +2947,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_phase = sse_decode_walk_phase(deserializer);
     var var_description = sse_decode_String(deserializer);
+    var var_descriptionRuns = sse_decode_list_inline_run(deserializer);
     var var_source = sse_decode_opt_String(deserializer);
     var var_total = sse_decode_u_32(deserializer);
     var var_current = sse_decode_u_32(deserializer);
     var var_prompt = sse_decode_opt_String(deserializer);
+    var var_promptRuns = sse_decode_opt_list_inline_run(deserializer);
     var var_givens = sse_decode_list_String(deserializer);
+    var var_givenRuns = sse_decode_list_list_inline_run(deserializer);
     var var_locator = sse_decode_opt_String(deserializer);
     var var_prediction = sse_decode_opt_String(deserializer);
     var var_excerpt = sse_decode_opt_box_autoadd_walk_excerpt(deserializer);
     var var_excerptError = sse_decode_opt_String(deserializer);
     var var_points = sse_decode_list_String(deserializer);
+    var var_pointRuns = sse_decode_list_list_inline_run(deserializer);
     var var_note = sse_decode_opt_String(deserializer);
+    var var_noteRuns = sse_decode_opt_list_inline_run(deserializer);
     var var_summary = sse_decode_opt_box_autoadd_walk_summary(deserializer);
     return WalkState(
       phase: var_phase,
       description: var_description,
+      descriptionRuns: var_descriptionRuns,
       source: var_source,
       total: var_total,
       current: var_current,
       prompt: var_prompt,
+      promptRuns: var_promptRuns,
       givens: var_givens,
+      givenRuns: var_givenRuns,
       locator: var_locator,
       prediction: var_prediction,
       excerpt: var_excerpt,
       excerptError: var_excerptError,
       points: var_points,
+      pointRuns: var_pointRuns,
       note: var_note,
+      noteRuns: var_noteRuns,
       summary: var_summary,
     );
   }
@@ -3689,6 +3723,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_list_inline_run(
+    List<InlineRun>? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_inline_run(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_list_list_inline_run(
     List<List<InlineRun>>? self,
     SseSerializer serializer,
@@ -3816,17 +3863,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_walk_phase(self.phase, serializer);
     sse_encode_String(self.description, serializer);
+    sse_encode_list_inline_run(self.descriptionRuns, serializer);
     sse_encode_opt_String(self.source, serializer);
     sse_encode_u_32(self.total, serializer);
     sse_encode_u_32(self.current, serializer);
     sse_encode_opt_String(self.prompt, serializer);
+    sse_encode_opt_list_inline_run(self.promptRuns, serializer);
     sse_encode_list_String(self.givens, serializer);
+    sse_encode_list_list_inline_run(self.givenRuns, serializer);
     sse_encode_opt_String(self.locator, serializer);
     sse_encode_opt_String(self.prediction, serializer);
     sse_encode_opt_box_autoadd_walk_excerpt(self.excerpt, serializer);
     sse_encode_opt_String(self.excerptError, serializer);
     sse_encode_list_String(self.points, serializer);
+    sse_encode_list_list_inline_run(self.pointRuns, serializer);
     sse_encode_opt_String(self.note, serializer);
+    sse_encode_opt_list_inline_run(self.noteRuns, serializer);
     sse_encode_opt_box_autoadd_walk_summary(self.summary, serializer);
   }
 

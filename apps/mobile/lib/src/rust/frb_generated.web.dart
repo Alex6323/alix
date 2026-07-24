@@ -263,6 +263,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String>? dco_decode_opt_list_String(dynamic raw);
 
   @protected
+  List<InlineRun>? dco_decode_opt_list_inline_run(dynamic raw);
+
+  @protected
   List<List<InlineRun>>? dco_decode_opt_list_list_inline_run(dynamic raw);
 
   @protected
@@ -566,6 +569,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<InlineRun>? sse_decode_opt_list_inline_run(SseDeserializer deserializer);
 
   @protected
   List<List<InlineRun>>? sse_decode_opt_list_list_inline_run(
@@ -948,6 +954,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_list_inline_run(
+    List<InlineRun>? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_list_list_inline_run(

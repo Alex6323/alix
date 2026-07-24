@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/inline_runs.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
@@ -311,10 +312,8 @@ class _WalkScreenState extends State<WalkScreen> {
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text(
-          _state.description,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        child: InlineRuns(
+          runs: _state.descriptionRuns,
           style: TextStyle(
             fontFamily: _mono,
             fontSize: 11.5,
@@ -345,8 +344,8 @@ class _WalkScreenState extends State<WalkScreen> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const SizedBox(height: 8),
-        Text(
-          _state.prompt ?? '',
+        InlineRuns(
+          runs: _state.promptRuns ?? const [],
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: _sans,
@@ -388,20 +387,22 @@ class _WalkScreenState extends State<WalkScreen> {
         alignment: WrapAlignment.center,
         spacing: 8,
         runSpacing: 6,
-        children: [for (final g in _state.givens) _givenTag(g, tokens)],
+        children: [
+          for (final runs in _state.givenRuns) _givenTag(runs, tokens),
+        ],
       ),
     );
   }
 
-  Widget _givenTag(String text, AlixTokens tokens) {
+  Widget _givenTag(List<InlineRun> runs, AlixTokens tokens) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         border: Border.all(color: tokens.line),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        text,
+      child: InlineRuns(
+        runs: runs,
         style: TextStyle(fontFamily: _mono, fontSize: 12, color: tokens.dim),
       ),
     );
@@ -579,7 +580,7 @@ class _WalkScreenState extends State<WalkScreen> {
       children: [
         _label('key points', tokens.good),
         const SizedBox(height: 6),
-        for (final pt in _state.points)
+        for (final runs in _state.pointRuns)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(
@@ -593,8 +594,8 @@ class _WalkScreenState extends State<WalkScreen> {
                   ),
                 ),
                 Expanded(
-                  child: Text(
-                    pt,
+                  child: InlineRuns(
+                    runs: runs,
                     style: TextStyle(color: onSurface, height: 1.4),
                   ),
                 ),
@@ -620,8 +621,8 @@ class _WalkScreenState extends State<WalkScreen> {
         border: Border.all(color: tokens.noteBorder.withValues(alpha: 0.24)),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
-        note,
+      child: InlineRuns(
+        runs: _state.noteRuns ?? const [],
         style: TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
       ),
     );
@@ -693,8 +694,17 @@ class _WalkScreenState extends State<WalkScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          Text(
-            _state.description.isEmpty ? 'Trace walked.' : _state.description,
+          InlineRuns(
+            runs: _state.description.isEmpty
+                ? [
+                    const InlineRun(
+                      text: 'Trace walked.',
+                      bold: false,
+                      italic: false,
+                      code: false,
+                    ),
+                  ]
+                : _state.descriptionRuns,
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w600,

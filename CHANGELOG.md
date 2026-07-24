@@ -18,6 +18,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Additive (web API):** card display projection now comes from the shared Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`, and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays in index lockstep with its existing text field. `CardDto` continues to expose text fallback for clients that ignore the new fields.
+- **Additive (web/mobile APIs):** trace walk state now carries inline-run projections for its description, checkpoint prompt, givens, key points, and note alongside the existing raw strings.
 - Mobile review now consumes the core's shared inline runs for bold, italic, code, and LaTeX math instead of rendering raw card strings separately.
 - Android release builds now size-optimize the embedded Rust core with fat LTO, one codegen unit, and stripped symbols. `make aab` produces the Android App Bundle for Google Play while `make apk` remains the GitHub-release and phone-smoke artifact.
 - Inline code (`` `like this` ``) now renders with a distinct, theme-aware color for readability.
@@ -28,6 +29,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Trace walks now render authored inline Markdown in their description, checkpoint prompt, givens, key points, and note on adult web and mobile instead of showing raw markers such as backticks.
 - Multiple-choice options now receive a fresh shuffle seed for each study session, so a card's correct answer does not return to the same memorized position every time the app is reopened; repeated state polls still keep the current question stable.
 - `alix doctor` now reports malformed recognized LaTeX with its deck, card line, source snippet, and renderer error. CLI, desktop-server, and paired-mobile generation reject malformed math before placement without damaging an existing deck; generated text that does not parse as a deck keeps the previous lenient saved-draft behavior.
 - Authored checkbox answers and distractors now retain their inline formatting source for display while duplicate detection and typed grading continue to use delimiter-free content.

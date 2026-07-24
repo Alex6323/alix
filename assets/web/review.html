@@ -1178,6 +1178,10 @@ function appendRuns(parent, runs) {
     parent.appendChild(node);
   }
 }
+function appendRunsOrText(parent, text, runs) {
+  if (runs) appendRuns(parent, runs);
+  else parent.textContent = text || "";
+}
 function isStandaloneInlineMath(runs) {
   return Array.isArray(runs) && runs.length === 1 &&
     !!runs[0].math && !runs[0].math.display;
@@ -1495,7 +1499,7 @@ function syncAsk() {
 }
 
 // `subject` is optional: null = use the current review card; an object with
-// {q, items} = walk checkpoint header (prompt as q, key points as items).
+// {q, qRuns, items, itemRuns} = the walk checkpoint prompt and key points.
 function renderAsk(subject) {
   const wrap = el("div", "ask-panel");
   // Mono eyebrow header ("ASK TUTOR · card-scoped" / "· step-scoped"), with
@@ -1516,8 +1520,15 @@ function renderAsk(subject) {
   if (subject) {
     // Walk: show the checkpoint prompt + key points.
     const ref = el("div", "ask-card");
-    ref.appendChild(el("div", "ask-card-q", subject.q));
-    for (const item of subject.items || []) ref.appendChild(el("div", "ask-card-a", "▸ " + item));
+    const prompt = el("div", "ask-card-q");
+    appendRunsOrText(prompt, subject.q, subject.qRuns);
+    ref.appendChild(prompt);
+    for (let i = 0; i < (subject.items || []).length; i++) {
+      const answer = el("div", "ask-card-a");
+      answer.appendChild(document.createTextNode("▸ "));
+      appendRunsOrText(answer, subject.items[i], subject.itemRuns && subject.itemRuns[i]);
+      ref.appendChild(answer);
+    }
     scroll.appendChild(ref);
   } else {
     // Review: show the current card's front + answer lines.
@@ -4090,16 +4101,18 @@ function buildWalkCard() {
 }
 
 // Add the checkpoint prompt (with the checkpoint breadcrumb) to the question region.
-function walkAddPrompt(q, text) {
+function walkAddPrompt(q, text, runs) {
   q.appendChild(el("div", "walk-eyebrow", `checkpoint ${walkData.current} / ${walkData.total}`));
-  const ft = el("div", "front-text" + ((text || "").length > 110 ? " long" : ""), text || "");
+  const ft = el("div", "front-text" + ((text || "").length > 110 ? " long" : ""));
+  appendRunsOrText(ft, text, runs);
   q.appendChild(ft);
 }
 
 function renderWalk() {
   const w = walkData;
   headerBreadcrumb();
-  deckEl.textContent = w.description || "trace";
+  deckEl.textContent = "";
+  appendRunsOrText(deckEl, w.description || "trace", w.description_runs);
   deckEl.title = w.description || "";
   histEl.textContent = "";
   scoreEl.innerHTML = ""; // the per-review score readout is intentionally omitted (noise) — matches review
@@ -4108,7 +4121,12 @@ function renderWalk() {
 
   if (walkConfirmingLeave) { renderWalkLeaveConfirm(); return; }
   if (asking) {
-    const subject = { q: w.prompt || "", items: w.points || [] };
+    const subject = {
+      q: w.prompt || "",
+      qRuns: w.prompt_runs,
+      items: w.points || [],
+      itemRuns: w.point_runs,
+    };
     renderAsk(subject);
     return;
   }
@@ -4122,10 +4140,14 @@ function renderWalk() {
 
 function renderWalkPredict() {
   const { q, a } = buildWalkCard();
-  walkAddPrompt(q, walkData.prompt);
+  walkAddPrompt(q, walkData.prompt, walkData.prompt_runs);
   if (walkData.givens && walkData.givens.length) {
     const g = el("div", "givens");
-    walkData.givens.forEach(x => g.appendChild(el("span", "given", x)));
+    walkData.givens.forEach((text, i) => {
+      const given = el("span", "given");
+      appendRunsOrText(given, text, walkData.given_runs && walkData.given_runs[i]);
+      g.appendChild(given);
+    });
     q.appendChild(g);
   }
   const wrap = el("div", "wcompose");
@@ -4145,7 +4167,7 @@ function walkSubmitPredict(ta) { const t = ta.value.trim(); if (t) walkPredict(t
 
 function renderWalkReveal() {
   const { card, q, a } = buildWalkCard();
-  walkAddPrompt(q, walkData.prompt);
+  walkAddPrompt(q, walkData.prompt, walkData.prompt_runs);
   const pred = el("div", "predicted" + (walkData.prediction ? "" : " empty"));
   const predLbl = el("span", "wlbl", "you predicted");
   predLbl.style.display = "block";
@@ -4181,7 +4203,11 @@ function renderWalkReveal() {
     const ul = el("ul", "wpoints");
     const ptLbl = el("li", "wlbl", "key points");
     ul.appendChild(ptLbl);
-    walkData.points.forEach(pt => ul.appendChild(el("li", "wpt", pt)));
+    walkData.points.forEach((text, i) => {
+      const point = el("li", "wpt");
+      appendRunsOrText(point, text, walkData.point_runs && walkData.point_runs[i]);
+      ul.appendChild(point);
+    });
     a.appendChild(ul);
   }
   // Note (insight), pinned to the bottom of the card.
@@ -4189,7 +4215,9 @@ function renderWalkReveal() {
     card.appendChild(el("div", "divider"));
     const n = el("div", "region n");
     n.style.textAlign = "left";
-    n.appendChild(el("div", "note", walkData.note));
+    const note = el("div", "note");
+    appendRunsOrText(note, walkData.note, walkData.note_runs);
+    n.appendChild(note);
     card.appendChild(n);
   }
   renderWalkRevealActions();
@@ -4205,7 +4233,9 @@ function renderWalkDone() {
   const s = walkData.summary || { passed: 0, partly: 0, failed: 0, weak: [], total: 0 };
   const wrap = el("div", "summary");
   wrap.appendChild(el("div", "lede", "walk complete · the drill is done"));
-  wrap.appendChild(el("h2", null, walkData.description || "Trace walked."));
+  const description = el("h2");
+  appendRunsOrText(description, walkData.description || "Trace walked.", walkData.description_runs);
+  wrap.appendChild(description);
   const row = (k, v, cls) => {
     const r = el("div", "row");
     r.appendChild(el("span", null, k));
