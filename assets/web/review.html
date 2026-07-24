@@ -16,7 +16,7 @@
      caret-browsing on). caret-color is inherited, so transparent here hides it
      everywhere; the editable elements and source excerpts opt back in. */
   html { caret-color: transparent; }
-  input, textarea, [contenteditable], .excerpt, .code { caret-color: auto; }
+  input, textarea, [contenteditable], .source-code, .code { caret-color: auto; }
   html, body { margin: 0; height: 100%; }
   body {
     /* One flat colour across header, stage and footer — no top-to-bottom halo,
@@ -200,12 +200,6 @@
      never move. The corner cue is excluded so you can still un-hide. */
   .region.a.concealed > *:not(.cite-toggle) { visibility: hidden; }
   .cite-err { color: var(--dim); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
-  .excerpt { padding: 6px 8px; background: rgba(0,0,0,0.25); border-radius: 8px; overflow-x: auto;
-             font-family: var(--mono); font-size: 0.78rem; line-height: 1.45; }
-  .exline { display: flex; gap: 12px; white-space: pre; }
-  .exline .lno { color: var(--dim); text-align: right; min-width: 3ch; user-select: none; }
-  .exline .ltx { color: var(--ink); }
-  .excerpt-more { color: var(--dim); font-size: 0.72rem; padding-left: 6px; margin-top: 4px; }
   .front-text { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
   /* A multi-line front (a reversed card's alternatives) reads as centred lines
      rather than one run-on where the browser collapsed the newlines. */
@@ -726,14 +720,14 @@
   .reveal-head { display: flex; align-items: baseline; gap: 10px; }
   .reveal-head .wlbl { color: var(--bolt); }
   .reveal-head .at { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* walk excerpt: distinct from the fact-card citation excerpt (.excerpt/.exline/.lno) */
-  .wexcerpt { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--excerpt-bg); }
-  .wexcerpt .wfile { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 7px 13px; border-bottom: 1px solid var(--line); background: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wcode { margin: 0; padding: 9px 0; overflow-x: auto; }
-  .wln { display: flex; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; }
-  .wln .wn { flex: none; width: 3.2em; padding-right: 13px; text-align: right; color: var(--dim); opacity: 0.55; user-select: none; }
-  .wln .wt { white-space: pre; color: var(--ink); padding-right: 16px; }
-  .wtrunc { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 5px 13px 0; }
+  /* shared editor-style source panel for trace reveals and fact-card citations */
+  .source-excerpt { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--excerpt-bg); }
+  .source-file { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 7px 13px; border-bottom: 1px solid var(--line); background: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-code { margin: 0; padding: 9px 0; overflow-x: auto; }
+  .source-line { display: flex; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; }
+  .source-number { flex: none; width: 3.2em; padding-right: 13px; text-align: right; color: var(--dim); opacity: 0.55; user-select: none; }
+  .source-text { white-space: pre; color: var(--ink); padding-right: 16px; }
+  .source-truncated { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 5px 13px 0; }
   .excerpt-miss { color: var(--dim); font-size: 0.86rem; font-style: italic; padding: 13px 15px; border: 1px dashed var(--line); border-radius: 12px; }
   /* key points the revealed truth makes */
   .wpoints { margin: 0; padding: 0; list-style: none; }
@@ -3230,7 +3224,7 @@ function fillBottom() {
   const citable = state.card.at && isAnswered();
   if (citable && citationView) {
     // Source view: the cited excerpt takes the answer's place (swap, not stack).
-    if (state.card.citation) renderExcerpt(a, state.card.citation);
+    if (state.card.citation) renderSourceExcerpt(a, state.card.citation);
     else a.appendChild(el("div", "cite-err", state.card.citation_error || "source unavailable"));
     setNote(true);
   } else if (isAcquire()) {
@@ -3302,7 +3296,7 @@ function fillBottom() {
   // pre-reveal badge/hint alone isn't body to center.
   const forceFilled = citable && citationView;
   a.classList.toggle("has-body", !forceFilled && !!a.querySelector(
-    ".reveal, .options, .inputs, .excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
+    ".reveal, .options, .inputs, .source-excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
   updateFade(a);
 }
 
@@ -3321,11 +3315,10 @@ function onCiteClick() {
 
 // Show a soft fade on whichever edge of the answer region hides content,
 // instead of a scrollbar.
-// Count the source-excerpt lines (`.ln` for fact-card citations, `.wln` for walk
-// excerpts) fully below the region's visible bottom, so the marker can say how
-// much more there is.
+// Count source-excerpt lines fully below the region's visible bottom, so the
+// marker can say how much more there is.
 function hiddenLineCount(a) {
-  const lns = a.querySelectorAll(".ln, .wln");
+  const lns = a.querySelectorAll(".source-line");
   if (!lns.length) return 0;
   const foldY = a.getBoundingClientRect().bottom;
   let n = 0;
@@ -3389,18 +3382,20 @@ function setNote(show) {
   }
 }
 
-// A line-numbered source excerpt (the cited source), like the trace walk. The
-// `↳ file:lines` pill already names the file, so no path header is needed.
-function renderExcerpt(parent, ex) {
-  const pre = el("div", "excerpt");
+// One editor-style source excerpt shared by fact citations and trace reveals.
+function renderSourceExcerpt(parent, ex) {
+  const panel = el("div", "source-excerpt");
+  panel.appendChild(el("div", "source-file", ex.path));
+  const code = el("div", "source-code");
   for (const ln of ex.lines) {
-    const row = el("div", "exline");
-    row.appendChild(el("span", "lno", String(ln.n)));
-    row.appendChild(el("span", "ltx", ln.text));
-    pre.appendChild(row);
+    const row = el("div", "source-line");
+    row.appendChild(el("span", "source-number", String(ln.n)));
+    row.appendChild(el("span", "source-text", ln.text));
+    code.appendChild(row);
   }
-  parent.appendChild(pre);
-  if (ex.truncated) parent.appendChild(el("div", "excerpt-more", "… (truncated)"));
+  panel.appendChild(code);
+  if (ex.truncated) panel.appendChild(el("div", "source-truncated", "… excerpt truncated"));
+  parent.appendChild(panel);
 }
 
 // Tappable multiple-choice options.
@@ -4184,18 +4179,7 @@ function renderWalkReveal() {
   if (walkData.locator) head.appendChild(el("span", "at", "at " + walkData.locator));
   a.appendChild(head);
   if (walkData.excerpt) {
-    const ex = el("div", "wexcerpt");
-    ex.appendChild(el("div", "wfile", walkData.excerpt.path));
-    const code = el("div", "wcode");
-    walkData.excerpt.lines.forEach(ln => {
-      const row = el("div", "wln");
-      row.appendChild(el("span", "wn", String(ln.n)));
-      row.appendChild(el("span", "wt", ln.text));
-      code.appendChild(row);
-    });
-    ex.appendChild(code);
-    if (walkData.excerpt.truncated) ex.appendChild(el("div", "wtrunc", "… excerpt truncated"));
-    a.appendChild(ex);
+    renderSourceExcerpt(a, walkData.excerpt);
   } else {
     a.appendChild(el("div", "excerpt-miss", walkData.excerpt_error || "no excerpt for this checkpoint"));
   }

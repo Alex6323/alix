@@ -110,9 +110,10 @@ A `Vec<u8>` (its bytes).
 The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses:
 `file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when `source:` is a single
 file. On reveal a `</>` marker appears on the answer: **click the answer** (or press
-`s`) to flip it to the line-numbered excerpt and back. The lines are read *live*
-from the source, so a moved or deleted file shows "source unavailable" rather than a
-stale quote.
+`s`) to flip it to the same editor-style source panel used by trace walks, with
+the resolved file path and line-numbered excerpt, and back. The lines are read
+*live* from the source, so a moved or deleted file shows "source unavailable"
+rather than a stale quote.
 
 This is the same machinery trace walks use to reveal source, brought to ordinary
 fact cards. Like every directive, `<!-- at: -->` is not part of a card's identity:
