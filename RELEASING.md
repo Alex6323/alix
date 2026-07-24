@@ -52,7 +52,7 @@ at. **crates.io is not automated.**
    into `apps/mobile/CHANGELOG.md` (they ship on `mobile-v*` tags, not here). (The
    README coverage badge is live Codecov since 0.4.0, tracking `main` by itself,
    no per-release refresh.) Re-read the tutorial deck
-   (`assets/decks/tutorial.txt`) against what shipped this release: a card
+   (`assets/decks/tutorial.md`) against what shipped this release: a card
    that teaches something that is no longer true must be fixed before the
    tag (an outdated tutorial is worse than none).
 2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`; refresh
@@ -60,24 +60,30 @@ at. **crates.io is not automated.**
 3. **Finalize the changelog.** Rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`,
    then add a fresh empty `## [Unreleased]` (Added / Changed / Fixed) above it.
    The release notes come from this section, so its heading must match the tag.
-4. **Stage everything the bump touched, then commit.** The version bump
+4. **Semantic documentation audit.** Run `make docs-audit` on this exact release
+   candidate. This makes a real read-only Claude call over every tracked public
+   text and visual surface: root guides, API, the complete book, committed
+   examples, site, slides, tutorials, images, and screenshots. It writes
+   `target/docs-audit.md`. Resolve every finding and rerun until the report
+   begins `DOCS AUDIT: PASS`; this is a deliberate release check, not CI.
+5. **Stage everything the bump touched, then commit.** The version bump
    regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
    snapshot and the mobile `Cargo.lock` both pick up the new version once the
    suite runs. Run `make preflight` again: its clean-tree step lists anything
    still unstaged. Then `git add -A` (stage ALL of it, never a hand-picked
    list), commit `Release vX.Y.Z`, and confirm a final `make preflight` is green
    with a clean tree.
-5. **Tag & push:** push `main` first and let CI go green, then
+6. **Tag & push:** push `main` first and let CI go green, then
    `git tag vX.Y.Z && git push origin vX.Y.Z`. Tagging fires the release workflow
    immediately (it is not gated on CI), so tag only after CI is green on the
    release commit. The workflow creates the GitHub Release and attaches the
    binaries.
-6. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
+7. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
    `Cargo.toml`'s `include` allowlist: only `src/**`, `assets/web/**`, and the
    root README/CHANGELOG/licenses ship). `make package-check` (also run inside
    `preflight`) asserts nothing untracked leaks into the tarball; eyeball
    `cargo package --list` too if unsure. Publish is irreversible.
-7. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
+8. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
 
@@ -108,9 +114,11 @@ To cut one:
 2. **Finalize** `apps/mobile/CHANGELOG.md` (rename `## [Unreleased]` to
    `## [X.Y.Z] - date`, fresh empty Unreleased above) and bump pubspec's
    `version:` to `X.Y.Z+N`.
-3. **Commit** as `Release mobile-vX.Y.Z`, then
+3. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
+   release candidate and resolve every finding until it reports `PASS`.
+4. **Commit** as `Release mobile-vX.Y.Z`, then
    `git tag mobile-vX.Y.Z && git push origin main --tags`.
-4. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
+5. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
    (missing secrets), non-16KB-aligned native libs, or a missing changelog
    section.
 

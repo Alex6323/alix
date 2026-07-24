@@ -108,6 +108,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make build` | Compile. |
 | `make test` | Run the test suite (the primary gate). |
 | `make lint` | `cargo clippy --all-targets`. |
+| `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
 | `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
@@ -135,6 +136,13 @@ if it prints *"a release looks due"*, surface that to the user before other work
 This is the reminder that backstops the release policy in `RELEASING.md`
 (milestone-driven + a ~monthly heartbeat, no fixed train) — there's no CI cron, so
 this session-start check is what keeps releases from drifting.
+
+**Release documentation audit — run `make docs-audit` before every desktop or
+mobile release.** It makes a real read-only LLM call over the root guides, API,
+complete book, committed examples, site, slides, tutorials, and published
+images/screenshots. Resolve every finding and rerun until it reports `PASS`.
+Because it is semantic, non-deterministic, and costed, it is a deliberate
+release gate rather than part of `make check` or CI.
 
 ## Formatting is nightly-only
 
@@ -246,6 +254,18 @@ to this codebase. When in doubt, mirror the surrounding code.
   (`make calibrate`) is the AI half, run deliberately before touching `grade_*`.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
+- **Every change gets a sourced alix study workspace** (user rule, 2026-07-24).
+  Before calling an issue done, create or update
+  `/home/me/dev-meta/alix/<issue-slug>/`, named after the issue, with an
+  `alix.toml` and one or more Markdown decks. Turn every relevant design,
+  implementation, safety, and tradeoff decision into a card. The deck declares
+  the live project root as `source:`, and every card carries a contiguous
+  `<!-- at: file:lines -->` locator after its answer and notes, followed by its
+  regularly stamped `<!-- id: ... -->`; `alix doctor` must resolve every
+  locator. Prefer authored task-list answers (exactly one `[x]`, plausible
+  `[ ]` distractors) so the workspace is immediately useful at Recognize depth
+  without an AI augmentation pass. Refresh locators after final edits so the
+  source view and tutor explain the code that actually ships.
 - Don't commit unless asked; never push without permission.
 - **Two docs, two jobs; keep both in sync.** `docs/book/` (mdBook; `make book`)
   is the **reference and manual**: the deck format, every frontmatter key and card directive,

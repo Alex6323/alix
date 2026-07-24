@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test lint lint-js docs-audit fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -37,6 +37,12 @@ lint-js:
 	else \
 		echo "lint-js: node not found — skipping JS asset check"; \
 	fi
+
+# Semantic release audit over every public text and visual surface. This makes a
+# real, read-only Claude call and writes target/docs-audit.md. Deliberately
+# manual and non-deterministic: required by RELEASING.md, never part of CI.
+docs-audit:
+	@sh scripts/docs-audit.sh
 
 # Format with the nightly toolchain (NOT stable `cargo fmt`).
 fmt:

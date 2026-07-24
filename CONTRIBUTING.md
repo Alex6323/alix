@@ -90,6 +90,7 @@ discussion are usually closed unread.
 | `make build` | Compile. |
 | `make test` | Run the test suite (the primary gate). |
 | `make lint` | `cargo clippy --all-targets`. |
+| `make docs-audit` | Live semantic audit of all public text and visual assets; required before a release. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
 | `make check` | `lint` + `test` — run before you call work done. |
