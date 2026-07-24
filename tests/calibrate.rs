@@ -7,10 +7,11 @@
 //! honest as this stays.
 //!
 //! Every test here is `#[ignore]`d, so `cargo test` (and CI) compile them but
-//! run none. Run them deliberately, before shipping a change to `grade_prompt`,
-//! with `make calibrate` (needs the `claude` CLI installed and logged in; makes
-//! real, costed calls). Unlike doctor's batched spot-check, each test grades
-//! its one probe in its own call, so a failure names exactly the drifted case.
+//! run none. Run them deliberately before every desktop/mobile release and
+//! after changing `grade_prompt`, with `make calibrate` (needs the `claude` CLI
+//! installed and logged in; makes real, costed calls). Unlike doctor's batched
+//! spot-check, each test grades its one probe in its own call, so a failure
+//! names exactly the drifted case.
 //!
 //! Two rules keep the probes robust to the model's nondeterminism. First,
 //! fixtures are clear-cut, never borderline. Second, a Safety probe asserts

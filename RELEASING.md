@@ -60,30 +60,37 @@ at. **crates.io is not automated.**
 3. **Finalize the changelog.** Rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`,
    then add a fresh empty `## [Unreleased]` (Added / Changed / Fixed) above it.
    The release notes come from this section, so its heading must match the tag.
-4. **Semantic documentation audit.** Run `make docs-audit` on this exact release
+4. **Live grader calibration.** Run `make calibrate` even when no grading prompt
+   changed: the configured model can drift independently of this repository.
+   These are the ignored, real-model grader tests, so this gate is costed,
+   non-deterministic, authenticated, and deliberately manual rather than CI.
+   Treat a failure as evidence to investigate and resolve before tagging. A
+   diagnostic rerun is fine, but do not discard a failure and release merely
+   because a later run got lucky.
+5. **Semantic documentation audit.** Run `make docs-audit` on this exact release
    candidate. This makes a real read-only Claude call over every tracked public
    text and visual surface: root guides, API, the complete book, committed
    examples, site, slides, tutorials, images, and screenshots. It writes
    `target/docs-audit.md`. Resolve every finding and rerun until the report
    begins `DOCS AUDIT: PASS`; this is a deliberate release check, not CI.
-5. **Stage everything the bump touched, then commit.** The version bump
+6. **Stage everything the bump touched, then commit.** The version bump
    regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
    snapshot and the mobile `Cargo.lock` both pick up the new version once the
    suite runs. Run `make preflight` again: its clean-tree step lists anything
    still unstaged. Then `git add -A` (stage ALL of it, never a hand-picked
    list), commit `Release vX.Y.Z`, and confirm a final `make preflight` is green
    with a clean tree.
-6. **Tag & push:** push `main` first and let CI go green, then
+7. **Tag & push:** push `main` first and let CI go green, then
    `git tag vX.Y.Z && git push origin vX.Y.Z`. Tagging fires the release workflow
    immediately (it is not gated on CI), so tag only after CI is green on the
    release commit. The workflow creates the GitHub Release and attaches the
    binaries.
-7. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
+8. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
    `Cargo.toml`'s `include` allowlist: only `src/**`, `assets/web/**`, and the
    root README/CHANGELOG/licenses ship). `make package-check` (also run inside
    `preflight`) asserts nothing untracked leaks into the tarball; eyeball
    `cargo package --list` too if unsure. Publish is irreversible.
-8. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
+9. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
 
@@ -114,11 +121,14 @@ To cut one:
 2. **Finalize** `apps/mobile/CHANGELOG.md` (rename `## [Unreleased]` to
    `## [X.Y.Z] - date`, fresh empty Unreleased above) and bump pubspec's
    `version:` to `X.Y.Z+N`.
-3. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
+3. **Live grader calibration:** run `make calibrate` under the same failure rule
+   as the desktop release: investigate any failure rather than rerunning until
+   chance produces green.
+4. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
    release candidate and resolve every finding until it reports `PASS`.
-4. **Commit** as `Release mobile-vX.Y.Z`, then
+5. **Commit** as `Release mobile-vX.Y.Z`, then
    `git tag mobile-vX.Y.Z && git push origin main --tags`.
-5. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
+6. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
    (missing secrets), non-16KB-aligned native libs, or a missing changelog
    section.
 

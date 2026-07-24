@@ -96,7 +96,7 @@ discussion are usually closed unread.
 | `make fmt-check` | Verify formatting without writing. |
 | `make check` | `lint` + `test` — run before you call work done. |
 | `make coverage` | Coverage report (`cargo-llvm-cov`, HTML). |
-| `make calibrate` | Real-Claude grader calibration (costed): before touching `grade_*`. |
+| `make calibrate` | Real-Claude grader calibration (costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary. |
 | `make web ARGS="~/decks-test --lan"` | Web frontend (a scoped root). |
 | `make book` | Serve the mdBook manual live. |
@@ -170,8 +170,10 @@ surrounding code; when in doubt, mirror it. The essentials:
   (Added / Changed / Fixed). While we're pre-1.0, **break freely** — change
   renamed/removed flags and directives outright and record a **Breaking** note
   under Changed; no back-compat shims.
-- **Prompt changes** (anything touching `grade_*`) ship with a `make calibrate` run
-  and the calibration delta noted — that's how "mastered" stays honest.
+- **Every desktop/mobile release runs `make calibrate`.** Prompt changes
+  (anything touching `grade_*`) run it too and note the calibration delta —
+  that's how "mastered" stays honest even when the live model drifts without a
+  repository change.
 
 ## Testing — two layers
 
@@ -187,11 +189,11 @@ today). That splits testing into two jobs, and it helps to know which you're in:
    coherent traces, a non-lenient exam? The fake CLI can't see this, so it needs
    the **calibration harness** (`make calibrate`), which runs the real prompts against a live
    model and scores them. It's non-deterministic and costs money, so it lives
-   **outside** the blocking gate — run it before any change to a `grade_*` prompt,
-   and note the calibration delta.
+   **outside** the blocking gate — run it before every release and after any
+   change to a `grade_*` prompt; note the calibration delta for prompt changes.
 
 Rule of thumb: a code change must pass layer 1 (`make check`); a *prompt* change
-must also clear layer 2 (`make calibrate`).
+must also clear layer 2 (`make calibrate`), and a release clears both layers.
 
 ### Backend flag-drift checks
 

@@ -154,8 +154,8 @@ coverage-lcov:
 
 # Grader calibration (tests/calibrate.rs): the REAL grade prompt vs labeled
 # adversarial answers, to catch a lenient grader. Needs the claude CLI logged in;
-# makes real, costed calls. Off the normal gate: run before shipping a change
-# to grade_prompt.
+# makes real, costed calls. Off the normal gate: run before every desktop/mobile
+# release and after changing grade_prompt.
 calibrate:
 	cargo test --test calibrate -- --ignored --nocapture --test-threads=1
 

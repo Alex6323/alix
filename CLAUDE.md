@@ -115,7 +115,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
 | `make ci` | **Full CI parity** — `fmt-check` + `check` under `-Dwarnings` + `coverage`, exactly as `.github/workflows/ci.yml` runs them. A green `make ci` predicts a green CI; run it before a push/release. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
-| `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before touching `grade_*`. |
+| `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.md"` | Run the binary with args. |
 | `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
 | `make web-debug` | `web` + per-request stderr logging (the `{#server-subresource-stall}` net). |
@@ -144,6 +144,13 @@ complete book, committed examples, site, slides, tutorials, and published
 images/screenshots. Resolve every finding and rerun until it reports `PASS`.
 Because it is semantic, non-deterministic, and costed, it is a deliberate
 release gate rather than part of `make check` or CI.
+
+**Release grader calibration — run `make calibrate` before every desktop or
+mobile release, even without a prompt change.** The live model can drift while
+the repository stands still. This is an authenticated, costed, non-deterministic
+manual gate, never CI. A failed probe is evidence to investigate; a rerun may
+diagnose variance but must not erase the failure or turn a lucky pass into
+release approval.
 
 ## Formatting is nightly-only
 
@@ -252,7 +259,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   race slipped through). Thin frontend glue (`serve` wiring) is the
   exception — a follow-up or manual check is enough there. This is the
   deterministic half of the QUALITY plan; the grader calibration
-  (`make calibrate`) is the AI half, run deliberately before touching `grade_*`.
+  (`make calibrate`) is the AI half, run deliberately before every release and
+  after touching `grade_*`.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
 - **Every change gets a sourced alix study workspace** (user rule, 2026-07-24).
