@@ -209,7 +209,10 @@ class _PickerScreenState extends State<PickerScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Support alix', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Support alix',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 12),
               Text(
                 'Free and open source. Telling someone who studies is the best '
@@ -1058,8 +1061,9 @@ class _PickerScreenState extends State<PickerScreen> {
     final support = await _support();
     if (!mounted) return;
     final config = readServer(support);
-    if (config == null)
+    if (config == null) {
       return; // the menu item is pairing-gated; a race here is a quiet no-op
+    }
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
 
     final dto = await showModalBottomSheet<RemoteGenerate>(
@@ -1074,8 +1078,9 @@ class _PickerScreenState extends State<PickerScreen> {
 
     final deck = dto?.deck;
     final filename = dto?.filename;
-    if (deck == null || filename == null)
+    if (deck == null || filename == null) {
       return; // cancelled or failed; the sheet's dispose closed the slot
+    }
 
     if (!mounted) {
       await client.generateClose().catchError((_) {});

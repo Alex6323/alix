@@ -639,8 +639,9 @@ class _WalkScreenState extends State<WalkScreen> {
       ],
       WalkPhase.done => const <Widget>[],
     };
-    if (chips.isEmpty)
+    if (chips.isEmpty) {
       return SizedBox(height: 12 + MediaQuery.of(context).padding.bottom);
+    }
     return Padding(
       padding: EdgeInsets.fromLTRB(
         12,

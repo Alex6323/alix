@@ -34,8 +34,9 @@ lint:
 # Syntax-check the JS embedded in the served HTML assets (assets/web/*.html).
 # That JS is shipped as static strings, so cargo never parses it — this catches a
 # syntax error the Rust gates can't see. Needs node; a no-op (not a failure) when
-# node isn't installed, so it never blocks a cargo-only contributor or CI. Not
-# wired into `check` for that reason — run it deliberately, like fmt.
+# node isn't installed, so it does not block a cargo-only contributor. CI
+# installs Node in its blocking `web-lint` job. Keep this out of `check` so the
+# normal Rust gate does not acquire a Node prerequisite.
 lint-js:
 	@if command -v node >/dev/null 2>&1; then \
 		node scripts/lint-js.js; \
@@ -74,32 +75,26 @@ roadmap:
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
 check: lint test site-media-check
 
-# Full CI parity, run the way GitHub does (see .github/workflows/ci.yml): the
-# nightly fmt check, then clippy + tests under `-Dwarnings`, then coverage with
-# the warnings gate cleared (coverage instruments its own flags). A green
-# `make ci` predicts a green CI — so this is the pre-push / pre-release gate.
-# It's heavier than `make check` (adds nightly fmt + a full coverage run, and the
-# -Dwarnings/coverage flag split forces a recompile between steps), which is why
-# `make check` stays the fast, lenient inner-loop gate rather than carrying these.
+# The Rust CI bundle: nightly formatting, clippy + tests under `-Dwarnings`, the
+# lean core, and coverage with the warnings gate cleared (coverage instruments
+# its own flags). GitHub also has separate blocking bridge, Flutter, JavaScript,
+# and Playwright jobs, so a green `make ci` predicts the Rust jobs rather than
+# complete workflow parity. It is heavier than `make check` because formatting,
+# coverage, and the RUSTFLAGS changes force additional work.
 ci:
 	$(MAKE) fmt-check
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	RUSTFLAGS= $(MAKE) coverage
 
-# The "am I ready to push or tag" gate. Runs CI's BLOCKING jobs under
-# -Dwarnings (fmt, clippy + tests, the lean core, and the mobile bridge),
-# then frb-check, then asserts the working tree is clean. Two failure modes
-# this catches that `make check` (lenient, no -Dwarnings) does not: a warning
-# that only fails under -Dwarnings, and a regenerated-but-unstaged file (a
-# `tests/contracts/*.json` snapshot, a `Cargo.lock`) that would otherwise slip
-# past a hand-picked `git add` into a release. Also runs `package-check` (no
-# non-tracked file leaks into the crate tarball). Lighter than `make ci` (no
-# coverage) and more complete (adds bridge + frb-check + package-check + the
-# clean-tree check), so run it before every push and before every `git tag`.
-# `make check` stays the fast, lenient inner-loop gate. The clean-tree
-# assertion runs last, so commit or stash first (it is a release gate, not a
-# mid-edit check).
+# The local "am I ready to push or tag" gate. Runs strict Rust checks (fmt,
+# clippy + tests, the lean core, and the mobile bridge), then frb-check and
+# package-check before asserting the working tree is clean. GitHub separately
+# enforces Flutter analysis, JavaScript syntax, and Playwright tests. This gate
+# catches warnings plus regenerated-but-unstaged files that can slip past a
+# hand-picked `git add`, and prevents untracked files from leaking into the
+# crate package. Run it before every push and tag; let CI verify the platform
+# jobs. The clean-tree assertion runs last, so commit or stash first.
 preflight:
 	$(MAKE) fmt-check
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
