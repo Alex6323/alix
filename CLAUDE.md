@@ -11,16 +11,17 @@ crate is the single source of logic**; the web server and the CLI are
 thin consumers. Put behavior in the lib (`src/`), not in the frontend, so both
 share it.
 
-Native mobile thin clients (Android/iOS) are anticipated, consuming these same
-web endpoints — so treat the web JSON API as a **client-agnostic contract**:
-review flow and session state live in the lib behind presentation-agnostic
-endpoints, never in page JS (a native client can't reuse logic trapped in the
-page). The contract is written down in `docs/API.md`, pinned by the
-`mod contract` snapshot tests in `src/serve/contract.rs` (which also emit the
-`tests/contracts/*.json` codegen corpus) — change code, doc, and CHANGELOG
-together. alix itself stays a plain bind-to-interface HTTP server — reaching it
-beyond the LAN is an operator deployment choice (VPN/reverse proxy), not a
-TLS/auth/accounts subsystem to grow here.
+The native Android client embeds the lean Rust core for offline review; when
+paired, it consumes the same web endpoints for server-backed capabilities. An
+iOS client is anticipated. Treat the web JSON API as a **client-agnostic
+contract**: review flow and session state live in the lib behind
+presentation-agnostic endpoints, never in page JS (another client can't reuse
+logic trapped in the page). The contract is written down in `docs/API.md`,
+pinned by the `mod contract` snapshot tests in `src/serve/contract.rs` (which
+also emit the `tests/contracts/*.json` codegen corpus) — change code, doc, and
+CHANGELOG together. alix itself stays a plain bind-to-interface HTTP server —
+reaching it beyond the LAN is an operator deployment choice (VPN/reverse proxy),
+not a TLS/auth/accounts subsystem to grow here.
 
 ## Scope & focus
 

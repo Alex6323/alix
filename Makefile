@@ -13,7 +13,7 @@ build:
 	cargo build
 
 # Compile the lean core only: no AI backends, no web server. This is the guard
-# that keeps the lib buildable AI/server-free for the future mobile client (see
+# that keeps the lib buildable AI/server-free for the native mobile client (see
 # CONTRIBUTING.md).
 build-core:
 	cargo build --no-default-features --lib

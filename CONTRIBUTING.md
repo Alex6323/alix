@@ -110,9 +110,9 @@ path: the backend CLI flag-drift smoke test and a weekly mobile toolchain
 build (`make frb-check` + an APK build against current stable Flutter).
 
 The library crate is feature-gated behind `full` (on by default), which pulls in
-the AI backends and the web server. `make build-core` builds the lean core that a
-future mobile client would consume, and CI enforces it with its own `core` job.
-A core module must never reach into a gated one: if it must, the thing it reaches
+the AI backends and the web server. `make build-core` builds the lean core
+embedded by the mobile client, and CI enforces it with its own `core` job. A
+core module must never reach into a gated one: if it must, the thing it reaches
 for belongs in core, not behind `full`.
 
 ### Formatting is nightly-only
