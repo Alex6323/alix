@@ -158,6 +158,11 @@ surrounding code; when in doubt, mirror it. The essentials:
   test.
 - **No new dependency without a one-line reason** in the PR/commit. Reach for
   std or an existing dep first.
+- **Record load-bearing decisions.** Local specs and plans may stay private, but
+  a choice that constrains persistence, identity, security, public client
+  boundaries, cross-cutting structure, or a hard-to-remove dependency gets a
+  tracked [ADR](docs/adrs/README.md) before or alongside implementation.
+  Supersede an accepted ADR with a new record rather than rewriting its history.
 - **Keep the two docs in sync.** `docs/book/` is the **reference and manual**
   (deck format, every directive and flag, all features), updated on every
   user-facing change. `README.md` is the **landing page** for GitHub and

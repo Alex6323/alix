@@ -213,6 +213,20 @@ to this codebase. When in doubt, mirror the surrounding code.
   function that spawns a thread and returns a `Receiver`; the frontend only
   `try_recv`/poll. Don't spawn threads from the web server.
 
+- **Promote load-bearing decisions to tracked ADRs.** Local specs and plans may
+  stay private, but a decision constraining persistence, identity, security,
+  public client boundaries, cross-cutting structure, or a hard-to-remove
+  dependency belongs in `docs/adrs/` before or alongside implementation. Follow
+  `docs/adrs/README.md`; supersede an accepted record instead of rewriting it.
+
+- **Use the design workflow in proportion to the change.** Substantial product
+  work proceeds from a spec (what users need and how acceptance is judged), to
+  an ADR when the choice is load-bearing (why this architecture), to an
+  implementation plan (how and in what order), and then code. Small features
+  may need a spec and plan but no ADR; routine bug fixes may go directly from a
+  focused issue or plan to a tested implementation. Never create an ADR merely
+  to satisfy the sequence.
+
 - **Small idioms.** Chain `Option` precedence with `.or(…)`
   (`card.mode.or(deck.mode)`), not `match`. Write deck/store files atomically
   (write a `.tmp`, then `rename`). For repeated I/O errors, define a local
