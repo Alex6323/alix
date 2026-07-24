@@ -264,8 +264,14 @@ to this codebase. When in doubt, mirror the surrounding code.
   regularly stamped `<!-- id: ... -->`; `alix doctor` must resolve every
   locator. Prefer authored task-list answers (exactly one `[x]`, plausible
   `[ ]` distractors) so the workspace is immediately useful at Recognize depth
-  without an AI augmentation pass. Refresh locators after final edits so the
-  source view and tutor explain the code that actually ships.
+  without an AI augmentation pass. Authored distractors must meet the same bar
+  as the choices augmentation prompt (`src/augment_ai.rs::distractors_prompt`):
+  tempting to someone who half-knows the material, matched to the correct
+  answer's form and length, clearly incorrect, and distinct. Reject giveaway
+  options: conspicuous absolutes such as "Only...", "always", or "never",
+  absurd claims, mismatched specificity, and simple negations of the answer all
+  test option-reading rather than understanding. Refresh locators after final
+  edits so the source view and tutor explain the code that actually ships.
 - Don't commit unless asked; never push without permission.
 - **Two docs, two jobs; keep both in sync.** `docs/book/` (mdBook; `make book`)
   is the **reference and manual**: the deck format, every frontmatter key and card directive,
