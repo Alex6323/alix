@@ -77,9 +77,10 @@ email contact@alix.study to raise it.
 ## Feature requests and PRs
 
 Feature ideas go to contact@alix.study and get triaged onto the maintainer's
-roadmap, not into a public backlog. Bug reports use the issue form. PRs come
-after a discussed issue or email thread; large or generated PRs without prior
-discussion are usually closed unread.
+roadmap, not into a public backlog. Bug reports use the issue form. Suspected
+vulnerabilities follow [`SECURITY.md`](SECURITY.md) and must not be reported in
+a public issue. PRs come after a discussed issue or email thread; large or
+generated PRs without prior discussion are usually closed unread.
 
 ## Development setup
 

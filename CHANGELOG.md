@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A private vulnerability-reporting policy and a tracked threat model covering
+  local files, LAN pairing, AI providers, sharing, persistence, mobile, and
+  release boundaries.
 - `alix profile`: define and launch a named alix instance per person (its own decks, port, and adult/kids frontend), reachable on your LAN with a stable token so phones can bookmark it. `alix profile add/list/remove`, `alix profile <name>` to launch, `alix profile default` to pick what bare `alix` launches, and `alix --launch-all` to boot every profile at once.
 - Multiple-choice cards you author directly: write the answer as a GitHub task list (`- [x]` correct, `- [ ]` distractors). It renders as a checklist in any Markdown previewer and drives the Recognize quiz from your own options, with no AI distractor pass needed. Task lists in notes and card fronts render as checkboxes too.
 - card text now renders inline Markdown: `**bold**`, `*italic*`/`_italic_`, and `` `code` ``.

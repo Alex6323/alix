@@ -328,6 +328,12 @@ to this codebase. When in doubt, mirror the surrounding code.
 - **User-facing changes get a `CHANGELOG.md` entry** under `## [Unreleased]`
   (Keep a Changelog format: Added / Changed / Fixed). Internal refactors and
   test-only changes don't.
+- **Security boundaries have tracked documentation.** Any change affecting
+  networking, authentication, persistence, sharing/receive, AI execution,
+  source access, untrusted rendering, mobile capability, or release provenance
+  must update its regression evidence and `docs/security/README.md`. Update
+  `SECURITY.md` when the public support or reporting contract changes; record an
+  ADR when a load-bearing security decision changes.
 - **Keep the living docs lean — this file, `CHANGELOG.md`, commit/PR text.** Condense each
   rule/change to its shortest form that still carries the information — cut filler, war-stories,
   and rationale-at-length (those go in the spec or memory), never the substance. If it can't be

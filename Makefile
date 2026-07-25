@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test test-inventory lint lint-js docs-audit fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test test-inventory lint lint-js docs-audit docs-audit-manifest-check fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -50,6 +50,21 @@ lint-js:
 docs-audit:
 	@sh scripts/docs-audit.sh
 
+# Deterministic guard for the manual semantic audit's input. This cannot decide
+# whether prose is stale; it proves every tracked Markdown file will be handed
+# to the release-time LLM instead of silently falling outside a maintained list.
+docs-audit-manifest-check:
+	@tracked=$$(mktemp); manifest=$$(mktemp); \
+	trap 'rm -f "$$tracked" "$$manifest"' EXIT HUP INT TERM; \
+	git ls-files -- '*.md' | sort -u >"$$tracked"; \
+	DOCS_AUDIT_MANIFEST_ONLY=text sh scripts/docs-audit.sh >"$$manifest"; \
+	missing=$$(comm -23 "$$tracked" "$$manifest"); \
+	if [ -n "$$missing" ]; then \
+		printf 'docs-audit: tracked Markdown missing from semantic audit:\\n%s\\n' "$$missing" >&2; \
+		exit 1; \
+	fi; \
+	echo 'docs-audit: every tracked Markdown file is in the semantic audit manifest'
+
 # Format with the nightly toolchain (NOT stable `cargo fmt`).
 fmt:
 	cargo +nightly fmt
@@ -73,7 +88,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: lint test site-media-check
+check: lint test site-media-check docs-audit-manifest-check
 
 # The Rust CI bundle: nightly formatting, clippy + tests under `-Dwarnings`, the
 # lean core, and coverage with the warnings gate cleared (coverage instruments

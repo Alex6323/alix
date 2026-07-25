@@ -23,7 +23,7 @@ as understood.
 
 **Manual → [alix.study/book](https://alix.study/book/)  ·  Slides → [alix.study/slides.html](https://alix.study/slides.html)  ·  Site → [alix.study](https://alix.study)**
 
-**Feedback → bugs via the [issue form](https://github.com/Alex6323/alix/issues/new/choose), ideas at [contact@alix.study](mailto:contact@alix.study)**
+**Feedback → bugs via the [issue form](https://github.com/Alex6323/alix/issues/new/choose), security reports via [`SECURITY.md`](SECURITY.md), ideas at [contact@alix.study](mailto:contact@alix.study)**
 
 ## Install
 

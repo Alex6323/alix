@@ -1,0 +1,172 @@
+# Security
+
+This directory contains Alix's tracked threat model. It describes the current
+pre-1.0 product, not an aspirational security architecture. Update it whenever a
+change affects networking, persistence, sharing/import, AI execution, source
+access, rendering of untrusted content, mobile boundaries, or release
+provenance. Review it during the required pre-release `make docs-audit`.
+
+Vulnerabilities are reported privately through [`SECURITY.md`](../../SECURITY.md).
+
+## Supported deployment model
+
+Alix supports:
+
+- one user controlling the local OS account and deck directories;
+- a server bound to loopback by default;
+- optional pairing across a network the user trusts;
+- one active writer for each progress store;
+- optional external AI provider CLIs selected and authenticated by the user;
+- local or received Markdown decks and frozen source excerpts; and
+- the lean Rust core embedded in the mobile client.
+
+Alix does not claim to provide:
+
+- isolation from a malicious process or person with the same local filesystem
+  permissions;
+- internet-grade hosting, TLS termination, account authentication, user roles,
+  audit logging, or hostile-LAN protection;
+- safe simultaneous writes to one progress store from multiple devices;
+- containment of a compromised AI CLI, provider account, operating system,
+  toolchain, or dependency; or
+- confidentiality for content the user deliberately shares or submits to an AI
+  provider.
+
+## Assets
+
+| Asset | Primary harm if compromised |
+| --- | --- |
+| Decks, notes, images, source citations, and frozen excerpts | Private learning or source material is disclosed or altered. |
+| `progress.json`, `recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
+| Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
+| Explicit `origin` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
+| AI CLI session and provider account | Prompts or local reads are disclosed; model-backed actions are performed as the user. |
+| Share-transfer process and received archive | An external transfer tool or hostile archive discloses data or writes unexpected files. |
+| Authored deck files versus generated output | Untrusted generated or received content is mistaken for reviewed authored material. |
+
+Availability matters, but preserving user-authored decks and progress takes
+priority over keeping an individual session running.
+
+## Trust boundaries and controls
+
+### Local files and processes
+
+Alix runs with the user's filesystem permissions. Progress saves serialize a
+whole replacement file, write a sibling temporary file, then rename it over the
+store (`src/store.rs`). A writer marker and synchronization-conflict detection
+warn about likely concurrent writers; neither mechanism authenticates a writer
+or merges concurrent changes.
+
+The mobile build excludes desktop server listeners, sharing, and provider
+subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
+code still process content supplied to the app.
+
+### Browser and LAN client
+
+The server binds to `127.0.0.1` unless LAN mode is explicitly selected. LAN
+launch generates a random 16-byte token unless a token is configured. Guarded
+`/api/*` requests accept a bearer header or bootstrap query token and compare it
+in constant time (`src/cli/launch.rs`, `src/serve/respond.rs`).
+
+The server uses plain HTTP. The HTML/application shell and `/img/<key>` are
+intentionally unauthenticated so a browser can bootstrap; the token protects
+only `/api/*`. A token placed in a URL can appear in browser history, logs,
+screenshots, or copied links. Remote AI request bodies use a 256 KiB cap, and
+ZIP uploads use a 50 MiB cap; several other JSON routes do not yet share that
+central cap (`src/serve/mod.rs`).
+
+Remote tutor inputs are supplied by the client, remote exams resolve a selected
+desktop deck, and remote generation accepts web URLs rather than a
+client-selected desktop path. The remote exam handlers deliberately avoid the
+poll path that writes progress. These controls do not turn pairing into a
+multi-user authorization system.
+
+### AI provider
+
+AI features execute a provider CLI as a subprocess under the local user's
+account. Tool grants are translated into each provider's command-line controls;
+provider behavior and enforcement are part of Alix's trusted computing base.
+Prompts and supplied context leave the machine for the selected provider.
+
+Filesystem grounding is opt-in. `[ask] source_access = true` is effective only
+when the deck or workspace declares an explicit `origin`; `source` and `at`
+remain evidence locators and never infer a wider project root (`src/deck.rs`,
+`src/source.rs`). This is the boundary for Alix's built-in grant. A user can
+deliberately widen the provider CLI's permissions through `permission_mode`,
+`allowed_tools`, or provider-specific configuration, and then owns that wider
+trust decision.
+
+Received workspace manifests are untrusted configuration. Before using AI on a
+received workspace, inspect `source_access`, `origin`, links, citations, and
+frozen excerpts. A portable manifest can request source access, and an origin
+that exists on the receiving machine may expose more than the sender intended.
+
+### Decks, generation, sharing, and receiving
+
+Authored and generated Markdown pass through the same parser and validation
+rules before use. Model output is untrusted until it parses and the user
+promotes or saves it. Rendering code must continue to treat authored text as
+data rather than executable HTML.
+
+`alix share` stages content locally and invokes the separately installed
+`magic-wormhole` CLI for transfer. That executable and its protocol
+implementation are part of the sharing trust boundary. Staging excludes
+progress, recent state, local overrides, hidden files, and backup-shaped files.
+Receive strips `progress.json`, `recent.json`, and `alix.local.toml`
+defensively even if the sender used another tool (`src/share.rs`). Frozen
+`assets/` are intentionally shareable evidence and may contain proprietary or
+private source excerpts; review the staged workspace before sending it.
+
+Received archives, decks, images, URLs, manifests, and source locators remain
+untrusted. Sanitizing personal state does not certify the remaining content as
+safe or accurate.
+
+## Principal abuse and failure cases
+
+| Scenario | Existing mitigation | Residual risk / operator action |
+| --- | --- | --- |
+| Another LAN device discovers Alix | Loopback default; LAN is explicit; `/api/*` needs a random token. | Use only a trusted LAN or put Alix behind a VPN/TLS reverse proxy. Replace a disclosed configured token and restart. |
+| Pairing token leaks through a URL | API accepts a bearer header after bootstrap. | Treat the URL as a credential; do not publish screenshots, history, logs, or bookmarks containing it. |
+| A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require `origin`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
+| A broad `origin` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `origin` as narrow as practical and inspect inherited workspace defaults. |
+| Syncthing or another tool creates concurrent progress writes | Atomic replacement, writer warnings, and conflict-file detection. | Keep one active writer, resolve conflict copies manually, and back up before recovery. |
+| Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
+| A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
+| Malformed or hostile input exhausts resources | Excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
+| A release or dependency is compromised | CI tests source changes. | Signed artifacts, checksums, SBOMs, and full provenance are not yet a complete release guarantee. |
+
+## Known security gaps
+
+- LAN pairing has no TLS, accounts, roles, revocation list, rate limiting, or
+  security audit log.
+- The public shell and image route are outside pairing-token authentication.
+- Several API request bodies lack a shared central size cap, and browser
+  security headers are not applied centrally.
+- Profile tokens may be stable and URL bootstrap can expose them through normal
+  browser tooling.
+- A received workspace can carry AI/source-access configuration that needs
+  human review.
+- Persistence has atomic replacement and conflict warnings, but no general
+  backup, rollback, migration, or multi-writer transaction protocol.
+- Provider sandboxes and tool flags differ, and Alix cannot independently prove
+  that a provider CLI honored them.
+- Release signing, checksums, SBOMs, and provenance are not yet complete across
+  every distribution channel.
+
+## Security regression evidence
+
+The most relevant deterministic checks currently live beside their controls:
+
+- `src/serve/tests.rs`: token scope and authorization behavior;
+- `src/serve/respond.rs`: constant-time token comparison and capped reads;
+- `src/deck.rs`: explicit-origin precedence and no source-root inference;
+- `src/source.rs`: citation and excerpt resolution;
+- `src/share.rs`: outgoing filtering and defensive receive sanitization;
+- `src/store.rs`: atomic replacement, writer markers, and sync conflicts;
+- `src/trace_ai.rs`: generated snapshot provenance; and
+- `src/math.rs` and renderer tests: validation and sanitization of generated
+  math SVG.
+
+A change to a listed boundary must update its regression tests, this threat
+model, the public manual when behavior changes, and an ADR when it changes a
+load-bearing security decision.

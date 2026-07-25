@@ -21,17 +21,10 @@ is_visual() {
 
 text_manifest() {
     {
-        git ls-files -- \
-            ':(glob)*.md' \
-            ':(glob).github/*.md' \
-            ':(glob).github/ISSUE_TEMPLATE/**' \
-            apps/mobile/CHANGELOG.md \
-            'apps/mobile/assets/decks/**' \
-            'assets/decks/**' \
-            docs/API.md \
-            'docs/book/**' \
-            'docs/examples/**' \
-            e2e/README.md
+        # A pathspec without a slash matches every directory. Keep this broad:
+        # a new tracked Markdown surface must enter the release audit without
+        # someone remembering to extend an allowlist.
+        git ls-files -- '*.md'
         git ls-files -- site | while IFS= read -r path; do
             if ! is_visual "$path"; then
                 printf '%s\n' "$path"
@@ -47,6 +40,11 @@ visual_manifest() {
         fi
     done
 }
+
+if [ "${DOCS_AUDIT_MANIFEST_ONLY:-}" = text ]; then
+    text_manifest
+    exit 0
+fi
 
 command -v "$cli" >/dev/null 2>&1 || {
     echo "docs-audit: '$cli' is required and must be authenticated" >&2
