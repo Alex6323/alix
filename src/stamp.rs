@@ -41,12 +41,20 @@ pub enum StampError {
     /// path is somehow still reached.
     #[error("{path} is not a deck (no cards, no frontmatter); refusing to stamp")]
     NotADeck { path: PathBuf },
+    #[error(
+        "{path} is not initialized as an Alix deck; run `alix deck init {path}` before opening it"
+    )]
+    Uninitialized { path: PathBuf },
+    #[error(
+        "{path} has a generic frontmatter `id:`; rename it to `alix-id:` to preserve an existing Alix deck identity, or rename/remove it before initializing a new deck"
+    )]
+    AmbiguousFrontmatterId { path: PathBuf },
     /// Should never happen: the parser guarantees every front line exists.
     #[error("line {0} is past the end of the file")]
     MissingLine(usize),
-    /// No `id:` can be spliced into non-block-mapping frontmatter without
+    /// No `alix-id:` can be spliced into non-block-mapping frontmatter without
     /// risking an unloadable file.
-    #[error("frontmatter is not a block mapping, cannot splice an `id:`")]
+    #[error("frontmatter is not a block mapping, cannot splice an `alix-id:`")]
     UnspliceableFrontmatter,
     #[error("deck does not parse: {0}")]
     Parse(#[from] parser::ParseError),
@@ -62,11 +70,19 @@ enum DeckAction {
     None,
     Prepend,
     /// The 1-based line number of the frontmatter's opening `---`, to splice
-    /// an `id:` after it.
+    /// an `alix-id:` after it.
     Splice(usize),
 }
 
 pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
+    stamp_deck_with_mode(path, true)
+}
+
+pub fn stamp_initialized_deck(path: &Path) -> Result<StampOutcome, StampError> {
+    stamp_deck_with_mode(path, false)
+}
+
+fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, StampError> {
     let original = fs::read_to_string(path).map_err(|source| StampError::Read {
         path: path.to_path_buf(),
         source,
@@ -90,6 +106,17 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
             path: path.to_path_buf(),
         });
     }
+    if initialize
+        && deck.deck_token.is_none()
+        && deck
+            .lints
+            .iter()
+            .any(|lint| matches!(&lint.kind, parser::LintKind::UnknownKey { key } if key == "id"))
+    {
+        return Err(StampError::AmbiguousFrontmatterId {
+            path: path.to_path_buf(),
+        });
+    }
 
     // Unstamped card front lines, deduped: a cloze card's holes expand to
     // several sub-cards sharing one `## ` line, but that line stamps once.
@@ -103,6 +130,10 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
 
     let deck_action = if deck.deck_token.is_some() {
         DeckAction::None
+    } else if !initialize {
+        return Err(StampError::Uninitialized {
+            path: path.to_path_buf(),
+        });
     } else {
         match deck.frontmatter_span {
             None => DeckAction::Prepend,
@@ -144,10 +175,10 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
     match (&deck_action, &deck_token) {
         (DeckAction::Splice(open), Some(tok)) => {
             let offset = line_start_of_next(body, *open).ok_or(StampError::MissingLine(*open))?;
-            inserts.push((offset, format!("id: \"{tok}\"\n")));
+            inserts.push((offset, format!("alix-id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
-            prepend = format!("---\nid: \"{tok}\"\n\n---\n");
+            prepend = format!("---\nalix-id: \"{tok}\"\n\n---\n");
         }
         _ => {}
     }
@@ -360,7 +391,7 @@ mod tests {
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
-        let deck_span = format!("id: \"{deck_tok}\"\n");
+        let deck_span = format!("alix-id: \"{deck_tok}\"\n");
         assert_eq!(1, reconstructed.matches(&deck_span).count());
         reconstructed = reconstructed.replacen(&deck_span, "", 1);
 
@@ -378,7 +409,7 @@ mod tests {
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
         assert!(
-            stamped.starts_with(&format!("---\nid: \"{deck_tok}\"\n\n---\n")),
+            stamped.starts_with(&format!("---\nalix-id: \"{deck_tok}\"\n\n---\n")),
             "{stamped:?}"
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
@@ -398,7 +429,7 @@ mod tests {
 
         assert!(stamped.starts_with(BOM));
         assert!(!stamped[BOM.len()..].starts_with(BOM));
-        assert!(stamped.starts_with(&format!("{BOM}---\nid: \"{deck_tok}\"\n\n---\n")));
+        assert!(stamped.starts_with(&format!("{BOM}---\nalix-id: \"{deck_tok}\"\n\n---\n")));
     }
 
     #[test]
@@ -412,7 +443,7 @@ mod tests {
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
         assert_eq!(
-            format!("---\nid: \"{deck_tok}\"\nsource: notes.md\n---\n"),
+            format!("---\nalix-id: \"{deck_tok}\"\nsource: notes.md\n---\n"),
             stamped[..stamped.find("## q").unwrap()]
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
@@ -453,8 +484,9 @@ mod tests {
     fn a_partially_stamped_deck_mints_only_the_missing_tokens() {
         let dir = tempfile::tempdir().unwrap();
         let stamped_card = "## already <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\na\n";
-        let original =
-            format!("---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n{stamped_card}## missing\nb\n");
+        let original = format!(
+            "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n{stamped_card}## missing\nb\n"
+        );
         let path = write(&dir, "deck.md", &original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -469,12 +501,58 @@ mod tests {
     }
 
     #[test]
+    fn maintenance_refuses_an_uninitialized_file_without_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "# Notes\n\n## Design\nThis is ordinary prose.\n";
+        let path = write(&dir, "notes.md", original);
+
+        let result = stamp_initialized_deck(&path);
+
+        assert!(
+            matches!(result, Err(StampError::Uninitialized { .. })),
+            "{result:?}"
+        );
+        assert_eq!(original, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn initialization_refuses_a_generic_frontmatter_id_without_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nid: \"article\"\n---\n## Question\nAnswer\n";
+        let path = write(&dir, "notes.md", original);
+
+        let result = stamp_deck(&path);
+
+        assert!(
+            matches!(result, Err(StampError::AmbiguousFrontmatterId { .. })),
+            "{result:?}"
+        );
+        assert_eq!(original, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn maintenance_mints_missing_card_ids_but_preserves_the_deck_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_token = "9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let original = format!("---\nalix-id: \"{deck_token}\"\n---\n## q\na\n");
+        let path = write(&dir, "deck.md", &original);
+
+        let outcome = stamp_initialized_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert_eq!(None, outcome.minted_deck);
+        assert_eq!(1, outcome.minted_cards.len());
+        assert!(stamped.contains(&format!("alix-id: \"{deck_token}\"")));
+        assert_eq!(1, stamped.matches("<!-- id: ").count());
+    }
+
+    #[test]
     fn token_replacement_swaps_exactly_the_old_span() {
         let dir = tempfile::tempdir().unwrap();
         let old = "4jkya9q3m8z0tw5v9y2b4n6d8f";
         let other = "zzzzzzzzzzzzzzzzzzzzzzzzzz";
         let original = format!(
-            "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n\
+            "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n\
              ## q <!-- id: {old} -->\na\n## r <!-- id: {other} -->\nb\n"
         );
         let path = write(&dir, "deck.md", &original);
@@ -568,7 +646,7 @@ mod tests {
         let stamped = fs::read_to_string(&path).unwrap();
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
-        let prefix = format!("---\nid: \"{deck_tok}\"\n\n---\n");
+        let prefix = format!("---\nalix-id: \"{deck_tok}\"\n\n---\n");
         assert!(stamped.starts_with(&prefix), "{stamped:?}");
         let mut reconstructed = stamped[prefix.len()..].to_string();
         for tok in &outcome.minted_cards {
@@ -597,7 +675,7 @@ mod tests {
             );
         }
 
-        let deck_span = format!("id: \"{deck_tok}\"\n");
+        let deck_span = format!("alix-id: \"{deck_tok}\"\n");
         assert_eq!(1, stamped.matches(&deck_span).count());
         let mut reconstructed = stamped.replacen(&deck_span, "", 1);
         for tok in &outcome.minted_cards {
@@ -613,7 +691,7 @@ mod tests {
     fn a_front_with_a_trailing_directive_keeps_it_and_the_id_line_closes_the_card() {
         let dir = tempfile::tempdir().unwrap();
         let original =
-            "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q <!-- reveal: line -->\na\n";
+            "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q <!-- reveal: line -->\na\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -622,7 +700,7 @@ mod tests {
 
         assert_eq!(
             format!(
-                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n\
+                "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n\
                  ## q <!-- reveal: line -->\na\n<!-- id: {tok} -->\n"
             ),
             stamped
@@ -635,7 +713,7 @@ mod tests {
     #[test]
     fn a_hash_run_front_keeps_its_run_and_the_id_line_closes_the_card() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ##\nbar\n";
+        let original = "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ##\nbar\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -644,7 +722,7 @@ mod tests {
 
         assert_eq!(
             format!(
-                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ##\nbar\n<!-- id: {tok} -->\n"
+                "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ##\nbar\n<!-- id: {tok} -->\n"
             ),
             stamped
         );
@@ -660,7 +738,7 @@ mod tests {
     #[test]
     fn a_divided_front_card_gets_its_id_line_at_the_end_of_the_block() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Q\n---\nthe answer\n";
+        let original = "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Q\n---\nthe answer\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -669,7 +747,7 @@ mod tests {
 
         assert_eq!(
             format!(
-                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Q\n---\nthe answer\n<!-- id: {tok} -->\n"
+                "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Q\n---\nthe answer\n<!-- id: {tok} -->\n"
             ),
             stamped
         );
@@ -684,7 +762,7 @@ mod tests {
     #[test]
     fn stamping_a_card_at_eof_without_trailing_newline() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na";
+        let original = "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -692,7 +770,9 @@ mod tests {
         let tok = &outcome.minted_cards[0];
 
         assert_eq!(
-            format!("---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n<!-- id: {tok} -->\n"),
+            format!(
+                "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n<!-- id: {tok} -->\n"
+            ),
             stamped
         );
 
@@ -707,7 +787,7 @@ mod tests {
     #[test]
     fn identical_cloze_fronts_on_different_lines_each_get_their_own_token() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe \\blank{a} note\n\n\
+        let original = "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe \\blank{a} note\n\n\
              ## Foo\n---\nthe \\blank{b} note\n";
         let path = write(&dir, "deck.md", original);
 

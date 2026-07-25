@@ -3,6 +3,7 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
+- Refined by: [ADR 0018](0018-explicit-deck-initialization.md)
 
 ## Decision history
 
@@ -33,7 +34,8 @@ format.
 
 Alix applies a line-oriented structural grammar around Markdown:
 
-- YAML frontmatter holds deck metadata.
+- YAML frontmatter holds deck metadata, including the namespaced `alix-id`
+  identity marker.
 - A level-two heading starts a card and supplies its front.
 - The following block supplies the answer and optional context.
 - Blockquotes represent notes.

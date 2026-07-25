@@ -161,7 +161,8 @@ impl Drop for Guard {
 /// on the second, rather than jumping straight to `"done"`) — and enough to
 /// make `run_review`'s store resolution (`assemble::store_for`, via
 /// `cfg.instance_store`) do real work if a test picks it via `/api/select`.
-const FIXTURE_DECK: &str = "## 2 + 2 <!-- id: s1 -->\n4\n\n## 3 + 3 <!-- id: s2 -->\n6\n";
+const FIXTURE_DECK: &str =
+    "---\nalix-id: \"sample\"\n---\n## 2 + 2 <!-- id: s1 -->\n4\n\n## 3 + 3 <!-- id: s2 -->\n6\n";
 
 /// Builds the `run_review` options over one fixture deck living in `dir`,
 /// mirroring (in miniature) what `src/cli/launch.rs` wires up for the real
@@ -284,10 +285,10 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
 /// filename no longer separates them. Distractors are never sampled from
 /// sibling answers, so only the armed copy renders choices. See
 /// [`spawn_full_server_fixture`].
-const CHOICE_DECK: &str = "## 1 + 1 <!-- id: c1 -->\n2\n\n## 2 + 2 <!-- id: c2 -->\n4\n\n\
+const CHOICE_DECK: &str = "---\nalix-id: \"choice\"\n---\n## 1 + 1 <!-- id: c1 -->\n2\n\n## 2 + 2 <!-- id: c2 -->\n4\n\n\
                            ## 3 + 3 <!-- id: c3 -->\n6\n\n## 4 + 4 <!-- id: c4 -->\n8\n\n\
                            ## 5 + 5 <!-- id: c5 -->\n10\n";
-const CHOICE_ARMED_DECK: &str = "## 1 + 1 <!-- id: ca1 -->\n2\n\n## 2 + 2 <!-- id: ca2 -->\n4\n\n\
+const CHOICE_ARMED_DECK: &str = "---\nalix-id: \"choicearmed\"\n---\n## 1 + 1 <!-- id: ca1 -->\n2\n\n## 2 + 2 <!-- id: ca2 -->\n4\n\n\
                                  ## 3 + 3 <!-- id: ca3 -->\n6\n\n## 4 + 4 <!-- id: ca4 -->\n8\n\n\
                                  ## 5 + 5 <!-- id: ca5 -->\n10\n";
 
@@ -308,7 +309,7 @@ fn choice_answer(front: &str) -> &'static str {
 /// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
 /// `walk_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
-const TRACE_DECK: &str = "---\ntrace: how it works\nsource: source.txt\n---\n\
+const TRACE_DECK: &str = "---\nalix-id: \"trace\"\ntrace: how it works\nsource: source.txt\n---\n\
 ## Predict the first hop <!-- id: t1 -->\n\
 <!-- given: line — the input line -->\n\
 it reads the first line\n\
@@ -630,8 +631,16 @@ fn write_animals_workspace(dir: &Path) {
     let ws = dir.join("animals");
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    std::fs::write(ws.join("one.md"), "## q1 <!-- id: aq1 -->\na1\n").unwrap();
-    std::fs::write(ws.join("two.md"), "## q2 <!-- id: aq2 -->\na2\n").unwrap();
+    std::fs::write(
+        ws.join("one.md"),
+        "---\nalix-id: \"animalone\"\n---\n## q1 <!-- id: aq1 -->\na1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        ws.join("two.md"),
+        "---\nalix-id: \"animaltwo\"\n---\n## q2 <!-- id: aq2 -->\na2\n",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -664,7 +673,8 @@ fn get_api_decks_lists_a_workspace_with_its_member_decks() {
 
 /// A one-card deck whose H1 title is what `/api/decks` serves as the row's
 /// `label`, the field that proves whether the file was (re-)parsed.
-const TITLED_DECK: &str = "# Original Title\n\n## q <!-- id: ti1 -->\na\n";
+const TITLED_DECK: &str =
+    "---\nalix-id: \"titled\"\n---\n# Original Title\n\n## q <!-- id: ti1 -->\na\n";
 
 fn write_titled_deck(dir: &Path) {
     std::fs::write(dir.join("titled.md"), TITLED_DECK).unwrap();
@@ -721,12 +731,12 @@ fn a_changed_deck_is_reparsed_on_the_next_listing() {
     // A longer rewrite changes the size, which dodges mtime granularity.
     std::fs::write(
         guard.dir().join("titled.md"),
-        "# A Renamed Title Longer Than Before\n\n## q <!-- id: ti1 -->\na\n",
+        "---\nalix-id: \"titled\"\n---\n# A Renamed Title Longer Than Before\n\n## q <!-- id: ti1 -->\na\n",
     )
     .unwrap();
     std::fs::write(
         guard.dir().join("fresh.md"),
-        "## new q <!-- id: fr1 -->\nb\n",
+        "---\nalix-id: \"fresh\"\n---\n## new q <!-- id: fr1 -->\nb\n",
     )
     .unwrap();
 
@@ -1084,7 +1094,7 @@ fn post_api_browse_serializes_card_images_as_lists_with_alt() {
     // A back card carries two image embeds (the second without an alt); a
     // divided front card carries one. Both sides serialize as ordered
     // `{ src, alt }` lists, and the old scalar `img`/`img_back` keys are gone.
-    const IMG_DECK: &str = "## Back images <!-- id: bi1 -->\nWaxing\n\
+    const IMG_DECK: &str = "---\nalix-id: \"images\"\n---\n## Back images <!-- id: bi1 -->\nWaxing\n\
                             ![a moon](moon.png)\n![](crescent.png)\n\n\
                             ## Front image <!-- id: fi1 -->\n![the sun](sun.png)\n\n\
                             ---\nThe sun\n";
@@ -1326,7 +1336,7 @@ fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
     let (base, _guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(
             dir.join("steps.md"),
-            "## steps <!-- id: st1 --> <!-- reveal: line -->\none\ntwo\n",
+            "---\nalix-id: \"steps\"\n---\n## steps <!-- id: st1 --> <!-- reveal: line -->\none\ntwo\n",
         )
         .unwrap();
     });
@@ -1522,7 +1532,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     // hole has AI distractors cached, served as a choice, answered, then the
     // state re-pulled (the tutor-close pull). The order must hold on both the
     // Recognize path (seen card) and the acquire path (unseen card).
-    const CLOZE_DECK: &str = "## What is frb, in one sentence? <!-- id: frb1 -->\n\
+    const CLOZE_DECK: &str = "---\nalix-id: \"frb\"\n---\n## What is frb, in one sentence? <!-- id: frb1 -->\n\
         A \\blank{code-generation} tool generating the \\blank{FFI} glue on both sides.\n";
     for seed_store in [true, false] {
         let (base, _guard) = spawn_full_server_fixture(None, |dir| {
@@ -1766,7 +1776,11 @@ fn ending_a_session_flushes_every_session_mutation_kind() {
 #[test]
 fn selecting_the_next_deck_flushes_the_previous_session() {
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
-        std::fs::write(dir.join("other.md"), "## 7 + 7 <!-- id: o1 -->\n14\n").unwrap();
+        std::fs::write(
+            dir.join("other.md"),
+            "---\nalix-id: \"other\"\n---\n## 7 + 7 <!-- id: o1 -->\n14\n",
+        )
+        .unwrap();
     });
     select_fixture(&base);
     let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
@@ -2145,12 +2159,12 @@ fn write_workspace_fixture(dir: &Path) {
     std::fs::write(ws.join("alix.toml"), "title = \"WS\"\n").unwrap();
     std::fs::write(
         ws.join("m1.md"),
-        "## q1 <!-- id: w1 -->\na1\n## q2 <!-- id: w2 -->\na2\n",
+        "---\nalix-id: \"workone\"\n---\n## q1 <!-- id: w1 -->\na1\n## q2 <!-- id: w2 -->\na2\n",
     )
     .unwrap();
     std::fs::write(
         ws.join("m2.md"),
-        "## q3 <!-- id: w3 -->\na3\n## q4 <!-- id: w4 -->\na4\n## q5 <!-- id: w5 -->\na5\n",
+        "---\nalix-id: \"worktwo\"\n---\n## q3 <!-- id: w3 -->\na3\n## q4 <!-- id: w4 -->\na4\n## q5 <!-- id: w5 -->\na5\n",
     )
     .unwrap();
 }
@@ -2163,7 +2177,11 @@ fn write_workspace_fixture(dir: &Path) {
 fn write_plain_folder_fixture(dir: &Path) {
     let folder = dir.join("plainfolder");
     std::fs::create_dir_all(&folder).unwrap();
-    std::fs::write(folder.join("loose.md"), "## q <!-- id: lq1 -->\na\n").unwrap();
+    std::fs::write(
+        folder.join("loose.md"),
+        "---\nalix-id: \"loose\"\n---\n## q <!-- id: lq1 -->\na\n",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2886,7 +2904,7 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 fn write_exam_deck_fixture(dir: &Path) {
     std::fs::write(
         dir.join("examdeck.md"),
-        "---\nsource: examsource.txt\n---\n## c <!-- id: e1 -->\na\n",
+        "---\nalix-id: \"examdeck\"\nsource: examsource.txt\n---\n## c <!-- id: e1 -->\na\n",
     )
     .unwrap();
     std::fs::write(dir.join("examsource.txt"), "c stands for a concept.\n").unwrap();

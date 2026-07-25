@@ -955,7 +955,7 @@ back a
         fs::create_dir_all(&dest).unwrap();
         fs::write(
             dest.join("01-a.md"),
-            "---\nid: \"da1\"\n---\n## old <!-- id: c1 -->\nold\n",
+            "---\nalix-id: \"da1\"\n---\n## old <!-- id: c1 -->\nold\n",
         )
         .unwrap();
         fs::write(staging.join("01-a.md"), "## new q\nnew ans\n").unwrap();
@@ -1017,7 +1017,7 @@ back a
         fs::write(
             dir.join("01-t.md"),
             format!(
-                "---\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
+                "---\nalix-id: \"trace\"\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
                 src.display()
             ),
         )
@@ -1025,7 +1025,7 @@ back a
         fs::write(
             dir.join("02-d.md"),
             format!(
-                "---\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
+                "---\nalix-id: \"facts\"\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
                 src.display()
             ),
         )
@@ -1055,7 +1055,7 @@ back a
         fs::write(
             dir.join("01-broken.md"),
             format!(
-                "---\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
+                "---\nalix-id: \"broken\"\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
                 dir.display()
             ),
         )

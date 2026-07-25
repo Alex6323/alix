@@ -5,7 +5,7 @@ use crate::{answer::Input, card::Direction, depth::Reveal, session::Order, token
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
-    pub id: Option<String>,
+    pub alix_id: Option<String>,
     pub source: Vec<String>,
     pub requires: Vec<String>,
     pub link: Vec<String>,
@@ -63,7 +63,7 @@ fn load_frontmatter(
     let Some(root) = docs.into_iter().next() else {
         return Ok(frontmatter);
     };
-    // A null-scalar root loads but is not a block mapping; splicing an `id:`
+    // A null-scalar root loads but is not a block mapping; splicing an `alix-id:`
     // in front of a bare scalar would fail (yaml-rust2: "simple key expected").
     if root == Yaml::Null {
         frontmatter.unspliceable = true;
@@ -74,7 +74,7 @@ fn load_frontmatter(
         return Ok(frontmatter);
     };
     // A flow mapping loads but offers no per-key line to splice a minted
-    // `id:` into.
+    // `alix-id:` into.
     if trim_ws(&text).starts_with('{') {
         frontmatter.unspliceable = true;
     }
@@ -90,7 +90,7 @@ fn load_frontmatter(
         };
         let line = key_line(block, first_line, key);
         match key.as_str() {
-            "id" => match value {
+            "alix-id" => match value {
                 Yaml::String(s) => {
                     if !token::is_valid(s) {
                         return Err(ParseError::InvalidToken {
@@ -98,10 +98,10 @@ fn load_frontmatter(
                             token: s.clone(),
                         });
                     }
-                    frontmatter.id = Some(s.clone());
+                    frontmatter.alix_id = Some(s.clone());
                 }
                 other => {
-                    return Err(ParseError::NonStringId {
+                    return Err(ParseError::NonStringAlixId {
                         line,
                         found: yaml_kind(other),
                     });

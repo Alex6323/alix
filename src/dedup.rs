@@ -24,7 +24,7 @@ pub struct CardDupe {
 pub struct DuplicateMap {
     /// (kept deck, excluded deck, shared token) per excluded copy. Never
     /// auto-fixed: the tool can't know which copy is pristine, so removing the
-    /// copy's `id:` line is manual.
+    /// copy's `alix-id:` line is manual.
     pub excluded_decks: Vec<(PathBuf, PathBuf, String)>,
     /// Excludes cards from an already-excluded deck: a whole-file copy is one
     /// deck-level finding, not one per card.
@@ -306,7 +306,7 @@ mod tests {
         let path = dir.join(name);
         std::fs::write(
             &path,
-            format!("---\nid: \"{token}\"\n---\n## q <!-- id: {card_token} -->\na\n"),
+            format!("---\nalix-id: \"{token}\"\n---\n## q <!-- id: {card_token} -->\na\n"),
         )
         .unwrap();
         path
@@ -317,12 +317,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nid: \"dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: shared1 -->\n\n## q2 <!-- id: samelinetok -->\nanswer\n",
+            "---\nalix-id: \"dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: shared1 -->\n\n## q2 <!-- id: samelinetok -->\nanswer\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "## q3\n<!-- id: shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: fencedtok -->\n<!-- id: alsofenced -->\n```\n<!-- id: realtok -->\n",
+            "---\nalix-id: \"dtok2\"\n---\n## q3\n<!-- id: shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: fencedtok -->\n<!-- id: alsofenced -->\n```\n<!-- id: realtok -->\n",
         )
         .unwrap();
         std::fs::write(dir.path().join("notes.md"), "just prose, no cards\n").unwrap();
@@ -377,13 +377,13 @@ mod tests {
         let a = dir.path().join("notes.md");
         std::fs::write(
             &a,
-            "---\nid: \"dtoka\"\n---\n## q <!-- id: cshared -->\na\n",
+            "---\nalix-id: \"dtoka\"\n---\n## q <!-- id: cshared -->\na\n",
         )
         .unwrap();
         let b = dir.path().join("notes copy.md");
         std::fs::write(
             &b,
-            "---\nid: \"dtokb\"\n---\n## q <!-- id: cshared -->\nb\n",
+            "---\nalix-id: \"dtokb\"\n---\n## q <!-- id: cshared -->\nb\n",
         )
         .unwrap();
 

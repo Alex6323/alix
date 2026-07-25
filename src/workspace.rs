@@ -126,17 +126,36 @@ pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
     members(dir).unwrap_or_default()
 }
 
-/// Unreadable is treated as a deck: a listing degrades a broken deck into a
-/// visible row rather than dropping it silently.
 pub fn file_is_deck(path: &Path) -> bool {
-    match std::fs::read_to_string(path) {
-        Ok(text) => crate::parser::is_deck_content(&text),
-        Err(_) => true,
-    }
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| crate::parser::deck_identity(&text).ok().flatten())
+        .is_some()
 }
 
 fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
-    members_where(dir, file_is_deck)
+    classified_deck_files(dir).map(|(initialized, _)| initialized)
+}
+
+pub fn uninitialized_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    classified_deck_files(dir).map(|(_, uninitialized)| uninitialized)
+}
+
+pub fn classified_deck_files(dir: &Path) -> io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    let candidates = members_where(dir, |_| true)?;
+    let mut initialized = Vec::new();
+    let mut uninitialized = Vec::new();
+    for path in candidates {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if crate::parser::deck_identity(&text).ok().flatten().is_some() {
+            initialized.push(path);
+        } else if crate::parser::is_deck_content(&text) {
+            uninitialized.push(path);
+        }
+    }
+    Ok((initialized, uninitialized))
 }
 
 pub(crate) fn members_where(
@@ -265,11 +284,15 @@ mod tests {
         std::fs::write(path, text).unwrap();
     }
 
+    fn deck(id: &str, body: &str) -> String {
+        format!("---\nalix-id: \"{id}\"\n---\n{body}")
+    }
+
     #[test]
     fn load_discovers_members_and_parses_manifest() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join("a.md"), "## a\n1\n");
-        write(&dir.path().join("b.md"), "## b\n2\n");
+        write(&dir.path().join("a.md"), &deck("a", "## a\n1\n"));
+        write(&dir.path().join("b.md"), &deck("b", "## b\n2\n"));
         write(
             &dir.path().join(MANIFEST),
             "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nreveal = \"line\"\ndirection = \"both\"\n",
@@ -293,7 +316,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("rust");
         std::fs::create_dir(&folder).unwrap();
-        write(&folder.join("a.md"), "## a\n1\n");
+        write(&folder.join("a.md"), &deck("a", "## a\n1\n"));
 
         let ws = Workspace::load(&folder).unwrap();
         assert_eq!(None, ws.title);
@@ -305,7 +328,7 @@ mod tests {
     #[test]
     fn malformed_manifest_is_forgiving() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join("a.md"), "## a\n1\n");
+        write(&dir.path().join("a.md"), &deck("a", "## a\n1\n"));
         write(&dir.path().join(MANIFEST), "this is not = = valid toml\n");
         let ws = Workspace::load(dir.path()).unwrap();
         assert_eq!(None, ws.title);
@@ -320,7 +343,7 @@ mod tests {
         std::fs::create_dir(&empty).unwrap();
         assert!(!is_workspace(&empty));
 
-        write(&empty.join("a.md"), "## a\n1\n");
+        write(&empty.join("a.md"), &deck("a", "## a\n1\n"));
         assert!(has_decks(&empty));
         assert!(!is_workspace(&empty));
 
@@ -334,18 +357,50 @@ mod tests {
     }
 
     #[test]
-    fn members_exclude_prose_but_keep_header_only_stubs() {
+    fn members_include_only_initialized_decks() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join("deck.md"), "## q\na\n");
+        write(
+            &dir.path().join("deck.md"),
+            "---\nalix-id: \"deck1\"\n---\n## q\na\n",
+        );
         write(&dir.path().join("stub.md"), "---\ntrace: a walk\n---\n");
-        write(&dir.path().join("notes.md"), "# Notes\n\njust prose\n");
+        write(
+            &dir.path().join("notes.md"),
+            "# Notes\n\n## Design\nordinary prose\n",
+        );
 
         let names: Vec<String> = members(dir.path())
             .unwrap()
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
+        assert_eq!(vec!["deck.md".to_string()], names);
+    }
+
+    #[test]
+    fn uninitialized_candidates_find_deck_like_markdown_only() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join("deck.md"), "## q\na\n");
+        write(&dir.path().join("stub.md"), "---\ntrace: a walk\n---\n");
+        write(&dir.path().join("notes.md"), "# Notes\n\njust prose\n");
+
+        let names: Vec<String> = uninitialized_deck_files(dir.path())
+            .unwrap()
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
         assert_eq!(vec!["deck.md".to_string(), "stub.md".to_string()], names);
+    }
+
+    #[test]
+    fn an_initialized_deck_with_a_malformed_card_stays_discoverable() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("broken.md"),
+            "---\nalix-id: \"broken\"\n---\n## unanswered\n",
+        );
+
+        assert_eq!(vec![dir.path().join("broken.md")], deck_files(dir.path()));
     }
 
     #[test]
@@ -409,7 +464,7 @@ mod tests {
     #[test]
     fn root_store_path_honors_a_workspace_store_override() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("d.md"), "## Q\nA\n").unwrap();
+        std::fs::write(dir.path().join("d.md"), deck("d", "## Q\nA\n")).unwrap();
         std::fs::write(
             dir.path().join("alix.toml"),
             "title = \"W\"\nstore = \"custom.json\"\n",
@@ -534,7 +589,7 @@ mod tests {
         assert!(!is_conflict_name("my-syncthing-notes.md"));
 
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        std::fs::write(dir.path().join("real.md"), deck("real", "## q\na\n")).unwrap();
         std::fs::write(
             dir.path().join("real.sync-conflict-20260101-abcdef.md"),
             "## q\na\n",
@@ -556,7 +611,7 @@ mod tests {
     #[test]
     fn readme_and_license_are_not_decks() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        std::fs::write(dir.path().join("real.md"), deck("real", "## q\na\n")).unwrap();
         std::fs::write(dir.path().join("README.md"), "about this folder\n").unwrap();
         std::fs::write(dir.path().join("LICENSE.md"), "MIT\n").unwrap();
         std::fs::write(dir.path().join("license.md"), "lower-case too\n").unwrap();

@@ -281,7 +281,7 @@ mod tests {
     fn write_deck(dir: &Path, name: &str, deck_token: &str, card_token: &str) {
         std::fs::write(
             dir.join(name),
-            format!("---\nid: \"{deck_token}\"\n---\n## q <!-- id: {card_token} -->\nans\n"),
+            format!("---\nalix-id: \"{deck_token}\"\n---\n## q <!-- id: {card_token} -->\nans\n"),
         )
         .unwrap();
     }
@@ -455,7 +455,7 @@ mod tests {
         );
     }
 
-    /// One fixture: frontmatter without `id:`, a divided card (fence + note +
+    /// One fixture: frontmatter without `alix-id:`, a divided card (fence + note +
     /// escaped divider + trailing-space front), and a two-hole cloze card.
     const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\blank{alpha} and \\blank{beta} here\n> cloze note\n";
 
@@ -563,7 +563,7 @@ mod tests {
     #[test]
     fn a_trace_rebuild_routes_through_replace_and_wipes_the_old_checkpoints() {
         let dir = tempfile::tempdir().unwrap();
-        let existing = "---\nid: \"da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: c1 -->\nold\n";
+        let existing = "---\nalix-id: \"da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: c1 -->\nold\n";
         std::fs::write(dir.path().join("t.md"), existing).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.get_or_insert("c1", 0);

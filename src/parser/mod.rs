@@ -67,8 +67,8 @@ pub enum ParseError {
     UnclosedFrontmatter(usize),
     #[error("line {line}: frontmatter is not valid yaml: {message}")]
     FrontmatterSyntax { line: usize, message: String },
-    #[error("line {line}: `id:` must be a quoted string (`id: \"...\"`), got {found}")]
-    NonStringId { line: usize, found: &'static str },
+    #[error("line {line}: `alix-id:` must be a quoted string (`alix-id: \"...\"`), got {found}")]
+    NonStringAlixId { line: usize, found: &'static str },
     #[error("line {line}: token `{token}` fails the charset `^[0-9a-z]+$`")]
     InvalidToken { line: usize, token: String },
     #[error("line {line}: control character {found} outside the whitespace set")]
@@ -95,7 +95,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
         build_card(&subject, raw, &mut cards, &mut lints)?;
     }
     Ok(ParsedDeck {
-        deck_token: document.frontmatter.id.clone(),
+        deck_token: document.frontmatter.alix_id.clone(),
         title: document.title,
         preamble: document.preamble,
         frontmatter: document.frontmatter,
@@ -126,6 +126,14 @@ pub fn is_deck_content(text: &str) -> bool {
         // surface to doctor rather than silently vanish from the listing.
         Err(_) => true,
     }
+}
+
+pub fn deck_identity(text: &str) -> Result<Option<String>, ParseError> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let lines = prepare(text)?;
+    let mut lints = Vec::new();
+    let (frontmatter, _, _) = parse_frontmatter(&lines, &mut lints)?;
+    Ok(frontmatter.alix_id)
 }
 
 // ── Internal representation ──
@@ -796,7 +804,7 @@ mod tests {
         assert_eq!(Some("a walk".to_string()), deck.frontmatter.trace);
         assert_eq!(1, deck.cards.len());
 
-        let deck = parse("intro prose\n---\nid: nope\n---\n## q\na\n");
+        let deck = parse("intro prose\n---\nalix-id: nope\n---\n## q\na\n");
         assert_eq!(Frontmatter::default(), deck.frontmatter);
         assert_eq!(None, deck.deck_token);
     }
@@ -805,7 +813,7 @@ mod tests {
     fn a_missing_frontmatter_close_is_a_hard_error() {
         assert_eq!(
             ParseError::UnclosedFrontmatter(1),
-            err("---\nid: \"abc\"\n## q\na\n")
+            err("---\nalix-id: \"abc\"\n## q\na\n")
         );
     }
 
@@ -824,7 +832,7 @@ mod tests {
 
     #[test]
     fn a_blank_line_before_the_frontmatter_closer_is_accepted() {
-        let deck = parse("---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n\n---\n## q\na\n");
+        let deck = parse("---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n\n---\n## q\na\n");
         assert_eq!(
             Some("9w2c7x4k1m8q3z5t0v6b2n4d8f"),
             deck.deck_token.as_deref()
@@ -835,35 +843,35 @@ mod tests {
     }
 
     #[test]
-    fn an_unquoted_numeric_id_is_a_hard_error_naming_the_line() {
+    fn an_unquoted_numeric_alix_id_is_a_hard_error_naming_the_line() {
         assert_eq!(
-            ParseError::NonStringId {
+            ParseError::NonStringAlixId {
                 line: 2,
                 found: "an integer"
             },
-            err("---\nid: 007\n---\n## q\na\n")
+            err("---\nalix-id: 007\n---\n## q\na\n")
         );
     }
 
     #[test]
-    fn a_bool_id_is_a_hard_error() {
+    fn a_bool_alix_id_is_a_hard_error() {
         assert_eq!(
-            ParseError::NonStringId {
+            ParseError::NonStringAlixId {
                 line: 2,
                 found: "a boolean"
             },
-            err("---\nid: true\n---\n## q\na\n")
+            err("---\nalix-id: true\n---\n## q\na\n")
         );
     }
 
     #[test]
-    fn a_quoted_id_parses_verbatim() {
-        let deck = parse("---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n");
+    fn a_quoted_alix_id_parses_verbatim() {
+        let deck = parse("---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n");
         assert_eq!(
             Some("9w2c7x4k1m8q3z5t0v6b2n4d8f"),
             deck.deck_token.as_deref()
         );
-        assert_eq!(deck.deck_token, deck.frontmatter.id);
+        assert_eq!(deck.deck_token, deck.frontmatter.alix_id);
         assert!(!deck.frontmatter.unspliceable);
     }
 
@@ -877,11 +885,11 @@ mod tests {
     #[test]
     fn a_null_scalar_frontmatter_is_unspliceable() {
         let deck = parse("---\nnull\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.id);
+        assert_eq!(None, deck.frontmatter.alix_id);
         assert!(deck.frontmatter.unspliceable);
 
         let deck = parse("---\n~\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.id);
+        assert_eq!(None, deck.frontmatter.alix_id);
         assert!(deck.frontmatter.unspliceable);
     }
 
@@ -902,13 +910,13 @@ mod tests {
     }
 
     #[test]
-    fn an_id_failing_the_charset_is_a_line_numbered_error() {
+    fn an_alix_id_failing_the_charset_is_a_line_numbered_error() {
         assert_eq!(
             ParseError::InvalidToken {
                 line: 2,
                 token: "ABC".into()
             },
-            err("---\nid: \"ABC\"\n---\n## q\na\n")
+            err("---\nalix-id: \"ABC\"\n---\n## q\na\n")
         );
     }
 
@@ -923,7 +931,7 @@ mod tests {
 
     #[test]
     fn invalid_frontmatter_yaml_is_a_hard_error() {
-        let e = err("---\nid: [unclosed\n---\n## q\na\n");
+        let e = err("---\nalix-id: [unclosed\n---\n## q\na\n");
         assert!(matches!(e, ParseError::FrontmatterSyntax { .. }), "{e:?}");
     }
 
@@ -955,6 +963,36 @@ mod tests {
         assert!(!is_deck_content("# Notes\n\njust some prose here\n"));
         assert!(!is_deck_content("# Notes\n\n```\n## not a card\n```\n"));
         assert!(is_deck_content("## q\na\n"));
+    }
+
+    #[test]
+    fn deck_identity_requires_a_valid_alix_id_in_opening_frontmatter() {
+        let token = "9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        assert_eq!(
+            Ok(Some(token.to_string())),
+            deck_identity(&format!("---\nalix-id: \"{token}\"\n---\n## q\na\n"))
+        );
+        assert_eq!(Ok(None), deck_identity("## q\nid: \"abc\"\na\n"));
+        assert_eq!(
+            Ok(None),
+            deck_identity(&format!("---\nid: \"{token}\"\n---\n## q\na\n"))
+        );
+        assert_eq!(
+            Ok(None),
+            deck_identity("---\nsource: notes.md\n---\n## q\na\n")
+        );
+        assert!(matches!(
+            deck_identity("---\nalix-id: \"ABC\"\n---\n## q\na\n"),
+            Err(ParseError::InvalidToken { .. })
+        ));
+    }
+
+    #[test]
+    fn deck_identity_survives_a_malformed_card_body() {
+        let token = "9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let text = format!("---\nalix-id: \"{token}\"\n---\n## unanswered\n");
+        assert!(super::parse("deck.md", &text).is_err());
+        assert_eq!(Ok(Some(token.to_string())), deck_identity(&text));
     }
 
     #[test]
@@ -1602,7 +1640,7 @@ mod tests {
     #[test]
     fn a_full_directive_fixture_parses_to_exactly_this_snapshot() {
         let text = r#"---
-id: "9w2c7x4k1m8q3z5t0v6b2n4d8f"
+alix-id: "9w2c7x4k1m8q3z5t0v6b2n4d8f"
 source:
   - https://example.org/book
   - notes.md
@@ -1641,7 +1679,7 @@ the answer
         let document = parse_document(text).unwrap();
         assert_eq!(
             Frontmatter {
-                id: Some("9w2c7x4k1m8q3z5t0v6b2n4d8f".into()),
+                alix_id: Some("9w2c7x4k1m8q3z5t0v6b2n4d8f".into()),
                 source: vec!["https://example.org/book".into(), "notes.md".into()],
                 requires: vec!["basics".into()],
                 link: vec!["https://docs.rs/tokio".into()],

@@ -61,7 +61,8 @@ fn stderr(out: &Output) -> String {
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
-const VALID_DECK: &str = "## What is 2 + 2? <!-- id: math1 -->\n4\n";
+const VALID_DECK: &str =
+    "---\nalix-id: \"mathdeck\"\n---\n## What is 2 + 2? <!-- id: math1 -->\n4\n";
 
 #[test]
 fn profile_add_list_and_remove_are_hermetic() {
@@ -188,7 +189,11 @@ fn workspace_deadline_shows_sets_and_clears() {
     let ws = dir.path().join("ws");
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Ws\"\n").unwrap();
-    std::fs::write(ws.join("cards.md"), "## Q?\nA\n").unwrap();
+    std::fs::write(
+        ws.join("cards.md"),
+        "---\nalix-id: \"cards\"\n---\n## Q?\nA\n",
+    )
+    .unwrap();
 
     let out = alix(&["workspace", "deadline", ws.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
@@ -625,15 +630,14 @@ fn fake_claude(dir: &Path, reply: &str) -> String {
 fn augment_target_format_caches_a_reshape() {
     // `deck augment --target format` reshapes a badly-shaped plain card and
     // writes the result to the sidecar `augment.json` beside the store, never
-    // rewriting the card TEXT. Augment open is an enumerated stamp site, so the
-    // deck's identity is minted (a frontmatter `id:` is added), but the card's
-    // own line and its token are left exactly as they were. The Claude call is
-    // faked by a config-wired CLI.
+    // rewriting the card text. The deck is already initialized; augment open
+    // only maintains missing card ids. The Claude call is faked by a
+    // config-wired CLI.
     let dir = TempDir::new().unwrap();
     let deck = write(
         dir.path(),
         "parts.md",
-        "## List the parts <!-- id: parts1 -->\nA, B, C\n",
+        "---\nalix-id: \"parts\"\n---\n## List the parts <!-- id: parts1 -->\nA, B, C\n",
     );
     // The model returns a structured reshape for card index 0: a list body and a
     // line-by-line mode suggestion.
@@ -665,15 +669,15 @@ fn augment_target_format_caches_a_reshape() {
     assert!(cached.contains("\"A\""), "augment.json: {cached}");
     assert!(cached.contains("LineByLine"), "augment.json: {cached}");
     // The card's own text and token are untouched (format is display-only). The
-    // deck was stamped at augment open (a frontmatter `id:` was minted).
+    // deck identity remains the initialized identity.
     let deck_after = std::fs::read_to_string(&deck).unwrap();
     assert!(
         deck_after.contains("## List the parts <!-- id: parts1 -->\nA, B, C\n"),
         "card text and token preserved: {deck_after}"
     );
     assert!(
-        deck_after.starts_with("---\nid: \""),
-        "the deck gained a frontmatter id at augment open: {deck_after}"
+        deck_after.starts_with("---\nalix-id: \""),
+        "the deck keeps its initialized frontmatter alix-id: {deck_after}"
     );
 }
 
@@ -686,7 +690,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
     let deck = write(
         dir.path(),
         "parts.md",
-        "## List the parts <!-- id: parts1 -->\nA, B, C\n",
+        "---\nalix-id: \"parts\"\n---\n## List the parts <!-- id: parts1 -->\nA, B, C\n",
     );
 
     let store_path = dir.path().join("p.json");
@@ -732,7 +736,8 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     // `deck augment --target format` must filter those out exactly like
     // `assemble::select`'s injection does, or the same card gets warmed twice.
     let dir = TempDir::new().unwrap();
-    let deck_text = "## List the parts <!-- id: parts1 -->\nA, B, C\n";
+    let deck_text =
+        "---\nalix-id: \"parts\"\n---\n## List the parts <!-- id: parts1 -->\nA, B, C\n";
     let deck = write(dir.path(), "parts.md", deck_text);
     let real_id = alix::parser::parse_str("parts.md", deck_text).unwrap()[0]
         .id()
@@ -1466,7 +1471,7 @@ fn share_zip_of_a_workspace_folder_strips_personal_state() {
     let ws = dir.path().join("eng");
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
-    write(&ws, "a.md", "## q\na\n");
+    write(&ws, "a.md", "---\nalix-id: \"a\"\n---\n## q\na\n");
     write(&ws, "progress.json", "{}"); // must never travel
     let out_dir = dir.path().join("out");
     std::fs::create_dir(&out_dir).unwrap();
@@ -2032,7 +2037,7 @@ fn augment_choices_caches_distractors_for_two_cards() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n",
+        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"], "1": ["W3", "W4"]}"#);
     let config = write(
@@ -2066,7 +2071,11 @@ fn augment_choices_caches_distractors_for_two_cards() {
 #[test]
 fn augment_notes_caches_a_trivia_note() {
     let dir = TempDir::new().unwrap();
-    let deck = write(dir.path(), "quiz.md", "## Q1 <!-- id: q1 -->\nA1\n");
+    let deck = write(
+        dir.path(),
+        "quiz.md",
+        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+    );
     let cli = fake_claude(dir.path(), r#"{"0": "a fun fact"}"#);
     let config = write(
         dir.path(),
@@ -2099,7 +2108,11 @@ fn augment_without_a_store_flag_caches_beside_the_decks_dir_root_store() {
     // decks-dir fallback, so a loose deck's augmentations went missing at
     // review time).
     let decks = tempfile::tempdir().unwrap();
-    let deck = write(decks.path(), "quiz.md", "## Q1 <!-- id: q1 -->\nA1\n");
+    let deck = write(
+        decks.path(),
+        "quiz.md",
+        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+    );
     let cli = fake_claude(decks.path(), r#"{"0": "a fun fact"}"#);
 
     let cfg = decks.path().join("config.toml");
@@ -2125,7 +2138,11 @@ fn augment_without_a_store_flag_caches_beside_the_decks_dir_root_store() {
 #[test]
 fn augment_questions_caches_a_reworded_variant() {
     let dir = TempDir::new().unwrap();
-    let deck = write(dir.path(), "quiz.md", "## Q1 <!-- id: q1 -->\nA1\n");
+    let deck = write(
+        dir.path(),
+        "quiz.md",
+        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+    );
     let cli = fake_claude(dir.path(), r#"{"0": ["Rephrased Q1?"]}"#);
     let config = write(
         dir.path(),
@@ -2155,7 +2172,7 @@ fn augment_questions_on_a_cloze_only_deck_errors() {
     let deck = write(
         dir.path(),
         "c.md",
-        "## Complete <!-- id: c1 -->\nThe capital of France is \\blank{Paris}.\n",
+        "---\nalix-id: \"cloze\"\n---\n## Complete <!-- id: c1 -->\nThe capital of France is \\blank{Paris}.\n",
     );
     let config = write(
         dir.path(),
@@ -2185,7 +2202,11 @@ fn augment_questions_on_a_cloze_only_deck_errors() {
 #[test]
 fn augment_keypoints_caches_decomposed_claims() {
     let dir = TempDir::new().unwrap();
-    let deck = write(dir.path(), "quiz.md", "## Q1 <!-- id: q1 -->\nA1\n");
+    let deck = write(
+        dir.path(),
+        "quiz.md",
+        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+    );
     let cli = fake_claude(dir.path(), r#"{"0": ["point one", "point two"]}"#);
     let config = write(
         dir.path(),
@@ -2216,7 +2237,7 @@ fn augment_order_prints_and_caches_the_walk() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n",
+        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n",
     );
     let cli = fake_claude(
         dir.path(),
@@ -2276,6 +2297,77 @@ fn augment_on_an_empty_deck_errors_without_calling_the_backend() {
 }
 
 // ── `alix deck import` ───────────────────────────────────────────────────────
+
+#[test]
+fn deck_init_stamps_an_intended_markdown_deck() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "notes.md", "## Question\nAnswer\n");
+
+    let out = alix(&["deck", "init", &deck]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Initialized"),
+        "stdout: {}",
+        stdout(&out)
+    );
+    let stamped = std::fs::read_to_string(&deck).unwrap();
+    assert!(stamped.starts_with("---\nalix-id: \""), "{stamped}");
+    assert_eq!(1, stamped.matches("<!-- id: ").count(), "{stamped}");
+}
+
+#[test]
+fn deck_init_refuses_plain_prose_without_changing_it() {
+    let dir = TempDir::new().unwrap();
+    let original = "# Notes\n\nordinary prose\n";
+    let path = write(dir.path(), "notes.md", original);
+
+    let out = alix(&["deck", "init", &path]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is not a deck"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert_eq!(original, std::fs::read_to_string(path).unwrap());
+}
+
+#[test]
+fn deck_init_refuses_a_generic_frontmatter_id_without_changing_it() {
+    let dir = TempDir::new().unwrap();
+    let original = "---\nid: \"article\"\n---\n## Question\nAnswer\n";
+    let path = write(dir.path(), "notes.md", original);
+
+    let out = alix(&["deck", "init", &path]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("rename it to `alix-id:`"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert_eq!(original, std::fs::read_to_string(path).unwrap());
+}
+
+#[test]
+fn doctor_recommends_initializing_deck_like_markdown() {
+    let dir = TempDir::new().unwrap();
+    let path = write(
+        dir.path(),
+        "notes.md",
+        "# Notes\n\n## Design\nordinary prose\n",
+    );
+
+    let out = alix(&["doctor", &path]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("deck init"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
 
 #[test]
 fn deck_import_writes_a_deck_from_tsv() {
@@ -2380,9 +2472,13 @@ fn workspace_init_on_an_existing_workspace_errors() {
     let ws = dir.path().join("fresh");
     let first = alix(&["workspace", "init", ws.to_str().unwrap()]);
     assert!(first.status.success(), "stderr: {}", stderr(&first));
-    // `is_workspace` requires a manifest AND at least one deck — a bare `init`
-    // alone isn't "already a workspace" yet.
-    write(&ws, "a.md", "## q\na\n");
+    let deck = write(&ws, "a.md", "## q\na\n");
+    let initialized = alix(&["deck", "init", &deck]);
+    assert!(
+        initialized.status.success(),
+        "stderr: {}",
+        stderr(&initialized)
+    );
     let second = alix(&["workspace", "init", ws.to_str().unwrap()]);
     assert!(!second.status.success());
     assert!(

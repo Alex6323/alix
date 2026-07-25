@@ -47,7 +47,16 @@ FSRS, which predicts when you're about to forget each card.
 ```
 
 Save it as `srs.md` in your decks directory (`~/decks` by default). A line
-starting with `>` is a **note**, shown after you answer.
+starting with `>` is a **note**, shown after you answer. Initialize a file you
+wrote by hand once:
+
+```sh
+alix deck init ~/decks/srs.md
+```
+
+Initialization assigns the stable deck and card IDs that preserve review
+history. It also tells alix that this Markdown file is a deck; other `.md`
+documents in the same folder remain ordinary files.
 
 ## Review it
 

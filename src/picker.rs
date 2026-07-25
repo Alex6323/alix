@@ -210,11 +210,25 @@ pub(crate) fn deck_label(path: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn write_initialized(path: &Path, text: &str) {
+        let id = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("deck")
+            .replace('-', "");
+        let text = if let Some(rest) = text.strip_prefix("---\n") {
+            format!("---\nalix-id: \"{id}\"\n{rest}")
+        } else {
+            format!("---\nalix-id: \"{id}\"\n---\n{text}")
+        };
+        std::fs::write(path, text).unwrap();
+    }
+
     #[test]
     fn build_candidates_orders_recent_first_then_alpha() {
         let dir = tempfile::tempdir().unwrap();
         for n in ["zeta.md", "alpha.md", "mid.md"] {
-            std::fs::write(dir.path().join(n), "## f\nb\n").unwrap();
+            write_initialized(&dir.path().join(n), "## f\nb\n");
         }
         let recent_path = dir.path().join("recent.json");
         let mut recent = RecentDecks::load(&recent_path);
@@ -231,7 +245,7 @@ mod tests {
     fn a_workspace_root_lists_as_that_single_workspace() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "title = \"T\"\n").unwrap();
-        std::fs::write(dir.path().join("m.md"), "## f\nb\n").unwrap();
+        write_initialized(&dir.path().join("m.md"), "## f\nb\n");
         let recent = RecentDecks::load(dir.path().join("recent.json"));
         let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
         assert_eq!(1, entries.len());
@@ -243,7 +257,7 @@ mod tests {
     fn catalog_mirrors_candidate_order_and_paths() {
         let dir = tempfile::tempdir().unwrap();
         for n in ["zeta.md", "alpha.md"] {
-            std::fs::write(dir.path().join(n), "## f\nb\n").unwrap();
+            write_initialized(&dir.path().join(n), "## f\nb\n");
         }
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         recent.record(&[dir.path().join("zeta.md")], 1000);
@@ -303,8 +317,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("english");
         std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
-        std::fs::write(ws.join("b.md"), "## c\nd\n").unwrap();
+        write_initialized(&ws.join("a.md"), "## a\nb\n");
+        write_initialized(&ws.join("b.md"), "## c\nd\n");
         std::fs::write(ws.join(workspace::MANIFEST), "title = \"English\"\n").unwrap();
         let recent = RecentDecks::load(dir.path().join("recent.json"));
 
@@ -322,7 +336,7 @@ mod tests {
     #[test]
     fn build_candidates_skips_missing_recent_files() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.md"), "## f\nb\n").unwrap();
+        write_initialized(&dir.path().join("real.md"), "## f\nb\n");
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         recent.record(&[dir.path().join("deleted.md")], 1000);
 
@@ -334,7 +348,7 @@ mod tests {
     #[test]
     fn a_dot_prefixed_folder_is_invisible_to_the_scan() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.md"), "## f\nb\n").unwrap();
+        write_initialized(&dir.path().join("real.md"), "## f\nb\n");
         let leftover = dir.path().join(".leftover.building");
         std::fs::create_dir(&leftover).unwrap();
         std::fs::write(leftover.join("x.md"), "## q\na\n").unwrap();
@@ -389,7 +403,7 @@ mod tests {
     #[test]
     fn readme_and_license_are_not_decks() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        write_initialized(&dir.path().join("real.md"), "## q\na\n");
         std::fs::write(dir.path().join("README.md"), "about\n").unwrap();
         std::fs::write(dir.path().join("LICENSE.md"), "MIT\n").unwrap();
         let names: Vec<String> = dir_candidates(dir.path(), &mut DeckCache::default())
@@ -402,10 +416,10 @@ mod tests {
     #[test]
     fn a_prose_md_file_never_lists_as_a_deck() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        write_initialized(&dir.path().join("real.md"), "## q\na\n");
         std::fs::write(
             dir.path().join("notes.md"),
-            "# My notes\n\njust prose, no cards\n",
+            "# My notes\n\n## Design\nordinary prose, not a deck\n",
         )
         .unwrap();
         let names: Vec<String> = dir_candidates(dir.path(), &mut DeckCache::default())
@@ -416,9 +430,9 @@ mod tests {
     }
 
     #[test]
-    fn a_header_only_stub_still_lists() {
+    fn an_initialized_header_only_stub_still_lists() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("stub.md"), "---\ntrace: a walk\n---\n").unwrap();
+        write_initialized(&dir.path().join("stub.md"), "---\ntrace: a walk\n---\n");
         let names: Vec<String> = dir_candidates(dir.path(), &mut DeckCache::default())
             .into_iter()
             .map(|c| c.name)

@@ -98,6 +98,9 @@ follows the source:
 
 The rest of the AI-and-deck surface:
 
+- `alix deck init <file>`: explicitly initialize a hand-authored Markdown deck
+  with stable deck and card IDs. Uninitialized `.md` files are ignored by
+  discovery and never stamped merely because they contain `##` headings.
 - `alix deck augment <deck> --target <...>`: precompute AI augmentations
   (choices, notes, questions, keypoints, format, order).
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
@@ -147,7 +150,8 @@ notes it.
   (naming which copy keeps the earned progress), store keys matching no live
   card or deck (orphans, clear them with `alix reset --orphans`), a
   non-canonical token, a frontmatter that can't be stamped, and cards still
-  awaiting a token. `--backends` additionally
+  awaiting a token. It also names deck-like Markdown ignored until explicitly
+  initialized. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few

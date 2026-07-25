@@ -16,6 +16,15 @@ use crate::{
     trace::Delta,
 };
 
+fn write_initialized(path: &Path, text: &str) {
+    let id = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("deck")
+        .replace('-', "");
+    std::fs::write(path, format!("---\nalix-id: \"{id}\"\n---\n{text}")).unwrap();
+}
+
 #[test]
 fn unconfigured_token_leaves_everything_open() {
     assert!(is_authorized("/api/decks", None, None, None));
@@ -209,7 +218,7 @@ fn app_page_dispatches_the_kids_page_for_kids_and_review_for_adult() {
 #[test]
 fn resolve_row_resolves_a_unique_bare_deck_name() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("solo.md"), "## f\nb\n").unwrap();
+    write_initialized(&dir.path().join("solo.md"), "## f\nb\n");
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
     assert_eq!(
@@ -239,8 +248,8 @@ fn resolve_row_resolves_a_workspace_row_to_many_with_every_member_file() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
-    std::fs::write(ws.join("b.md"), "## c\nd\n").unwrap();
+    write_initialized(&ws.join("a.md"), "## a\nb\n");
+    write_initialized(&ws.join("b.md"), "## c\nd\n");
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
@@ -271,9 +280,9 @@ fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
 #[test]
 fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.md"), "## f\nb\n").unwrap();
+    write_initialized(&dir.path().join("a.md"), "## f\nb\n");
     let elsewhere = tempfile::tempdir().unwrap();
-    std::fs::write(elsewhere.path().join("a.md"), "## g\nh\n").unwrap();
+    write_initialized(&elsewhere.path().join("a.md"), "## g\nh\n");
     let mut recent = RecentDecks::load(dir.path().join("recent.json"));
     recent.record(&[elsewhere.path().join("a.md")], 1000);
 
@@ -288,13 +297,13 @@ fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_nam
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
+    write_initialized(&ws.join("a.md"), "## a\nb\n");
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
 
     let other_ws = tempfile::tempdir().unwrap();
     let other_english = other_ws.path().join("english");
     std::fs::create_dir(&other_english).unwrap();
-    std::fs::write(other_english.join("z.md"), "## z\ny\n").unwrap();
+    write_initialized(&other_english.join("z.md"), "## z\ny\n");
     std::fs::write(
         other_english.join(crate::workspace::MANIFEST),
         "title = \"Other English\"\n",
@@ -326,13 +335,13 @@ fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambigu
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
+    write_initialized(&ws.join("a.md"), "## a\nb\n");
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
 
     let other_ws = tempfile::tempdir().unwrap();
     let other_english = other_ws.path().join("english");
     std::fs::create_dir(&other_english).unwrap();
-    std::fs::write(other_english.join("a.md"), "## z\ny\n").unwrap();
+    write_initialized(&other_english.join("a.md"), "## z\ny\n");
     std::fs::write(
         other_english.join(crate::workspace::MANIFEST),
         "title = \"Other English\"\n",
@@ -364,7 +373,7 @@ fn resolve_row_reuses_a_shared_cache_instead_of_reparsing_on_a_second_call() {
     // resolving from the shared cache must keep the pre-rewrite answer.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("solo.md");
-    std::fs::write(&path, "## f <!-- id: s1 -->\nb\n").unwrap();
+    write_initialized(&path, "## f <!-- id: s1 -->\nb\n");
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let mut cache = DeckCache::default();
 
@@ -505,7 +514,7 @@ fn resolve_dest_falls_back_to_decks_dir_and_rejects_unknown_names() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
+    write_initialized(&ws.join("a.md"), "## a\nb\n");
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
     assert_eq!(
@@ -552,11 +561,11 @@ fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
+    write_initialized(&ws.join("a.md"), "## a\nb\n");
     let elsewhere = tempfile::tempdir().unwrap();
     let other_english = elsewhere.path().join("english");
     std::fs::create_dir(&other_english).unwrap();
-    std::fs::write(other_english.join("z.md"), "## z\ny\n").unwrap();
+    write_initialized(&other_english.join("z.md"), "## z\ny\n");
     let mut recent = RecentDecks::load(dir.path().join("recent.json"));
     recent.record(&[other_english], 1000);
 
@@ -577,8 +586,8 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     let ws = dir.path().join("animals");
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    std::fs::write(ws.join("one.md"), "## q1 <!-- id: qa -->\na1\n").unwrap();
-    std::fs::write(ws.join("two.md"), "## q2 <!-- id: qb -->\na2\n").unwrap();
+    write_initialized(&ws.join("one.md"), "## q1 <!-- id: qa -->\na1\n");
+    write_initialized(&ws.join("two.md"), "## q2 <!-- id: qb -->\na2\n");
 
     let mut ws_store = Store::open(crate::workspace::store_path(&ws)).unwrap();
     let now = now_ms();
@@ -634,7 +643,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("letters");
     std::fs::create_dir(&folder).unwrap();
-    std::fs::write(folder.join("a.md"), "## q <!-- id: qa -->\na\n").unwrap();
+    write_initialized(&folder.join("a.md"), "## q <!-- id: qa -->\na\n");
 
     let mut instance_store = Store::open(dir.path().join("instance.json")).unwrap();
     let deck = Deck::load(folder.join("a.md")).unwrap();
@@ -682,7 +691,10 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
 fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     let dir = tempfile::tempdir().unwrap();
     // An unclosed cloze hole fails to parse: `Deck::load` errors.
-    std::fs::write(dir.path().join("broken.md"), "## front\nbad \\blank{oops\n").unwrap();
+    write_initialized(
+        &dir.path().join("broken.md"),
+        "## front\nbad \\blank{oops\n",
+    );
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let entry = picker::catalog(dir.path(), &recent, &mut DeckCache::default())
         .into_iter()

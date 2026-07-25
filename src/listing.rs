@@ -601,6 +601,30 @@ mod tests {
     const MUCH_LATER: u64 = T0 + 30 * 86_400_000;
 
     fn write(path: &Path, text: &str) {
+        let text = if path.extension().is_some_and(|extension| extension == "md")
+            && !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(workspace::is_conventional_non_deck)
+            && crate::parser::is_deck_content(text)
+            && crate::parser::deck_identity(text).ok().flatten().is_none()
+        {
+            let id: String = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("deck")
+                .chars()
+                .filter(|ch| ch.is_ascii_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect();
+            if let Some(rest) = text.strip_prefix("---\n") {
+                format!("---\nalix-id: \"{id}\"\n{rest}")
+            } else {
+                format!("---\nalix-id: \"{id}\"\n---\n{text}")
+            }
+        } else {
+            text.to_string()
+        };
         std::fs::write(path, text).unwrap();
     }
 
@@ -1091,13 +1115,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unstamped_deck_is_reviewable_so_a_hand_authored_deck_can_be_started() {
+    fn an_initialized_deck_with_unstamped_cards_is_reviewable() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.md");
-        // No `<!-- id: -->` lines: a hand-authored deck that has never been
-        // opened (stamping happens at review-open). Its cards are brand new, so
-        // the deck must read drillable; opening it is what stamps it.
-        std::fs::write(&deck_path, "## q1\na1\n## q2\na2\n").unwrap();
+        std::fs::write(
+            &deck_path,
+            "---\nalix-id: \"rust\"\n---\n## q1\na1\n## q2\na2\n",
+        )
+        .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         assert!(
             deck.cards.iter().all(|c| c.id().is_none()),
@@ -1115,7 +1140,7 @@ mod tests {
         );
         assert!(
             status.reviewable,
-            "a fresh unstamped deck must be drillable"
+            "new cards in an initialized deck must be drillable"
         );
     }
 
@@ -1460,13 +1485,13 @@ mod tests {
         assert!(!status.badge_dotted);
     }
     #[test]
-    fn a_listing_scan_never_writes() {
+    fn a_listing_scan_ignores_deck_like_prose_without_writing() {
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("fresh.md");
-        let body = "## q\na\n";
-        std::fs::write(&deck, body).unwrap();
+        let notes = dir.path().join("notes.md");
+        let body = "# Notes\n\n## Design\nordinary prose\n";
+        std::fs::write(&notes, body).unwrap();
         let summaries = list_root(dir.path(), &ReviewConfig::default(), T0);
-        assert_eq!(1, summaries.len());
-        assert_eq!(body, std::fs::read_to_string(&deck).unwrap());
+        assert!(summaries.is_empty());
+        assert_eq!(body, std::fs::read_to_string(&notes).unwrap());
     }
 }

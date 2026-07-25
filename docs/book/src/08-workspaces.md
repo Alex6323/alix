@@ -7,9 +7,10 @@ own progress.
 
 ## Making a workspace
 
-Any folder of `.md` decks becomes a workspace the moment you drop a **`alix.toml`**
-in it, a scoped version of the global config file. It sets a title and a
-`[defaults]` table of directives that every deck in the folder inherits:
+Any folder of initialized `.md` decks becomes a workspace the moment you drop
+an **`alix.toml`** in it, a scoped version of the global config file. It sets a
+title and a `[defaults]` table of directives that every deck in the folder
+inherits:
 
 ```toml
 # ~/decks/spanish/alix.toml
@@ -28,6 +29,12 @@ explained inline, so they document themselves. Grow the workspace with
 `alix deck import … --workspace <dir>`, also available from the web UI's ☰
 menu's **Add deck…** sheet. Dependencies (`requires:`) are still edited by
 hand in the deck files.
+
+Run `alix deck init <file>` once for each deck you author by hand. Markdown
+without a valid opening-frontmatter `alix-id` is ignored by workspace
+discovery, so README-style prose and notes can live beside decks without
+becoming picker entries or being stamped. A generic frontmatter `id` is
+ordinary document metadata and does not initialize a deck.
 
 Now open the cluster and drill its members one at a time:
 

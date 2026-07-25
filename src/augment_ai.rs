@@ -889,7 +889,7 @@ mod tests {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
-        let deck_src = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Capital of France? <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\nParis\n";
+        let deck_src = "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Capital of France? <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\nParis\n";
         std::fs::write(&deck_path, deck_src).unwrap();
         let before = std::fs::read(&deck_path).unwrap();
 

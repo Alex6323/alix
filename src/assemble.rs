@@ -250,12 +250,17 @@ pub fn selectable(path: &Path) -> bool {
     !workspace::has_decks(path)
 }
 
-pub fn stamp_for_session(path: &Path) {
-    if let Err(e) = stamp::stamp_deck(path) {
-        eprintln!(
-            "warning: cannot stamp {}: {e}; its unstamped cards are excluded from this session",
-            path.display()
-        );
+pub fn stamp_for_session(path: &Path) -> Result<()> {
+    match stamp::stamp_initialized_deck(path) {
+        Ok(_) => Ok(()),
+        Err(e @ stamp::StampError::Uninitialized { .. }) => Err(e.into()),
+        Err(e) => {
+            eprintln!(
+                "warning: cannot stamp {}: {e}; its unstamped cards are excluded from this session",
+                path.display()
+            );
+            Ok(())
+        }
     }
 }
 
@@ -297,7 +302,7 @@ fn realign_and_record(store: &mut Store, augment: &mut AugmentCache, cards: &[Ca
 }
 
 pub fn stamp_and_load_deck(path: &Path) -> Result<Deck> {
-    stamp_for_session(path);
+    stamp_for_session(path)?;
     let mut deck = Deck::load(path)?;
     let cards = std::mem::take(&mut deck.cards);
     deck.cards = exclude_unstamped(cards, &deck.subject);
@@ -337,7 +342,7 @@ pub fn select(
     if let [path] = paths.as_slice()
         && path.is_file()
     {
-        stamp_for_session(path);
+        stamp_for_session(path)?;
         resolve_duplicates_at_open(path);
     }
 
@@ -591,14 +596,26 @@ mod tests {
     use super::*;
     use crate::{answer::Mode, scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS, store::VirtualKind};
 
+    fn write_initialized(path: &Path, text: &str) {
+        let id: String = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("deck")
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        std::fs::write(path, format!("---\nalix-id: \"{id}\"\n---\n{text}")).unwrap();
+    }
+
     #[test]
     fn selectable_is_false_only_for_a_folder_that_contains_decks() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("d.md");
-        std::fs::write(&file, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&file, "## q <!-- id: q1 -->\na\n");
         let ws = dir.path().join("box");
         std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("m.md"), "## q <!-- id: qm -->\na\n").unwrap();
+        write_initialized(&ws.join("m.md"), "## q <!-- id: qm -->\na\n");
         let empty = dir.path().join("empty");
         std::fs::create_dir(&empty).unwrap();
 
@@ -608,22 +625,19 @@ mod tests {
     }
 
     #[test]
-    fn augment_open_stamps_an_unstamped_deck() {
+    fn augment_open_refuses_an_uninitialized_deck_without_writing() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(&path, "## q1\na1\n## q2\na2\n").unwrap();
+        let original = "## q1\na1\n## q2\na2\n";
+        std::fs::write(&path, original).unwrap();
 
-        let cards = stamp_and_load_cards(std::slice::from_ref(&path)).unwrap();
+        let error = stamp_and_load_cards(std::slice::from_ref(&path)).unwrap_err();
 
-        assert_eq!(2, cards.len(), "both cards survive with real ids");
         assert!(
-            cards.iter().all(|c| c.id().is_some()),
-            "every returned card carries a minted token"
+            error.to_string().contains("alix deck init"),
+            "actionable error: {error:#}"
         );
-
-        let stamped = std::fs::read_to_string(&path).unwrap();
-        assert!(stamped.contains("id: \""), "{stamped:?}");
-        assert_eq!(2, stamped.matches("<!-- id: ").count(), "{stamped:?}");
+        assert_eq!(original, std::fs::read_to_string(&path).unwrap());
     }
 
     #[test]
@@ -633,9 +647,9 @@ mod tests {
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
         let member = ws.join("a.md");
-        std::fs::write(&member, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&member, "## q <!-- id: q1 -->\na\n");
         let loose = dir.path().join("loose.md");
-        std::fs::write(&loose, "## q <!-- id: q2 -->\na\n").unwrap();
+        write_initialized(&loose, "## q <!-- id: q2 -->\na\n");
         let instance = dir.path().join("instance-progress.json");
 
         let p = store_path_for(std::slice::from_ref(&member), None).expect("workspace store");
@@ -655,15 +669,15 @@ mod tests {
             let ws = dir.path().join(name);
             std::fs::create_dir(&ws).unwrap();
             std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
-            std::fs::write(ws.join("a.md"), "## a <!-- id: qa -->\n1\n").unwrap();
-            std::fs::write(ws.join("b.md"), "## b <!-- id: qb -->\n1\n").unwrap();
+            write_initialized(&ws.join("a.md"), "## a <!-- id: qa -->\n1\n");
+            write_initialized(&ws.join("b.md"), "## b <!-- id: qb -->\n1\n");
             ws
         };
         let ws = mk_ws("ws");
         let ws2 = mk_ws("ws2");
         let ws_store = ws.join("progress.json");
         let loose = dir.path().join("loose.md");
-        std::fs::write(&loose, "## c <!-- id: qc -->\n1\n").unwrap();
+        write_initialized(&loose, "## c <!-- id: qc -->\n1\n");
 
         assert_eq!(
             Some(ws_store.clone()),
@@ -690,7 +704,7 @@ mod tests {
         );
     }
 
-    const TRACE_DECK: &str = "---\ntrace: how it works\nsource: source.txt\n---\n\
+    const TRACE_DECK: &str = "---\nalix-id: \"trace\"\ntrace: how it works\nsource: source.txt\n---\n\
 ## Predict the first hop <!-- id: qhop1 -->\n\
 it reads the first line\n\
 <!-- at: 1 -->\n\
@@ -717,7 +731,7 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\
+            "---\nalix-id: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\
              the \\blank{alpha} and \\blank{beta}\n## Plain <!-- id: plaincard -->\nanswer\n",
         )
         .unwrap();
@@ -743,7 +757,7 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\blank{alpha} then \\blank{beta}\n",
+            "---\nalix-id: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\blank{alpha} then \\blank{beta}\n",
         )
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
@@ -760,7 +774,7 @@ it reads line two\n\
 
         std::fs::write(
             &path,
-            "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\blank{beta} then \\blank{alpha}\n",
+            "---\nalix-id: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\blank{beta} then \\blank{alpha}\n",
         )
         .unwrap();
         select(
@@ -780,7 +794,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("d.md"),
-            "---\nid: \"deck1\"\n---\n## q <!-- id: qcard -->\na\n",
+            "---\nalix-id: \"deck1\"\n---\n## q <!-- id: qcard -->\na\n",
         )
         .unwrap();
         let store_path = workspace::root_store_path(dir.path());
@@ -805,7 +819,7 @@ it reads line two\n\
         std::fs::write(&trace, TRACE_DECK).unwrap();
         std::fs::write(dir.path().join("source.txt"), "first\nsecond\nthird\n").unwrap();
         let fact = dir.path().join("f.md");
-        std::fs::write(&fact, "## q <!-- id: qf -->\na\n").unwrap();
+        write_initialized(&fact, "## q <!-- id: qf -->\na\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = AssembleConfig {
             trace_auto_grade: false,
@@ -843,7 +857,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("eng");
         std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("a.md"), "## a <!-- id: qa -->\nb\n").unwrap();
+        write_initialized(&ws.join("a.md"), "## a <!-- id: qa -->\nb\n");
         std::fs::write(ws.join("alix.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
 
         let exp = expand_workspaces(&[ws.join("a.md")]).unwrap();
@@ -875,7 +889,7 @@ it reads line two\n\
         let ws = dir.path().join("animals");
         std::fs::create_dir(&ws).unwrap();
         let member = ws.join("m.md");
-        std::fs::write(&member, "## q <!-- id: qm -->\na\n").unwrap();
+        write_initialized(&member, "## q <!-- id: qm -->\na\n");
         // Pin the store explicitly: a bare `None` would fall through to the
         // real global data dir.
         let mut store = store_for(
@@ -900,7 +914,7 @@ it reads line two\n\
     fn select_injects_a_decks_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
+        write_initialized(&path, "## q1 <!-- id: q1 -->\na1\n");
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
@@ -926,9 +940,13 @@ it reads line two\n\
     fn region_focus_excludes_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        // A frontmatter `id:` gives the deck a stable token, which topology
+        // A frontmatter `alix-id:` gives the deck a stable token, which topology
         // matching is bound to (not card overlap).
-        std::fs::write(&path, "---\nid: dtok1\n---\n## q1 <!-- id: q1 -->\na1\n").unwrap();
+        std::fs::write(
+            &path,
+            "---\nalix-id: dtok1\n---\n## q1 <!-- id: q1 -->\na1\n",
+        )
+        .unwrap();
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
@@ -1011,7 +1029,7 @@ it reads line two\n\
     fn select_applies_a_cached_format_to_an_injected_virtual_card() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
+        write_initialized(&path, "## q1 <!-- id: q1 -->\na1\n");
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
@@ -1067,7 +1085,7 @@ it reads line two\n\
 
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("d.md");
-        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
@@ -1092,7 +1110,7 @@ it reads line two\n\
 
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
-        std::fs::write(&deck_path, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&deck_path, "## q <!-- id: q1 -->\na\n");
         let store_path = dir.path().join("p.json");
         let mut store = open_store(Some(store_path.clone())).unwrap();
         let cfg = test_config();
@@ -1123,7 +1141,7 @@ it reads line two\n\
 
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
-        std::fs::write(&deck_path, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&deck_path, "## q <!-- id: q1 -->\na\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
@@ -1138,7 +1156,7 @@ it reads line two\n\
     #[test]
     fn browse_of_a_folder_bails_with_the_workspace_hint() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("a.md"), "## q <!-- id: qa -->\na\n").unwrap();
+        write_initialized(&dir.path().join("a.md"), "## q <!-- id: qa -->\na\n");
         let err = browse(vec![dir.path().to_path_buf()]).unwrap_err();
         assert!(
             err.to_string().contains("browse a deck inside it"),
@@ -1167,7 +1185,7 @@ it reads line two\n\
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
         let path = ws.join("d.md");
-        std::fs::write(&path, "## List the parts <!-- id: qlist -->\nA, B, C\n").unwrap();
+        write_initialized(&path, "## List the parts <!-- id: qlist -->\nA, B, C\n");
 
         let raw = browse(vec![path.clone()]).unwrap();
         let id = raw.cards[0].id().unwrap();
@@ -1214,7 +1232,7 @@ it reads line two\n\
     fn select_returns_the_decks_augment_cache() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
-        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
         let store_path = dir.path().join("p.json");
         let mut store = open_store(Some(store_path.clone())).unwrap();
         let loaded = crate::deck::Deck::load(&deck).unwrap();
@@ -1243,7 +1261,7 @@ it reads line two\n\
     fn a_configured_acquire_cooldown_reaches_the_session() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
-        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
@@ -1270,7 +1288,7 @@ it reads line two\n\
     fn select_serves_by_the_injected_clock() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
-        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
@@ -1309,7 +1327,7 @@ it reads line two\n\
         // The deadline overlay only fires inside a real workspace (manifest present).
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
         let deck = dir.path().join("m.md");
-        std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
+        write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
@@ -1355,10 +1373,10 @@ it reads line two\n\
         );
     }
     #[test]
-    fn review_open_stamps_the_deck_and_serves_it() {
+    fn review_open_stamps_missing_cards_in_an_initialized_deck() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("fresh.md");
-        std::fs::write(&deck, "## q1\na\n\n## q2\nb\n").unwrap();
+        write_initialized(&deck, "## q1\na\n\n## q2\nb\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let Selected::Review(build) = select(
             vec![deck.clone()],
@@ -1383,13 +1401,13 @@ it reads line two\n\
         let keeper = dir.path().join("notes.md");
         std::fs::write(
             &keeper,
-            "---\nid: \"dtoka\"\n---\n## q <!-- id: cshared -->\na\n",
+            "---\nalix-id: \"dtoka\"\n---\n## q <!-- id: cshared -->\na\n",
         )
         .unwrap();
         let loser = dir.path().join("notes copy.md");
         std::fs::write(
             &loser,
-            "---\nid: \"dtokb\"\n---\n## q <!-- id: cshared -->\nb\n",
+            "---\nalix-id: \"dtokb\"\n---\n## q <!-- id: cshared -->\nb\n",
         )
         .unwrap();
 
@@ -1439,7 +1457,7 @@ it reads line two\n\
         let decks = dir.path().join("decks");
         std::fs::create_dir(&decks).unwrap();
         let deck = decks.join("half.md");
-        std::fs::write(&deck, "## a <!-- id: q1 -->\n1\n\n## b\n2\n").unwrap();
+        write_initialized(&deck, "## a <!-- id: q1 -->\n1\n\n## b\n2\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         std::fs::set_permissions(&decks, std::fs::Permissions::from_mode(0o555)).unwrap();
         let result = select(

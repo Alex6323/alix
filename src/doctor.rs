@@ -105,21 +105,20 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             "create it, serve another folder (`alix <dir>`), or set `decks_dir` in the config",
         );
     }
-    let mut deck_files: Vec<PathBuf> = Vec::new();
+    let (mut deck_files, mut uninitialized) =
+        workspace::classified_deck_files(decks_dir).unwrap_or_default();
     let mut dirs = 0usize;
     for entry in std::fs::read_dir(decks_dir).into_iter().flatten().flatten() {
         let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|e| e == "md") {
-            deck_files.push(path);
-        } else if workspace::has_decks(&path) {
-            dirs += 1;
-            for sub in std::fs::read_dir(&path).into_iter().flatten().flatten() {
-                let p = sub.path();
-                if p.is_file() && p.extension().is_some_and(|e| e == "md") {
-                    deck_files.push(p);
-                }
-            }
+        if !path.is_dir() {
+            continue;
         }
+        let (members, candidates) = workspace::classified_deck_files(&path).unwrap_or_default();
+        if !members.is_empty() {
+            dirs += 1;
+        }
+        deck_files.extend(members);
+        uninitialized.extend(candidates);
     }
     let mut broken = Vec::new();
     let mut malformed_math = Vec::new();
@@ -149,7 +148,7 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         dirs,
         decks_dir.display()
     );
-    if broken.is_empty() && malformed_math.is_empty() {
+    if broken.is_empty() && malformed_math.is_empty() && uninitialized.is_empty() {
         Finding::ok("decks", counts)
     } else {
         let named = broken
@@ -167,18 +166,40 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
                 )
             })
             .unwrap_or_default();
+        let uninitialized_detail = if uninitialized.is_empty() {
+            String::new()
+        } else {
+            let names = uninitialized
+                .iter()
+                .take(3)
+                .map(|path| {
+                    path.strip_prefix(decks_dir)
+                        .unwrap_or(path)
+                        .display()
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "; {} deck-like Markdown file(s) ignored until initialized: {names}",
+                uninitialized.len()
+            )
+        };
+        let parse_detail = if broken.is_empty() {
+            String::new()
+        } else {
+            format!("; {} won't parse: {named}", broken.len())
+        };
+        let remedy = if uninitialized.is_empty() {
+            "run `alix doctor <file>` for the exact deck diagnostics"
+        } else {
+            "run `alix deck init <file>` for each intended deck; leave ordinary Markdown unchanged"
+        };
         Finding::bad(
             "decks",
             Status::Warn,
-            if broken.is_empty() {
-                format!("{counts}{math_detail}")
-            } else {
-                format!(
-                    "{counts}; {} won't parse: {named}{math_detail}",
-                    broken.len()
-                )
-            },
-            "run `alix doctor <file>` for the exact deck diagnostics",
+            format!("{counts}{parse_detail}{math_detail}{uninitialized_detail}"),
+            remedy,
         )
     }
 }
@@ -248,8 +269,16 @@ mod tests {
     #[test]
     fn a_broken_deck_warns_and_points_at_deck_check() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("good.md"), "## f\nb\n").unwrap();
-        std::fs::write(dir.path().join("bad.md"), "## front with no answer\n").unwrap();
+        std::fs::write(
+            dir.path().join("good.md"),
+            "---\nalix-id: \"good\"\n---\n## f\nb\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("bad.md"),
+            "---\nalix-id: \"bad\"\n---\n## front with no answer\n",
+        )
+        .unwrap();
         let finding = check_decks(dir.path());
         assert_eq!(Status::Warn, finding.status);
         assert!(finding.detail.contains("bad.md"), "{}", finding.detail);
@@ -261,10 +290,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("good.md"),
-            "## valid $x^2$\n$5 and $10 with unmatched $x\n",
+            "---\nalix-id: \"good\"\n---\n## valid $x^2$\n$5 and $10 with unmatched $x\n",
         )
         .unwrap();
-        std::fs::write(dir.path().join("bad.md"), "## q\n$\\frac{1$\n> $\\sqrt{$\n").unwrap();
+        std::fs::write(
+            dir.path().join("bad.md"),
+            "---\nalix-id: \"bad\"\n---\n## q\n$\\frac{1$\n> $\\sqrt{$\n",
+        )
+        .unwrap();
 
         let finding = check_decks(dir.path());
         assert_eq!(Status::Warn, finding.status);
@@ -273,8 +306,24 @@ mod tests {
             "{}",
             finding.detail
         );
-        assert!(finding.detail.contains("bad.md: card at line 1"));
+        assert!(finding.detail.contains("bad.md: card at line 4"));
         assert!(finding.detail.contains("\\frac{1"));
+    }
+
+    #[test]
+    fn deck_like_markdown_is_reported_as_ignored_without_being_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notes.md");
+        let original = "# Notes\n\n## Design\nordinary prose\n";
+        std::fs::write(&path, original).unwrap();
+
+        let finding = check_decks(dir.path());
+
+        assert_eq!(Status::Warn, finding.status);
+        assert!(finding.detail.contains("ignored until initialized"));
+        assert!(finding.detail.contains("notes.md"));
+        assert!(finding.remedy.as_deref().unwrap().contains("deck init"));
+        assert_eq!(original, std::fs::read_to_string(path).unwrap());
     }
 
     #[test]

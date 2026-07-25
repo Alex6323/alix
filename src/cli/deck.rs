@@ -12,9 +12,19 @@ use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 
 use crate::{
-    AugmentArgs, AugmentTarget, ImportArgs, WorkspaceDeadlineArgs, WorkspaceInitArgs,
+    AugmentArgs, AugmentTarget, DeckInitArgs, ImportArgs, WorkspaceDeadlineArgs, WorkspaceInitArgs,
     common::{deck_out_dir, one_line, store_for, truncate},
 };
+
+pub(crate) fn init_cmd(args: DeckInitArgs) -> Result<()> {
+    let outcome = alix::stamp::stamp_deck(&args.deck)?;
+    println!(
+        "Initialized {} ({} card ids assigned)",
+        args.deck.display(),
+        outcome.minted_cards.len()
+    );
+    Ok(())
+}
 
 /// Foreground: any Claude error surfaces here, not mid-review.
 pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {

@@ -261,7 +261,7 @@ mod tests {
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
         let member = ws.join("a.md");
-        std::fs::write(&member, "## q\na\n").unwrap();
+        std::fs::write(&member, "---\nalix-id: \"a\"\n---\n## q\na\n").unwrap();
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()

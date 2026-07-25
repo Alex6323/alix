@@ -20,12 +20,13 @@ desktop rewrites the same progress file even though the learning histories are
 independent. Generating augmentation for unrelated decks has the same
 unnecessary conflict boundary.
 
-Alix already gives every deck a stable minted identity that survives filename
-changes. The persisted-data boundary can therefore follow the domain object
-that changes independently rather than the mutable path chosen by the learner.
-This is aggregate-per-file persistence, not scale-oriented database sharding:
-the purpose is to isolate ownership, synchronization, corruption, migration,
-and recovery by deck.
+Alix already gives every deck a stable minted identity, stored under
+`alix-id` in the Markdown frontmatter, that survives filename changes. The
+persisted-data boundary can therefore follow the domain object that changes
+independently rather than the mutable path chosen by the learner. This is
+aggregate-per-file persistence, not scale-oriented database sharding: the
+purpose is to isolate ownership, synchronization, corruption, migration, and
+recovery by deck.
 
 ## Decision
 

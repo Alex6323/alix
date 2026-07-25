@@ -114,7 +114,7 @@ enum Command {
     /// and mastered flags) after one confirmation. `--card` narrows to one
     /// card; `--all` wipes the whole store instead of a path.
     Reset(ResetArgs),
-    /// Augment or import decks.
+    /// Initialize, augment, or import decks.
     #[command(subcommand)]
     Deck(DeckAction),
     /// Create and grow workspaces.
@@ -397,6 +397,8 @@ struct GenerateDeckArgs {
 /// The `alix deck` subcommands: create, augment, or validate a deck.
 #[derive(Subcommand)]
 enum DeckAction {
+    /// Initialize a hand-authored Markdown file as an Alix deck.
+    Init(DeckInitArgs),
     /// Augment an existing deck with Claude: multiple-choice distractors, or
     /// trivia notes. Augmentations are deliberate and persisted, so review stays
     /// instant and fully offline.
@@ -405,6 +407,12 @@ enum DeckAction {
     ///
     /// Expects tab-separated `front<TAB>back` lines.
     Import(ImportArgs),
+}
+
+#[derive(Args)]
+struct DeckInitArgs {
+    /// The Markdown file to initialize with stable deck and card IDs.
+    deck: PathBuf,
 }
 
 #[derive(Args)]
@@ -563,6 +571,7 @@ fn main() -> Result<()> {
         Some(Command::Reset(args)) => progress::reset(args),
         Some(Command::Generate(args)) => generate::generate_cmd(args),
         Some(Command::Deck(action)) => match action {
+            DeckAction::Init(args) => deck::init_cmd(args),
             DeckAction::Augment(args) => deck::augment_cmd(args),
             DeckAction::Import(args) => deck::import_cmd(args),
         },

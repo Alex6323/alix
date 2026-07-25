@@ -80,6 +80,14 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
             return;
         }
     };
+    let initialized = deck.deck_token.is_some();
+    if !initialized && alix::parser::is_deck_content(&text) {
+        report.warn(format!(
+            "{}: deck-like Markdown is not initialized; run `alix deck init {}` if this is an intended deck",
+            path.display(),
+            path.display()
+        ));
+    }
 
     let augment = path.parent().map(|dir| {
         alix::augment::AugmentCache::open(alix::augment::augment_path_for(
@@ -123,7 +131,7 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
     if deck.deck_token.is_none() && deck.frontmatter_span.is_some() && deck.frontmatter.unspliceable
     {
         report.warn(format!(
-            "{}: cannot stamp: frontmatter is not a block mapping, so no `id:` can be spliced in",
+            "{}: cannot stamp: frontmatter is not a block mapping, so no `alix-id:` can be spliced in",
             path.display()
         ));
     }
@@ -138,7 +146,7 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
         .collect();
     unstamped.sort_unstable();
     unstamped.dedup();
-    if !unstamped.is_empty() {
+    if initialized && !unstamped.is_empty() {
         report.warn(format!(
             "{}: {} entries are card content without ids; open the deck to assign them",
             path.display(),
@@ -277,15 +285,19 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
 
 fn workspace_findings(dir: &Path) -> Report {
     let mut report = Report::default();
-    let deck_files = alix::workspace::deck_files(dir);
+    let (deck_files, uninitialized) =
+        alix::workspace::classified_deck_files(dir).unwrap_or_default();
     for path in &deck_files {
         deck_findings(path, false, &mut report);
+    }
+    for path in uninitialized {
+        deck_findings(&path, false, &mut report);
     }
 
     let map = alix::dedup::scan_dir(dir);
     for (kept, excluded, token) in &map.excluded_decks {
         report.warn(format!(
-            "duplicate deck token `{token}`: {} is excluded (kept {}); delete the `id:` line in the copy",
+            "duplicate deck token `{token}`: {} is excluded (kept {}); delete the `alix-id:` line in the copy",
             excluded.display(),
             kept.display()
         ));
@@ -355,7 +367,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
     for path in &decks {
         // Deck::load would error on a directory, so a workspace target is
         // handled separately here.
-        if path.is_dir() && alix::workspace::is_workspace(path) {
+        if path.is_dir() && path.join(alix::workspace::MANIFEST).is_file() {
             if let Some(rel) = alix::workspace::manifest_icon(path)
                 && !path.join(&rel).is_file()
             {
@@ -671,22 +683,22 @@ mod tests {
         w(
             dir,
             "dup-deck.md",
-            "---\nid: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
+            "---\nalix-id: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
         );
         w(
             dir,
             "dup-deck copy.md",
-            "---\nid: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
+            "---\nalix-id: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
         );
         w(
             dir,
             "card-dup.md",
-            "---\nid: cda\n---\n## q <!-- id: cshared -->\na\n",
+            "---\nalix-id: cda\n---\n## q <!-- id: cshared -->\na\n",
         );
         w(
             dir,
             "card-dup copy.md",
-            "---\nid: cdb\n---\n## q <!-- id: cshared -->\nb\n",
+            "---\nalix-id: cdb\n---\n## q <!-- id: cshared -->\nb\n",
         );
         w(
             dir,
@@ -708,7 +720,7 @@ mod tests {
             "imgcard.md",
             "## pic <!-- id: img1 -->\nphoto\n![](missing.png)\n",
         );
-        w(dir, "fresh.md", "## q\na\n");
+        w(dir, "fresh.md", "---\nalix-id: \"fresh\"\n---\n## q\na\n");
         w(
             dir,
             "trace-bad.md",

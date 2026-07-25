@@ -57,6 +57,16 @@ store (`src/store.rs`). A writer marker and synchronization-conflict detection
 warn about likely concurrent writers; neither mechanism authenticates a writer
 or merges concurrent changes.
 
+Deck stamping has a separate local write boundary. A valid deck ID under the
+namespaced `alix-id` key in opening YAML frontmatter marks a file as initialized
+and authorizes automatic maintenance of missing card IDs. A generic `id` key
+has no Alix meaning and never grants write authority. `alix deck init <file>` is
+the explicit opt-in that may mint the initial deck ID. Discovery and automatic
+review or augmentation never grant that authority from `##` headings alone, so
+ordinary Markdown remains byte-identical. Generated, imported, received,
+library, and tutorial creation workflows initialize the output they
+deliberately create (`src/parser/mod.rs`, `src/stamp.rs`, `src/workspace.rs`).
+
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
 code still process content supplied to the app.
@@ -131,6 +141,7 @@ safe or accurate.
 | A broad `origin` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `origin` as narrow as practical and inspect inherited workspace defaults. |
 | Syncthing or another tool creates concurrent progress writes | Atomic replacement, writer warnings, and conflict-file detection. | Keep one active writer, resolve conflict copies manually, and back up before recovery. |
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
+| Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `alix-id`; a generic `id` grants no write authority, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
 | Malformed or hostile input exhausts resources | Excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
 | A release or dependency is compromised | CI tests source changes; production toolchains are exact and direct Action references use immutable SHAs. | Hosted runner images, operating-system packages, transitive Action behavior, signed artifacts, checksums, SBOMs, and full provenance are not yet a complete release guarantee. |
@@ -162,6 +173,8 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/serve/tests.rs`: token scope and authorization behavior;
 - `src/serve/respond.rs`: constant-time token comparison and capped reads;
 - `src/deck.rs`: explicit-origin precedence and no source-root inference;
+- `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
+  identity, byte-preserving refusal, and initialized-only discovery;
 - `src/source.rs`: citation and excerpt resolution;
 - `src/share.rs`: outgoing filtering and defensive receive sanitization;
 - `src/store.rs`: atomic replacement, writer markers, and sync conflicts;

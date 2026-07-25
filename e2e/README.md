@@ -98,10 +98,10 @@ where it is rather than fixed:
 - `fixtures/decks/animals/` is a tiny, deterministic workspace ("Animals"),
   shared by both clients:
   - `alix.toml` — makes the folder a workspace.
-  - `wild.md` — a 2-card L1 deck (`## ` fronts with literal `<!-- id: -->`
-    tokens, `> ` notes). Both cards are always genuinely never-seen at the
-    start of a run, so the suite exercises a real first session, acquire path
-    included.
+  - `wild.md`: an initialized 2-card L1 deck (a frontmatter `alix-id`, `## `
+    fronts with literal `<!-- id: -->` tokens, and `> ` notes). Both cards are
+    always genuinely never-seen at the start of a run, so the suite exercises
+    a real first session, acquire path included.
   - `cats.md` — one card with a two-line answer ("Lion" / "Tiger"), in its
     own file so editing it can never disturb `wild.md`. Exists
     solely for the multi-line regression test (`tests/kids-multiline.spec.ts`).
@@ -115,11 +115,10 @@ where it is rather than fixed:
 
     It's committed so the suite needs no AI backend and no network at test
     time — Recognize only renders tap-the-answer buttons when distractors are
-    cached. The cache is keyed by each card's interim id (the hash of its
-    `<!-- id: -->` token), so it stays valid as long as the tokens in
-    `wild.md` don't change; if you change a token, or add/remove a card in
-    that file, regenerate `augment.json` with the command above and commit
-    the new file.
+    cached. The cache is keyed by each card's literal `<!-- id: -->` token, so
+    it stays valid as long as those tokens in `wild.md` don't change; if you
+    change a token, or add/remove a card in that file, regenerate
+    `augment.json` with the command above and commit the new file.
 - `fixtures/kids.toml` / `fixtures/adult.toml` each set `[serve] audience`
   explicitly (`"kids"` / `"adult"`) — one server config per client, both
   pointed at their own copy of the same decks fixture. `--config` is always

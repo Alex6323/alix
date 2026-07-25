@@ -20,6 +20,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking (pre-1.0):** a hand-authored Markdown file must be explicitly
+  initialized with `alix deck init <file>` before it appears in the picker or
+  can be reviewed or augmented. A valid opening-frontmatter `alix-id` now
+  authorizes machine stamping; a generic `id` is ordinary metadata and grants
+  no write authority. Existing decks must rename the old `id` key to `alix-id`
+  without changing its token. Opening an initialized deck still assigns IDs to
+  newly added cards, while ordinary `.md` prose with `##` headings is ignored
+  and never modified.
 - Production CI and release workflows now select exact Rust, Flutter, Java,
   Node, Android NDK, FRB codegen, mdBook, and coverage-tool versions. Every
   directly referenced GitHub Action uses an immutable commit SHA, a blocking
@@ -52,7 +60,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Authored checkbox answers and distractors now retain their inline formatting source for display while duplicate detection and typed grading continue to use delimiter-free content.
 - A formula that is the only inline run on its logical line now renders larger across adult web, kids web, and mobile, while math embedded in prose keeps its previous text-sized scale.
 - Editing a card's content now invalidates its cached AI augmentations (distractors, note, questions, key points, and the reshaped answer). Previously a cached output generated from the old content was served until you cleared or regenerated it.
-- a hand-authored deck that had never been opened (its cards not yet stamped with ids) showed greyed out and refused to launch in the picker; an unstamped card now reads as a new, due card, so a fresh deck is drillable (opening it stamps it) instead of being stuck
 
 ## [0.6.0] - 2026-07-20
 

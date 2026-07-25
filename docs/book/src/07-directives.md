@@ -11,7 +11,8 @@ taking precedence. Each links to the chapter that explains it in full.
 | `##` front | card | Starts a card at column 0; the lines below are the answer. [→ ch 3](03-the-deck-format.md) |
 | `>` line | card | A note, shown after you answer. [→ ch 3](03-the-deck-format.md) |
 | `<!-- -->` | anywhere | A comment with no recognized key: ignored. |
-| `id` | card | The card's identity token: minted and written by alix the first time it sees the card, never hand-authored. [→ ch 3](03-the-deck-format.md) |
+| `alix-id` | deck | The namespaced frontmatter deck ID marks an initialized Alix deck and authorizes maintenance of missing card IDs. A generic frontmatter `id` has no Alix meaning. [→ ch 3](03-the-deck-format.md) |
+| `id` | card | The HTML-comment card ID anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. [→ ch 3](03-the-deck-format.md) |
 | `reveal` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default) or line. |
 | `order` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
