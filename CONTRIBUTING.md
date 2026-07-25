@@ -93,9 +93,10 @@ generated PRs without prior discussion are usually closed unread.
 | `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
 | `make lint` | `cargo clippy --all-targets`. |
 | `make docs-audit` | Live semantic audit of all public text and visual assets; required before a release. |
+| `make toolchain-check` | Verify exact production toolchains, immutable Action references, and the explicit drift-job exceptions. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
-| `make check` | `lint` + `test` — run before you call work done. |
+| `make check` | The normal local gate: lint, tests, media/docs manifests, and toolchain-pin invariants. |
 | `make coverage` | Coverage report (`cargo-llvm-cov`, HTML). |
 | `make calibrate` | Real-Claude grader calibration (costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary. |
@@ -112,6 +113,14 @@ informational `coverage` job. Two scheduled drift detectors run off the PR
 path: the backend CLI flag-drift smoke test and a weekly mobile toolchain
 build (`make frb-check` + an APK build against current stable Flutter).
 
+Production CI and release versions are repository inputs, not ambient machine
+state: Rust comes from `rust-toolchain.toml`, formatting/coverage nightly from
+`.rust-nightly-version`, Flutter from `apps/mobile/.fvmrc`, and Android's NDK
+from `apps/mobile/android/app/build.gradle.kts`. Every external Action is pinned
+to a full commit SHA and Dependabot proposes grouped weekly updates. The
+scheduled drift jobs are the deliberate exception for tool versions; they
+never publish artifacts.
+
 The library crate is feature-gated behind `full` (on by default), which pulls in
 the AI backends and the web server. `make build-core` builds the lean core
 embedded by the mobile client, and CI enforces it with its own `core` job. A
@@ -120,10 +129,12 @@ for belongs in core, not behind `full`.
 
 ### Formatting is nightly-only
 
-`rustfmt.toml` uses nightly-only options, so **format with `make fmt`**
-(`cargo +nightly fmt`). Do **not** run plain `cargo fmt` (stable) — it can't
-apply the config and produces a large bogus diff. The tree has some pre-existing
-drift, so don't reformat unrelated files; keep your diff to what you touched.
+`rustfmt.toml` uses nightly-only options, so **format with `make fmt`**. The
+Makefile selects the date-pinned toolchain in `.rust-nightly-version`; install
+that toolchain with its `rustfmt` component if rustup asks. Do **not** run plain
+`cargo fmt` (stable) — it can't apply the config and produces a large bogus
+diff. The tree has some pre-existing drift, so don't reformat unrelated files;
+keep your diff to what you touched.
 
 ## House rules (the craft gate)
 

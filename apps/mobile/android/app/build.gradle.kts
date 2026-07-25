@@ -19,7 +19,7 @@ val keyProperties = Properties().apply {
 android {
     namespace = "study.alix.mobile"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

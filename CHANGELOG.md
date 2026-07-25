@@ -20,6 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Production CI and release workflows now select exact Rust, Flutter, Java,
+  Node, Android NDK, FRB codegen, mdBook, and coverage-tool versions. Every
+  directly referenced GitHub Action uses an immutable commit SHA, a blocking
+  check prevents movable pins from returning, and scheduled drift jobs remain
+  the explicit non-publishing path for testing current upstream toolchains.
 - **Breaking (pre-1.0):** grounded tutor filesystem access now requires an
   explicit deck or workspace `origin`. A local `source` citation still supplies
   the card's evidence, but alix no longer guesses a wider project root from

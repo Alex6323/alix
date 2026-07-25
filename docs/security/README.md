@@ -133,7 +133,7 @@ safe or accurate.
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
 | Malformed or hostile input exhausts resources | Excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
-| A release or dependency is compromised | CI tests source changes. | Signed artifacts, checksums, SBOMs, and full provenance are not yet a complete release guarantee. |
+| A release or dependency is compromised | CI tests source changes; production toolchains are exact and direct Action references use immutable SHAs. | Hosted runner images, operating-system packages, transitive Action behavior, signed artifacts, checksums, SBOMs, and full provenance are not yet a complete release guarantee. |
 
 ## Known security gaps
 
@@ -150,8 +150,10 @@ safe or accurate.
   backup, rollback, migration, or multi-writer transaction protocol.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
   that a provider CLI honored them.
-- Release signing, checksums, SBOMs, and provenance are not yet complete across
-  every distribution channel.
+- Exact direct toolchain and Action pins now reduce release drift, but runner
+  images and transitive build inputs are not hermetic. Release signing,
+  checksums, SBOMs, and provenance are not yet complete across every
+  distribution channel.
 
 ## Security regression evidence
 

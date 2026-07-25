@@ -110,6 +110,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
 | `make lint` | `cargo clippy --all-targets`. |
 | `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |
+| `make toolchain-check` | Enforce exact production toolchains, full-SHA Action references, and named drift-only exceptions. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
 | `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
@@ -155,7 +156,8 @@ release approval.
 ## Formatting is nightly-only
 
 `rustfmt.toml` uses nightly-only options, so **formatting must go through the
-nightly toolchain** (`make fmt` → `cargo +nightly fmt`). Do **not** run plain
+date-pinned nightly toolchain** (`make fmt`; version in
+`.rust-nightly-version`). Do **not** run plain
 `cargo fmt` (stable): it can't apply the config and reformats by different rules,
 producing a large bogus diff. The tree also has some pre-existing rustfmt drift,
 so don't reformat unrelated files as part of a change — keep your diff to what
@@ -338,6 +340,11 @@ to this codebase. When in doubt, mirror the surrounding code.
   must update its regression evidence and `docs/security/README.md`. Update
   `SECURITY.md` when the public support or reporting contract changes; record an
   ADR when a load-bearing security decision changes.
+- **Keep release inputs pinned and drift probes separate.** Production CI and
+  releases use the exact native version files and full-SHA Action references
+  enforced by `make toolchain-check`. Only named scheduled drift workflows may
+  follow current tool versions, and they never publish artifacts. Review
+  Dependabot Action-pin updates as executable code; never auto-merge them.
 - **Keep the living docs lean — this file, `CHANGELOG.md`, commit/PR text.** Condense each
   rule/change to its shortest form that still carries the information — cut filler, war-stories,
   and rationale-at-length (those go in the spec or memory), never the substance. If it can't be

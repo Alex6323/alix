@@ -6,7 +6,9 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test test-inventory lint lint-js docs-audit docs-audit-manifest-check fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
+RUST_NIGHTLY := $(shell cat .rust-nightly-version)
+
+.PHONY: build build-core test test-inventory lint lint-js docs-audit docs-audit-manifest-check toolchain-check fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -65,13 +67,19 @@ docs-audit-manifest-check:
 	fi; \
 	echo 'docs-audit: every tracked Markdown file is in the semantic audit manifest'
 
+# Deterministic supply-chain guard: production CI and release paths use exact
+# toolchains, every external Action is immutable, and only named drift jobs may
+# follow current stable/nightly versions.
+toolchain-check:
+	@sh scripts/toolchain-check.sh
+
 # Format with the nightly toolchain (NOT stable `cargo fmt`).
 fmt:
-	cargo +nightly fmt
+	cargo +$(RUST_NIGHTLY) fmt
 
 # Verify formatting without writing.
 fmt-check:
-	cargo +nightly fmt --check
+	cargo +$(RUST_NIGHTLY) fmt --check
 
 # Wrap over-long lines in ROADMAP.md (or files passed via ARGS) onto the
 # roadmap's 13-space continuation indent. Wrap-only: lines already within
@@ -88,7 +96,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: lint test site-media-check docs-audit-manifest-check
+check: lint test site-media-check docs-audit-manifest-check toolchain-check
 
 # The Rust CI bundle: nightly formatting, clippy + tests under `-Dwarnings`, the
 # lean core, and coverage with the warnings gate cleared (coverage instruments
@@ -153,14 +161,14 @@ package-check:
 # takes effect under nightly — running this on stable would silently count
 # those lines as missed instead of excluded.
 coverage:
-	cargo +nightly llvm-cov --workspace --html
+	cargo +$(RUST_NIGHTLY) llvm-cov --workspace --html
 	@echo "HTML report -> target/llvm-cov/html/index.html"
 
 # Coverage in lcov format for the Codecov upload (see .github/workflows/ci.yml
 # and codecov.yml). Same nightly toolchain as `coverage` above. Writes
 # lcov.info at the repo root (gitignored).
 coverage-lcov:
-	cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info
+	cargo +$(RUST_NIGHTLY) llvm-cov --workspace --lcov --output-path lcov.info
 
 # Grader calibration (tests/calibrate.rs): the REAL grade prompt vs labeled
 # adversarial answers, to catch a lenient grader. Needs the claude CLI logged in;

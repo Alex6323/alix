@@ -7,8 +7,8 @@
 #
 # Checked (FAIL): codegen binary == pubspec pin == rust crate pin (exact);
 # the two template patches (cargokit ExecOperations, rust_builder
-# compileSdk >= 36); Flutter's pinned default NDK is installed (that is the
-# NDK cargokit builds the Rust with, via Gradle's android.ndkVersion).
+# compileSdk >= 36); the app's exact NDK is installed (that is the NDK cargokit
+# builds the Rust with, via Gradle's android.ndkVersion).
 # Checked (warn): ANDROID_NDK_HOME pointing at a different NDK than the
 # build uses. That only affects manual `cargo ndk` runs, not the app build.
 set -eu
@@ -69,33 +69,30 @@ else
     bad "rust_builder compileSdkVersion is '$csdk' (must be >= 36)"
 fi
 
-# 7. Flutter's pinned default NDK is installed. The app inherits it
-# (ndkVersion = flutter.ndkVersion) and cargokit builds the Rust with it,
-# so a missing one breaks the first build after a Flutter upgrade.
-if command -v flutter >/dev/null 2>&1; then
-    flutter_root=$(dirname "$(dirname "$(command -v flutter)")")
-    ext="$flutter_root/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
-    flutter_ndk=$(sed -n 's/.*val ndkVersion: String = "\([0-9][0-9.]*\)".*/\1/p' "$ext" 2>/dev/null)
-    if [ -z "$flutter_ndk" ]; then
-        bad "could not read Flutter's pinned ndkVersion from $ext (Flutter layout changed? update this check)"
-    elif [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME/ndk/$flutter_ndk" ]; then
-        ok "Flutter's pinned NDK $flutter_ndk is installed"
+# 7. The app's exact NDK is installed. Scheduled mobile drift temporarily
+# rewrites this pin in its checkout to the current Flutter NDK before calling
+# this check; normal CI and release builds never derive it from a moving SDK.
+gradle="$app/android/app/build.gradle.kts"
+app_ndk=$(sed -n 's/^[[:space:]]*ndkVersion = "\([0-9][0-9.]*\)"$/\1/p' "$gradle")
+if [ -z "$app_ndk" ]; then
+    bad "could not read an exact ndkVersion from $gradle"
+else
+    if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME/ndk/$app_ndk" ]; then
+        ok "app-pinned NDK $app_ndk is installed"
     else
-        bad "Flutter pins NDK $flutter_ndk but it is not under \$ANDROID_HOME/ndk (sdkmanager \"ndk;$flutter_ndk\")"
+        bad "app pins NDK $app_ndk but it is not under \$ANDROID_HOME/ndk (sdkmanager \"ndk;$app_ndk\")"
     fi
     # ANDROID_NDK_HOME only steers manual `cargo ndk` runs; a mismatch does
     # not break the app build but makes a manual repro use a different NDK.
-    if [ -n "${ANDROID_NDK_HOME:-}" ] && [ -n "$flutter_ndk" ]; then
-        if [ "$(basename "$ANDROID_NDK_HOME")" != "$flutter_ndk" ]; then
-            warn "ANDROID_NDK_HOME is $(basename "$ANDROID_NDK_HOME"), the build uses $flutter_ndk (manual cargo-ndk runs differ)"
+    if [ -n "${ANDROID_NDK_HOME:-}" ]; then
+        if [ "$(basename "$ANDROID_NDK_HOME")" != "$app_ndk" ]; then
+            warn "ANDROID_NDK_HOME is $(basename "$ANDROID_NDK_HOME"), the build uses $app_ndk (manual cargo-ndk runs differ)"
         else
             ok "ANDROID_NDK_HOME matches the build NDK"
         fi
     else
         warn "ANDROID_NDK_HOME unset in this shell; not compared (only manual cargo-ndk runs read it)"
     fi
-else
-    bad "flutter is not on PATH (needed to read its pinned ndkVersion)"
 fi
 
 if [ "$fail" -ne 0 ]; then

@@ -4,6 +4,25 @@ alix is solo-built and pre-1.0. Releases are **driven by what's ready, not by a
 calendar** — there is no fixed release train. The pipeline is automated, so
 cutting a release is cheap; a version communicates *what changed*, not *when*.
 
+## Pinned build environment
+
+Production CI and releases use the exact Rust version in
+`rust-toolchain.toml`, nightly in `.rust-nightly-version`, Flutter version in
+`apps/mobile/.fvmrc`, and Android NDK in
+`apps/mobile/android/app/build.gradle.kts`. Workflow inputs also pin Java,
+Node, FRB codegen, mdBook, and coverage tooling. Every external GitHub Action
+is referenced by a full commit SHA.
+
+`make toolchain-check` enforces those constraints and runs inside `make check`.
+Dependabot proposes grouped Action-SHA updates weekly; review them as executable
+dependency changes and do not auto-merge them.
+
+The scheduled backend and mobile drift workflows intentionally follow current
+tool versions, but their Action code remains immutable and they never publish
+release artifacts. When a drift job reveals a compatible upgrade, update all
+coupled pins and generated files in one reviewed change, then run the complete
+desktop and mobile gates before releasing.
+
 ## When to release
 
 - **Per milestone (default).** When a coherent batch of work has landed on `main`
