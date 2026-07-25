@@ -21,6 +21,10 @@ the model CLI on a background thread and the page polls for the reply, so
 the single-threaded server never blocks and the session stays responsive
 while it works.
 
+In the web panel, `Enter` inserts a newline and `Shift-Enter` sends. Closing a
+tutor that contains a conversation asks for an explicit click on **Leave
+anyway**; `Escape` chooses **Stay** so it cannot also abandon the card.
+
 One conversation spans the **whole review run**. For Claude, `alix` uses
 `--session-id` for the first question and `--resume` for each follow-up, so the
 model remembers earlier cards and questions efficiently. Other backends re-inline

@@ -76,10 +76,11 @@ where it is rather than fixed:
   which sidesteps the wait rather than taking it) or committing pre-warmed
   progress state, which the fixture contract forbids. The `test.fixme`
   reports the gap on every run instead of it rotting in this paragraph.
-- **Ask Alix** (the tutor overlay, both clients) is never opened. It calls a
-  real AI backend; exercising it here would make the suite slow,
-  non-deterministic, and dependent on whatever backend happens to be
-  configured on the machine running it.
+- **Ask Alix's real model call** is never made. Adult tutor interaction is
+  exercised with a deterministic intercepted `AskDto`, including its
+  unsaved-conversation guard and return to the originating card; the kids
+  tutor and an actual AI round trip remain uncovered because they would make
+  the suite slow, non-deterministic, and backend-dependent.
 - **Done/restart.** Neither client's "review again" control is clicked. The
   adult grading test does reach the summary screen (`.summary`) as a
   side effect of proving a grade ends the session, but stops there.

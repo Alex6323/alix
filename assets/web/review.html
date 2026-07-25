@@ -925,6 +925,7 @@ let duePoll = null;   // setInterval handle while the summary waits for a coolin
 let browsing = null;  // {cards, label, i} while the read-only browse overlay is open
 let walkData = null;  // the WalkDto while an in-page trace walk is active (null otherwise)
 let walkConfirmingLeave = false; // showing the "leave the walk?" confirmation
+let askNeedsStateRefresh = false; // a tutor note changed the current card/checkpoint
 let KEYS = {};        // configured review key bindings, from /api/keys
 let PK = {};          // configured deck-picker nav keys, from /api/picker-keys
 let BK = { next: [{ k: "l", ctrl: false }], prev: [{ k: "h", ctrl: false }] }; // browse pager keys, from /api/browse-keys
@@ -1328,6 +1329,7 @@ function isAnswered() {
 function openAsk() {
   asking = true;
   askConfirmingClose = false;
+  askNeedsStateRefresh = false;
   render(); // builds the panel once (entrance animation runs once)
   const ep = walkData ? "/api/walk/ask" : "/api/ask";
   api(ep).then(d => { askData = d; if (asking) syncAsk(); }); // pick up any prior transcript
@@ -1344,16 +1346,16 @@ function closeAsk() {
   askConfirmingClose = false;
   asking = false;
   stopAskPoll();
-  if (walkData) {
+  if (walkData && askNeedsStateRefresh) {
     // Re-pull the walk state (a saved note may have landed on a checkpoint).
     api("/api/walk").then(d => { walkData = d; render(); }).catch(render);
-  } else {
+  } else if (!walkData && askNeedsStateRefresh) {
     // A note saved during the chat now lives on the server's card; re-pull the
     // state so it shows on return without a manual reload. Keep the reveal
     // position (`revealed`/`feedback` are client-side and the card can't change
     // while the modal ask panel is open), so we don't reset the card to its front.
     api("/api/state").then(s => { state = s; render(); }).catch(render);
-  }
+  } else render();
 }
 function sendAsk(text) {
   const q = (text || "").trim();
@@ -1369,6 +1371,7 @@ function sendAsk(text) {
 function canDistill() { return !askData.thinking && askData.transcript.length > 0; }
 function saveAskNote() {
   if (!canDistill()) return;
+  askNeedsStateRefresh = true;
   const ep = walkData ? "/api/walk/ask/note" : "/api/ask/note";
   api(ep, post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
@@ -1600,7 +1603,7 @@ function renderAskLeaveConfirm() {
   legend.innerHTML = "";
   legend.appendChild(el("span", "leave-msg",
     "Leave the tutor? Moving on to the next card drops this conversation. Making a note or a card keeps it."));
-  chip("Leave anyway", "again", closeAsk, "enter");
+  chip("Leave anyway", "again", closeAsk);
   chip("Stay", "primary", cancelAskLeave, "esc");
 }
 function cancelAskLeave() {
@@ -4372,6 +4375,10 @@ document.addEventListener("keydown", (e) => {
   // The ask overlay: Esc closes, the save-note key saves; the textarea handles
   // typing, Enter for a newline, and Shift+Enter to send.
   if (asking) {
+    if (askConfirmingClose) {
+      if (e.key === "Escape") { e.preventDefault(); cancelAskLeave(); }
+      return;
+    }
     if (e.key === "Escape") { e.preventDefault(); closeAsk(); return; }
     if (hit(e, KEYS.make_note)) { e.preventDefault(); saveAskNote(); return; }
     if (hit(e, KEYS.make_card)) { e.preventDefault(); draftCard(); return; }

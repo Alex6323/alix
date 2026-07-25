@@ -51,6 +51,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The adult tutor's unsaved-conversation prompt no longer binds
+  <kbd>Enter</kbd>, which remains available for composing a newline;
+  <kbd>Escape</kbd> stays in the tutor, and leaving returns to the card that
+  opened it without an unnecessary session-state refresh.
 - Visible adult-client scrollbars now use slim, theme-aware tracks and thumbs
   instead of the browser's bright native chrome.
 - Short fact-card source excerpts now keep the answer region's centered vertical alignment; excerpts still top-align when they overflow.

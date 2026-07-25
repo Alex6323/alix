@@ -18,6 +18,46 @@ test.beforeEach(async ({ page, request }) => {
   await openApp(page);
 });
 
+async function openWildCram(page: Parameters<typeof openApp>[0], depth: "Recall" | "Recognize") {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await page.getByTitle("choose a depth").click();
+  await page.getByRole("button", { name: /cram/i }).click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: new RegExp(`^${depth}`) }).click(),
+  ]);
+}
+
+async function mockCompletedTutor(page: Parameters<typeof openApp>[0]) {
+  await page.route("**/api/ask", (route) =>
+    route.fulfill({
+      json: {
+        transcript: [{ q: "Why?", a: "Because the source says so." }],
+        thinking: false,
+        status: null,
+        error: null,
+        draft: null,
+      },
+    }),
+  );
+}
+
+async function answerCurrentWildCard(page: Parameters<typeof openApp>[0]) {
+  const reveal = page.getByRole("button", { name: "Reveal" });
+  if (await reveal.isVisible()) {
+    await reveal.click();
+    return;
+  }
+
+  const front = await page.locator(".front-text").textContent();
+  const answer = front?.includes("tallest") ? "Giraffe" : "Cheetah";
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/choose")),
+    page.getByRole("button", { name: new RegExp(answer) }).click(),
+  ]);
+}
+
 test("the picker lists the fixture workspace and its decks", async ({ page }) => {
   const animals = adultDeckRow(page, "Animals");
   await expect(animals).toBeVisible();
@@ -113,6 +153,56 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
   const answer = page.locator(".reveal .answer");
   await expect(answer.locator("strong")).toHaveText("Cheetah");
   await expect(answer).toHaveText("Cheetah");
+});
+
+test("the tutor leave prompt keeps Enter for composing and Escape stays", async ({ page }) => {
+  await openWildCram(page, "Recall");
+  await answerCurrentWildCard(page);
+  await mockCompletedTutor(page);
+  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await expect(page.locator(".ask-q")).toHaveText("Why?");
+
+  await page.getByRole("button", { name: /^Close/ }).click();
+  const leave = page.getByRole("button", { name: /^Leave anyway/ });
+  await expect(leave).toBeVisible();
+  await expect(leave.locator(".k")).toHaveCount(0);
+
+  const input = page.locator(".ask-input");
+  await input.focus();
+  await input.press("Enter");
+  await expect(input).toHaveValue("\n");
+  await expect(leave).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(leave).toHaveCount(0);
+  await expect(page.locator(".ask-panel")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Close/ })).toBeVisible();
+});
+
+test("leaving an unsaved tutor returns to its originating card without pulling state", async ({ page }) => {
+  await openWildCram(page, "Recall");
+  const firstState = await (await page.request.get("/api/state")).json();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/skip")),
+    page.getByRole("button", { name: /^Skip/ }).click(),
+  ]);
+  const originFront = await page.locator(".front-text").textContent();
+  await answerCurrentWildCard(page);
+  await mockCompletedTutor(page);
+  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await expect(page.locator(".ask-q")).toHaveText("Why?");
+  await page.getByRole("button", { name: /^Close/ }).click();
+
+  let statePulls = 0;
+  await page.route("**/api/state", (route) => {
+    statePulls += 1;
+    return route.fulfill({ json: firstState });
+  });
+  await page.getByRole("button", { name: /^Leave anyway/ }).click();
+
+  await expect(page.locator(".ask-panel")).toHaveCount(0);
+  expect(statePulls).toBe(0);
+  await expect(page.locator(".front-text")).toHaveText(originFront ?? "");
 });
 
 test("focusing a deck opens the drawer with its preamble and heatmap, no due count", async ({ page }) => {
