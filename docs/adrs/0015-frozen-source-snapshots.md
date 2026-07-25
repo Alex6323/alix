@@ -109,7 +109,8 @@ prompt.
 - `src/explore.rs` snapshots cited fact and trace material and reports missing
   sources.
 - `src/trace_ai.rs` performs excerpt copying and locator rewriting.
-- `src/trace.rs` resolves frozen blocks and compares them with live origins.
+- `src/source.rs` resolves cited excerpts and frozen-source provenance.
+- `src/trace.rs` compares frozen trace evidence with live origins.
 - `src/ask.rs` anchors tutor prompts in frozen evidence and adds live context
   deliberately.
 - Doctor and workspace tests cover missing snapshots, locator resolution, and

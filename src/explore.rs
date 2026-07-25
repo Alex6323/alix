@@ -14,9 +14,9 @@ use crate::{
     library,
     parser::yaml_quote,
     share,
+    source::{self, resolve_source},
     store::Store,
     title,
-    trace::{self, resolve_source},
     trace_ai::{self, build_run_config, clean_to_cards},
     workspace,
 };
@@ -621,7 +621,7 @@ fn slug(title: &str) -> String {
     }
 }
 
-/// Anchors overlap-aware via [`trace::resolve_under_base`]: a plain
+/// Anchors overlap-aware via [`source::resolve_under_base`]: a plain
 /// `root.join(scope)` can double an already-rooted scope into a dead path.
 fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
     let scope = scope.trim();
@@ -640,7 +640,7 @@ fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
     } else if Path::new(first).is_absolute() {
         PathBuf::from(first)
     } else {
-        trace::resolve_under_base(root, first)
+        source::resolve_under_base(root, first)
     };
     match rest {
         Some(rest) => format!("{} + {}", anchored.display(), rest),

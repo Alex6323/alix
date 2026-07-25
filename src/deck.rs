@@ -245,6 +245,8 @@ impl Deck {
         out
     }
 
+    /// The explicitly declared live-source boundary for tutor grounding and
+    /// frozen-source drift checks. A `source` citation never implies this grant.
     pub fn source_root(&self) -> Option<PathBuf> {
         let deck_dir = self.path.parent().unwrap_or_else(|| Path::new("."));
         if let Some(origin) = &self.settings.origin {
@@ -255,7 +257,7 @@ impl Deck {
         if let Some(origin) = workspace_settings.origin {
             return Some(resolve_source_root(&origin, deck_dir));
         }
-        crate::trace::project_root(&self.sources, deck_dir)
+        None
     }
 
     pub fn is_frozen(&self) -> bool {
@@ -1218,6 +1220,23 @@ mod tests {
             Some(source.canonicalize().unwrap()),
             Deck::load(path).unwrap().source_root()
         );
+    }
+
+    #[test]
+    fn source_root_is_not_inferred_from_a_source_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join("decks");
+        let source = dir.path().join("project/src/lib.rs");
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, "// lib\n").unwrap();
+        let path = write_deck(
+            &decks,
+            "d.md",
+            &format!("---\nsource: {}\n---\n## f\nb\n", source.to_string_lossy()),
+        );
+
+        assert_eq!(None, Deck::load(path).unwrap().source_root());
     }
 
     #[test]

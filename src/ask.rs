@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn source_access_grounds_every_prompt_in_the_crate_root() {
+    fn source_access_grounds_every_prompt_in_the_declared_root() {
         let p = question_prompt(
             &card(),
             Audience::Adult,

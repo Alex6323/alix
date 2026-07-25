@@ -18,8 +18,8 @@ taking precedence. Each links to the chapter that explains it in full.
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `link` | deck | [tutor reference](10-tutor.md) URL, tutor-only (repeatable). |
-| `source` | deck | [Exam ground truth](12-the-ai-exam.md) (URL/file, repeatable); also a [trace](13-trace-decks.md)'s path origin, and a tutor reference. |
-| `origin` | deck · card | Live source root a [frozen deck](14-explore.md)'s snapshots came from (usually set in a workspace's `alix.toml`; a relative path resolves from that workspace or deck); enables [tutor](10-tutor.md) grounding and [`alix doctor`](17-command-reference.md) drift detection: `source` itself points at the frozen `assets/`. |
+| `source` | deck | [Exam ground truth](12-the-ai-exam.md) (URL/file, repeatable); also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. |
+| `origin` | deck · card | Explicit live-source root for [tutor](10-tutor.md) grounding and [`alix doctor`](17-command-reference.md) drift detection (usually set in a workspace's `alix.toml`; a relative path resolves from that workspace or deck). A [frozen deck](14-explore.md) keeps `source: assets` while `origin` records where those snapshots came from. |
 | `trace` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
 | `at` | card | A locator into the `source` (`file:lines`): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name — meaning` (repeatable). |

@@ -10,9 +10,9 @@ use crate::{
     card::Card,
     depth::Depth,
     scheduler::{Grade, Scheduler},
+    source::SourceBase,
     store::{Store, VirtualCard},
     time,
-    trace::SourceBase,
 };
 
 pub struct DeckInfo {

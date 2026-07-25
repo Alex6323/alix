@@ -24,7 +24,8 @@ use crate::{
     exam, generate, math, parser,
     session::{Session, now_ms},
     share,
-    trace::{self, Delta, SourceBase, Walk},
+    source::SourceBase,
+    trace::{self, Delta, Walk},
     trace_ai,
 };
 

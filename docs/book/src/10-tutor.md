@@ -71,11 +71,11 @@ immediately, with no model call. The same grounding applies when you ask during 
 trace walk.
 
 Local file grounding is opt-in with `[ask] source_access = true`. An explicit
-deck or workspace `origin` defines the readable root. Without one, alix
-canonicalizes the local `source` paths and recognizes real project files or Git
-metadata only within the deck's directory boundary; a source outside that
-directory is capped at its own common ancestor. An unrelated parent checkout can
-therefore never silently widen what the tutor may read.
+deck or workspace `origin` defines the readable root. Without one, alix does
+not grant the tutor filesystem access: `source` identifies the cited evidence,
+but it never implicitly authorizes the surrounding project. This keeps decks
+portable across profile-managed deck directories and makes every wider
+live-source grant deliberate and reviewable.
 
 ## How it's sandboxed
 

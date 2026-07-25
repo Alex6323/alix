@@ -1056,10 +1056,11 @@ pub fn default_config_toml() -> &'static str {
 # Tools the assistant may use. With "dontAsk" this is an exclusive
 # allowlist; the defaults let it consult deck links but nothing else.
 # allowed_tools = ["WebFetch", "WebSearch"]
-# Let the tutor READ the card's source (Read/Glob/Grep at the deck's % source:
-# project root) to verify its answer instead of relying on memory. Off by
-# default: it grants the (possibly LAN-served) tutor file-read access — only
-# enable on a machine and network you trust.
+# Let the tutor READ the card's explicitly declared origin root with
+# Read/Glob/Grep to verify its answer instead of relying on memory. A source:
+# citation never grants access by itself. Off by default because this can expose
+# local files to a possibly LAN-served tutor; enable it only on a machine and
+# network you trust.
 # source_access = false
 # Pre-flight size guard: warn and confirm before spending a large model call on
 # a local source tree bigger than this many bytes (0 = always proceed silently).

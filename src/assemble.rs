@@ -15,10 +15,11 @@ use crate::{
     parser,
     scheduler::Fsrs,
     session::{self, DeckInfo, Order, Session, SessionOptions},
+    source::SourceBase,
     stamp,
     store::{Store, VirtualCard, default_store_path},
     time::now_ms,
-    trace::{SourceBase, Trace, Walk},
+    trace::{Trace, Walk},
     workspace,
 };
 

@@ -7,7 +7,7 @@ use crate::{
     backend::ensure_source_reachable,
     config::{AskConfig, GenerateDeckConfig},
     deck::is_url,
-    trace::resolve_source,
+    source::resolve_source,
 };
 
 const DEFAULT_PROMPT: &str = "\

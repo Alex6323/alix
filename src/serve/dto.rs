@@ -14,8 +14,9 @@ use crate::{
     render::NoteUnit,
     review::{self, CardView},
     session::now_ms,
+    source::{Excerpt, relabel_for_display},
     store::Store,
-    trace::{self, Delta, Excerpt, Phase},
+    trace::{Delta, Phase},
 };
 
 #[derive(Debug, Serialize)]
@@ -826,7 +827,7 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
                     Ok(ex) => {
                         // For a frozen-snapshot asset, relabel to the ORIGINAL
                         // source so the gutter shows real line numbers, not the asset's.
-                        let (ex, label) = trace::relabel_for_display(ex, c.at_origin.as_deref());
+                        let (ex, label) = relabel_for_display(ex, c.at_origin.as_deref());
                         if let Some(label) = label {
                             dto.locator = Some(label);
                         }
@@ -964,7 +965,7 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
                         // Relabel a frozen-snapshot asset to its real source
                         // and line numbers, so the citation reads
                         // `store.rs:36-66`, not the asset's own numbering.
-                        let (ex, label) = trace::relabel_for_display(ex, c.at_origin.as_deref());
+                        let (ex, label) = relabel_for_display(ex, c.at_origin.as_deref());
                         if let Some(label) = label {
                             dto.at = Some(label);
                         }

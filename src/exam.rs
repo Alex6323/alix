@@ -630,7 +630,7 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
         }
         // A value may join several files with " + "; skip any that can't be read rather than
         // failing.
-        for path in crate::trace::source_paths(src, base) {
+        for path in crate::source::source_paths(src, base) {
             match std::fs::read_to_string(&path) {
                 Ok(text) => {
                     let label = path

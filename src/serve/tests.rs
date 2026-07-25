@@ -12,7 +12,8 @@ use crate::{
     render::NoteUnit,
     scheduler::{Fsrs, Grade},
     session::Session,
-    trace::{Delta, SourceBase},
+    source::SourceBase,
+    trace::Delta,
 };
 
 #[test]

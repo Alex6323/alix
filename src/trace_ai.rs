@@ -1,5 +1,4 @@
-//! Split out of `trace` so the core (the walk, citation resolution) compiles
-//! without the AI backend.
+//! Split out of `trace` so the core trace walk compiles without the AI backend.
 
 use std::{
     path::{Path, PathBuf},
@@ -13,7 +12,8 @@ use crate::{
     backend::{backend_for, ensure_source_reachable},
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
-    trace::{Checkpoint, Delta, Excerpt, SNAPSHOT_DIR, SourceBase, resolve_source},
+    source::{Excerpt, SourceBase, resolve_source},
+    trace::{Checkpoint, Delta, SNAPSHOT_DIR},
 };
 
 pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -725,7 +725,7 @@ mod tests {
         write(
             &root.join("ws"),
             "alix.toml",
-            "title = \"W\"\n\n[defaults]\n",
+            "title = \"W\"\n\n[defaults]\norigin = \"../src\"\n",
         );
         write(
             &root.join("ws"),

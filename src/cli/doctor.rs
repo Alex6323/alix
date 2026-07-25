@@ -3,12 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use alix::{
-    deck::Deck,
-    store::Store,
-    trace::{SourceBase, Trace},
-    workspace,
-};
+use alix::{deck::Deck, source::SourceBase, store::Store, trace::Trace, workspace};
 use anyhow::{Context, Result, bail};
 
 use crate::{
