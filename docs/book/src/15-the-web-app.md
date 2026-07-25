@@ -124,7 +124,8 @@ the newest line), a typing Reconstruct check (each line marked ✓/✗ with the
 correct answer shown, then you grade), an explain Reconstruct check, and the
 multiple-choice pick: a new card's attempt-first on-ramp, or a genuine
 Recognize-session question (tap an option; a correct pick offers the quiet "I
-guessed" undo). Controls are big tap targets and
+guessed" undo). A revealed note uses the same content-column width and text
+size as the answer or choices above it. Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The

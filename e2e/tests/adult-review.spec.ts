@@ -205,6 +205,25 @@ test("leaving an unsaved tutor returns to its originating card without pulling s
   await expect(page.locator(".front-text")).toHaveText(originFront ?? "");
 });
 
+test("a revealed note matches its choice column width and text size", async ({ page }) => {
+  await openWildCram(page, "Recognize");
+  await answerCurrentWildCard(page);
+
+  const choices = page.locator(".options");
+  const note = page.locator(".note");
+  await expect(note).toBeVisible();
+  const choicesBox = await choices.boundingBox();
+  const noteBox = await note.boundingBox();
+  await page.screenshot({ path: "/tmp/alix-note-layout.png", fullPage: true });
+  expect(choicesBox).not.toBeNull();
+  expect(noteBox).not.toBeNull();
+  expect(Math.abs((choicesBox?.width ?? 0) - (noteBox?.width ?? 0))).toBeLessThanOrEqual(1);
+
+  const choicesFontSize = await choices.locator(".option").first().evaluate((node) => getComputedStyle(node).fontSize);
+  const noteFontSize = await note.evaluate((node) => getComputedStyle(node).fontSize);
+  expect(noteFontSize).toBe(choicesFontSize);
+});
+
 test("focusing a deck opens the drawer with its preamble and heatmap, no due count", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click(); // focuses the row → opens the drawer

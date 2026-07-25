@@ -336,14 +336,17 @@
     border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  /* notes: a warm, clearly-separated block (yellow, like the TUI), as wide as
-     the card rather than the answer text */
+  /* notes: a warm, clearly-separated block (yellow, like the TUI), sharing the
+     answer/choice content column and its text scale */
   .note {
-    text-align: left; margin: 18px auto 0; max-width: 600px;
+    box-sizing: border-box; width: 100%; max-width: min(96vw, 1040px);
+    text-align: left; margin: 18px auto 0;
     background: var(--note-bg); border: 1px solid var(--note-line);
     border-radius: 10px;
-    padding: 12px 15px; color: var(--note-ink); font-size: 0.93rem;
+    padding: 12px 15px; color: var(--note-ink);
+    font-size: clamp(1.02rem, 2.9vw, 1.22rem);
   }
+  .card:has(.region.a.choices) .note { font-size: 1.05rem; }
   .note p { margin: 0 0 10px; } .note p:last-child { margin-bottom: 0; }
   .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: var(--note-code); }
   .note .checklist { display: grid; gap: 6px; margin: 8px 0; }

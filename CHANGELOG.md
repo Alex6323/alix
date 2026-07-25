@@ -51,6 +51,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Adult review notes now use the same content width and text size as the answer
+  or choice column instead of shrinking into a narrower, smaller box.
 - The adult tutor's unsaved-conversation prompt no longer binds
   <kbd>Enter</kbd>, which remains available for composing a newline;
   <kbd>Escape</kbd> stays in the tutor, and leaving returns to the card that
