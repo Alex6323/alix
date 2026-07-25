@@ -113,7 +113,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
 | `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
-| `make ci` | **Full CI parity** — `fmt-check` + `check` under `-Dwarnings` + `coverage`, exactly as `.github/workflows/ci.yml` runs them. A green `make ci` predicts a green CI; run it before a push/release. |
+| `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.md"` | Run the binary with args. |
