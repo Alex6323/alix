@@ -277,24 +277,37 @@ to this codebase. When in doubt, mirror the surrounding code.
   after touching `grade_*`.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
-- **Every change gets a sourced alix study workspace** (user rule, 2026-07-24).
-  Before calling an issue done, create or update
-  `/home/me/dev-meta/alix/<issue-slug>/`, named after the issue, with an
-  `alix.toml` and one or more Markdown decks. Turn every relevant design,
-  implementation, safety, and tradeoff decision into a card. The deck declares
-  the live project root as `source:`, and every card carries a contiguous
+- **Every change gets a sourced alix study deck** (user rule, 2026-07-24).
+  Before calling an issue done, create or update the issue-named Markdown deck
+  at `~/dev-meta/alix/alix-development/<issue-slug>.md`; do not create a
+  separate workspace per issue. Turn every relevant design, implementation,
+  safety, and tradeoff decision into a card. For an implementation change,
+  include cards about the exact patch: name the edited functions/types, contrast
+  the old and new behavior, identify the tests that prove it, and explain why
+  that mechanism was chosen over plausible alternatives. A decision-only card
+  is not a substitute for teaching the code that implements it; for a docs- or
+  roadmap-only change, say explicitly that no runtime code changed and teach the
+  exact document contract added. Use authored choice cards for decisions and
+  discriminating between plausible alternatives; use plain, often multi-line
+  Recall cards for implementation walkthroughs that need enough room to explain
+  the patch. When the implementation is best understood as a multi-step control
+  flow, data flow, lifecycle, or failure path, add a trace deck whose checkpoints
+  walk that path through the actual code. Do not force every card into choice
+  format. The deck declares the live project root as `source:`, and every card
+  carries a contiguous
   `<!-- at: file:lines -->` locator after its answer and notes, followed by its
-  regularly stamped `<!-- id: ... -->`; `alix doctor` must resolve every
-  locator. Prefer authored task-list answers (exactly one `[x]`, plausible
-  `[ ]` distractors) so the workspace is immediately useful at Recognize depth
-  without an AI augmentation pass. Authored distractors must meet the same bar
-  as the choices augmentation prompt (`src/augment_ai.rs::distractors_prompt`):
-  tempting to someone who half-knows the material, matched to the correct
-  answer's form and length, clearly incorrect, and distinct. Reject giveaway
-  options: conspicuous absolutes such as "Only...", "always", or "never",
-  absurd claims, mismatched specificity, and simple negations of the answer all
-  test option-reading rather than understanding. Refresh locators after final
-  edits so the source view and tutor explain the code that actually ships.
+  regularly stamped `<!-- id: ... -->`; `alix doctor` on the shared workspace
+  must resolve every locator. For decision cards, prefer authored task-list
+  answers (exactly one `[x]`, plausible `[ ]` distractors) so they are useful at
+  Recognize depth without an AI augmentation pass. Authored distractors must
+  meet the same bar as the choices augmentation prompt
+  (`src/augment_ai.rs::distractors_prompt`): tempting to someone who half-knows
+  the material, matched to the correct answer's form and length, clearly
+  incorrect, and distinct. Reject giveaway options: conspicuous absolutes such
+  as "Only...", "always", or "never", absurd claims, mismatched specificity,
+  and simple negations of the answer all test option-reading rather than
+  understanding. Refresh locators after final edits so the source view and
+  tutor explain the code that actually ships.
 - Don't commit unless asked; never push without permission.
 - **Two docs, two jobs; keep both in sync.** `docs/book/` (mdBook; `make book`)
   is the **reference and manual**: the deck format, every frontmatter key and card directive,
