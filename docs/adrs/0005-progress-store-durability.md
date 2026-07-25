@@ -3,6 +3,8 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
+- Refined by: [ADR 0017](0017-per-deck-state-documents.md), which narrows the
+  active-writer and conflict boundary from a workspace store to a deck document.
 
 ## Decision history
 
