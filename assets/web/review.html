@@ -3292,11 +3292,11 @@ function fillBottom() {
   // the midline once there's real body content, sitting clearly separated from the
   // prompt. A line card centers too — it grows as each line reveals and re-settles,
   // which is fine; if it grows past the region it overflows into `filled` and the
-  // per-line auto-scroll (above) keeps the newest line reachable. Only the cited
-  // source excerpt stays pinned top (it scrolls and drives the more-hint). The
-  // pre-reveal badge/hint alone isn't body to center.
-  const forceFilled = citable && citationView;
-  a.classList.toggle("has-body", !forceFilled && !!a.querySelector(
+  // per-line auto-scroll (above) keeps the newest line reachable. A short cited
+  // source follows the same centering rule; a long one overflows into `filled`
+  // and stays top-aligned and scrollable. The pre-reveal badge/hint alone isn't
+  // body to center.
+  a.classList.toggle("has-body", !!a.querySelector(
     ".reveal, .options, .inputs, .source-excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
   updateFade(a);
 }

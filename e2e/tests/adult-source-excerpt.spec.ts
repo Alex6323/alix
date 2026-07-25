@@ -16,10 +16,13 @@ test("fact citations use the editor-style source panel", async ({ page }) => {
   ]);
 
   await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(page.locator("#ansRegion")).toHaveClass(/balanced/);
   await page.keyboard.press("s");
 
   const panel = page.locator(".source-excerpt");
   await expect(panel).toBeVisible();
+  await expect(page.locator("#ansRegion")).toHaveClass(/balanced/);
+  await expect(page.locator("#ansRegion")).not.toHaveClass(/filled/);
   await expect(panel.locator(".source-file")).toContainText("source-fact.rs");
   await expect(panel.locator(".source-line")).toHaveCount(4);
   await expect(panel.locator(".source-number")).toHaveText(["1", "2", "3", "4"]);

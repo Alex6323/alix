@@ -30,6 +30,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Short fact-card source excerpts now keep the answer region's centered vertical alignment; excerpts still top-align when they overflow.
 - Fact-card citations and trace walks now share the same editor-style, path-labelled source excerpt instead of using two visually inconsistent renderers.
 - Trace walks now render authored inline Markdown in their description, checkpoint prompt, givens, key points, and note on adult web and mobile instead of showing raw markers such as backticks.
 - Multiple-choice options now receive a fresh shuffle seed for each study session, so a card's correct answer does not return to the same memorized position every time the app is reopened; repeated state polls still keep the current question stable.

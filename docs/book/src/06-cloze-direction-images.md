@@ -113,7 +113,8 @@ file. On reveal a `</>` marker appears on the answer: **click the answer** (or p
 `s`) to flip it to the same editor-style source panel used by trace walks, with
 the resolved file path and line-numbered excerpt, and back. The lines are read
 *live* from the source, so a moved or deleted file shows "source unavailable"
-rather than a stale quote.
+rather than a stale quote. A short excerpt keeps the answer's centered vertical
+alignment; a long excerpt aligns to the top and scrolls.
 
 This is the same machinery trace walks use to reveal source, brought to ordinary
 fact cards. Like every directive, `<!-- at: -->` is not part of a card's identity:
