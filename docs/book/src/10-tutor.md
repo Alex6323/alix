@@ -70,6 +70,13 @@ gone, it says so plainly instead of guessing. In review, that reply comes back
 immediately, with no model call. The same grounding applies when you ask during a
 trace walk.
 
+Local file grounding is opt-in with `[ask] source_access = true`. An explicit
+deck or workspace `origin` defines the readable root. Without one, alix
+canonicalizes the local `source` paths and recognizes real project files or Git
+metadata only within the deck's directory boundary; a source outside that
+directory is capped at its own common ancestor. An unrelated parent checkout can
+therefore never silently widen what the tutor may read.
+
 ## How it's sandboxed
 
 Because the CLI runs headless, it can't show interactive permission prompts: an

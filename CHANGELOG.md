@@ -33,6 +33,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Short fact-card source excerpts now keep the answer region's centered vertical alignment; excerpts still top-align when they overflow.
 - Fact-card citations and trace walks now share the same editor-style, path-labelled source excerpt instead of using two visually inconsistent renderers.
 - Trace walks now render authored inline Markdown in their description, checkpoint prompt, givens, key points, and note on adult web and mobile instead of showing raw markers such as backticks.
+- Grounded AI source-root discovery no longer accepts empty project-marker paths
+  or climbs into an unrelated ancestor checkout. Explicit deck/workspace
+  `origin` paths now win consistently and resolve relative to their manifest;
+  inferred roots are canonical, validate Git metadata, and stay within the
+  declared deck or external-source boundary.
 - Multiple-choice options now receive a fresh shuffle seed for each study session, so a card's correct answer does not return to the same memorized position every time the app is reopened; repeated state polls still keep the current question stable.
 - `alix doctor` now reports malformed recognized LaTeX with its deck, card line, source snippet, and renderer error. CLI, desktop-server, and paired-mobile generation reject malformed math before placement without damaging an existing deck; generated text that does not parse as a deck keeps the previous lenient saved-draft behavior.
 - Authored checkbox answers and distractors now retain their inline formatting source for display while duplicate detection and typed grading continue to use delimiter-free content.

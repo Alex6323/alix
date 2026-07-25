@@ -246,17 +246,14 @@ impl Deck {
     }
 
     pub fn source_root(&self) -> Option<PathBuf> {
-        if let Some(origin) = &self.settings.origin {
-            return Some(PathBuf::from(origin));
-        }
         let deck_dir = self.path.parent().unwrap_or_else(|| Path::new("."));
-        // A bare Deck::load has no settings.origin yet, so recover it from the workspace manifest
-        // directly.
-        if self.is_frozen()
-            && let Ok(ws) = crate::workspace::Workspace::load(deck_dir)
-            && let Some(origin) = ws.settings.origin
-        {
-            return Some(PathBuf::from(origin));
+        if let Some(origin) = &self.settings.origin {
+            return Some(resolve_source_root(origin, deck_dir));
+        }
+        let (_, _, workspace_settings, _) =
+            crate::workspace::read_manifest(&deck_dir.join(crate::workspace::MANIFEST));
+        if let Some(origin) = workspace_settings.origin {
+            return Some(resolve_source_root(&origin, deck_dir));
         }
         crate::trace::project_root(&self.sources, deck_dir)
     }
@@ -266,6 +263,16 @@ impl Deck {
             .first()
             .is_some_and(|s| s == crate::trace::SNAPSHOT_DIR)
     }
+}
+
+fn resolve_source_root(origin: &str, deck_dir: &Path) -> PathBuf {
+    let origin = Path::new(origin);
+    let path = if origin.is_absolute() {
+        origin.to_path_buf()
+    } else {
+        deck_dir.join(origin)
+    };
+    path.canonicalize().unwrap_or(path)
 }
 
 pub fn resolve_dep(
@@ -1168,6 +1175,49 @@ mod tests {
             "/ws".to_string(),
         )]));
         assert_eq!(Some("/ws".to_string()), bare.origin);
+    }
+
+    #[test]
+    fn source_root_resolves_a_relative_deck_origin() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join("decks");
+        let source = dir.path().join("source");
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        let path = write_deck(
+            &decks,
+            "d.md",
+            "---\nsource: assets\norigin: ../source\n---\n## f\nb\n",
+        );
+
+        assert_eq!(
+            Some(source.canonicalize().unwrap()),
+            Deck::load(path).unwrap().source_root()
+        );
+    }
+
+    #[test]
+    fn source_root_prefers_a_workspace_origin_for_a_live_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let source = dir.path().join("source");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            workspace.join(crate::workspace::MANIFEST),
+            "[defaults]\norigin = \"../source\"\n",
+        )
+        .unwrap();
+        let path = write_deck(
+            &workspace,
+            "d.md",
+            "---\nsource: ../source/file.rs\n---\n## f\nb\n",
+        );
+
+        assert_eq!(
+            Some(source.canonicalize().unwrap()),
+            Deck::load(path).unwrap().source_root()
+        );
     }
 
     #[test]

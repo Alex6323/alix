@@ -396,14 +396,14 @@ impl SourceBase {
     }
 }
 
-/// Walks up to the nearest project root (`Cargo.toml`, `.git`, etc.) so the
-/// tutor can read the whole crate, not just the cited files.
+/// Resolves local sources to a canonical project root without crossing their
+/// declared boundary.
 pub(crate) fn project_root(sources: &[String], deck_dir: &Path) -> Option<PathBuf> {
     let mut dirs: Vec<PathBuf> = sources
         .iter()
         .filter(|s| !is_url(s))
         .flat_map(|s| source_paths(s, Some(deck_dir)))
-        .filter(|p| p.exists())
+        .filter_map(|p| p.canonicalize().ok())
         .map(|p| {
             if p.is_file() {
                 p.parent().map(Path::to_path_buf).unwrap_or(p)
@@ -415,7 +415,12 @@ pub(crate) fn project_root(sources: &[String], deck_dir: &Path) -> Option<PathBu
     dirs.sort();
     dirs.dedup();
     let base = common_ancestor(&dirs)?;
-    Some(find_project_root(&base).unwrap_or(base))
+    let deck_dir = deck_dir.canonicalize().ok();
+    let boundary = deck_dir
+        .as_deref()
+        .filter(|deck_dir| base.starts_with(deck_dir))
+        .unwrap_or(&base);
+    Some(find_project_root(&base, boundary).unwrap_or(base))
 }
 
 /// A value may join several paths with " + " (first a full path, rest
@@ -457,22 +462,54 @@ fn common_ancestor(dirs: &[PathBuf]) -> Option<PathBuf> {
     Some(common)
 }
 
-fn find_project_root(dir: &Path) -> Option<PathBuf> {
-    const MARKERS: [&str; 5] = [
-        "Cargo.toml",
-        ".git",
-        "package.json",
-        "go.mod",
-        "pyproject.toml",
-    ];
+fn find_project_root(dir: &Path, boundary: &Path) -> Option<PathBuf> {
+    if !dir.starts_with(boundary) {
+        return None;
+    }
     let mut cur = Some(dir);
     while let Some(d) = cur {
-        if MARKERS.iter().any(|m| d.join(m).exists()) {
+        if has_project_marker(d) {
             return Some(d.to_path_buf());
+        }
+        if d == boundary {
+            break;
         }
         cur = d.parent();
     }
     None
+}
+
+fn has_project_marker(dir: &Path) -> bool {
+    ["Cargo.toml", "package.json", "go.mod", "pyproject.toml"]
+        .iter()
+        .any(|marker| dir.join(marker).is_file())
+        || has_git_marker(dir)
+}
+
+fn has_git_marker(dir: &Path) -> bool {
+    let marker = dir.join(".git");
+    if marker.is_dir() {
+        return marker.join("HEAD").is_file();
+    }
+    let Ok(metadata) = marker.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() || metadata.len() > 4096 {
+        return false;
+    }
+    let Ok(text) = std::fs::read_to_string(marker) else {
+        return false;
+    };
+    let Some(target) = text.trim().strip_prefix("gitdir:").map(str::trim) else {
+        return false;
+    };
+    let target = Path::new(target);
+    let target = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        dir.join(target)
+    };
+    target.is_dir() && target.join("HEAD").is_file()
 }
 
 /// A locator is a single span, never comma-separated, so a stitched,
@@ -1341,6 +1378,77 @@ mod tests {
         assert_eq!(
             None,
             project_root(&["https://example.com".to_string()], dir.path())
+        );
+    }
+
+    #[test]
+    fn project_root_rejects_empty_marker_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        let source_dir = project.join("src");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(project.join("Cargo.toml")).unwrap();
+        std::fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("lib.rs");
+        std::fs::write(&source, "// lib\n").unwrap();
+
+        assert_eq!(
+            Some(source_dir.canonicalize().unwrap()),
+            project_root(&[source.to_string_lossy().into_owned()], &project)
+        );
+    }
+
+    #[test]
+    fn project_root_does_not_cross_an_external_source_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let ancestor = dir.path();
+        std::fs::create_dir_all(ancestor.join(".git")).unwrap();
+        std::fs::write(ancestor.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let deck_dir = ancestor.join("decks");
+        let source_dir = ancestor.join("external");
+        std::fs::create_dir_all(&deck_dir).unwrap();
+        std::fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("notes.md");
+        std::fs::write(&source, "# notes\n").unwrap();
+
+        assert_eq!(
+            Some(source_dir.canonicalize().unwrap()),
+            project_root(&[source.to_string_lossy().into_owned()], &deck_dir)
+        );
+    }
+
+    #[test]
+    fn project_root_chooses_the_nearest_nested_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path().join("outer");
+        let inner = outer.join("inner");
+        std::fs::create_dir_all(inner.join("src")).unwrap();
+        std::fs::write(outer.join("Cargo.toml"), "[workspace]\n").unwrap();
+        std::fs::write(inner.join("package.json"), "{}\n").unwrap();
+        let source = inner.join("src/index.js");
+        std::fs::write(&source, "export {};\n").unwrap();
+
+        assert_eq!(
+            Some(inner.canonicalize().unwrap()),
+            project_root(&[source.to_string_lossy().into_owned()], &outer)
+        );
+    }
+
+    #[test]
+    fn project_root_accepts_a_valid_git_worktree_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        let git_dir = dir.path().join("git-meta");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(project.join(".git"), "gitdir: ../git-meta\n").unwrap();
+        let source = project.join("src/lib.rs");
+        std::fs::write(&source, "// lib\n").unwrap();
+
+        assert_eq!(
+            Some(project.canonicalize().unwrap()),
+            project_root(&[source.to_string_lossy().into_owned()], &project)
         );
     }
 
