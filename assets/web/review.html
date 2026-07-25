@@ -17,6 +17,18 @@
      everywhere; the editable elements and source excerpts opt back in. */
   html { caret-color: transparent; }
   input, textarea, [contenteditable], .source-code, .code { caret-color: auto; }
+  /* Any scrollbar that remains visible belongs to the active theme. More
+     immersive regions override this below with width/height 0 and fade hints. */
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--dim) 55%, transparent) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--dim) 55%, transparent);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: var(--dim); background-clip: padding-box; }
   html, body { margin: 0; height: 100%; }
   body {
     /* One flat colour across header, stage and footer — no top-to-bottom halo,

@@ -34,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Visible adult-client scrollbars now use slim, theme-aware tracks and thumbs
+  instead of the browser's bright native chrome.
 - Short fact-card source excerpts now keep the answer region's centered vertical alignment; excerpts still top-align when they overflow.
 - Fact-card citations and trace walks now share the same editor-style, path-labelled source excerpt instead of using two visually inconsistent renderers.
 - Trace walks now render authored inline Markdown in their description, checkpoint prompt, givens, key points, and note on adult web and mobile instead of showing raw markers such as backticks.
