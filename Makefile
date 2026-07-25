@@ -6,6 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
+RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
 .PHONY: build build-core test test-inventory lint lint-js docs-audit docs-audit-manifest-check toolchain-check fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
@@ -273,7 +274,7 @@ site: site-media-check
 
 # Install `alix` from this checkout.
 install:
-	cargo install --path .
+	cargo +$(RUST_TOOLCHAIN) install --locked --path .
 
 # Remove build artifacts.
 clean:

@@ -8,7 +8,7 @@
 ```sh
 git clone <repo-url> alix
 cd alix
-make install        # or: cargo install --path .
+make install
 ```
 
 That puts `alix` on your `PATH`. Check it:

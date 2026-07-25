@@ -87,6 +87,11 @@ done
 
 require_literal Makefile 'RUST_NIGHTLY := $(shell cat .rust-nightly-version)' \
     "Make targets read the date-pinned nightly"
+require_literal Makefile \
+    'RUST_TOOLCHAIN := $(shell sed -n '\''s/^channel = "\([^"]*\)"$$/\1/p'\'' rust-toolchain.toml)' \
+    "Make targets read the exact Rust toolchain"
+require_literal Makefile 'cargo +$(RUST_TOOLCHAIN) install --locked --path .' \
+    "local install selects the exact Rust toolchain and lockfile"
 require_literal .github/workflows/ci.yml "toolchain: $rust" \
     "CI uses the exact Rust toolchain"
 require_literal .github/workflows/release.yml "toolchain: $rust" \

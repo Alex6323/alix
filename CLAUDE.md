@@ -127,7 +127,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make apk` | The arm64 release APK (debug-signed while `android/key.properties` is absent); smoke-install it before a `mobile-vX.Y.Z` tag (RELEASING.md). |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
-| `make install` | `cargo install --path .`. |
+| `make install` | Install from this checkout with the exact Rust pin and lockfile. |
 | `make clean` | `cargo clean`. |
 | `make heartbeat` | Release heartbeat — is shipped work piling up unreleased? (see below). |
 | `make check-backends` | `alix doctor --all-backends` (real tiny request per backend; needs logins). Maintainer-only. |
