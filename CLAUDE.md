@@ -306,8 +306,12 @@ to this codebase. When in doubt, mirror the surrounding code.
   incorrect, and distinct. Reject giveaway options: conspicuous absolutes such
   as "Only...", "always", or "never", absurd claims, mismatched specificity,
   and simple negations of the answer all test option-reading rather than
-  understanding. Refresh locators after final edits so the source view and
-  tutor explain the code that actually ships.
+  understanding. Numeric locators can still resolve after line insertions while
+  pointing at unrelated code: whenever a source file changes, search the whole
+  shared workspace for every `at:` naming that file and semantically review all
+  matches, including decks from earlier issues. `alix doctor` proves resolution,
+  not relevance. Refresh affected ranges after final edits so the source view
+  and tutor explain the code that actually ships.
 - Don't commit unless asked; never push without permission.
 - **Two docs, two jobs; keep both in sync.** `docs/book/` (mdBook; `make book`)
   is the **reference and manual**: the deck format, every frontmatter key and card directive,
