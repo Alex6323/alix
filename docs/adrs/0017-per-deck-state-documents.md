@@ -6,6 +6,16 @@
 - Refines: [ADR 0001](0001-local-first-files.md) and
   [ADR 0005](0005-progress-store-durability.md)
 
+## Decision history
+
+The record as first accepted (commit `d56899f`, 2026-07-25) paired the per-deck
+layout with a runtime migration of the aggregate files: layout marker,
+old-client fencing, and an automatic backed-up conversion. That compatibility
+machinery was rejected under the pre-1.0 no-backwards-compatibility rule, and
+commit `8439f9c` (2026-07-26) revised this record to the clean break below; old
+data is converted by disposable tooling outside the repository, never by
+production code.
+
 ## Context
 
 ADR 0001 separates canonical Markdown content from personal review state and
