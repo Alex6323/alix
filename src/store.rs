@@ -414,8 +414,7 @@ fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), StoreErr
         source,
     })?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)
+    crate::fsio::replace_file(&tmp, path, json.as_bytes()).map_err(io_err)
 }
 
 pub(crate) fn write_deck_data(
@@ -547,7 +546,10 @@ fn owned_values<T: Clone>(
 impl Store {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let path = path.as_ref().to_path_buf();
-        if path.extension().is_some_and(|extension| extension == "json") {
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "json")
+        {
             let deck_id = crate::state::deck_id_from_document(&path)
                 .ok_or_else(|| StoreError::MissingDeckId {
                     subject: path.display().to_string(),
@@ -781,6 +783,43 @@ impl Store {
         }
     }
 
+    /// Cheap conflict peek: errors with `StaleRevision` once another writer
+    /// has replaced a document this store loaded, without writing anything.
+    pub fn check_revision(&self) -> Result<(), StoreError> {
+        match &self.backing {
+            StoreBacking::Deck {
+                deck_id, revision, ..
+            } => {
+                let loaded = revision.load(Ordering::Relaxed);
+                let disk = deck_revision(&self.path, deck_id)?;
+                if disk != loaded {
+                    return Err(StoreError::StaleRevision {
+                        path: self.path.clone(),
+                        loaded,
+                        disk,
+                    });
+                }
+                Ok(())
+            }
+            StoreBacking::Aggregate { documents, .. } => {
+                let documents = documents
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                for document in documents.iter() {
+                    let disk = deck_revision(&document.path, &document.deck_id)?;
+                    if disk != document.revision {
+                        return Err(StoreError::StaleRevision {
+                            path: document.path.clone(),
+                            loaded: document.revision,
+                            disk,
+                        });
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
     fn save_deck(
         &self,
         deck_id: &str,
@@ -1011,28 +1050,25 @@ impl Store {
         old_deck_id: &str,
         deck: &Deck,
     ) -> Result<(), StoreError> {
-        let new_deck_id =
-            deck.deck_token
-                .as_deref()
-                .ok_or_else(|| StoreError::MissingDeckId {
-                    subject: deck.subject.clone(),
-                })?;
+        let new_deck_id = deck
+            .deck_token
+            .as_deref()
+            .ok_or_else(|| StoreError::MissingDeckId {
+                subject: deck.subject.clone(),
+            })?;
         match &mut self.backing {
             StoreBacking::Deck {
                 deck_id,
                 subject,
                 revision,
             } => {
-                let progress =
-                    self.path
-                        .parent()
-                        .ok_or_else(|| StoreError::Io {
-                            path: self.path.clone(),
-                            source: std::io::Error::new(
-                                std::io::ErrorKind::InvalidInput,
-                                "progress document has no parent directory",
-                            ),
-                        })?;
+                let progress = self.path.parent().ok_or_else(|| StoreError::Io {
+                    path: self.path.clone(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "progress document has no parent directory",
+                    ),
+                })?;
                 self.path = progress.join(format!("{new_deck_id}.json"));
                 deck_id.replace_range(.., new_deck_id);
                 subject.clone_from(&deck.subject);
@@ -1054,9 +1090,7 @@ impl Store {
                 owners.cards.retain(|_, owner| owner != old_deck_id);
                 owners.records.retain(|_, owner| owner != old_deck_id);
                 owners.decks.retain(|_, owner| owner != old_deck_id);
-                owners
-                    .virtual_cards
-                    .retain(|_, owner| owner != old_deck_id);
+                owners.virtual_cards.retain(|_, owner| owner != old_deck_id);
                 owners
                     .decks
                     .insert(deck.subject.clone(), new_deck_id.to_string());
@@ -1555,10 +1589,14 @@ pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "progress")
-        && store_path.extension().is_some_and(|extension| extension == "json");
+        && store_path
+            .extension()
+            .is_some_and(|extension| extension == "json");
     let mut out = if direct {
         let mut conflicts = conflict_copies(store_path);
-        conflicts.extend(conflict_copies(&crate::augment::augment_path_for(store_path)));
+        conflicts.extend(conflict_copies(&crate::augment::augment_path_for(
+            store_path,
+        )));
         conflicts
     } else {
         let progress = if store_path
@@ -1570,7 +1608,9 @@ pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
             store_path.join("progress")
         };
         let mut conflicts = conflict_documents(&progress);
-        conflicts.extend(conflict_documents(&crate::augment::augment_path_for(&progress)));
+        conflicts.extend(conflict_documents(&crate::augment::augment_path_for(
+            &progress,
+        )));
         conflicts
     };
     out.sort();
@@ -2162,6 +2202,27 @@ mod tests {
             Err(error) => error,
         };
         assert!(matches!(error, StoreError::DeckOwner { .. }));
+    }
+
+    #[test]
+    fn check_revision_flags_a_document_replaced_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        Store::open_deck(&path, "deck1", "d.md")
+            .unwrap()
+            .save()
+            .unwrap();
+        let session = Store::open_deck(&path, "deck1", "d.md").unwrap();
+        assert!(session.check_revision().is_ok());
+
+        let mut other = Store::open_deck(&path, "deck1", "d.md").unwrap();
+        other.get_or_insert("card1", 1);
+        other.save().unwrap();
+
+        assert!(matches!(
+            session.check_revision(),
+            Err(StoreError::StaleRevision { .. })
+        ));
     }
 
     #[test]

@@ -165,5 +165,6 @@
   "phase": "review",
   "promotable": true,
   "remaining": 3,
-  "reviews": 2
+  "reviews": 2,
+  "save_error": "progress/rust1.json: stale progress revision 3; disk is at 4"
 }

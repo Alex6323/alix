@@ -263,8 +263,7 @@ fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), AugmentE
         source,
     })?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)
+    crate::fsio::replace_file(&tmp, path, json.as_bytes()).map_err(io_err)
 }
 
 pub(crate) fn write_deck_data(
@@ -341,11 +340,12 @@ impl AugmentCache {
 
     pub fn open(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
-        if path.extension().is_some_and(|extension| extension == "json")
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "json")
             && let Some(deck_id) = crate::state::deck_id_from_document(&path)
         {
-            return Self::open_deck(&path, deck_id)
-                .unwrap_or_else(|_| Self::empty(path));
+            return Self::open_deck(&path, deck_id).unwrap_or_else(|_| Self::empty(path));
         }
         Self::open_aggregate(path.clone(), HashMap::new(), HashSet::new())
             .unwrap_or_else(|_| Self::empty(path))

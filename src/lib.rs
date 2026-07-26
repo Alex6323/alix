@@ -32,6 +32,7 @@ pub mod doctor;
 pub mod exam;
 #[cfg(feature = "full")]
 pub mod explore;
+mod fsio;
 #[cfg(feature = "full")]
 pub mod generate;
 #[cfg(feature = "full")]

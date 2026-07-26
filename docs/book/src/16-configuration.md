@@ -215,7 +215,10 @@ devices may review different decks in the same synchronized folder: their
 progress documents do not compete. For the same deck, use one active writer and
 let synchronization settle before switching devices. Alix does not merge
 concurrent same-deck reviews or decide which schedule is semantically correct.
-A disconnected collision therefore remains a Syncthing conflict copy.
+A disconnected collision therefore remains a Syncthing conflict copy. If a
+running web session's own deck is replaced under it, that session can no longer
+save; the review screen shows a persistent banner and the fix is to reopen the
+deck (grades made after the collision are not kept).
 
 Run `alix doctor <folder>` before recovery. For a progress conflict, stop both
 writers and synchronization, back up the folder, compare the canonical

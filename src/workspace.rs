@@ -318,8 +318,7 @@ pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Resu
         }
     }
     let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, doc.to_string())
-        .and_then(|()| std::fs::rename(&tmp, &path))
+    crate::fsio::replace_file(&tmp, &path, doc.to_string().as_bytes())
         .with_context(|| format!("cannot write {}", path.display()))
 }
 

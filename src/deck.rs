@@ -394,8 +394,7 @@ fn write_deck_text(path: &Path, text: &str) -> Result<(), DeckError> {
         source,
     };
     let tmp = path.with_extension("md.tmp");
-    std::fs::write(&tmp, text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
+    crate::fsio::replace_file(&tmp, path, text.as_bytes()).map_err(io_err)?;
     Ok(())
 }
 

@@ -161,9 +161,9 @@ safe or accurate.
   browser tooling.
 - A received workspace can carry AI/source-access configuration that needs
   human review.
-- Per-deck state has atomic replacement, owner and revision checks, and
-  conflict warnings, but no general same-deck merge or multi-writer
-  transaction protocol.
+- Per-deck state has fsynced atomic replacement, owner and revision checks,
+  and conflict warnings, but no general same-deck merge or multi-writer
+  transaction protocol; kill-point fault injection is still open.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
   that a provider CLI honored them.
 - Exact direct toolchain and Action pins now reduce release drift, but runner
@@ -185,6 +185,8 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/state.rs`: state-root layout and stable-ID document routing;
 - `src/store.rs`: per-deck atomic replacement, revisions, writer markers, and
   sync conflicts;
+- `src/fsio.rs`: durable file replacement (data and directory-entry sync
+  around the rename) shared by every state, deck, and manifest writer;
 - `src/trace_ai.rs`: generated snapshot provenance; and
 - `src/math.rs` and renderer tests: validation and sanitization of generated
   math SVG.

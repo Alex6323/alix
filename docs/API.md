@@ -527,6 +527,7 @@ The review-session payload; returned by every review action.
 | `can_restart` | bool | Anything due/new right now. |
 | `promotable` | bool | Current card is a virtual (remediation) card. |
 | `label` | string | Session header label *(presentational)*. |
+| `save_error` | string? | Absent while saving works. Set (human-readable reason) once session progress can no longer be persisted, e.g. another writer replaced this deck's progress document; it stays set until a save succeeds, so clients should show it persistently and advise reopening the deck. |
 
 Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 `depth:"recall"`, `input:"type"`, counters 0.

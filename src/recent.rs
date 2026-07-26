@@ -51,8 +51,7 @@ impl RecentDecks {
         }
         let json = serde_json::to_string_pretty(&self.entries).expect("recent entries serialize");
         let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, json)?;
-        std::fs::rename(&tmp, &self.path)
+        crate::fsio::replace_file(&tmp, &self.path, json.as_bytes())
     }
 }
 

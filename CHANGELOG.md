@@ -72,6 +72,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- State, deck, and manifest writes now sync the file's data before the atomic
+  rename and the directory entry after it, so a power loss right after a save
+  can no longer leave the only copy of a document empty; previously the bytes
+  could still sit unflushed in the OS cache when the rename was already
+  durable.
+- A review session whose progress document was replaced by another writer
+  (for example a synced device) now reports it: the review state carries a
+  `save_error` and the adult web client shows a persistent banner advising to
+  reopen the deck, instead of failing every save silently into the server log.
 - Adult review notes now use the same content width and text size as the answer
   or choice column instead of shrinking into a narrower, smaller box.
 - The adult tutor's unsaved-conversation prompt no longer binds

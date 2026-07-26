@@ -48,6 +48,7 @@ fn statedto_select_phase_wire_shape() {
         can_restart: false,
         promotable: false,
         label: "select decks".to_string(),
+        save_error: None,
     };
     pin(
         "StateDto.select",
@@ -166,6 +167,9 @@ fn statedto_review_phase_wire_shape() {
         can_restart: true,
         promotable: true,
         label: "rust.md".to_string(),
+        save_error: Some(
+            "progress/rust1.json: stale progress revision 3; disk is at 4".to_string(),
+        ),
     };
     pin(
         "StateDto.review",
@@ -245,7 +249,8 @@ fn statedto_review_phase_wire_shape() {
             "exam_due": ["rust.md"],
             "can_restart": true,
             "promotable": true,
-            "label": "rust.md"
+            "label": "rust.md",
+            "save_error": "progress/rust1.json: stale progress revision 3; disk is at 4"
         }),
     );
 }

@@ -954,6 +954,30 @@ fn post_api_grade_passed_returns_the_next_state_dto() {
 }
 
 #[test]
+fn a_concurrent_writer_surfaces_save_error_in_the_review_state() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let clean = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&clean.body).unwrap();
+    assert!(body.get("save_error").is_none(), "clean session: {body}");
+
+    let document = state_root(guard.dir.path()).join("progress/sample.json");
+    let mut other = Store::open_deck(&document, "sample", "sample.md").unwrap();
+    other.get_or_insert("elsewhere", 1);
+    other.save().unwrap();
+
+    let conflicted = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&conflicted.body).unwrap();
+    assert!(
+        body["save_error"]
+            .as_str()
+            .is_some_and(|error| error.contains("stale")),
+        "conflicted session: {body}"
+    );
+}
+
+#[test]
 fn get_api_doctor_returns_200_with_doctor_rows() {
     let (base, _guard) = spawn_test_server();
 

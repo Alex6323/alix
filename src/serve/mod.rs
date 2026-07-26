@@ -138,6 +138,7 @@ const WORKERS: usize = 16;
 struct ServeState {
     store: Store,
     store_dirty: bool,
+    save_error: Option<String>,
     recent: RecentDecks,
     decks_dir: PathBuf,
     cache: DeckCache,
@@ -161,13 +162,31 @@ struct ServeState {
 // Must run before every `*store =` replacement and before any handler opens
 // a store fresh from disk for a mutating operation (reset): a deferred dirty
 // store that is replaced or shadowed unflushed silently loses the session.
-fn flush_store(store: &Store, dirty: &mut bool) {
+fn flush_store(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
     if !*dirty {
         return;
     }
     match store.save() {
-        Ok(()) => *dirty = false,
-        Err(e) => eprintln!("warning: could not save progress: {e}"),
+        Ok(()) => {
+            *dirty = false;
+            *save_error = None;
+        }
+        Err(e) => {
+            eprintln!("warning: could not save progress: {e}");
+            *save_error = Some(e.to_string());
+        }
+    }
+}
+
+// Runs on every store mutation: a cheap revision peek turns a concurrent
+// writer into a visible state-DTO error at the next response instead of a
+// silent save failure at session end.
+fn note_dirty(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
+    *dirty = true;
+    if save_error.is_none()
+        && let Err(e) = store.check_revision()
+    {
+        *save_error = Some(e.to_string());
     }
 }
 
@@ -203,6 +222,7 @@ pub fn run_review(
     let state = Mutex::new(ServeState {
         store,
         store_dirty: false,
+        save_error: None,
         recent,
         decks_dir,
         cache: DeckCache::default(),
@@ -328,6 +348,7 @@ pub fn run_review(
                 let ServeState {
                     store,
                     store_dirty,
+                    save_error,
                     recent,
                     decks_dir,
                     cache,
@@ -399,7 +420,7 @@ pub fn run_review(
                     if let Some(r) = reviewing.as_mut() {
                         r.session.poll(store, now_ms());
                     }
-                    respond_json(request, &review_state(reviewing.as_ref(), store))
+                    respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()))
                 }
             }
             (Method::Post, "/api/select") => {
@@ -407,7 +428,7 @@ pub fn run_review(
                     Some(sel) => {
                         let opts = sel.opts;
                         let paths = vec![sel.deck];
-                        flush_store(store, store_dirty);
+                        flush_store(store, store_dirty, save_error);
                         if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
                             .map(|s| *store = s)
                         {
@@ -434,7 +455,7 @@ pub fn run_review(
                                 r.rotate_variant();
                                 *reviewing = Some(r);
                                 *walking = None;
-                                respond_json(request, &review_state(reviewing.as_ref(), store));
+                                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
                             }
                             Err(e) => {
                                 eprintln!("warning: could not load the selected decks: {e}");
@@ -449,7 +470,7 @@ pub fn run_review(
                 match read_selection(&mut request, decks_dir, recent, &mut *cache) {
                     Some(sel) => {
                         let paths = vec![sel.deck];
-                        flush_store(store, store_dirty);
+                        flush_store(store, store_dirty, save_error);
                         if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
                             .map(|s| *store = s)
                         {
@@ -505,7 +526,7 @@ pub fn run_review(
                 respond_json(request, &dto);
             }
             (Method::Post, "/api/reset") => {
-                flush_store(store, store_dirty);
+                flush_store(store, store_dirty, save_error);
                 #[derive(Deserialize)]
                 struct Body {
                     deck: String,
@@ -961,11 +982,11 @@ pub fn run_review(
                 *reviewing = None;
                 *walking = None;
                 *browsing = None;
-                flush_store(store, store_dirty);
+                flush_store(store, store_dirty, save_error);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/grade") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -979,9 +1000,9 @@ pub fn run_review(
                         if let Some(subject) = r.files.paths.keys().next() {
                             store::note_badges(&mut *store, subject, r.session.cards(), now);
                         }
-                        *store_dirty = true;
+                        note_dirty(store, store_dirty, save_error);
                         r.rotate_variant();
-                        respond_json(request, &review_state(reviewing.as_ref(), store));
+                        respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
                     }
                     None => respond_status(request, 400),
                 }
@@ -993,7 +1014,7 @@ pub fn run_review(
                 };
                 r.session.skip(store, now_ms());
                 r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/acquire") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -1001,9 +1022,9 @@ pub fn run_review(
                     continue;
                 };
                 r.session.acquire_current(&mut *store, now_ms());
-                *store_dirty = true;
+                note_dirty(store, store_dirty, save_error);
                 r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/check") => {
                 let Some(r) = reviewing.as_ref() else {
@@ -1047,10 +1068,10 @@ pub fn run_review(
                             store.remove(&id);
                         }
                     }
-                    *store_dirty = true;
+                    note_dirty(store, store_dirty, save_error);
                     r.files.remove_block(&subject, line);
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/promote") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -1077,9 +1098,9 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
-                *store_dirty = true;
+                note_dirty(store, store_dirty, save_error);
                 r.session.poll(store, now_ms());
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/restart") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -1088,7 +1109,7 @@ pub fn run_review(
                 };
                 r.session.restart(store, now_ms());
                 r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/ask") => {
                 #[derive(Deserialize)]
@@ -1164,7 +1185,7 @@ pub fn run_review(
                     &deck_fingerprints,
                 ) {
                     Ok(id) => {
-                        *store_dirty = true;
+                        note_dirty(store, store_dirty, save_error);
                         respond_json(request, &CreateCardResp { id });
                     }
                     Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
@@ -1201,7 +1222,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                flush_store(store, store_dirty);
+                flush_store(store, store_dirty, save_error);
                 if let Ok(s) =
                     assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
                 {
@@ -1322,11 +1343,11 @@ pub fn run_review(
             }
             (Method::Post, "/api/exam/close") => {
                 *examining = None;
-                flush_store(store, store_dirty);
+                flush_store(store, store_dirty, save_error);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/augment/open") => {
                 #[derive(Deserialize)]
@@ -1348,7 +1369,7 @@ pub fn run_review(
                     }
                 };
                 let name = body.deck;
-                flush_store(store, store_dirty);
+                flush_store(store, store_dirty, save_error);
                 if let Ok(s) = assemble::store_for(&files, cfg.instance_store.as_deref()) {
                     *store = s;
                 }
@@ -1437,11 +1458,11 @@ pub fn run_review(
             }
             (Method::Post, "/api/augment/close") => {
                 *augmenting = None;
-                flush_store(store, store_dirty);
+                flush_store(store, store_dirty, save_error);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Get, "/api/walk") => {
                 let Some(w) = walking.as_mut() else {
@@ -1477,7 +1498,7 @@ pub fn run_review(
                 match delta {
                     Some(delta) => {
                         w.walk.grade(&mut *store, delta, now_ms());
-                        *store_dirty = true;
+                        note_dirty(store, store_dirty, save_error);
                         w.clear_grade();
                         respond_json(request, &walk_dto(w));
                     }
@@ -1528,11 +1549,11 @@ pub fn run_review(
             }
             (Method::Post, "/api/walk/leave") => {
                 *walking = None;
-                flush_store(store, store_dirty);
+                flush_store(store, store_dirty, save_error);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), store));
+                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/remote/ask") => {
                 if let Some(a) = remote_ask.as_mut() {

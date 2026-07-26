@@ -96,6 +96,8 @@ pub(super) struct StateDto {
     pub(super) can_restart: bool,
     pub(super) promotable: bool,
     pub(super) label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) save_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -880,7 +882,11 @@ pub(super) fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
 /// A choice card's options are seeded by the card id plus its appearance
 /// count, so they're stable across `/api/state` and `/api/choose` yet
 /// reshuffle next time the card is served.
-pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
+pub(super) fn review_state(
+    reviewing: Option<&Reviewing>,
+    store: &Store,
+    save_error: Option<&str>,
+) -> StateDto {
     let Some(r) = reviewing else {
         return StateDto {
             kind: "review",
@@ -904,6 +910,7 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
             can_restart: false,
             promotable: false,
             label: "select decks".to_string(),
+            save_error: save_error.map(str::to_string),
         };
     };
     let session = &r.session;
@@ -999,6 +1006,7 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
         can_restart: s.can_restart,
         promotable: s.promotable,
         label: r.label.clone(),
+        save_error: save_error.map(str::to_string),
     }
 }
 

@@ -414,6 +414,8 @@
   /* Transient error notice (a failed select otherwise returns a silent 400). */
   #notice { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--void); color: var(--dim); font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 40; }
   #notice.show { opacity: 1; }
+  /* Persistent save-failure banner: unlike #notice it stays until a save succeeds. */
+  #save-alert { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); max-width: min(92vw, 560px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 6px 12px; border: 1px solid color-mix(in srgb, var(--again) 55%, transparent); border-radius: 9px; background: var(--void); color: var(--again); font-size: 0.85rem; z-index: 40; }
   .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px color-mix(in srgb, var(--bolt) 32%, transparent); }
   .deckrow .open { flex: none; width: 22px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
   .deckrow .icon { flex: none; width: 22px; height: 22px; }
@@ -1007,6 +1009,22 @@ function notice(msg) {
   n._t = setTimeout(() => n.classList.remove("show"), 4000);
 }
 
+// Save failures are stateful, not transient: the server keeps reporting
+// `save_error` until a save succeeds, so the banner stays exactly that long.
+// The raw store error rides on the tooltip.
+function syncSaveAlert() {
+  let a = document.getElementById("save-alert");
+  const msg = state && state.save_error;
+  if (!msg) { if (a) a.remove(); return; }
+  if (!a) {
+    a = document.createElement("div");
+    a.id = "save-alert";
+    document.body.appendChild(a);
+  }
+  a.title = msg;
+  a.textContent = "Progress is not being saved. Reopen the deck; recent grades may be lost.";
+}
+
 // The depth menu's cram tick-box — a per-launch choice (plain Learn never
 // crams), reset to off every time the menu opens.
 let cramOn = false;
@@ -1292,6 +1310,7 @@ function startDuePoll() {
 
 function render() {
   stopDuePoll();
+  syncSaveAlert();
   stage.innerHTML = "";
   crumbStrip.innerHTML = "";
   legend.innerHTML = "";

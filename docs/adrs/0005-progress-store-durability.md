@@ -13,6 +13,10 @@ The local placement and ownership direction is recorded in ADR 0001. Commit
 documented the self-contained synchronization model, and `d390d14` routed
 mutating commands through the same store resolution. Commit `cde778c` added a
 last-writer marker and synchronization-conflict detection on 2026-07-15.
+On 2026-07-26 the shared write path gained data and directory-entry syncing
+around the atomic rename, closing the power-loss window that could leave a
+replaced document empty; stale sessions now also surface their failed saves
+through the review API instead of only the server log.
 
 ## Context
 

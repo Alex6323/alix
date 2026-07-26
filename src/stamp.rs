@@ -233,12 +233,8 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), StampError> {
         })?;
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
     let tmp = parent.join(format!(".{file_name}.tmp"));
-    fs::write(&tmp, contents).map_err(|source| StampError::Write {
-        path: tmp.clone(),
-        source,
-    })?;
-    fs::rename(&tmp, path).map_err(|source| {
-        // The rename failed, so the tmp is stray: best-effort cleanup.
+    crate::fsio::replace_file(&tmp, path, contents.as_bytes()).map_err(|source| {
+        // A failure may strand the tmp: best-effort cleanup.
         let _ = fs::remove_file(&tmp);
         StampError::Write {
             path: path.to_path_buf(),

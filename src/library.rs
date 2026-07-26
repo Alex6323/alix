@@ -62,8 +62,8 @@ fn write_body(path: &Path, text: &str) -> Result<()> {
     std::fs::create_dir_all(parent)
         .with_context(|| format!("cannot create {}", parent.display()))?;
     let tmp = parent.join(format!(".{name}.tmp"));
-    std::fs::write(&tmp, body).with_context(|| format!("cannot write {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("cannot write {}", path.display()))?;
+    crate::fsio::replace_file(&tmp, path, body.as_bytes())
+        .with_context(|| format!("cannot write {}", path.display()))?;
     Ok(())
 }
 
@@ -555,8 +555,7 @@ mod tests {
         {
             let dir = tempfile::tempdir().unwrap();
             place_deck(dir.path(), "d", "## x\ny\n").unwrap();
-            let mut store =
-                crate::state::open_store(&dir.path().join("d.md"), dir.path()).unwrap();
+            let mut store = crate::state::open_store(&dir.path().join("d.md"), dir.path()).unwrap();
             replace_deck(dir.path(), "d", MARKER_FIXTURE, &mut store).unwrap();
             let text = std::fs::read_to_string(dir.path().join("d.md")).unwrap();
             let deck = crate::parser::parse("d.md", &text).unwrap();
