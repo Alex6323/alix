@@ -425,6 +425,16 @@ fn workspace_findings(dir: &Path) -> Report {
             }
         }
     }
+    for name in ["progress.json", "augment.json"] {
+        let stray = store_path.join(name);
+        if stray.is_file() {
+            report.warn(format!(
+                "{}: aggregate state file is never read (state lives in per-deck documents \
+                 under `progress/` and `augment/`); back it up and delete it",
+                stray.display()
+            ));
+        }
+    }
     for conflict in alix::store::sync_conflicts(&store_path) {
         report.warn(format!(
             "synchronization conflict needs deliberate recovery: {}",
@@ -941,5 +951,29 @@ mod tests {
 
         assert!(warnings.contains("orphaned augmentation state document"));
         assert!(warnings.contains(&conflict.display().to_string()));
+    }
+
+    #[test]
+    fn doctor_flags_unread_aggregate_state_files() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "deck.md",
+            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+        );
+        w(dir.path(), "progress.json", r#"{"version":1,"cards":{}}"#);
+        w(dir.path(), "augment.json", r#"{"version":1,"cards":{}}"#);
+
+        let report = workspace_findings(dir.path());
+        let warnings = report.warnings.join("\n");
+
+        assert!(
+            warnings.contains("progress.json") && warnings.contains("never read"),
+            "aggregate progress warning: {warnings}"
+        );
+        assert!(
+            warnings.contains("augment.json"),
+            "aggregate augment warning: {warnings}"
+        );
     }
 }

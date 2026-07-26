@@ -155,7 +155,8 @@ notes it.
   card or deck (orphans, clear them with `alix reset --orphans`), a
   non-canonical token, a frontmatter that can't be stamped, and cards still
   awaiting a token. It also names deck-like Markdown ignored until explicitly
-  initialized, invalid or orphaned per-deck state documents, and
+  initialized, invalid or orphaned per-deck state documents, aggregate
+  `progress.json`/`augment.json` files that are never read, and
   synchronization conflict copies. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured

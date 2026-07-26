@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix doctor` flags aggregate `progress.json`/`augment.json` files that are
+  never read, with the advice to back them up and delete them.
 - A private vulnerability-reporting policy and a tracked threat model covering
   local files, LAN pairing, AI providers, sharing, persistence, mobile, and
   release boundaries.
