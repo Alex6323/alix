@@ -30,7 +30,8 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
     let cwd = if url {
         None
     } else {
-        let (base_dir, _) = resolve_source(deck.path.parent(), Some(source));
+        let content_root = crate::workspace::content_root(&deck.path);
+        let (base_dir, _) = resolve_source(Some(&content_root), Some(source));
         Some(base_dir)
     };
     let prompt = build_prompt(description, source, url, cfg);
@@ -54,14 +55,13 @@ pub(crate) fn snapshot(
     start: usize,
     workspace_origin: Option<&Path>,
 ) -> Result<SnapshotReport> {
-    let deck_dir = deck.path.parent().unwrap_or_else(|| Path::new("."));
-    if !crate::workspace::is_workspace(deck_dir) {
+    let Some(workspace_root) = crate::workspace::root_for_deck(&deck.path) else {
         bail!(
             "a deck snapshots into its workspace's `assets/`, but {} is not in a \
              workspace (no `alix.toml`).",
             deck.path.display()
         );
-    }
+    };
     let source = deck
         .sources
         .first()
@@ -78,7 +78,7 @@ pub(crate) fn snapshot(
     };
 
     let source_base = SourceBase::for_deck(deck);
-    let assets_dir = deck_dir.join(SNAPSHOT_DIR);
+    let assets_dir = workspace_root.join(SNAPSHOT_DIR);
     let mut copied = Vec::new();
     let mut missing = Vec::new();
     let mut ats: Vec<crate::deck::AtRewrite> = Vec::new();
@@ -727,8 +727,9 @@ mod tests {
             "alix.toml",
             "title = \"W\"\n\n[defaults]\norigin = \"../src\"\n",
         );
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(
-            &root.join("ws"),
+            &root.join("ws/decks"),
             "t.md",
             "---\ntrace: how it works\nsource: ../src\n---\n\
              ## hop 1\nit reads a\n<!-- at: a.rs:2-3 -->\n\
@@ -793,10 +794,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(root, "notes.md", "L1\nL2\nL3\n");
-        std::fs::create_dir_all(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let deck_path = write(
-            &root.join("ws"),
+            &root.join("ws/decks"),
             "t.md",
             "---\ntrace: t\nsource: ../notes.md\n---\n## hop\np\n<!-- at: 2 -->\n",
         );
@@ -824,10 +825,10 @@ mod tests {
         std::fs::create_dir_all(root.join("src")).unwrap();
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
         write(&root.join("src"), "b.rs", "one\ntwo\n");
-        std::fs::create_dir_all(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let deck_path = write(
-            &root.join("ws"),
+            &root.join("ws/decks"),
             "d.md",
             "---\nsource: ../src/a.rs + b.rs\n---\n\
              ## q1\np\n<!-- at: a.rs:2-3 -->\n\
@@ -852,10 +853,10 @@ mod tests {
         let err = snapshot(&Deck::load(&loose).unwrap(), 0, None).unwrap_err();
         assert!(format!("{err:#}").contains("not in a workspace"), "{err:#}");
 
-        std::fs::create_dir_all(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let url = write(
-            &root.join("ws"),
+            &root.join("ws/decks"),
             "u.md",
             "---\ntrace: t\nsource: https://example.com/p\n---\n## h\np\n<!-- at: 1 -->\n",
         );

@@ -108,18 +108,21 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
     }
     let (mut deck_files, mut uninitialized) =
         workspace::classified_deck_files(decks_dir).unwrap_or_default();
-    let mut dirs = 0usize;
-    for entry in std::fs::read_dir(decks_dir).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
+    let direct_workspace = workspace::is_workspace(decks_dir);
+    let mut dirs = usize::from(direct_workspace);
+    if !direct_workspace {
+        for entry in std::fs::read_dir(decks_dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let (members, candidates) = workspace::classified_deck_files(&path).unwrap_or_default();
+            if !members.is_empty() {
+                dirs += 1;
+            }
+            deck_files.extend(members);
+            uninitialized.extend(candidates);
         }
-        let (members, candidates) = workspace::classified_deck_files(&path).unwrap_or_default();
-        if !members.is_empty() {
-            dirs += 1;
-        }
-        deck_files.extend(members);
-        uninitialized.extend(candidates);
     }
     let mut broken = Vec::new();
     let mut malformed_math = Vec::new();
@@ -330,6 +333,27 @@ mod tests {
         assert!(finding.detail.contains("notes.md"));
         assert!(finding.remedy.as_deref().unwrap().contains("deck init"));
         assert_eq!(original, std::fs::read_to_string(path).unwrap());
+    }
+
+    #[test]
+    fn a_direct_workspace_counts_each_member_once() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(workspace::MANIFEST), "").unwrap();
+        std::fs::create_dir(dir.path().join(workspace::DECKS)).unwrap();
+        std::fs::write(
+            dir.path().join("decks/member.md"),
+            "---\nalix-id: \"member\"\n---\n## q\nanswer\n",
+        )
+        .unwrap();
+
+        let finding = check_decks(dir.path());
+
+        assert_eq!(Status::Ok, finding.status);
+        assert!(
+            finding.detail.starts_with("1 decks across 1"),
+            "{}",
+            finding.detail
+        );
     }
 
     #[test]

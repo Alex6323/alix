@@ -99,11 +99,11 @@ where it is rather than fixed:
 - `fixtures/decks/animals/` is a tiny, deterministic workspace ("Animals"),
   shared by both clients:
   - `alix.toml` — makes the folder a workspace.
-  - `wild.md`: an initialized 2-card L1 deck (a frontmatter `alix-id`, `## `
+  - `decks/wild.md`: an initialized 2-card L1 deck (a frontmatter `alix-id`, `## `
     fronts with literal `<!-- id: -->` tokens, and `> ` notes). Both cards are
     always genuinely never-seen at the start of a run, so the suite exercises
     a real first session, acquire path included.
-  - `cats.md` — one card with a two-line answer ("Lion" / "Tiger"), in its
+  - `decks/cats.md`: one card with a two-line answer ("Lion" / "Tiger"), in its
     own file so editing it can never disturb `wild.md`. Exists
     solely for the multi-line regression test (`tests/kids-multiline.spec.ts`).
   - `augment/00000000000000000000000008.json`: the **frozen**, deck-owned
@@ -111,14 +111,14 @@ where it is rather than fixed:
     Claude call:
 
     ```sh
-    alix deck augment e2e/fixtures/decks/animals/wild.md --target choices \
+    alix deck augment e2e/fixtures/decks/animals/decks/wild.md --target choices \
       --store e2e/fixtures/decks/animals
     ```
 
     It's committed so the suite needs no AI backend and no network at test
     time — Recognize only renders tap-the-answer buttons when distractors are
     cached. The cache is keyed by each card's literal `<!-- id: -->` token, so
-    it stays valid as long as those tokens in `wild.md` don't change; if you
+    it stays valid as long as those tokens in `decks/wild.md` don't change; if you
     change a token, or add/remove a card in that file, regenerate the matching
     augmentation document with the command above and commit it.
 - `fixtures/kids.toml` / `fixtures/adult.toml` each set `[serve] audience`

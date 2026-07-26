@@ -88,8 +88,8 @@ flutter:
     - assets/decks/tutorial.md
     - assets/decks/basics.md
     - assets/decks/sample-workspace/alix.toml
-    - assets/decks/sample-workspace/capitals.md
-    - assets/decks/sample-workspace/steps.md
+    - assets/decks/sample-workspace/decks/capitals.md
+    - assets/decks/sample-workspace/decks/steps.md
     - assets/icon/alix-192.png
 
   # IBM Plex (OFL, assets/fonts/OFL.txt): the web app's identity faces,

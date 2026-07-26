@@ -109,7 +109,7 @@ The rest of the AI-and-deck surface:
   needed; `--workspace <dir>` imports into a workspace).
 - `alix workspace init <dir>`: scaffold an empty
   [workspace](08-workspaces.md): an `alix.toml` (`--title` names it) and an
-  `assets/` dir, no decks. Grow it with the `--workspace` flags above.
+  empty `decks/` plus `assets/`. Grow it with the `--workspace` flags above.
 - `alix workspace deadline <dir> [<date>|clear]`: show, set, or clear a
   workspace's personal "ready by" date (`--config <path>`); no argument prints
   the current one. Workspace-only, see [Workspaces](08-workspaces.md).

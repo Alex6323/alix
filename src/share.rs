@@ -9,11 +9,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// Named personal entries excluded from staging and stripped on receive.
-pub const PERSONAL: [&str; 3] = [
-    "progress",
-    "recent.json",
-    "alix.local.toml",
-];
+pub const PERSONAL: [&str; 3] = ["progress", "recent.json", "alix.local.toml"];
 const DECK_BUNDLE_MARKER: &str = ".alix-deck-share.json";
 const DECK_BUNDLE_VERSION: u32 = 1;
 
@@ -80,14 +76,8 @@ pub fn stage_path(path: &Path, state_root: &Path, stage_root: &Path) -> Result<(
 
 pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
     std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
-    let deck_ids: std::collections::HashSet<String> = std::fs::read_dir(dir)
+    let deck_ids: std::collections::HashSet<String> = crate::workspace::deck_files(dir)
         .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.is_file() && path.extension().is_some_and(|extension| extension == "md")
-        })
         .filter_map(|path| crate::deck::Deck::load(path).ok()?.deck_token)
         .collect();
     let mut staged = 0;
@@ -521,8 +511,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("ws");
         std::fs::create_dir_all(src.join("assets")).unwrap();
+        std::fs::create_dir_all(src.join("decks")).unwrap();
         std::fs::write(
-            src.join("deck.md"),
+            src.join("decks/deck.md"),
             "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
         )
         .unwrap();
@@ -541,9 +532,9 @@ mod tests {
 
         assert_eq!(
             4, n,
-            "deck.md, alix.toml, augment/deck1.json, assets/icon.svg"
+            "decks/deck.md, alix.toml, augment/deck1.json, assets/icon.svg"
         );
-        assert!(stage.join("deck.md").exists());
+        assert!(stage.join("decks/deck.md").exists());
         assert!(stage.join("alix.toml").exists());
         assert!(stage.join("augment/deck1.json").exists());
         assert!(!stage.join("augment/orphan.json").exists());

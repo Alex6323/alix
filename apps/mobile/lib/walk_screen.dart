@@ -200,14 +200,20 @@ class _WalkScreenState extends State<WalkScreen> {
 
   /// The name the paired server's own catalog resolves this deck by,
   /// mirroring review_screen.dart's `_deckName()` exactly (see its own
-  /// doc): strip the root prefix, then rejoin the remaining path
-  /// components with `/`.
+  /// doc): strip the root prefix and the workspace's internal `decks/`
+  /// segment, then rejoin the remaining path components with `/`.
   String _deckName() {
     var rel = widget.deckPath;
     if (rel.startsWith(widget.rootDir)) {
       rel = rel.substring(widget.rootDir.length);
     }
-    final parts = rel.split(RegExp(r'[\\/]+')).where((p) => p.isNotEmpty);
+    final parts = rel
+        .split(RegExp(r'[\\/]+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.length >= 2 && parts[parts.length - 2] == 'decks') {
+      parts.removeAt(parts.length - 2);
+    }
     return parts.join('/');
   }
 

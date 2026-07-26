@@ -39,7 +39,8 @@ pub fn scan_dir(dir: &Path) -> DuplicateMap {
 /// review-open hot path. Divergence from the parser is biased to missing a
 /// dup (no resolution, doctor still warns), never to inventing one.
 pub fn scan_dir_fast(dir: &Path) -> DuplicateMap {
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
+    let member_dir = crate::workspace::member_dir(dir);
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(member_dir)
         .map(|entries| {
             entries
                 .filter_map(|r| r.ok().map(|e| e.path()))

@@ -120,10 +120,13 @@ mod tests {
     fn lists_a_root_with_a_workspace_and_a_loose_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write_deck(root.join("loose.md"), "# Loose\n\n## q <!-- id: q1 -->\na\n");
-        std::fs::create_dir(root.join("ws")).unwrap();
+        write_deck(
+            root.join("loose.md"),
+            "# Loose\n\n## q <!-- id: q1 -->\na\n",
+        );
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         std::fs::write(root.join("ws/alix.toml"), "title = \"Ws\"\n").unwrap();
-        write_deck(root.join("ws/m.md"), "## q <!-- id: q1 -->\na\n");
+        write_deck(root.join("ws/decks/m.md"), "## q <!-- id: q1 -->\na\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(1_000_000));
         let titles: Vec<(&str, bool, bool)> = rows
@@ -149,8 +152,7 @@ mod tests {
         assert!(sync_conflicts(root.to_string_lossy().into_owned()).is_empty());
 
         std::fs::create_dir(root.join("progress")).unwrap();
-        let conflict =
-            root.join("progress/deck1.sync-conflict-20260714-101112-ABCDEF7.json");
+        let conflict = root.join("progress/deck1.sync-conflict-20260714-101112-ABCDEF7.json");
         std::fs::write(&conflict, "{}").unwrap();
         assert_eq!(
             sync_conflicts(root.to_string_lossy().into_owned()),
@@ -189,7 +191,9 @@ mod tests {
         );
         write_deck(root.join("fresh.md"), "## q\na\n");
 
-        let base_subject = alix::deck::Deck::load(root.join("base.md")).unwrap().subject;
+        let base_subject = alix::deck::Deck::load(root.join("base.md"))
+            .unwrap()
+            .subject;
         let base_id = alix::deck::Deck::load(root.join("base.md")).unwrap().cards[0]
             .id()
             .expect("the fixture stamps its own id");
@@ -225,13 +229,14 @@ mod tests {
             "---\nsource: \"https://x\"\n---\n## q\na\n",
         );
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
         write(&ws.join("alix.toml"), "");
         write_deck(
-            ws.join("child.md"),
+            members.join("child.md"),
             "---\nrequires: gate\n---\n## q2\nb\n",
         );
-        write_deck(ws.join("other.md"), "## q\na\n");
+        write_deck(members.join("other.md"), "## q\na\n");
 
         let rows = list_members(
             root.to_string_lossy().into_owned(),
@@ -248,11 +253,11 @@ mod tests {
     fn workspace_icon_crosses_to_some_and_a_plain_deck_row_to_none() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::create_dir(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws/alix.toml"), "");
         std::fs::create_dir_all(root.join("ws/assets")).unwrap();
         write(&root.join("ws/assets/icon.svg"), "<svg/>");
-        write_deck(root.join("ws/m.md"), "## q\na\n");
+        write_deck(root.join("ws/decks/m.md"), "## q\na\n");
         write_deck(root.join("loose.md"), "## q\na\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
@@ -274,18 +279,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
         write(&ws.join("alix.toml"), "");
-        write_deck(ws.join("base.md"), "## q\na\n");
+        write_deck(members.join("base.md"), "## q\na\n");
         write_deck(
-            ws.join("mid.md"),
+            members.join("mid.md"),
             "---\nrequires: base\n---\n## q\na\n",
         );
-        write_deck(
-            ws.join("tip.md"),
-            "---\nrequires: mid\n---\n## q\na\n",
-        );
-        write_deck(ws.join("other.md"), "## q\na\n");
+        write_deck(members.join("tip.md"), "---\nrequires: mid\n---\n## q\na\n");
+        write_deck(members.join("other.md"), "## q\na\n");
 
         let rows = list_members(
             root.to_string_lossy().into_owned(),
@@ -312,9 +315,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"Ws\"\n");
-        write_deck(ws.join("m.md"), "## q\na\n");
+        write_deck(ws.join("decks/m.md"), "## q\na\n");
         let ws_s = ws.to_string_lossy().into_owned();
         let root_s = root.to_string_lossy().into_owned();
 
@@ -326,15 +329,21 @@ mod tests {
         let text = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
         assert!(text.contains(&format!("deadline = \"{date_s}\"")));
         let fetched = workspace_deadline(root_s.clone(), ws_s.clone(), Some(T0)).unwrap();
-        assert_eq!((date_s.as_str(), 5, 0, 1), (
-            fetched.date.as_str(),
-            fetched.days_left,
-            fetched.ready,
-            fetched.total,
-        ));
+        assert_eq!(
+            (date_s.as_str(), 5, 0, 1),
+            (
+                fetched.date.as_str(),
+                fetched.days_left,
+                fetched.ready,
+                fetched.total,
+            )
+        );
         let rows = list_root(root_s.clone(), Some(T0));
         let row = rows.iter().find(|r| r.is_workspace).unwrap();
-        assert_eq!(Some(date_s.as_str()), row.deadline.as_ref().map(|d| d.date.as_str()));
+        assert_eq!(
+            Some(date_s.as_str()),
+            row.deadline.as_ref().map(|d| d.date.as_str())
+        );
 
         assert!(set_workspace_deadline(ws_s.clone(), Some("someday".into())).is_err());
 
@@ -343,7 +352,13 @@ mod tests {
         assert!(!text.contains("deadline"));
         assert!(workspace_deadline(root_s.clone(), ws_s, Some(T0)).is_none());
         let rows = list_root(root_s, Some(T0));
-        assert!(rows.iter().find(|r| r.is_workspace).unwrap().deadline.is_none());
+        assert!(
+            rows.iter()
+                .find(|r| r.is_workspace)
+                .unwrap()
+                .deadline
+                .is_none()
+        );
     }
 
     #[test]

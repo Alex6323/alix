@@ -211,12 +211,13 @@ mod tests {
 
     fn write_workspace(dir: &std::path::Path) {
         std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::create_dir_all(dir.join("decks")).unwrap();
         std::fs::write(
             dir.join("alix.toml"),
             "title = \"Light Client\"\ndescription = \"understand the source\"\n",
         )
         .unwrap();
-        std::fs::write(dir.join("a.md"), "# Sync protocol\n## q\na\n").unwrap();
+        std::fs::write(dir.join("decks/a.md"), "# Sync protocol\n## q\na\n").unwrap();
     }
 
     #[test]

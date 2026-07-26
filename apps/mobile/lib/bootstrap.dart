@@ -12,8 +12,8 @@ import 'package:alix_mobile/server_client.dart';
 const _samples = [
   'decks/basics.md',
   'decks/sample-workspace/alix.toml',
-  'decks/sample-workspace/capitals.md',
-  'decks/sample-workspace/steps.md',
+  'decks/sample-workspace/decks/capitals.md',
+  'decks/sample-workspace/decks/steps.md',
 ];
 
 /// What [prepare] resolved for this launch.

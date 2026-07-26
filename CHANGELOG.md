@@ -20,6 +20,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking (pre-1.0):** workspace member decks now live only under direct
+  `decks/*.md` children. Manifests, assets, progress, and augmentation remain at
+  the workspace root; relative member sources, origins, and images also anchor
+  there. Workspace creation and every generation/import/receive surface write
+  the new shape, while `alix doctor` reports initialized root decks that are not
+  discovered. Existing workspaces must move their deck files into `decks/`
+  without changing `alix-id` or card IDs.
 - **Breaking (pre-1.0):** progress and AI augmentation now live in independently
   versioned documents per initialized deck:
   `progress/<alix-id>.json` and `augment/<alix-id>.json`. Renaming a deck keeps
@@ -1558,7 +1565,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   background thread while the page polls; `--port`/`--lan` work as in `review`.
   `alix trace <deck> --map`
   prints the path without quizzing; the generic AI exam refuses a trace (its
-  verification is the walk itself). See `docs/examples/workspace-showcase/ownership-move.md`.
+  verification is the walk itself). See
+  `docs/examples/workspace-showcase/decks/ownership-move.md`.
   **`alix trace --build <deck>`** discovers the path for you: declare just the
   `% trace:` and `% source:`, and Claude explores the source (read-only
   `Read`/`Glob`/`Grep`, with the source root as its working directory — no write

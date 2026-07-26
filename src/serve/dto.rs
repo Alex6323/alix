@@ -474,7 +474,7 @@ pub(super) fn strictness_name(s: Strictness) -> &'static str {
     }
 }
 
-pub(super) fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
+pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
     let s = &ex.sitting;
     let result = s.result();
     let grades = result
@@ -496,7 +496,7 @@ pub(super) fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
         .unwrap_or_default();
     let passed = result.map(|r| r.passed);
     let unlocks = if passed == Some(true) {
-        deck::dependents(&ex.deck_path, decks_dir)
+        deck::dependents(&ex.deck_path)
     } else {
         Vec::new()
     };

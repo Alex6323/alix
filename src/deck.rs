@@ -248,14 +248,14 @@ impl Deck {
     /// The explicitly declared live-source boundary for tutor grounding and
     /// frozen-source drift checks. A `source` citation never implies this grant.
     pub fn source_root(&self) -> Option<PathBuf> {
-        let deck_dir = self.path.parent().unwrap_or_else(|| Path::new("."));
+        let content_root = crate::workspace::content_root(&self.path);
         if let Some(origin) = &self.settings.origin {
-            return Some(resolve_source_root(origin, deck_dir));
+            return Some(resolve_source_root(origin, &content_root));
         }
         let (_, _, workspace_settings, _) =
-            crate::workspace::read_manifest(&deck_dir.join(crate::workspace::MANIFEST));
+            crate::workspace::read_manifest(&content_root.join(crate::workspace::MANIFEST));
         if let Some(origin) = workspace_settings.origin {
-            return Some(resolve_source_root(&origin, deck_dir));
+            return Some(resolve_source_root(&origin, &content_root));
         }
         None
     }
@@ -346,11 +346,14 @@ pub(crate) fn is_url(s: &str) -> bool {
     s.starts_with("http://") || s.starts_with("https://")
 }
 
-pub fn dependents(target: &Path, decks_dir: &Path) -> Vec<String> {
+pub fn dependents(target: &Path) -> Vec<String> {
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let target = canon(target);
     let mut names = Vec::new();
-    let Ok(entries) = std::fs::read_dir(decks_dir) else {
+    let Some(member_dir) = target.parent() else {
+        return names;
+    };
+    let Ok(entries) = std::fs::read_dir(member_dir) else {
         return names;
     };
     for entry in entries.flatten() {
@@ -362,7 +365,7 @@ pub fn dependents(target: &Path, decks_dir: &Path) -> Vec<String> {
             continue;
         };
         let requires_target = deck.requires.iter().any(|req| {
-            resolve_dep(req, Some(decks_dir), path.parent())
+            resolve_dep(req, Some(member_dir), path.parent())
                 .is_some_and(|dep| canon(&dep) == target)
         });
         if requires_target {
@@ -374,10 +377,7 @@ pub fn dependents(target: &Path, decks_dir: &Path) -> Vec<String> {
 }
 
 fn image_base_dir(deck_path: &Path) -> PathBuf {
-    deck_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf()
+    crate::workspace::content_root(deck_path)
 }
 
 fn resolve_image(base: &Path, image: PathBuf) -> PathBuf {
@@ -867,8 +867,24 @@ mod tests {
         );
         write_deck(dir.path(), "unrelated.md", "## q\nr\n");
 
-        let deps = dependents(&basics, dir.path());
+        let deps = dependents(&basics);
         assert_eq!(vec!["advanced.md"], deps);
+    }
+
+    #[test]
+    fn dependents_scan_the_workspace_member_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let members = dir.path().join("decks");
+        std::fs::create_dir(&members).unwrap();
+        std::fs::write(dir.path().join(crate::workspace::MANIFEST), "").unwrap();
+        let basics = write_deck(&members, "basics.md", "## a\n1\n");
+        write_deck(
+            &members,
+            "advanced.md",
+            "---\nrequires: basics\n---\n## x\ny\n",
+        );
+
+        assert_eq!(vec!["advanced.md"], dependents(&basics));
     }
 
     #[test]
@@ -1203,7 +1219,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path().join("workspace");
         let source = dir.path().join("source");
-        std::fs::create_dir_all(&workspace).unwrap();
+        let members = workspace.join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&members).unwrap();
         std::fs::create_dir_all(&source).unwrap();
         std::fs::write(
             workspace.join(crate::workspace::MANIFEST),
@@ -1211,7 +1228,7 @@ mod tests {
         )
         .unwrap();
         let path = write_deck(
-            &workspace,
+            &members,
             "d.md",
             "---\nsource: ../source/file.rs\n---\n## f\nb\n",
         );

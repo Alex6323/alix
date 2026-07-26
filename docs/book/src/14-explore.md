@@ -34,8 +34,8 @@ items become a **workspace build**: the plan prints, `alix` confirms
 explores the source **once** and reuses that single session to fill every item —
 predict-verify checkpoints for the traces, fact cards for the decks — so the
 [workspace](08-workspaces.md) comes out review-ready in one command: an
-`alix.toml` (carrying the goal; `--title` names it) and one deck per item — a
-`trace:` deck per trace, a `# ` facts deck per deck — wired together
+`alix.toml` (carrying the goal; `--title` names it) and one file per item under
+`decks/`: a `trace:` deck per trace and a `# ` facts deck per deck, wired together
 with `requires:` so they unlock in dependency order, each `source:` pointing
 back at the real source. Writing the whole set from one understanding keeps the
 items **coherent** (each builds on its prerequisites instead of repeating them).
@@ -51,7 +51,7 @@ source under your decks directory.
 
 Pointing a build at a destination that already has files never blocks the run
 or loses anything: `alix` builds into a scratch staging folder next to it
-first, then moves the new files in one by one. A name that's already there
+first, then moves the new member files into `decks/` one by one. A name that's already there
 keeps your existing file untouched — the new version stays behind in the
 staging folder, reported at the end so you can compare and move it in by
 hand — while everything else lands normally. Pass `--force` to overwrite

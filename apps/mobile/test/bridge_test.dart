@@ -59,14 +59,14 @@ Directory makeRoot() {
     '${root.path}/loose.md',
     '# Loose\n\n## capital of france? <!-- id: capital -->\nParis\n',
   );
-  Directory('${root.path}/ws').createSync();
+  Directory('${root.path}/ws/decks').createSync(recursive: true);
   File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
   writeTestDeck(
-    '${root.path}/ws/m.md',
+    '${root.path}/ws/decks/m.md',
     '## q1 <!-- id: q1 -->\na1\n\n'
-    '## q2 <!-- id: q2 -->\na2\n\n'
-    '## q3 <!-- id: q3 -->\na3\n\n'
-    '## q4 <!-- id: q4 -->\na4\n',
+        '## q2 <!-- id: q2 -->\na2\n\n'
+        '## q3 <!-- id: q3 -->\na3\n\n'
+        '## q4 <!-- id: q4 -->\na4\n',
   );
   return root;
 }
@@ -83,10 +83,9 @@ void acquireAll(String deck, String root) {
 }
 
 String onlyProgressDocument(String stateRoot) {
-  final files = Directory('$stateRoot/progress')
-      .listSync()
-      .whereType<File>()
-      .toList();
+  final files = Directory(
+    '$stateRoot/progress',
+  ).listSync().whereType<File>().toList();
   expect(files, hasLength(1));
   return files.single.readAsStringSync();
 }
@@ -234,7 +233,7 @@ void main() {
   test('a grade persists into the workspace store, on injected time', () {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/ws/m.md';
+    final deck = '${root.path}/ws/decks/m.md';
     acquireAll(deck, root.path);
 
     final s = ReviewSession.open(
@@ -251,8 +250,8 @@ void main() {
     expect(
       !rootProgress.existsSync() ||
           rootProgress.listSync().whereType<File>().every(
-                (file) => !file.readAsStringSync().contains('"stability"'),
-              ),
+            (file) => !file.readAsStringSync().contains('"stability"'),
+          ),
       isTrue,
       reason: 'the loose-deck root store stays untouched (or was never made)',
     );
@@ -261,7 +260,7 @@ void main() {
   test('choice options and feedback stay in lockstep', () {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/ws/m.md';
+    final deck = '${root.path}/ws/decks/m.md';
     acquireAll(deck, root.path);
     // Recognize is pick-only: arm the deck's cached distractors so it renders a
     // real pick (on a phone these arrive by syncing the desktop's augmentation).
@@ -381,10 +380,7 @@ void main() {
     addTearDown(() => rootA.deleteSync(recursive: true));
     final rootB = Directory.systemTemp.createTempSync('alix-shared-');
     addTearDown(() => rootB.deleteSync(recursive: true));
-    writeTestDeck(
-      '${rootB.path}/shared.md',
-      '# Shared Deck\n\n## q\na\n',
-    );
+    writeTestDeck('${rootB.path}/shared.md', '# Shared Deck\n\n## q\na\n');
 
     await tester.pumpWidget(
       AlixApp(
@@ -457,40 +453,42 @@ void main() {
     expect(find.text('mobile 9.9.9+9 / core ${coreVersion()}'), findsOneWidget);
   });
 
-  testWidgets('the one quiet Support line lives behind the Settings heart, not on a study surface', (
-    tester,
-  ) async {
-    final root = makeRoot();
-    addTearDown(() => root.deleteSync(recursive: true));
-    await tester.pumpWidget(
-      AlixApp(
-        prepared: Prepared(root: root.path, device: 'phone-test'),
-        access: FakeAccess(),
-        persistDecksDir: (_) async {},
-        reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
-      ),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'the one quiet Support line lives behind the Settings heart, not on a study surface',
+    (tester) async {
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+      await tester.pumpWidget(
+        AlixApp(
+          prepared: Prepared(root: root.path, device: 'phone-test'),
+          access: FakeAccess(),
+          persistDecksDir: (_) async {},
+          reprepare: () async =>
+              Prepared(root: root.path, device: 'phone-test'),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    // Not on the picker (a study surface).
-    expect(find.textContaining('sponsors/Alex6323'), findsNothing);
+      // Not on the picker (a study surface).
+      expect(find.textContaining('sponsors/Alex6323'), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
 
-    // Opening Settings shows only the row's label, not the ask copy/link.
-    expect(find.text('Support alix'), findsOneWidget);
-    expect(find.textContaining('sponsors/Alex6323'), findsNothing);
+      // Opening Settings shows only the row's label, not the ask copy/link.
+      expect(find.text('Support alix'), findsOneWidget);
+      expect(find.textContaining('sponsors/Alex6323'), findsNothing);
 
-    await tester.tap(find.text('Support alix'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Support alix'));
+      await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining('Telling someone who studies is the best support'),
-      findsOneWidget,
-    );
-    expect(find.text('https://github.com/sponsors/Alex6323'), findsOneWidget);
-  });
+      expect(
+        find.textContaining('Telling someone who studies is the best support'),
+        findsOneWidget,
+      );
+      expect(find.text('https://github.com/sponsors/Alex6323'), findsOneWidget);
+    },
+  );
 
   group('theme picker (T6.2)', () {
     testWidgets('startup resolves the saved theme via themeById', (
@@ -956,10 +954,7 @@ void main() {
     await tester.tap(find.text('Got it'));
     await tester.pump();
     expect(find.text('SESSION COMPLETE'), findsOneWidget);
-    expect(
-      onlyProgressDocument(root.path),
-      contains('"stability"'),
-    );
+    expect(onlyProgressDocument(root.path), contains('"stability"'));
   });
 
   testWidgets(
@@ -997,7 +992,7 @@ void main() {
   testWidgets('a choice pick washes the correct option green', (tester) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/ws/m.md';
+    final deck = '${root.path}/ws/decks/m.md';
     acquireAll(deck, root.path);
     // Recognize is pick-only: arm the deck's cached distractors so it renders a
     // real pick (on a phone these arrive by syncing the desktop's augmentation).

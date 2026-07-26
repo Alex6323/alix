@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
+use std::collections::{HashMap, HashSet};
 
 use alix::{
     assemble::{load_decks, open_store, store_path_for},
@@ -40,9 +37,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
     for path in &target.decks {
         let store = target.store_for_deck(path, args.store.as_deref())?;
         let deck = Deck::load(path)?;
-        let review = config
-            .review
-            .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
+        let review = config.review.for_workspace(&workspace::content_root(path));
         let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
 
         let mut due_now = 0usize;
@@ -119,9 +114,7 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
     for path in &target.decks {
         let store = target.store_for_deck(path, args.store.as_deref())?;
         let deck = Deck::load(path)?;
-        let review = config
-            .review
-            .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
+        let review = config.review.for_workspace(&workspace::content_root(path));
         let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
         println!("{}", deck.display_name());
         for card in &deck.cards {

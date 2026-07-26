@@ -36,6 +36,7 @@ use crate::{
     share,
     store::{self, Store},
     trace::{self, Walk},
+    workspace,
 };
 
 const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
@@ -1259,7 +1260,7 @@ pub fn run_review(
                             sitting,
                             deck_path: path,
                         };
-                        let dto = exam_dto(&ex, decks_dir);
+                        let dto = exam_dto(&ex);
                         *examining = Some(ex);
                         respond_json(request, &dto);
                     }
@@ -1271,10 +1272,10 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                let parent = ex.deck_path.parent().unwrap_or_else(|| Path::new(""));
-                let retire_after_days = review_cfg.for_workspace(parent).retire_after_days;
+                let root = workspace::content_root(&ex.deck_path);
+                let retire_after_days = review_cfg.for_workspace(&root).retire_after_days;
                 ex.sitting.poll(&mut *store, now_ms(), retire_after_days);
-                respond_json(request, &exam_dto(ex, decks_dir));
+                respond_json(request, &exam_dto(ex));
             }
             (Method::Post, "/api/exam/answer") => {
                 #[derive(Deserialize)]
@@ -1293,7 +1294,7 @@ pub fn run_review(
                         ex.sitting.goto(i);
                     }
                 }
-                respond_json(request, &exam_dto(ex, decks_dir));
+                respond_json(request, &exam_dto(ex));
             }
             (Method::Post, "/api/exam/grade") => {
                 #[derive(Deserialize)]
@@ -1309,7 +1310,7 @@ pub fn run_review(
                     ex.sitting.set_answer(b.text);
                 }
                 ex.sitting.submit();
-                respond_json(request, &exam_dto(ex, decks_dir));
+                respond_json(request, &exam_dto(ex));
             }
             (Method::Post, "/api/exam/remediate") => {
                 let Some(ex) = examining.as_mut() else {
@@ -1317,7 +1318,7 @@ pub fn run_review(
                     continue;
                 };
                 ex.sitting.remediate();
-                respond_json(request, &exam_dto(ex, decks_dir));
+                respond_json(request, &exam_dto(ex));
             }
             (Method::Post, "/api/exam/close") => {
                 *examining = None;

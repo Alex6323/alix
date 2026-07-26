@@ -731,14 +731,14 @@ mod tests {
         std::fs::create_dir_all(root.join("src")).unwrap();
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
         write(&root.join("src"), "b.rs", "one\ntwo\n");
-        std::fs::create_dir_all(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(
             &root.join("ws"),
             "alix.toml",
             "title = \"W\"\n\n[defaults]\norigin = \"../src\"\n",
         );
         write(
-            &root.join("ws"),
+            &root.join("ws/decks"),
             "t.md",
             "---\ntrace: how it works\n\
              source: ../src\n---\n\

@@ -7,10 +7,10 @@ own progress.
 
 ## Making a workspace
 
-Any folder of initialized `.md` decks becomes a workspace the moment you drop
-an **`alix.toml`** in it, a scoped version of the global config file. It sets a
-title and a `[defaults]` table of directives that every deck in the folder
-inherits:
+A workspace has an **`alix.toml`** at its root and its initialized `.md` decks
+as direct children of `decks/`. The manifest is a scoped version of the global
+config file. It sets a title and a `[defaults]` table of directives that every
+member deck inherits:
 
 ```toml
 # ~/decks/spanish/alix.toml
@@ -23,18 +23,32 @@ reveal = "line"
 
 Starting from nothing instead? `alix workspace init <dir>` (`--title` to name
 it) scaffolds an empty workspace: an `alix.toml`, an `alix.local.toml`, and an
-`assets/` folder, no decks yet. Both TOML files come fully commented, each key
-explained inline, so they document themselves. Grow the workspace with
+empty `decks/` plus `assets/`. Both TOML files come fully commented, each key
+explained inline, so they document themselves. The fixed layout is:
+
+```text
+spanish/
+├── alix.toml
+├── alix.local.toml
+├── decks/
+│   └── verbs.md
+├── assets/
+├── progress/
+└── augment/
+```
+
+Grow the workspace with
 [`alix generate … --workspace <dir>`](11-generating-decks.md) or
 `alix deck import … --workspace <dir>`, also available from the web UI's ☰
 menu's **Add deck…** sheet. Dependencies (`requires:`) are still edited by
 hand in the deck files.
 
-Run `alix deck init <file>` once for each deck you author by hand. Markdown
-without a valid opening-frontmatter `alix-id` is ignored by workspace
-discovery, so README-style prose and notes can live beside decks without
-becoming picker entries or being stamped. A generic frontmatter `id` is
-ordinary document metadata and does not initialize a deck.
+Put hand-authored decks under `decks/`, then run `alix deck init <file>` once
+for each one. Markdown without a valid opening-frontmatter `alix-id` is ignored
+by discovery. Root-level Markdown is never a workspace member, so README-style
+prose and notes can live beside `alix.toml` without becoming picker entries or
+being stamped. A generic frontmatter `id` is ordinary document metadata and
+does not initialize a deck.
 
 Now open the cluster and drill its members one at a time:
 
@@ -90,7 +104,7 @@ It's picked per session, the same as for a loose deck (see
 
 ## Its own progress
 
-A workspace keeps its state **inside the folder**, split by stable deck ID:
+A workspace keeps its state **at the workspace root**, split by stable deck ID:
 
 ```text
 progress/<alix-id>.json   # private schedules, history, exams, virtual cards
@@ -103,8 +117,8 @@ comes from its `alix-id`, not its display name. A `store = "..."` line in
 `alix.toml` overrides the state-root directory.
 
 That makes a workspace a **self-contained, portable unit** for moving, backup,
-and folder synchronization: its decks, `assets/` (frozen trace excerpts,
-covered with traces later), and state all live under one boundary. Sharing is
+and folder synchronization: authored decks in `decks/`, frozen excerpts and
+icons in `assets/`, and state all live under one boundary. Sharing is
 deliberately narrower and strips personal progress. Decks outside any workspace
 use the state root in your decks directory. The CLI commands (`alix
 stats`/`list`/`reset`) take a deck file, a plain folder, **or a workspace**: a
@@ -113,14 +127,15 @@ state root the launcher would serve it with (`--store <path>` still overrides).
 
 ## In the picker
 
-Folders show up in the picker in two flavors: a folder *with* a
-`alix.toml` appears under **Workspaces**, one *without* as a plain **Folder**.
-Opening either drills in to its decks, drawn as a **dependency tree**: each deck
-nested under the prerequisite that gates it, foundations at the roots (the
-[next chapter](09-dependencies.md)). Each row is badged `· deck ·` or `· trace ·`,
-and the drill-in is a single-launch list: `Enter` on a facts deck reviews it,
-`Enter` on a trace **walks** it. Typing a filter flattens the tree to a plain
-search.
+Folders show up in the picker in two flavors: a folder with `alix.toml` and
+initialized `decks/*.md` members appears under **Workspaces**; one without a
+manifest is a plain **Folder** whose initialized decks are direct `*.md`
+children. Opening either drills in to its decks, drawn as a **dependency tree**:
+each deck nests under the prerequisite that gates it, foundations at the roots
+(the [next chapter](09-dependencies.md)). Each row is badged `· deck ·` or
+`· trace ·`, and the drill-in is a single-launch list: `Enter` on a facts deck
+reviews it, `Enter` on a trace **walks** it. Typing a filter flattens the tree
+to a plain search.
 
 In the **web** picker, a workspace can show a small **emblem** in place of the
 chevron, so a long list of similar-named workspaces is quicker to scan. Drop an
@@ -141,7 +156,8 @@ just applies no shared directives.
 
 ## Sharing a workspace
 
-A workspace is a self-contained folder, so sharing one is sending the folder.
+A workspace is a self-contained folder, so sharing one is sending the folder
+with its `decks/` structure intact.
 `alix share <dir>` does that over magic-wormhole with the personal files
 (`progress/`, backups, recent list, `alix.local.toml`) left home; the
 other side runs `alix receive <code>` and gets it beside their own decks, ready

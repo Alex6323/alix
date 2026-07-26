@@ -40,12 +40,7 @@ pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     if !path.is_dir() {
         bail!("`{}` is neither a deck file nor a folder", path.display());
     }
-    let mut decks: Vec<PathBuf> = std::fs::read_dir(path)?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
-        .collect();
-    decks.sort();
+    let decks = workspace::deck_files(path);
     if decks.is_empty() {
         bail!("no decks in `{}`", path.display());
     }
@@ -196,7 +191,14 @@ pub(crate) fn deck_out_dir(workspace: Option<&Path>, config: &Config) -> Result<
                     dir.display()
                 );
             }
-            Ok(dir.to_path_buf())
+            if !workspace::has_manifest(dir) {
+                bail!(
+                    "{} is not a workspace; create it first: alix workspace init {}",
+                    dir.display(),
+                    dir.display()
+                );
+            }
+            Ok(workspace::member_dir(dir))
         }
         None => config
             .decks_dir()
@@ -270,9 +272,9 @@ mod tests {
     fn store_for_still_resolves_a_workspace_deck_to_the_workspace_store() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("box");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join(workspace::DECKS)).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
-        let member = ws.join("a.md");
+        let member = ws.join("decks/a.md");
         std::fs::write(
             &member,
             "---\nalix-id: \"a\"\n---\n## q <!-- id: q -->\na\n",

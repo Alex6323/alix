@@ -37,11 +37,9 @@ pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<
     if let Some(path) = cli_override {
         return Some(path.to_path_buf());
     }
-    let mut stores = decks.iter().map(|deck| {
-        deck.parent()
-            .filter(|p| workspace::is_workspace(p))
-            .map(workspace::store_path)
-    });
+    let mut stores = decks
+        .iter()
+        .map(|deck| workspace::root_for_deck(deck).map(workspace::store_path));
     match stores.next() {
         Some(Some(first)) if stores.all(|s| s.as_ref() == Some(&first)) => Some(first),
         _ => None,
@@ -106,6 +104,10 @@ pub struct WalkBuild {
     pub grade: Option<AskConfig>,
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "boxing the common review build adds indirection to a short-lived selection result"
+)]
 pub enum Selected {
     Review(SessionBuild),
     Walk(WalkBuild),
@@ -127,9 +129,8 @@ pub fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
     let mut decks = Vec::new();
     let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
     for path in deck_paths {
-        if let Some(parent) = path.parent()
-            && parent.join(workspace::MANIFEST).is_file()
-            && let Ok(ws) = workspace::Workspace::load(parent)
+        if let Some(root) = workspace::root_for_deck(path)
+            && let Ok(ws) = workspace::Workspace::load(root)
             && let Some(name) = path.file_name().and_then(|n| n.to_str())
         {
             defaults.insert(name.to_string(), ws.settings);
@@ -386,11 +387,8 @@ pub fn select(
     let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
     let mut cards = exclude_unstamped(cards, &deck_label);
     for info in decks.values_mut() {
-        let workspace_override = info
-            .path
-            .parent()
-            .filter(|p| workspace::is_workspace(p))
-            .and_then(workspace::manifest_source_access);
+        let workspace_override =
+            workspace::root_for_deck(&info.path).and_then(workspace::manifest_source_access);
         info.source_access = workspace_override.unwrap_or(cfg.ask.source_access);
     }
     let label = deck_label;
@@ -444,9 +442,7 @@ pub fn select(
         cards.retain(|c| c.id().is_some_and(|id| ids.contains(&id)));
     }
 
-    let review = cfg
-        .review
-        .for_workspace(deck.parent().unwrap_or_else(|| Path::new("")));
+    let review = cfg.review.for_workspace(&workspace::content_root(deck));
 
     let subject: Arc<str> = decks
         .keys()
@@ -658,9 +654,9 @@ mod tests {
     fn store_for_prefers_workspace_then_instance_then_global() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("box");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join(workspace::DECKS)).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
-        let member = ws.join("a.md");
+        let member = ws.join("decks/a.md");
         write_initialized(&member, "## q <!-- id: q1 -->\na\n");
         let loose = dir.path().join("loose.md");
         write_initialized(&loose, "## q <!-- id: q2 -->\na\n");
@@ -673,7 +669,9 @@ mod tests {
         let s = store_for(std::slice::from_ref(&loose), Some(&instance)).unwrap();
         assert_eq!(
             s.path(),
-            dir.path().join("instance-state/progress/loose.json").as_path()
+            dir.path()
+                .join("instance-state/progress/loose.json")
+                .as_path()
         );
         let global = dir.path().join("global-state");
         let g = store_for_with_default(std::slice::from_ref(&loose), None, Some(global.clone()))
@@ -689,10 +687,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mk_ws = |name: &str| {
             let ws = dir.path().join(name);
-            std::fs::create_dir(&ws).unwrap();
+            std::fs::create_dir_all(ws.join(workspace::DECKS)).unwrap();
             std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
-            write_initialized(&ws.join("a.md"), "## a <!-- id: qa -->\n1\n");
-            write_initialized(&ws.join("b.md"), "## b <!-- id: qb -->\n1\n");
+            write_initialized(&ws.join("decks/a.md"), "## a <!-- id: qa -->\n1\n");
+            write_initialized(&ws.join("decks/b.md"), "## b <!-- id: qb -->\n1\n");
             ws
         };
         let ws = mk_ws("ws");
@@ -703,26 +701,26 @@ mod tests {
 
         assert_eq!(
             Some(ws_store.clone()),
-            store_path_for(&[ws.join("a.md")], None)
+            store_path_for(&[ws.join("decks/a.md")], None)
         );
         assert_eq!(
             Some(ws_store.clone()),
-            store_path_for(&[ws.join("a.md"), ws.join("b.md")], None)
+            store_path_for(&[ws.join("decks/a.md"), ws.join("decks/b.md")], None)
         );
         assert_eq!(None, store_path_for(std::slice::from_ref(&loose), None));
         assert_eq!(
             None,
-            store_path_for(&[ws.join("a.md"), loose.clone()], None)
+            store_path_for(&[ws.join("decks/a.md"), loose.clone()], None)
         );
         assert_eq!(
             None,
-            store_path_for(&[ws.join("a.md"), ws2.join("a.md")], None)
+            store_path_for(&[ws.join("decks/a.md"), ws2.join("decks/a.md")], None)
         );
         assert_eq!(None, store_path_for(&[], None));
         let over = dir.path().join("x.json");
         assert_eq!(
             Some(over.clone()),
-            store_path_for(&[ws.join("a.md")], Some(&over))
+            store_path_for(&[ws.join("decks/a.md")], Some(&over))
         );
     }
 
@@ -879,11 +877,11 @@ it reads line two\n\
     fn expand_workspaces_member_file_inherits_workspace_settings() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("eng");
-        std::fs::create_dir(&ws).unwrap();
-        write_initialized(&ws.join("a.md"), "## a <!-- id: qa -->\nb\n");
+        std::fs::create_dir_all(ws.join(workspace::DECKS)).unwrap();
+        write_initialized(&ws.join("decks/a.md"), "## a <!-- id: qa -->\nb\n");
         std::fs::write(ws.join("alix.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
 
-        let exp = expand_workspaces(&[ws.join("a.md")]).unwrap();
+        let exp = expand_workspaces(&[ws.join("decks/a.md")]).unwrap();
         assert_eq!(1, exp.decks.len());
         assert_eq!(
             Some(crate::card::Direction::Both),
@@ -940,11 +938,8 @@ it reads line two\n\
         write_initialized(&path, "## q1 <!-- id: q1 -->\na1\n");
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
-        let mut store = store_for(
-            std::slice::from_ref(&path),
-            Some(&dir.path().join("state")),
-        )
-        .unwrap();
+        let mut store =
+            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
         insert_virtual_card(&mut store, "rust.md");
 
         let Selected::Review(build) = select(
@@ -972,11 +967,8 @@ it reads line two\n\
         .unwrap();
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
-        let mut store = store_for(
-            std::slice::from_ref(&path),
-            Some(&dir.path().join("state")),
-        )
-        .unwrap();
+        let mut store =
+            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
 
         let deck = Deck::load(&path).unwrap();
         let card_id = deck.cards[0].id().unwrap();
@@ -1055,11 +1047,8 @@ it reads line two\n\
         write_initialized(&path, "## q1 <!-- id: q1 -->\na1\n");
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
-        let mut store = store_for(
-            std::slice::from_ref(&path),
-            Some(&dir.path().join("state")),
-        )
-        .unwrap();
+        let mut store =
+            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
         insert_virtual_card(&mut store, "rust.md");
         let virtual_card = crate::parser::parse_str(
             "rust.md",
@@ -1205,9 +1194,9 @@ it reads line two\n\
     fn browse_applies_a_cached_format_reshape() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("eng");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
-        let path = ws.join("d.md");
+        let path = ws.join("decks/d.md");
         write_initialized(&path, "## List the parts <!-- id: qlist -->\nA, B, C\n");
 
         let raw = browse(vec![path.clone()], None).unwrap();
@@ -1349,9 +1338,10 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         // The deadline overlay only fires inside a real workspace (manifest present).
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
-        let deck = dir.path().join("m.md");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        let deck = dir.path().join("decks/m.md");
         write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let mut store = crate::state::open_store(&deck, dir.path()).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
             .unwrap();

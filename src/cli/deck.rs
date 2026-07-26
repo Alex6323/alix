@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use alix::{
     assemble::{self, VIRTUAL_LINE_BASE, synthesize_virtual},
@@ -177,7 +177,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 deck.cards.iter().filter_map(Card::id).collect();
             let retire_after_days = config
                 .review
-                .for_workspace(deck.path.parent().unwrap_or_else(|| Path::new("")))
+                .for_workspace(&alix::workspace::content_root(&deck.path))
                 .retire_after_days;
             let mut plain: Vec<Card> = deck
                 .cards
@@ -265,10 +265,11 @@ fn print_topology(topo: &augment::Topology, cards: &[Card]) {
 }
 
 pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
-    if workspace::is_workspace(&args.dir) {
+    if workspace::has_manifest(&args.dir) {
         bail!("{} is already a workspace", args.dir.display());
     }
-    std::fs::create_dir_all(args.dir.join("assets"))
+    std::fs::create_dir_all(args.dir.join(workspace::DECKS))
+        .and_then(|()| std::fs::create_dir_all(args.dir.join("assets")))
         .with_context(|| format!("cannot create {}", args.dir.display()))?;
     let title = match &args.title {
         Some(t) => t.clone(),

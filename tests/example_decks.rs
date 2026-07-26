@@ -41,7 +41,7 @@ fn workspace_showcase_example_still_checks() {
         "workspace showcase manifest is missing: {}",
         manifest.display()
     );
-    doctor_example("docs/examples/workspace-showcase/ownership-move.md");
+    doctor_example("docs/examples/workspace-showcase/decks/ownership-move.md");
 }
 
 #[test]

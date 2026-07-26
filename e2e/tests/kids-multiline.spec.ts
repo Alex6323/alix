@@ -2,7 +2,7 @@
 // `answerFill` used to flatten a multi-line answer into one run-on string
 // via `back.join(" ")` (fixed in 1129c04), turning an ordered sequence into
 // nonsense. Nothing else in this suite exercises a multi-line answer —
-// ../fixtures/decks/animals/wild.md's two cards are both single-line.
+// ../fixtures/decks/animals/decks/wild.md's two cards are both single-line.
 //
 // This deck (cats.md) exists solely for this test, in its own file, so it
 // never touches wild.md's card ids, which key its committed augmentation document.

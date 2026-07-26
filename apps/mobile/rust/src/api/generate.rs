@@ -4,7 +4,8 @@ use anyhow::{Result, bail};
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -> Result<String> {
-    let dir = Path::new(&decks_dir);
+    let root = Path::new(&decks_dir);
+    let dir = alix::workspace::member_dir(root);
     let raw = Path::new(&filename)
         .file_name()
         .and_then(|n| n.to_str())
@@ -25,7 +26,7 @@ pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -
         }
     }
 
-    let placed = alix::library::place_deck(dir, &candidate, &text)?;
+    let placed = alix::library::place_deck(&dir, &candidate, &text)?;
     Ok(placed
         .path
         .file_name()
@@ -52,6 +53,23 @@ mod tests {
         assert_eq!(name, "topic.md");
         let deck = alix::deck::Deck::load(dir.path().join("topic.md")).unwrap();
         assert_eq!(deck.cards.len(), 2);
+    }
+
+    #[test]
+    fn apply_generated_deck_writes_workspace_members_under_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(alix::workspace::MANIFEST), "").unwrap();
+
+        let name = apply_generated_deck(
+            dir_str(&dir),
+            "topic.txt".to_string(),
+            "## q\na\n".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!("topic.md", name);
+        assert!(dir.path().join("decks/topic.md").is_file());
+        assert!(!dir.path().join("topic.md").exists());
     }
 
     #[test]

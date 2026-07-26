@@ -410,7 +410,8 @@ pub fn materialize(
     for item in &mut items {
         item.title = title::condense(&item.title);
     }
-    fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    let member_dir = dir.join(crate::workspace::DECKS);
+    fs::create_dir_all(&member_dir).with_context(|| format!("cannot create {}", dir.display()))?;
 
     let root = if is_url(source) {
         None
@@ -496,7 +497,7 @@ pub fn materialize(
                 }
             }),
         }
-        fs::write(dir.join(name), body)?;
+        fs::write(member_dir.join(name), body)?;
     }
 
     Ok(Materialized {
@@ -531,6 +532,32 @@ pub fn merge_built(
         let name = entry.file_name().to_string_lossy().into_owned();
         let from = entry.path();
         let to = dest.join(&name);
+        if name == crate::workspace::DECKS && from.is_dir() {
+            fs::create_dir_all(&to).with_context(|| format!("cannot create {}", to.display()))?;
+            for member in
+                fs::read_dir(&from).with_context(|| format!("cannot read {}", from.display()))?
+            {
+                let member = member?;
+                let member_name = member.file_name().to_string_lossy().into_owned();
+                let member_from = member.path();
+                let member_to = to.join(&member_name);
+                if member_to.exists() {
+                    if !force {
+                        conflicts.push(format!("{name}/{member_name}"));
+                        continue;
+                    }
+                    let text = fs::read_to_string(&member_from)
+                        .with_context(|| format!("cannot read {}", member_from.display()))?;
+                    library::replace_deck(&to, &member_name, &text, store)?;
+                    fs::remove_file(&member_from)
+                        .with_context(|| format!("cannot remove {}", member_from.display()))?;
+                } else {
+                    share::move_into(&member_from, &member_to)?;
+                }
+                moved += 1;
+            }
+            continue;
+        }
         if to.exists() {
             if !force {
                 conflicts.push(name);
@@ -778,11 +805,11 @@ Spine   a -> b
         assert!(!manifest.contains("title ="));
         assert!(manifest.contains("[defaults]"));
 
-        let deck = fs::read_to_string(dir.join("01-the-deck-format.md")).unwrap();
+        let deck = fs::read_to_string(dir.join("decks/01-the-deck-format.md")).unwrap();
         assert!(deck.contains("# The Deck Format"));
         assert!(deck.contains("source: "));
 
-        let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.md")).unwrap();
+        let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();
         assert!(trace.contains("trace: \"How Text Becomes Cards\""));
         assert!(trace.contains("- \"01-the-deck-format.md\""));
 
@@ -862,11 +889,11 @@ back a
         let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", Some(&filled)).unwrap();
         assert_eq!(1, report.filled);
 
-        let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.md")).unwrap();
+        let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();
         assert!(trace.contains("trace: \"How Text Becomes Cards\""));
         assert!(trace.contains("## how does text become Cards?"));
         assert!(trace.contains("<!-- at: src/parser.rs:1-9 -->"));
-        let deck = fs::read_to_string(dir.join("01-the-deck-format.md")).unwrap();
+        let deck = fs::read_to_string(dir.join("decks/01-the-deck-format.md")).unwrap();
         assert!(deck.contains("Stub from `alix generate`"));
 
         let _ = fs::remove_dir_all(&dir);
@@ -952,14 +979,15 @@ back a
     #[test]
     fn a_forced_md_collision_routes_through_the_replace_protocol() {
         let (staging, dest) = merge_test_dirs("md-replace");
-        fs::create_dir_all(&dest).unwrap();
+        fs::create_dir_all(dest.join("decks")).unwrap();
+        fs::create_dir_all(staging.join("decks")).unwrap();
         fs::write(
-            dest.join("01-a.md"),
+            dest.join("decks/01-a.md"),
             "---\nalix-id: \"da1\"\n---\n## old <!-- id: c1 -->\nold\n",
         )
         .unwrap();
-        fs::write(staging.join("01-a.md"), "## new q\nnew ans\n").unwrap();
-        let mut store = crate::state::open_store(&dest.join("01-a.md"), &dest).unwrap();
+        fs::write(staging.join("decks/01-a.md"), "## new q\nnew ans\n").unwrap();
+        let mut store = crate::state::open_store(&dest.join("decks/01-a.md"), &dest).unwrap();
         store.get_or_insert("c1", 0);
         store.save().unwrap();
 
@@ -967,13 +995,13 @@ back a
 
         assert_eq!(1, report.moved);
         assert!(store.get("c1").is_none());
-        assert!(dest.join("01-a.md.bak").exists());
+        assert!(dest.join("decks/01-a.md.bak").exists());
         assert!(
-            fs::read_to_string(dest.join("01-a.md"))
+            fs::read_to_string(dest.join("decks/01-a.md"))
                 .unwrap()
                 .contains("new q")
         );
-        assert!(!staging.join("01-a.md").exists());
+        assert!(!staging.join("decks/01-a.md").exists());
 
         let _ = fs::remove_dir_all(staging.parent().unwrap());
     }
@@ -1011,11 +1039,12 @@ back a
         let dir = std::env::temp_dir().join(format!("alix-snap-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("src")).unwrap();
+        fs::create_dir_all(dir.join("decks")).unwrap();
         fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
         fs::write(dir.join("alix.toml"), "[defaults]\n").unwrap();
         let src = dir.join("src");
         fs::write(
-            dir.join("01-t.md"),
+            dir.join("decks/01-t.md"),
             format!(
                 "---\nalix-id: \"trace\"\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
                 src.display()
@@ -1023,14 +1052,14 @@ back a
         )
         .unwrap();
         fs::write(
-            dir.join("02-d.md"),
+            dir.join("decks/02-d.md"),
             format!(
                 "---\nalix-id: \"facts\"\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
                 src.display()
             ),
         )
         .unwrap();
-        fs::write(dir.join("03-plain.md"), "# d\n## q\na\n").unwrap();
+        fs::write(dir.join("decks/03-plain.md"), "# d\n## q\na\n").unwrap();
 
         let summary = snapshot_workspace(&dir).unwrap();
         assert_eq!((2, 2), (summary.decks, summary.files));
@@ -1038,7 +1067,7 @@ back a
         assert!(dir.join("assets/01.rs").is_file());
         assert!(dir.join("assets/02.rs").is_file());
         assert!(!dir.join("assets/a.rs").exists());
-        let fact = fs::read_to_string(dir.join("02-d.md")).unwrap();
+        let fact = fs::read_to_string(dir.join("decks/02-d.md")).unwrap();
         assert!(fact.contains("source: assets\n"), "{fact}");
         assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
         assert!(fact.contains("<!-- at: 0"), "{fact}");
@@ -1050,10 +1079,10 @@ back a
     fn snapshot_workspace_surfaces_a_deck_whose_source_cannot_be_frozen() {
         let dir = std::env::temp_dir().join(format!("alix-snap-fail-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(dir.join("decks")).unwrap();
         fs::write(dir.join("alix.toml"), "[defaults]\n").unwrap();
         fs::write(
-            dir.join("01-broken.md"),
+            dir.join("decks/01-broken.md"),
             format!(
                 "---\nalix-id: \"broken\"\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
                 dir.display()

@@ -209,17 +209,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// paths (`deckPath`, `rootDir`, both sourced from `DeckEntry`/
   /// `PickerScreen.root`, themselves device-absolute), never the
   /// server-relative key the picker keys rows by, so this derives it fresh:
-  /// strip the root prefix, then rejoin the remaining path components with
-  /// `/`. One level of drilling only, matching this app's own navigation
-  /// (root -> loose deck, or root -> workspace folder -> member deck), so
-  /// the result is exactly a bare name or a two-part qualified key, never
-  /// deeper.
+  /// strip the root prefix and the workspace's internal `decks/` segment,
+  /// then rejoin the remaining path components with `/`.
   String _deckName() {
     var rel = widget.deckPath;
     if (rel.startsWith(widget.rootDir)) {
       rel = rel.substring(widget.rootDir.length);
     }
-    final parts = rel.split(RegExp(r'[\\/]+')).where((p) => p.isNotEmpty);
+    final parts = rel
+        .split(RegExp(r'[\\/]+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.length >= 2 && parts[parts.length - 2] == 'decks') {
+      parts.removeAt(parts.length - 2);
+    }
     return parts.join('/');
   }
 

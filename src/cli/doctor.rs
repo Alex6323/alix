@@ -286,6 +286,13 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
 
 fn workspace_findings(dir: &Path) -> Report {
     let mut report = Report::default();
+    for path in alix::workspace::misplaced_deck_files(dir).unwrap_or_default() {
+        report.warn(format!(
+            "{}: workspace decks belong in {}; this file is not discovered",
+            path.display(),
+            dir.join(alix::workspace::DECKS).display()
+        ));
+    }
     let (deck_files, uninitialized) =
         alix::workspace::classified_deck_files(dir).unwrap_or_default();
     for path in &deck_files {
@@ -631,6 +638,26 @@ mod tests {
         assert!(check(vec![dir.path().to_path_buf()]).is_ok());
     }
 
+    #[test]
+    fn workspace_findings_report_a_root_deck_without_reading_it_as_a_member() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "");
+        w(
+            dir.path(),
+            "misplaced.md",
+            "---\nalix-id: misplaced\n---\n## q <!-- id: q1 -->\na\n",
+        );
+
+        let report = workspace_findings(dir.path());
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("workspace decks belong in")
+                    && warning.contains("not discovered"))
+        );
+    }
+
     fn w(dir: &Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
     }
@@ -748,68 +775,74 @@ mod tests {
     fn doctor_flags_the_full_check_set() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
+        let decks = dir.join("decks");
+        std::fs::create_dir(&decks).unwrap();
         w(dir, "alix.toml", "title = \"Check Set\"\n");
-        w(dir, "bad-token.md", "## q <!-- id: BAD1 -->\na\n");
+        w(&decks, "bad-token.md", "## q <!-- id: BAD1 -->\na\n");
         w(
-            dir,
+            &decks,
             "bad-value.md",
             "---\nreveal: bogus\n---\n## q <!-- id: bv1 -->\na\n",
         );
         w(
-            dir,
+            &decks,
             "dup-deck.md",
             "---\nalix-id: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
         );
         w(
-            dir,
+            &decks,
             "dup-deck copy.md",
             "---\nalix-id: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
         );
         w(
-            dir,
+            &decks,
             "card-dup.md",
             "---\nalix-id: cda\n---\n## q <!-- id: cshared -->\na\n",
         );
         w(
-            dir,
+            &decks,
             "card-dup copy.md",
             "---\nalix-id: cdb\n---\n## q <!-- id: cshared -->\nb\n",
         );
         w(
-            dir,
+            &decks,
             "unspliceable.md",
             "---\n{source: [a]}\n---\n## q <!-- id: uq1 -->\nb\n",
         );
         w(
-            dir,
+            &decks,
             "cloze.md",
             "## Fill <!-- id: clz1 -->\n<!-- reveal: line -->\nthe \\blank{a} gap\n",
         );
         w(
-            dir,
+            &decks,
             "indented.md",
             "## real <!-- id: ind1 -->\n  ## not a front\nanswer\n",
         );
         w(
-            dir,
+            &decks,
             "imgcard.md",
             "## pic <!-- id: img1 -->\nphoto\n![](missing.png)\n",
         );
-        w(dir, "fresh.md", "---\nalix-id: \"fresh\"\n---\n## q\na\n");
         w(
-            dir,
+            &decks,
+            "fresh.md",
+            "---\nalix-id: \"fresh\"\n---\n## q\na\n",
+        );
+        w(
+            &decks,
             "trace-bad.md",
             "---\ntrace: a walk\nsource: trace-src.txt\n---\n## hop <!-- id: thop1 -->\nstep\n<!-- at: 5-6 -->\n",
         );
         w(dir, "trace-src.txt", "one\ntwo\n");
         w(
-            dir,
+            &decks,
             "at-dangling.md",
             "---\nsource: .\n---\n## cited <!-- id: atd1 -->\nb\n<!-- at: missing.rs:1-2 -->\n",
         );
-        w(dir, "sourceless.md", "## a <!-- id: sla1 -->\n1\n");
+        w(&decks, "sourceless.md", "## a <!-- id: sla1 -->\n1\n");
         w(
-            dir,
+            &decks,
             "gated.md",
             "---\nsource: https://example.test\nrequires: sourceless\n---\n## b <!-- id: gtd1 -->\n1\n",
         );
@@ -909,5 +942,4 @@ mod tests {
         assert!(warnings.contains("orphaned augmentation state document"));
         assert!(warnings.contains(&conflict.display().to_string()));
     }
-
 }

@@ -193,7 +193,8 @@ fn doctor_warns_about_a_malformed_deadline_without_failing() {
         "[review]\ndeadline = \"soonish\"\n",
     )
     .unwrap();
-    write(ws, "cards.md", VALID_DECK);
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    write(&ws.join("decks"), "cards.md", VALID_DECK);
     let out = alix(&["doctor", ws.to_str().unwrap()]);
     assert!(
         out.status.success(),
@@ -216,6 +217,7 @@ fn workspace_init_writes_both_documented_manifests() {
     let local = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
     assert!(local.contains("[review]"), "headers stay uncommented");
     assert!(local.contains("never shared"), "{local}");
+    assert!(ws.join("decks").is_dir());
     assert!(ws.join("assets").is_dir());
 }
 
@@ -223,10 +225,10 @@ fn workspace_init_writes_both_documented_manifests() {
 fn workspace_deadline_shows_sets_and_clears() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Ws\"\n").unwrap();
     std::fs::write(
-        ws.join("cards.md"),
+        ws.join("decks/cards.md"),
         "---\nalix-id: \"cards\"\n---\n## Q?\nA\n",
     )
     .unwrap();
@@ -330,15 +332,16 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     // own per-deck progress documents, including the mastered flag.
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("eng");
-    std::fs::create_dir(&ws).unwrap();
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
     let a = write(
-        &ws,
+        &members,
         "a.md",
         "---\nalix-id: decka\n---\n## qa <!-- id: qa1 -->\nans-a\n",
     );
     let b = write(
-        &ws,
+        &members,
         "b.md",
         "---\nalix-id: deckb\n---\n## qb <!-- id: qb1 -->\nans-b\n",
     );
@@ -646,17 +649,13 @@ fn an_unsupported_progress_document_version_is_rejected() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let state_root = dir.path().join("state");
     let store = write_progress_document(&state_root, "mathdeck", "math.md", "");
-    let text = std::fs::read_to_string(&store)
-        .unwrap()
-        .replacen("\"version\":1", "\"version\":999", 1);
+    let text =
+        std::fs::read_to_string(&store)
+            .unwrap()
+            .replacen("\"version\":1", "\"version\":999", 1);
     std::fs::write(&store, text).unwrap();
 
-    let out = alix(&[
-        "stats",
-        &deck,
-        "--store",
-        state_root.to_str().unwrap(),
-    ]);
+    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
     assert!(!out.status.success());
 }
 
@@ -672,12 +671,7 @@ fn a_corrupt_progress_document_fails_without_overwriting_it() {
     std::fs::create_dir_all(store.parent().unwrap()).unwrap();
     std::fs::write(&store, garbage).unwrap();
 
-    let out = alix(&[
-        "stats",
-        &deck,
-        "--store",
-        state_root.to_str().unwrap(),
-    ]);
+    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
     assert!(
         !out.status.success(),
         "a corrupt store should fail the command"
@@ -1199,12 +1193,7 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
         "cards.md",
         &format!("{card1},{card2}"),
     );
-    let out = alix(&[
-        "list",
-        &deck,
-        "--store",
-        state_root.to_str().unwrap(),
-    ]);
+    let out = alix(&["list", &deck, "--store", state_root.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
     // Slot order is recall|reconstruct — a swap would print [  learning|    review].
@@ -1230,12 +1219,7 @@ fn stats_shows_per_depth_due_counts() {
     let card = both_depths_due_card(&card_id);
     let state_root = dir.path().join("state");
     write_progress_document(&state_root, "statsdeck", "stats.md", &card);
-    let out = alix(&[
-        "stats",
-        &deck,
-        "--store",
-        state_root.to_str().unwrap(),
-    ]);
+    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
     assert!(
@@ -1465,8 +1449,7 @@ fn stats_on_a_loose_deck_resolves_the_decks_dir_root_store_like_review_does() {
     let cfg = cfg.to_str().unwrap();
 
     let garbage = "{ this is not valid json";
-    let progress =
-        alix::state::Layout::new(decks.path()).progress_for("mathdeck");
+    let progress = alix::state::Layout::new(decks.path()).progress_for("mathdeck");
     std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
     std::fs::write(&progress, garbage).unwrap();
 
@@ -1494,8 +1477,7 @@ fn reset_all_clears_the_decks_dir_root_store_not_the_global_one() {
     let cfg = cfg.to_str().unwrap();
 
     let garbage = "{ this is not valid json";
-    let progress =
-        alix::state::Layout::new(decks.path()).progress_for("mathdeck");
+    let progress = alix::state::Layout::new(decks.path()).progress_for("mathdeck");
     std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
     std::fs::write(&progress, garbage).unwrap();
 
@@ -1564,8 +1546,7 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     let mut progress = alix::state::open_store(Path::new(&deck), &sender_decks).unwrap();
     progress.get_or_insert("math1", 1);
     progress.save().unwrap();
-    let mut augmentation =
-        alix::state::open_augment(Path::new(&deck), &sender_decks).unwrap();
+    let mut augmentation = alix::state::open_augment(Path::new(&deck), &sender_decks).unwrap();
     augmentation.set_note("math1", "shared note".to_string(), 9);
     augmentation.save().unwrap();
     let out_dir = sender.path().join("out");
@@ -1592,8 +1573,7 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     let received_state = receiver.path().join("decks");
     let received_progress = alix::state::open_store(&received_deck, &received_state).unwrap();
     assert!(received_progress.get("math1").is_none());
-    let received_augmentation =
-        alix::state::open_augment(&received_deck, &received_state).unwrap();
+    let received_augmentation = alix::state::open_augment(&received_deck, &received_state).unwrap();
     assert_eq!(Some("shared note"), received_augmentation.note("math1", 9));
 
     std::fs::write(
@@ -1613,8 +1593,7 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     );
     assert!(replaced.status.success(), "stderr: {}", stderr(&replaced));
     assert_eq!(VALID_DECK, std::fs::read_to_string(&received_deck).unwrap());
-    let received_augmentation =
-        alix::state::open_augment(&received_deck, &received_state).unwrap();
+    let received_augmentation = alix::state::open_augment(&received_deck, &received_state).unwrap();
     assert_eq!(Some("shared note"), received_augmentation.note("math1", 9));
 }
 
@@ -1622,9 +1601,10 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
 fn share_zip_of_a_workspace_folder_strips_personal_state() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("eng");
-    std::fs::create_dir(&ws).unwrap();
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
-    write(&ws, "a.md", "---\nalix-id: \"a\"\n---\n## q\na\n");
+    write(&members, "a.md", "---\nalix-id: \"a\"\n---\n## q\na\n");
     std::fs::create_dir(ws.join("progress")).unwrap();
     write(&ws.join("progress"), "a.json", "{}");
     let out_dir = dir.path().join("out");
@@ -1642,7 +1622,7 @@ fn share_zip_of_a_workspace_folder_strips_personal_state() {
 
     let landed = dir.path().join("landed");
     alix::share::unzip_to(&zip_path, &landed).unwrap();
-    assert!(landed.join("eng/a.md").is_file());
+    assert!(landed.join("eng/decks/a.md").is_file());
     assert!(!landed.join("eng/progress").exists());
 }
 
@@ -1949,7 +1929,8 @@ fn generate_single_deck_writes_a_deck_file() {
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
         "https://example.org/page",
@@ -1966,7 +1947,7 @@ fn generate_single_deck_writes_a_deck_file() {
         "{}",
         stdout(&out)
     );
-    assert!(ws.join("gen.md").is_file());
+    assert!(ws.join("decks/gen.md").is_file());
 }
 
 #[test]
@@ -2004,7 +1985,8 @@ fn generate_single_deck_refuses_to_clobber_without_force_then_force_overwrites()
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
     let args = [
         "generate",
         "https://example.org/page",
@@ -2042,8 +2024,9 @@ fn generate_single_deck_rejects_invalid_math_without_touching_the_destination() 
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
-    let target = write(&ws, "gen.md", "original bytes\n");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let target = write(&ws.join("decks"), "gen.md", "original bytes\n");
     let out = alix(&[
         "generate",
         "https://example.org/page",
@@ -2063,7 +2046,7 @@ fn generate_single_deck_rejects_invalid_math_without_touching_the_destination() 
         stderr(&out)
     );
     assert_eq!("original bytes\n", std::fs::read_to_string(target).unwrap());
-    assert_eq!(1, std::fs::read_dir(&ws).unwrap().count());
+    assert_eq!(1, std::fs::read_dir(ws.join("decks")).unwrap().count());
 }
 
 #[test]
@@ -2076,7 +2059,8 @@ fn generate_single_deck_invalid_math_creates_no_new_destination() {
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
         "https://example.org/page",
@@ -2089,7 +2073,7 @@ fn generate_single_deck_invalid_math_creates_no_new_destination() {
     ]);
 
     assert!(!out.status.success());
-    assert!(!ws.join("gen.md").exists());
+    assert!(!ws.join("decks/gen.md").exists());
 }
 
 #[test]
@@ -2128,7 +2112,8 @@ fn generate_single_deck_still_saves_text_that_does_not_parse() {
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
         "https://example.org/page",
@@ -2141,7 +2126,7 @@ fn generate_single_deck_still_saves_text_that_does_not_parse() {
     ]);
 
     assert!(!out.status.success());
-    assert!(ws.join("draft.md").exists());
+    assert!(ws.join("decks/draft.md").exists());
     assert!(
         stderr(&out).contains("Saved the generated deck"),
         "stderr: {}",
@@ -2164,7 +2149,8 @@ fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
         src.to_str().unwrap(),
@@ -2181,7 +2167,7 @@ fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
         "stderr: {}",
         stderr(&out)
     );
-    assert!(ws.join("gen.md").is_file());
+    assert!(ws.join("decks/gen.md").is_file());
 }
 
 // ── `alix deck augment`: each target, fake backend ──────────────────────────
@@ -2563,7 +2549,8 @@ fn deck_import_into_a_workspace_lands_there() {
     let dir = TempDir::new().unwrap();
     let tsv = write(dir.path(), "cards.tsv", "Q1\tA1\n");
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "deck",
         "import",
@@ -2574,7 +2561,7 @@ fn deck_import_into_a_workspace_lands_there() {
         "geo",
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(ws.join("geo.md").is_file());
+    assert!(ws.join("decks/geo.md").is_file());
 }
 
 #[test]
@@ -2582,7 +2569,8 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     let dir = TempDir::new().unwrap();
     let tsv = write(dir.path(), "cards.tsv", "Q1\tA1\n");
     let ws = dir.path().join("ws");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
     let args = [
         "deck",
         "import",
@@ -2594,7 +2582,7 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     ];
     let first = alix(&args);
     assert!(first.status.success(), "stderr: {}", stderr(&first));
-    let placed = std::fs::read_to_string(ws.join("geo.md")).unwrap();
+    let placed = std::fs::read_to_string(ws.join("decks/geo.md")).unwrap();
 
     let second = alix(&args);
     assert!(!second.status.success());
@@ -2605,10 +2593,10 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     );
     assert_eq!(
         placed,
-        std::fs::read_to_string(ws.join("geo.md")).unwrap(),
+        std::fs::read_to_string(ws.join("decks/geo.md")).unwrap(),
         "the deck must be untouched when --force is absent"
     );
-    assert!(!ws.join("geo.md.bak").exists());
+    assert!(!ws.join("decks/geo.md.bak").exists());
 
     // The kept `.md.bak` proves the replace protocol ran; a plain overwrite
     // leaves none.
@@ -2618,7 +2606,7 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     assert!(third.status.success(), "stderr: {}", stderr(&third));
     assert_eq!(
         placed,
-        std::fs::read_to_string(ws.join("geo.md.bak")).unwrap()
+        std::fs::read_to_string(ws.join("decks/geo.md.bak")).unwrap()
     );
 }
 

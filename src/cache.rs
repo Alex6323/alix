@@ -108,7 +108,7 @@ impl DeckCache {
     }
 
     pub fn is_workspace(&mut self, path: &Path) -> bool {
-        path.join(workspace::MANIFEST).is_file() && self.has_decks(path)
+        workspace::has_manifest(path)
     }
 
     pub fn workspace(&mut self, dir: &Path) -> Workspace {

@@ -9,6 +9,7 @@ use serde::Deserialize;
 use crate::deck::DeckSettings;
 
 pub const MANIFEST: &str = "alix.toml";
+pub const DECKS: &str = "decks";
 
 #[derive(Deserialize, Default)]
 struct Manifest {
@@ -34,7 +35,13 @@ pub struct Workspace {
 impl Workspace {
     pub fn load(dir: impl AsRef<Path>) -> io::Result<Workspace> {
         let path = dir.as_ref().to_path_buf();
-        let members = members(&path)?;
+        let members = match members(&path) {
+            Ok(members) => members,
+            Err(error) if error.kind() == io::ErrorKind::NotFound && has_manifest(&path) => {
+                Vec::new()
+            }
+            Err(error) => return Err(error),
+        };
         let (title, description, settings, icon_key) = read_manifest(&path.join(MANIFEST));
         let icon = resolve_icon(&path, icon_key.as_deref());
         Ok(Workspace {
@@ -124,6 +131,38 @@ pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
     members(dir).unwrap_or_default()
 }
 
+pub fn has_manifest(path: &Path) -> bool {
+    path.join(MANIFEST).is_file()
+}
+
+pub fn member_dir(path: &Path) -> PathBuf {
+    if has_manifest(path) {
+        path.join(DECKS)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+pub fn root_for_deck(path: &Path) -> Option<&Path> {
+    root_for_member_dir(path.parent()?)
+}
+
+pub fn root_for_member_dir(path: &Path) -> Option<&Path> {
+    let members = path;
+    if members.file_name().and_then(|name| name.to_str()) != Some(DECKS) {
+        return None;
+    }
+    let root = members.parent()?;
+    has_manifest(root).then_some(root)
+}
+
+pub fn content_root(path: &Path) -> PathBuf {
+    root_for_deck(path)
+        .or_else(|| path.parent())
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf()
+}
+
 pub fn file_is_deck(path: &Path) -> bool {
     std::fs::read_to_string(path)
         .ok()
@@ -137,6 +176,22 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
 
 pub fn uninitialized_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     classified_deck_files(dir).map(|(_, uninitialized)| uninitialized)
+}
+
+pub fn misplaced_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    if !has_manifest(dir) {
+        return Ok(Vec::new());
+    }
+    members_where_in(dir, |_| true).map(|paths| {
+        paths
+            .into_iter()
+            .filter(|path| {
+                std::fs::read_to_string(path).ok().is_some_and(|text| {
+                    crate::parser::deck_identity(&text).ok().flatten().is_some()
+                })
+            })
+            .collect()
+    })
 }
 
 pub fn classified_deck_files(dir: &Path) -> io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
@@ -158,6 +213,13 @@ pub fn classified_deck_files(dir: &Path) -> io::Result<(Vec<PathBuf>, Vec<PathBu
 
 pub(crate) fn members_where(
     dir: &Path,
+    is_deck: impl FnMut(&Path) -> bool,
+) -> io::Result<Vec<PathBuf>> {
+    members_where_in(&member_dir(dir), is_deck)
+}
+
+fn members_where_in(
+    dir: &Path,
     mut is_deck: impl FnMut(&Path) -> bool,
 ) -> io::Result<Vec<PathBuf>> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
@@ -175,9 +237,7 @@ pub(crate) fn members_where(
 }
 
 pub fn is_workspace(path: &Path) -> bool {
-    // Manifest stat first: has_decks reads every member file, and the catalog
-    // probes is_workspace once per loose deck.
-    path.join(MANIFEST).is_file() && has_decks(path)
+    has_manifest(path)
 }
 
 pub fn has_decks(path: &Path) -> bool {
@@ -195,11 +255,12 @@ pub fn store_path(dir: &Path) -> PathBuf {
 }
 
 pub fn root_store_path(dir: &Path) -> PathBuf {
-    if is_workspace(dir) {
-        store_path(dir)
-    } else {
-        dir.to_path_buf()
+    if has_manifest(dir) {
+        return store_path(dir);
     }
+    root_for_member_dir(dir)
+        .map(store_path)
+        .unwrap_or_else(|| dir.to_path_buf())
 }
 
 fn manifest_store(dir: &Path) -> Option<String> {
@@ -289,8 +350,10 @@ mod tests {
     #[test]
     fn load_discovers_members_and_parses_manifest() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join("a.md"), &deck("a", "## a\n1\n"));
-        write(&dir.path().join("b.md"), &deck("b", "## b\n2\n"));
+        let members = dir.path().join(DECKS);
+        std::fs::create_dir(&members).unwrap();
+        write(&members.join("a.md"), &deck("a", "## a\n1\n"));
+        write(&members.join("b.md"), &deck("b", "## b\n2\n"));
         write(
             &dir.path().join(MANIFEST),
             "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nreveal = \"line\"\ndirection = \"both\"\n",
@@ -326,7 +389,9 @@ mod tests {
     #[test]
     fn malformed_manifest_is_forgiving() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join("a.md"), &deck("a", "## a\n1\n"));
+        let members = dir.path().join(DECKS);
+        std::fs::create_dir(&members).unwrap();
+        write(&members.join("a.md"), &deck("a", "## a\n1\n"));
         write(&dir.path().join(MANIFEST), "this is not = = valid toml\n");
         let ws = Workspace::load(dir.path()).unwrap();
         assert_eq!(None, ws.title);
@@ -335,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn is_workspace_requires_a_deck() {
+    fn the_manifest_establishes_a_workspace_before_it_has_members() {
         let dir = tempfile::tempdir().unwrap();
         let empty = dir.path().join("empty");
         std::fs::create_dir(&empty).unwrap();
@@ -346,6 +411,12 @@ mod tests {
         assert!(!is_workspace(&empty));
 
         write(&empty.join(MANIFEST), "title = \"x\"\n");
+        assert!(!has_decks(&empty));
+        assert!(is_workspace(&empty));
+
+        let members = empty.join(DECKS);
+        std::fs::create_dir(&members).unwrap();
+        write(&members.join("a.md"), &deck("a", "## a\n1\n"));
         assert!(is_workspace(&empty));
 
         let file = dir.path().join("loose.md");
@@ -459,17 +530,65 @@ mod tests {
     #[test]
     fn root_store_path_honors_a_workspace_store_override() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("d.md"), deck("d", "## Q\nA\n")).unwrap();
         std::fs::write(
             dir.path().join("alix.toml"),
             "title = \"W\"\nstore = \"custom-state\"\n",
         )
         .unwrap();
-        assert_eq!(
-            root_store_path(dir.path()),
-            dir.path().join("custom-state")
-        );
+        assert_eq!(root_store_path(dir.path()), dir.path().join("custom-state"));
         assert_eq!(root_store_path(dir.path()), store_path(dir.path()));
+    }
+
+    #[test]
+    fn workspace_members_live_only_under_the_decks_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join(MANIFEST), "title = \"W\"\n");
+        let members = dir.path().join(DECKS);
+        std::fs::create_dir(&members).unwrap();
+        write(
+            &dir.path().join("root.md"),
+            &deck("root", "## root\nignored\n"),
+        );
+        write(
+            &members.join("member.md"),
+            &deck("member", "## member\nlisted\n"),
+        );
+
+        assert_eq!(vec![members.join("member.md")], deck_files(dir.path()));
+    }
+
+    #[test]
+    fn workspace_root_decks_are_reported_as_misplaced() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join(MANIFEST), "");
+        write(
+            &dir.path().join("root.md"),
+            &deck("root", "## root\nanswer\n"),
+        );
+        write(&dir.path().join("README.md"), "## prose\nnot a deck\n");
+
+        assert_eq!(
+            vec![dir.path().join("root.md")],
+            misplaced_deck_files(dir.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn member_decks_resolve_to_their_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join(MANIFEST), "title = \"W\"\n");
+        let members = dir.path().join(DECKS);
+        std::fs::create_dir(&members).unwrap();
+        let member = members.join("member.md");
+        write(&member, &deck("member", "## member\nlisted\n"));
+
+        assert_eq!(Some(dir.path()), root_for_deck(&member));
+        assert_eq!(Some(dir.path()), root_for_member_dir(&members));
+        assert_eq!(dir.path(), content_root(&member));
+
+        let loose = dir.path().join("loose.md");
+        assert_eq!(None, root_for_deck(&loose));
+        assert_eq!(dir.path(), content_root(&loose));
     }
 
     #[test]

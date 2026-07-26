@@ -247,32 +247,35 @@ fn resolve_row_resolves_an_unknown_name_to_unknown() {
 fn resolve_row_resolves_a_workspace_row_to_many_with_every_member_file() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
-    std::fs::create_dir(&ws).unwrap();
-    write_initialized(&ws.join("a.md"), "## a\nb\n");
-    write_initialized(&ws.join("b.md"), "## c\nd\n");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    write_initialized(&ws.join("decks/a.md"), "## a\nb\n");
+    write_initialized(&ws.join("decks/b.md"), "## c\nd\n");
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
     assert_eq!(
         Resolved::Many {
             dir: ws.clone(),
-            files: vec![ws.join("a.md"), ws.join("b.md")],
+            files: vec![ws.join("decks/a.md"), ws.join("decks/b.md")],
         },
         resolve_row("english", dir.path(), &recent, &mut DeckCache::default())
     );
 }
 
 #[test]
-fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
+fn resolve_row_keeps_a_manifest_only_workspace_addressable() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("empty-ws");
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"Empty\"\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
-    assert!(picker::catalog(dir.path(), &recent, &mut DeckCache::default()).is_empty());
+    let entries = picker::catalog(dir.path(), &recent, &mut DeckCache::default());
+    assert_eq!(1, entries.len());
+    assert!(entries[0].is_workspace);
+    assert!(entries[0].members.is_empty());
     assert_eq!(
-        Resolved::Unknown,
+        Resolved::One(ws),
         resolve_row("empty-ws", dir.path(), &recent, &mut DeckCache::default())
     );
 }
@@ -296,14 +299,14 @@ fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
 fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_name_is_duplicated() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
-    std::fs::create_dir(&ws).unwrap();
-    write_initialized(&ws.join("a.md"), "## a\nb\n");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    write_initialized(&ws.join("decks/a.md"), "## a\nb\n");
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
 
     let other_ws = tempfile::tempdir().unwrap();
     let other_english = other_ws.path().join("english");
-    std::fs::create_dir(&other_english).unwrap();
-    write_initialized(&other_english.join("z.md"), "## z\ny\n");
+    std::fs::create_dir_all(other_english.join("decks")).unwrap();
+    write_initialized(&other_english.join("decks/z.md"), "## z\ny\n");
     std::fs::write(
         other_english.join(crate::workspace::MANIFEST),
         "title = \"Other English\"\n",
@@ -318,7 +321,7 @@ fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_nam
         resolve_row("english", dir.path(), &recent, &mut DeckCache::default())
     );
     assert_eq!(
-        Resolved::One(ws.join("a.md")),
+        Resolved::One(ws.join("decks/a.md")),
         resolve_row(
             "english/a.md",
             dir.path(),
@@ -334,14 +337,14 @@ fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambigu
     // behind /api/reset's delete-by-path).
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
-    std::fs::create_dir(&ws).unwrap();
-    write_initialized(&ws.join("a.md"), "## a\nb\n");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    write_initialized(&ws.join("decks/a.md"), "## a\nb\n");
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
 
     let other_ws = tempfile::tempdir().unwrap();
     let other_english = other_ws.path().join("english");
-    std::fs::create_dir(&other_english).unwrap();
-    write_initialized(&other_english.join("a.md"), "## z\ny\n");
+    std::fs::create_dir_all(other_english.join("decks")).unwrap();
+    write_initialized(&other_english.join("decks/a.md"), "## z\ny\n");
     std::fs::write(
         other_english.join(crate::workspace::MANIFEST),
         "title = \"Other English\"\n",
@@ -584,17 +587,17 @@ fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
 fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("animals");
-    std::fs::create_dir(&ws).unwrap();
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    write_initialized(&ws.join("one.md"), "## q1 <!-- id: qa -->\na1\n");
-    write_initialized(&ws.join("two.md"), "## q2 <!-- id: qb -->\na2\n");
+    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: qa -->\na1\n");
+    write_initialized(&ws.join("decks/two.md"), "## q2 <!-- id: qb -->\na2\n");
 
     let paths = crate::workspace::deck_files(&ws);
     let mut ws_store =
         crate::state::open_stores(&paths, &crate::workspace::store_path(&ws)).unwrap();
     let now = now_ms();
     for name in ["one.md", "two.md"] {
-        let deck = Deck::load(ws.join(name)).unwrap();
+        let deck = Deck::load(ws.join("decks").join(name)).unwrap();
         let id = deck.cards[0].id().unwrap();
         let future = crate::store::FsrsState {
             state: 2,
@@ -1621,7 +1624,7 @@ fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
     let dto = deck_drawer_dto(&augment, &store, &deck);
     assert_eq!(Some("A short intro."), dto.preamble.as_deref());
     // One cell per stamped card; a never-reviewed card reads as the neutral
-    // sentinel (-1.0), not 0.0.
+    // negative value (-1.0), not 0.0.
     assert_eq!(vec![-1.0, -1.0], dto.heatmap);
     assert!(dto.topologies.is_empty());
 }

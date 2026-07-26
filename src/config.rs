@@ -1268,8 +1268,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // The deadline overlay only fires inside a real workspace (manifest + a deck).
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
         std::fs::write(
-            dir.path().join("a.md"),
+            dir.path().join("decks/a.md"),
             "---\nalix-id: \"a\"\n---\n## q\na\n",
         )
         .unwrap();
@@ -1290,8 +1291,9 @@ mod tests {
     fn for_workspace_ignores_a_malformed_deadline_but_keeps_other_keys() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
         std::fs::write(
-            dir.path().join("a.md"),
+            dir.path().join("decks/a.md"),
             "---\nalix-id: \"a\"\n---\n## q\na\n",
         )
         .unwrap();

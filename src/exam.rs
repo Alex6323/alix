@@ -12,6 +12,7 @@ use crate::{
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
     store::Store,
+    workspace,
 };
 
 const MAX_SOURCE_BYTES: usize = 100_000;
@@ -80,7 +81,8 @@ pub fn generate_questions(
     if deck.sources.is_empty() {
         bail!("the deck declares no `source:` to examine against");
     }
-    generate_questions_from(&deck.sources, deck.path.parent(), cfg, ask_cfg)
+    let root = workspace::content_root(&deck.path);
+    generate_questions_from(&deck.sources, Some(&root), cfg, ask_cfg)
 }
 
 pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()> {
@@ -296,7 +298,7 @@ impl Sitting {
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
         let pending = Pending::Questions(spawn_questions(
             deck.sources.clone(),
-            deck.path.parent().map(Path::to_path_buf),
+            Some(workspace::content_root(&deck.path)),
             cfg.clone(),
             ask_cfg.clone(),
         ));

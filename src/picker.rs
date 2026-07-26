@@ -39,7 +39,7 @@ fn dir_candidates(decks_dir: &Path, cache: &mut DeckCache) -> Vec<Candidate> {
                     && cache.is_deck(&path);
                 if is_deck {
                     Some((path, false))
-                } else if cache.has_decks(&path) {
+                } else if cache.is_workspace(&path) || cache.has_decks(&path) {
                     Some((path, true))
                 } else {
                     None
@@ -67,7 +67,7 @@ fn build_candidates(
     let mut seen = HashSet::new();
 
     for entry in recent.entries() {
-        let is_workspace = cache.has_decks(&entry.path);
+        let is_workspace = cache.is_workspace(&entry.path) || cache.has_decks(&entry.path);
         if entry.path.is_file() || is_workspace {
             out.push(Candidate {
                 name: file_name(&entry.path),
@@ -245,12 +245,26 @@ mod tests {
     fn a_workspace_root_lists_as_that_single_workspace() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "title = \"T\"\n").unwrap();
-        write_initialized(&dir.path().join("m.md"), "## f\nb\n");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        write_initialized(&dir.path().join("decks/m.md"), "## f\nb\n");
         let recent = RecentDecks::load(dir.path().join("recent.json"));
         let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
         assert_eq!(1, entries.len());
         assert!(entries[0].is_workspace);
         assert_eq!(1, entries[0].members.len());
+    }
+
+    #[test]
+    fn an_empty_initialized_workspace_still_lists_as_a_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "title = \"T\"\n").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
+
+        assert_eq!(1, entries.len());
+        assert!(entries[0].is_workspace);
+        assert!(entries[0].members.is_empty());
     }
 
     #[test]
@@ -316,9 +330,9 @@ mod tests {
     fn catalog_surfaces_workspace_with_qualified_members() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("english");
-        std::fs::create_dir(&ws).unwrap();
-        write_initialized(&ws.join("a.md"), "## a\nb\n");
-        write_initialized(&ws.join("b.md"), "## c\nd\n");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        write_initialized(&ws.join("decks/a.md"), "## a\nb\n");
+        write_initialized(&ws.join("decks/b.md"), "## c\nd\n");
         std::fs::write(ws.join(workspace::MANIFEST), "title = \"English\"\n").unwrap();
         let recent = RecentDecks::load(dir.path().join("recent.json"));
 

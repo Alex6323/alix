@@ -50,16 +50,18 @@ void main() {
     ServerClient Function(ServerConfig)? buildClient,
   }) async {
     final root = deckRoot(examinable: examinable);
-    await tester.pumpWidget(MaterialApp(
-      theme: alixDark(),
-      home: ReviewScreen(
-        deckPath: '${root.path}/facts.md',
-        rootDir: root.path,
-        depth: Depth.recall,
-        supportDir: support,
-        buildClient: buildClient,
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixDark(),
+        home: ReviewScreen(
+          deckPath: '${root.path}/facts.md',
+          rootDir: root.path,
+          depth: Depth.recall,
+          supportDir: support,
+          buildClient: buildClient,
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
@@ -72,45 +74,58 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('an examinable deck with a live paired desktop: the chip appears on the done summary',
-      (tester) async {
-    final support = tempSupport();
-    await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
+  testWidgets(
+    'an examinable deck with a live paired desktop: the chip appears on the done summary',
+    (tester) async {
+      final support = tempSupport();
+      await setServer(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+        support: support,
+      );
 
-    await pumpReview(
-      tester,
-      support: support,
-      examinable: true,
-      buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
-    );
-    await finishReview(tester);
+      await pumpReview(
+        tester,
+        support: support,
+        examinable: true,
+        buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
+      );
+      await finishReview(tester);
 
-    expect(find.text('SESSION COMPLETE'), findsOneWidget);
-    expect(find.text('Take the exam'), findsOneWidget);
-  });
+      expect(find.text('SESSION COMPLETE'), findsOneWidget);
+      expect(find.text('Take the exam'), findsOneWidget);
+    },
+  );
 
-  testWidgets('a deck with no source: the chip does not exist even with a live paired desktop',
-      (tester) async {
-    final support = tempSupport();
-    await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
+  testWidgets(
+    'a deck with no source: the chip does not exist even with a live paired desktop',
+    (tester) async {
+      final support = tempSupport();
+      await setServer(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+        support: support,
+      );
 
-    await pumpReview(
-      tester,
-      support: support,
-      examinable: false,
-      buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
-    );
-    await finishReview(tester);
+      await pumpReview(
+        tester,
+        support: support,
+        examinable: false,
+        buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
+      );
+      await finishReview(tester);
 
-    expect(find.text('Take the exam'), findsNothing);
-  });
+      expect(find.text('Take the exam'), findsNothing);
+    },
+  );
 
-  testWidgets('an examinable deck with no pairing config: the chip does not exist', (tester) async {
-    await pumpReview(tester, support: tempSupport(), examinable: true);
-    await finishReview(tester);
+  testWidgets(
+    'an examinable deck with no pairing config: the chip does not exist',
+    (tester) async {
+      await pumpReview(tester, support: tempSupport(), examinable: true);
+      await finishReview(tester);
 
-    expect(find.text('Take the exam'), findsNothing);
-  });
+      expect(find.text('Take the exam'), findsNothing);
+    },
+  );
 
   // T8.3 regression: review_screen.dart's `_deckName()` (~:210) must resolve
   // a workspace member to `<workspace>/<member>`, the key the desktop's own
@@ -118,38 +133,52 @@ void main() {
   // the device-absolute path, and never a bare basename (a naive
   // `path.basename` would collapse this to `member.md` and pass the chip's
   // own visibility tests above without ever exercising the join).
-  testWidgets('a workspace member deck: "Take the exam" starts the sitting on "<workspace>/<member>"',
-      (tester) async {
-    final root = Directory.systemTemp.createTempSync('alix-exam-chip-ws-decks-');
-    addTearDown(() => root.deleteSync(recursive: true));
-    Directory('${root.path}/wsfolder').createSync();
-    File('${root.path}/wsfolder/alix.toml').writeAsStringSync('title = "Ws"\n');
-    writeTestDeck(
-      '${root.path}/wsfolder/member.md',
-      '---\nsource: https://example.com\n---\n## q?\na\n',
-    );
+  testWidgets(
+    'a workspace member deck: "Take the exam" starts the sitting on "<workspace>/<member>"',
+    (tester) async {
+      final root = Directory.systemTemp.createTempSync(
+        'alix-exam-chip-ws-decks-',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      Directory('${root.path}/wsfolder/decks').createSync(recursive: true);
+      File(
+        '${root.path}/wsfolder/alix.toml',
+      ).writeAsStringSync('title = "Ws"\n');
+      writeTestDeck(
+        '${root.path}/wsfolder/decks/member.md',
+        '---\nsource: https://example.com\n---\n## q?\na\n',
+      );
 
-    final support = tempSupport();
-    await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
+      final support = tempSupport();
+      await setServer(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+        support: support,
+      );
 
-    final client = FakeServerClient(versionReply: '0.6.0', examStartReply: false);
-    await tester.pumpWidget(MaterialApp(
-      theme: alixDark(),
-      home: ReviewScreen(
-        deckPath: '${root.path}/wsfolder/member.md',
-        rootDir: root.path,
-        depth: Depth.recall,
-        supportDir: support,
-        buildClient: (_) => client,
-      ),
-    ));
-    await tester.pumpAndSettle();
-    await finishReview(tester);
+      final client = FakeServerClient(
+        versionReply: '0.6.0',
+        examStartReply: false,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: ReviewScreen(
+            deckPath: '${root.path}/wsfolder/decks/member.md',
+            rootDir: root.path,
+            depth: Depth.recall,
+            supportDir: support,
+            buildClient: (_) => client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await finishReview(tester);
 
-    expect(find.text('Take the exam'), findsOneWidget);
-    await tester.tap(find.text('Take the exam'));
-    await tester.pumpAndSettle();
+      expect(find.text('Take the exam'), findsOneWidget);
+      await tester.tap(find.text('Take the exam'));
+      await tester.pumpAndSettle();
 
-    expect(client.startedDeck, 'wsfolder/member.md');
-  });
+      expect(client.startedDeck, 'wsfolder/member.md');
+    },
+  );
 }

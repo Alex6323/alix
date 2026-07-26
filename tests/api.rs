@@ -377,7 +377,10 @@ fn spawn_full_server_fixture(
             .into_iter()
             .map(|path| alix::deck::Deck::load(path).unwrap())
             .collect::<Vec<_>>();
-        let deck_paths = decks.iter().map(|deck| deck.path.clone()).collect::<Vec<_>>();
+        let deck_paths = decks
+            .iter()
+            .map(|deck| deck.path.clone())
+            .collect::<Vec<_>>();
         let mut seed = alix::state::open_stores(&deck_paths, &store_path).unwrap();
         let mut aug = AugmentCache::open_for_decks(seed.path(), &decks).unwrap();
         for card in parser::parse_str("choice.md", CHOICE_DECK).unwrap() {
@@ -645,15 +648,16 @@ fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
 /// decks, into the fixture's decks dir.
 fn write_animals_workspace(dir: &Path) {
     let ws = dir.join("animals");
-    std::fs::create_dir(&ws).unwrap();
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
     std::fs::write(
-        ws.join("one.md"),
+        members.join("one.md"),
         "---\nalix-id: \"animalone\"\n---\n## q1 <!-- id: aq1 -->\na1\n",
     )
     .unwrap();
     std::fs::write(
-        ws.join("two.md"),
+        members.join("two.md"),
         "---\nalix-id: \"animaltwo\"\n---\n## q2 <!-- id: aq2 -->\na2\n",
     )
     .unwrap();
@@ -856,8 +860,7 @@ fn a_workspace_row_name_is_not_selectable() {
 #[test]
 fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store() {
     let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
-    let ws_store =
-        alix::state::Layout::new(guard.dir().join("animals")).progress_for("animalone");
+    let ws_store = alix::state::Layout::new(guard.dir().join("animals")).progress_for("animalone");
     assert!(!ws_store.exists(), "no review has happened yet");
 
     let decks_resp = http(&base, "GET", "/api/decks", &[], &[]);
@@ -1569,8 +1572,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
             }
             cache.save().unwrap();
             if seed_store {
-                let mut store =
-                    alix::state::open_store(&deck_path, &fixture_state).unwrap();
+                let mut store = alix::state::open_store(&deck_path, &fixture_state).unwrap();
                 for c in &cards {
                     store.get_or_insert(&c.id().unwrap(), 0);
                 }
@@ -2175,15 +2177,16 @@ fn a_single_target_batch_stays_a_stateless_one_shot() {
 /// `spawn_full_server_fixture` closure: 2 + 3 cards, so a union open reports 5.
 fn write_workspace_fixture(dir: &Path) {
     let ws = dir.join("ws");
-    std::fs::create_dir_all(&ws).unwrap();
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"WS\"\n").unwrap();
     std::fs::write(
-        ws.join("m1.md"),
+        members.join("m1.md"),
         "---\nalix-id: \"workone\"\n---\n## q1 <!-- id: w1 -->\na1\n## q2 <!-- id: w2 -->\na2\n",
     )
     .unwrap();
     std::fs::write(
-        ws.join("m2.md"),
+        members.join("m2.md"),
         "---\nalix-id: \"worktwo\"\n---\n## q3 <!-- id: w3 -->\na3\n## q4 <!-- id: w4 -->\na4\n## q5 <!-- id: w5 -->\na5\n",
     )
     .unwrap();

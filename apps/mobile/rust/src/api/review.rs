@@ -1,15 +1,18 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
+pub use alix::{
+    answer::{Input, Mode, TypedResult},
+    depth::Depth,
+    inline::InlineRun,
+    math::MathView,
+    render::{ChecklistItem, NoteUnit},
+    review::{CardView, CheckFeedback, ChoiceFeedback, ImageView, ReviewState},
+    trace::Phase as WalkPhase,
+};
 use anyhow::{Result, bail};
-
-pub use alix::answer::{Input, Mode, TypedResult};
-pub use alix::depth::Depth;
-pub use alix::inline::InlineRun;
-pub use alix::math::MathView;
-pub use alix::render::{ChecklistItem, NoteUnit};
-pub use alix::review::{CardView, CheckFeedback, ChoiceFeedback, ImageView, ReviewState};
-pub use alix::trace::Phase as WalkPhase;
 
 #[flutter_rust_bridge::frb(mirror(Mode))]
 pub enum _Mode {
@@ -59,10 +62,7 @@ pub struct _ChecklistItem {
 
 #[flutter_rust_bridge::frb(mirror(NoteUnit))]
 pub enum _NoteUnit {
-    Sentence {
-        text: String,
-        runs: Vec<InlineRun>,
-    },
+    Sentence { text: String, runs: Vec<InlineRun> },
     Code { lines: Vec<String> },
     Checklist { items: Vec<ChecklistItem> },
 }
@@ -263,18 +263,14 @@ impl ReviewSession {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
         let subject = loaded.subject.clone();
-        let deck_fingerprints: HashSet<u64> = loaded
-            .cards
-            .iter()
-            .map(|c| c.content_fingerprint)
-            .collect();
+        let deck_fingerprints: HashSet<u64> =
+            loaded.cards.iter().map(|c| c.content_fingerprint).collect();
         let has_exam = loaded.has_exam();
         // Captured before `deck` moves into `assemble::select` below.
         let deck_path = deck.clone();
 
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
-        let mut store =
-            alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
+        let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
         if device.is_some() {
             store.device = device;
         }
@@ -642,16 +638,12 @@ impl WalkSession {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
         let subject = loaded.subject.clone();
-        let deck_fingerprints: HashSet<u64> = loaded
-            .cards
-            .iter()
-            .map(|c| c.content_fingerprint)
-            .collect();
+        let deck_fingerprints: HashSet<u64> =
+            loaded.cards.iter().map(|c| c.content_fingerprint).collect();
         let has_exam = loaded.has_exam();
 
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
-        let mut store =
-            alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
+        let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
         if device.is_some() {
             store.device = device;
         }
@@ -775,11 +767,7 @@ mod tests {
     }
 
     fn reopened_store(root: &Path, deck: &str) -> alix::store::Store {
-        alix::state::open_store(
-            &root.join(deck),
-            &alix::workspace::root_store_path(root),
-        )
-        .unwrap()
+        alix::state::open_store(&root.join(deck), &alix::workspace::root_store_path(root)).unwrap()
     }
 
     fn math_run<'a>(runs: &'a [InlineRun], source: &str) -> &'a InlineRun {
@@ -813,8 +801,7 @@ mod tests {
         let card = state.card.as_ref().expect("the card is served");
         let front = math_run(&card.front_runs, "E = mc^2");
         assert!(front.math.as_ref().is_some_and(|math| {
-            math.svg.as_deref().is_some_and(|svg| svg.contains("<path"))
-                && math.error.is_none()
+            math.svg.as_deref().is_some_and(|svg| svg.contains("<path")) && math.error.is_none()
         }));
         assert!(
             state
@@ -845,13 +832,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("loose.md"), "## 2 plus 2?\n4\n");
-        std::fs::create_dir(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/member.md"), "## capital of france?\nParis\n");
+        write(
+            &root.join("ws/decks/member.md"),
+            "## capital of france?\nParis\n",
+        );
 
         for (deck, state_root) in [
             (root.join("loose.md"), root.to_path_buf()),
-            (root.join("ws/member.md"), root.join("ws")),
+            (root.join("ws/decks/member.md"), root.join("ws")),
         ] {
             let mut s = opened_after_acquire(&deck, root, None);
             assert!(
@@ -859,10 +849,7 @@ mod tests {
                 "past the cooldown this is a quiz"
             );
             s.grade(Grade::Pass, Some(LATER)).unwrap();
-            let deck_id = alix::deck::Deck::load(&deck)
-                .unwrap()
-                .deck_token
-                .unwrap();
+            let deck_id = alix::deck::Deck::load(&deck).unwrap().deck_token.unwrap();
             let store_file = alix::state::Layout::new(&state_root).progress_for(&deck_id);
             let json = std::fs::read_to_string(&store_file).unwrap();
             assert!(
@@ -897,20 +884,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"W\"\n");
-        write_deck(&ws.join("m.md"), "## q <!-- id: q1 -->\na\n");
+        let deck_path = ws.join("decks/m.md");
+        write_deck(&deck_path, "## q <!-- id: q1 -->\na\n");
         let deadline = alix::time::local_date(T0) + chrono::Days::new(3);
         write(
             &ws.join("alix.local.toml"),
             &format!("[review]\ndeadline = \"{}\"\n", deadline.format("%Y-%m-%d")),
         );
 
-        let id = alix::deck::Deck::load(ws.join("m.md")).unwrap().cards[0]
+        let id = alix::deck::Deck::load(&deck_path).unwrap().cards[0]
             .id()
             .expect("the fixture stamps its own id");
         let store_path = alix::workspace::store_path(&ws);
-        let mut store = alix::state::open_store(&ws.join("m.md"), &store_path).unwrap();
+        let mut store = alix::state::open_store(&deck_path, &store_path).unwrap();
         store.get_or_insert(&id, T0).recall = Some(alix::store::FsrsState {
             stability: 200.0,
             difficulty: 5.0,
@@ -924,7 +912,7 @@ mod tests {
         store.save().unwrap();
 
         let mut s = ReviewSession::open(
-            ws.join("m.md").to_string_lossy().into_owned(),
+            deck_path.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             None,
             Some(T0),
@@ -934,7 +922,7 @@ mod tests {
         s.grade(Grade::Pass, Some(T0)).unwrap();
 
         let ceiling = alix::time::end_of_local_day_ms(deadline);
-        let store = alix::state::open_store(&ws.join("m.md"), &store_path).unwrap();
+        let store = alix::state::open_store(&deck_path, &store_path).unwrap();
         let due = store.get(&id).unwrap().recall.unwrap().due_ms;
         assert!(
             due <= ceiling,
@@ -984,7 +972,11 @@ mod tests {
         assert_eq!(keypoint_grade(1, 3), Grade::Partial);
         assert_eq!(keypoint_grade(2, 3), Grade::Partial);
         assert_eq!(keypoint_grade(3, 3), Grade::Pass);
-        assert_eq!(keypoint_grade(0, 0), Grade::Pass, "no rubric, nothing to miss");
+        assert_eq!(
+            keypoint_grade(0, 0),
+            Grade::Pass,
+            "no rubric, nothing to miss"
+        );
     }
 
     #[test]
@@ -1124,10 +1116,18 @@ mod tests {
             "a card matching an existing deck card must not mint a duplicate"
         );
         let reopened = reopened_store(root, "d.md");
-        assert_eq!(reopened.virtual_len(), 0, "the duplicate never reached disk");
+        assert_eq!(
+            reopened.virtual_len(),
+            0,
+            "the duplicate never reached disk"
+        );
 
         let id = s
-            .mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()], LATER)
+            .mint_tutor_card(
+                "capital of spain?".to_string(),
+                vec!["Madrid".to_string()],
+                LATER,
+            )
             .expect("fresh content mints");
         let reopened = reopened_store(root, "d.md");
         let vc = reopened
@@ -1478,22 +1478,28 @@ mod tests {
         let state = s.state();
         assert_eq!(state.phase, WalkPhase::Predict);
         assert_eq!(state.description, "how `it` works");
-        assert!(state
-            .description_runs
-            .iter()
-            .any(|run| run.code && run.text == "it"));
+        assert!(
+            state
+                .description_runs
+                .iter()
+                .any(|run| run.code && run.text == "it")
+        );
         assert_eq!(state.source.as_deref(), Some("source.txt"));
         assert_eq!(state.total, 2);
         assert_eq!(state.current, 1);
         assert_eq!(state.prompt.as_deref(), Some("Predict the `first` hop"));
-        assert!(state
-            .prompt_runs
-            .as_ref()
-            .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "first")));
+        assert!(
+            state
+                .prompt_runs
+                .as_ref()
+                .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "first"))
+        );
         assert_eq!(state.givens, vec!["line — the `input` line".to_string()]);
-        assert!(state.given_runs[0]
-            .iter()
-            .any(|run| run.code && run.text == "input"));
+        assert!(
+            state.given_runs[0]
+                .iter()
+                .any(|run| run.code && run.text == "input")
+        );
 
         s.predict("guess1".to_string());
         let state = s.state();
@@ -1510,13 +1516,17 @@ mod tests {
             }]
         );
         assert_eq!(state.points, vec!["it reads the `first` line".to_string()]);
-        assert!(state.point_runs[0]
-            .iter()
-            .any(|run| run.code && run.text == "first"));
-        assert!(state
-            .note_runs
-            .as_ref()
-            .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "read")));
+        assert!(
+            state.point_runs[0]
+                .iter()
+                .any(|run| run.code && run.text == "first")
+        );
+        assert!(
+            state
+                .note_runs
+                .as_ref()
+                .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "read"))
+        );
 
         let state = s.grade(WalkDelta::Got, Some(T0)).unwrap();
         assert_eq!(state.phase, WalkPhase::Predict);
@@ -1556,11 +1566,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("box");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"Box\"\n");
         write(&ws.join("source.txt"), "alpha\nbeta\ngamma\n");
+        let deck_path = ws.join("decks/t.md");
         write_deck(
-            &ws.join("t.md"),
+            &deck_path,
             "---\n\
              trace: a member walk\n\
              source: source.txt\n\
@@ -1571,7 +1582,7 @@ mod tests {
         );
 
         let mut s = WalkSession::open(
-            ws.join("t.md").to_string_lossy().into_owned(),
+            deck_path.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
             None,

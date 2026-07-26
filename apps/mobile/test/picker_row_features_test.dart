@@ -131,22 +131,22 @@ void main() {
   group('item 11: workspace icons', () {
     Directory iconRoot() {
       final root = tempRoot('alix-picker-icons-');
-      Directory('${root.path}/wsSvg').createSync();
+      Directory('${root.path}/wsSvg/decks').createSync(recursive: true);
       File('${root.path}/wsSvg/alix.toml').writeAsStringSync('title = "WsSvg"\n');
       Directory('${root.path}/wsSvg/assets').createSync();
       File('${root.path}/wsSvg/assets/icon.svg').writeAsStringSync(_svgIcon);
-      writeTestDeck('${root.path}/wsSvg/m.md', '## q\na\n');
+      writeTestDeck('${root.path}/wsSvg/decks/m.md', '## q\na\n');
 
-      Directory('${root.path}/wsPng').createSync();
+      Directory('${root.path}/wsPng/decks').createSync(recursive: true);
       File('${root.path}/wsPng/alix.toml').writeAsStringSync('title = "WsPng"\n');
       Directory('${root.path}/wsPng/assets').createSync();
       File('${root.path}/wsPng/assets/icon.png').writeAsBytesSync(_pngIcon);
-      writeTestDeck('${root.path}/wsPng/m.md', '## q\na\n');
+      writeTestDeck('${root.path}/wsPng/decks/m.md', '## q\na\n');
 
-      Directory('${root.path}/wsNone').createSync();
+      Directory('${root.path}/wsNone/decks').createSync(recursive: true);
       File('${root.path}/wsNone/alix.toml')
           .writeAsStringSync('title = "WsNone"\n');
-      writeTestDeck('${root.path}/wsNone/m.md', '## q\na\n');
+      writeTestDeck('${root.path}/wsNone/decks/m.md', '## q\na\n');
 
       writeTestDeck('${root.path}/loose.md', '# Loose\n\n## q\na\n');
       return root;
@@ -372,20 +372,21 @@ void main() {
     Directory requiresChainRoot() {
       final root = tempRoot('alix-picker-tree-');
       final ws = Directory('${root.path}/ws')..createSync();
+      final decks = Directory('${ws.path}/decks')..createSync();
       File('${ws.path}/alix.toml').writeAsStringSync('');
       writeTestDeck(
-        '${ws.path}/base.md',
+        '${decks.path}/base.md',
         '---\nsource: https://example.com\n---\n# Base\n\n## q?\na\n',
       );
       writeTestDeck(
-        '${ws.path}/mid.md',
+        '${decks.path}/mid.md',
         '---\nrequires: base\n---\n# Mid\n\n## q?\na\n',
       );
       writeTestDeck(
-        '${ws.path}/tip.md',
+        '${decks.path}/tip.md',
         '---\nrequires: mid\n---\n# Tip\n\n## q?\na\n',
       );
-      writeTestDeck('${ws.path}/other.md', '# Other\n\n## q?\na\n');
+      writeTestDeck('${decks.path}/other.md', '# Other\n\n## q?\na\n');
       return root;
     }
 
@@ -470,17 +471,18 @@ void main() {
         (tester) async {
       final root = tempRoot('alix-picker-tree-truncate-');
       final ws = Directory('${root.path}/ws')..createSync();
+      final decks = Directory('${ws.path}/decks')..createSync();
       File('${ws.path}/alix.toml').writeAsStringSync('');
-      writeTestDeck('${ws.path}/base.md', '# Base\n\n## q?\na\n');
+      writeTestDeck('${decks.path}/base.md', '# Base\n\n## q?\na\n');
       writeTestDeck(
-        '${ws.path}/mid.md',
+        '${decks.path}/mid.md',
         '---\nrequires: base\n---\n# Mid\n\n## q?\na\n',
       );
       const longTitle = 'A very long member deck title that would wrap onto '
           'more than one line if the row were not truncating it with an '
           'ellipsis instead';
       writeTestDeck(
-        '${ws.path}/deep.md',
+        '${decks.path}/deep.md',
         '---\nrequires: mid\n---\n# $longTitle\n\n## q?\na\n',
       );
 

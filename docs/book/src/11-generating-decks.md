@@ -44,7 +44,7 @@ alix generate <source> -o ownership              # choose the output file name
 alix generate <source> --cards 15                # cap the number of cards
 alix generate <source> --review                  # a 2nd pass that dedups and tightens
 alix generate <source> --print                   # print to stdout instead of writing a file
-alix generate <source> --workspace ~/decks/rust/ # write the deck into that workspace
+alix generate <source> --workspace ~/decks/rust/ # write it under that workspace's decks/
 ```
 
 `--review` runs a **second** model call that takes the draft and returns a

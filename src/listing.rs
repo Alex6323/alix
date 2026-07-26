@@ -58,7 +58,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         if name.starts_with('.') {
             continue;
         }
-        if path.is_dir() && workspace::has_decks(&path) {
+        if path.is_dir() && (workspace::is_workspace(&path) || workspace::has_decks(&path)) {
             out.push(folder_summary(root, &path, review, now_ms));
         } else if path.is_file()
             && path.extension().is_some_and(|e| e == "md")
@@ -682,9 +682,9 @@ mod tests {
             &root.join("b-loose.md"),
             "# Loose Deck\n## q <!-- id: qloose -->\na\n",
         );
-        std::fs::create_dir(root.join("a-ws")).unwrap();
+        std::fs::create_dir_all(root.join("a-ws/decks")).unwrap();
         write(&root.join("a-ws/alix.toml"), "title = \"My Workspace\"\n");
-        write(&root.join("a-ws/m.md"), "## q <!-- id: qm -->\na\n");
+        write(&root.join("a-ws/decks/m.md"), "## q <!-- id: qm -->\na\n");
         std::fs::create_dir(root.join("c-plain")).unwrap();
         write(&root.join("c-plain/d.md"), "## q <!-- id: qd -->\na\n");
         std::fs::create_dir(root.join(".hidden")).unwrap();
@@ -711,7 +711,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("alix.toml"), "title = \"The Root\"\n");
-        write(&root.join("a.md"), "## q <!-- id: qa -->\na\n");
+        std::fs::create_dir(root.join("decks")).unwrap();
+        write(&root.join("decks/a.md"), "## q <!-- id: qa -->\na\n");
         let rows = list_root(root, &ReviewConfig::default(), T0);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "The Root");
@@ -722,17 +723,32 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_initialized_workspace_is_still_a_workspace_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("alix.toml"), "title = \"The Root\"\n");
+
+        let rows = list_root(root, &ReviewConfig::default(), T0);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "The Root");
+        assert!(rows[0].is_workspace);
+        assert!(!rows[0].due);
+        assert!(list_members(root, root, &ReviewConfig::default(), T0).is_empty());
+    }
+
+    #[test]
     fn due_reads_each_entrys_own_store_and_the_injected_clock() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("loose.md"), "## q <!-- id: qloose -->\na\n");
-        std::fs::create_dir(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/m.md"), "## q <!-- id: qm -->\na\n");
+        write(&root.join("ws/decks/m.md"), "## q <!-- id: qm -->\na\n");
 
         settle(
             &workspace::store_path(&root.join("ws")),
-            &root.join("ws/m.md"),
+            &root.join("ws/decks/m.md"),
         );
         settle(&workspace::root_store_path(root), &root.join("loose.md"));
 
@@ -750,14 +766,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("loose.md"), "## q <!-- id: qloose -->\na\n");
-        std::fs::create_dir(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/m.md"), "## q <!-- id: qm -->\na\n");
+        write(&root.join("ws/decks/m.md"), "## q <!-- id: qm -->\na\n");
 
         std::fs::create_dir(root.join("progress")).unwrap();
         std::fs::create_dir(root.join("ws/progress")).unwrap();
-        let root_conflict =
-            root.join("progress/loose.sync-conflict-20260714-101112-AAAAAAA.json");
+        let root_conflict = root.join("progress/loose.sync-conflict-20260714-101112-AAAAAAA.json");
         let ws_conflict =
             root.join("ws/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
         write(&root_conflict, "{}");
@@ -831,23 +846,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
         write(
-            &ws.join("base.md"),
+            &ws.join("decks/base.md"),
             "---\nsource: https://x\n---\n## q <!-- id: qbase -->\na\n",
         );
         write(
-            &ws.join("advanced.md"),
+            &ws.join("decks/advanced.md"),
             "---\nrequires: base\n---\n## q2 <!-- id: qadv -->\nb\n",
         );
         write(
-            &ws.join("walk.md"),
+            &ws.join("decks/walk.md"),
             "---\ntrace: How it flows\n---\n## hop? <!-- id: qhop -->\nstep\n",
         );
 
         let store_path = workspace::store_path(&ws);
-        let base_id = Deck::load(ws.join("base.md")).unwrap().cards[0]
+        let base_id = Deck::load(ws.join("decks/base.md")).unwrap().cards[0]
             .id()
             .unwrap();
         let paths = workspace::deck_files(&ws);
@@ -892,7 +907,7 @@ mod tests {
         assert!(walk.has_exam);
 
         let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
-        let base_deck = Deck::load(ws.join("base.md")).unwrap();
+        let base_deck = Deck::load(ws.join("decks/base.md")).unwrap();
         store.set_deck_mastered(&base_deck.subject, T0 + 1_000);
         store.save().unwrap();
 
@@ -931,18 +946,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("base.md"), "## q <!-- id: qbase -->\na\n");
+        write(&ws.join("decks/base.md"), "## q <!-- id: qbase -->\na\n");
         write(
-            &ws.join("mid.md"),
+            &ws.join("decks/mid.md"),
             "---\nrequires: base\n---\n## q <!-- id: qmid -->\na\n",
         );
         write(
-            &ws.join("tip.md"),
+            &ws.join("decks/tip.md"),
             "---\nrequires: mid\n---\n## q <!-- id: qtip -->\na\n",
         );
-        write(&ws.join("other.md"), "## q <!-- id: qother -->\na\n");
+        write(&ws.join("decks/other.md"), "## q <!-- id: qother -->\na\n");
 
         let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
         let shape: Vec<(&str, usize, &str)> = rows
@@ -969,23 +984,23 @@ mod tests {
             "---\nsource: https://x\n---\n## q <!-- id: qgate -->\na\n",
         );
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "");
         write(
-            &ws.join("aaa-locked.md"),
+            &ws.join("decks/aaa-locked.md"),
             "---\nrequires: gate\n---\n## q2 <!-- id: qlocked -->\nb\n",
         );
         write(
-            &ws.join("zzz-examdue.md"),
+            &ws.join("decks/zzz-examdue.md"),
             "---\nsource: https://y\n---\n## q <!-- id: qexamdue -->\na\n",
         );
 
         let store_path = workspace::store_path(&ws);
-        let examdue_id = Deck::load(ws.join("zzz-examdue.md")).unwrap().cards[0]
+        let examdue_id = Deck::load(ws.join("decks/zzz-examdue.md")).unwrap().cards[0]
             .id()
             .unwrap();
         let mut store =
-            crate::state::open_store(&ws.join("zzz-examdue.md"), &store_path).unwrap();
+            crate::state::open_store(&ws.join("decks/zzz-examdue.md"), &store_path).unwrap();
         let entry = store.get_or_insert(&examdue_id, T0);
         entry.recognized_ms = Some(T0);
         entry.recall = Some(graduated_not_due(T0));
@@ -1018,11 +1033,11 @@ mod tests {
             "---\nsource: https://x\n---\n## q <!-- id: qgate -->\na\n",
         );
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("zzz-broken.md"), "## q with no answer\n");
+        write(&ws.join("decks/zzz-broken.md"), "## q with no answer\n");
         write(
-            &ws.join("aaa-locked.md"),
+            &ws.join("decks/aaa-locked.md"),
             "---\nrequires: gate\n---\n## q2 <!-- id: qlocked -->\nb\n",
         );
 
@@ -1043,11 +1058,11 @@ mod tests {
     fn workspace_icon_resolves_only_for_workspace_rows() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::create_dir(root.join("ws")).unwrap();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws/alix.toml"), "");
         std::fs::create_dir_all(root.join("ws/assets")).unwrap();
         write(&root.join("ws/assets/icon.svg"), "<svg/>");
-        write(&root.join("ws/m.md"), "## q <!-- id: qm -->\na\n");
+        write(&root.join("ws/decks/m.md"), "## q <!-- id: qm -->\na\n");
         write(&root.join("loose.md"), "## q <!-- id: qloose -->\na\n");
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
@@ -1255,20 +1270,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("ws");
-        std::fs::create_dir(&ws).unwrap();
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
-        write(&ws.join("done.md"), "## q <!-- id: qdone -->\na\n");
-        write(&ws.join("fresh.md"), "## q2 <!-- id: qfresh -->\nb\n");
+        write(&ws.join("decks/done.md"), "## q <!-- id: qdone -->\na\n");
+        write(&ws.join("decks/fresh.md"), "## q2 <!-- id: qfresh -->\nb\n");
         let date = crate::time::local_date(T0) + chrono::Days::new(5);
         write(
             &ws.join("alix.local.toml"),
             &format!("[review]\ndeadline = \"{}\"\n", date.format("%Y-%m-%d")),
         );
-        let done_id = Deck::load(ws.join("done.md")).unwrap().cards[0]
+        let done_id = Deck::load(ws.join("decks/done.md")).unwrap().cards[0]
             .id()
             .unwrap();
         let mut store =
-            crate::state::open_store(&ws.join("done.md"), &workspace::store_path(&ws)).unwrap();
+            crate::state::open_store(&ws.join("decks/done.md"), &workspace::store_path(&ws))
+                .unwrap();
         store.get_or_insert(&done_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 

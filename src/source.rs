@@ -55,8 +55,11 @@ impl SourceBase {
     pub fn for_deck(deck: &Deck) -> Self {
         let first = deck.sources.first();
         let multi = first.is_some_and(|source| source.contains(" + "));
-        let (base_dir, source_file) =
-            resolve_source(deck.path.parent(), first.map(|source| first_source(source)));
+        let content_root = crate::workspace::content_root(&deck.path);
+        let (base_dir, source_file) = resolve_source(
+            Some(&content_root),
+            first.map(|source| first_source(source)),
+        );
         Self {
             base_dir,
             source_file: if multi { None } else { source_file },

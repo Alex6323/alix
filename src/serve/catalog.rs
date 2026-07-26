@@ -434,7 +434,7 @@ pub(super) fn deck_catalog(
         }
         // A loose deck inside a workspace belongs to it (reached by opening
         // the workspace), so it's excluded from Recent.
-        if e.path.parent().is_some_and(|p| cache.is_workspace(p)) {
+        if crate::workspace::root_for_deck(&e.path).is_some() {
             continue;
         }
         recent_decks.push(deck_item_dto(
@@ -574,7 +574,7 @@ pub(super) fn resolve_dest(
     cache: &mut DeckCache,
 ) -> Option<PathBuf> {
     let Some(name) = dest.filter(|d| !d.is_empty()) else {
-        return Some(decks_dir.to_path_buf());
+        return Some(crate::workspace::member_dir(decks_dir));
     };
     let mut matches = resolve_catalog(decks_dir, recent, cache)
         .into_iter()
@@ -583,7 +583,7 @@ pub(super) fn resolve_dest(
     if matches.next().is_some() {
         return None; // ambiguous: more than one dir row shares this name
     }
-    Some(first.path)
+    Some(crate::workspace::member_dir(&first.path))
 }
 
 /// The hex `XxHash64` of the path. Keeps `/img/` safe from traversal, since no
