@@ -6,7 +6,7 @@ use std::{
 #[cfg(test)]
 use crate::deck::DeckState;
 pub use crate::listing::{DeckStatus, deck_status, dependency_forest, member_parents};
-use crate::{cache::DeckCache, recent::RecentDecks, store::Store, title, workspace};
+use crate::{cache::DeckCache, recent::RecentDecks, title, workspace};
 
 struct Candidate {
     path: PathBuf,
@@ -96,7 +96,7 @@ fn file_name(path: &Path) -> String {
 }
 
 pub fn workspace_last_progress(folder: &Path) -> Option<String> {
-    let ts = Store::open(workspace::store_path(folder))
+    let ts = crate::state::open_aggregate_store(&workspace::store_path(folder))
         .ok()?
         .last_review_ms()?;
     let now = crate::time::now_ms();

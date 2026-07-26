@@ -4,6 +4,6 @@
   "landed": "rust-decks",
   "phase": "done",
   "stripped": [
-    "progress.json"
+    "progress"
   ]
 }

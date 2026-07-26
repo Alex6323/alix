@@ -6,35 +6,137 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 
-/// Excluded from staging AND stripped defensively from anything received:
-/// the sender may not have used `alix share`.
-pub const PERSONAL: [&str; 3] = ["progress.json", "recent.json", "alix.local.toml"];
+/// Named personal entries excluded from staging and stripped on receive.
+pub const PERSONAL: [&str; 3] = [
+    "progress",
+    "recent.json",
+    "alix.local.toml",
+];
+const DECK_BUNDLE_MARKER: &str = ".alix-deck-share.json";
+const DECK_BUNDLE_VERSION: u32 = 1;
+
+#[derive(Deserialize, Serialize)]
+struct DeckBundle {
+    version: u32,
+    deck: String,
+}
 
 fn stays_home(name: &str) -> bool {
     PERSONAL.contains(&name)
         || name.starts_with('.')
-        || name.ends_with(".bak")
+        || crate::workspace::is_conflict_name(name)
         || name.ends_with("-bak")
+        || name.ends_with(".json.tmp")
+}
+
+pub fn stage_path(path: &Path, state_root: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
+    if path.is_dir() {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("shared-decks");
+        let stage = stage_root.join(name);
+        let staged = stage_dir(path, &stage)?;
+        return Ok((stage, staged));
+    }
+    if !path.is_file() {
+        bail!("`{}` is neither a deck file nor a folder", path.display());
+    }
+    let deck = crate::deck::Deck::load(path)?;
+    let Some(deck_id) = deck.deck_token.as_deref() else {
+        return Ok((path.to_path_buf(), 1));
+    };
+    let augmentation = crate::state::Layout::new(state_root).augment_for(deck_id);
+    if !augmentation.is_file() {
+        return Ok((path.to_path_buf(), 1));
+    }
+    crate::augment::read_deck_data(&augmentation, deck_id)?;
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("deck.md");
+    let stem = file_name.strip_suffix(".md").unwrap_or(file_name);
+    let stage = stage_root.join(format!("{stem}.alix-deck"));
+    std::fs::create_dir_all(stage.join("augment"))
+        .with_context(|| format!("cannot create {}", stage.display()))?;
+    std::fs::copy(path, stage.join(file_name))
+        .with_context(|| format!("cannot copy {}", path.display()))?;
+    std::fs::copy(
+        &augmentation,
+        stage.join("augment").join(format!("{deck_id}.json")),
+    )
+    .with_context(|| format!("cannot copy {}", augmentation.display()))?;
+    let marker = serde_json::to_string_pretty(&DeckBundle {
+        version: DECK_BUNDLE_VERSION,
+        deck: file_name.to_string(),
+    })?;
+    std::fs::write(stage.join(DECK_BUNDLE_MARKER), marker)
+        .with_context(|| format!("cannot write {}", stage.display()))?;
+    Ok((stage, 3))
 }
 
 pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
     std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
+    let deck_ids: std::collections::HashSet<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file() && path.extension().is_some_and(|extension| extension == "md")
+        })
+        .filter_map(|path| crate::deck::Deck::load(path).ok()?.deck_token)
+        .collect();
     let mut staged = 0;
     for entry in std::fs::read_dir(dir).with_context(|| format!("cannot read {}", dir.display()))? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
+        let from = entry.path();
         if stays_home(&name) {
             continue;
         }
-        let from = entry.path();
         let to = stage.join(&name);
-        if from.is_dir() {
+        if name == "augment" && from.is_dir() {
+            staged += stage_augmentation(&from, &to, &deck_ids)?;
+        } else if from.is_dir() {
             staged += stage_dir(&from, &to)?;
         } else {
             std::fs::copy(&from, &to).with_context(|| format!("cannot copy {}", from.display()))?;
             staged += 1;
         }
+    }
+    Ok(staged)
+}
+
+fn stage_augmentation(
+    dir: &Path,
+    stage: &Path,
+    deck_ids: &std::collections::HashSet<String>,
+) -> Result<usize> {
+    let mut staged = 0;
+    for entry in std::fs::read_dir(dir).with_context(|| format!("cannot read {}", dir.display()))? {
+        let entry = entry?;
+        let from = entry.path();
+        let Some(deck_id) = crate::state::deck_id_from_document(&from) else {
+            continue;
+        };
+        if !from.is_file()
+            || !deck_ids.contains(deck_id)
+            || from
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(crate::workspace::is_conflict_name)
+        {
+            continue;
+        }
+        std::fs::create_dir_all(stage)
+            .with_context(|| format!("cannot create {}", stage.display()))?;
+        std::fs::copy(&from, stage.join(entry.file_name()))
+            .with_context(|| format!("cannot copy {}", from.display()))?;
+        staged += 1;
     }
     Ok(staged)
 }
@@ -45,8 +147,16 @@ pub fn sanitize_received(dir: &Path) -> Result<Vec<String>> {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
-        if PERSONAL.contains(&name.as_str()) {
-            if path.is_file() {
+        let private = PERSONAL.contains(&name.as_str())
+            || crate::workspace::is_conflict_name(&name)
+            || name.ends_with("-bak")
+            || name.ends_with(".json.tmp")
+            || (name.starts_with('.') && name != DECK_BUNDLE_MARKER);
+        if private {
+            if path.is_dir() {
+                std::fs::remove_dir_all(&path)?;
+                removed.push(name);
+            } else if path.is_file() {
                 std::fs::remove_file(&path)?;
                 removed.push(name);
             }
@@ -290,6 +400,9 @@ pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>
         .and_then(|n| n.to_str())
         .unwrap_or("received")
         .to_string();
+    if is_deck_bundle(&got) {
+        return land_deck_bundle(&got, dest_dir);
+    }
     let stripped = if got.is_dir() {
         sanitize_received(&got)?
     } else {
@@ -301,6 +414,98 @@ pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>
     }
     move_into(&got, &dest)?;
     Ok((name, stripped))
+}
+
+pub fn is_deck_bundle(path: &Path) -> bool {
+    path.is_dir() && path.join(DECK_BUNDLE_MARKER).is_file()
+}
+
+pub fn land_deck_bundle(bundle: &Path, dest_dir: &Path) -> Result<(String, Vec<String>)> {
+    land_deck_bundle_with_force(bundle, dest_dir, false)
+}
+
+pub fn land_deck_bundle_with_force(
+    bundle: &Path,
+    dest_dir: &Path,
+    force: bool,
+) -> Result<(String, Vec<String>)> {
+    let stripped = sanitize_received(bundle)?;
+    let marker_path = bundle.join(DECK_BUNDLE_MARKER);
+    let marker: DeckBundle = serde_json::from_str(
+        &std::fs::read_to_string(&marker_path)
+            .with_context(|| format!("cannot read {}", marker_path.display()))?,
+    )
+    .with_context(|| format!("cannot read {}", marker_path.display()))?;
+    if marker.version != DECK_BUNDLE_VERSION
+        || Path::new(&marker.deck)
+            .file_name()
+            .and_then(|name| name.to_str())
+            != Some(marker.deck.as_str())
+        || !marker.deck.ends_with(".md")
+    {
+        bail!("{} is not a supported deck share", bundle.display());
+    }
+    let source_deck = bundle.join(&marker.deck);
+    let deck = crate::deck::Deck::load(&source_deck)?;
+    let deck_id = deck
+        .deck_token
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("{} is not initialized", source_deck.display()))?;
+    let source_augmentation = bundle.join("augment").join(format!("{deck_id}.json"));
+    let (source_revision, source_data) =
+        crate::augment::read_deck_data(&source_augmentation, deck_id)?;
+
+    std::fs::create_dir_all(dest_dir)
+        .with_context(|| format!("cannot create {}", dest_dir.display()))?;
+    let destination = dest_dir.join(&marker.deck);
+    if destination.exists() && !force {
+        bail!(
+            "{} already exists; move it aside first",
+            destination.display()
+        );
+    }
+    let staged_deck = dest_dir.join(format!(".{}.receive.md", marker.deck));
+    if staged_deck.exists() {
+        bail!(
+            "{} already exists; move it aside first",
+            staged_deck.display()
+        );
+    }
+    std::fs::copy(&source_deck, &staged_deck)
+        .with_context(|| format!("cannot stage {}", destination.display()))?;
+
+    let state_root = crate::workspace::root_store_path(dest_dir);
+    let (layout, _) = match crate::state::prepare(&staged_deck, &state_root) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            let _ = std::fs::remove_file(&staged_deck);
+            return Err(error.into());
+        }
+    };
+    let destination_augmentation = layout.augment_for(deck_id);
+    let destination_revision = if destination_augmentation.is_file() {
+        let (revision, data) = crate::augment::read_deck_data(&destination_augmentation, deck_id)?;
+        if !force && data != source_data && (!data.cards.is_empty() || !data.topologies.is_empty())
+        {
+            let _ = std::fs::remove_file(&staged_deck);
+            bail!(
+                "{} already has different augmentation for deck `{deck_id}`",
+                destination_augmentation.display()
+            );
+        }
+        revision
+    } else {
+        0
+    };
+    crate::augment::write_deck_data(
+        &destination_augmentation,
+        deck_id,
+        source_revision.max(destination_revision.saturating_add(1)),
+        &source_data,
+    )?;
+    move_into(&staged_deck, &destination)
+        .with_context(|| format!("cannot write {}", destination.display()))?;
+    Ok((marker.deck, stripped))
 }
 
 #[cfg(test)]
@@ -316,27 +521,95 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("ws");
         std::fs::create_dir_all(src.join("assets")).unwrap();
-        touch(&src, "a.txt");
+        std::fs::write(
+            src.join("deck.md"),
+            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+        )
+        .unwrap();
         touch(&src, "alix.toml");
-        touch(&src, "augment.json");
-        touch(&src, "progress.json");
         touch(&src, "recent.json");
         touch(&src, "alix.local.toml");
-        touch(&src, "progress.json.predepth-bak");
+        std::fs::create_dir(src.join("progress")).unwrap();
+        touch(&src.join("progress"), "deck1.json");
+        std::fs::create_dir(src.join("augment")).unwrap();
+        touch(&src.join("augment"), "deck1.json");
+        touch(&src.join("augment"), "orphan.json");
         touch(&src.join("assets"), "icon.svg");
 
         let stage = dir.path().join("stage");
         let n = stage_dir(&src, &stage).unwrap();
 
-        assert_eq!(4, n, "a.txt, alix.toml, augment.json, assets/icon.svg");
-        assert!(stage.join("a.txt").exists());
+        assert_eq!(
+            4, n,
+            "deck.md, alix.toml, augment/deck1.json, assets/icon.svg"
+        );
+        assert!(stage.join("deck.md").exists());
         assert!(stage.join("alix.toml").exists());
-        assert!(stage.join("augment.json").exists());
+        assert!(stage.join("augment/deck1.json").exists());
+        assert!(!stage.join("augment/orphan.json").exists());
         assert!(stage.join("assets/icon.svg").exists());
-        assert!(!stage.join("progress.json").exists());
+        assert!(!stage.join("progress").exists());
         assert!(!stage.join("recent.json").exists());
         assert!(!stage.join("alix.local.toml").exists());
-        assert!(!stage.join("progress.json.predepth-bak").exists());
+    }
+
+    #[test]
+    fn a_single_deck_round_trip_carries_augmentation_but_not_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let sender = dir.path().join("sender");
+        std::fs::create_dir(&sender).unwrap();
+        let deck_path = sender.join("math.md");
+        std::fs::write(
+            &deck_path,
+            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+        )
+        .unwrap();
+        let mut progress = crate::state::open_store(&deck_path, &sender).unwrap();
+        progress.get_or_insert("card1", 1);
+        progress.save().unwrap();
+        let mut augmentation = crate::state::open_augment(&deck_path, &sender).unwrap();
+        augmentation.set_note("card1", "shared note".to_string(), 7);
+        augmentation.save().unwrap();
+
+        let transfer = dir.path().join("transfer");
+        std::fs::create_dir(&transfer).unwrap();
+        let (bundle, count) = stage_path(&deck_path, &sender, &transfer).unwrap();
+
+        assert_eq!(3, count);
+        assert!(is_deck_bundle(&bundle));
+        assert!(bundle.join("math.md").is_file());
+        assert!(bundle.join("augment/deck1.json").is_file());
+        assert!(!bundle.join("progress").exists());
+
+        let receiver = dir.path().join("receiver");
+        let (landed, stripped) = land_received(&transfer, &receiver).unwrap();
+
+        assert_eq!("math.md", landed);
+        assert!(stripped.is_empty());
+        let received_deck = receiver.join("math.md");
+        let received_progress = crate::state::open_store(&received_deck, &receiver).unwrap();
+        assert!(received_progress.get("card1").is_none());
+        let received_augmentation = crate::state::open_augment(&received_deck, &receiver).unwrap();
+        assert_eq!(Some("shared note"), received_augmentation.note("card1", 7));
+
+        let mut changed_augmentation =
+            crate::state::open_augment(&received_deck, &receiver).unwrap();
+        changed_augmentation.set_note("card1", "local note".to_string(), 7);
+        changed_augmentation.save().unwrap();
+        std::fs::write(
+            &received_deck,
+            "---\nalix-id: deck1\n---\n## changed <!-- id: card1 -->\nlocally\n",
+        )
+        .unwrap();
+
+        land_deck_bundle_with_force(&bundle, &receiver, true).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&deck_path).unwrap(),
+            std::fs::read_to_string(&received_deck).unwrap()
+        );
+        let received_augmentation = crate::state::open_augment(&received_deck, &receiver).unwrap();
+        assert_eq!(Some("shared note"), received_augmentation.note("card1", 7));
     }
 
     #[test]
@@ -345,15 +618,28 @@ mod tests {
         let root = dir.path().join("got");
         std::fs::create_dir_all(root.join("nested")).unwrap();
         touch(&root, "a.txt");
-        touch(&root, "progress.json");
+        touch(&root, ".private");
         touch(&root.join("nested"), "alix.local.toml");
+        std::fs::create_dir(root.join("nested/progress")).unwrap();
+        touch(&root.join("nested/progress"), "deck1.json");
+        std::fs::create_dir(root.join("nested/augment")).unwrap();
+        touch(
+            &root.join("nested/augment"),
+            "deck1.sync-conflict-20260725-phone.json",
+        );
 
         let removed = sanitize_received(&root).unwrap();
 
         assert!(root.join("a.txt").exists());
-        assert!(!root.join("progress.json").exists());
+        assert!(!root.join(".private").exists());
         assert!(!root.join("nested/alix.local.toml").exists());
-        assert_eq!(2, removed.len(), "{removed:?}");
+        assert!(!root.join("nested/progress").exists());
+        assert!(
+            !root
+                .join("nested/augment/deck1.sync-conflict-20260725-phone.json")
+                .exists()
+        );
+        assert_eq!(4, removed.len(), "{removed:?}");
     }
 
     #[test]
@@ -458,14 +744,15 @@ mod tests {
         let tmp = dir.path().join("scratch");
         std::fs::create_dir_all(tmp.join("ws")).unwrap();
         std::fs::write(tmp.join("ws/a.txt"), "x").unwrap();
-        std::fs::write(tmp.join("ws/progress.json"), "x").unwrap();
+        std::fs::create_dir(tmp.join("ws/progress")).unwrap();
+        std::fs::write(tmp.join("ws/progress/deck1.json"), "x").unwrap();
         let dest = dir.path().join("decks");
         std::fs::create_dir_all(&dest).unwrap();
         let (landed, stripped) = land_received(&tmp, &dest).unwrap();
         assert_eq!("ws", landed);
-        assert_eq!(vec!["progress.json".to_string()], stripped);
+        assert_eq!(vec!["progress".to_string()], stripped);
         assert!(dest.join("ws/a.txt").exists());
-        assert!(!dest.join("ws/progress.json").exists());
+        assert!(!dest.join("ws/progress").exists());
     }
 
     #[test]

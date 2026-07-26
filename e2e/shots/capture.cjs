@@ -154,7 +154,12 @@ function parseDeck(file) {
 // ---- augment cache (choices/notes/keypoints/topology on the hero deck) ----
 
 function heroAugmentState() {
-  const augPath = path.join(DEMO_DIR, "rust-book", "augment.json");
+  const augPath = path.join(
+    DEMO_DIR,
+    "rust-book",
+    "augment",
+    `${deckId(HERO_FILE)}.json`,
+  );
   if (!fs.existsSync(augPath)) return { distractors: 0, note: 0, keypoints: 0, topology: false };
   const data = JSON.parse(fs.readFileSync(augPath, "utf8"));
   const cards = parseDeck(HERO_FILE);
@@ -169,6 +174,13 @@ function heroAugmentState() {
   }
   const topology = Array.isArray(data.topologies) && data.topologies.length > 0;
   return { distractors, note, keypoints, topology, cardCount: cards.length };
+}
+
+function deckId(file) {
+  const text = fs.readFileSync(file, "utf8");
+  const match = text.match(/^alix-id:\s*"?([^"\r\n]+)"?\s*$/m);
+  if (!match) throw new Error(`no alix-id in ${file}`);
+  return match[1];
 }
 
 function runAugment(target) {
@@ -423,7 +435,7 @@ async function establishHeroSchedules(page) {
   // Stagger review recency so the topology heatmap shows a genuine red->green
   // spread rather than "everything reviewed a second ago" (FSRS retrievability
   // is ~1.0 right at last_review_ms regardless of grade). This edits ONLY the
-  // scratch copy's progress.json — never the real ~/alix-demo — and only the
+  // scratch copy's per-deck progress document, never the real ~/alix-demo, and only the
   // `last_review_ms`/`due_ms` timestamps, not the grades or history just
   // recorded for real above. CardDto has no `id` field on the wire (by
   // design — see docs/API.md), so this reads the store file directly rather
@@ -434,9 +446,14 @@ async function establishHeroSchedules(page) {
 }
 
 function backdateRecallReviews() {
-  const storePath = path.join(DEMO_DIR, "rust-book", "progress.json");
+  const storePath = path.join(
+    DEMO_DIR,
+    "rust-book",
+    "progress",
+    `${deckId(HERO_FILE)}.json`,
+  );
   if (!fs.existsSync(storePath)) {
-    log("WARNING: no progress.json to backdate at", storePath);
+    log("WARNING: no progress document to backdate at", storePath);
     return;
   }
   const store = JSON.parse(fs.readFileSync(storePath, "utf8"));

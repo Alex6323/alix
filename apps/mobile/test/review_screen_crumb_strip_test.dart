@@ -29,6 +29,8 @@ import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
+import 'support/deck_fixture.dart';
+
 /// The web's cell color formula (assets/web/review.html), computed
 /// independently here so the assertions don't just echo the production
 /// code's literals back at it.
@@ -120,7 +122,7 @@ void main() {
 
   Directory plainDeckRoot() {
     final root = Directory.systemTemp.createTempSync('alix-crumb-decks-');
-    File('${root.path}/facts.md').writeAsStringSync('# Facts\n\n## q?\na\n');
+    writeTestDeck('${root.path}/facts.md', '# Facts\n\n## q?\na\n');
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }

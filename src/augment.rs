@@ -1,14 +1,18 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{answer::Mode, card::Card, depth::Reveal};
+use crate::{answer::Mode, card::Card, deck::Deck, depth::Reveal};
 
-const CURRENT_VERSION: u32 = 1;
+const DECK_DOCUMENT_VERSION: u32 = 1;
 
 /// Display-only; never part of `Card::id()`, so applying it never touches progress.
 /// An all-empty value still marks the card as checked, distinct from no cache entry.
@@ -140,18 +144,45 @@ impl TopologyOrder {
 }
 
 #[derive(Serialize, Deserialize)]
-struct AugmentFile {
-    #[serde(default = "default_version")]
+struct DeckAugmentFile {
     version: u32,
+    deck_id: String,
+    revision: u64,
     cards: HashMap<String, Augmentation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     topologies: Vec<Topology>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct AugmentDocumentData {
+    pub cards: HashMap<String, Augmentation>,
+    pub topologies: Vec<Topology>,
+}
+
+enum AugmentBacking {
+    Deck {
+        deck_id: String,
+        revision: AtomicU64,
+    },
+    Aggregate {
+        documents: Mutex<Vec<AugmentDocument>>,
+        card_owners: HashMap<String, String>,
+    },
+}
+
+#[derive(Clone)]
+struct AugmentDocument {
+    path: PathBuf,
+    deck_id: String,
+    revision: u64,
+    original: AugmentDocumentData,
 }
 
 pub struct AugmentCache {
     path: PathBuf,
     cards: HashMap<String, Augmentation>,
     topologies: Vec<Topology>,
+    backing: AugmentBacking,
 }
 
 /// Loading never errors; a bad cache is silently treated as empty.
@@ -169,42 +200,447 @@ pub enum AugmentError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("{path}: unsupported augmentation document version {version}")]
+    Version { path: PathBuf, version: u32 },
+    #[error("{path}: augmentation document belongs to deck `{actual}`, expected `{expected}`")]
+    DeckOwner {
+        path: PathBuf,
+        expected: String,
+        actual: String,
+    },
+    #[error("{path}: stale augmentation revision {loaded}; disk is at {disk}")]
+    StaleRevision {
+        path: PathBuf,
+        loaded: u64,
+        disk: u64,
+    },
+    #[error("duplicate augmentation key `{key}` across per-deck documents")]
+    DuplicateKey { key: String },
+    #[error("cannot save aggregate augmentation: card key `{key}` has no owning deck")]
+    UnownedKey { key: String },
+    #[error("cannot save aggregate augmentation: topology `{name}` names unknown deck `{deck_id}`")]
+    UnownedTopology { name: String, deck_id: String },
+    #[error("cannot open aggregate augmentation for uninitialized deck `{subject}`")]
+    MissingDeckId { subject: String },
+}
+
+fn deck_revision(path: &Path, expected_deck_id: &str) -> Result<u64, AugmentError> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let text = std::fs::read_to_string(path).map_err(|source| AugmentError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let file: DeckAugmentFile =
+        serde_json::from_str(&text).map_err(|source| AugmentError::Format {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if file.version != DECK_DOCUMENT_VERSION {
+        return Err(AugmentError::Version {
+            path: path.to_path_buf(),
+            version: file.version,
+        });
+    }
+    if file.deck_id != expected_deck_id {
+        return Err(AugmentError::DeckOwner {
+            path: path.to_path_buf(),
+            expected: expected_deck_id.to_string(),
+            actual: file.deck_id,
+        });
+    }
+    Ok(file.revision)
+}
+
+fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), AugmentError> {
+    let io_err = |source| AugmentError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let json = serde_json::to_string_pretty(value).map_err(|source| AugmentError::Format {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)
+}
+
+pub(crate) fn write_deck_data(
+    path: &Path,
+    deck_id: &str,
+    revision: u64,
+    data: &AugmentDocumentData,
+) -> Result<(), AugmentError> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|source| AugmentError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    write_json_atomic(
+        path,
+        &DeckAugmentFile {
+            version: DECK_DOCUMENT_VERSION,
+            deck_id: deck_id.to_string(),
+            revision,
+            cards: data.cards.clone(),
+            topologies: data.topologies.clone(),
+        },
+    )
+}
+
+pub(crate) fn read_deck_data(
+    path: &Path,
+    expected_deck_id: &str,
+) -> Result<(u64, AugmentDocumentData), AugmentError> {
+    let text = std::fs::read_to_string(path).map_err(|source| AugmentError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let file: DeckAugmentFile =
+        serde_json::from_str(&text).map_err(|source| AugmentError::Format {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if file.version != DECK_DOCUMENT_VERSION {
+        return Err(AugmentError::Version {
+            path: path.to_path_buf(),
+            version: file.version,
+        });
+    }
+    if file.deck_id != expected_deck_id {
+        return Err(AugmentError::DeckOwner {
+            path: path.to_path_buf(),
+            expected: expected_deck_id.to_string(),
+            actual: file.deck_id,
+        });
+    }
+    Ok((
+        file.revision,
+        AugmentDocumentData {
+            cards: file.cards,
+            topologies: file.topologies,
+        },
+    ))
 }
 
 impl AugmentCache {
+    pub(crate) fn empty(path: impl AsRef<Path>) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            cards: HashMap::new(),
+            topologies: Vec::new(),
+            backing: AugmentBacking::Aggregate {
+                documents: Mutex::new(Vec::new()),
+                card_owners: HashMap::new(),
+            },
+        }
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
-        let Loaded { cards, topologies } = load(&path).unwrap_or_default();
-        Self {
+        if path.extension().is_some_and(|extension| extension == "json")
+            && let Some(deck_id) = crate::state::deck_id_from_document(&path)
+        {
+            return Self::open_deck(&path, deck_id)
+                .unwrap_or_else(|_| Self::empty(path));
+        }
+        Self::open_aggregate(path.clone(), HashMap::new(), HashSet::new())
+            .unwrap_or_else(|_| Self::empty(path))
+    }
+
+    pub fn open_deck(
+        path: impl AsRef<Path>,
+        deck_id: impl Into<String>,
+    ) -> Result<Self, AugmentError> {
+        let path = path.as_ref().to_path_buf();
+        let deck_id = deck_id.into();
+        if !path.exists() {
+            return Ok(Self {
+                path,
+                cards: HashMap::new(),
+                topologies: Vec::new(),
+                backing: AugmentBacking::Deck {
+                    deck_id,
+                    revision: AtomicU64::new(0),
+                },
+            });
+        }
+        let text = std::fs::read_to_string(&path).map_err(|source| AugmentError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        let file: DeckAugmentFile =
+            serde_json::from_str(&text).map_err(|source| AugmentError::Format {
+                path: path.clone(),
+                source,
+            })?;
+        if file.version != DECK_DOCUMENT_VERSION {
+            return Err(AugmentError::Version {
+                path,
+                version: file.version,
+            });
+        }
+        if file.deck_id != deck_id {
+            return Err(AugmentError::DeckOwner {
+                path,
+                expected: deck_id,
+                actual: file.deck_id,
+            });
+        }
+        Ok(Self {
+            path,
+            cards: file.cards,
+            topologies: file.topologies,
+            backing: AugmentBacking::Deck {
+                deck_id,
+                revision: AtomicU64::new(file.revision),
+            },
+        })
+    }
+
+    fn open_aggregate(
+        path: PathBuf,
+        mut card_owners: HashMap<String, String>,
+        expected_decks: HashSet<String>,
+    ) -> Result<Self, AugmentError> {
+        let mut document_paths: Vec<PathBuf> = if path.is_dir() {
+            std::fs::read_dir(&path)
+                .map_err(|source| AugmentError::Io {
+                    path: path.clone(),
+                    source,
+                })?
+                .map(|entry| {
+                    entry
+                        .map(|entry| entry.path())
+                        .map_err(|source| AugmentError::Io {
+                            path: path.clone(),
+                            source,
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+        document_paths.retain(|document_path| {
+            document_path.is_file()
+                && document_path.extension().is_some_and(|ext| ext == "json")
+                && document_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_none_or(|name| !crate::workspace::is_conflict_name(name))
+        });
+        document_paths.sort();
+        let mut cards = HashMap::new();
+        let mut topologies = Vec::new();
+        let mut documents = Vec::new();
+        let mut loaded_decks = HashSet::new();
+        for document_path in document_paths {
+            let Some(deck_id) =
+                crate::state::deck_id_from_document(&document_path).map(str::to_string)
+            else {
+                continue;
+            };
+            let (revision, data) = read_deck_data(&document_path, &deck_id)?;
+            for (key, value) in &data.cards {
+                if cards.insert(key.clone(), value.clone()).is_some()
+                    || card_owners
+                        .insert(key.clone(), deck_id.clone())
+                        .is_some_and(|owner| owner != deck_id)
+                {
+                    return Err(AugmentError::DuplicateKey { key: key.clone() });
+                }
+            }
+            for topology in &data.topologies {
+                if topology.deck_token != deck_id {
+                    return Err(AugmentError::DeckOwner {
+                        path: document_path.clone(),
+                        expected: deck_id,
+                        actual: topology.deck_token.clone(),
+                    });
+                }
+            }
+            topologies.extend(data.topologies.clone());
+            loaded_decks.insert(deck_id.clone());
+            documents.push(AugmentDocument {
+                path: document_path,
+                deck_id,
+                revision,
+                original: data,
+            });
+        }
+        for deck_id in expected_decks.difference(&loaded_decks) {
+            documents.push(AugmentDocument {
+                path: path.join(format!("{deck_id}.json")),
+                deck_id: deck_id.clone(),
+                revision: 0,
+                original: AugmentDocumentData::default(),
+            });
+        }
+        documents.sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(Self {
             path,
             cards,
             topologies,
+            backing: AugmentBacking::Aggregate {
+                documents: Mutex::new(documents),
+                card_owners,
+            },
+        })
+    }
+
+    pub fn open_for_decks(store_path: &Path, decks: &[Deck]) -> Result<Self, AugmentError> {
+        let path = augment_path_for(store_path);
+        let mut owners = HashMap::new();
+        let mut deck_ids = HashSet::new();
+        for deck in decks {
+            let deck_id =
+                deck.deck_token
+                    .as_deref()
+                    .ok_or_else(|| AugmentError::MissingDeckId {
+                        subject: deck.subject.clone(),
+                    })?;
+            deck_ids.insert(deck_id.to_string());
+            for card_id in deck.cards.iter().filter_map(Card::id) {
+                if owners
+                    .insert(card_id.clone(), deck_id.to_string())
+                    .is_some_and(|owner| owner != deck_id)
+                {
+                    return Err(AugmentError::DuplicateKey { key: card_id });
+                }
+            }
+        }
+        Self::open_aggregate(path, owners, deck_ids)
+    }
+
+    pub fn open_for_store(store_path: &Path) -> Result<Self, AugmentError> {
+        let path = augment_path_for(store_path);
+        match crate::state::deck_id_from_document(&path).filter(|_| {
+            path.parent()
+                .and_then(Path::file_name)
+                .is_some_and(|name| name == "augment")
+        }) {
+            Some(deck_id) => Self::open_deck(&path, deck_id),
+            None => Ok(Self::open(path)),
         }
     }
 
     pub fn save(&self) -> Result<(), AugmentError> {
+        match &self.backing {
+            AugmentBacking::Deck { deck_id, revision } => self.save_deck(deck_id, revision),
+            AugmentBacking::Aggregate {
+                documents,
+                card_owners,
+            } => self.save_aggregate(documents, card_owners),
+        }
+    }
+
+    fn save_deck(&self, deck_id: &str, revision: &AtomicU64) -> Result<(), AugmentError> {
         let io_err = |source| AugmentError::Io {
             path: self.path.clone(),
             source,
         };
-
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).map_err(io_err)?;
         }
-
-        let file = AugmentFile {
-            version: CURRENT_VERSION,
+        let loaded = revision.load(Ordering::Relaxed);
+        let disk = deck_revision(&self.path, deck_id)?;
+        if loaded != disk {
+            return Err(AugmentError::StaleRevision {
+                path: self.path.clone(),
+                loaded,
+                disk,
+            });
+        }
+        let next = loaded.saturating_add(1);
+        let file = DeckAugmentFile {
+            version: DECK_DOCUMENT_VERSION,
+            deck_id: deck_id.to_string(),
+            revision: next,
             cards: self.cards.clone(),
             topologies: self.topologies.clone(),
         };
-        let json = serde_json::to_string_pretty(&file).map_err(|source| AugmentError::Format {
-            path: self.path.clone(),
-            source,
-        })?;
+        write_json_atomic(&self.path, &file)?;
+        revision.store(next, Ordering::Relaxed);
+        Ok(())
+    }
 
-        let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, json).map_err(io_err)?;
-        std::fs::rename(&tmp, &self.path).map_err(io_err)?;
+    fn save_aggregate(
+        &self,
+        documents: &Mutex<Vec<AugmentDocument>>,
+        card_owners: &HashMap<String, String>,
+    ) -> Result<(), AugmentError> {
+        if let Some(key) = self
+            .cards
+            .keys()
+            .find(|key| !card_owners.contains_key(*key))
+        {
+            return Err(AugmentError::UnownedKey { key: key.clone() });
+        }
+        {
+            let documents = documents
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let known_decks: HashSet<&str> = documents
+                .iter()
+                .map(|document| document.deck_id.as_str())
+                .collect();
+            if let Some(topology) = self
+                .topologies
+                .iter()
+                .find(|topology| !known_decks.contains(topology.deck_token.as_str()))
+            {
+                return Err(AugmentError::UnownedTopology {
+                    name: topology.name.clone(),
+                    deck_id: topology.deck_token.clone(),
+                });
+            }
+        }
+
+        let mut documents = documents
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut changed = Vec::new();
+        for (index, document) in documents.iter().enumerate() {
+            let data = AugmentDocumentData {
+                cards: self
+                    .cards
+                    .iter()
+                    .filter(|(key, _)| {
+                        card_owners
+                            .get(*key)
+                            .is_some_and(|owner| owner == &document.deck_id)
+                    })
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+                topologies: self
+                    .topologies
+                    .iter()
+                    .filter(|topology| topology.deck_token == document.deck_id)
+                    .cloned()
+                    .collect(),
+            };
+            if data != document.original {
+                let disk = deck_revision(&document.path, &document.deck_id)?;
+                if disk != document.revision {
+                    return Err(AugmentError::StaleRevision {
+                        path: document.path.clone(),
+                        loaded: document.revision,
+                        disk,
+                    });
+                }
+                changed.push((index, data));
+            }
+        }
+        for (index, data) in changed {
+            let document = &mut documents[index];
+            let next = document.revision.saturating_add(1);
+            write_deck_data(&document.path, &document.deck_id, next, &data)?;
+            document.revision = next;
+            document.original = data;
+        }
         Ok(())
     }
 
@@ -644,31 +1080,27 @@ pub struct CoverageSummary {
     pub topologies: Vec<String>,
 }
 
-#[derive(Default)]
-struct Loaded {
-    cards: HashMap<String, Augmentation>,
-    topologies: Vec<Topology>,
-}
-
-fn load(path: &Path) -> Option<Loaded> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let file: AugmentFile = serde_json::from_str(&text).ok()?;
-    // A newer cache may hold a shape we'd mangle: ignore it instead of risking wrong options.
-    if file.version > CURRENT_VERSION {
-        return None;
-    }
-    Some(Loaded {
-        cards: file.cards,
-        topologies: file.topologies,
-    })
-}
-
-fn default_version() -> u32 {
-    1
-}
-
 pub fn augment_path_for(store_path: &Path) -> PathBuf {
-    store_path.with_file_name("augment.json")
+    if store_path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "progress")
+        && store_path.extension().is_some_and(|ext| ext == "json")
+        && let (Some(root), Some(name)) = (
+            store_path.parent().and_then(Path::parent),
+            store_path.file_name(),
+        )
+    {
+        return root.join("augment").join(name);
+    }
+    if store_path
+        .file_name()
+        .is_some_and(|name| name == "progress")
+        && let Some(root) = store_path.parent()
+    {
+        return root.join("augment");
+    }
+    store_path.join("augment")
 }
 
 #[derive(Clone, Debug)]
@@ -708,7 +1140,7 @@ mod tests {
     #[test]
     fn open_missing_file_is_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("augment.json"));
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
         assert!(cache.is_empty());
     }
 
@@ -716,7 +1148,7 @@ mod tests {
     fn augment_entries_move_with_their_hole() {
         use crate::store::CascadeOutcome;
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.set_distractors("tok-0", vec!["wrong x".into(), "wrong y".into()], FP);
         cache.set_note("tok-0", "a note about the old hole 0".into(), FP);
 
@@ -740,7 +1172,7 @@ mod tests {
     fn an_orphaned_holes_augmentation_is_dropped_not_inherited() {
         use crate::store::CascadeOutcome;
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.set_distractors("tok-0", vec!["a".into()], FP);
         let outcome = CascadeOutcome {
             remap: vec![],
@@ -755,7 +1187,7 @@ mod tests {
     #[test]
     fn save_and_reload_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
+        let path = dir.path().join("deck1.json");
 
         let mut cache = AugmentCache::open(&path);
         cache.set_distractors("c42", vec!["wrong a".into(), "wrong b".into()], FP);
@@ -770,9 +1202,71 @@ mod tests {
     }
 
     #[test]
+    fn deck_document_roundtrip_records_owner_and_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("augment/deck1.json");
+        let mut cache = AugmentCache::open_deck(&path, "deck1").unwrap();
+        cache.set_note("card1", "note".to_string(), FP);
+        cache.save().unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"version\": 1"));
+        assert!(text.contains("\"deck_id\": \"deck1\""));
+        assert!(text.contains("\"revision\": 1"));
+        let reopened = AugmentCache::open_deck(&path, "deck1").unwrap();
+        assert_eq!(Some("note"), reopened.note("card1", FP));
+    }
+
+    #[test]
+    fn a_deck_augmentation_document_refuses_the_wrong_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("augment/deck1.json");
+        AugmentCache::open_deck(&path, "deck1")
+            .unwrap()
+            .save()
+            .unwrap();
+
+        let error = match AugmentCache::open_deck(&path, "deck2") {
+            Ok(_) => panic!("wrong owner was accepted"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, AugmentError::DeckOwner { .. }));
+    }
+
+    #[test]
+    fn a_stale_augmentation_save_does_not_replace_the_newer_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("augment/deck1.json");
+        AugmentCache::open_deck(&path, "deck1")
+            .unwrap()
+            .save()
+            .unwrap();
+        let mut first = AugmentCache::open_deck(&path, "deck1").unwrap();
+        let mut stale = AugmentCache::open_deck(&path, "deck1").unwrap();
+        first.set_note("card1", "newer".to_string(), FP);
+        first.save().unwrap();
+        stale.set_note("card1", "stale".to_string(), FP);
+
+        let error = match stale.save() {
+            Ok(()) => panic!("stale revision was accepted"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            AugmentError::StaleRevision {
+                loaded: 1,
+                disk: 2,
+                ..
+            }
+        ));
+        let reopened = AugmentCache::open_deck(&path, "deck1").unwrap();
+        assert_eq!(Some("newer"), reopened.note("card1", FP));
+    }
+
+    #[test]
     fn distractors_is_none_when_absent_or_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         assert_eq!(None, cache.distractors("c1", FP));
         cache.set_distractors("c1", Vec::new(), FP);
         assert_eq!(None, cache.distractors("c1", FP));
@@ -782,7 +1276,7 @@ mod tests {
     #[test]
     fn corrupt_file_yields_empty_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
+        let path = dir.path().join("deck1.json");
         std::fs::write(&path, "this is not json").unwrap();
         let cache = AugmentCache::open(&path);
         assert!(cache.is_empty());
@@ -791,8 +1285,12 @@ mod tests {
     #[test]
     fn newer_version_is_ignored() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
-        std::fs::write(&path, r#"{"version":999,"cards":{}}"#).unwrap();
+        let path = dir.path().join("deck1.json");
+        std::fs::write(
+            &path,
+            r#"{"version":999,"deck_id":"deck1","revision":1,"cards":{}}"#,
+        )
+        .unwrap();
         let cache = AugmentCache::open(&path);
         assert!(cache.is_empty());
     }
@@ -800,40 +1298,38 @@ mod tests {
     #[test]
     fn every_string_key_loads_verbatim() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
-        std::fs::write(
-            &path,
-            r#"{"version":1,"cards":{"not-a-token":{"distractors":["x"]},"q7":{"distractors":["y"]}}}"#,
-        )
-        .unwrap();
+        let path = dir.path().join("deck1.json");
+        let mut cache = AugmentCache::open(&path);
+        cache.set_distractors("not-a-token", vec!["x".to_string()], FP);
+        cache.set_distractors("q7", vec!["y".to_string()], FP);
+        cache.save().unwrap();
         let cache = AugmentCache::open(&path);
         assert_eq!(2, cache.len());
         assert!(cache.contains("q7"));
         assert!(cache.contains("not-a-token"));
-        assert_eq!(None, cache.distractors("q7", FP));
-        assert_eq!(None, cache.distractors("not-a-token", FP));
+        assert_eq!(Some(&["y".to_string()][..]), cache.distractors("q7", FP));
+        assert_eq!(
+            Some(&["x".to_string()][..]),
+            cache.distractors("not-a-token", FP)
+        );
     }
 
     #[test]
-    fn file_without_version_field_loads() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
-        std::fs::write(&path, r#"{"cards":{"c3":{"distractors":["z"]}}}"#).unwrap();
-        let cache = AugmentCache::open(&path);
-        assert!(cache.contains("c3"));
-        assert_eq!(None, cache.distractors("c3", FP));
+    fn a_state_root_contains_the_augmentation_directory() {
+        let p = augment_path_for(Path::new("/data/alix"));
+        assert_eq!(Path::new("/data/alix/augment"), p);
     }
 
     #[test]
-    fn augment_path_is_a_sibling_of_the_store() {
-        let p = augment_path_for(Path::new("/data/alix/progress.json"));
-        assert_eq!(Path::new("/data/alix/augment.json"), p);
+    fn per_deck_augment_path_mirrors_the_progress_document() {
+        let p = augment_path_for(Path::new("/data/alix/progress/deck1.json"));
+        assert_eq!(Path::new("/data/alix/augment/deck1.json"), p);
     }
 
     #[test]
     fn set_distractors_replaces_previous() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.set_distractors("c1", vec!["old".into()], FP);
         cache.set_distractors("c1", vec!["new a".into(), "new b".into()], FP);
         assert_eq!(
@@ -845,7 +1341,7 @@ mod tests {
     #[test]
     fn note_roundtrips_through_the_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
+        let path = dir.path().join("deck1.json");
         let mut cache = AugmentCache::open(&path);
         cache.set_note("c7", "a memorable fact".into(), FP);
         cache.save().unwrap();
@@ -857,7 +1353,7 @@ mod tests {
     #[test]
     fn variants_roundtrip_and_pick() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
+        let path = dir.path().join("deck1.json");
         let mut cache = AugmentCache::open(&path);
         cache.set_variants("c5", vec!["one".into(), "two".into(), "three".into()], FP);
         cache.save().unwrap();
@@ -881,7 +1377,7 @@ mod tests {
     #[test]
     fn keypoints_roundtrip_through_the_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
+        let path = dir.path().join("deck1.json");
         let mut cache = AugmentCache::open(&path);
         cache.set_keypoints("c9", vec!["claim a".into(), "claim b".into()], FP);
         cache.save().unwrap();
@@ -941,7 +1437,7 @@ mod tests {
     #[test]
     fn topology_roundtrips_through_the_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
+        let path = dir.path().join("deck1.json");
         let mut cache = AugmentCache::open(&path);
         assert!(cache.topologies().is_empty());
         cache.add_topology(topology("auto", "d1", &["c1", "c2"]));
@@ -958,7 +1454,7 @@ mod tests {
     #[test]
     fn add_topology_appends_new_names_and_replaces_same_name() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.add_topology(topology("north to south", "d1", &["c1", "c2"]));
         cache.add_topology(topology("by continent", "d1", &["c3", "c4"]));
         assert_eq!(2, cache.topologies().len());
@@ -1097,7 +1593,7 @@ mod tests {
     #[test]
     fn summarize_counts_coverage_against_each_targets_eligible_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let cards = vec![
             plain_card("a"),
             plain_card("b"),
@@ -1162,7 +1658,7 @@ mod tests {
     #[test]
     fn missing_returns_only_uncovered_eligible_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let cards = vec![plain_card("a"), plain_card("b"), cloze_card("z")];
         cache.set_distractors(
             &cid(&cards[0]),
@@ -1188,7 +1684,7 @@ mod tests {
     #[test]
     fn a_card_with_authored_distractors_is_not_a_choices_gap() {
         let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("augment.json"));
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let mut authored = plain_card("a");
         authored.authored_distractors = vec!["x".into(), "y".into()];
         let cards = vec![authored, plain_card("b")];
@@ -1207,7 +1703,7 @@ mod tests {
     #[test]
     fn clear_distractors_is_deck_scoped_and_prunes_empty_entries() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let mine = plain_card("a");
         let other = plain_card("other-deck-card");
         cache.set_distractors(&cid(&mine), vec!["x".into()], mine.content_fingerprint);
@@ -1230,7 +1726,7 @@ mod tests {
     #[test]
     fn clear_notes_keeps_other_fields_and_does_not_prune() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let c = plain_card("a");
         cache.set_note(&cid(&c), "n".into(), c.content_fingerprint);
         cache.set_distractors(&cid(&c), vec!["x".into()], c.content_fingerprint);
@@ -1249,7 +1745,7 @@ mod tests {
     #[test]
     fn remove_topology_is_name_and_deck_scoped() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let mine = plain_card("a");
         let other = plain_card("other");
         cache.add_topology(topo_over("auto", "dA", &cid(&mine)));
@@ -1264,7 +1760,7 @@ mod tests {
     #[test]
     fn clear_all_removes_only_this_decks_augmentations() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let mine = plain_card("a");
         let other = plain_card("other");
         cache.set_distractors(&cid(&mine), vec!["x".into()], mine.content_fingerprint);
@@ -1297,7 +1793,7 @@ mod tests {
         );
         card.token = Some(Arc::from("qfmt"));
         let id = cid(&card);
-        let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-augment.json"));
+        let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-deck1.json"));
         cache.set_format(
             &id,
             Format {
@@ -1340,7 +1836,7 @@ mod tests {
     #[test]
     fn a_distractor_read_with_a_changed_fingerprint_is_stale() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.set_distractors("c1", vec!["w1".into(), "w2".into()], 100);
         assert_eq!(
             Some(["w1".to_string(), "w2".to_string()].as_slice()),
@@ -1352,7 +1848,7 @@ mod tests {
     #[test]
     fn every_target_gates_on_its_own_fingerprint() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.set_note("c1", "a fact".into(), 7);
         cache.set_variants("c1", vec!["v1".into()], 7);
         cache.set_keypoints("c1", vec!["k1".into()], 7);
@@ -1375,9 +1871,9 @@ mod tests {
     }
 
     #[test]
-    fn a_legacy_entry_without_a_fingerprint_reads_stale() {
+    fn an_entry_without_a_fingerprint_reads_stale() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("augment.json");
+        let path = dir.path().join("deck1.json");
         std::fs::write(
             &path,
             r#"{"version":1,"cards":{"c1":{"distractors":["old"]}}}"#,
@@ -1397,7 +1893,7 @@ mod tests {
         let card = &deck[0];
         let id = card.id().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.set_format(
             &id,
             Format {

@@ -73,7 +73,9 @@ at. **crates.io is not automated.**
    no per-release refresh.) Re-read the tutorial deck
    (`assets/decks/tutorial.md`) against what shipped this release: a card
    that teaches something that is no longer true must be fixed before the
-   tag (an outdated tutorial is worse than none).
+   tag (an outdated tutorial is worse than none). When a pre-1.0 release
+   changes persisted state, state the clean break explicitly and verify that
+   production contains no accidental compatibility branch.
 2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`; refresh
    `Cargo.lock` (`cargo build`).
 3. **Finalize the changelog.** Rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`,

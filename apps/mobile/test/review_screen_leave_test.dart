@@ -11,12 +11,15 @@ import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
+import 'support/deck_fixture.dart';
+
 void main() {
   setUpAll(() async => RustLib.init());
 
   Directory dueDeck() {
     final root = Directory.systemTemp.createTempSync('alix-leave-');
-    File('${root.path}/facts.md').writeAsStringSync(
+    writeTestDeck(
+        '${root.path}/facts.md',
         '# Facts\n\n## q? <!-- id: q1 -->\na\n\n## q2? <!-- id: q2 -->\nb\n');
     addTearDown(() => root.deleteSync(recursive: true));
     return root;

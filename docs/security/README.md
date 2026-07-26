@@ -15,7 +15,7 @@ Alix supports:
 - one user controlling the local OS account and deck directories;
 - a server bound to loopback by default;
 - optional pairing across a network the user trusts;
-- one active writer for each progress store;
+- one active writer for each per-deck progress document;
 - optional external AI provider CLIs selected and authenticated by the user;
 - local or received Markdown decks and frozen source excerpts; and
 - the lean Rust core embedded in the mobile client.
@@ -26,7 +26,7 @@ Alix does not claim to provide:
   permissions;
 - internet-grade hosting, TLS termination, account authentication, user roles,
   audit logging, or hostile-LAN protection;
-- safe simultaneous writes to one progress store from multiple devices;
+- safe simultaneous writes to one deck's progress from multiple devices;
 - containment of a compromised AI CLI, provider account, operating system,
   toolchain, or dependency; or
 - confidentiality for content the user deliberately shares or submits to an AI
@@ -37,7 +37,7 @@ Alix does not claim to provide:
 | Asset | Primary harm if compromised |
 | --- | --- |
 | Decks, notes, images, source citations, and frozen excerpts | Private learning or source material is disclosed or altered. |
-| `progress.json`, `recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
+| `progress/<deck-id>.json`, `recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
 | Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
 | Explicit `origin` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
 | AI CLI session and provider account | Prompts or local reads are disclosed; model-backed actions are performed as the user. |
@@ -51,11 +51,12 @@ priority over keeping an individual session running.
 
 ### Local files and processes
 
-Alix runs with the user's filesystem permissions. Progress saves serialize a
-whole replacement file, write a sibling temporary file, then rename it over the
-store (`src/store.rs`). A writer marker and synchronization-conflict detection
-warn about likely concurrent writers; neither mechanism authenticates a writer
-or merges concurrent changes.
+Alix runs with the user's filesystem permissions. A progress save serializes
+one deck's complete replacement document, writes a sibling temporary file,
+checks its loaded revision against the canonical file, then renames the
+replacement into place (`src/store.rs`). A writer marker and
+synchronization-conflict detection warn about likely same-deck concurrency;
+none of these mechanisms authenticates a writer or merges concurrent changes.
 
 Deck stamping has a separate local write boundary. A valid deck ID under the
 namespaced `alix-id` key in opening YAML frontmatter marks a file as initialized
@@ -120,12 +121,15 @@ data rather than executable HTML.
 
 `alix share` stages content locally and invokes the separately installed
 `magic-wormhole` CLI for transfer. That executable and its protocol
-implementation are part of the sharing trust boundary. Staging excludes
-progress, recent state, local overrides, hidden files, and backup-shaped files.
-Receive strips `progress.json`, `recent.json`, and `alix.local.toml`
-defensively even if the sender used another tool (`src/share.rs`). Frozen
-`assets/` are intentionally shareable evidence and may contain proprietary or
-private source excerpts; review the staged workspace before sending it.
+implementation are part of the sharing trust boundary. Staging excludes the
+entire `progress/` tree, recent state, local overrides, temporary and
+backup-shaped files, hidden files, and synchronization conflicts. Receive
+strips private state recursively even if the sender used another tool
+(`src/share.rs`). Matching `augment/<deck-id>.json`
+documents are intentionally shareable generated deck material; unrelated or
+orphaned augmentation documents stay home. Frozen `assets/` are intentionally
+shareable evidence and may contain proprietary or private source excerpts;
+review the staged workspace before sending it.
 
 Received archives, decks, images, URLs, manifests, and source locators remain
 untrusted. Sanitizing personal state does not certify the remaining content as
@@ -139,7 +143,7 @@ safe or accurate.
 | Pairing token leaks through a URL | API accepts a bearer header after bootstrap. | Treat the URL as a credential; do not publish screenshots, history, logs, or bookmarks containing it. |
 | A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require `origin`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
 | A broad `origin` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `origin` as narrow as practical and inspect inherited workspace defaults. |
-| Syncthing or another tool creates concurrent progress writes | Atomic replacement, writer warnings, and conflict-file detection. | Keep one active writer, resolve conflict copies manually, and back up before recovery. |
+| Syncthing or another tool creates concurrent same-deck progress writes | Per-deck atomic replacement, revision checks, writer warnings, and conflict-file detection. | Different decks are independent; for one deck, keep one active writer, resolve conflict copies manually, and back up before recovery. |
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
 | Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `alix-id`; a generic `id` grants no write authority, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
@@ -157,8 +161,9 @@ safe or accurate.
   browser tooling.
 - A received workspace can carry AI/source-access configuration that needs
   human review.
-- Persistence has atomic replacement and conflict warnings, but no general
-  backup, rollback, migration, or multi-writer transaction protocol.
+- Per-deck state has atomic replacement, owner and revision checks, and
+  conflict warnings, but no general same-deck merge or multi-writer
+  transaction protocol.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
   that a provider CLI honored them.
 - Exact direct toolchain and Action pins now reduce release drift, but runner
@@ -177,7 +182,9 @@ The most relevant deterministic checks currently live beside their controls:
   identity, byte-preserving refusal, and initialized-only discovery;
 - `src/source.rs`: citation and excerpt resolution;
 - `src/share.rs`: outgoing filtering and defensive receive sanitization;
-- `src/store.rs`: atomic replacement, writer markers, and sync conflicts;
+- `src/state.rs`: state-root layout and stable-ID document routing;
+- `src/store.rs`: per-deck atomic replacement, revisions, writer markers, and
+  sync conflicts;
 - `src/trace_ai.rs`: generated snapshot provenance; and
 - `src/math.rs` and renderer tests: validation and sanitization of generated
   math SVG.

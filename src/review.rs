@@ -562,7 +562,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut card = parse("## q\nthe authored answer\n").remove(0);
         let id = card.id().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         cache.set_format(
             &id,
             crate::augment::Format {

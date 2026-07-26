@@ -589,7 +589,9 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     write_initialized(&ws.join("one.md"), "## q1 <!-- id: qa -->\na1\n");
     write_initialized(&ws.join("two.md"), "## q2 <!-- id: qb -->\na2\n");
 
-    let mut ws_store = Store::open(crate::workspace::store_path(&ws)).unwrap();
+    let paths = crate::workspace::deck_files(&ws);
+    let mut ws_store =
+        crate::state::open_stores(&paths, &crate::workspace::store_path(&ws)).unwrap();
     let now = now_ms();
     for name in ["one.md", "two.md"] {
         let deck = Deck::load(ws.join(name)).unwrap();
@@ -705,8 +707,8 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
         "fixture must actually fail to load"
     );
 
-    let store = Store::open(dir.path().join("progress.json")).unwrap();
-    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    let store = Store::open(dir.path().join("progress/deck1.json")).unwrap();
+    let augment = AugmentCache::open(crate::augment::augment_path_for(store.path()));
     let dto = deck_item_dto(
         &entry,
         &store,
@@ -859,7 +861,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
         },
         now_ms(),
     );
-    let augment = crate::augment::AugmentCache::open(deck.with_extension("augment.json"));
+    let augment = crate::augment::AugmentCache::open(deck.with_extension("generated.json"));
     let mut decks = HashMap::new();
     decks.insert("d.md".to_string(), deck);
     Reviewing::new(SessionBuild {
@@ -1132,7 +1134,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         source_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
-        augment: crate::augment::AugmentCache::open(deck.with_extension("augment.json")),
+        augment: crate::augment::AugmentCache::open(deck.with_extension("generated.json")),
     });
     (reviewing, card, deck)
 }
@@ -1261,7 +1263,7 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         source_roots,
         source_bases,
         topology_name: None,
-        augment: crate::augment::AugmentCache::open(dir.path().join("a.augment.json")),
+        augment: crate::augment::AugmentCache::open(dir.path().join("a.generated.json")),
     });
 
     let cfg = crate::testutil::ask_config(&dir.path().join("no-such-claude-binary"));
@@ -1466,7 +1468,7 @@ fn aug_card(front: &str, back: &str) -> Card {
 #[test]
 fn augmenting_reports_coverage_and_removal_persists() {
     let dir = tempfile::tempdir().unwrap();
-    let cache_path = dir.path().join("augment.json");
+    let cache_path = dir.path().join("deck1.json");
     let cards = vec![aug_card("Q1", "a"), aug_card("Q2", "b")];
 
     let mut seed = AugmentCache::open(&cache_path);
@@ -1486,7 +1488,7 @@ fn augmenting_reports_coverage_and_removal_persists() {
         "d.md".into(),
         cards.clone(),
         vec![],
-        cache_path.clone(),
+        AugmentCache::open(&cache_path),
         None,
     );
     let dto = aug.dto();
@@ -1523,7 +1525,7 @@ fn augmenting_reports_coverage_and_removal_persists() {
 #[test]
 fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     let dir = tempfile::tempdir().unwrap();
-    let cache_path = dir.path().join("augment.json");
+    let cache_path = dir.path().join("deck1.json");
     let cards = vec![aug_card("Q", "a")];
 
     let mut seed = AugmentCache::open(&cache_path);
@@ -1534,7 +1536,13 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     );
     seed.save().unwrap();
 
-    let mut aug = Augmenting::open("d.md".into(), cards, vec![], cache_path, None);
+    let mut aug = Augmenting::open(
+        "d.md".into(),
+        cards,
+        vec![],
+        AugmentCache::open(cache_path),
+        None,
+    );
     let started = aug.generate_batch(
         vec![("choices".into(), None)],
         &AiConfig::default(),
@@ -1553,9 +1561,15 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
 fn generate_batch_runs_every_target_even_after_one_fails() {
     let _g = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
-    let cache_path = dir.path().join("augment.json");
+    let cache_path = dir.path().join("deck1.json");
     let cards = vec![aug_card("Q", "a")];
-    let mut aug = Augmenting::open("d.md".into(), cards, vec![], cache_path, None);
+    let mut aug = Augmenting::open(
+        "d.md".into(),
+        cards,
+        vec![],
+        AugmentCache::open(cache_path),
+        None,
+    );
 
     let ai = AiConfig::default();
     let cli = crate::testutil::fake_reply(dir.path(), r#"{"0": "a note"}"#);
@@ -1601,8 +1615,8 @@ fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
     .unwrap();
     let deck = Deck::load(&deck_path).unwrap();
 
-    let store = Store::open(dir.path().join("progress.json")).unwrap();
-    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    let store = Store::open(dir.path().join("progress/deck1.json")).unwrap();
+    let augment = AugmentCache::open(crate::augment::augment_path_for(store.path()));
 
     let dto = deck_drawer_dto(&augment, &store, &deck);
     assert_eq!(Some("A short intro."), dto.preamble.as_deref());

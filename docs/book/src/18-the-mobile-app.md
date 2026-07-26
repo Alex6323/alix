@@ -37,9 +37,9 @@ you actually maintain, point it at a real folder on the phone:
 3. The first time, Android opens its **All files access** page: alix reads
    and writes plain files in a folder another app manages, which is exactly
    what this permission grants. Enable it, go back, choose again.
-4. Pick the folder. The app lists it immediately; progress
-   (`progress.json`) is written next to the decks, exactly like the
-   desktop, so it travels with the folder.
+4. Pick the folder. The app lists it immediately; each initialized deck's
+   progress is written as `progress/<alix-id>.json`, exactly like the desktop,
+   so it travels with the folder.
 
 **Use app storage** in the same sheet switches back; nothing is deleted
 either way. If the folder becomes unavailable (permission revoked, folder
@@ -57,24 +57,30 @@ in the workspace's own `alix.local.toml` (see
 phone and desktop, and the phone's own offline sessions bend their
 scheduling toward the date exactly as the desktop does.
 
-## One device at a time
+## One writer per deck
 
-The progress store is a single file, rewritten on every grade, and alix
-does not merge concurrent histories (deliberately: fail loud beats a silent
-merge that corrupts scheduling). Syncing the folder between a computer and
-a phone works well under one rule: **review on one device at a time**, and
-let the sync settle before switching.
+Progress is split into one versioned document per deck. A computer and phone
+can review **different decks** in the same synced folder without rewriting the
+same file. Alix does not merge concurrent histories for the **same deck**
+(deliberately: fail loud beats a silent merge that corrupts scheduling), so
+let sync settle before switching that deck to another device.
 
 Two guards back the rule:
 
-- If another device wrote the store minutes ago, the review screen says so
-  before you grade anything.
+- If another device wrote that deck's progress minutes ago, the review screen
+  says so before you grade anything.
 - If the folder contains a sync conflict file (Syncthing's
-  `progress.sync-conflict-….json`), the deck list warns loudly. Resolve it
-  by keeping the file you trust: usually delete the conflict copy if the
-  newer history won, or replace `progress.json` with the conflict copy if
-  it holds the reviews you want. There is no merge.
+  `progress/<alix-id>.sync-conflict-….json`), the deck list warns loudly.
+  Stop both writers and sync, back up the folder, and deliberately keep the
+  complete document you trust at `progress/<alix-id>.json`. Do not combine
+  schedules by hand; there is no merge. `alix doctor <folder>` on the desktop
+  lists every conflict and should be clean before you resume.
 
 Two Syncthing tips: add `*.json.tmp` to the folder's `.stignore` (alix
 writes through a temp file; there is no point syncing it), and prefer
 "send & receive" on both sides so the phone's grades actually travel back.
+
+Install the same Alix version on every device that writes a synchronized
+folder. For a pre-1.0 persisted-state format break, stop every writer, back up
+the folder, complete the release's external conversion procedure, synchronize
+the resulting per-deck documents, and only then resume review.

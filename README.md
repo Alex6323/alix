@@ -6,9 +6,9 @@
 [![docs.rs](https://img.shields.io/docsrs/alix)](https://docs.rs/alix)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/alix)](https://crates.io/crates/alix)
 
-> **Early WIP.** The deck format and the progress store still change between
-> commits, with no migration path, so expect to lose progress. Fine for
-> tinkering; not yet for study you care about.
+> **Early WIP.** Deck and persisted-state formats still change before 1.0,
+> without runtime compatibility paths. Expect resets between commits and keep
+> an independent backup for study history you care about.
 
 `alix` is a plain-text spaced-repetition learning tool that turns your own
 material into decks you study, then has you prove you actually grasped it, not

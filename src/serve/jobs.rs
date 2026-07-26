@@ -480,16 +480,11 @@ impl Reviewing {
             links: build.links,
             source_roots: build.source_roots,
             source_bases: build.source_bases,
-            // placeholder until `open_augment` sets the real store path
-            augment: AugmentCache::open(Path::new("")),
+            augment: build.augment,
             present_seq: now_ms(),
             original_fronts: HashMap::new(),
             topology_name: build.topology_name,
         }
-    }
-
-    pub(super) fn open_augment(&mut self, store_path: &Path) {
-        self.augment = AugmentCache::open(augment::augment_path_for(store_path));
     }
 
     pub(super) fn rotate_variant(&mut self) {
@@ -724,7 +719,7 @@ impl Augmenting {
         deck: String,
         cards: Vec<Card>,
         deck_tokens: Vec<String>,
-        cache_path: PathBuf,
+        cache: AugmentCache,
         workspace_dir: Option<PathBuf>,
     ) -> Self {
         let deck_ids = cards.iter().filter_map(Card::id).collect();
@@ -738,7 +733,7 @@ impl Augmenting {
             deck_ids,
             deck_tokens,
             primary_token,
-            cache: AugmentCache::open(cache_path),
+            cache,
             workspace_dir,
             conversation: None,
             pending: None,
@@ -1181,20 +1176,15 @@ impl Sharing {
     }
 }
 
-pub(super) fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<PathBuf> {
-    if path.is_file() {
-        return Ok(path.to_path_buf());
-    }
-    if !crate::workspace::has_decks(path) {
+pub(super) fn stage_for_share(
+    path: &Path,
+    state_root: &Path,
+    tmp: &tempfile::TempDir,
+) -> Result<PathBuf> {
+    if !path.is_file() && !crate::workspace::has_decks(path) {
         bail!("no decks in `{}` — nothing to share", path.display());
     }
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("shared-decks");
-    let stage = tmp.path().join(name);
-    share::stage_dir(path, &stage)?;
-    Ok(stage)
+    share::stage_path(path, state_root, tmp.path()).map(|(stage, _)| stage)
 }
 
 pub(super) struct Receiving {

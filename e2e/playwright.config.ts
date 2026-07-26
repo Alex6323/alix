@@ -7,7 +7,7 @@ const PREPARE_SCRIPT = path.join(ROOT, "prepare-fixtures.cjs");
 
 // One `alix` server config per web client under test, each on its own port
 // and its own scratch decks copy (see prepare-fixtures.cjs) — so the two
-// servers' progress.json/recent.json writes never collide.
+// servers' progress/recent writes never collide.
 const KIDS_CONFIG = path.join(ROOT, "fixtures", "kids.toml");
 const KIDS_DECKS_DIR = path.join(ROOT, ".tmp", "kids", "decks");
 const KIDS_PORT = 7788;

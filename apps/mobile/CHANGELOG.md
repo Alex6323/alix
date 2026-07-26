@@ -9,6 +9,12 @@ Release notes, so a release without its section fails loud.
 
 ### Changed
 
+- **Breaking:** synced progress and AI augmentation now use one versioned JSON
+  document per initialized deck under `progress/` and `augment/`. This is a
+  clean pre-1.0 format break with no runtime compatibility path. Two devices
+  may review different decks in the same synced folder without competing for
+  one file; reviewing the same deck concurrently remains unsupported and
+  synchronization conflict copies are preserved for deliberate recovery.
 - Settings' Support, Connected devices, Theme, and About rows now stay in
   Settings (their sheet opens over it) instead of returning to the deck list;
   Decks folder and Generate deck still take you back to the list so you see the

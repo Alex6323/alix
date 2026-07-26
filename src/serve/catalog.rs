@@ -14,7 +14,7 @@ use twox_hash::XxHash64;
 use super::{SelectOptions, dto::*};
 use crate::{
     assemble,
-    augment::{self, AugmentCache},
+    augment::AugmentCache,
     cache::DeckCache,
     card::Card,
     config::{Config, ReviewConfig},
@@ -182,7 +182,7 @@ pub(super) fn workspace_members(
     let review = review.for_workspace(&e.path);
     let is_ws = cache.is_workspace(&e.path);
     let own_workspace_store = is_ws
-        .then(|| Store::open(crate::workspace::store_path(&e.path)).ok())
+        .then(|| crate::state::open_aggregate_store(&crate::workspace::store_path(&e.path)).ok())
         .flatten();
     let store: Option<&Store> = if is_ws {
         own_workspace_store.as_ref()
@@ -190,7 +190,7 @@ pub(super) fn workspace_members(
         Some(instance_store)
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
-    let augment = store.map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
+    let augment = store.and_then(|store| AugmentCache::open_for_store(store.path()).ok());
     // Load each member deck once, deriving its status, whether it has a
     // topology, and its last-used session depth from the same parse.
     let loaded: Vec<(Option<picker::DeckStatus>, bool, &'static str)> = paths
@@ -358,7 +358,8 @@ pub(super) fn deck_catalog(
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
     let mut folders = Vec::new();
-    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    let augment = AugmentCache::open_for_store(store.path())
+        .unwrap_or_else(|_| AugmentCache::open(Path::new("")));
     for e in picker::catalog(decks_dir, recent, cache) {
         if e.is_workspace {
             let is_ws = cache.is_workspace(&e.path);

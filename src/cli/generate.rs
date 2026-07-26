@@ -152,7 +152,8 @@ fn build_workspace(
         source,
         Some(&filled),
     )?;
-    let mut store = alix::store::Store::open(alix::workspace::root_store_path(&dir))
+    let existing_decks = alix::workspace::deck_files(&dir);
+    let mut store = store_for(&existing_decks, None, config)
         .with_context(|| format!("opening the store for {}", dir.display()))?;
     let merged = alix::explore::merge_built(&staging, &dir, args.force, &mut store)?;
 

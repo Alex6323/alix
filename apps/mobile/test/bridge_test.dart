@@ -19,6 +19,8 @@ import 'package:alix_mobile/src/rust/api/simple.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
+import 'support/deck_fixture.dart';
+
 /// The platform seam's test double: no channels exist under `flutter test`.
 class FakeAccess implements PlatformAccess {
   FakeAccess({this.dir});
@@ -53,12 +55,14 @@ final later = BigInt.from(1000000 + 301000);
 /// stamp, so an unstamped card would never count as due.
 Directory makeRoot() {
   final root = Directory.systemTemp.createTempSync('alix-decks-');
-  File('${root.path}/loose.md').writeAsStringSync(
+  writeTestDeck(
+    '${root.path}/loose.md',
     '# Loose\n\n## capital of france? <!-- id: capital -->\nParis\n',
   );
   Directory('${root.path}/ws').createSync();
   File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
-  File('${root.path}/ws/m.md').writeAsStringSync(
+  writeTestDeck(
+    '${root.path}/ws/m.md',
     '## q1 <!-- id: q1 -->\na1\n\n'
     '## q2 <!-- id: q2 -->\na2\n\n'
     '## q3 <!-- id: q3 -->\na3\n\n'
@@ -76,6 +80,15 @@ void acquireAll(String deck, String root) {
   while (state.acquire) {
     state = s.acquire(nowMs: t0);
   }
+}
+
+String onlyProgressDocument(String stateRoot) {
+  final files = Directory('$stateRoot/progress')
+      .listSync()
+      .whereType<File>()
+      .toList();
+  expect(files, hasLength(1));
+  return files.single.readAsStringSync();
 }
 
 InlineRun expectMathRun(
@@ -119,7 +132,8 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
 
     final choiceDeck = '${root.path}/choice.md';
-    File(choiceDeck).writeAsStringSync(
+    writeTestDeck(
+      choiceDeck,
       '## What does \$E = mc^2\$ describe? <!-- id: choice -->\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
@@ -152,7 +166,8 @@ void main() {
     expectMathRun(noteRuns, 'c^2');
 
     final displayDeck = '${root.path}/display.md';
-    File(displayDeck).writeAsStringSync(
+    writeTestDeck(
+      displayDeck,
       '## Evaluate <!-- id: display -->\n'
       '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
     );
@@ -168,7 +183,8 @@ void main() {
     );
 
     final clozeDeck = '${root.path}/cloze.md';
-    File(clozeDeck).writeAsStringSync(
+    writeTestDeck(
+      clozeDeck,
       '## Complete <!-- id: cloze -->\n'
       '\$x = \\blank{alpha} + \\blank{beta}\$\n',
     );
@@ -189,7 +205,8 @@ void main() {
     expect(clozeRun.math!.error, isNull);
 
     final explainDeck = '${root.path}/explain.md';
-    File(explainDeck).writeAsStringSync(
+    writeTestDeck(
+      explainDeck,
       '## Explain <!-- id: explain -->\n'
       'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
       'The discriminant is \$b^2 - 4ac\$.\n',
@@ -228,12 +245,14 @@ void main() {
     expect(s.state().acquire, isFalse);
     expect(s.state().mode, Mode.flip);
     s.grade(grade: Grade.pass, nowMs: later);
-    final store = File('${root.path}/ws/progress.json').readAsStringSync();
+    final store = onlyProgressDocument('${root.path}/ws');
     expect(store, contains('"stability"'));
-    final rootStore = File('${root.path}/progress.json');
+    final rootProgress = Directory('${root.path}/progress');
     expect(
-      !rootStore.existsSync() ||
-          !rootStore.readAsStringSync().contains('"stability"'),
+      !rootProgress.existsSync() ||
+          rootProgress.listSync().whereType<File>().every(
+                (file) => !file.readAsStringSync().contains('"stability"'),
+              ),
       isTrue,
       reason: 'the loose-deck root store stays untouched (or was never made)',
     );
@@ -362,9 +381,10 @@ void main() {
     addTearDown(() => rootA.deleteSync(recursive: true));
     final rootB = Directory.systemTemp.createTempSync('alix-shared-');
     addTearDown(() => rootB.deleteSync(recursive: true));
-    File(
+    writeTestDeck(
       '${rootB.path}/shared.md',
-    ).writeAsStringSync('# Shared Deck\n\n## q\na\n');
+      '# Shared Deck\n\n## q\na\n',
+    );
 
     await tester.pumpWidget(
       AlixApp(
@@ -613,8 +633,9 @@ void main() {
   ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
+    Directory('${root.path}/progress').createSync();
     File(
-      '${root.path}/progress.sync-conflict-20260714-101112-AAAAAAA.json',
+      '${root.path}/progress/loose.sync-conflict-20260714-101112-AAAAAAA.json',
     ).writeAsStringSync('{}');
 
     await tester.pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
@@ -693,7 +714,8 @@ void main() {
     // A seen multi-line flip card at Reconstruct renders as Explain; with no
     // cached keypoints the rubric falls back to the authored back lines.
     final deck = '${root.path}/why.md';
-    File(deck).writeAsStringSync(
+    writeTestDeck(
+      deck,
       '## why does spacing work? <!-- id: why -->\n'
       'recall strengthens the memory\n'
       'stronger memories fade more slowly\n',
@@ -740,7 +762,7 @@ void main() {
     await tester.tap(find.text('Passed'));
     await tester.pump();
     expect(find.text('SESSION COMPLETE'), findsOneWidget);
-    final store = File('${root.path}/progress.json').readAsStringSync();
+    final store = onlyProgressDocument(root.path);
     expect(store, contains('"reconstruct"'));
     expect(
       store,
@@ -756,7 +778,8 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
 
     final choiceDeck = '${root.path}/choice.md';
-    File(choiceDeck).writeAsStringSync(
+    writeTestDeck(
+      choiceDeck,
       '## What does \$E = mc^2\$ describe? <!-- id: choice -->\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
@@ -782,7 +805,8 @@ void main() {
     expect(find.byType(SvgPicture), findsAtLeast(beforeNote + 2));
 
     final displayDeck = '${root.path}/display.md';
-    File(displayDeck).writeAsStringSync(
+    writeTestDeck(
+      displayDeck,
       '## Evaluate <!-- id: display -->\n'
       '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
     );
@@ -810,7 +834,8 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final clozeDeck = '${root.path}/cloze.md';
-    File(clozeDeck).writeAsStringSync(
+    writeTestDeck(
+      clozeDeck,
       '## Complete <!-- id: cloze -->\n'
       '\$x = \\blank{alpha} + \\blank{beta}\$\n',
     );
@@ -831,7 +856,8 @@ void main() {
     expect(find.textContaining('beta', findRichText: true), findsNothing);
 
     final explainDeck = '${root.path}/explain.md';
-    File(explainDeck).writeAsStringSync(
+    writeTestDeck(
+      explainDeck,
       '## Explain <!-- id: explain -->\n'
       'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
       'The discriminant is \$b^2 - 4ac\$.\n',
@@ -863,7 +889,8 @@ void main() {
     expect(find.byType(SvgPicture), findsAtLeast(4));
 
     final malformedDeck = '${root.path}/malformed.md';
-    File(malformedDeck).writeAsStringSync(
+    writeTestDeck(
+      malformedDeck,
       '## Broken \$\\frac{1\$ <!-- id: malformed -->\n'
       'still reviewable\n',
     );
@@ -930,7 +957,7 @@ void main() {
     await tester.pump();
     expect(find.text('SESSION COMPLETE'), findsOneWidget);
     expect(
-      File('${root.path}/progress.json').readAsStringSync(),
+      onlyProgressDocument(root.path),
       contains('"stability"'),
     );
   });

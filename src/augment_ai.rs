@@ -379,7 +379,7 @@ fn topology_prompt(cards_block: &str, guidance: Option<&str>) -> String {
          has a short place-NAME (one or two words, not a sentence) and the \
          indices of its cards; every card belongs to exactly one region. The \
          name must orient WITHOUT giving away any card's answer — name the area, \
-         never the fact (\"Persistence\", not \"saves to progress.json\").\n\
+         never the fact (\"Persistence\", not an implementation detail about where it saves).\n\
          Use the cards' index numbers. Relate cards by their meaning, not their \
          wording.\n",
     );
@@ -898,9 +898,9 @@ mod tests {
         let cli = fake_reply(dir.path(), r#"{"0": ["w1","w2","w3"]}"#);
         let map = generate(&items, 3, None, &ask_config(&cli), None).unwrap();
 
-        let store_path = dir.path().join("progress.json");
-        let cache_path = crate::augment::augment_path_for(&store_path);
-        let mut cache = crate::augment::AugmentCache::open(&cache_path);
+        let deck_id = deck.deck_token.as_deref().unwrap();
+        let cache_path = crate::state::Layout::new(dir.path()).augment_for(deck_id);
+        let mut cache = crate::augment::AugmentCache::open_deck(&cache_path, deck_id).unwrap();
         let fp_by_id: HashMap<String, u64> = deck
             .cards
             .iter()

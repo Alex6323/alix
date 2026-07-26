@@ -73,7 +73,7 @@ irrelevant or sensitive files, and weaken data minimization.
 ### Store snapshots in personal progress
 
 The evidence belongs to the portable learning workspace, not to one learner's
-review history. Hiding it in `progress.json` would break sharing and ordinary
+review history. Hiding it in a progress document would break sharing and ordinary
 inspection.
 
 ### Store remote URLs without captured evidence

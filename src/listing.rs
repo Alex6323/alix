@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    augment::{self, AugmentCache},
+    augment::AugmentCache,
     card::Card,
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
@@ -44,10 +44,10 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
     if workspace::is_workspace(root) {
         return vec![folder_summary(root, root, review, now_ms)];
     }
-    let root_store = Store::open(workspace::root_store_path(root)).ok();
+    let root_store = crate::state::open_aggregate_store(&workspace::root_store_path(root)).ok();
     let augment = root_store
         .as_ref()
-        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
+        .and_then(|store| AugmentCache::open_for_store(store.path()).ok());
     let mut names: Vec<PathBuf> = std::fs::read_dir(root)
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
@@ -119,7 +119,7 @@ fn member_rows(
     let store = member_store(root, dir);
     let augment = store
         .as_ref()
-        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
+        .and_then(|store| AugmentCache::open_for_store(store.path()).ok());
     let paths: Vec<PathBuf> = match workspace::Workspace::load(dir) {
         Ok(ws) => ws.members,
         Err(_) => return (Vec::new(), Vec::new()),
@@ -184,7 +184,7 @@ fn member_store(root: &Path, dir: &Path) -> Option<Store> {
     } else {
         workspace::root_store_path(root)
     };
-    Store::open(path).ok()
+    crate::state::open_aggregate_store(&path).ok()
 }
 
 fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -> DeckSummary {
@@ -629,7 +629,7 @@ mod tests {
     }
 
     fn no_augment() -> AugmentCache {
-        AugmentCache::open(Path::new("unused-augment.json"))
+        AugmentCache::open(Path::new("unused-generated.json"))
     }
 
     fn arm(augment: &mut AugmentCache, cards: &[Card]) {
@@ -661,8 +661,8 @@ mod tests {
         assert_eq!(vec![("facts", false), ("How it flows", true)], flags);
     }
 
-    fn settle(store_path: &Path, deck_path: &Path) {
-        let mut store = Store::open(store_path).unwrap();
+    fn settle(state_root: &Path, deck_path: &Path) {
+        let mut store = crate::state::open_store(deck_path, state_root).unwrap();
         let deck = Deck::load(deck_path).unwrap();
         let scheduler = Fsrs::default();
         for card in &deck.cards {
@@ -754,8 +754,12 @@ mod tests {
         write(&root.join("ws/alix.toml"), "");
         write(&root.join("ws/m.md"), "## q <!-- id: qm -->\na\n");
 
-        let root_conflict = root.join("progress.sync-conflict-20260714-101112-AAAAAAA.json");
-        let ws_conflict = root.join("ws/progress.sync-conflict-20260715-101112-BBBBBBB.json");
+        std::fs::create_dir(root.join("progress")).unwrap();
+        std::fs::create_dir(root.join("ws/progress")).unwrap();
+        let root_conflict =
+            root.join("progress/loose.sync-conflict-20260714-101112-AAAAAAA.json");
+        let ws_conflict =
+            root.join("ws/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
         write(&root_conflict, "{}");
         write(&ws_conflict, "{}");
         write(
@@ -846,7 +850,8 @@ mod tests {
         let base_id = Deck::load(ws.join("base.md")).unwrap().cards[0]
             .id()
             .unwrap();
-        let mut store = Store::open(&store_path).unwrap();
+        let paths = workspace::deck_files(&ws);
+        let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
         store.get_or_insert(&base_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
         let review = ReviewConfig::default();
@@ -875,7 +880,7 @@ mod tests {
         };
 
         let rows = list_members(root, &ws, &review, T0 + 1_000);
-        let store = Store::open(&store_path).unwrap();
+        let store = crate::state::open_stores(&paths, &store_path).unwrap();
         assert_parity(&rows, &store);
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.exam_due);
@@ -886,13 +891,13 @@ mod tests {
         assert!(walk.is_trace);
         assert!(walk.has_exam);
 
-        let mut store = Store::open(&store_path).unwrap();
+        let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
         let base_deck = Deck::load(ws.join("base.md")).unwrap();
         store.set_deck_mastered(&base_deck.subject, T0 + 1_000);
         store.save().unwrap();
 
         let rows = list_members(root, &ws, &review, T0 + 1_000);
-        let store = Store::open(&store_path).unwrap();
+        let store = crate::state::open_stores(&paths, &store_path).unwrap();
         assert_parity(&rows, &store);
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.mastered);
@@ -912,7 +917,7 @@ mod tests {
         assert_eq!(Depth::default(), row.last_depth);
 
         let store_path = workspace::root_store_path(root);
-        let mut store = Store::open(&store_path).unwrap();
+        let mut store = crate::state::open_store(&root.join("d.md"), &store_path).unwrap();
         store.set_last_depth("d.md", Depth::Reconstruct);
         store.save().unwrap();
 
@@ -979,7 +984,8 @@ mod tests {
         let examdue_id = Deck::load(ws.join("zzz-examdue.md")).unwrap().cards[0]
             .id()
             .unwrap();
-        let mut store = Store::open(&store_path).unwrap();
+        let mut store =
+            crate::state::open_store(&ws.join("zzz-examdue.md"), &store_path).unwrap();
         let entry = store.get_or_insert(&examdue_id, T0);
         entry.recognized_ms = Some(T0);
         entry.recall = Some(graduated_not_due(T0));
@@ -1082,7 +1088,7 @@ mod tests {
         std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
         let entry = store.get_or_insert(&card_id, now);
@@ -1129,7 +1135,7 @@ mod tests {
             "fixture must be unstamped"
         );
 
-        let store = Store::open(dir.path().join("progress.json")).unwrap();
+        let store = Store::open(dir.path().join("deck1.json")).unwrap();
         let status = deck_status(
             &deck,
             &store,
@@ -1151,7 +1157,7 @@ mod tests {
         std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
         store.get_or_insert(&card_id, now).recall = Some(mature(now, 25.0));
@@ -1183,8 +1189,8 @@ mod tests {
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-        let mut augment = AugmentCache::open(dir.path().join("augment.json"));
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
+        let mut augment = AugmentCache::open(dir.path().join("deck1-generated.json"));
         arm(&mut augment, &deck.cards);
         let now = session::now_ms();
         store
@@ -1230,7 +1236,7 @@ mod tests {
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
-        let store = Store::open(dir.path().join("progress.json")).unwrap();
+        let store = Store::open(dir.path().join("deck1.json")).unwrap();
 
         let status = deck_status(
             &deck,
@@ -1261,7 +1267,8 @@ mod tests {
         let done_id = Deck::load(ws.join("done.md")).unwrap().cards[0]
             .id()
             .unwrap();
-        let mut store = Store::open(workspace::store_path(&ws)).unwrap();
+        let mut store =
+            crate::state::open_store(&ws.join("done.md"), &workspace::store_path(&ws)).unwrap();
         store.get_or_insert(&done_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 
@@ -1297,7 +1304,7 @@ mod tests {
         let deck_path = dir.path().join("d.md");
         std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
-        let store = Store::open(dir.path().join("progress.json")).unwrap();
+        let store = Store::open(dir.path().join("deck1.json")).unwrap();
         let review = ReviewConfig::default();
         let now = session::now_ms();
 
@@ -1311,7 +1318,7 @@ mod tests {
         );
         assert!(!bare.can_recognize, "un-augmented deck is not recognizable");
 
-        let mut augment = AugmentCache::open(dir.path().join("augment.json"));
+        let mut augment = AugmentCache::open(dir.path().join("deck1-generated.json"));
         arm(&mut augment, &deck.cards);
         let (armed, _) = deck_summary(
             &deck_path,
@@ -1333,7 +1340,7 @@ mod tests {
         let deck_path = dir.path().join("rust.md");
         std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let entry = store.get_or_insert(&deck.cards[0].id().unwrap(), now);
         entry.recall = Some(graduated_not_due(now));
@@ -1344,7 +1351,7 @@ mod tests {
             "un-augmented settled deck is not due"
         );
 
-        let mut augment = AugmentCache::open(dir.path().join("augment.json"));
+        let mut augment = AugmentCache::open(dir.path().join("deck1-generated.json"));
         arm(&mut augment, &deck.cards);
         assert!(
             deck_due(&deck, &store, &augment, &ReviewConfig::default(), now),
@@ -1363,7 +1370,7 @@ mod tests {
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         store
             .get_or_insert(&deck.cards[0].id().unwrap(), now)
@@ -1408,7 +1415,7 @@ mod tests {
         std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
         let entry = store.get_or_insert(&card_id, now);
@@ -1434,7 +1441,7 @@ mod tests {
         std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
         store.get_or_insert(&card_id, now).recall = Some(mature(now, 25.0));
@@ -1465,7 +1472,7 @@ mod tests {
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         store
             .get_or_insert(&deck.cards[0].id().unwrap(), now)

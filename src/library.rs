@@ -138,12 +138,22 @@ pub fn replace_deck(
         .context("saving the store after replacing a deck")?;
     let cache_path = augment::augment_path_for(store.path());
     if cache_path.exists() {
-        let mut cache = AugmentCache::open(&cache_path);
+        let mut cache = AugmentCache::open_for_store(store.path())?;
         if cache.wipe_tokens(&old_card_tokens, &old_deck_tokens) {
             cache
                 .save()
                 .with_context(|| format!("cannot save {}", cache_path.display()))?;
         }
+    }
+    if old_deck_tokens.len() == 1
+        && let Some(deck_id) = old_deck_tokens.iter().next()
+    {
+        crate::state::retire_replaced_deck(store.path(), deck_id)
+            .context("retiring the replaced deck's state documents")?;
+        let replacement = Deck::load(&path).context("loading the stamped replacement deck")?;
+        store
+            .rebind_replaced_deck(deck_id, &replacement)
+            .context("binding state to the replacement deck identity")?;
     }
 
     Ok(ReplaceReport {
@@ -314,7 +324,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
         let orig = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
 
@@ -334,8 +344,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
         write_deck(dir.path(), "b.md", "db1", "cb1");
-        let store_path = dir.path().join("p.json");
-        let mut store = Store::open(&store_path).unwrap();
+        let paths = [dir.path().join("a.md"), dir.path().join("b.md")];
+        let decks = paths
+            .iter()
+            .map(Deck::load)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let mut store = crate::state::open_stores(&paths, dir.path()).unwrap();
 
         // Deck A: a card schedule, deck-family mastery, records, a parented virtual.
         store.get_or_insert("c1", 0);
@@ -355,8 +370,8 @@ mod tests {
         store.save().unwrap();
 
         // Augment cache beside the store: A's card entry + A's topology, plus B's.
-        let cache_path = augment::augment_path_for(&store_path);
-        let mut cache = AugmentCache::open(&cache_path);
+        let cache_path = augment::augment_path_for(store.path());
+        let mut cache = AugmentCache::open_for_decks(store.path(), &decks).unwrap();
         cache.set_distractors("c1", vec!["x".into()], 1);
         cache.add_topology(crate::augment::Topology {
             name: "auto".into(),
@@ -393,7 +408,7 @@ mod tests {
     fn a_replaced_deck_leaves_no_orphaned_store_keys() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         store.get_or_insert("c1", 0);
         store.set_deck_mastered("a.md", 1);
         store.ensure_records_raw("c1", &[]);
@@ -421,7 +436,7 @@ mod tests {
             .collect();
         assert!(old_tokens.len() >= 3, "{old_tokens:?}");
 
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
 
         let now = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
@@ -433,10 +448,47 @@ mod tests {
     }
 
     #[test]
+    fn replacing_one_per_deck_document_retires_its_old_identity_without_touching_its_neighbor() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        write_deck(dir.path(), "b.md", "db1", "c2");
+        let paths = [dir.path().join("a.md"), dir.path().join("b.md")];
+        let mut aggregate = crate::state::open_stores(&paths, dir.path()).unwrap();
+        aggregate.get_or_insert("c1", 0);
+        aggregate.get_or_insert("c2", 0);
+        aggregate.save().unwrap();
+        let mut augmentation = AugmentCache::open_for_decks(
+            aggregate.path(),
+            &paths
+                .iter()
+                .map(Deck::load)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap(),
+        )
+        .unwrap();
+        augmentation.set_note("c1", "first".to_string(), 1);
+        augmentation.set_note("c2", "second".to_string(), 1);
+        augmentation.save().unwrap();
+
+        replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut aggregate).unwrap();
+
+        assert!(!dir.path().join("progress/da1.json").exists());
+        assert!(!dir.path().join("augment/da1.json").exists());
+        assert!(dir.path().join("progress/db1.json").exists());
+        assert!(dir.path().join("augment/db1.json").exists());
+        let untouched =
+            Store::open_deck(dir.path().join("progress/db1.json"), "db1", "b.md").unwrap();
+        assert!(untouched.get("c2").is_some());
+        let untouched_augmentation =
+            AugmentCache::open_deck(dir.path().join("augment/db1.json"), "db1").unwrap();
+        assert_eq!(Some("second"), untouched_augmentation.note("c2", 1));
+    }
+
+    #[test]
     fn a_second_replace_overwrites_the_prior_bak() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
 
         replace_deck(dir.path(), "a", "## first q\nfirst ans\n", &mut store).unwrap();
         let first = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
@@ -503,7 +555,8 @@ mod tests {
         {
             let dir = tempfile::tempdir().unwrap();
             place_deck(dir.path(), "d", "## x\ny\n").unwrap();
-            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            let mut store =
+                crate::state::open_store(&dir.path().join("d.md"), dir.path()).unwrap();
             replace_deck(dir.path(), "d", MARKER_FIXTURE, &mut store).unwrap();
             let text = std::fs::read_to_string(dir.path().join("d.md")).unwrap();
             let deck = crate::parser::parse("d.md", &text).unwrap();
@@ -538,7 +591,7 @@ mod tests {
         {
             let dir = tempfile::tempdir().unwrap();
             let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();
-            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            let mut store = crate::state::open_store(&placed.path, dir.path()).unwrap();
             let vid = "pvzzzzzzzzzzzzzzzzzzzzzzzzz";
             store.insert_virtual(crate::store::VirtualCard {
                 id: vid.into(),
@@ -564,8 +617,9 @@ mod tests {
     fn a_trace_rebuild_routes_through_replace_and_wipes_the_old_checkpoints() {
         let dir = tempfile::tempdir().unwrap();
         let existing = "---\nalix-id: \"da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: c1 -->\nold\n";
-        std::fs::write(dir.path().join("t.md"), existing).unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let path = dir.path().join("t.md");
+        std::fs::write(&path, existing).unwrap();
+        let mut store = crate::state::open_store(&path, dir.path()).unwrap();
         store.get_or_insert("c1", 0);
         store.save().unwrap();
 

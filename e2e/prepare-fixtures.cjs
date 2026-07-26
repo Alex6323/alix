@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // Prepares the scratch decks dir a real `alix` server can write into
-// (progress.json / recent.json) without ever touching the repo. Idempotent:
+// (`progress/` / recent.json) without ever touching the repo. Idempotent:
 // wipes and re-copies on every call, so each run starts from the exact same
 // committed state. Each web client under test gets its OWN copy
 // (`.tmp/<name>/decks`), so the kids and adult servers' stores never collide
@@ -23,15 +23,9 @@ const ROOT = __dirname;
 const SRC = path.join(ROOT, "fixtures", "decks");
 const TMP = path.join(ROOT, ".tmp");
 
-// A progress store is per-run state, never a fixture: the suite must start
-// every run from a deck with NO store, so it exercises the never-seen
-// (acquire) path a real first session hits. Even though the committed
-// fixtures never include one (enforced by .gitignore), skip any that show up
-// anyway (e.g. a contributor's local stray file) rather than silently
-// carrying it into the run.
-function isStoreFile(src) {
+function isPrivateState(src) {
   const base = path.basename(src);
-  return base === "progress.json" || base === "recent.json";
+  return base === "progress" || base === "recent.json";
 }
 
 function prepareFixtures(name) {
@@ -39,7 +33,7 @@ function prepareFixtures(name) {
   const dest = path.join(clientTmp, "decks");
   fs.rmSync(clientTmp, { recursive: true, force: true });
   fs.mkdirSync(dest, { recursive: true });
-  fs.cpSync(SRC, dest, { recursive: true, filter: (src) => !isStoreFile(src) });
+  fs.cpSync(SRC, dest, { recursive: true, filter: (src) => !isPrivateState(src) });
   return dest;
 }
 

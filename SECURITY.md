@@ -53,8 +53,9 @@ Alix is local-first, but some optional features cross trust boundaries:
 - a `source` citation identifies evidence but does not activate Alix's
   live-source grant; `[ask] source_access = true` also requires an explicit
   deck or workspace `origin`;
-- progress files support one active writer; synchronization conflict warnings
-  are not authentication or a general multi-writer merge protocol; and
+- each per-deck progress document supports one active writer; independently
+  owned decks may be written on different devices, but synchronization conflict
+  warnings are not authentication or a same-deck merge protocol; and
 - received decks, archives, workspace manifests, snapshots, and generated
   Markdown are untrusted input and may disclose their authored contents when
   reviewed, shared, or sent to an AI provider.

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use alix::{deck::Deck, source::SourceBase, store::Store, trace::Trace, workspace};
+use alix::{deck::Deck, source::SourceBase, trace::Trace, workspace};
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -89,10 +89,11 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
         ));
     }
 
-    let augment = path.parent().map(|dir| {
-        alix::augment::AugmentCache::open(alix::augment::augment_path_for(
-            &alix::workspace::root_store_path(dir),
-        ))
+    let augment = path.parent().and_then(|dir| {
+        deck.deck_token.as_deref().and_then(|deck_id| {
+            alix::state::open_augment_read_only(deck_id, &alix::workspace::root_store_path(dir))
+                .ok()
+        })
     });
     for diagnostic in alix::math::diagnostics(&deck.cards, augment.as_ref()) {
         report.warn(format!("{}: {diagnostic}", path.display()));
@@ -318,44 +319,118 @@ fn workspace_findings(dir: &Path) -> Report {
     }
 
     let store_path = alix::workspace::root_store_path(dir);
-    if let Ok(store) = Store::open(&store_path) {
-        let mut known_cards: HashSet<String> = HashSet::new();
-        let mut known_subjects: HashSet<String> = HashSet::new();
-        let mut any_fresh = false;
-        for path in &deck_files {
-            if let Ok(deck) = Deck::load(path) {
-                known_subjects.insert(deck.subject.clone());
-                for card in &deck.cards {
-                    if let Some(id) = card.id() {
-                        if store.get(&id).is_none() {
-                            any_fresh = true;
+    let mut known_deck_ids = HashSet::new();
+    for path in &deck_files {
+        if let Ok(deck) = Deck::load(path)
+            && let Some(deck_id) = deck.deck_token
+        {
+            known_deck_ids.insert(deck_id);
+        }
+    }
+    match alix::state::open_aggregate_store(&store_path) {
+        Ok(store) => {
+            let mut known_cards: HashSet<String> = HashSet::new();
+            let mut known_subjects: HashSet<String> = HashSet::new();
+            let mut any_fresh = false;
+            for path in &deck_files {
+                if let Ok(deck) = Deck::load(path) {
+                    known_subjects.insert(deck.subject.clone());
+                    for card in &deck.cards {
+                        if let Some(id) = card.id() {
+                            if store.get(&id).is_none() {
+                                any_fresh = true;
+                            }
+                            known_cards.insert(id);
                         }
-                        known_cards.insert(id);
                     }
                 }
             }
-        }
-        let orphans = store.orphans(&known_cards, &known_subjects);
-        for key in &orphans.cards {
-            report.warn(format!(
-                "orphaned store key (card) `{key}` matches no card in {}",
-                dir.display()
-            ));
-        }
-        for key in &orphans.decks {
-            report.warn(format!(
-                "orphaned store key (deck) `{key}` matches no deck in {}",
-                dir.display()
-            ));
-        }
-        if !orphans.cards.is_empty() && any_fresh {
-            report.warn(
-                "orphaned card progress exists and fresh tokens were minted: a card may have \
+            let orphans = store.orphans(&known_cards, &known_subjects);
+            for key in &orphans.cards {
+                report.warn(format!(
+                    "orphaned store key (card) `{key}` matches no card in {}",
+                    dir.display()
+                ));
+            }
+            for key in &orphans.decks {
+                report.warn(format!(
+                    "orphaned store key (deck) `{key}` matches no deck in {}",
+                    dir.display()
+                ));
+            }
+            if !orphans.cards.is_empty() && any_fresh {
+                report.warn(
+                    "orphaned card progress exists and fresh tokens were minted: a card may have \
                  lost its `<!-- id: -->` comment (e.g. a formatter stripped it) and been \
                  re-stamped, orphaning its old progress; the old progress stays until you run \
                  `alix reset --orphans`"
-                    .to_string(),
-            );
+                        .to_string(),
+                );
+            }
+        }
+        Err(error) => report.error(format!("state layout: {error}")),
+    }
+    if let Err(error) = alix::augment::AugmentCache::open_for_store(&store_path) {
+        report.error(format!("augmentation state: {error}"));
+    }
+    let layout = alix::state::Layout::new(&store_path);
+    for (kind, state_dir) in [
+        ("progress", layout.progress.as_path()),
+        ("augmentation", layout.augment.as_path()),
+    ] {
+        for entry in std::fs::read_dir(state_dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            if !path.is_file()
+                || path.extension().is_none_or(|extension| extension != "json")
+                || alix::workspace::is_conflict_name(name)
+            {
+                continue;
+            }
+            let Some(deck_id) = alix::state::deck_id_from_document(&path) else {
+                report.warn(format!(
+                    "unrecognized {kind} state document {}",
+                    path.display()
+                ));
+                continue;
+            };
+            let document_error = match kind {
+                "progress" => alix::store::Store::open_deck(&path, deck_id, "")
+                    .err()
+                    .map(|error| error.to_string()),
+                _ => alix::augment::AugmentCache::open_deck(&path, deck_id)
+                    .err()
+                    .map(|error| error.to_string()),
+            };
+            if let Some(error) = document_error {
+                report.error(format!("{kind} state document: {error}"));
+                continue;
+            }
+            if !known_deck_ids.contains(deck_id) {
+                report.warn(format!(
+                    "orphaned {kind} state document {} belongs to no deck in {}",
+                    path.display(),
+                    dir.display()
+                ));
+            }
+        }
+    }
+    for conflict in alix::store::sync_conflicts(&store_path) {
+        report.warn(format!(
+            "synchronization conflict needs deliberate recovery: {}",
+            conflict.display()
+        ));
+    }
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() && alix::workspace::is_workspace(&path) {
+            let nested = workspace_findings(&path);
+            report.errors.extend(nested.errors);
+            report.warnings.extend(nested.warnings);
+            report.notes.extend(nested.notes);
         }
     }
 
@@ -637,13 +712,13 @@ mod tests {
         w(
             dir.path(),
             "cached.md",
-            "## q <!-- id: doctormath1 -->\na\n",
+            "---\nalix-id: doctormathdeck\n---\n## q <!-- id: doctormath1 -->\na\n",
         );
         let parsed =
             alix::parser::parse("cached.md", &std::fs::read_to_string(&path).unwrap()).unwrap();
         let card = &parsed.cards[0];
         let id = card.id().unwrap();
-        let mut augment = alix::augment::AugmentCache::open(dir.path().join("augment.json"));
+        let mut augment = alix::state::open_augment(&path, dir.path()).unwrap();
         augment.set_distractors(
             &id,
             vec![r"$\frac{1$".to_string()],
@@ -739,7 +814,12 @@ mod tests {
             "---\nsource: https://example.test\nrequires: sourceless\n---\n## b <!-- id: gtd1 -->\n1\n",
         );
 
-        let mut store = alix::store::Store::open(dir.join("progress.json")).unwrap();
+        let mut store = alix::store::Store::open_deck(
+            dir.join("progress/orphan-owner.json"),
+            "orphan-owner",
+            "orphan-owner.md",
+        )
+        .unwrap();
         store.get_or_insert("orphancard", 0);
         store.set_last_depth("ghostdeck.md", alix::depth::Depth::Recall);
         store.save().unwrap();
@@ -795,4 +875,39 @@ mod tests {
             "unstamped warning: {warnings}"
         );
     }
+
+    #[test]
+    fn doctor_reports_orphaned_state_documents_and_sync_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "deck.md",
+            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+        );
+        let state_root = dir.path();
+        alix::state::open_store(&dir.path().join("deck.md"), state_root)
+            .unwrap()
+            .save()
+            .unwrap();
+        let orphan_path = dir.path().join("augment/orphan.json");
+        alix::augment::AugmentCache::open_deck(&orphan_path, "orphan")
+            .unwrap()
+            .save()
+            .unwrap();
+        let conflict = dir
+            .path()
+            .join("progress/deck1.sync-conflict-20260725-phone.json");
+        w(
+            dir.path(),
+            "progress/deck1.sync-conflict-20260725-phone.json",
+            "{}",
+        );
+
+        let report = workspace_findings(dir.path());
+        let warnings = report.warnings.join("\n");
+
+        assert!(warnings.contains("orphaned augmentation state document"));
+        assert!(warnings.contains(&conflict.display().to_string()));
+    }
+
 }

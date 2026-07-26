@@ -1,19 +1,26 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use anyhow::{Context, Result as AnyResult, bail};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{card::Card, deck, depth::Depth, scheduler::Grade};
+use crate::{
+    card::Card,
+    deck::{self, Deck},
+    depth::Depth,
+    scheduler::Grade,
+};
 
 const HISTORY_CAP: usize = 50;
 
-// Pinned at 1 on purpose: pre-1.0 the shape changes freely and old data loads
-// best-effort via `#[serde(default)]`, never gated on this field.
-const CURRENT_VERSION: u32 = 1;
+const DECK_DOCUMENT_VERSION: u32 = 1;
 
 // Below this age a foreign write is ordinary roaming, not a live conflict.
 pub const FOREIGN_WRITE_WARN_WINDOW_MS: u64 = 60 * 60 * 1000;
@@ -21,17 +28,10 @@ pub const FOREIGN_WRITE_WARN_WINDOW_MS: u64 = 60 * 60 * 1000;
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Review {
     pub ts_ms: u64,
-    #[serde(default = "default_review_grade")]
     pub grade: Grade,
-    #[serde(default)]
     pub depth: Depth,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub propagated: bool,
-}
-
-// Defaults pre-grade history to Pass: history is cosmetic, so this can't corrupt scheduling.
-fn default_review_grade() -> Grade {
-    Grade::Pass
 }
 
 // Our own representation (all-u64 times), decoupled from rs-fsrs's `Card` so
@@ -48,8 +48,6 @@ pub struct FsrsState {
     pub scheduled_days: u32,
     pub last_review_ms: u64,
     pub due_ms: u64,
-    // serde(default): a pre-existing store with no Goods yet reads as 0.
-    #[serde(default)]
     pub learning_goods: u8,
 }
 
@@ -64,7 +62,6 @@ impl FsrsState {
 pub struct CardState {
     #[serde(default)]
     pub acquired_ms: u64,
-    // Renamed from `fsrs` with no alias: a stored old `fsrs` key simply loads as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
     // Independent of `recall` on purpose: no cross-crediting between depths.
@@ -250,19 +247,58 @@ pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> Ca
 }
 
 #[derive(Serialize, Deserialize)]
-struct StoreFile {
-    #[serde(default = "default_version")]
+struct DeckStoreFile {
     version: u32,
+    deck_id: String,
+    subject: String,
+    revision: u64,
     cards: HashMap<String, CardState>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     records: HashMap<String, CardRecords>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
-    // Raw JSON so a stale/old-shape entry can be dropped without failing the whole load.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     virtual_cards: HashMap<String, serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     writer: Option<Writer>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct StoreDocumentData {
+    pub cards: HashMap<String, CardState>,
+    pub records: HashMap<String, CardRecords>,
+    pub decks: HashMap<String, DeckProgress>,
+    pub virtual_cards: HashMap<String, VirtualCard>,
+    pub writer: Option<Writer>,
+}
+
+enum StoreBacking {
+    Deck {
+        deck_id: String,
+        subject: String,
+        revision: AtomicU64,
+    },
+    Aggregate {
+        documents: Mutex<Vec<StoreDocument>>,
+        owners: StoreOwners,
+    },
+}
+
+#[derive(Clone)]
+struct StoreDocument {
+    path: PathBuf,
+    deck_id: String,
+    subject: String,
+    revision: u64,
+    original: StoreDocumentData,
+}
+
+#[derive(Default)]
+struct StoreOwners {
+    cards: HashMap<String, String>,
+    records: HashMap<String, String>,
+    decks: HashMap<String, String>,
+    virtual_cards: HashMap<String, String>,
 }
 
 pub struct Store {
@@ -275,6 +311,7 @@ pub struct Store {
     // don't masquerade as a device).
     pub device: Option<String>,
     last_writer: Option<Writer>,
+    backing: StoreBacking,
 }
 
 #[derive(Debug, Error)]
@@ -291,12 +328,244 @@ pub enum StoreError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("{path}: unsupported progress document version {version}")]
+    Version { path: PathBuf, version: u32 },
+    #[error("{path}: progress document belongs to deck `{actual}`, expected `{expected}`")]
+    DeckOwner {
+        path: PathBuf,
+        expected: String,
+        actual: String,
+    },
+    #[error("{path}: stale progress revision {loaded}; disk is at {disk}")]
+    StaleRevision {
+        path: PathBuf,
+        loaded: u64,
+        disk: u64,
+    },
+    #[error("duplicate {kind} key `{key}` across per-deck progress documents")]
+    DuplicateKey { kind: &'static str, key: String },
+    #[error("cannot save aggregate progress: {kind} key `{key}` has no owning deck")]
+    UnownedKey { kind: &'static str, key: String },
+    #[error("{subject}: deck is not initialized")]
+    MissingDeckId { subject: String },
+}
+
+fn decode_virtual_cards(
+    values: HashMap<String, serde_json::Value>,
+) -> HashMap<String, VirtualCard> {
+    values
+        .into_iter()
+        .filter_map(|(key, value)| serde_json::from_value(value).ok().map(|card| (key, card)))
+        .collect()
+}
+
+fn encode_virtual_cards(
+    path: &Path,
+    cards: &HashMap<String, VirtualCard>,
+) -> Result<HashMap<String, serde_json::Value>, StoreError> {
+    cards
+        .iter()
+        .map(|(id, card)| {
+            serde_json::to_value(card)
+                .map(|value| (id.clone(), value))
+                .map_err(|source| StoreError::Format {
+                    path: path.to_path_buf(),
+                    source,
+                })
+        })
+        .collect()
+}
+
+fn deck_revision(path: &Path, expected_deck_id: &str) -> Result<u64, StoreError> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let text = std::fs::read_to_string(path).map_err(|source| StoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let file: DeckStoreFile = serde_json::from_str(&text).map_err(|source| StoreError::Format {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if file.version != DECK_DOCUMENT_VERSION {
+        return Err(StoreError::Version {
+            path: path.to_path_buf(),
+            version: file.version,
+        });
+    }
+    if file.deck_id != expected_deck_id {
+        return Err(StoreError::DeckOwner {
+            path: path.to_path_buf(),
+            expected: expected_deck_id.to_string(),
+            actual: file.deck_id,
+        });
+    }
+    Ok(file.revision)
+}
+
+fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), StoreError> {
+    let io_err = |source| StoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let json = serde_json::to_string_pretty(value).map_err(|source| StoreError::Format {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)
+}
+
+pub(crate) fn write_deck_data(
+    path: &Path,
+    deck_id: &str,
+    subject: &str,
+    revision: u64,
+    data: &StoreDocumentData,
+) -> Result<(), StoreError> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|source| StoreError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    let file = DeckStoreFile {
+        version: DECK_DOCUMENT_VERSION,
+        deck_id: deck_id.to_string(),
+        subject: subject.to_string(),
+        revision,
+        cards: data.cards.clone(),
+        records: data.records.clone(),
+        decks: data.decks.clone(),
+        virtual_cards: encode_virtual_cards(path, &data.virtual_cards)?,
+        writer: data.writer.clone(),
+    };
+    write_json_atomic(path, &file)
+}
+
+pub(crate) fn read_deck_data(
+    path: &Path,
+    expected_deck_id: &str,
+    current_subject: Option<&str>,
+) -> Result<(u64, String, StoreDocumentData), StoreError> {
+    let text = std::fs::read_to_string(path).map_err(|source| StoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let file: DeckStoreFile = serde_json::from_str(&text).map_err(|source| StoreError::Format {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if file.version != DECK_DOCUMENT_VERSION {
+        return Err(StoreError::Version {
+            path: path.to_path_buf(),
+            version: file.version,
+        });
+    }
+    if file.deck_id != expected_deck_id {
+        return Err(StoreError::DeckOwner {
+            path: path.to_path_buf(),
+            expected: expected_deck_id.to_string(),
+            actual: file.deck_id,
+        });
+    }
+    let old_subject = file.subject;
+    let subject = current_subject.unwrap_or(&old_subject).to_string();
+    let mut decks = file.decks;
+    let mut virtual_cards = decode_virtual_cards(file.virtual_cards);
+    if old_subject != subject {
+        if let Some(progress) = decks.remove(&old_subject) {
+            decks.insert(subject.clone(), progress);
+        }
+        for card in virtual_cards.values_mut() {
+            if card.parent == old_subject {
+                card.parent.clone_from(&subject);
+            }
+        }
+    }
+    Ok((
+        file.revision,
+        subject,
+        StoreDocumentData {
+            cards: file.cards,
+            records: file.records,
+            decks,
+            virtual_cards,
+            writer: file.writer,
+        },
+    ))
+}
+
+fn merge_owned<T: Clone>(
+    target: &mut HashMap<String, T>,
+    owners: &mut HashMap<String, String>,
+    source: &HashMap<String, T>,
+    deck_id: &str,
+    kind: &'static str,
+) -> Result<(), StoreError> {
+    for (key, value) in source {
+        if target.contains_key(key) {
+            return Err(StoreError::DuplicateKey {
+                kind,
+                key: key.clone(),
+            });
+        }
+        target.insert(key.clone(), value.clone());
+        owners.insert(key.clone(), deck_id.to_string());
+    }
+    Ok(())
+}
+
+fn reject_unowned<T>(
+    values: &HashMap<String, T>,
+    owners: &HashMap<String, String>,
+    kind: &'static str,
+) -> Result<(), StoreError> {
+    match values.keys().find(|key| !owners.contains_key(*key)) {
+        Some(key) => Err(StoreError::UnownedKey {
+            kind,
+            key: key.clone(),
+        }),
+        None => Ok(()),
+    }
+}
+
+fn owned_values<T: Clone>(
+    values: &HashMap<String, T>,
+    owners: &HashMap<String, String>,
+    deck_id: &str,
+) -> HashMap<String, T> {
+    values
+        .iter()
+        .filter(|(key, _)| owners.get(*key).is_some_and(|owner| owner == deck_id))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 impl Store {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let path = path.as_ref().to_path_buf();
+        if path.extension().is_some_and(|extension| extension == "json") {
+            let deck_id = crate::state::deck_id_from_document(&path)
+                .ok_or_else(|| StoreError::MissingDeckId {
+                    subject: path.display().to_string(),
+                })?
+                .to_string();
+            return Self::open_deck(&path, &deck_id, format!("{deck_id}.md"));
+        }
+        Self::open_aggregate_for(path, &[])
+    }
 
+    pub fn open_deck(
+        path: impl AsRef<Path>,
+        deck_id: impl Into<String>,
+        subject: impl Into<String>,
+    ) -> Result<Self, StoreError> {
+        let path = path.as_ref().to_path_buf();
+        let deck_id = deck_id.into();
+        let subject = subject.into();
         if !path.exists() {
             return Ok(Self {
                 path,
@@ -306,6 +575,11 @@ impl Store {
                 records: HashMap::new(),
                 device: None,
                 last_writer: None,
+                backing: StoreBacking::Deck {
+                    deck_id,
+                    subject,
+                    revision: AtomicU64::new(0),
+                },
             });
         }
 
@@ -313,76 +587,301 @@ impl Store {
             path: path.clone(),
             source,
         })?;
-        let file: StoreFile = serde_json::from_str(&text).map_err(|source| StoreError::Format {
-            path: path.clone(),
-            source,
-        })?;
-        // A key of an unexpected charset is kept, not rejected: doctor material, not a load
-        // failure.
-        let cards = file.cards;
-        // A stale/old-shape entry (pre-rework numeric id) is dropped, not a load
-        // failure: regenerable content, not real progress.
-        let mut virtual_cards = HashMap::new();
-        for (key, val) in file.virtual_cards {
-            if let Ok(vc) = serde_json::from_value::<VirtualCard>(val) {
-                virtual_cards.insert(key, vc);
+        let file: DeckStoreFile =
+            serde_json::from_str(&text).map_err(|source| StoreError::Format {
+                path: path.clone(),
+                source,
+            })?;
+        if file.version != DECK_DOCUMENT_VERSION {
+            return Err(StoreError::Version {
+                path,
+                version: file.version,
+            });
+        }
+        if file.deck_id != deck_id {
+            return Err(StoreError::DeckOwner {
+                path,
+                expected: deck_id,
+                actual: file.deck_id,
+            });
+        }
+
+        let old_subject = file.subject;
+        let mut decks = file.decks;
+        if old_subject != subject
+            && let Some(progress) = decks.remove(&old_subject)
+        {
+            decks.insert(subject.clone(), progress);
+        }
+        let mut virtual_cards = decode_virtual_cards(file.virtual_cards);
+        if old_subject != subject {
+            for card in virtual_cards.values_mut() {
+                if card.parent == old_subject {
+                    card.parent.clone_from(&subject);
+                }
             }
         }
         Ok(Self {
             path,
-            cards,
-            decks: file.decks,
+            cards: file.cards,
+            decks,
             virtual_cards,
             records: file.records,
             device: None,
             last_writer: file.writer,
+            backing: StoreBacking::Deck {
+                deck_id,
+                subject,
+                revision: AtomicU64::new(file.revision),
+            },
+        })
+    }
+
+    pub fn open_for_decks(path: impl AsRef<Path>, decks: &[Deck]) -> Result<Self, StoreError> {
+        Self::open_aggregate_for(path.as_ref().to_path_buf(), decks)
+    }
+
+    fn open_aggregate_for(path: PathBuf, expected_decks: &[Deck]) -> Result<Self, StoreError> {
+        let mut document_paths: Vec<PathBuf> = if path.is_dir() {
+            std::fs::read_dir(&path)
+                .map_err(|source| StoreError::Io {
+                    path: path.clone(),
+                    source,
+                })?
+                .map(|entry| {
+                    entry
+                        .map(|entry| entry.path())
+                        .map_err(|source| StoreError::Io {
+                            path: path.clone(),
+                            source,
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+        document_paths.retain(|path| {
+            path.is_file()
+                && path.extension().is_some_and(|ext| ext == "json")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_none_or(|name| !crate::workspace::is_conflict_name(name))
+        });
+        document_paths.sort();
+
+        let mut cards = HashMap::new();
+        let mut decks = HashMap::new();
+        let mut virtual_cards = HashMap::new();
+        let mut records = HashMap::new();
+        let mut owners = StoreOwners::default();
+        let mut expected = HashMap::new();
+        for deck in expected_decks {
+            let deck_id = deck
+                .deck_token
+                .as_deref()
+                .ok_or_else(|| StoreError::MissingDeckId {
+                    subject: deck.subject.clone(),
+                })?;
+            expected.insert(deck_id.to_string(), deck.subject.clone());
+            for card in &deck.cards {
+                if let Some(card_id) = card.id() {
+                    owners.cards.insert(card_id, deck_id.to_string());
+                }
+                if let Some(token) = card.token.as_deref() {
+                    owners
+                        .records
+                        .insert(token.to_string(), deck_id.to_string());
+                }
+            }
+            owners
+                .decks
+                .insert(deck.subject.clone(), deck_id.to_string());
+        }
+        let mut documents = Vec::new();
+        let mut loaded_decks = HashSet::new();
+        let mut last_writer: Option<Writer> = None;
+        for document_path in document_paths {
+            let Some(deck_id) =
+                crate::state::deck_id_from_document(&document_path).map(str::to_string)
+            else {
+                continue;
+            };
+            let current_subject = expected.get(&deck_id).map(String::as_str);
+            let (revision, subject, data) =
+                read_deck_data(&document_path, &deck_id, current_subject)?;
+            merge_owned(&mut cards, &mut owners.cards, &data.cards, &deck_id, "card")?;
+            merge_owned(
+                &mut records,
+                &mut owners.records,
+                &data.records,
+                &deck_id,
+                "record",
+            )?;
+            merge_owned(&mut decks, &mut owners.decks, &data.decks, &deck_id, "deck")?;
+            merge_owned(
+                &mut virtual_cards,
+                &mut owners.virtual_cards,
+                &data.virtual_cards,
+                &deck_id,
+                "virtual card",
+            )?;
+            if data.writer.as_ref().is_some_and(|candidate| {
+                last_writer
+                    .as_ref()
+                    .is_none_or(|current| candidate.at_ms > current.at_ms)
+            }) {
+                last_writer.clone_from(&data.writer);
+            }
+            documents.push(StoreDocument {
+                path: document_path,
+                deck_id: deck_id.clone(),
+                subject,
+                revision,
+                original: data,
+            });
+            loaded_decks.insert(deck_id);
+        }
+        for (deck_id, subject) in expected {
+            if loaded_decks.contains(&deck_id) {
+                continue;
+            }
+            documents.push(StoreDocument {
+                path: path.join(format!("{deck_id}.json")),
+                deck_id,
+                subject,
+                revision: 0,
+                original: StoreDocumentData::default(),
+            });
+        }
+        documents.sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(Self {
+            path,
+            cards,
+            decks,
+            virtual_cards,
+            records,
+            device: None,
+            last_writer,
+            backing: StoreBacking::Aggregate {
+                documents: Mutex::new(documents),
+                owners,
+            },
         })
     }
 
     pub fn save(&self) -> Result<(), StoreError> {
+        match &self.backing {
+            StoreBacking::Deck {
+                deck_id,
+                subject,
+                revision,
+            } => self.save_deck(deck_id, subject, revision),
+            StoreBacking::Aggregate { documents, owners } => self.save_aggregate(documents, owners),
+        }
+    }
+
+    fn save_deck(
+        &self,
+        deck_id: &str,
+        subject: &str,
+        revision: &AtomicU64,
+    ) -> Result<(), StoreError> {
         let io_err = |source| StoreError::Io {
             path: self.path.clone(),
             source,
         };
-
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).map_err(io_err)?;
         }
-
-        // Write side uses the real VirtualCard shape; only loading is lenient.
-        let mut virtual_cards = HashMap::with_capacity(self.virtual_cards.len());
-        for (id, vc) in &self.virtual_cards {
-            let value = serde_json::to_value(vc).map_err(|source| StoreError::Format {
+        let loaded = revision.load(Ordering::Relaxed);
+        let disk = deck_revision(&self.path, deck_id)?;
+        if disk != loaded {
+            return Err(StoreError::StaleRevision {
                 path: self.path.clone(),
-                source,
-            })?;
-            virtual_cards.insert(id.clone(), value);
+                loaded,
+                disk,
+            });
         }
-
-        let file = StoreFile {
-            version: CURRENT_VERSION,
+        let next = loaded.saturating_add(1);
+        let file = DeckStoreFile {
+            version: DECK_DOCUMENT_VERSION,
+            deck_id: deck_id.to_string(),
+            subject: subject.to_string(),
+            revision: next,
             cards: self.cards.clone(),
             records: self.records.clone(),
             decks: self.decks.clone(),
-            virtual_cards,
-            // No device set: keep the existing marker instead of erasing it.
-            writer: self
-                .device
-                .clone()
-                .map(|device| Writer {
-                    device,
-                    at_ms: crate::time::now_ms(),
-                })
-                .or_else(|| self.last_writer.clone()),
+            virtual_cards: encode_virtual_cards(&self.path, &self.virtual_cards)?,
+            writer: self.writer_for_save(),
         };
-        let json = serde_json::to_string_pretty(&file).map_err(|source| StoreError::Format {
-            path: self.path.clone(),
-            source,
-        })?;
+        write_json_atomic(&self.path, &file)?;
+        revision.store(next, Ordering::Relaxed);
+        Ok(())
+    }
 
-        let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, json).map_err(io_err)?;
-        std::fs::rename(&tmp, &self.path).map_err(io_err)?;
+    fn writer_for_save(&self) -> Option<Writer> {
+        self.device
+            .clone()
+            .map(|device| Writer {
+                device,
+                at_ms: crate::time::now_ms(),
+            })
+            .or_else(|| self.last_writer.clone())
+    }
+
+    fn save_aggregate(
+        &self,
+        documents: &Mutex<Vec<StoreDocument>>,
+        owners: &StoreOwners,
+    ) -> Result<(), StoreError> {
+        reject_unowned(&self.cards, &owners.cards, "card")?;
+        reject_unowned(&self.records, &owners.records, "record")?;
+        reject_unowned(&self.decks, &owners.decks, "deck")?;
+        reject_unowned(&self.virtual_cards, &owners.virtual_cards, "virtual card")?;
+
+        let mut documents = documents
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut changed = Vec::new();
+        for (index, document) in documents.iter().enumerate() {
+            let data = StoreDocumentData {
+                cards: owned_values(&self.cards, &owners.cards, &document.deck_id),
+                records: owned_values(&self.records, &owners.records, &document.deck_id),
+                decks: owned_values(&self.decks, &owners.decks, &document.deck_id),
+                virtual_cards: owned_values(
+                    &self.virtual_cards,
+                    &owners.virtual_cards,
+                    &document.deck_id,
+                ),
+                writer: document.original.writer.clone(),
+            };
+            if data != document.original {
+                let disk = deck_revision(&document.path, &document.deck_id)?;
+                if disk != document.revision {
+                    return Err(StoreError::StaleRevision {
+                        path: document.path.clone(),
+                        loaded: document.revision,
+                        disk,
+                    });
+                }
+                changed.push((index, data));
+            }
+        }
+        for (index, mut data) in changed {
+            let document = &mut documents[index];
+            data.writer = self.writer_for_save();
+            let next = document.revision.saturating_add(1);
+            write_deck_data(
+                &document.path,
+                &document.deck_id,
+                &document.subject,
+                next,
+                &data,
+            )?;
+            document.revision = next;
+            document.original = data;
+        }
         Ok(())
     }
 
@@ -498,7 +997,82 @@ impl Store {
     }
 
     pub fn insert_virtual(&mut self, card: VirtualCard) {
+        if let StoreBacking::Aggregate { owners, .. } = &mut self.backing
+            && let Some(deck_id) = owners.decks.get(&card.parent).cloned()
+        {
+            owners.cards.insert(card.id.clone(), deck_id.clone());
+            owners.virtual_cards.insert(card.id.clone(), deck_id);
+        }
         self.virtual_cards.insert(card.id.clone(), card);
+    }
+
+    pub fn rebind_replaced_deck(
+        &mut self,
+        old_deck_id: &str,
+        deck: &Deck,
+    ) -> Result<(), StoreError> {
+        let new_deck_id =
+            deck.deck_token
+                .as_deref()
+                .ok_or_else(|| StoreError::MissingDeckId {
+                    subject: deck.subject.clone(),
+                })?;
+        match &mut self.backing {
+            StoreBacking::Deck {
+                deck_id,
+                subject,
+                revision,
+            } => {
+                let progress =
+                    self.path
+                        .parent()
+                        .ok_or_else(|| StoreError::Io {
+                            path: self.path.clone(),
+                            source: std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "progress document has no parent directory",
+                            ),
+                        })?;
+                self.path = progress.join(format!("{new_deck_id}.json"));
+                deck_id.replace_range(.., new_deck_id);
+                subject.clone_from(&deck.subject);
+                revision.store(0, Ordering::Relaxed);
+            }
+            StoreBacking::Aggregate { documents, owners } => {
+                let documents = documents
+                    .get_mut()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                documents.retain(|document| document.deck_id != old_deck_id);
+                documents.push(StoreDocument {
+                    path: self.path.join(format!("{new_deck_id}.json")),
+                    deck_id: new_deck_id.to_string(),
+                    subject: deck.subject.clone(),
+                    revision: 0,
+                    original: StoreDocumentData::default(),
+                });
+                documents.sort_by(|left, right| left.path.cmp(&right.path));
+                owners.cards.retain(|_, owner| owner != old_deck_id);
+                owners.records.retain(|_, owner| owner != old_deck_id);
+                owners.decks.retain(|_, owner| owner != old_deck_id);
+                owners
+                    .virtual_cards
+                    .retain(|_, owner| owner != old_deck_id);
+                owners
+                    .decks
+                    .insert(deck.subject.clone(), new_deck_id.to_string());
+                for card in &deck.cards {
+                    if let Some(card_id) = card.id() {
+                        owners.cards.insert(card_id, new_deck_id.to_string());
+                    }
+                    if let Some(token) = card.token.as_deref() {
+                        owners
+                            .records
+                            .insert(token.to_string(), new_deck_id.to_string());
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn remove_virtual(&mut self, id: &str) -> bool {
@@ -971,16 +1545,58 @@ fn stamp_block(block: &str, token: &str) -> String {
     }
 }
 
-fn default_version() -> u32 {
-    1
-}
-
 pub fn default_store_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().join("progress.json"))
+    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().to_path_buf())
 }
 
 // Syncthing's own naming convention for conflict copies: `<stem>.sync-conflict-*.<ext>`.
 pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
+    let direct = store_path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "progress")
+        && store_path.extension().is_some_and(|extension| extension == "json");
+    let mut out = if direct {
+        let mut conflicts = conflict_copies(store_path);
+        conflicts.extend(conflict_copies(&crate::augment::augment_path_for(store_path)));
+        conflicts
+    } else {
+        let progress = if store_path
+            .file_name()
+            .is_some_and(|name| name == "progress")
+        {
+            store_path.to_path_buf()
+        } else {
+            store_path.join("progress")
+        };
+        let mut conflicts = conflict_documents(&progress);
+        conflicts.extend(conflict_documents(&crate::augment::augment_path_for(&progress)));
+        conflicts
+    };
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn conflict_documents(dir: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(crate::workspace::is_conflict_name)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn conflict_copies(store_path: &Path) -> Vec<PathBuf> {
     let Some(dir) = store_path.parent() else {
         return Vec::new();
     };
@@ -1043,7 +1659,7 @@ mod tests {
     #[test]
     fn open_creates_empty_store() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
     }
@@ -1292,7 +1908,7 @@ mod tests {
     #[test]
     fn save_stamps_the_writer_and_a_reopen_sees_it_as_foreign_elsewhere() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
         store.device = Some("desk-1".into());
         store.save().unwrap();
@@ -1313,7 +1929,7 @@ mod tests {
     #[test]
     fn an_unnamed_save_preserves_the_existing_writer_marker() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
         store.device = Some("desk-1".into());
         store.save().unwrap();
@@ -1330,8 +1946,8 @@ mod tests {
     #[test]
     fn a_store_without_a_writer_marker_loads_and_reports_none() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(&path, r#"{"version":1,"cards":{}}"#).unwrap();
+        let path = dir.path().join("deck1.json");
+        Store::open(&path).unwrap().save().unwrap();
         let store = Store::open(&path).unwrap();
         assert!(store.foreign_writer("phone-1", 0).is_none());
     }
@@ -1339,7 +1955,7 @@ mod tests {
     #[test]
     fn the_warn_window_separates_roaming_from_concurrent_writes() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         store.last_writer = Some(Writer {
             device: "desk-1".into(),
             at_ms: 1_000,
@@ -1363,24 +1979,42 @@ mod tests {
     #[test]
     fn sync_conflicts_finds_syncthing_copies_and_ignores_near_misses() {
         let dir = tempfile::tempdir().unwrap();
-        let store_path = dir.path().join("progress.json");
+        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        let store_path = dir.path().join("progress/deck1.json");
         std::fs::write(&store_path, "{}").unwrap();
         let conflict = dir
             .path()
-            .join("progress.sync-conflict-20260714-101112-ABCDEF7.json");
+            .join("progress/deck1.sync-conflict-20260714-101112-ABCDEF7.json");
         std::fs::write(&conflict, "{}").unwrap();
         for near_miss in [
-            "recent.sync-conflict-20260714-101112-AAAAAAA.json",
-            "progress.sync-conflict-20260714.txt",
-            "progress.json.tmp",
+            "progress/recent.sync-conflict-20260714-101112-AAAAAAA.json",
+            "progress/deck1.sync-conflict-20260714.txt",
+            "progress/deck1.json.tmp",
         ] {
             std::fs::write(dir.path().join(near_miss), "{}").unwrap();
         }
         assert_eq!(sync_conflicts(&store_path), vec![conflict]);
         assert_eq!(
-            sync_conflicts(&dir.path().join("missing/progress.json")),
+            sync_conflicts(&dir.path().join("missing/progress/deck1.json")),
             Vec::<PathBuf>::new()
         );
+    }
+
+    #[test]
+    fn sync_conflicts_finds_per_deck_progress_and_augmentation_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        std::fs::create_dir(dir.path().join("augment")).unwrap();
+        let progress = dir
+            .path()
+            .join("progress/deck1.sync-conflict-20260714-phone.json");
+        let augment = dir
+            .path()
+            .join("augment/deck2.sync-conflict-20260714-laptop.json");
+        std::fs::write(&progress, "{}").unwrap();
+        std::fs::write(&augment, "{}").unwrap();
+
+        assert_eq!(sync_conflicts(dir.path()), vec![augment, progress]);
     }
 
     #[test]
@@ -1403,7 +2037,7 @@ mod tests {
     #[test]
     fn open_rejects_malformed_json() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         std::fs::write(&path, "this is not json").unwrap();
         assert!(Store::open(&path).is_err());
     }
@@ -1411,12 +2045,10 @@ mod tests {
     #[test]
     fn open_keeps_a_card_key_of_any_charset() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(
-            &path,
-            r#"{"version":1,"cards":{"not-a-token":{"acquired_ms":0}}}"#,
-        )
-        .unwrap();
+        let path = dir.path().join("deck1.json");
+        let mut store = Store::open(&path).unwrap();
+        store.get_or_insert("not-a-token", 0);
+        store.save().unwrap();
         let store = Store::open(&path).unwrap();
         assert!(store.get("not-a-token").is_some());
     }
@@ -1424,7 +2056,7 @@ mod tests {
     #[test]
     fn last_review_ms_is_the_latest_across_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
         assert_eq!(None, store.last_review_ms());
         store
@@ -1439,7 +2071,7 @@ mod tests {
     #[test]
     fn path_returns_the_store_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let store = Store::open(&path).unwrap();
         assert_eq!(path.as_path(), store.path());
     }
@@ -1447,7 +2079,7 @@ mod tests {
     #[test]
     fn save_and_reload_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert("42", 1000);
@@ -1470,9 +2102,100 @@ mod tests {
     }
 
     #[test]
+    fn deck_document_roundtrip_records_owner_and_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
+        store.get_or_insert("card1", 1);
+        store.set_deck_mastered("old.md", 2);
+        store.save().unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"version\": 1"));
+        assert!(text.contains("\"deck_id\": \"deck1\""));
+        assert!(text.contains("\"revision\": 1"));
+
+        let reopened = Store::open_deck(&path, "deck1", "old.md").unwrap();
+        assert!(reopened.get("card1").is_some());
+        assert!(reopened.deck_mastered("old.md"));
+    }
+
+    #[test]
+    fn opening_a_deck_document_under_a_new_filename_rebinds_subject_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
+        store.set_deck_mastered("old.md", 2);
+        store.insert_virtual(VirtualCard {
+            id: "virtual1".to_string(),
+            kind: VirtualKind::Tutor,
+            parent: "old.md".to_string(),
+            text: "## q <!-- id: virtual1 -->\na\n".to_string(),
+            created_ms: 1,
+        });
+        store.save().unwrap();
+
+        let renamed = Store::open_deck(&path, "deck1", "new.md").unwrap();
+        assert!(renamed.deck_mastered("new.md"));
+        assert!(!renamed.deck_mastered("old.md"));
+        assert_eq!(
+            vec!["virtual1"],
+            renamed
+                .virtual_cards_for("new.md")
+                .into_iter()
+                .map(|card| card.id.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_deck_document_refuses_the_wrong_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        Store::open_deck(&path, "deck1", "d.md")
+            .unwrap()
+            .save()
+            .unwrap();
+
+        let error = match Store::open_deck(&path, "deck2", "d.md") {
+            Ok(_) => panic!("wrong owner was accepted"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, StoreError::DeckOwner { .. }));
+    }
+
+    #[test]
+    fn a_stale_deck_document_save_does_not_replace_the_newer_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        Store::open_deck(&path, "deck1", "d.md")
+            .unwrap()
+            .save()
+            .unwrap();
+        let mut first = Store::open_deck(&path, "deck1", "d.md").unwrap();
+        let mut stale = Store::open_deck(&path, "deck1", "d.md").unwrap();
+        first.get_or_insert("newer", 1);
+        first.save().unwrap();
+        stale.get_or_insert("stale", 1);
+
+        let error = stale.save().unwrap_err();
+        assert!(matches!(
+            error,
+            StoreError::StaleRevision {
+                loaded: 1,
+                disk: 2,
+                ..
+            }
+        ));
+        let reopened = Store::open_deck(&path, "deck1", "d.md").unwrap();
+        assert!(reopened.get("newer").is_some());
+        assert!(reopened.get("stale").is_none());
+    }
+
+    #[test]
     fn propagated_flag_survives_save_reload() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert("42", 1000);
@@ -1493,7 +2216,7 @@ mod tests {
     #[test]
     fn deck_mastered_roundtrips_and_clears() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
         assert!(!store.deck_mastered("rust.md"));
@@ -1514,7 +2237,7 @@ mod tests {
     #[test]
     fn exam_failed_records_and_a_pass_clears_it() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
         assert_eq!(None, store.exam_failed_at("t.md"));
@@ -1578,73 +2301,12 @@ mod tests {
     }
 
     #[test]
-    fn loads_a_v1_deck_record_with_a_bare_mastered_timestamp() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(
-            &path,
-            "{\"version\":1,\"cards\":{},\"decks\":{\"rust.md\":{\"mastered_at_ms\":1234}}}",
-        )
-        .unwrap();
-        let store = Store::open(&path).unwrap();
-        assert!(store.deck_mastered("rust.md"));
-        assert_eq!(Some(1234), store.deck_mastered_at("rust.md"));
-        assert_eq!(None, store.exam_failed_at("rust.md"));
-    }
-
-    #[test]
     fn clear_also_drops_deck_mastered() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.set_deck_mastered("a.md", 1);
         store.clear();
         assert!(!store.deck_mastered("a.md"));
-    }
-
-    #[test]
-    fn loads_store_file_without_decks_field() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
-        let store = Store::open(&path).unwrap();
-        assert!(store.is_empty());
-        assert!(!store.deck_mastered("anything.md"));
-    }
-
-    #[test]
-    fn loads_a_store_file_without_a_version_field() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(&path, "{\"cards\":{}}").unwrap();
-        let store = Store::open(&path).unwrap();
-        assert!(store.is_empty());
-    }
-
-    #[test]
-    fn loads_any_version_and_defaults_pre_grade_history() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(
-            &path,
-            r#"{"version":999,"cards":{"5":{"acquired_ms":7,"history":[{"ts_ms":100,"passed":false}]}}}"#,
-        )
-        .unwrap();
-        let store = Store::open(&path).unwrap();
-        let state = store.get("5").unwrap();
-        assert_eq!(7, state.acquired_ms);
-        assert_eq!(100, state.history[0].ts_ms);
-        assert_eq!(Grade::Pass, state.history[0].grade);
-    }
-
-    #[test]
-    fn save_writes_the_current_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        let mut store = Store::open(&path).unwrap();
-        store.get_or_insert("1", 0);
-        store.save().unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains(&format!("\"version\": {CURRENT_VERSION}")));
     }
 
     #[test]
@@ -1702,7 +2364,7 @@ mod tests {
     #[test]
     fn virtual_card_survives_save_reload() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id.clone();
@@ -1733,33 +2395,15 @@ mod tests {
     #[test]
     fn loads_store_file_without_virtual_cards_field() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
-        let store = Store::open(&path).unwrap();
-        assert!(store.is_empty());
-        assert!(store.get_virtual("123").is_none());
-    }
-
-    #[test]
-    fn an_old_shape_virtual_cards_object_loads_leniently_dropping_stale_entries() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         std::fs::write(
             &path,
-            r#"{"version":1,
-                "cards":{"5":{"acquired_ms":7}},
-                "decks":{"rust.md":{"mastered_at_ms":1234}},
-                "virtual_cards":{
-                    "v:abc":{"id":"v:abc","kind":"Remediation","parent":"rust.md",
-                             "content":{"front":"f","back":["b"],"mode":null},
-                             "state":{"acquired_ms":0},"created_ms":0}
-                }}"#,
+            r#"{"version":1,"deck_id":"deck1","subject":"deck1.md","revision":1,"cards":{}}"#,
         )
         .unwrap();
         let store = Store::open(&path).unwrap();
-        assert_eq!(7, store.get("5").unwrap().acquired_ms);
-        assert!(store.deck_mastered("rust.md"));
-        assert_eq!(0, store.iter_virtual_cards().count());
+        assert!(store.is_empty());
+        assert!(store.get_virtual("123").is_none());
     }
 
     fn write_deck(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -1776,7 +2420,7 @@ mod tests {
             "rust.md",
             "## existing <!-- id: ex1 -->\nanswer\n",
         );
-        let store_path = dir.path().join("progress.json");
+        let store_path = dir.path().join("deck1.json");
         let mut store = Store::open(&store_path).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id.clone();
@@ -1815,7 +2459,7 @@ mod tests {
                 .unwrap();
         let ids_before: Vec<String> = before.iter().map(|c| c.id().unwrap()).collect();
 
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id.clone();
         store.insert_virtual(vc);
@@ -1835,7 +2479,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_deck(dir.path(), "d.md", "## one\n1\n");
         let deck_before = std::fs::read_to_string(&deck_path).unwrap();
-        let store_path = dir.path().join("progress.json");
+        let store_path = dir.path().join("deck1.json");
         let mut store = Store::open(&store_path).unwrap();
 
         let result = promote_virtual(&mut store, "999", &deck_path);
@@ -1853,7 +2497,7 @@ mod tests {
             "rust.md",
             "## existing <!-- id: ex1 -->\nanswer\n",
         );
-        let store_path = dir.path().join("progress.json");
+        let store_path = dir.path().join("deck1.json");
         let mut store = Store::open(&store_path).unwrap();
 
         let text = "## Complete the quote <!-- id: vcz1 -->\nTo \\blank{be} or not to \\blank{be}\n> Hamlet\n";
@@ -1905,7 +2549,7 @@ mod tests {
             "rust.md",
             "## existing <!-- id: ex1 -->\nanswer\n",
         );
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id.clone();
         store.insert_virtual(vc);
@@ -1946,7 +2590,7 @@ mod tests {
     #[test]
     fn a_tutor_virtual_card_round_trips_through_the_store() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
         let text = "## capital of france <!-- id: cap1 -->\nParis\n".to_string();
         let id = crate::parser::parse_str("geo.md", &text).unwrap()[0]
@@ -2020,7 +2664,7 @@ mod tests {
     #[test]
     fn per_depth_schedules_and_recognized_flag_survive_save_reload() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("store.json")).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let st = store.get_or_insert("7", 1_000);
         *st.schedule_slot(Depth::Reconstruct).unwrap() = Some(FsrsState {
             stability: 4.5,
@@ -2029,7 +2673,7 @@ mod tests {
         st.recognized_ms = Some(2_000);
         st.record_review(2_000, Grade::Pass, Depth::Reconstruct, false);
         store.save().unwrap();
-        let reloaded = Store::open(dir.path().join("store.json")).unwrap();
+        let reloaded = Store::open(dir.path().join("deck1.json")).unwrap();
         let st = reloaded.get("7").unwrap();
         assert_eq!(
             Some(4.5),
@@ -2040,35 +2684,9 @@ mod tests {
     }
 
     #[test]
-    fn a_pre_depth_store_loads_with_empty_schedules() {
-        let json = r#"{"version":1,"cards":{"7":{"acquired_ms":5,"fsrs":{"stability":9.0,"difficulty":5.0,"reps":3,"lapses":0,"state":2,"scheduled_days":9,"last_review_ms":1,"due_ms":2},"total_reviews":3}}}"#;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("store.json");
-        std::fs::write(&path, json).unwrap();
-        let store = Store::open(&path).unwrap();
-        let st = store.get("7").unwrap();
-        assert_eq!(5, st.acquired_ms, "known fields still load");
-        assert!(
-            st.schedule(Depth::Recall).is_none(),
-            "old fsrs key is dropped, not aliased"
-        );
-    }
-
-    #[test]
-    fn card_state_round_trips_without_a_stage_field() {
-        let json = r#"{"acquired_ms":1234,"fsrs":null}"#;
-        let s: CardState = serde_json::from_str(json).unwrap();
-        assert_eq!(s.acquired_ms, 1234);
-        assert!(s.recall.is_none());
-        let legacy = r#"{"stage":3,"acquired_ms":5}"#;
-        let s2: CardState = serde_json::from_str(legacy).unwrap();
-        assert_eq!(s2.acquired_ms, 5);
-    }
-
-    #[test]
     fn history_grades_survive_save_reload() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
         let st = store.get_or_insert("7", 0);
         st.record_review(100, Grade::Partial, Depth::Recall, false);
@@ -2084,7 +2702,7 @@ mod tests {
     #[test]
     fn fsrs_state_survives_save_reload() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
         store.get_or_insert("9", 0).recall = Some(FsrsState {
             stability: 12.5,

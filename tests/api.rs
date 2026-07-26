@@ -27,7 +27,7 @@ use std::{
 
 use alix::{
     assemble::{AssembleConfig, Pacing},
-    augment::{self, AugmentCache},
+    augment::AugmentCache,
     config::{Audience, Config},
     parser,
     recent::RecentDecks,
@@ -123,8 +123,7 @@ struct Guard {
     server: Arc<Server>,
     handle: Option<thread::JoinHandle<()>>,
     // Keeps the fixture tempdir alive for the server thread's whole lifetime;
-    // also lets a test reach into the fixture's files (e.g. a workspace's own
-    // `progress.json`) via `dir()`.
+    // also lets a test reach into the fixture's files via `dir()`.
     dir: TempDir,
 }
 
@@ -154,6 +153,19 @@ impl Drop for Guard {
             }
         }
     }
+}
+
+fn state_root(dir: &Path) -> PathBuf {
+    dir.join("state")
+}
+
+fn open_instance_store(dir: &Path) -> Store {
+    let decks = alix::workspace::deck_files(dir);
+    alix::state::open_stores(&decks, &state_root(dir)).unwrap()
+}
+
+fn open_deck_store(dir: &Path, deck: &str) -> Store {
+    alix::state::open_store(&dir.join(deck), &state_root(dir)).unwrap()
 }
 
 /// A minimal two-card fixture deck — enough for a grade→next-state sequence
@@ -230,9 +242,8 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
     let deck_path = dir.path().join("sample.md");
     std::fs::write(&deck_path, FIXTURE_DECK).unwrap();
     extra(dir.path());
-    let store_path = dir.path().join("store.json");
-
-    let store = Store::open(&store_path).unwrap();
+    let store_path = state_root(dir.path());
+    let store = open_instance_store(dir.path());
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let decks_dir = dir.path().to_path_buf();
 
@@ -248,7 +259,7 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
     // `/api/select` now runs the real classifier/assembler (`assemble::select`)
     // instead of a hand-rolled stub — give it the same pacing default the old
     // stub's `session_options` used (`max_new: 10`), and pin the instance store
-    // to this fixture's own file.
+    // to this fixture's own state root.
     let opts = ReviewOptions {
         cfg: AssembleConfig {
             trace_auto_grade: false,
@@ -351,7 +362,7 @@ fn spawn_full_server_fixture(
     std::fs::write(dir.path().join("trace.md"), TRACE_DECK).unwrap();
     std::fs::write(dir.path().join("source.txt"), TRACE_SOURCE).unwrap();
     extra(dir.path());
-    let store_path = dir.path().join("store.json");
+    let store_path = state_root(dir.path());
 
     // Two copies of the choice deck with distinct literal tokens → distinct
     // card ids: `choice.md` is seen but NOT augmented, so the
@@ -362,8 +373,13 @@ fn spawn_full_server_fixture(
     // pick. They are non-numeric, so none collides with a card's own numeric
     // answer and gets dropped as a duplicate.
     {
-        let mut seed = Store::open(&store_path).unwrap();
-        let mut aug = AugmentCache::open(augment::augment_path_for(&store_path));
+        let decks = alix::workspace::deck_files(dir.path())
+            .into_iter()
+            .map(|path| alix::deck::Deck::load(path).unwrap())
+            .collect::<Vec<_>>();
+        let deck_paths = decks.iter().map(|deck| deck.path.clone()).collect::<Vec<_>>();
+        let mut seed = alix::state::open_stores(&deck_paths, &store_path).unwrap();
+        let mut aug = AugmentCache::open_for_decks(seed.path(), &decks).unwrap();
         for card in parser::parse_str("choice.md", CHOICE_DECK).unwrap() {
             seed.get_or_insert(&card.id().unwrap(), 0);
         }
@@ -379,7 +395,7 @@ fn spawn_full_server_fixture(
         aug.save().unwrap();
     }
 
-    let store = Store::open(&store_path).unwrap();
+    let store = open_instance_store(dir.path());
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let decks_dir = dir.path().to_path_buf();
 
@@ -831,16 +847,17 @@ fn a_workspace_row_name_is_not_selectable() {
 }
 
 /// The store-scoping policy `assemble::store_for` implements, end to end: a
-/// workspace member's grade lands in the workspace's own `progress.json`
-/// (`workspace::store_path`'s default), not the served instance's global
-/// store. The old `store_for` closure this harness stubbed out ignored its
+/// workspace member's grade lands in the workspace's own progress document,
+/// not the served instance's state root. The old `store_for` closure this
+/// harness stubbed out ignored its
 /// `paths` argument and always opened the instance store, so this is the
 /// first test able to exercise the real precedence (now wired via
 /// `run_review` → `cfg.instance_store` → `assemble::store_for`).
 #[test]
 fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store() {
     let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
-    let ws_store = guard.dir().join("animals").join("progress.json");
+    let ws_store =
+        alix::state::Layout::new(guard.dir().join("animals")).progress_for("animalone");
     assert!(!ws_store.exists(), "no review has happened yet");
 
     let decks_resp = http(&base, "GET", "/api/decks", &[], &[]);
@@ -864,11 +881,13 @@ fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store(
 
     assert!(
         ws_store.exists(),
-        "the workspace's own progress.json must receive the grade write"
+        "the workspace's own progress document must receive the grade write"
     );
     assert!(
-        !guard.dir().join("store.json").exists(),
-        "the instance store must not receive a workspace member's progress"
+        !alix::state::Layout::new(state_root(guard.dir()))
+            .progress_for("sample")
+            .exists(),
+        "the instance state root must not receive a workspace member's progress"
     );
 }
 
@@ -1538,9 +1557,9 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
         let (base, _guard) = spawn_full_server_fixture(None, |dir| {
             std::fs::write(dir.join("frb.md"), CLOZE_DECK).unwrap();
             let cards = parser::parse_str("frb.md", CLOZE_DECK).unwrap();
-            // Real distractor sets on every sub-card, mirroring the user's
-            // augment.json (the lib computes the ids — never hand-rolled).
-            let mut cache = alix::augment::AugmentCache::open(dir.join("augment.json"));
+            let deck_path = dir.join("frb.md");
+            let fixture_state = state_root(dir);
+            let mut cache = alix::state::open_augment(&deck_path, &fixture_state).unwrap();
             for c in &cards {
                 cache.set_distractors(
                     &c.id().unwrap(),
@@ -1550,7 +1569,8 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
             }
             cache.save().unwrap();
             if seed_store {
-                let mut store = Store::open(dir.join("store.json")).unwrap();
+                let mut store =
+                    alix::state::open_store(&deck_path, &fixture_state).unwrap();
                 for c in &cards {
                     store.get_or_insert(&c.id().unwrap(), 0);
                 }
@@ -1733,7 +1753,7 @@ fn a_grade_does_not_rewrite_the_store_mid_session() {
     let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
     assert_eq!(200, resp.status);
 
-    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert_eq!(
         None,
         on_disk.last_review_ms(),
@@ -1742,7 +1762,7 @@ fn a_grade_does_not_rewrite_the_store_mid_session() {
 
     let resp = post_json(&base, "/api/deselect", "{}");
     assert_eq!(200, resp.status);
-    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert!(
         on_disk.last_review_ms().is_some(),
         "deselect must flush the graded card to disk"
@@ -1761,7 +1781,7 @@ fn ending_a_session_flushes_every_session_mutation_kind() {
     let resp = post_json(&base, "/api/deselect", "{}");
     assert_eq!(200, resp.status);
 
-    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert_eq!(
         2,
         on_disk.len(),
@@ -1789,7 +1809,7 @@ fn selecting_the_next_deck_flushes_the_previous_session() {
     let resp = post_json(&base, "/api/select", r#"{"deck":"other.md"}"#);
     assert_eq!(200, resp.status);
 
-    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert!(
         on_disk.last_review_ms().is_some(),
         "switching decks without deselecting must flush the previous session's grade"
@@ -1808,7 +1828,7 @@ fn an_administrative_mutation_still_writes_immediately() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(1, body["cards_cleared"], "body: {body}");
-    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert_eq!(
         None,
         on_disk.last_review_ms(),
@@ -1834,7 +1854,7 @@ fn resetting_mid_session_does_not_resurrect_the_cleared_grade() {
     let resp = post_json(&base, "/api/deselect", "{}");
     assert_eq!(200, resp.status);
 
-    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert_eq!(
         None,
         on_disk.last_review_ms(),
@@ -2561,9 +2581,8 @@ fn get_api_receive_with_no_receive_in_flight_yields_409() {
 fn spawn_kids_server() -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("sample.md"), FIXTURE_DECK).unwrap();
-    let store_path = dir.path().join("store.json");
-
-    let store = Store::open(&store_path).unwrap();
+    let store_path = state_root(dir.path());
+    let store = open_instance_store(dir.path());
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let decks_dir = dir.path().to_path_buf();
 
@@ -3492,8 +3511,8 @@ fn remote_exam_trace_grade_pass_settles_to_results_and_writes_no_store() {
         r#"{"verdict":"pass","feedback":"re-derives the chain","missed":[]}"#,
     );
     let (base, guard) = spawn_full_server(Some(&fake));
-    let store_path = guard.dir().join("store.json");
-    let before = std::fs::read(&store_path).ok();
+    let fixture_state = state_root(guard.dir());
+    let before = snapshot_dir(&fixture_state);
 
     post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
     let resp = post_json(
@@ -3508,7 +3527,7 @@ fn remote_exam_trace_grade_pass_settles_to_results_and_writes_no_store() {
     assert_eq!(true, body["is_trace"], "body: {body}");
     assert_eq!(false, body["can_remediate"], "body: {body}");
 
-    let after = std::fs::read(&store_path).ok();
+    let after = snapshot_dir(&fixture_state);
     assert_eq!(
         before, after,
         "a passing remote trace exam must not write the server's store"
@@ -3529,8 +3548,8 @@ fn remote_exam_trace_grade_fail_refuses_remediation_and_writes_no_store() {
         r#"{"verdict":"fail","feedback":"missed the second hop","missed":["it reads the second line"]}"#,
     );
     let (base, guard) = spawn_full_server(Some(&fake));
-    let store_path = guard.dir().join("store.json");
-    let before = std::fs::read(&store_path).ok();
+    let fixture_state = state_root(guard.dir());
+    let before = snapshot_dir(&fixture_state);
 
     post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
     post_json(
@@ -3547,7 +3566,7 @@ fn remote_exam_trace_grade_fail_refuses_remediation_and_writes_no_store() {
     let resp = post_json(&base, "/api/remote/exam/remediate", "{}");
     assert_eq!(409, resp.status);
 
-    let after = std::fs::read(&store_path).ok();
+    let after = snapshot_dir(&fixture_state);
     assert_eq!(
         before, after,
         "a failed remote trace exam must not write the server's store (no cooldown set remotely)"
@@ -3672,8 +3691,8 @@ fn remote_endpoints_never_write_the_server_store() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
-    let store_path = guard.dir().join("store.json");
-    let before = std::fs::read(&store_path).ok();
+    let fixture_state = state_root(guard.dir());
+    let before = snapshot_dir(&fixture_state);
     let decks_before = snapshot_dir(guard.dir());
 
     // (a) a full remote exam that PASSES.
@@ -3785,7 +3804,7 @@ fn remote_endpoints_never_write_the_server_store() {
     assert_eq!("done", body["phase"], "body: {body}");
     post_json(&base, "/api/remote/generate/close", "{}");
 
-    let after = std::fs::read(&store_path).ok();
+    let after = snapshot_dir(&fixture_state);
     assert_eq!(
         before, after,
         "no /api/remote/* call may write the server's own store"

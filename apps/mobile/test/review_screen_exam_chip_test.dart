@@ -15,6 +15,7 @@ import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
+import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
 
 void main() {
@@ -37,7 +38,7 @@ void main() {
     final text = examinable
         ? '---\nsource: https://example.com\n---\n## q?\na\n'
         : '## q?\na\n';
-    File('${root.path}/facts.md').writeAsStringSync(text);
+    writeTestDeck('${root.path}/facts.md', text);
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }
@@ -123,8 +124,10 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
     Directory('${root.path}/wsfolder').createSync();
     File('${root.path}/wsfolder/alix.toml').writeAsStringSync('title = "Ws"\n');
-    File('${root.path}/wsfolder/member.md')
-        .writeAsStringSync('---\nsource: https://example.com\n---\n## q?\na\n');
+    writeTestDeck(
+      '${root.path}/wsfolder/member.md',
+      '---\nsource: https://example.com\n---\n## q?\na\n',
+    );
 
     final support = tempSupport();
     await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);

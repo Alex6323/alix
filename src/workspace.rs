@@ -10,8 +10,6 @@ use crate::deck::DeckSettings;
 
 pub const MANIFEST: &str = "alix.toml";
 
-pub const STORE_FILE: &str = "progress.json";
-
 #[derive(Deserialize, Default)]
 struct Manifest {
     title: Option<String>,
@@ -192,7 +190,7 @@ pub fn store_path(dir: &Path) -> PathBuf {
     match manifest_store(dir) {
         Some(store) if Path::new(&store).is_absolute() => PathBuf::from(store),
         Some(store) => dir.join(store),
-        None => dir.join(STORE_FILE),
+        None => dir.to_path_buf(),
     }
 }
 
@@ -200,7 +198,7 @@ pub fn root_store_path(dir: &Path) -> PathBuf {
     if is_workspace(dir) {
         store_path(dir)
     } else {
-        dir.join(STORE_FILE)
+        dir.to_path_buf()
     }
 }
 
@@ -416,25 +414,25 @@ mod tests {
     }
 
     #[test]
-    fn store_path_defaults_to_progress_json_in_the_workspace() {
+    fn store_path_defaults_to_the_workspace_directory() {
         let dir = tempfile::tempdir().unwrap();
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
-        assert_eq!(dir.path().join("progress.json"), store_path(dir.path()));
+        assert_eq!(dir.path(), store_path(dir.path()));
         let bare = dir.path().join("bare");
         std::fs::create_dir(&bare).unwrap();
-        assert_eq!(bare.join("progress.json"), store_path(&bare));
+        assert_eq!(bare, store_path(&bare));
     }
 
     #[test]
-    fn store_path_honors_a_relative_or_absolute_override() {
+    fn store_path_honors_a_relative_or_absolute_state_root_override() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join(MANIFEST), "store = \"sub/p.json\"\n");
-        assert_eq!(dir.path().join("sub/p.json"), store_path(dir.path()));
+        write(&dir.path().join(MANIFEST), "store = \"sub/state\"\n");
+        assert_eq!(dir.path().join("sub/state"), store_path(dir.path()));
 
         let abs = if cfg!(windows) {
-            "C:/p.json"
+            "C:/alix-state"
         } else {
-            "/tmp/p.json"
+            "/tmp/alix-state"
         };
         write(&dir.path().join(MANIFEST), &format!("store = \"{abs}\"\n"));
         assert_eq!(PathBuf::from(abs), store_path(dir.path()));
@@ -453,12 +451,9 @@ mod tests {
     }
 
     #[test]
-    fn root_store_path_uses_in_folder_progress_for_a_plain_folder() {
+    fn root_store_path_uses_the_plain_folder_as_its_state_root() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(
-            root_store_path(dir.path()),
-            dir.path().join("progress.json")
-        );
+        assert_eq!(root_store_path(dir.path()), dir.path());
     }
 
     #[test]
@@ -467,10 +462,13 @@ mod tests {
         std::fs::write(dir.path().join("d.md"), deck("d", "## Q\nA\n")).unwrap();
         std::fs::write(
             dir.path().join("alix.toml"),
-            "title = \"W\"\nstore = \"custom.json\"\n",
+            "title = \"W\"\nstore = \"custom-state\"\n",
         )
         .unwrap();
-        assert_eq!(root_store_path(dir.path()), dir.path().join("custom.json"));
+        assert_eq!(
+            root_store_path(dir.path()),
+            dir.path().join("custom-state")
+        );
         assert_eq!(root_store_path(dir.path()), store_path(dir.path()));
     }
 

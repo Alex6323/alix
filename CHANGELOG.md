@@ -20,6 +20,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking (pre-1.0):** progress and AI augmentation now live in independently
+  versioned documents per initialized deck:
+  `progress/<alix-id>.json` and `augment/<alix-id>.json`. Renaming a deck keeps
+  its state, reviewing different decks on different synced devices no longer
+  rewrites one shared file, and stale local revisions fail instead of silently
+  replacing a newer document. This is a clean pre-1.0 format break: production
+  reads only version-1 per-deck documents and contains no runtime converter for
+  preceding layouts. Same-deck concurrent offline review is still unsupported;
+  use `alix doctor <folder>` to surface incompatible or orphaned documents and
+  synchronization conflicts.
+  Sharing carries matching per-deck augmentation and recursively excludes all
+  progress, temporary, backup, and conflict material.
 - **Breaking (pre-1.0):** a hand-authored Markdown file must be explicitly
   initialized with `alix deck init <file>` before it appears in the picker or
   can be reviewed or augmented. A valid opening-frontmatter `alix-id` now

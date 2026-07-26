@@ -203,8 +203,7 @@ pub fn seed_choice_distractors(deck_path: String, root_dir: String) -> Result<()
     let deck = alix::deck::Deck::load(&deck_pb)?;
     let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
     let store = alix::assemble::store_for(std::slice::from_ref(&deck_pb), Some(&root_store))?;
-    let mut cache =
-        alix::augment::AugmentCache::open(alix::augment::augment_path_for(store.path()));
+    let mut cache = alix::augment::AugmentCache::open_for_store(store.path())?;
     for card in &deck.cards {
         if let Some(id) = card.id() {
             cache.set_distractors(
@@ -514,7 +513,7 @@ pub struct WalkState {
     pub summary: Option<WalkSummary>,
 }
 
-fn walk_excerpt(excerpt: &alix::trace::Excerpt) -> WalkExcerpt {
+fn walk_excerpt(excerpt: &alix::source::Excerpt) -> WalkExcerpt {
     WalkExcerpt {
         path: excerpt.path.display().to_string(),
         lines: excerpt
@@ -592,7 +591,7 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
                 match trace.excerpt(c) {
                     Ok(ex) => {
                         let (ex, label) =
-                            alix::trace::relabel_for_display(ex, c.at_origin.as_deref());
+                            alix::source::relabel_for_display(ex, c.at_origin.as_deref());
                         if let Some(label) = label {
                             state.locator = Some(label);
                         }
@@ -747,7 +746,13 @@ mod tests {
         std::fs::write(path, text).unwrap();
     }
 
+    fn write_deck(path: &Path, text: &str) {
+        write(path, text);
+        alix::stamp::stamp_deck(path).unwrap();
+    }
+
     fn opened_after_acquire(deck: &Path, root: &Path, depth: Option<Depth>) -> ReviewSession {
+        alix::stamp::stamp_deck(deck).unwrap();
         let mut s = ReviewSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
@@ -769,6 +774,14 @@ mod tests {
         .unwrap()
     }
 
+    fn reopened_store(root: &Path, deck: &str) -> alix::store::Store {
+        alix::state::open_store(
+            &root.join(deck),
+            &alix::workspace::root_store_path(root),
+        )
+        .unwrap()
+    }
+
     fn math_run<'a>(runs: &'a [InlineRun], source: &str) -> &'a InlineRun {
         runs.iter()
             .find(|run| run.text == source && run.math.is_some())
@@ -779,7 +792,7 @@ mod tests {
     fn review_bridge_state_carries_math_runs_without_reparsing() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(
+        write_deck(
             &root.join("math.md"),
             "## What does $E = mc^2$ describe? <!-- id: math -->\n\
              - [x] **$E = mc^2$**\n\
@@ -836,9 +849,9 @@ mod tests {
         write(&root.join("ws/alix.toml"), "");
         write(&root.join("ws/member.md"), "## capital of france?\nParis\n");
 
-        for (deck, store_file) in [
-            (root.join("loose.md"), root.join("progress.json")),
-            (root.join("ws/member.md"), root.join("ws/progress.json")),
+        for (deck, state_root) in [
+            (root.join("loose.md"), root.to_path_buf()),
+            (root.join("ws/member.md"), root.join("ws")),
         ] {
             let mut s = opened_after_acquire(&deck, root, None);
             assert!(
@@ -846,14 +859,35 @@ mod tests {
                 "past the cooldown this is a quiz"
             );
             s.grade(Grade::Pass, Some(LATER)).unwrap();
+            let deck_id = alix::deck::Deck::load(&deck)
+                .unwrap()
+                .deck_token
+                .unwrap();
+            let store_file = alix::state::Layout::new(&state_root).progress_for(&deck_id);
             let json = std::fs::read_to_string(&store_file).unwrap();
             assert!(
                 json.contains("\"recall\"") && json.contains("\"history\""),
                 "the grade persists into {store_file:?}"
             );
         }
-        let root_store = std::fs::read_to_string(root.join("progress.json")).unwrap();
-        let ws_store = std::fs::read_to_string(root.join("ws/progress.json")).unwrap();
+        let root_store = std::fs::read_to_string(
+            std::fs::read_dir(root.join("progress"))
+                .unwrap()
+                .next()
+                .unwrap()
+                .unwrap()
+                .path(),
+        )
+        .unwrap();
+        let ws_store = std::fs::read_to_string(
+            std::fs::read_dir(root.join("ws/progress"))
+                .unwrap()
+                .next()
+                .unwrap()
+                .unwrap()
+                .path(),
+        )
+        .unwrap();
         assert_eq!(root_store.matches("\"stability\"").count(), 1);
         assert_eq!(ws_store.matches("\"stability\"").count(), 1);
     }
@@ -865,7 +899,7 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "title = \"W\"\n");
-        write(&ws.join("m.md"), "## q <!-- id: q1 -->\na\n");
+        write_deck(&ws.join("m.md"), "## q <!-- id: q1 -->\na\n");
         let deadline = alix::time::local_date(T0) + chrono::Days::new(3);
         write(
             &ws.join("alix.local.toml"),
@@ -875,7 +909,8 @@ mod tests {
         let id = alix::deck::Deck::load(ws.join("m.md")).unwrap().cards[0]
             .id()
             .expect("the fixture stamps its own id");
-        let mut store = alix::store::Store::open(alix::workspace::store_path(&ws)).unwrap();
+        let store_path = alix::workspace::store_path(&ws);
+        let mut store = alix::state::open_store(&ws.join("m.md"), &store_path).unwrap();
         store.get_or_insert(&id, T0).recall = Some(alix::store::FsrsState {
             stability: 200.0,
             difficulty: 5.0,
@@ -899,7 +934,7 @@ mod tests {
         s.grade(Grade::Pass, Some(T0)).unwrap();
 
         let ceiling = alix::time::end_of_local_day_ms(deadline);
-        let store = alix::store::Store::open(alix::workspace::store_path(&ws)).unwrap();
+        let store = alix::state::open_store(&ws.join("m.md"), &store_path).unwrap();
         let due = store.get(&id).unwrap().recall.unwrap().due_ms;
         assert!(
             due <= ceiling,
@@ -918,10 +953,12 @@ mod tests {
              ## q3 <!-- id: q3 -->\na3\n\n\
              ## q4 <!-- id: q4 -->\na4\n",
         );
+        alix::stamp::stamp_deck(&root.join("d.md")).unwrap();
+        let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let store_path = alix::workspace::root_store_path(root);
-        let mut cache =
-            alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
-        for card in &alix::deck::Deck::load(root.join("d.md")).unwrap().cards {
+        let store = alix::state::open_store(&root.join("d.md"), &store_path).unwrap();
+        let mut cache = alix::augment::AugmentCache::open_for_store(store.path()).unwrap();
+        for card in &loaded.cards {
             cache.set_distractors(
                 &card.id().expect("the fixture stamps its own id"),
                 vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
@@ -968,9 +1005,9 @@ mod tests {
         );
 
         let store_path = alix::workspace::root_store_path(root);
-        let mut cache =
-            alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
         let deck = alix::deck::Deck::load(root.join("d.md")).unwrap();
+        let store = alix::state::open_store(&root.join("d.md"), &store_path).unwrap();
+        let mut cache = alix::augment::AugmentCache::open_for_store(store.path()).unwrap();
         cache.set_keypoints(
             &deck.cards[0].id().expect("the fixture stamps its own id"),
             vec!["one claim".to_string()],
@@ -995,7 +1032,7 @@ mod tests {
     fn foreign_writer_warns_the_other_device_and_never_the_writer() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.md"), "## q\na\n");
+        write_deck(&root.join("d.md"), "## q\na\n");
         let open_as = |device: &str| {
             ReviewSession::open(
                 root.join("d.md").to_string_lossy().into_owned(),
@@ -1040,7 +1077,7 @@ mod tests {
     fn tutor_card_exposes_the_authored_card_not_the_masked_view() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(
+        write_deck(
             &root.join("d.md"),
             "## capital?\nParis is the capital of \\blank{France}\n",
         );
@@ -1077,8 +1114,6 @@ mod tests {
             "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n",
         );
         let mut s = opened_after_acquire(&root.join("d.md"), root, None);
-        let store_path = alix::workspace::root_store_path(root);
-
         let dup = s.mint_tutor_card(
             "capital of france?".to_string(),
             vec!["Paris".to_string()],
@@ -1088,13 +1123,13 @@ mod tests {
             dup.is_err(),
             "a card matching an existing deck card must not mint a duplicate"
         );
-        let reopened = alix::store::Store::open(&store_path).unwrap();
+        let reopened = reopened_store(root, "d.md");
         assert_eq!(reopened.virtual_len(), 0, "the duplicate never reached disk");
 
         let id = s
             .mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()], LATER)
             .expect("fresh content mints");
-        let reopened = alix::store::Store::open(&store_path).unwrap();
+        let reopened = reopened_store(root, "d.md");
         let vc = reopened
             .get_virtual(&id)
             .expect("the fresh mint is retrievable from disk");
@@ -1134,11 +1169,9 @@ mod tests {
         let id_before = before.cards[0].id().expect("the fixture stamps its own id");
         let line = before.cards[0].line;
 
-        let store_path = alix::workspace::root_store_path(root);
         let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         s.grade(Grade::Pass, Some(LATER)).unwrap();
-        let schedule_before = alix::store::Store::open(&store_path)
-            .unwrap()
+        let schedule_before = reopened_store(root, "d.md")
             .get(&id_before)
             .and_then(|cs| cs.recall);
         assert!(
@@ -1160,7 +1193,7 @@ mod tests {
             "appending a note must not change the card's id"
         );
 
-        let reopened = alix::store::Store::open(&store_path).unwrap();
+        let reopened = reopened_store(root, "d.md");
         assert_eq!(
             reopened.get(&id_after).and_then(|cs| cs.recall),
             schedule_before,
@@ -1252,18 +1285,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q\na\n");
-        let store_path = alix::workspace::root_store_path(root);
         let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         assert!(
-            !alix::store::Store::open(&store_path)
-                .unwrap()
-                .deck_mastered("d.md"),
+            !reopened_store(root, "d.md").deck_mastered("d.md"),
             "fresh store: not mastered"
         );
 
         s.apply_exam_passed(LATER).unwrap();
 
-        let reopened = alix::store::Store::open(&store_path).unwrap();
+        let reopened = reopened_store(root, "d.md");
         assert!(reopened.deck_mastered("d.md"));
         assert_eq!(reopened.deck_mastered_at("d.md"), Some(LATER));
     }
@@ -1274,14 +1304,12 @@ mod tests {
         let root = dir.path();
         write(&root.join("d.md"), "## capital of france?\nParis\n");
         let mut s = opened_after_acquire(&root.join("d.md"), root, None);
-        let store_path = alix::workspace::root_store_path(root);
-
         let remediation =
             "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n".to_string();
         let created = s.apply_remediation(remediation.clone(), LATER).unwrap();
         assert_eq!(created, 1, "the Paris block already matches a deck card");
 
-        let reopened = alix::store::Store::open(&store_path).unwrap();
+        let reopened = reopened_store(root, "d.md");
         assert_eq!(
             reopened.virtual_len(),
             1,
@@ -1301,7 +1329,7 @@ mod tests {
             created_again, 0,
             "an active dupe is left alone, no schedule reset"
         );
-        let reopened_again = alix::store::Store::open(&store_path).unwrap();
+        let reopened_again = reopened_store(root, "d.md");
         assert_eq!(reopened_again.virtual_len(), 1);
     }
 
@@ -1324,8 +1352,10 @@ mod tests {
         regions: Vec<(&str, Vec<String>)>,
     ) {
         let store_path = alix::workspace::root_store_path(root);
+        let layout = alix::state::Layout::new(&store_path);
         let mut cache =
-            alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
+            alix::augment::AugmentCache::open_deck(layout.augment_for(deck_token), deck_token)
+                .unwrap();
         cache.add_topology(alix::augment::Topology {
             name: "auto".to_string(),
             principle: "test order".to_string(),
@@ -1428,6 +1458,7 @@ mod tests {
              it reads lines two and three\n\
              <!-- at: 2-3 -->\n",
         );
+        alix::stamp::stamp_deck(&path).unwrap();
         path
     }
 
@@ -1528,7 +1559,7 @@ mod tests {
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "title = \"Box\"\n");
         write(&ws.join("source.txt"), "alpha\nbeta\ngamma\n");
-        write(
+        write_deck(
             &ws.join("t.md"),
             "---\n\
              trace: a member walk\n\
@@ -1568,7 +1599,7 @@ mod tests {
 
         // No source at all: a bare line-number locator has no file to resolve against.
         let no_source = root.join("no-source.md");
-        write(
+        write_deck(
             &no_source,
             "---\n\
              trace: a path with no source\n\
@@ -1592,7 +1623,7 @@ mod tests {
 
         // A URL source has no local line ranges either.
         let url_source = root.join("url-source.md");
-        write(
+        write_deck(
             &url_source,
             "---\n\
              trace: a path with a URL source\n\
@@ -1642,7 +1673,7 @@ mod tests {
 
         let store_path = alix::workspace::root_store_path(root);
         assert!(
-            !alix::store::Store::open(&store_path)
+            !alix::state::open_store(&deck, &store_path)
                 .unwrap()
                 .deck_mastered("t.md"),
             "fresh: not yet mastered"
@@ -1652,7 +1683,7 @@ mod tests {
             s.deck_has_exam(),
             "the flag is captured at open, not derived from the store"
         );
-        let reopened = alix::store::Store::open(&store_path).unwrap();
+        let reopened = alix::state::open_store(&deck, &store_path).unwrap();
         assert!(reopened.deck_mastered("t.md"));
         assert_eq!(
             reopened.deck_mastered_at("t.md"),
@@ -1666,7 +1697,7 @@ mod tests {
         let root = dir.path();
         let trace = trace_fixture(root);
         let facts = root.join("facts.md");
-        write(&facts, "## q\na\n");
+        write_deck(&facts, "## q\na\n");
 
         // `.err()` (not `.unwrap_err()`): the opaque session handles carry no
         // `Debug` impl, which `unwrap_err`'s panic message would require.

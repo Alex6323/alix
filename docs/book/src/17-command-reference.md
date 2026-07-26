@@ -8,9 +8,10 @@ depth, where there is one. Run any command with `--help` for its full flags.
 - `alix`: serve the web app: the deck [picker](02-getting-started.md) over
   your decks directory (`~/decks`), printing its URL.
 - `alix <dir>`: serve that folder as a **self-contained scoped root**: its own
-  catalog, with its own `progress.json` and `recent.json` inside the folder, so
-  several instances can run side by side. A [workspace](08-workspaces.md) dir
-  opens the picker drilled into it, with its own store.
+  catalog, with its own per-deck `progress/` and `augment/` state plus
+  `recent.json` inside the folder, so several instances can run side by side. A
+  [workspace](08-workspaces.md) dir opens the picker drilled into it, with its
+  own state root.
 
 Every review starts from the picker. There's no direct deck launch. Browsing a
 deck read-only, sitting the AI exam, and walking a [trace](13-trace-decks.md)
@@ -53,10 +54,11 @@ port. Ctrl-C or closing the terminal stops them together.
 
 `alix stats`, `alix list`, and `alix reset` each take a **deck file, a plain
 folder, or a [workspace](08-workspaces.md)**: a folder or workspace expands to
-its member decks, and each deck resolves to the store the launcher would serve
-it with (`--store` > its workspace's store > a served root's own
-`progress.json` (the folder itself for a folder target, or your configured
-decks dir for a loose deck file) > the global store).
+its member decks, and each deck resolves to the state root the launcher would
+serve it with (`--store` > its workspace's store > a served folder or
+configured decks root > the global store). Inside that boundary, progress is
+loaded from `progress/<alix-id>.json`; folder-wide commands aggregate the
+relevant documents in memory without creating an authoritative combined file.
 
 - `alix stats <target>`: progress overview, completion state, and a
   per-depth due count.
@@ -125,10 +127,12 @@ notes it.
 - `alix share <path>`: send a deck file, a plain folder, or a workspace to
   someone over [magic-wormhole](https://magic-wormhole.readthedocs.io) (the
   `wormhole` binary must be installed, `alix doctor` checks). A folder is
-  staged first so your personal state stays home: `progress.json`, the recent
-  list, `alix.local.toml`, and backup files never travel. Tell the receiver
-  the code wormhole prints. No wormhole around? `--zip [--output <path>]`
-  writes the same staged copy as a `.zip` to mail or hand over instead.
+  staged first so your personal state stays home: `progress/`, the recent list,
+  `alix.local.toml`, temporary files, and conflict or backup files never travel.
+  Matching `augment/<alix-id>.json` documents do travel, including when sharing
+  one deck. Tell the receiver the code wormhole prints. No wormhole around?
+  `--zip [--output <path>]` writes the same staged copy as a `.zip` to mail or
+  hand over instead.
 - `alix receive <code-or-zip>`: fetch what someone shared, by wormhole code
   or by a `.zip` path (the `--zip` fallback's output, same landing either
   way). A deck lands in your
@@ -151,7 +155,8 @@ notes it.
   card or deck (orphans, clear them with `alix reset --orphans`), a
   non-canonical token, a frontmatter that can't be stamped, and cards still
   awaiting a token. It also names deck-like Markdown ignored until explicitly
-  initialized. `--backends` additionally
+  initialized, invalid or orphaned per-deck state documents, and
+  synchronization conflict copies. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few

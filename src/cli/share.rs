@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use alix::{config::Config, workspace};
+use alix::{assemble, config::Config, workspace};
 use anyhow::{Context, Result, bail};
 
 use crate::{ReceiveArgs, ShareArgs, common::deck_out_dir};
 
 pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
+    let config = Config::load(None)?;
     let path = &args.path;
     let name = path
         .file_name()
@@ -13,22 +14,22 @@ pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
         .unwrap_or("shared-decks")
         .to_string();
 
-    // A single deck file has no personal state and travels as-is; only a
-    // folder needs staging, so its progress and personal config stay home.
     let tmp = tempfile::tempdir().context("cannot create a staging directory")?;
-    let (to_send, staged) = if path.is_file() {
-        (path.clone(), 1)
-    } else {
-        if !path.is_dir() {
-            bail!("`{}` is neither a deck file nor a folder", path.display());
-        }
-        if !workspace::has_decks(path) {
-            bail!("no decks in `{}` — nothing to share", path.display());
-        }
-        let stage = tmp.path().join(&name);
-        let staged = alix::share::stage_dir(path, &stage)?;
-        (stage, staged)
-    };
+    if path.is_dir() && !workspace::has_decks(path) {
+        bail!("no decks in `{}`; nothing to share", path.display());
+    }
+    let state_root = assemble::store_path_for(std::slice::from_ref(path), None)
+        .or_else(|| {
+            config
+                .decks_dir()
+                .map(|decks| workspace::root_store_path(&decks))
+        })
+        .unwrap_or_else(|| {
+            path.parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        });
+    let (to_send, staged) = alix::share::stage_path(path, &state_root, tmp.path())?;
 
     if args.zip {
         let stem = name.strip_suffix(".md").unwrap_or(&name);
@@ -75,7 +76,7 @@ pub(crate) fn receive_cmd(args: ReceiveArgs) -> Result<()> {
         .unwrap_or("received")
         .to_string();
 
-    if got.is_dir() {
+    if got.is_dir() && !alix::share::is_deck_bundle(&got) {
         if args.workspace.is_some() {
             bail!(
                 "--workspace places a received deck; a folder lands under the decks dir as `{name}`"
@@ -103,6 +104,21 @@ pub(crate) fn receive_cmd(args: ReceiveArgs) -> Result<()> {
         );
     } else {
         let dest_dir = deck_out_dir(args.workspace.as_deref(), &config)?;
+        if alix::share::is_deck_bundle(&got) {
+            let scratch = tempfile::tempdir().context("cannot stage the received deck")?;
+            let staged = scratch.path().join(&name);
+            alix::share::move_into(&got, &staged)?;
+            let (landed, stripped) =
+                alix::share::land_deck_bundle_with_force(&staged, &dest_dir, args.force)?;
+            for item in stripped {
+                println!("stripped a leaked personal file: {item}");
+            }
+            println!(
+                "Received {}; it shows up in the picker (`alix`).",
+                dest_dir.join(landed).display()
+            );
+            return Ok(());
+        }
         std::fs::create_dir_all(&dest_dir)
             .with_context(|| format!("cannot create {}", dest_dir.display()))?;
         let dest = dest_dir.join(&name);

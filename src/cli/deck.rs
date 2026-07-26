@@ -41,7 +41,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
         &config,
     )?;
     let cache_path = augment::augment_path_for(store.path());
-    let mut cache = AugmentCache::open(&cache_path);
+    let mut cache = AugmentCache::open_for_store(store.path())?;
     let fp_by_id: std::collections::HashMap<String, u64> = deck
         .cards
         .iter()

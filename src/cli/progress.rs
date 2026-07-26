@@ -10,6 +10,7 @@ use alix::{
     deck::{Deck, DeckState},
     depth::Depth,
     scheduler::{Fsrs, Scheduler},
+    state,
     store::Store,
     time::{humanize_ms, now_ms},
     workspace,
@@ -229,12 +230,14 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
 
     // Mirrors the launcher's store precedence, so reset hits the same
     // progress that serving uses.
-    let mut store = open_store(
-        args.store
-            .clone()
-            .or_else(|| store_path_for(&deck_paths, None))
-            .or_else(|| target.default_store.clone()),
-    )?;
+    let store_path = args
+        .store
+        .clone()
+        .or_else(|| store_path_for(&deck_paths, None))
+        .or_else(|| target.default_store.clone())
+        .or_else(alix::store::default_store_path)
+        .context("cannot determine the data directory")?;
+    let mut store = state::open_stores(&deck_paths, &store_path)?;
 
     let (cards, label, _, _) = load_decks(&deck_paths, &HashMap::new())?;
 
@@ -329,7 +332,10 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
         }
     }
 
-    let mut store = open_store(store_path)?;
+    let store_path = store_path
+        .or_else(alix::store::default_store_path)
+        .context("cannot determine the data directory")?;
+    let mut store = state::open_stores(&deck_paths, &store_path)?;
     let orphans = store.orphans(&known_cards, &known_subjects);
     if orphans.is_empty() {
         println!("No orphaned progress to reset.");

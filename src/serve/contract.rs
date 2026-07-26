@@ -1244,7 +1244,7 @@ fn receivedto_done_wire_shape() {
     let dto = ReceiveDto {
         phase: "done",
         landed: Some("rust-decks".to_string()),
-        stripped: vec!["progress.json".to_string()],
+        stripped: vec!["progress".to_string()],
         elapsed: Some(9),
         error: None,
     };
@@ -1252,7 +1252,7 @@ fn receivedto_done_wire_shape() {
         "ReceiveDto",
         &dto,
         json!({"phase": "done", "landed": "rust-decks",
-               "stripped": ["progress.json"], "elapsed": 9, "error": null}),
+               "stripped": ["progress"], "elapsed": 9, "error": null}),
     );
 }
 

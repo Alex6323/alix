@@ -79,8 +79,9 @@ it working); **Remove** clears a target, and the order card adds or drops
 named topologies. Each card has its own compact guidance input, feeding the
 same `--with` steer as the command line, with a kind-specific example as its
 placeholder so you can see what a steer is good for; a batch carries each
-ticked card's own guidance. It writes the same `augment.json` review reads, so
-this only saves you the trip to the terminal.
+ticked card's own guidance. It writes the same
+`augment/<deck-alix-id>.json` document review reads, so this only saves you the
+trip to the terminal.
 
 Cached per-card augmentations are tied to the question and answer they were
 generated from. Editing either makes that card reappear as a gap, so its
@@ -217,8 +218,9 @@ only use `--lan` on a network you trust. The default port lives in the `[serve]`
 config section; `--port` overrides it.
 
 `alix <dir>` serves that folder as a **self-contained scoped root**: its own
-catalog, with its own `progress.json` and `recent.json` kept inside the folder.
-Several instances run happily side by side, one per family member, say:
+catalog, with its own per-deck `progress/` and `augment/` state plus
+`recent.json` kept inside the folder. Several instances run happily side by
+side, one per family member, say:
 `alix ~/decks-maria --lan --port 7781`.
 
 If a launch misbehaves, `alix doctor` checks the setup (config, progress

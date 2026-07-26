@@ -163,29 +163,69 @@ settings:
 ## Decks directory and storage
 
 By default `alix` looks for decks in `~/decks`; set `decks_dir` to change it.
-The progress store lives **in your decks folder** (`<decks_dir>/progress.json`),
-the same store `alix <dir>` uses for that folder, so bare `alix` and
-`alix <dir>` share one store when `<dir>` is your configured `decks_dir`. A
-workspace, or any other folder you serve with `alix <dir>`, keeps its own
-`progress.json` inside that folder too. The `stats`/`list`/`reset` commands
-take a deck, folder, or workspace as their target and resolve its store the
-same way, with `--store <path>` as an override.
+Persisted state lives **in that folder**, one document per initialized deck:
+
+```text
+<decks_dir>/
+├── progress/<alix-id>.json
+├── augment/<alix-id>.json
+└── recent.json
+```
+
+`progress/` is private, indispensable learning state: schedules, review
+history, exam state, virtual cards, and the last writer. `augment/` is
+regenerable, shareable material: generated choices, notes, key points,
+variants, and topologies. The stable `alix-id`, not the Markdown filename,
+selects both documents, so renaming a deck keeps its state.
+
+Bare `alix` and `alix <dir>` use the same state root when `<dir>` is the
+configured `decks_dir`. A workspace, or any other folder served with `alix
+<dir>`, keeps its own directories inside that folder. The
+`stats`/`list`/`reset` commands take a deck, folder, or workspace and resolve
+the same documents, with `--store <directory>` as a state-root override. A
+workspace's `store = "..."` manifest setting is also a state-root directory,
+relative to the workspace unless absolute.
+
+Each document carries its owner ID, format version, and revision. Saves write a
+sibling `.json.tmp` and atomically rename it into place. A process that can see
+that its loaded revision is stale refuses to overwrite the newer document.
+This protects local overlapping writers; it cannot turn disconnected folder
+synchronization into a transaction.
+
+Alix is pre-1.0 and reads only the current version-1 per-deck documents. A
+persisted-state format break is handled before installing that build: back up
+the state root, perform any one-time conversion outside production Alix, and
+verify the result with `alix doctor <folder>`. Production does not contain
+runtime compatibility branches or converters for superseded pre-1.0 layouts.
 
 ### Multi-device via your cloud drive
 
 Because your decks and their progress live in one folder, put that folder in a
-cloud drive you already use (Dropbox, iCloud, OneDrive, Syncthing) and it follows
-you across devices. Use one device at a time; alix stays unaware that the folder
-is synced, and it writes the store atomically so a background sync never sees a
-half-written file. There are no accounts and nothing is uploaded by alix itself.
+cloud drive you already use (Dropbox, iCloud, OneDrive, Syncthing) and it
+follows you across devices. Alix stays unaware that the folder is synced and
+uploads nothing itself.
 
 For a free, no-account option that fits alix's local-first grain,
 [Syncthing](https://syncthing.net) works well: install it on each machine, pair
 the devices, and share your decks folder between them. It syncs the folder
-peer-to-peer over your own network, with no cloud company in the middle. Because
-alix does not yet merge concurrent edits, keep to one device at a time; reviewing
-on two at once while offline would leave Syncthing to resolve a `progress.json`
-conflict.
+peer-to-peer over your own network, with no cloud company in the middle.
+
+The writer boundary is now **one deck**, not the whole workspace. Different
+devices may review different decks in the same synchronized folder: their
+progress documents do not compete. For the same deck, use one active writer and
+let synchronization settle before switching devices. Alix does not merge
+concurrent same-deck reviews or decide which schedule is semantically correct.
+A disconnected collision therefore remains a Syncthing conflict copy.
+
+Run `alix doctor <folder>` before recovery. For a progress conflict, stop both
+writers and synchronization, back up the folder, compare the canonical
+`progress/<alix-id>.json` with its
+`<alix-id>.sync-conflict-….json` copies, and deliberately keep the complete
+history you trust at the canonical path. Do not combine schedules by hand.
+Augmentation conflicts are regenerable: keep one complete
+`augment/<alix-id>.json` or move all conflicting copies aside and regenerate
+that deck's augmentation. Resume synchronization and rerun doctor only after
+the canonical files are settled.
 
 A card's identity is a minted token alix writes into the file as an
 `<!-- id: ... -->` line, not a hash over its content. Editing any text,

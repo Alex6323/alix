@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn default_depth_is_recognize_when_any_card_is_recognizable() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let covered = card("a");
         let uncovered = card("b");
         cache.set_distractors(
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn default_depth_stays_recall_when_distractors_cannot_build_a_pick() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let covered = card("a");
         cache.set_distractors(
             &covered.id().unwrap(),
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn default_depth_stays_recall_without_any_cached_distractors() {
         let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("augment.json"));
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let cards = vec![card("a"), card("b")];
         assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn default_depth_is_recognize_for_authored_distractors_without_a_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("augment.json"));
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let mut authored = card("a");
         authored.authored_distractors = vec!["b".into()];
         assert_eq!(Depth::Recognize, default_depth(&[authored], &cache));
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn default_depth_stays_recall_for_an_empty_deck() {
         let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("augment.json"));
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
         assert_eq!(Depth::Recall, default_depth(&[], &cache));
     }
 

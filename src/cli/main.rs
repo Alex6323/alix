@@ -433,7 +433,7 @@ struct AugmentArgs {
     #[arg(long)]
     with: Option<String>,
 
-    /// Path of the progress store the augmentation cache sits beside (default:
+    /// State-root directory containing `progress/` and `augment/` (default:
     /// resolved from the deck, like `stats`/`list`/`reset`).
     #[arg(long)]
     store: Option<PathBuf>,
@@ -503,7 +503,7 @@ struct DeckArgs {
     #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: PathBuf,
 
-    /// Path of the progress store (default: resolved from the target).
+    /// State-root directory (default: resolved from the target).
     #[arg(long)]
     store: Option<PathBuf>,
 
@@ -540,8 +540,8 @@ struct ResetArgs {
     #[arg(short = 'y', long)]
     yes: bool,
 
-    /// Path of the progress store (default: resolved from the target, or the
-    /// decks-dir root store for `--all`/`--card` with no target).
+    /// State-root directory (default: resolved from the target, or the
+    /// decks-dir state root for `--all`/`--card` with no target).
     #[arg(long)]
     store: Option<PathBuf>,
 

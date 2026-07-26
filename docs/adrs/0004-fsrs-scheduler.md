@@ -71,7 +71,7 @@ the shared-core decisions in ADRs 0006 and 0007.
 
 ## Compatibility
 
-`FsrsState` in `progress.json`, including stability, difficulty, state,
+`FsrsState` in each deck's progress document, including stability, difficulty, state,
 intervals, timestamps, and Alix's learning-Good count, is persisted learner
 state. The store owns a representation independent of the dependency's Rust
 type so a crate update does not silently redefine the file format.

@@ -59,6 +59,7 @@ pub mod session;
 pub mod share;
 pub mod source;
 pub mod stamp;
+pub mod state;
 pub mod store;
 pub mod time;
 #[cfg(feature = "full")]

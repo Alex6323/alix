@@ -5,8 +5,8 @@
 // ../fixtures/decks/animals/wild.md's two cards are both single-line.
 //
 // This deck (cats.md) exists solely for this test, in its own file, so it
-// never touches wild.md's card ids (which key the committed augment.json —
-// see ../README.md).
+// never touches wild.md's card ids, which key its committed augmentation document.
+// See ../README.md.
 import { test, expect } from "./helpers";
 import { kidsDeckRow, openApp } from "./helpers";
 

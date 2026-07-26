@@ -3,6 +3,9 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
+- Refined by: [ADR 0017](0017-per-deck-state-documents.md), which keeps each
+  virtual card in its parent deck's progress document instead of an aggregate
+  workspace file.
 
 ## Decision history
 
@@ -32,7 +35,8 @@ into authored material.
 
 ## Decision
 
-Generated learning cards may live as virtual cards in `progress.json`.
+Generated learning cards may live as virtual cards in their parent deck's
+`progress/<alix-id>.json` document.
 A virtual card records minted identity, kind, parent deck, Markdown card text,
 and creation metadata. Its schedule is stored in the same card-state map and
 uses the same FSRS and session behavior as an authored card.
@@ -57,7 +61,8 @@ separate persistence architectures.
 - AI-generated cards can be tested through actual review before becoming
   authored content.
 - Generated cards survive application restarts and participate in scheduling.
-- `progress.json` contains regenerable card text in addition to learner state.
+- A deck's progress document contains regenerable card text in addition to
+  learner state.
 - Store reset and cleanup rules must account for both authored and virtual
   cards.
 - Promotion crosses from personal state into a user-authored file and therefore

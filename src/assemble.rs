@@ -6,8 +6,10 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
+#[cfg(test)]
+use crate::augment;
 use crate::{
-    augment::{self, AugmentCache, Topology, TopologyOrder},
+    augment::{AugmentCache, Topology, TopologyOrder},
     card::Card,
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings},
@@ -16,7 +18,7 @@ use crate::{
     scheduler::Fsrs,
     session::{self, DeckInfo, Order, Session, SessionOptions},
     source::SourceBase,
-    stamp,
+    stamp, state,
     store::{Store, VirtualCard, default_store_path},
     time::now_ms,
     trace::{Trace, Walk},
@@ -28,9 +30,7 @@ pub fn open_store(path: Option<PathBuf>) -> Result<Store> {
         Some(path) => path,
         None => default_store_path().context("cannot determine the data directory")?,
     };
-    let mut store = Store::open(&path).context("cannot open the progress store")?;
-    store.device = crate::store::device_label();
-    Ok(store)
+    state::open_aggregate_store(&path).context("cannot open the progress store")
 }
 
 pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<PathBuf> {
@@ -49,7 +49,20 @@ pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<
 }
 
 pub fn store_for(paths: &[PathBuf], instance: Option<&Path>) -> Result<Store> {
-    open_store(store_path_for(paths, None).or_else(|| instance.map(Path::to_path_buf)))
+    store_for_with_default(paths, instance, default_store_path())
+}
+
+fn store_for_with_default(
+    paths: &[PathBuf],
+    instance: Option<&Path>,
+    default: Option<PathBuf>,
+) -> Result<Store> {
+    let state_root = store_path_for(paths, None).or_else(|| instance.map(Path::to_path_buf));
+    let state_root = match state_root {
+        Some(path) => path,
+        None => default.context("cannot determine the data directory")?,
+    };
+    state::open_stores(paths, &state_root).context("cannot open deck progress")
 }
 
 #[derive(Clone, Copy)]
@@ -391,7 +404,8 @@ pub fn select(
     let deck_card_ids: std::collections::HashSet<String> =
         cards.iter().filter_map(Card::id).collect();
 
-    let mut augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    let mut augment =
+        AugmentCache::open_for_store(store.path()).context("cannot open deck augmentation")?;
     // Records must land before the session build reaches any `get_or_insert`.
     if realign_and_record(store, &mut augment, &cards) {
         if let Err(e) = augment.save() {
@@ -555,7 +569,8 @@ pub fn select(
     }))
 }
 
-pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
+pub fn browse(paths: Vec<PathBuf>, instance: Option<&Path>) -> Result<CardsBuild> {
+    let default = instance.map(Path::to_path_buf).or_else(default_store_path);
     let [deck] = paths.as_slice() else {
         bail!("browse one deck at a time (merging decks was removed)");
     };
@@ -569,10 +584,9 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
     let (mut cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
     let label = deck_label;
 
-    // Quirk: no instance-store fallback here (browse only resolves a
-    // workspace's own store, else the global default).
-    let store = store_for(&expanded.decks, None)?;
-    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    let store = open_store(store_path_for(&expanded.decks, None).or(default))?;
+    let augment =
+        AugmentCache::open_for_store(store.path()).context("cannot open deck augmentation")?;
     for card in &mut cards {
         augment.apply_format(card);
         if let Some(note) = card
@@ -650,16 +664,24 @@ mod tests {
         write_initialized(&member, "## q <!-- id: q1 -->\na\n");
         let loose = dir.path().join("loose.md");
         write_initialized(&loose, "## q <!-- id: q2 -->\na\n");
-        let instance = dir.path().join("instance-progress.json");
+        let instance = dir.path().join("instance-state");
 
         let p = store_path_for(std::slice::from_ref(&member), None).expect("workspace store");
-        assert_eq!(p, ws.join("progress.json"));
+        assert_eq!(p, ws);
         let s = store_for(std::slice::from_ref(&member), Some(&instance)).unwrap();
-        assert_eq!(s.path(), ws.join("progress.json").as_path());
+        assert_eq!(s.path(), ws.join("progress/a.json").as_path());
         let s = store_for(std::slice::from_ref(&loose), Some(&instance)).unwrap();
-        assert_eq!(s.path(), instance.as_path());
-        let g = store_for(std::slice::from_ref(&loose), None).unwrap();
-        assert!(!g.path().starts_with(dir.path()));
+        assert_eq!(
+            s.path(),
+            dir.path().join("instance-state/progress/loose.json").as_path()
+        );
+        let global = dir.path().join("global-state");
+        let g = store_for_with_default(std::slice::from_ref(&loose), None, Some(global.clone()))
+            .unwrap();
+        assert_eq!(
+            g.path(),
+            dir.path().join("global-state/progress/loose.json")
+        );
     }
 
     #[test]
@@ -675,7 +697,7 @@ mod tests {
         };
         let ws = mk_ws("ws");
         let ws2 = mk_ws("ws2");
-        let ws_store = ws.join("progress.json");
+        let ws_store = ws.clone();
         let loose = dir.path().join("loose.md");
         write_initialized(&loose, "## c <!-- id: qc -->\n1\n");
 
@@ -792,20 +814,21 @@ it reads line two\n\
     #[test]
     fn read_only_scans_never_write_records() {
         let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("d.md");
         std::fs::write(
-            dir.path().join("d.md"),
+            &deck_path,
             "---\nalix-id: \"deck1\"\n---\n## q <!-- id: qcard -->\na\n",
         )
         .unwrap();
         let store_path = workspace::root_store_path(dir.path());
-        let mut store = Store::open(&store_path).unwrap();
+        let mut store = state::open_store(&deck_path, &store_path).unwrap();
         store.get_or_insert("qcard", 0);
         store.save().unwrap();
-        let before = std::fs::read(&store_path).unwrap();
+        let before = std::fs::read(store.path()).unwrap();
 
         crate::listing::list_root(dir.path(), &ReviewConfig::default(), 1000);
 
-        let after = std::fs::read(&store_path).unwrap();
+        let after = std::fs::read(store.path()).unwrap();
         assert_eq!(
             before, after,
             "a read-only listing must not write the store"
@@ -894,7 +917,7 @@ it reads line two\n\
         // real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&member),
-            Some(&dir.path().join("store.json")),
+            Some(&dir.path().join("state")),
         )
         .unwrap();
 
@@ -919,7 +942,7 @@ it reads line two\n\
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&path),
-            Some(&dir.path().join("store.json")),
+            Some(&dir.path().join("state")),
         )
         .unwrap();
         insert_virtual_card(&mut store, "rust.md");
@@ -951,7 +974,7 @@ it reads line two\n\
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&path),
-            Some(&dir.path().join("store.json")),
+            Some(&dir.path().join("state")),
         )
         .unwrap();
 
@@ -959,7 +982,7 @@ it reads line two\n\
         let card_id = deck.cards[0].id().unwrap();
         let deck_token = deck.deck_token.clone().unwrap();
 
-        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
+        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
         cache.add_topology(Topology {
             name: "auto".to_string(),
             principle: "test".to_string(),
@@ -1034,7 +1057,7 @@ it reads line two\n\
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&path),
-            Some(&dir.path().join("store.json")),
+            Some(&dir.path().join("state")),
         )
         .unwrap();
         insert_virtual_card(&mut store, "rust.md");
@@ -1046,7 +1069,7 @@ it reads line two\n\
         .remove(0);
         let virtual_id = virtual_card.id().unwrap();
 
-        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
+        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
         cache.set_format(
             &virtual_id,
             augment::Format {
@@ -1111,15 +1134,15 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
         write_initialized(&deck_path, "## q <!-- id: q1 -->\na\n");
-        let store_path = dir.path().join("p.json");
-        let mut store = open_store(Some(store_path.clone())).unwrap();
+        let store_path = dir.path().join("state");
+        let mut store = state::open_store(&deck_path, &store_path).unwrap();
         let cfg = test_config();
 
         // Distractor set keyed by the real id, read from the loaded deck
         // (never hand-computed).
         let loaded = Deck::load(&deck_path).unwrap();
         let card_id = loaded.cards[0].id().unwrap();
-        let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
+        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
         cache.set_distractors(
             &card_id,
             vec!["w1".into(), "w2".into(), "w3".into()],
@@ -1157,7 +1180,7 @@ it reads line two\n\
     fn browse_of_a_folder_bails_with_the_workspace_hint() {
         let dir = tempfile::tempdir().unwrap();
         write_initialized(&dir.path().join("a.md"), "## q <!-- id: qa -->\na\n");
-        let err = browse(vec![dir.path().to_path_buf()]).unwrap_err();
+        let err = browse(vec![dir.path().to_path_buf()], None).unwrap_err();
         assert!(
             err.to_string().contains("browse a deck inside it"),
             "got: {err}"
@@ -1174,7 +1197,7 @@ it reads line two\n\
         )
         .unwrap();
 
-        let build = browse(vec![path]).unwrap();
+        let build = browse(vec![path], Some(&dir.path().join("global-state"))).unwrap();
         assert_eq!(2, build.cards.len());
     }
 
@@ -1187,12 +1210,12 @@ it reads line two\n\
         let path = ws.join("d.md");
         write_initialized(&path, "## List the parts <!-- id: qlist -->\nA, B, C\n");
 
-        let raw = browse(vec![path.clone()]).unwrap();
+        let raw = browse(vec![path.clone()], None).unwrap();
         let id = raw.cards[0].id().unwrap();
         assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
 
         let store = store_for(std::slice::from_ref(&path), None).unwrap();
-        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
+        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
         cache.set_format(
             &id,
             augment::Format {
@@ -1210,7 +1233,7 @@ it reads line two\n\
         );
         cache.save().unwrap();
 
-        let merged = browse(vec![path]).unwrap();
+        let merged = browse(vec![path], None).unwrap();
         assert_eq!(merged.cards[0].front, "Name the parts");
         assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
         let note = merged.cards[0].note.clone().unwrap_or_default();
@@ -1224,7 +1247,7 @@ it reads line two\n\
         let b = dir.path().join("b.md");
         std::fs::write(&a, "## q <!-- id: qa -->\na\n").unwrap();
         std::fs::write(&b, "## q <!-- id: qb -->\nb\n").unwrap();
-        let err = browse(vec![a, b]).err().unwrap();
+        let err = browse(vec![a, b], None).err().unwrap();
         assert!(format!("{err}").contains("one deck"), "{err}");
     }
 
@@ -1233,12 +1256,12 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
         write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
-        let store_path = dir.path().join("p.json");
-        let mut store = open_store(Some(store_path.clone())).unwrap();
+        let store_path = dir.path().join("state");
+        let mut store = state::open_store(&deck, &store_path).unwrap();
         let loaded = crate::deck::Deck::load(&deck).unwrap();
         let id = loaded.cards[0].id().unwrap();
         let fingerprint = loaded.cards[0].content_fingerprint;
-        let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
+        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
         cache.set_note(&id, "seeded".to_string(), fingerprint);
         cache.save().unwrap();
 
@@ -1262,7 +1285,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
         write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let mut store = state::open_store(&deck, dir.path()).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
             .unwrap();
@@ -1289,7 +1312,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
         write_initialized(&deck, "## q <!-- id: q1 -->\na\n");
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let mut store = state::open_store(&deck, dir.path()).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
             .unwrap();
@@ -1418,7 +1441,7 @@ it reads line two\n\
         assert_eq!("cshared", map.card_dupes[0].token);
         assert_eq!(keeper.clone(), map.card_dupes[0].keeper.0);
 
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let mut store = state::open_store(&loser, dir.path()).unwrap();
         store.get_or_insert("cshared", 1_000);
         store.save().unwrap();
 

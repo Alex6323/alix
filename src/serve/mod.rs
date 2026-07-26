@@ -23,7 +23,7 @@ use tiny_http::{Method, Server};
 pub use crate::assemble::SelectOptions;
 use crate::{
     assemble::{self, CardsBuild, SessionBuild},
-    augment::{self, AugmentCache},
+    augment::AugmentCache,
     cache::DeckCache,
     config::{
         AiConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
@@ -430,7 +430,6 @@ pub fn run_review(
                                     let _ = recent.save();
                                 }
                                 let mut r = Reviewing::new(b);
-                                r.open_augment(store.path());
                                 r.rotate_variant();
                                 *reviewing = Some(r);
                                 *walking = None;
@@ -458,7 +457,7 @@ pub fn run_review(
                             continue;
                         }
                         let recorded_paths = paths.clone();
-                        match assemble::browse(paths) {
+                        match assemble::browse(paths, cfg.instance_store.as_deref()) {
                             Ok(b) => {
                                 recent.record(&recorded_paths, now_ms());
                                 let _ = recent.save();
@@ -488,8 +487,13 @@ pub fn run_review(
                             ),
                         ) {
                             (Ok(deck), Ok(s)) => {
-                                let augment =
-                                    AugmentCache::open(augment::augment_path_for(s.path()));
+                                let augment = match AugmentCache::open_for_store(s.path()) {
+                                    Ok(augment) => augment,
+                                    Err(_) => {
+                                        respond_json(request, &DeckDrawerDto::default());
+                                        continue;
+                                    }
+                                };
                                 deck_drawer_dto(&augment, &s, &deck)
                             }
                             _ => DeckDrawerDto::default(),
@@ -760,7 +764,14 @@ pub fn run_review(
                 let started = tempfile::tempdir()
                     .map_err(|e| anyhow!("{e}"))
                     .and_then(|tmp| {
-                        let to_send = stage_for_share(&path, &tmp)?;
+                        let state_root =
+                            crate::assemble::store_path_for(
+                                std::slice::from_ref(&path),
+                                None,
+                            )
+                            .unwrap_or_else(|| crate::workspace::root_store_path(decks_dir));
+                        let to_send =
+                            stage_for_share(&path, &state_root, &tmp)?;
                         let job = share::send_spawn(&to_send)?;
                         Ok(Sharing {
                             job,
@@ -812,7 +823,14 @@ pub fn run_review(
                     continue;
                 };
                 let zipped = tempfile::tempdir().ok().and_then(|tmp| {
-                    let staged = stage_for_share(&path, &tmp).ok()?;
+                    let state_root =
+                        crate::assemble::store_path_for(
+                            std::slice::from_ref(&path),
+                            None,
+                        )
+                        .unwrap_or_else(|| crate::workspace::root_store_path(decks_dir));
+                    let staged =
+                        stage_for_share(&path, &state_root, &tmp).ok()?;
                     let out = tmp.path().join("share.zip");
                     share::zip_to(&staged, &out).ok()?;
                     std::fs::read(&out).ok()
@@ -1337,17 +1355,21 @@ pub fn run_review(
                 // key 0, orphaning the spend at the first real stamp.
                 match assemble::stamp_and_load_cards(&files) {
                     Ok(cards) => {
-                        let deck_tokens: Vec<String> = files
+                        let decks: Vec<_> = files
                             .iter()
-                            .filter_map(|p| {
-                                crate::deck::Deck::load(p).ok().and_then(|d| d.deck_token)
-                            })
+                            .filter_map(|path| crate::deck::Deck::load(path).ok())
                             .collect();
+                        let deck_tokens: Vec<String> =
+                            decks.iter().filter_map(|deck| deck.deck_token.clone()).collect();
+                        let Ok(cache) = AugmentCache::open_for_decks(store.path(), &decks) else {
+                            respond_status(request, 409);
+                            continue;
+                        };
                         let aug = Augmenting::open(
                             name,
                             cards,
                             deck_tokens,
-                            augment::augment_path_for(store.path()),
+                            cache,
                             workspace_dir,
                         );
                         let dto = aug.dto();

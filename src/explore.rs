@@ -887,7 +887,7 @@ back a
         fs::write(staging.join("alix.toml"), "[defaults]\n").unwrap();
         fs::write(staging.join("01-a.txt"), "deck a\n").unwrap();
 
-        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
         let report = merge_built(&staging, &dest, false, &mut store).unwrap();
 
         assert_eq!(2, report.moved);
@@ -912,7 +912,7 @@ back a
         fs::write(dest.join("01-a.txt"), "the user's own deck\n").unwrap();
         fs::write(staging.join("01-a.txt"), "the freshly generated deck\n").unwrap();
 
-        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
         let report = merge_built(&staging, &dest, false, &mut store).unwrap();
 
         assert_eq!(0, report.moved);
@@ -936,7 +936,7 @@ back a
         fs::write(dest.join("01-a.txt"), "stale\n").unwrap();
         fs::write(staging.join("01-a.txt"), "fresh\n").unwrap();
 
-        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
         let report = merge_built(&staging, &dest, true, &mut store).unwrap();
 
         assert_eq!(1, report.moved);
@@ -959,7 +959,7 @@ back a
         )
         .unwrap();
         fs::write(staging.join("01-a.md"), "## new q\nnew ans\n").unwrap();
-        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let mut store = crate::state::open_store(&dest.join("01-a.md"), &dest).unwrap();
         store.get_or_insert("c1", 0);
         store.save().unwrap();
 
@@ -984,7 +984,7 @@ back a
         fs::create_dir_all(staging.join("assets")).unwrap();
         fs::write(staging.join("assets/img.svg"), "new\n").unwrap();
 
-        let mut store = Store::open(dest.join("progress.json")).unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
         let report = merge_built(&staging, &dest, false, &mut store).unwrap();
         assert_eq!(1, report.moved);
         assert!(report.conflicts.is_empty());

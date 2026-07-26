@@ -106,46 +106,41 @@ where it is rather than fixed:
   - `cats.md` — one card with a two-line answer ("Lion" / "Tiger"), in its
     own file so editing it can never disturb `wild.md`. Exists
     solely for the multi-line regression test (`tests/kids-multiline.spec.ts`).
-  - `augment.json` — a **frozen** multiple-choice distractor cache for
-    `wild.md`, its distractors generated once with a real Claude call:
+  - `augment/00000000000000000000000008.json`: the **frozen**, deck-owned
+    multiple-choice distractor cache for `wild.md`, generated once with a real
+    Claude call:
 
     ```sh
     alix deck augment e2e/fixtures/decks/animals/wild.md --target choices \
-      --store /tmp/alix-e2e-augment-seed/progress.json
+      --store e2e/fixtures/decks/animals
     ```
 
     It's committed so the suite needs no AI backend and no network at test
     time — Recognize only renders tap-the-answer buttons when distractors are
     cached. The cache is keyed by each card's literal `<!-- id: -->` token, so
     it stays valid as long as those tokens in `wild.md` don't change; if you
-    change a token, or add/remove a card in that file, regenerate
-    `augment.json` with the command above and commit the new file.
+    change a token, or add/remove a card in that file, regenerate the matching
+    augmentation document with the command above and commit it.
 - `fixtures/kids.toml` / `fixtures/adult.toml` each set `[serve] audience`
   explicitly (`"kids"` / `"adult"`) — one server config per client, both
   pointed at their own copy of the same decks fixture. `--config` is always
   passed explicitly (never omitted): without it, `alix` would read the
   developer's real platform config — their real decks dir and AI backend.
-- **No `progress.json`/`recent.json` under `fixtures/` — ever**, with one
-  narrow, deliberate exception (below). `.gitignore` blocks them under
-  `fixtures/decks/**/`, and `prepare-fixtures.cjs` refuses to copy one even
-  if it somehow shows up locally. A progress store is per-run state, not a
+- **No `progress/` or `recent.json` under `fixtures/`, ever.**
+  `.gitignore` blocks progress documents under `fixtures/decks/**/`, and
+  `prepare-fixtures.cjs` refuses to copy private state even if it somehow
+  shows up locally. Progress is per-run state, not a
   fixture: every run must start from a deck nobody has reviewed yet, so it
   actually exercises the never-seen (*acquire*) path. Committing a pre-warmed
   store would also be a ticking clock: due-ness is computed against wall
   time, so a frozen timestamp would change the suite's behavior as it ages.
-- **No exceptions, and no synthesising one at setup either.** Backdating a
-  card's `acquired_ms` to skip the server's acquire cooldown would mean
-  computing `Card::id` (`XxHash64(deck file name + back lines)`) outside the
-  Rust that owns it — a second source of truth for card identity, in another
-  language, failing *silently* when it drifts: a mismatched id means the cache
-  is ignored, the app quietly renders a different presentation, and the test
-  passes for the wrong reason. `CLAUDE.md` forbids both halves of that (don't
-  break card identity; don't hand-roll a correctness-critical commodity).
-  A gap is recorded, not engineered around — see below.
+- **No exceptions, and no synthesising progress at setup either.** Card and
+  deck IDs are authored by Rust and remain the only persistence keys; browser
+  fixture code must not recreate or guess them.
 - Playwright's `globalSetup` (and, redundantly, each server's own
   `webServer` command — see `prepare-fixtures.cjs`) copies the whole
   `fixtures/decks` folder into a scratch `.tmp/<kids|adult>/decks` before
-  each run, so the servers' `progress.json`/`recent.json` writes never land
+  each run, so the servers' `progress/` and `recent.json` writes never land
   in the repo, and the two clients' stores never collide.
 
 ## Dependency hygiene

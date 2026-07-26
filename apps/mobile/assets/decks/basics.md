@@ -14,8 +14,8 @@ in a plain text file
 ## What grade ends a card for the session?
 Pass
 
-## Which store file holds review progress?
-progress.json
+## Which folder holds per-deck review progress?
+progress/
 
 ## What marks a note line in a deck file?
 a leading > (blockquote) marker

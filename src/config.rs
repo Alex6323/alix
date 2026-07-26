@@ -1101,8 +1101,8 @@ pub fn default_config_toml() -> &'static str {
 # auto_grade = false            # AI-grade walk predictions (a model call per hop)
 
 # AI deck augmentation (`alix deck augment <deck>`). Generates choice-mode
-# distractors (and notes) into a sidecar cache beside your progress; review
-# reads them. Reuses the [ask] command; generation is a tool-free text call.
+# distractors (and notes) into that deck's augmentation document; review reads
+# them. Reuses the [ask] command; generation is a tool-free text call.
 [ai]
 # model = ""                    # --model override; empty = use [ask] / CLI default
 # distractor_count = 3          # wrong options generated per choice card

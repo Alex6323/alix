@@ -74,6 +74,7 @@ impl SourceBase {
 
 /// A value may join several paths with " + " (first a full path, rest
 /// relative to its directory, e.g. `<crate>/README.md + src/lib.rs`).
+#[cfg(any(feature = "full", test))]
 pub(crate) fn source_paths(value: &str, base: Option<&Path>) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut anchor: Option<PathBuf> = None;

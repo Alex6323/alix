@@ -279,17 +279,17 @@ to this codebase. When in doubt, mirror the surrounding code.
   after touching `grade_*`.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
-- **Every change gets a sourced alix study deck** (user rule, 2026-07-24).
-  Before calling an issue done, create or update the issue-named Markdown deck
-  at `~/dev-meta/alix/alix-development/<issue-slug>.md`; do not create a
-  separate workspace per issue. Turn every relevant design, implementation,
-  safety, and tradeoff decision into a card. For an implementation change,
-  include cards about the exact patch: name the edited functions/types, contrast
-  the old and new behavior, identify the tests that prove it, and explain why
-  that mechanism was chosen over plausible alternatives. A decision-only card
-  is not a substitute for teaching the code that implements it; for a docs- or
-  roadmap-only change, say explicitly that no runtime code changed and teach the
-  exact document contract added. Use authored choice cards for decisions and
+- **Implementations and drafted specs/ADRs get sourced alix study decks**
+  (user rule, clarified 2026-07-26). Do not create decks for questions,
+  investigations, plans, roadmap notes, or other simple requests. When runtime,
+  tooling, or product behavior is implemented, or a spec or ADR is drafted,
+  create or update the issue-named Markdown deck at
+  `~/dev-meta/alix/alix-development/<issue-slug>.md`; do not create a separate
+  workspace per issue. For an implementation, teach the exact patch: name the
+  edited functions/types, contrast old and new behavior, identify the tests,
+  and explain the chosen mechanism. A decision-only card is not a substitute
+  for teaching the code that implements it. For a spec or ADR, teach its
+  relevant design, safety, and tradeoff decisions. Use authored choice cards for
   discriminating between plausible alternatives; use plain, often multi-line
   Recall cards for implementation walkthroughs that need enough room to explain
   the patch. When the implementation is best understood as a multi-step control
@@ -314,6 +314,12 @@ to this codebase. When in doubt, mirror the surrounding code.
   matches, including decks from earlier issues. `alix doctor` proves resolution,
   not relevance. Refresh affected ranges after final edits so the source view
   and tutor explain the code that actually ships.
+- **A source-code review deck contains source code, not design prose.** Every
+  card in a deck presented for implementation review must cite implementation
+  or regression-test files (`src/`, `apps/`, `tests/`, or the local equivalent).
+  Put ADR, spec, plan, book, and other explanatory prose in a separately named
+  architecture or context deck. Before recommending a code-review deck, inspect
+  every `at:` locator and reject the deck if any locator points to prose.
 - Don't commit unless asked; never push without permission.
 - **Two docs, two jobs; keep both in sync.** `docs/book/` (mdBook; `make book`)
   is the **reference and manual**: the deck format, every frontmatter key and card directive,
@@ -352,12 +358,16 @@ to this codebase. When in doubt, mirror the surrounding code.
   not line count.
 - **Break freely while pre-1.0.** While the version is `0.x.y`, don't add
   back-compat shims or aliases for renamed or removed commands, flags, config
-  keys, or directives — change them outright and record it as a **Breaking** note
-  under `## [Unreleased]` → Changed. Compatibility machinery only earns its keep
-  after 1.0; before then it's just surface to carry.
-- **Pre-1.0 store format: no versioning, no migrations — break it.** `CURRENT_VERSION` stays
-  `1`; never bump it or add a `migrate` step. Change the shape outright and let old data break
-  (`#[serde(default)]` is a fine soft break). **Don't propose a store version bump pre-1.0.**
+  keys, directives, persisted layouts, or document schemas; change them outright
+  and record user-visible breaks under `## [Unreleased]` → Changed. Production
+  code before 1.0 contains no old-format decoder, migration path, compatibility
+  branch, sentinel, alias, or legacy terminology: it reads as the first and final
+  implementation. If existing development or personal data needs conversion,
+  use disposable tooling outside the production repository, verify the result
+  and backup, then delete the tool. Migration and compatibility policy begins
+  only after 1.0; before then it is surface to carry. Persisted format versions
+  for a replacement design restart at `1`; never bump a version as a substitute
+  for removing the superseded design.
 - **No new dependency without a one-line reason.** Each crate added is permanent
   maintenance and supply-chain surface — reach for std or an existing dep first,
   and when a new one genuinely earns its place, say why in the commit. The

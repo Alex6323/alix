@@ -90,17 +90,26 @@ It's picked per session, the same as for a loose deck (see
 
 ## Its own progress
 
-A workspace keeps its progress **inside the folder**, in a `progress.json` next to
-the decks (override the location with a `store = "..."` line in the `alix.toml`),
-separate from the store your loose decks use (your decks directory's own `progress.json`). That makes a workspace a
-**self-contained, portable unit**: its decks, its `assets/` (frozen trace
-excerpts, covered with traces later), and its history all live in one folder you
-can move, copy, or share, with its progress isolated from everything else. Decks
-outside any workspace use your decks directory's store; the CLI commands
-(`alix stats`/`list`/`reset`) take a deck file, a plain folder, **or a
-workspace**: a folder or workspace expands to its member decks, each resolved
-against the same store the launcher would serve it with (`--store <path>` still
-overrides).
+A workspace keeps its state **inside the folder**, split by stable deck ID:
+
+```text
+progress/<alix-id>.json   # private schedules, history, exams, virtual cards
+augment/<alix-id>.json    # shareable generated choices, notes, and topologies
+```
+
+This state is separate from the equivalent directories in your main decks
+folder. Renaming a deck file leaves both paths unchanged because the filename
+comes from its `alix-id`, not its display name. A `store = "..."` line in
+`alix.toml` overrides the state-root directory.
+
+That makes a workspace a **self-contained, portable unit** for moving, backup,
+and folder synchronization: its decks, `assets/` (frozen trace excerpts,
+covered with traces later), and state all live under one boundary. Sharing is
+deliberately narrower and strips personal progress. Decks outside any workspace
+use the state root in your decks directory. The CLI commands (`alix
+stats`/`list`/`reset`) take a deck file, a plain folder, **or a workspace**: a
+folder or workspace expands to its member decks, each resolved against the same
+state root the launcher would serve it with (`--store <path>` still overrides).
 
 ## In the picker
 
@@ -134,12 +143,14 @@ just applies no shared directives.
 
 A workspace is a self-contained folder, so sharing one is sending the folder.
 `alix share <dir>` does that over magic-wormhole with the personal files
-(progress, recent list, `alix.local.toml`) left home; the other side runs
-`alix receive <code>` and gets it beside their own decks, ready to serve with
-`alix <dir>`. Precomputed augmentations (`augment.json`) travel: the AI
-content comes along, the progress doesn't. Also available from the web UI's ☰
-menu (**Share…** / **Add deck…** → Receive), with a `.zip` download/upload
-fallback when neither side has `wormhole` installed.
+(`progress/`, backups, recent list, `alix.local.toml`) left home; the
+other side runs `alix receive <code>` and gets it beside their own decks, ready
+to serve with `alix <dir>`. Precomputed augmentation documents matching the
+shared decks travel: the AI content comes along, unrelated augmentation and
+progress do not. A single-deck share follows the same rule and lands as a normal
+`.md` deck plus its augmentation. Also available from the web UI's ☰ menu
+(**Share…** / **Add deck…** → Receive), with a `.zip` download/upload fallback
+when neither side has `wormhole` installed.
 
 ## Titles
 

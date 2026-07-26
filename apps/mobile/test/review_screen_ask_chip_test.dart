@@ -3,7 +3,7 @@
 // card (capability presence, no status chrome; attempt-first, like the
 // web client's tutor chip). ReviewScreen's own listing/session calls the
 // real bridge in initState, so RustLib.init() is required to mount it,
-// same as hashcards_repro_test.dart's own screens.
+// same as trace_review_routing_test.dart's own screens.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -16,6 +16,7 @@ import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
+import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
 
 void main() {
@@ -31,7 +32,7 @@ void main() {
 
   Directory deckRoot() {
     final root = Directory.systemTemp.createTempSync('alix-ask-chip-decks-');
-    File('${root.path}/facts.md').writeAsStringSync('# Facts\n\n## q?\na\n');
+    writeTestDeck('${root.path}/facts.md', '# Facts\n\n## q?\na\n');
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }

@@ -120,14 +120,10 @@ mod tests {
     fn lists_a_root_with_a_workspace_and_a_loose_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::write(
-            root.join("loose.md"),
-            "# Loose\n\n## q <!-- id: q1 -->\na\n",
-        )
-        .unwrap();
+        write_deck(root.join("loose.md"), "# Loose\n\n## q <!-- id: q1 -->\na\n");
         std::fs::create_dir(root.join("ws")).unwrap();
         std::fs::write(root.join("ws/alix.toml"), "title = \"Ws\"\n").unwrap();
-        std::fs::write(root.join("ws/m.md"), "## q <!-- id: q1 -->\na\n").unwrap();
+        write_deck(root.join("ws/m.md"), "## q <!-- id: q1 -->\na\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(1_000_000));
         let titles: Vec<(&str, bool, bool)> = rows
@@ -152,7 +148,9 @@ mod tests {
         std::fs::write(root.join("loose.md"), "## q\na\n").unwrap();
         assert!(sync_conflicts(root.to_string_lossy().into_owned()).is_empty());
 
-        let conflict = root.join("progress.sync-conflict-20260714-101112-ABCDEF7.json");
+        std::fs::create_dir(root.join("progress")).unwrap();
+        let conflict =
+            root.join("progress/deck1.sync-conflict-20260714-101112-ABCDEF7.json");
         std::fs::write(&conflict, "{}").unwrap();
         assert_eq!(
             sync_conflicts(root.to_string_lossy().into_owned()),
@@ -164,6 +162,12 @@ mod tests {
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();
+    }
+
+    fn write_deck(path: impl AsRef<Path>, text: &str) {
+        let path = path.as_ref();
+        write(path, text);
+        alix::stamp::stamp_deck(path).unwrap();
     }
 
     fn graduated_not_due(now: u64) -> alix::store::FsrsState {
@@ -179,18 +183,18 @@ mod tests {
     fn mastered_and_exam_due_cross_the_boundary_for_a_sourced_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(
-            &root.join("base.md"),
+        write_deck(
+            root.join("base.md"),
             "---\nsource: \"https://x\"\n---\n## q <!-- id: q1 -->\na\n",
         );
-        write(&root.join("fresh.md"), "## q\na\n");
+        write_deck(root.join("fresh.md"), "## q\na\n");
 
         let base_subject = alix::deck::Deck::load(root.join("base.md")).unwrap().subject;
         let base_id = alix::deck::Deck::load(root.join("base.md")).unwrap().cards[0]
             .id()
             .expect("the fixture stamps its own id");
         let store_path = alix::workspace::root_store_path(root);
-        let mut store = alix::store::Store::open(&store_path).unwrap();
+        let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
         store.get_or_insert(&base_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 
@@ -203,7 +207,7 @@ mod tests {
         assert!(!fresh.mastered);
         assert!(!fresh.has_exam);
 
-        let mut store = alix::store::Store::open(&store_path).unwrap();
+        let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
         store.set_deck_mastered(&base_subject, T0 + 1_000);
         store.save().unwrap();
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000));
@@ -216,12 +220,18 @@ mod tests {
     fn locked_and_unlocked_members_cross_the_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("gate.md"), "---\nsource: \"https://x\"\n---\n## q\na\n");
+        write_deck(
+            root.join("gate.md"),
+            "---\nsource: \"https://x\"\n---\n## q\na\n",
+        );
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("child.md"), "---\nrequires: gate\n---\n## q2\nb\n");
-        write(&ws.join("other.md"), "## q\na\n");
+        write_deck(
+            ws.join("child.md"),
+            "---\nrequires: gate\n---\n## q2\nb\n",
+        );
+        write_deck(ws.join("other.md"), "## q\na\n");
 
         let rows = list_members(
             root.to_string_lossy().into_owned(),
@@ -242,8 +252,8 @@ mod tests {
         write(&root.join("ws/alix.toml"), "");
         std::fs::create_dir_all(root.join("ws/assets")).unwrap();
         write(&root.join("ws/assets/icon.svg"), "<svg/>");
-        write(&root.join("ws/m.md"), "## q\na\n");
-        write(&root.join("loose.md"), "## q\na\n");
+        write_deck(root.join("ws/m.md"), "## q\na\n");
+        write_deck(root.join("loose.md"), "## q\na\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
         let ws_row = rows.iter().find(|r| r.is_workspace).expect("listed");
@@ -266,10 +276,16 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("base.md"), "## q\na\n");
-        write(&ws.join("mid.md"), "---\nrequires: base\n---\n## q\na\n");
-        write(&ws.join("tip.md"), "---\nrequires: mid\n---\n## q\na\n");
-        write(&ws.join("other.md"), "## q\na\n");
+        write_deck(ws.join("base.md"), "## q\na\n");
+        write_deck(
+            ws.join("mid.md"),
+            "---\nrequires: base\n---\n## q\na\n",
+        );
+        write_deck(
+            ws.join("tip.md"),
+            "---\nrequires: mid\n---\n## q\na\n",
+        );
+        write_deck(ws.join("other.md"), "## q\na\n");
 
         let rows = list_members(
             root.to_string_lossy().into_owned(),
@@ -298,7 +314,7 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "title = \"Ws\"\n");
-        write(&ws.join("m.md"), "## q\na\n");
+        write_deck(ws.join("m.md"), "## q\na\n");
         let ws_s = ws.to_string_lossy().into_owned();
         let root_s = root.to_string_lossy().into_owned();
 
@@ -334,14 +350,14 @@ mod tests {
     fn last_depth_crosses_the_boundary_remembered_then_falls_back_to_default() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.md"), "## q\na\n");
+        write_deck(root.join("d.md"), "## q\na\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
         assert_eq!(alix::depth::Depth::default(), row.last_depth);
 
         let store_path = alix::workspace::root_store_path(root);
-        let mut store = alix::store::Store::open(&store_path).unwrap();
+        let mut store = alix::state::open_store(&root.join("d.md"), &store_path).unwrap();
         store.set_last_depth("d.md", alix::depth::Depth::Reconstruct);
         store.save().unwrap();
 

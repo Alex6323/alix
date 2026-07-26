@@ -41,12 +41,15 @@ Users can create and edit them with ordinary text tools, and Alix reads them
 directly rather than importing them into an application-owned database.
 
 Personal state is stored in explicit files. A folder or workspace normally
-keeps review history in `progress.json` and recent activity in `recent.json`
-beside its decks. Configuration may override the progress-store path.
+keeps per-deck review history under `progress/`, generated augmentation under
+`augment/`, and recent activity in `recent.json` beside its decks.
+Configuration may override the state root.
 
 Alix itself provides no account or cloud storage. Users may copy or synchronize
 their folders with tools they choose. Sharing a folder strips personal state,
-including `progress.json`, `recent.json`, and `alix.local.toml`.
+including per-deck progress documents, recent activity, temporary and backup
+files, and `alix.local.toml`; matching augmentation may travel with an
+initialized deck.
 
 ## Consequences
 
@@ -54,9 +57,10 @@ including `progress.json`, `recent.json`, and `alix.local.toml`.
 - Existing file tools provide backup, version control, search, and sync.
 - Desktop, mobile, CLI, and web surfaces must preserve the same file semantics.
 - File-format compatibility and atomic writes are product requirements.
-- Alix cannot assume transactional multi-file updates or simultaneous writers.
-- Concurrent offline review needs conflict detection or a future merge design;
-  the current guidance is to review on one device at a time.
+- Alix cannot assume transactional multi-file updates or simultaneous writers
+  for one deck.
+- Different decks can be reviewed independently, while concurrent offline
+  review of the same deck needs conflict detection or a future merge design.
 
 ## Alternatives considered
 
@@ -81,12 +85,12 @@ personal history unless every export scrubbed it.
 
 ## Compatibility
 
-Markdown syntax, card identity directives, and the versioned `progress.json`
-shape are persisted surfaces. The current pre-1.0 store deliberately provides
-best-effort loading rather than a forward-version fence; ADR 0005 records that
-temporary limitation. A stable compatibility promise must preserve existing
-authored content and review history or provide an explicit migration with
-backup and rollback behavior.
+Markdown syntax, card identity directives, and the versioned per-deck state
+documents are persisted surfaces. ADR 0017 adds owner and forward-version
+fences. Before 1.0, incompatible persisted-state changes are clean format
+breaks converted outside production Alix. After 1.0, incompatible changes must
+preserve existing authored content and review history or provide an explicit
+conversion with backup and rollback behavior.
 
 Personal-state file names are also part of the sharing boundary. A new personal
 file must be excluded both when staging a share and when receiving one.
@@ -105,10 +109,10 @@ files, and backups stay home.
 
 - `src/cli/common.rs` resolves deck, folder, and workspace targets without
   importing their content into another store.
-- `src/workspace.rs` defines the default workspace store as `progress.json` and
-  tests folder-local resolution.
-- `src/store.rs` versions the progress format and writes through a temporary
-  file followed by rename.
+- `src/workspace.rs` defines the conventional folder-local state entry point,
+  while `src/state.rs` derives and versions the per-deck layout.
+- `src/store.rs` versions each progress document, checks its revision, and
+  writes through a temporary file followed by rename.
 - `src/recent.rs` applies the same temporary-file write pattern to
   `recent.json`.
 - `src/share.rs` excludes personal files while staging and receiving shared

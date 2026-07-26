@@ -20,6 +20,7 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
+import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
 
 void main() {
@@ -46,7 +47,8 @@ void main() {
   Directory twoHopRoot() {
     final root = tempRoot('alix-walk-2hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\nthird\n');
-    File('${root.path}/t.md').writeAsStringSync(
+    writeTestDeck(
+      '${root.path}/t.md',
       '---\n'
       'trace: how it works\n'
       'source: source.txt\n'
@@ -67,7 +69,8 @@ void main() {
   Directory oneHopRoot() {
     final root = tempRoot('alix-walk-1hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\n');
-    File('${root.path}/t.md').writeAsStringSync(
+    writeTestDeck(
+      '${root.path}/t.md',
       '---\n'
       'trace: a short path\n'
       'source: source.txt\n'
@@ -84,7 +87,8 @@ void main() {
     File(
       '${root.path}/source.txt',
     ).writeAsStringSync('origin calls resolve_source_root\n');
-    File('${root.path}/t.md').writeAsStringSync(
+    writeTestDeck(
+      '${root.path}/t.md',
       '---\n'
       'trace: a highlighted path\n'
       'source: source.txt\n'
@@ -100,7 +104,8 @@ void main() {
   /// `% source:` at all): the excerpt-error fallback path.
   Directory noSourceRoot() {
     final root = tempRoot('alix-walk-nosource-');
-    File('${root.path}/t.md').writeAsStringSync(
+    writeTestDeck(
+      '${root.path}/t.md',
       '---\n'
       'trace: a path with no source\n'
       '---\n'
@@ -477,7 +482,8 @@ void main() {
       (tester) async {
         final root = tempRoot('alix-picker-walk-');
         File('${root.path}/source.txt').writeAsStringSync('alpha\nbeta\n');
-        File('${root.path}/t.md').writeAsStringSync(
+        writeTestDeck(
+          '${root.path}/t.md',
           '---\n'
           'trace: a picker-launched walk\n'
           'source: source.txt\n'

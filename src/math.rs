@@ -412,7 +412,7 @@ mod tests {
         let parsed = crate::parser::parse("deck.md", "## q <!-- id: mathdiag1 -->\na\n").unwrap();
         let card = &parsed.cards[0];
         let id = card.id().unwrap();
-        let mut augment = AugmentCache::open(dir.path().join("augment.json"));
+        let mut augment = AugmentCache::open(dir.path().join("deck1.json"));
         augment.set_distractors(
             &id,
             vec![r"$\frac{1$".to_string()],

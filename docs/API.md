@@ -219,12 +219,17 @@ Augment.
 
 ### 4.8 Share
 
-`POST /api/share {deck?}` stages a row (a deck file as-is; a folder minus
-personal state: progress, recent list, local pacing overrides) and starts a
-`wormhole send` on it, following §3's polling pattern: poll `GET /api/share`
-while `phase:"staging"`/`"code"`, then read `error` or `"sent"`. `deck` is the
-same resolution-map name `/api/select` uses; absent/`null` shares the served
-root. `phase` walks `"staging"` (job started, no code yet) → `"code"`
+`POST /api/share {deck?}` stages a row and starts a `wormhole send` on it,
+following §3's polling pattern: poll `GET /api/share` while
+`phase:"staging"`/`"code"`, then read `error` or `"sent"`. A folder includes
+only augmentation documents whose stable IDs match its initialized decks and
+recursively excludes `progress/`, recent state, local pacing, temporary files,
+backups, hidden files, and conflict copies. A single
+deck with augmentation travels in an internal bundle containing the `.md` file
+and `augment/<deck-id>.json`; without augmentation it travels as the deck file
+as-is. Progress never travels. `deck` is the same resolution-map name
+`/api/select` uses; absent/`null` shares the served root. `phase` walks
+`"staging"` (job started, no code yet) → `"code"`
 (`code` set, show it to the other side) → `"sent"`, or `"error"` at any
 point, including a spawn failure (`wormhole` not installed), which still comes
 back as an error-phase `ShareDto` with the install hint, not a bare error
@@ -240,16 +245,18 @@ it stages the same way and streams back a `.zip` instead of a wormhole code.
 `POST /api/receive {code, dest?}` starts a `wormhole receive` for the given
 code into a scratch dir, following §3's polling pattern: poll `GET
 /api/receive` while `phase:"receiving"`, then read `error` or `"done"` (the
-landed name plus any `stripped` personal files — see §4.8's `PERSONAL` list —
-that leaked in because the sender didn't use `alix share`). `dest` resolves
-exactly like Generate's (§4.7). Landing never overwrites: an existing entry of
-the same name at `dest` is an `error`, not a silent replace. Only one receive
-runs at a time: `POST` while one is in flight is 409; a **finished** job (an
-`error` or `done` phase) is replaced by the next `POST`, mirroring Share.
-Spawn failure (`wormhole` not installed) also surfaces as an error-phase
-`ReceiveDto` with the install hint, never a bare error status. `POST
-/api/receive/close` cancels an in-flight transfer (kills the wormhole child)
-and clears the job unconditionally.
+landed name plus any `stripped` private state, recursively sanitized under the
+same rules as §4.8, that leaked in because the sender didn't use `alix share`).
+An internal single-deck bundle lands as a normal `.md` file and adopts its
+matching augmentation into the destination's state root; it never adopts
+progress. `dest` resolves exactly like Generate's (§4.7). Landing never
+overwrites: an existing entry of the same name at `dest` is an `error`, not a
+silent replace. Only one receive runs at a time: `POST` while one is in flight
+is 409; a **finished** job (an `error` or `done` phase) is replaced by the next
+`POST`, mirroring Share. Spawn failure (`wormhole` not installed) also surfaces
+as an error-phase `ReceiveDto` with the install hint, never a bare error status.
+`POST /api/receive/close` cancels an in-flight transfer (kills the wormhole
+child) and clears the job unconditionally.
 
 `POST /api/receive/zip[?dest]` is the offline fallback: synchronous, no
 polling, it takes a `.zip` archive as the raw request body (§8) instead of a
@@ -789,12 +796,12 @@ The result of `POST`/`GET /api/receive` (and the synchronous `POST
 |---|---|---|
 | `phase` | string | `receiving` \| `done` \| `error` (open set). |
 | `landed` | string? | The landed file/folder name — set once `done`. |
-| `stripped` | [string] | Personal files (§4.8) stripped from a leaked folder, if any. |
+| `stripped` | [string] | Private state, temp, conflict, backup, or hidden entries (§4.8) stripped from a leaked folder, if any. |
 | `elapsed` | number? | Seconds since the job started (kept ticking even after it finishes); always `0` for the synchronous `/api/receive/zip`. |
 | `error` | string? | Set on `error` — including a spawn failure (`wormhole` not installed), which surfaces the install hint here rather than a bare error status. |
 
 Example (from the pinned test):
-`{"phase":"done","landed":"rust-decks","stripped":["progress.json"],"elapsed":9,"error":null}`.
+`{"phase":"done","landed":"rust-decks","stripped":["progress"],"elapsed":9,"error":null}`.
 
 ### ExamDto
 

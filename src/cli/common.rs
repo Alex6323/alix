@@ -3,12 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use alix::{
-    assemble::{open_store, store_path_for},
-    config::Config,
-    store::Store,
-    workspace,
-};
+use alix::{assemble::store_path_for, config::Config, state, store::Store, workspace};
 use anyhow::{Context, Result, bail};
 
 pub(crate) struct Target {
@@ -22,7 +17,14 @@ impl Target {
             .map(Path::to_path_buf)
             .or_else(|| store_path_for(std::slice::from_ref(&deck.to_path_buf()), None))
             .or_else(|| self.default_store.clone());
-        open_store(path)
+        match path {
+            Some(path) => state::open_store(deck, &path).map_err(Into::into),
+            None => {
+                let path = alix::store::default_store_path()
+                    .context("cannot determine the data directory")?;
+                state::open_store(deck, &path).map_err(Into::into)
+            }
+        }
     }
 }
 
@@ -65,7 +67,11 @@ pub(crate) fn store_for(
 ) -> Result<Store> {
     let path = store_path_for(decks, cli_override.as_deref())
         .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d)));
-    open_store(path)
+    let path = match path {
+        Some(path) => path,
+        None => alix::store::default_store_path().context("cannot determine the data directory")?,
+    };
+    state::open_stores(decks, &path).map_err(Into::into)
 }
 
 pub(crate) fn confirm(prompt: &str, yes: bool) -> Result<bool> {
@@ -222,7 +228,7 @@ mod tests {
     fn store_for_resolves_a_loose_deck_to_the_decks_dir_root_store() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("loose.md");
-        std::fs::write(&deck, "## q\na\n").unwrap();
+        std::fs::write(&deck, "---\nalix-id: loose\n---\n## q <!-- id: q -->\na\n").unwrap();
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -230,15 +236,18 @@ mod tests {
 
         let store = store_for(std::slice::from_ref(&deck), None, &config).unwrap();
 
-        assert_eq!(store.path(), dir.path().join("progress.json").as_path());
+        assert_eq!(
+            store.path(),
+            dir.path().join("progress/loose.json").as_path()
+        );
     }
 
     #[test]
     fn store_for_lets_a_cli_override_win_over_the_decks_dir_fallback() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("loose.md");
-        std::fs::write(&deck, "## q\na\n").unwrap();
-        let override_path = dir.path().join("custom.json");
+        std::fs::write(&deck, "---\nalix-id: loose\n---\n## q <!-- id: q -->\na\n").unwrap();
+        let override_path = dir.path().join("custom");
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -251,7 +260,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(store.path(), override_path.as_path());
+        assert_eq!(
+            store.path(),
+            dir.path().join("custom/progress/loose.json").as_path()
+        );
     }
 
     #[test]
@@ -261,7 +273,11 @@ mod tests {
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
         let member = ws.join("a.md");
-        std::fs::write(&member, "---\nalix-id: \"a\"\n---\n## q\na\n").unwrap();
+        std::fs::write(
+            &member,
+            "---\nalix-id: \"a\"\n---\n## q <!-- id: q -->\na\n",
+        )
+        .unwrap();
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -269,7 +285,7 @@ mod tests {
 
         let store = store_for(std::slice::from_ref(&member), None, &config).unwrap();
 
-        assert_eq!(store.path(), ws.join("progress.json").as_path());
+        assert_eq!(store.path(), ws.join("progress/a.json").as_path());
     }
 
     #[test]

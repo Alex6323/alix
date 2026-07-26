@@ -5,7 +5,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::{config::Config, deck::Deck, store::Store, workspace};
+use crate::{config::Config, deck::Deck, workspace};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -76,7 +76,8 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
             );
         }
     };
-    match Store::open(&path) {
+    let progress = crate::state::Layout::new(&path).progress;
+    match crate::store::Store::open(progress) {
         Ok(store) => Finding::ok(
             "store",
             format!(
@@ -89,7 +90,7 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
             "store",
             Status::Fail,
             format!("{} — {e:#}", path.display()),
-            "the store JSON is unreadable — restore it from a backup, or move it aside to start fresh",
+            "a progress document is unreadable; restore it from a backup, or move it aside to start fresh",
         ),
     }
 }
@@ -130,10 +131,14 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             .into_owned();
         match Deck::load(path) {
             Ok(deck) => {
-                let augment = path.parent().map(|dir| {
-                    crate::augment::AugmentCache::open(crate::augment::augment_path_for(
-                        &workspace::root_store_path(dir),
-                    ))
+                let augment = path.parent().and_then(|dir| {
+                    deck.deck_token.as_deref().and_then(|deck_id| {
+                        crate::state::open_augment_read_only(
+                            deck_id,
+                            &workspace::root_store_path(dir),
+                        )
+                        .ok()
+                    })
                 });
                 for diagnostic in crate::math::diagnostics(&deck.cards, augment.as_ref()) {
                     malformed_math.push(format!("{name}: {diagnostic}"));
@@ -251,9 +256,10 @@ mod tests {
     #[test]
     fn a_corrupt_store_reports_fail_with_a_remedy() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress.json");
+        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        let path = dir.path().join("progress/deck1.json");
         std::fs::write(&path, "not json at all").unwrap();
-        let finding = check_store(Some(path));
+        let finding = check_store(Some(dir.path().to_path_buf()));
         assert_eq!(Status::Fail, finding.status);
         assert!(finding.remedy.is_some());
     }
@@ -261,7 +267,7 @@ mod tests {
     #[test]
     fn a_readable_store_reports_its_entry_count() {
         let dir = tempfile::tempdir().unwrap();
-        let finding = check_store(Some(dir.path().join("progress.json")));
+        let finding = check_store(Some(dir.path().to_path_buf()));
         assert_eq!(Status::Ok, finding.status);
         assert!(finding.detail.contains("0 card entries"));
     }

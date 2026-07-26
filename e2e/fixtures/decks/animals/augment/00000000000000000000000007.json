@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "deck_id": "00000000000000000000000007",
+  "revision": 1,
+  "cards": {
+    "mathexplain": {
+      "keypoints": [
+        "The discriminant is $b^2 - 4ac$",
+        "The denominator is $2a$"
+      ],
+      "keypoints_fp": 6339166044165714001
+    }
+  },
+  "topologies": []
+}

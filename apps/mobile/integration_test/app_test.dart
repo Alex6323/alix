@@ -14,6 +14,17 @@ import 'package:alix_mobile/main.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
+import '../test/support/deck_fixture.dart';
+
+String onlyProgressDocument(String stateRoot) {
+  final files = Directory('$stateRoot/progress')
+      .listSync()
+      .whereType<File>()
+      .toList();
+  expect(files, hasLength(1));
+  return files.single.readAsStringSync();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -22,7 +33,8 @@ void main() {
     await RustLib.init();
     final root = Directory.systemTemp.createTempSync('alix-e2e-');
     addTearDown(() => root.deleteSync(recursive: true));
-    File('${root.path}/greek.md').writeAsStringSync(
+    writeTestDeck(
+      '${root.path}/greek.md',
       '# Greek\n\n## capital of greece?\nAthens\n',
     );
     // Acquired ten minutes "ago" (past the 5-min default acquire cooldown):
@@ -52,7 +64,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('SESSION COMPLETE'), findsOneWidget);
 
-    final store = File('${root.path}/progress.json').readAsStringSync();
+    final store = onlyProgressDocument(root.path);
     expect(store, contains('"stability"'));
     expect(store, contains('"history"'));
   });
