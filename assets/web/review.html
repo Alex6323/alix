@@ -979,7 +979,7 @@ function promote() { api("/api/promote", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
 
 // One heatmap cell's fill: retrievability 0 (red) → 1 (green). A negative value
-// is the "no data yet" sentinel (never reviewed) and renders as a neutral cell,
+// means "no data yet" (never reviewed) and renders as a neutral cell,
 // so a fresh deck reads as unlearned rather than failing.
 function paintHeatCell(cellEl, s) {
   if (s < 0) { cellEl.classList.add("empty"); return; }

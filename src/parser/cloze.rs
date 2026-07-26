@@ -640,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn hash_repr_wraps_an_image_in_sentinels() {
+    fn hash_repr_wraps_an_image_in_unit_separators() {
         let (segments, _) = answer("![](m.png)");
         assert_eq!("\u{1f}image\u{1f}m.png\u{1f}", hash_repr(&segments));
     }

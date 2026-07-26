@@ -109,6 +109,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make test` | Run the test suite (the primary gate). |
 | `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
 | `make lint` | `cargo clippy --all-targets`. |
+| `make pre-1-0-check` | Reject backwards-compatibility vocabulary in production code while the package is `0.x`. |
 | `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |
 | `make toolchain-check` | Enforce exact production toolchains, full-SHA Action references, and named drift-only exceptions. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
@@ -356,18 +357,24 @@ to this codebase. When in doubt, mirror the surrounding code.
   and rationale-at-length (those go in the spec or memory), never the substance. If it can't be
   shorter without losing something relevant, long is fine. The measure is information-per-word,
   not line count.
-- **Break freely while pre-1.0.** While the version is `0.x.y`, don't add
-  back-compat shims or aliases for renamed or removed commands, flags, config
-  keys, directives, persisted layouts, or document schemas; change them outright
-  and record user-visible breaks under `## [Unreleased]` → Changed. Production
-  code before 1.0 contains no old-format decoder, migration path, compatibility
-  branch, sentinel, alias, or legacy terminology: it reads as the first and final
-  implementation. If existing development or personal data needs conversion,
-  use disposable tooling outside the production repository, verify the result
-  and backup, then delete the tool. Migration and compatibility policy begins
-  only after 1.0; before then it is surface to carry. Persisted format versions
-  for a replacement design restart at `1`; never bump a version as a substitute
-  for removing the superseded design.
+- **Pre-1.0 has no backwards compatibility. This is a hard rule.** The installed
+  base is the maintainer plus testers who can rerun a command; hypothetical
+  upgrade continuity is not a constraint. A format or layout change has exactly
+  one sanctioned shape: production code contains only the new design; disposable
+  tooling outside the production repository backs up, converts, verifies, and
+  deletes old artifacts; `alix doctor` may detect an old artifact and tell the
+  user to delete it or run that tool, but detection is not support. No dual
+  readers, old-data version fences, markers, old-path-derived addressing,
+  aliases, or defenses for older clients. `make pre-1-0-check` rejects the
+  vocabulary that usually signals such machinery. If a diff introduces
+  `legacy`, `compat`, `shim`, `deprecated`, `sentinel`, `adopt`, `coexist`,
+  `migrate`, `older clients`, or `graceful upgrade` in a production identifier,
+  filename, or comment, stop and ask rather than renaming around the gate. No
+  ADR, spec, review, durability argument, or other document overrides this rule.
+  Only the user may change this rule or its gate; an agent-authored edit without
+  explicit user direction is invalid. Record user-visible breaks under
+  `## [Unreleased]` → Changed. Persisted format versions for replacement
+  designs restart at `1`. Migration policy begins only after 1.0.
 - **No new dependency without a one-line reason.** Each crate added is permanent
   maintenance and supply-chain surface — reach for std or an existing dep first,
   and when a new one genuinely earns its place, say why in the commit. The

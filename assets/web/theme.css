@@ -83,13 +83,8 @@
 /* ── Base tokens: shape, motion, and the Alix Adult token vocabulary ───
  * Radii/motion are shared across every theme. The brand mark + its
  * primary-action fill are fixed across every theme too (brand identity
- * doesn't reskin with the palette). --bg/--chrome/--border/--accent
- * forward to the legacy --void/--panel-top/--line/--bolt names below, so
- * every theme — aligned to the Alix Adult palette or not — resolves them
- * without repeating the value; --text/--faint/--accent-ink/--brand-text
- * have no legacy analog, so they fall back to their closest existing
- * counterpart here and get real per-theme values only where a theme block
- * below sets them explicitly. */
+ * doesn't reskin with the palette). Tokens with the same default visual role
+ * share a value here; theme blocks override them when their roles diverge. */
 :root {
   --radius-btn: 10px;
   --radius-chip-sm: 6px;
@@ -103,9 +98,6 @@
   --brand-ink: #1a1206;
 
   --bg: var(--void);
-  --chrome: var(--panel-top);
-  --border: var(--line);
-  --accent: var(--bolt);
   --text: var(--ink);
   --faint: var(--dim);
   --accent-ink: var(--void);

@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js docs-audit docs-audit-manifest-check toolchain-check fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test test-inventory lint lint-js docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -68,6 +68,12 @@ docs-audit-manifest-check:
 	fi; \
 	echo 'docs-audit: every tracked Markdown file is in the semantic audit manifest'
 
+# Pre-1.0 production code must contain only the current design. Vocabulary
+# associated with backwards-compatibility machinery is a hard stop, not an
+# invitation to rename the mechanism.
+pre-1-0-check:
+	@sh scripts/pre-1-0-check.sh
+
 # Deterministic supply-chain guard: production CI and release paths use exact
 # toolchains, every external Action is immutable, and only named drift jobs may
 # follow current stable/nightly versions.
@@ -97,7 +103,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: lint test site-media-check docs-audit-manifest-check toolchain-check
+check: pre-1-0-check lint test site-media-check docs-audit-manifest-check toolchain-check
 
 # The Rust CI bundle: nightly formatting, clippy + tests under `-Dwarnings`, the
 # lean core, and coverage with the warnings gate cleared (coverage instruments
