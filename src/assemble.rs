@@ -208,7 +208,7 @@ pub fn load_decks(
         };
         names.push(deck.display_name());
         decks.insert(
-            deck.subject.clone(),
+            deck.deck_token.clone().unwrap_or_default(),
             DeckInfo {
                 path: deck.path.clone(),
                 deck_token: deck.deck_token.clone(),
@@ -254,9 +254,6 @@ fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
     }
 }
 
-/// Keyed by the deck's stable alix-id (empty when the deck has none), never
-/// by its filename: transient session-scoped routing must not key on a name
-/// that can be renamed out from under it.
 fn deck_id_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
     decks
         .into_values()
@@ -551,8 +548,6 @@ pub fn select(
         eprintln!("warning: could not save progress: {e}");
     }
 
-    // Keyed by the deck's alix-id (never the filename): these are looked up
-    // by `card.deck_id` at ask/tutor time.
     let links = decks
         .values()
         .map(|info| (info.deck_token.clone().unwrap_or_default(), info.links.clone()))
@@ -662,6 +657,35 @@ mod tests {
         assert!(selectable(&file), "a deck file is selectable");
         assert!(!selectable(&ws), "a folder of decks is not selectable");
         assert!(selectable(&empty), "an empty folder has no decks to reject");
+    }
+
+    #[test]
+    fn load_decks_keys_by_alix_id_so_same_basename_decks_survive_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        std::fs::create_dir(&a).unwrap();
+        std::fs::create_dir(&b).unwrap();
+        let one = a.join("geo.md");
+        let two = b.join("geo.md");
+        std::fs::write(
+            &one,
+            "---\nalix-id: \"aaaaaaaaaaaaaaaaaaaaaaaaaa\"\n---\n## q <!-- id: qa -->\na\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &two,
+            "---\nalix-id: \"bbbbbbbbbbbbbbbbbbbbbbbbbb\"\n---\n## q <!-- id: qb -->\nb\n",
+        )
+        .unwrap();
+
+        let (_, _, decks, _) = load_decks(&[one, two], &HashMap::new()).unwrap();
+
+        assert_eq!(
+            2,
+            decks.len(),
+            "two decks sharing the filename `geo.md` but with distinct alix-ids must both survive; a filename key collapses them to one"
+        );
     }
 
     #[test]

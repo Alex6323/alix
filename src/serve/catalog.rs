@@ -25,9 +25,7 @@ use crate::{
     store::Store,
 };
 
-/// Keyed by each deck's stable alix-id (never its filename): this is
-/// rebuilt fresh at session open, but a rename mid-session must not orphan
-/// the routing.
+/// Per-deck IO routing, keyed by each deck's stable alix-id, not its filename.
 pub(super) struct DeckFiles {
     pub(super) paths: HashMap<String, PathBuf>,
     /// Absent for a deck whose text couldn't be read (it can't have cards
