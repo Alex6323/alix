@@ -113,6 +113,20 @@ marker in each `progress/<alix-id>.json` document are persisted surfaces.
 Unsupported versions are rejected. A future post-1.0 breaking change requires
 an explicit compatibility and conversion policy before it ships.
 
+A *hard* break (a bumped or unrecognized document version) is loud: the reader
+rejects the file and leaves it on disk untouched. A *soft* break is not. The
+pre-1.0 policy permits reshaping a document with `#[serde(default)]` and no
+version bump, and no field uses `deny_unknown_fields`. So renaming, removing, or
+repurposing a serde field without bumping the version deserializes silently: the
+old field is ignored, the new one defaults, and the next save rewrites the file
+in the new shape, dropping that dimension of history. Nothing detects it, and a
+folder backup only helps a user who happened to snapshot before running the new
+binary. This silent-loss channel is accepted for fields that carry no
+load-bearing history; a soft break that would touch schedules, review history,
+or exam state must instead be gated by a version bump (making it a loud hard
+break) or a one-time external conversion, never shipped as a silent
+`#[serde(default)]`.
+
 ## Security
 
 The writer marker is a conflict signal, not authentication. A local or synced

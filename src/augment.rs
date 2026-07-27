@@ -273,7 +273,7 @@ pub(crate) fn write_deck_data(
     data: &AugmentDocumentData,
 ) -> Result<(), AugmentError> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|source| AugmentError::Io {
+        crate::fsio::create_dir_all(dir).map_err(|source| AugmentError::Io {
             path: path.to_path_buf(),
             source,
         })?;
@@ -551,7 +551,7 @@ impl AugmentCache {
             source,
         };
         if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir).map_err(io_err)?;
+            crate::fsio::create_dir_all(dir).map_err(io_err)?;
         }
         let loaded = revision.load(Ordering::Relaxed);
         let disk = deck_revision(&self.path, deck_id)?;
@@ -1308,6 +1308,20 @@ mod tests {
         ));
         let reopened = AugmentCache::open_deck(&path, "deck1").unwrap();
         assert_eq!(Some("newer"), reopened.note("card1", FP));
+    }
+
+    #[test]
+    fn a_truncated_augmentation_document_is_rejected_not_panicked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("augment/deck1.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"version":1,"deck_id":"deck1","car"#).unwrap();
+
+        let error = match AugmentCache::open_deck(&path, "deck1") {
+            Ok(_) => panic!("a truncated document was accepted"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, AugmentError::Format { .. }));
     }
 
     #[test]

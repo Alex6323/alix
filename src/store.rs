@@ -425,7 +425,7 @@ pub(crate) fn write_deck_data(
     data: &StoreDocumentData,
 ) -> Result<(), StoreError> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|source| StoreError::Io {
+        crate::fsio::create_dir_all(dir).map_err(|source| StoreError::Io {
             path: path.to_path_buf(),
             source,
         })?;
@@ -794,7 +794,7 @@ impl Store {
             source,
         };
         if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir).map_err(io_err)?;
+            crate::fsio::create_dir_all(dir).map_err(io_err)?;
         }
         let loaded = revision.load(Ordering::Relaxed);
         let disk = deck_revision(&self.path, deck_id)?;
@@ -1628,7 +1628,7 @@ pub fn device_label_in(dir: &Path) -> Option<String> {
         }
     }
     let label = generate_device_label();
-    std::fs::create_dir_all(dir).ok()?;
+    crate::fsio::create_dir_all(dir).ok()?;
     std::fs::write(&path, format!("{label}\n")).ok()?;
     Some(label)
 }
@@ -2180,6 +2180,34 @@ mod tests {
         let reopened = Store::open_deck(&path, "deck1", "d.md").unwrap();
         assert!(reopened.get("newer").is_some());
         assert!(reopened.get("stale").is_none());
+    }
+
+    #[test]
+    fn a_truncated_progress_document_is_rejected_and_a_fresh_save_recovers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // A save cut short by a crash before atomic replacement can never
+        // produce this, but a corrupted sync copy can; opening must not panic.
+        std::fs::write(&path, r#"{"version":1,"deck_id":"deck1","revi"#).unwrap();
+
+        let error = match Store::open_deck(&path, "deck1", "d.md") {
+            Ok(_) => panic!("a truncated document was accepted"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, StoreError::Format { .. }));
+
+        // The document is not the only copy of anything yet; a fresh save lands.
+        std::fs::remove_file(&path).unwrap();
+        let mut fresh = Store::open_deck(&path, "deck1", "d.md").unwrap();
+        fresh.get_or_insert("card1", 1);
+        fresh.save().unwrap();
+        assert!(
+            Store::open_deck(&path, "deck1", "d.md")
+                .unwrap()
+                .get("card1")
+                .is_some()
+        );
     }
 
     #[test]

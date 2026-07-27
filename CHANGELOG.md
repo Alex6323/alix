@@ -134,6 +134,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Saving a document that first has to create its `progress/` or `augment/`
+  directory now flushes the new directory entry to disk, closing a window where
+  a power loss right after the save could drop the freshly created directory and
+  the document inside it even though the save reported success.
+- `alix doctor` no longer tells you to "restore from a backup" that Alix does not
+  make; it now points at moving the file aside or restoring the folder from your
+  own backup (see the manual's Backing up section).
 - Hard-wrapped Markdown answer prose no longer renders each source line as a
   separate, widely spaced answer line. Ordinary flip and acquire views join
   soft wraps; line reveal, typing, fenced code, and generated lists retain

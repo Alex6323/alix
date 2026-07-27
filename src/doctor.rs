@@ -90,7 +90,7 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
             "store",
             Status::Fail,
             format!("{} — {e:#}", path.display()),
-            "a progress document is unreadable; restore it from a backup, or move it aside to start fresh",
+            "a progress document is unreadable; move it aside to start fresh, or restore the folder from your own backup (your decks are plain files — back them up like any folder)",
         ),
     }
 }

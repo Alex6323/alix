@@ -47,7 +47,7 @@ impl RecentDecks {
 
     pub fn save(&self) -> std::io::Result<()> {
         if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir)?;
+            crate::fsio::create_dir_all(dir)?;
         }
         let json = serde_json::to_string_pretty(&self.entries).expect("recent entries serialize");
         let tmp = self.path.with_extension("json.tmp");

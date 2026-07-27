@@ -202,6 +202,25 @@ the affected files, perform any one-time conversion outside production Alix, and
 verify the result with `alix doctor <folder>`. Production does not contain
 runtime compatibility branches or converters for superseded pre-1.0 layouts.
 
+### Backing up
+
+Everything Alix stores is plain files in one folder, so a backup is a copy of
+that folder. Use whatever you already use for folders: a cloud drive, `git`,
+`rsync`, Time Machine, or `cp -r`. Alix deliberately has no `backup`/`restore`
+command of its own: it could only reproduce what those tools already do,
+losslessly, over the same plain files. Keep an independent copy of any study
+history you care about.
+
+What Alix does guarantee is that its **own** writes cannot corrupt your files.
+Every state, deck, and manifest write goes to a sibling temporary file that is
+flushed to disk, atomically renamed over the target, and (on Linux and macOS)
+has its directory entry flushed. An interrupted save leaves the previous file
+intact, never a half-written one; a kill-point fault-injection suite checks that
+at each step. Surviving a hard power loss additionally relies on flushing before
+the rename, which the code does but a test cannot simulate. That protects
+against Alix; your own folder backup protects against disk failure and
+accidental deletion.
+
 ### Multi-device via your cloud drive
 
 With the defaults, your decks, augmentation, assets, and progress live in one
