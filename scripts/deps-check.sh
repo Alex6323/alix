@@ -17,7 +17,7 @@ cargo tree --locked --offline -d --edges normal,build --prefix none --format '{p
         family = parts[1] == "0" ? "0." parts[2] : parts[1]
         print name "@" family
     }' |
-    sort |
+    LC_ALL=C sort |
     uniq -c |
     awk '{ print $2 " x" $1 }' >"$actual"
 
