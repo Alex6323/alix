@@ -1457,6 +1457,7 @@ mod tests {
              <!-- at: 2-3 -->\n",
         );
         alix::stamp::stamp_deck(&path).unwrap();
+        alix::source::stamp_citations(&path).unwrap();
         path
     }
 
@@ -1568,7 +1569,7 @@ mod tests {
         write(&ws.join("alix.toml"), "title = \"Box\"\n");
         write(&ws.join("source.txt"), "alpha\nbeta\ngamma\n");
         let deck_path = ws.join("decks/t.md");
-        write_deck(
+        write(
             &deck_path,
             "---\n\
              trace: a member walk\n\
@@ -1578,6 +1579,8 @@ mod tests {
              it reads line two\n\
              <!-- at: 2 -->\n",
         );
+        alix::assets::initialize(&deck_path).unwrap();
+        alix::source::stamp_citations(&deck_path).unwrap();
 
         let mut s = WalkSession::open(
             deck_path.to_string_lossy().into_owned(),
