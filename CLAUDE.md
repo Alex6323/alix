@@ -311,12 +311,15 @@ to this codebase. When in doubt, mirror the surrounding code.
   incorrect, and distinct. Reject giveaway options: conspicuous absolutes such
   as "Only...", "always", or "never", absurd claims, mismatched specificity,
   and simple negations of the answer all test option-reading rather than
-  understanding. Numeric locators can still resolve after line insertions while
-  pointing at unrelated code: whenever a source file changes, search the whole
-  shared workspace for every `at:` naming that file and semantically review all
-  matches, including decks from earlier issues. `alix doctor` proves resolution,
-  not relevance. Refresh affected ranges after final edits so the source view
-  and tutor explain the code that actually ships.
+  understanding. Every authored choice card also includes a short post-answer
+  note naming the mistaken premise behind each distractor; do not merely label
+  an option wrong or repeat the correct answer. Numeric locators can still
+  resolve after line insertions while pointing at unrelated code: whenever a
+  source file changes, search the whole shared workspace for every `at:` naming
+  that file and semantically review all matches, including decks from earlier
+  issues. `alix doctor` proves resolution, not relevance. Refresh affected
+  ranges after final edits so the source view and tutor explain the code that
+  actually ships.
 - **A source-code review deck contains source code, not design prose.** Every
   card in a deck presented for implementation review must cite implementation
   or regression-test files (`src/`, `apps/`, `tests/`, or the local equivalent).
