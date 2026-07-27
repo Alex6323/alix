@@ -26,6 +26,7 @@ const DECK_DOCUMENT_VERSION: u32 = 1;
 pub const FOREIGN_WRITE_WARN_WINDOW_MS: u64 = 60 * 60 * 1000;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Review {
     pub ts_ms: u64,
     pub grade: Grade,
@@ -37,6 +38,7 @@ pub struct Review {
 // Our own representation (all-u64 times), decoupled from rs-fsrs's `Card` so
 // the store format doesn't depend on the crate's type.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct FsrsState {
     pub stability: f64,
     pub difficulty: f64,
@@ -59,6 +61,7 @@ impl FsrsState {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct CardState {
     #[serde(default)]
     pub acquired_ms: u64,
@@ -135,6 +138,7 @@ impl CardState {
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct DeckProgress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mastered_at_ms: Option<u64>,
@@ -160,6 +164,7 @@ pub enum VirtualKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VirtualCard {
     pub id: String,
     pub kind: VirtualKind,
@@ -169,6 +174,7 @@ pub struct VirtualCard {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Writer {
     pub device: String,
     pub at_ms: u64,
@@ -180,6 +186,7 @@ pub const FP_VERSION: u8 = 1;
 
 // Store-internal matcher data, not card identity: freely changeable.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct HoleFingerprint {
     pub text_fp: u64,
     pub line_fp: u64,
@@ -187,6 +194,7 @@ pub struct HoleFingerprint {
 
 // Keyed by the card's base token; store-internal, never part of card identity.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct CardRecords {
     // FP_VERSION at write time; a stale value is ignored and rewritten, not mismatched.
     pub version: u8,
@@ -247,6 +255,7 @@ pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> Ca
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DeckStoreFile {
     version: u32,
     deck_id: String,
@@ -258,7 +267,7 @@ struct DeckStoreFile {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    virtual_cards: HashMap<String, serde_json::Value>,
+    virtual_cards: HashMap<String, VirtualCard>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     writer: Option<Writer>,
 }
@@ -350,32 +359,6 @@ pub enum StoreError {
     MissingDeckId { subject: String },
 }
 
-fn decode_virtual_cards(
-    values: HashMap<String, serde_json::Value>,
-) -> HashMap<String, VirtualCard> {
-    values
-        .into_iter()
-        .filter_map(|(key, value)| serde_json::from_value(value).ok().map(|card| (key, card)))
-        .collect()
-}
-
-fn encode_virtual_cards(
-    path: &Path,
-    cards: &HashMap<String, VirtualCard>,
-) -> Result<HashMap<String, serde_json::Value>, StoreError> {
-    cards
-        .iter()
-        .map(|(id, card)| {
-            serde_json::to_value(card)
-                .map(|value| (id.clone(), value))
-                .map_err(|source| StoreError::Format {
-                    path: path.to_path_buf(),
-                    source,
-                })
-        })
-        .collect()
-}
-
 fn deck_revision(path: &Path, expected_deck_id: &str) -> Result<u64, StoreError> {
     if !path.exists() {
         return Ok(0);
@@ -438,7 +421,7 @@ pub(crate) fn write_deck_data(
         cards: data.cards.clone(),
         records: data.records.clone(),
         decks: data.decks.clone(),
-        virtual_cards: encode_virtual_cards(path, &data.virtual_cards)?,
+        virtual_cards: data.virtual_cards.clone(),
         writer: data.writer.clone(),
     };
     write_json_atomic(path, &file)
@@ -473,7 +456,7 @@ pub(crate) fn read_deck_data(
     let old_subject = file.subject;
     let subject = current_subject.unwrap_or(&old_subject).to_string();
     let mut decks = file.decks;
-    let mut virtual_cards = decode_virtual_cards(file.virtual_cards);
+    let mut virtual_cards = file.virtual_cards;
     if old_subject != subject {
         if let Some(progress) = decks.remove(&old_subject) {
             decks.insert(subject.clone(), progress);
@@ -615,7 +598,7 @@ impl Store {
         {
             decks.insert(subject.clone(), progress);
         }
-        let mut virtual_cards = decode_virtual_cards(file.virtual_cards);
+        let mut virtual_cards = file.virtual_cards;
         if old_subject != subject {
             for card in virtual_cards.values_mut() {
                 if card.parent == old_subject {
@@ -814,7 +797,7 @@ impl Store {
             cards: self.cards.clone(),
             records: self.records.clone(),
             decks: self.decks.clone(),
-            virtual_cards: encode_virtual_cards(&self.path, &self.virtual_cards)?,
+            virtual_cards: self.virtual_cards.clone(),
             writer: self.writer_for_save(),
         };
         write_json_atomic(&self.path, &file)?;
@@ -2180,6 +2163,46 @@ mod tests {
         let reopened = Store::open_deck(&path, "deck1", "d.md").unwrap();
         assert!(reopened.get("newer").is_some());
         assert!(reopened.get("stale").is_none());
+    }
+
+    #[test]
+    fn an_unrecognized_field_is_rejected_loudly_not_silently_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // A renamed-away or removed field must fail the load, not be ignored
+        // and then dropped when the next save rewrites the document.
+        std::fs::write(
+            &path,
+            r#"{"version":1,"deck_id":"deck1","subject":"d.md","revision":1,"cards":{},"retired_field":true}"#,
+        )
+        .unwrap();
+
+        let error = match Store::open_deck(&path, "deck1", "d.md") {
+            Ok(_) => panic!("an unknown field was silently accepted"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, StoreError::Format { .. }));
+    }
+
+    #[test]
+    fn a_malformed_virtual_card_fails_the_load_instead_of_vanishing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress/deck1.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // Missing the required parent/text/created_ms: it used to be decoded
+        // with `.ok()` and silently dropped; now the whole load fails loudly.
+        std::fs::write(
+            &path,
+            r#"{"version":1,"deck_id":"deck1","subject":"d.md","revision":1,"cards":{},"virtual_cards":{"v1":{"id":"v1","kind":"tutor"}}}"#,
+        )
+        .unwrap();
+
+        let error = match Store::open_deck(&path, "deck1", "d.md") {
+            Ok(_) => panic!("a malformed virtual card was silently dropped"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, StoreError::Format { .. }));
     }
 
     #[test]

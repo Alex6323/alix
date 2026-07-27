@@ -38,6 +38,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Progress and augmentation documents now reject an unrecognized field instead
+  of ignoring it. Before, renaming or removing a field in a future build would
+  let old documents load with that field silently dropped, losing that data on
+  the next save; now such a document fails to load loudly and is left on disk
+  for external conversion, with no format version bump.
 - Review progress now persists as it happens: every grade, acquire, exam
   flag, badge, and card mutation writes the deck's progress document before
   the response returns, so closing the browser or killing the server
@@ -134,6 +139,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A malformed virtual card in a progress document no longer vanishes silently
+  (it was decoded best-effort and dropped on failure); the whole document now
+  fails to load loudly instead, so a corrupt or out-of-shape card is surfaced
+  rather than quietly discarding that card and its progress.
 - Saving a document that first has to create its `progress/` or `augment/`
   directory now flushes the new directory entry to disk, closing a window where
   a power loss right after the save could drop the freshly created directory and

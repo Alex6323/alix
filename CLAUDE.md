@@ -380,6 +380,13 @@ to this codebase. When in doubt, mirror the surrounding code.
   explicit user direction is invalid. Record user-visible breaks under
   `## [Unreleased]` → Changed. Persisted format versions for replacement
   designs restart at `1`. Migration policy begins only after 1.0.
+  **No silent soft breaks:** every persisted document struct carries
+  `#[serde(deny_unknown_fields)]`, so an old document with a renamed or removed
+  field fails to parse (loud) instead of silently ignoring it and dropping that
+  data on the next save. Change a field's meaning by renaming it (old data then
+  fails loud) and rewrite old data with external tooling; never repurpose a
+  field name in place, and never rely on `#[serde(default)]` to absorb a
+  removed field.
 - **No new dependency without a one-line reason.** Each crate added is permanent
   maintenance and supply-chain surface; reach for std or an existing dep first.
   Run `make deps-check` before editing dependency requirements and again after

@@ -113,19 +113,21 @@ marker in each `progress/<alix-id>.json` document are persisted surfaces.
 Unsupported versions are rejected. A future post-1.0 breaking change requires
 an explicit compatibility and conversion policy before it ships.
 
-A *hard* break (a bumped or unrecognized document version) is loud: the reader
-rejects the file and leaves it on disk untouched. A *soft* break is not. The
-pre-1.0 policy permits reshaping a document with `#[serde(default)]` and no
-version bump, and no field uses `deny_unknown_fields`. So renaming, removing, or
-repurposing a serde field without bumping the version deserializes silently: the
-old field is ignored, the new one defaults, and the next save rewrites the file
-in the new shape, dropping that dimension of history. Nothing detects it, and a
-folder backup only helps a user who happened to snapshot before running the new
-binary. This silent-loss channel is accepted for fields that carry no
-load-bearing history; a soft break that would touch schedules, review history,
-or exam state must instead be gated by a version bump (making it a loud hard
-break) or a one-time external conversion, never shipped as a silent
-`#[serde(default)]`.
+Both hard and soft format breaks are loud; there is no silent soft break. A
+*hard* break (a bumped or unrecognized document version) rejects the file and
+leaves it on disk untouched. A *soft* break (renaming, removing, or repurposing
+a field within the same version) is made loud by `#[serde(deny_unknown_fields)]`
+on every persisted document struct: an old document carrying a field the current
+shape no longer knows fails to parse, so it is rejected rather than silently
+having that field ignored and dropped on the next save. To change a field's
+meaning, rename it (the old name then fails loud on old data); never reuse a
+name with a new meaning, and never remove a field silently. Old data is
+rewritten by disposable tooling outside production Alix, with no version bump,
+consistent with the pre-1.0 no-backwards-compatibility rule. The one shape
+change `deny_unknown_fields` cannot make loud is *adding* a field (a document
+missing it fills from `#[serde(default)]`, which the omit-when-empty optional
+fields require); that case loses no data, since old documents never carried the
+new field.
 
 ## Security
 

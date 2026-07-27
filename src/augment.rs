@@ -17,6 +17,7 @@ const DECK_DOCUMENT_VERSION: u32 = 1;
 /// Display-only; never part of `Card::id()`, so applying it never touches progress.
 /// An all-empty value still marks the card as checked, distinct from no cache entry.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Format {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub front: Option<String>,
@@ -38,6 +39,7 @@ fn reveal_from_suggested(mode: Mode) -> Option<Reveal> {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Augmentation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub distractors: Vec<String>,
@@ -72,6 +74,7 @@ impl Augmentation {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Topology {
     pub name: String,
     pub principle: String,
@@ -84,6 +87,7 @@ pub struct Topology {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TopologyEdge {
     pub from: String,
     pub to: String,
@@ -91,6 +95,7 @@ pub struct TopologyEdge {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TopologyRegion {
     pub name: String,
     pub cards: Vec<String>,
@@ -144,6 +149,7 @@ impl TopologyOrder {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DeckAugmentFile {
     version: u32,
     deck_id: String,
