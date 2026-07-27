@@ -926,15 +926,18 @@ pub(super) fn review_state(
     let s = review::state(session, store, &r.augment, None);
     // Only computed when finished: it reloads decks, so this stays off the hot path.
     let exam_due = if s.finished {
+        // `r.files.paths` is keyed by deck_id (routing only); the wire value
+        // clients resolve `/api/exam/start` by is the deck's own name, read
+        // back off the loaded deck, not the map key.
         let mut due: Vec<String> = r
             .files
             .paths
-            .iter()
-            .filter_map(|(subject, path)| {
+            .values()
+            .filter_map(|path| {
                 Deck::load(path)
                     .ok()
                     .filter(|d| d.state(store) == DeckState::ExamDue)
-                    .map(|_| subject.clone())
+                    .map(|d| d.subject)
             })
             .collect();
         due.sort();
@@ -978,7 +981,7 @@ pub(super) fn review_state(
                     excerpt: None,
                     error: None,
                 };
-                if let Some(base) = r.source_bases.get(&*c.subject) {
+                if let Some(base) = r.source_bases.get(&*c.deck_id) {
                     match base.checked_excerpt(citation) {
                         Ok(ex) => {
                             // Relabel a content-addressed excerpt to its authored

@@ -1054,7 +1054,7 @@ pub fn run_review(
                 };
                 let dropped = r.session.remove_current(store, now_ms());
                 if let Some(first) = dropped.first() {
-                    let subject = first.subject.to_string();
+                    let deck_id = first.deck_id.to_string();
                     let line = first.line;
                     for card in &dropped {
                         if let Some(id) = card.id() {
@@ -1062,7 +1062,7 @@ pub fn run_review(
                         }
                     }
                     flush_mutation(store, store_dirty, save_error);
-                    r.files.remove_block(&subject, line);
+                    r.files.remove_block(&deck_id, line);
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
@@ -1079,11 +1079,11 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(subject) = r.session.current().map(|c| c.subject.to_string()) else {
+                let Some(deck_id) = r.session.current().map(|c| c.deck_id.to_string()) else {
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(path) = r.files.paths.get(&subject).cloned() else {
+                let Some(path) = r.files.paths.get(&deck_id).cloned() else {
                     respond_status(request, 400);
                     continue;
                 };

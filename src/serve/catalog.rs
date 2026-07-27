@@ -25,6 +25,9 @@ use crate::{
     store::Store,
 };
 
+/// Keyed by each deck's stable alix-id (never its filename): this is
+/// rebuilt fresh at session open, but a rename mid-session must not orphan
+/// the routing.
 pub(super) struct DeckFiles {
     pub(super) paths: HashMap<String, PathBuf>,
     /// Absent for a deck whose text couldn't be read (it can't have cards
@@ -37,10 +40,10 @@ impl DeckFiles {
     pub(super) fn new(paths: HashMap<String, PathBuf>) -> Self {
         let snapshots = paths
             .iter()
-            .filter_map(|(subject, path)| {
+            .filter_map(|(deck_id, path)| {
                 std::fs::read_to_string(path)
                     .ok()
-                    .map(|text| (subject.clone(), text))
+                    .map(|text| (deck_id.clone(), text))
             })
             .collect();
         Self {
@@ -54,32 +57,57 @@ impl DeckFiles {
     /// new note.
     pub(super) fn append_note(
         &mut self,
-        subject: &str,
+        deck_id: &str,
         line: usize,
         notes: &[String],
     ) -> Result<(), String> {
         let path = self
             .paths
-            .get(subject)
-            .ok_or_else(|| format!("no deck file known for {subject}"))?;
+            .get(deck_id)
+            .ok_or_else(|| format!("no deck file known for {deck_id}"))?;
         deck::append_note(path, line, notes).map_err(|e| e.to_string())?;
         if let Ok(text) = std::fs::read_to_string(path) {
-            self.snapshots.insert(subject.to_string(), text);
+            self.snapshots.insert(deck_id.to_string(), text);
         }
         Ok(())
     }
 
     /// Best-effort: a rewrite failure only warns, never propagates.
-    pub(super) fn remove_block(&mut self, subject: &str, line: usize) {
-        let lines = self.removed.entry(subject.to_string()).or_default();
+    pub(super) fn remove_block(&mut self, deck_id: &str, line: usize) {
+        let lines = self.removed.entry(deck_id.to_string()).or_default();
         lines.insert(line);
-        if let (Some(path), Some(original)) = (self.paths.get(subject), self.snapshots.get(subject))
+        if let (Some(path), Some(original)) =
+            (self.paths.get(deck_id), self.snapshots.get(deck_id))
         {
             let lines: Vec<usize> = lines.iter().copied().collect();
             if let Err(e) = deck::rewrite_without_cards(path, original, &lines) {
                 eprintln!("warning: could not update {}: {e}", path.display());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deck_files_routes_by_deck_id_never_by_the_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("whatever-its-called.md");
+        std::fs::write(&path, "## q\na\n").unwrap();
+        let mut paths = HashMap::new();
+        paths.insert("stable-alix-id".to_string(), path.clone());
+        let mut files = DeckFiles::new(paths);
+
+        assert_eq!(Some(&path), files.paths.get("stable-alix-id"));
+        assert_eq!(None, files.paths.get("whatever-its-called.md"));
+
+        files
+            .append_note("stable-alix-id", 1, &["a note".to_string()])
+            .expect("routes to the file through its deck_id, not its filename");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("a note"), "deck:\n{text}");
     }
 }
 

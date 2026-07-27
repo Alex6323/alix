@@ -540,13 +540,13 @@ impl Reviewing {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
-        let mut links = self.links.get(&*card.subject).cloned().unwrap_or_default();
+        let mut links = self.links.get(&*card.deck_id).cloned().unwrap_or_default();
         let card_origin_url = card
             .origin
             .as_deref()
             .filter(|origin| crate::deck::is_url(origin))
             .map(str::to_string);
-        let origin_url = card_origin_url.or_else(|| self.origin_urls.get(&*card.subject).cloned());
+        let origin_url = card_origin_url.or_else(|| self.origin_urls.get(&*card.deck_id).cloned());
         if let Some(origin) = &origin_url
             && !links.contains(origin)
         {
@@ -557,8 +557,8 @@ impl Reviewing {
             .as_deref()
             .filter(|origin| !crate::deck::is_url(origin))
             .map(PathBuf::from)
-            .or_else(|| self.origin_roots.get(&*card.subject).cloned());
-        let frozen = self.source_bases.get(&*card.subject).and_then(|base| {
+            .or_else(|| self.origin_roots.get(&*card.deck_id).cloned());
+        let frozen = self.source_bases.get(&*card.deck_id).and_then(|base| {
             let blocks = card
                 .citations
                 .iter()
@@ -590,7 +590,7 @@ impl Reviewing {
             ..
         } = self;
         ask.poll(|card, notes| {
-            files.append_note(&card.subject, card.line, notes)?;
+            files.append_note(&card.deck_id, card.line, notes)?;
             if let Some(cur) = session.current_mut()
                 && cur.id() == card.id()
             {

@@ -39,6 +39,9 @@ pub struct SourceCitation {
 #[derive(Clone, Debug)]
 pub struct Card {
     pub subject: Arc<str>,
+    /// The owning deck's stable alix-id; empty when the deck has none
+    /// (uninitialized deck, or a card built outside deck context).
+    pub deck_id: Arc<str>,
     pub front: String,
     pub context: Vec<String>,
     pub back: Vec<String>,
@@ -75,6 +78,7 @@ impl Card {
         let content_fingerprint = crate::parser::content_fingerprint(&front, &back);
         Self {
             subject,
+            deck_id: Arc::from(""),
             front,
             context: Vec::new(),
             back,
@@ -111,6 +115,7 @@ impl Card {
             self.note.clone(),
             self.line,
         );
+        card.deck_id = Arc::clone(&self.deck_id);
         card.reveal = self.reveal;
         card.input = self.input;
         card.images = self.images_back.clone();
@@ -255,6 +260,14 @@ mod tests {
         assert!(!fwd.reversed);
         assert!(rev.reversed);
         assert_eq!(fwd.token, rev.token);
+    }
+
+    #[test]
+    fn reversed_keeps_the_owning_decks_id() {
+        let mut fwd = stamped("vocab.md", "purported", &["angeblich"], None, "q1");
+        fwd.deck_id = Arc::from("a-deck-token");
+        let rev = fwd.reversed();
+        assert_eq!(fwd.deck_id, rev.deck_id);
     }
 
     #[test]

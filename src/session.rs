@@ -448,7 +448,7 @@ fn build_queue(
 }
 
 fn sibling_group(card: &Card) -> (&str, usize) {
-    (card.subject.as_ref(), card.line)
+    (card.deck_id.as_ref(), card.line)
 }
 
 fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
@@ -1249,6 +1249,47 @@ mod tests {
         assert_eq!(2, removed.len());
         assert_eq!(1, session.remaining());
         assert_eq!(2, session.current().unwrap().line);
+    }
+
+    #[test]
+    fn sibling_grouping_follows_deck_id_not_the_filename() {
+        let (store, _dir) = empty_store();
+        // Same deck_id, different filenames: still grouped as siblings.
+        let mut a = card("a.md", 1);
+        a.deck_id = Arc::from("shared-deck");
+        a.back = vec!["hole a".into()];
+        a.hole = Some(0);
+        let mut b = card("b.md", 1);
+        b.deck_id = Arc::from("shared-deck");
+        b.back = vec!["hole b".into()];
+        b.hole = Some(1);
+        let mut session = Session::new(vec![a, b], &store, sched(), SessionOptions::default(), 0);
+        assert_eq!(2, session.remaining());
+        let removed = session.remove_current(&store, 0);
+        assert_eq!(
+            2,
+            removed.len(),
+            "cards sharing a deck_id and line group as siblings even under different filenames"
+        );
+    }
+
+    #[test]
+    fn sibling_grouping_does_not_merge_across_deck_ids_sharing_a_filename() {
+        let (store, _dir) = empty_store();
+        // Same filename, different deck_id: must not be treated as siblings.
+        let mut a = card("deck.md", 1);
+        a.deck_id = Arc::from("deck-one");
+        let mut b = card("deck.md", 1);
+        b.deck_id = Arc::from("deck-two");
+        b.token = Some(Arc::from("tok1b"));
+        let mut session = Session::new(vec![a, b], &store, sched(), SessionOptions::default(), 0);
+        assert_eq!(2, session.remaining());
+        let removed = session.remove_current(&store, 0);
+        assert_eq!(
+            1,
+            removed.len(),
+            "a shared filename alone must not group cards from different decks"
+        );
     }
 
     #[test]

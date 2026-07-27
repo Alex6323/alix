@@ -95,10 +95,11 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     let document = parse_document(text)?;
     // Zero `## ` fronts is a valid, loadable zero-card deck, not a parse error.
     let subject: Arc<str> = Arc::from(subject);
+    let deck_id: Arc<str> = Arc::from(document.frontmatter.alix_id.as_deref().unwrap_or(""));
     let mut lints = document.lints;
     let mut cards = Vec::new();
     for raw in document.cards {
-        build_card(&subject, raw, &mut cards, &mut lints)?;
+        build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?;
     }
     Ok(ParsedDeck {
         deck_token: document.frontmatter.alix_id.clone(),
@@ -662,6 +663,7 @@ fn image_only(segments: &[Seg]) -> bool {
 
 fn build_card(
     subject: &Arc<str>,
+    deck_id: &Arc<str>,
     raw: RawCard,
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
@@ -770,6 +772,7 @@ fn build_card(
                 });
             } else if let Some((_, correct)) = options.into_iter().find(|(checked, _)| *checked) {
                 let mut card = Card::plain(Arc::clone(subject), front, vec![correct], note, line);
+                card.deck_id = Arc::clone(deck_id);
                 card.token = directives.token.as_deref().map(Arc::from);
                 card.images = images;
                 card.images_back = images_back;
@@ -804,6 +807,7 @@ fn build_card(
             .map(|segments| seg_display(segments))
             .collect();
         let mut card = Card::plain(Arc::clone(subject), front, back_lines, note, line);
+        card.deck_id = Arc::clone(deck_id);
         card.token = directives.token.as_deref().map(Arc::from);
         card.reveal = directives.reveal;
         card.input = directives.input;
@@ -860,6 +864,7 @@ fn build_card(
             note.clone(),
             line,
         );
+        card.deck_id = Arc::clone(deck_id);
         card.context = context;
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
@@ -1412,6 +1417,28 @@ mod tests {
         );
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(Some("0m5v2"), deck.cards[1].token.as_deref());
+    }
+
+    #[test]
+    fn every_card_shape_is_stamped_with_the_decks_alix_id() {
+        let token = "9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let text = format!(
+            "---\nalix-id: \"{token}\"\n---\n\
+             ## plain\na\n\
+             ## choice\n- [x] a\n- [ ] b\n\
+             ## cloze\nthe \\blank{{cat}} sat\n"
+        );
+        let deck = parse(&text);
+        assert!(deck.cards.len() >= 3, "{:?}", deck.cards);
+        for card in &deck.cards {
+            assert_eq!(token, card.deck_id.as_ref(), "{card:?}");
+        }
+    }
+
+    #[test]
+    fn a_deck_without_an_alix_id_stamps_cards_with_an_empty_deck_id() {
+        let deck = parse("## q\na\n");
+        assert_eq!("", deck.cards[0].deck_id.as_ref());
     }
 
     #[test]

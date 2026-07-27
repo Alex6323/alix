@@ -882,8 +882,14 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
         now_ms(),
     );
     let augment = crate::augment::AugmentCache::open(deck.with_extension("generated.json"));
+    // Routed by the deck's own alix-id (empty for a fixture with no
+    // frontmatter), matching what its parsed cards carry as `deck_id`.
+    let deck_id = crate::deck::Deck::load(&deck)
+        .ok()
+        .and_then(|d| d.deck_token)
+        .unwrap_or_default();
     let mut decks = HashMap::new();
-    decks.insert("d.md".to_string(), deck);
+    decks.insert(deck_id, deck);
     Reviewing::new(SessionBuild {
         session,
         label: "d.md".to_string(),
@@ -1138,6 +1144,9 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         1,
     );
     card.token = Some(Arc::from("q1"));
+    // Deliberately not the filename: proves the routing below keys on
+    // deck_id, not on `card.subject`.
+    card.deck_id = Arc::from("one-card-deck");
     let session = Session::new(
         vec![card.clone()],
         &store,
@@ -1146,7 +1155,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         now_ms(),
     );
     let mut decks = HashMap::new();
-    decks.insert("d.md".to_string(), deck.clone());
+    decks.insert("one-card-deck".to_string(), deck.clone());
     let reviewing = Reviewing::new(SessionBuild {
         session,
         label: "d.md".to_string(),
@@ -1251,7 +1260,8 @@ fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
     let deck_path = dir.path().join("d.md");
     std::fs::write(
         &deck_path,
-        "---\nsource: 29.rs\n---\n## q\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n",
+        "---\nalix-id: \"frozendeck1\"\nsource: 29.rs\n---\n## q\na\n\
+         <!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n",
     )
     .unwrap();
     crate::source::stamp_citations(&deck_path).unwrap();
@@ -1271,12 +1281,12 @@ fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
         now_ms(),
     );
     let mut decks = HashMap::new();
-    decks.insert("d.md".to_string(), deck_path);
+    decks.insert("frozendeck1".to_string(), deck_path);
     let mut origin_roots = HashMap::new();
     // Configured (`source_access` opted in), but unresolved on disk.
-    origin_roots.insert("d.md".to_string(), dir.path().join("gone-origin"));
+    origin_roots.insert("frozendeck1".to_string(), dir.path().join("gone-origin"));
     let mut source_bases = HashMap::new();
-    source_bases.insert("d.md".to_string(), SourceBase::for_deck(&deck));
+    source_bases.insert("frozendeck1".to_string(), SourceBase::for_deck(&deck));
     let mut r = Reviewing::new(SessionBuild {
         session,
         label: "d.md".to_string(),
@@ -1340,6 +1350,37 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
         .expect("a draft should be surfaced");
     assert_eq!("term?", draft.front);
     assert_eq!(vec!["definition".to_string()], draft.back);
+}
+
+#[test]
+fn exam_due_reports_the_decks_name_not_its_routing_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let deck_path = dir.path().join("d.md");
+    // `alix-id` deliberately differs from the filename: `r.files.paths` is
+    // keyed by it, but the wire value must stay the resolvable deck name.
+    std::fs::write(
+        &deck_path,
+        "---\nalix-id: \"examduedeck\"\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
+    )
+    .unwrap();
+    let deck = crate::deck::Deck::load(&deck_path).unwrap();
+    let card = deck.cards[0].clone();
+    assert_eq!("examduedeck", card.deck_id.as_ref());
+
+    let mut store = Store::open(dir.path().join("p.json")).unwrap();
+    let id = card.id().unwrap();
+    // A year-out review: graduated and long past due, so the deck reads as
+    // exam-due rather than merely started.
+    store.get_or_insert(&id, 0).recall = Some(crate::store::FsrsState {
+        state: 2,
+        scheduled_days: 100_000,
+        ..Default::default()
+    });
+
+    let r = reviewing_at(deck_path, vec![card], &store, Depth::Recall);
+    let dto = review_state(Some(&r), &store, None);
+    assert_eq!("done", dto.phase, "expected a finished session: {dto:?}");
+    assert_eq!(vec!["d.md".to_string()], dto.exam_due);
 }
 
 fn walk_deck(dir: &Path) -> crate::trace::Trace {

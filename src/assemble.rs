@@ -178,6 +178,7 @@ pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> 
         .into_iter()
         .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
     card.line = line;
+    card.deck_id = Arc::from(vc.deck.as_str());
     Some(card)
 }
 
@@ -253,10 +254,13 @@ fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
     }
 }
 
-fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
+/// Keyed by the deck's stable alix-id (empty when the deck has none), never
+/// by its filename: transient session-scoped routing must not key on a name
+/// that can be renamed out from under it.
+fn deck_id_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
     decks
-        .into_iter()
-        .map(|(subject, info)| (subject, info.path))
+        .into_values()
+        .map(|info| (info.deck_token.clone().unwrap_or_default(), info.path))
         .collect()
 }
 
@@ -547,32 +551,43 @@ pub fn select(
         eprintln!("warning: could not save progress: {e}");
     }
 
+    // Keyed by the deck's alix-id (never the filename): these are looked up
+    // by `card.deck_id` at ask/tutor time.
     let links = decks
-        .iter()
-        .map(|(subject, info)| (subject.clone(), info.links.clone()))
+        .values()
+        .map(|info| (info.deck_token.clone().unwrap_or_default(), info.links.clone()))
         .collect();
     let origin_urls = decks
-        .iter()
-        .filter_map(|(subject, info)| {
+        .values()
+        .filter_map(|info| {
             info.origin_url
                 .clone()
-                .map(|origin| (subject.clone(), origin))
+                .map(|origin| (info.deck_token.clone().unwrap_or_default(), origin))
         })
         .collect();
     let origin_roots = decks
-        .iter()
-        .filter(|(_, info)| info.source_access)
-        .filter_map(|(subject, info)| info.origin_root.clone().map(|root| (subject.clone(), root)))
+        .values()
+        .filter(|info| info.source_access)
+        .filter_map(|info| {
+            info.origin_root
+                .clone()
+                .map(|root| (info.deck_token.clone().unwrap_or_default(), root))
+        })
         .collect();
     let source_bases = decks
-        .iter()
-        .map(|(subject, info)| (subject.clone(), info.source_base.clone()))
+        .values()
+        .map(|info| {
+            (
+                info.deck_token.clone().unwrap_or_default(),
+                info.source_base.clone(),
+            )
+        })
         .collect();
 
     Ok(Selected::Review(SessionBuild {
         session,
         label,
-        decks: subject_paths(decks),
+        decks: deck_id_paths(decks),
         links,
         origin_urls,
         origin_roots,
@@ -612,7 +627,7 @@ pub fn browse(paths: Vec<PathBuf>, _instance: Option<&Path>) -> Result<CardsBuil
     Ok(CardsBuild {
         cards,
         label,
-        decks: subject_paths(decks),
+        decks: deck_id_paths(decks),
     })
 }
 
