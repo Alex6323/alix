@@ -33,7 +33,14 @@ Paris.
 Red
 Green
 Blue
+<!-- reveal: line -->
 ```
+
+A physical newline inside an ordinary flip answer is a Markdown soft wrap: the
+adult and mobile clients display it as a space, so you can wrap long source
+lines for editing without creating visual gaps on the card. Add
+`<!-- reveal: line -->` when the lines themselves are the learning sequence;
+line reveal and line typing preserve them individually.
 
 ## Inline formatting
 

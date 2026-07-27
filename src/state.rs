@@ -162,7 +162,9 @@ fn progress_document_for(store_path: &Path, deck_id: &str) -> Result<PathBuf, St
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "progress")
-        && store_path.extension().is_some_and(|extension| extension == "json")
+        && store_path
+            .extension()
+            .is_some_and(|extension| extension == "json")
     {
         let progress = store_path
             .parent()

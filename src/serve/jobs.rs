@@ -241,7 +241,14 @@ fn remote_card(c: &RemoteCard) -> Card {
         None,
         0,
     );
-    card.at = c.at.clone();
+    if let Some(locator) = &c.at {
+        card.citations.push(crate::card::SourceCitation {
+            locator: locator.clone(),
+            fingerprint: None,
+            origin: None,
+            line: 0,
+        });
+    }
     card
 }
 
@@ -538,9 +545,13 @@ impl Reviewing {
                 .unwrap_or_else(|| deck_root.clone())
         });
         let frozen = root.as_ref().and_then(|_| {
-            let at = card.at.as_deref()?;
             let base = self.source_bases.get(&*card.subject)?;
-            trace::frozen_excerpt_block(at, card.at_origin.as_deref(), base)
+            let blocks = card
+                .citations
+                .iter()
+                .filter_map(|citation| trace::frozen_excerpt_block(citation, base))
+                .collect::<Vec<_>>();
+            (!blocks.is_empty()).then(|| blocks.join("\n\n"))
         });
         let live_root = root.as_deref().filter(|r| r.exists());
         // answering here avoids a round trip that would just have the model
@@ -1110,6 +1121,15 @@ impl Generating {
             }
             match crate::library::place_deck(&self.dest, &name, &t) {
                 Ok(p) => {
+                    if Path::new(&self.url).exists() {
+                        crate::source::stamp_citations(&p.path).map_err(|error| {
+                            format!(
+                                "saved {}, but could not fingerprint its source citations: \
+                                 {error:#}",
+                                p.path.display()
+                            )
+                        })?;
+                    }
                     let deck = p
                         .path
                         .file_name()

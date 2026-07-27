@@ -68,6 +68,16 @@ ordinary Markdown remains byte-identical. Generated, imported, received,
 library, and tutorial creation workflows initialize the output they
 deliberately create (`src/parser/mod.rs`, `src/stamp.rs`, `src/workspace.rs`).
 
+Source citations fail closed behind a content fingerprint. Review, trace, and
+tutor grounding reveal a cited range only when its normalized displayed text
+matches the stored xxHash64 value. A unique exact relocation may be proposed,
+but ordinary doctor remains read-only; the explicit
+`--repair-source-locators` flag may stamp a reviewed range or apply that exact
+rebase. Changed and ambiguous excerpts are never substituted automatically.
+The hash detects accidental drift and does not authenticate a deck or defend
+against a malicious author who controls both content and metadata
+(`src/source.rs`, `src/cli/doctor.rs`).
+
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
 code still process content supplied to the app.
@@ -146,6 +156,7 @@ safe or accurate.
 | Syncthing or another tool creates concurrent same-deck progress writes | Per-deck atomic replacement, revision checks, writer warnings, and conflict-file detection. | Different decks are independent; for one deck, keep one active writer, resolve conflict copies manually, and back up before recovery. |
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
 | Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `alix-id`; a generic `id` grants no write authority, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
+| A numeric source range slides onto unrelated text | Every complete citation fingerprints the normalized excerpt and source consumers fail closed on a mismatch. | Review doctor findings before using explicit locator repair; fingerprints detect drift but do not prove semantic support. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
 | Malformed or hostile input exhausts resources | Excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
 | A release or dependency is compromised | CI tests source changes; production toolchains are exact and direct Action references use immutable SHAs. | Hosted runner images, operating-system packages, transitive Action behavior, signed artifacts, checksums, SBOMs, and full provenance are not yet a complete release guarantee. |
@@ -180,7 +191,8 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/deck.rs`: explicit-origin precedence and no source-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;
-- `src/source.rs`: citation and excerpt resolution;
+- `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
+  explicit exact locator repair;
 - `src/share.rs`: outgoing filtering and defensive receive sanitization;
 - `src/state.rs`: state-root layout and stable-ID document routing;
 - `src/store.rs`: per-deck atomic replacement, revisions, writer markers, and

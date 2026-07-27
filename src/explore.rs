@@ -606,7 +606,7 @@ pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
         let Ok(deck) = Deck::load(&member) else {
             continue;
         };
-        if !(deck.is_trace() || deck.cards.iter().any(|c| c.at.is_some())) {
+        if !(deck.is_trace() || deck.cards.iter().any(|c| !c.citations.is_empty())) {
             continue;
         }
         // `summary.files` is the running snippet count, passed as the start so each

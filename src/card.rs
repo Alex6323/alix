@@ -28,6 +28,14 @@ pub struct CardImage {
     pub alt: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceCitation {
+    pub locator: String,
+    pub fingerprint: Option<u64>,
+    pub origin: Option<String>,
+    pub line: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct Card {
     pub subject: Arc<str>,
@@ -42,8 +50,7 @@ pub struct Card {
     pub direction: Option<Direction>,
     pub images: Vec<CardImage>,
     pub images_back: Vec<CardImage>,
-    pub at: Option<String>,
-    pub at_origin: Option<String>,
+    pub citations: Vec<SourceCitation>,
     pub origin: Option<String>,
     pub givens: Vec<String>,
     pub display_back: Option<Vec<String>>,
@@ -79,8 +86,7 @@ impl Card {
             direction: None,
             images: Vec::new(),
             images_back: Vec::new(),
-            at: None,
-            at_origin: None,
+            citations: Vec::new(),
             origin: None,
             givens: Vec::new(),
             display_back: None,
@@ -109,6 +115,7 @@ impl Card {
         card.input = self.input;
         card.images = self.images_back.clone();
         card.images_back = self.images.clone();
+        card.citations = self.citations.clone();
         // The reversed half keeps the same token so id() can compose the "-r" suffix from it.
         card.token = self.token.clone();
         card.reversed = true;
@@ -273,7 +280,12 @@ mod tests {
             src: PathBuf::from("/imgs/a.png"),
             alt: None,
         }];
-        a.at = Some("card.rs:1-9".to_string());
+        a.citations.push(SourceCitation {
+            locator: "card.rs:1-9".to_string(),
+            fingerprint: Some(42),
+            origin: None,
+            line: 4,
+        });
         a.givens = vec!["state — the parser position".to_string()];
         assert_eq!(a.id(), b.id());
     }

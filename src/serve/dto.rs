@@ -29,14 +29,20 @@ pub(super) struct CardDto {
     pub(super) context_runs: Vec<Vec<InlineRun>>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
+    pub(super) back_units: Vec<NoteUnit>,
     pub(super) reshaped: bool,
     pub(super) note: Vec<NoteUnit>,
     pub(super) images: Vec<ImageDto>,
     pub(super) images_back: Vec<ImageDto>,
-    pub(super) at: Option<String>,
-    pub(super) citation: Option<ExcerptDto>,
-    pub(super) citation_error: Option<String>,
+    pub(super) citations: Vec<CitationDto>,
     pub(super) crumb: Option<CrumbDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct CitationDto {
+    pub(super) locator: String,
+    pub(super) excerpt: Option<ExcerptDto>,
+    pub(super) error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -963,25 +969,33 @@ pub(super) fn review_state(
                     .collect(),
             });
         }
-        if let Some(locator) = c.at.as_deref() {
-            // `dto.at` already carries the raw locator via the core view; a
-            // resolved excerpt may relabel it to its display form below.
-            if let Some(base) = r.source_bases.get(&*c.subject) {
-                match base.excerpt(locator) {
-                    Ok(ex) => {
-                        // Relabel a frozen-snapshot asset to its real source
-                        // and line numbers, so the citation reads
-                        // `store.rs:36-66`, not the asset's own numbering.
-                        let (ex, label) = relabel_for_display(ex, c.at_origin.as_deref());
-                        if let Some(label) = label {
-                            dto.at = Some(label);
+        dto.citations = c
+            .citations
+            .iter()
+            .map(|citation| {
+                let mut resolved = CitationDto {
+                    locator: citation.locator.clone(),
+                    excerpt: None,
+                    error: None,
+                };
+                if let Some(base) = r.source_bases.get(&*c.subject) {
+                    match base.checked_excerpt(citation) {
+                        Ok(ex) => {
+                            // Relabel a frozen-snapshot asset to its real source
+                            // and line numbers, so the citation reads
+                            // `store.rs:36-66`, not the asset's own numbering.
+                            let (ex, label) = relabel_for_display(ex, citation.origin.as_deref());
+                            if let Some(label) = label {
+                                resolved.locator = label;
+                            }
+                            resolved.excerpt = Some(excerpt_dto(&ex));
                         }
-                        dto.citation = Some(excerpt_dto(&ex));
+                        Err(e) => resolved.error = Some(format!("{e:#}")),
                     }
-                    Err(e) => dto.citation_error = Some(format!("{e:#}")),
                 }
-            }
-        }
+                resolved
+            })
+            .collect();
         dto
     });
     StateDto {
@@ -1065,11 +1079,18 @@ pub(super) fn card_dto(view: CardView) -> CardDto {
         context_runs: view.context_runs,
         back: view.back,
         back_runs: view.back_runs,
+        back_units: view.back_units,
         reshaped: view.reshaped,
         note: view.note,
-        at: view.at,
-        citation: None,
-        citation_error: None,
+        citations: view
+            .citations
+            .into_iter()
+            .map(|locator| CitationDto {
+                locator,
+                excerpt: None,
+                error: None,
+            })
+            .collect(),
         crumb: None,
     }
 }

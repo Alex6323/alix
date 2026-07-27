@@ -3,7 +3,6 @@
   "acquired": 4,
   "can_restart": true,
   "card": {
-    "at": "string.rs:120-128",
     "back": [
       "every value has one owner"
     ],
@@ -14,17 +13,33 @@
         }
       ]
     ],
-    "citation": {
-      "lines": [
-        {
-          "n": 120,
-          "text": "let s = String::new();"
-        }
-      ],
-      "path": "src/string.rs",
-      "truncated": false
-    },
-    "citation_error": null,
+    "back_units": [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "every value has one owner"
+          }
+        ],
+        "text": "every value has one owner"
+      }
+    ],
+    "citations": [
+      {
+        "error": null,
+        "excerpt": {
+          "lines": [
+            {
+              "n": 120,
+              "text": "let s = String::new();"
+            }
+          ],
+          "path": "src/string.rs",
+          "truncated": false
+        },
+        "locator": "string.rs:120-128"
+      }
+    ],
     "context": [
       "Chapter 4"
     ],

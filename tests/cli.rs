@@ -1786,6 +1786,7 @@ fn receive_a_zip_folder_refuses_to_clobber_an_existing_dest() {
 #[test]
 fn generate_builds_checkpoints_into_an_existing_trace_stub() {
     let dir = TempDir::new().unwrap();
+    write(dir.path(), "notes.md", "some source material\n");
     let stub = write(
         dir.path(),
         "t.md",
@@ -1793,7 +1794,7 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
     );
     let cli = fake_claude(
         dir.path(),
-        "## checkpoint one\nsome point\n<!-- at: 1 -->\n",
+        "## checkpoint one\nsome point\n<!-- at: notes.md:1 -->\n",
     );
     let config = write(
         dir.path(),

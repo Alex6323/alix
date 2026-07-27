@@ -3,7 +3,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use alix::{deck::Deck, source::SourceBase, trace::Trace, workspace};
+use alix::{
+    deck::{AtRewrite, Deck},
+    source::{CitationIntegrity, SourceBase},
+    trace::Trace,
+    workspace,
+};
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -220,15 +225,33 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             Err(e) => report.warn(format!("{}: {e:#}", deck.subject)),
         }
     }
-    if !deck.is_trace() {
-        let base = SourceBase::for_deck(deck);
-        for card in &deck.cards {
-            if let Some(at) = card.at.as_deref()
-                && let Err(e) = base.excerpt(at)
-            {
+    let base = SourceBase::for_deck(deck);
+    for card in &deck.cards {
+        for citation in &card.citations {
+            let detail = match base.inspect_citation(citation) {
+                Ok(CitationIntegrity::Current(_)) => None,
+                Ok(CitationIntegrity::Unfingerprinted { .. }) => Some(
+                    "has no excerpt fingerprint; review it, then run \
+                     `alix doctor --repair-source-locators`"
+                        .to_string(),
+                ),
+                Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
+                    "the exact excerpt moved to `{locator}`; run \
+                     `alix doctor --repair-source-locators` to rebase it"
+                )),
+                Ok(CitationIntegrity::Changed) => {
+                    Some("the excerpt changed or disappeared; review it manually".to_string())
+                }
+                Ok(CitationIntegrity::Ambiguous { locators }) => Some(format!(
+                    "the excerpt matches several ranges ({}); review it manually",
+                    locators.join(", ")
+                )),
+                Err(error) => Some(format!("{error:#}")),
+            };
+            if let Some(detail) = detail {
                 report.warn(format!(
-                    "{}: card at line {}: `at: {at}`: {e:#}",
-                    deck.subject, card.line
+                    "{}: card at line {}: `at: {}` {detail}",
+                    deck.subject, card.line, citation.locator
                 ));
             }
         }
@@ -506,15 +529,94 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
+    let mut unresolved = 0;
+    for path in paths {
+        let deck = Deck::load(path)?;
+        let base = SourceBase::for_deck(&deck);
+        let mut rewrites = Vec::new();
+        let mut changed = false;
+        for card in &deck.cards {
+            for citation in &card.citations {
+                let (at, fingerprint) = match base.inspect_citation(citation)? {
+                    CitationIntegrity::Current(_) => {
+                        (citation.locator.clone(), citation.fingerprint)
+                    }
+                    CitationIntegrity::Unfingerprinted { fingerprint, .. } => {
+                        println!(
+                            "stamped {}:{} `{}`",
+                            path.display(),
+                            citation.line,
+                            citation.locator
+                        );
+                        changed = true;
+                        (citation.locator.clone(), Some(fingerprint))
+                    }
+                    CitationIntegrity::Relocated { locator, .. } => {
+                        println!(
+                            "rebased {}:{} `{}` -> `{locator}`",
+                            path.display(),
+                            citation.line,
+                            citation.locator
+                        );
+                        changed = true;
+                        (locator, citation.fingerprint)
+                    }
+                    CitationIntegrity::Changed => {
+                        eprintln!(
+                            "warning: {}:{} `{}` changed or disappeared; not repaired",
+                            path.display(),
+                            citation.line,
+                            citation.locator
+                        );
+                        unresolved += 1;
+                        (citation.locator.clone(), citation.fingerprint)
+                    }
+                    CitationIntegrity::Ambiguous { locators } => {
+                        eprintln!(
+                            "warning: {}:{} `{}` matches several ranges ({}); not repaired",
+                            path.display(),
+                            citation.line,
+                            citation.locator,
+                            locators.join(", ")
+                        );
+                        unresolved += 1;
+                        (citation.locator.clone(), citation.fingerprint)
+                    }
+                };
+                rewrites.push(AtRewrite {
+                    at,
+                    fingerprint,
+                    origin: citation.origin.clone(),
+                    line: citation.line,
+                });
+            }
+        }
+        if changed {
+            alix::deck::set_source_citations(path, &rewrites)?;
+        }
+    }
+    if unresolved > 0 {
+        bail!("{unresolved} source citation(s) need manual review");
+    }
+    Ok(())
+}
+
 // Exits non-zero only on a hard fail; a missing optional binary (a warn)
 // never breaks a script.
 pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     use alix::doctor::{self, Status};
     if let Some(path) = &args.dir {
         if path.is_file() {
+            if args.repair_source_locators {
+                repair_source_locators(std::slice::from_ref(path))?;
+            }
             return check(vec![path.clone()]);
         }
         if alix::workspace::is_workspace(path) {
+            if args.repair_source_locators {
+                repair_source_locators(&alix::workspace::deck_files(path))?;
+            }
             check(vec![path.clone()])?;
         }
     }
@@ -528,6 +630,14 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             (dir, store)
         }
     };
+    if args.repair_source_locators
+        && !args
+            .dir
+            .as_deref()
+            .is_some_and(alix::workspace::is_workspace)
+    {
+        repair_source_locators(&alix::workspace::deck_files(&decks_dir))?;
+    }
     findings.push(doctor::check_store(Some(store_path)));
     findings.push(doctor::check_decks(&decks_dir));
     findings.push(doctor::check_binary(
@@ -974,6 +1084,55 @@ mod tests {
         assert!(
             warnings.contains("augment.json"),
             "aggregate augment warning: {warnings}"
+        );
+    }
+
+    #[test]
+    fn source_locator_repair_is_explicit_and_preserves_card_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "code.rs",
+            "inserted\nalpha\nfn answer() {\n    42\n}\nomega\n",
+        );
+        let expected = alix::source::Excerpt {
+            path: PathBuf::from("code.rs"),
+            lines: vec![(2, "fn answer() {".into()), (3, "    42".into())],
+            truncated: false,
+        };
+        let fingerprint =
+            alix::source::format_excerpt_fingerprint(alix::source::excerpt_fingerprint(&expected));
+        let deck_path = dir.path().join("deck.md");
+        w(
+            dir.path(),
+            "deck.md",
+            &format!(
+                "---\nalix-id: \"deck1\"\nsource: .\n---\n\
+                 ## q\nanswer\n<!-- at: code.rs:2-3 @ {fingerprint} -->\n\
+                 <!-- id: card1 -->\n"
+            ),
+        );
+
+        let before = std::fs::read_to_string(&deck_path).unwrap();
+        let mut report = Report::default();
+        deck_findings(&deck_path, true, &mut report);
+        assert!(
+            report
+                .warnings
+                .join("\n")
+                .contains("moved to `code.rs:3-4`"),
+            "{:?}",
+            report.warnings
+        );
+        assert_eq!(before, std::fs::read_to_string(&deck_path).unwrap());
+
+        repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
+        let after = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(after.contains(&format!("at: code.rs:3-4 @ {fingerprint}")));
+        assert!(after.contains("<!-- id: card1 -->"));
+        assert_eq!(
+            Some("card1".to_string()),
+            Deck::load(&deck_path).unwrap().cards[0].id()
         );
     }
 }

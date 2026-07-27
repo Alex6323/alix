@@ -26,10 +26,16 @@
 
 // Section: imports
 
+use flutter_rust_bridge::{
+    Handler, IntoIntoDart,
+    for_generated::{
+        Lifetimeable, Lockable,
+        byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt},
+        transform_result_dco,
+    },
+};
+
 use crate::api::review::*;
-use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
-use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
-use flutter_rust_bridge::{Handler, IntoIntoDart};
 
 // Section: boilerplate
 
@@ -1493,11 +1499,12 @@ const _: fn() = || {
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.context_runs;
         let _: Vec<String> = CardView.back;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.back_runs;
+        let _: Vec<crate::api::review::NoteUnit> = CardView.back_units;
         let _: bool = CardView.reshaped;
         let _: Vec<crate::api::review::NoteUnit> = CardView.note;
         let _: Vec<crate::api::review::ImageView> = CardView.images;
         let _: Vec<crate::api::review::ImageView> = CardView.images_back;
-        let _: Option<String> = CardView.at;
+        let _: Vec<String> = CardView.citations;
     }
     {
         let CheckFeedback = None::<crate::api::review::CheckFeedback>.unwrap();
@@ -1662,11 +1669,12 @@ impl SseDecode for crate::api::review::CardView {
             <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
         let mut var_backRuns = <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
+        let mut var_backUnits = <Vec<crate::api::review::NoteUnit>>::sse_decode(deserializer);
         let mut var_reshaped = <bool>::sse_decode(deserializer);
         let mut var_note = <Vec<crate::api::review::NoteUnit>>::sse_decode(deserializer);
         let mut var_images = <Vec<crate::api::review::ImageView>>::sse_decode(deserializer);
         let mut var_imagesBack = <Vec<crate::api::review::ImageView>>::sse_decode(deserializer);
-        let mut var_at = <Option<String>>::sse_decode(deserializer);
+        let mut var_citations = <Vec<String>>::sse_decode(deserializer);
         return crate::api::review::CardView {
             front: var_front,
             front_runs: var_frontRuns,
@@ -1675,11 +1683,12 @@ impl SseDecode for crate::api::review::CardView {
             context_runs: var_contextRuns,
             back: var_back,
             back_runs: var_backRuns,
+            back_units: var_backUnits,
             reshaped: var_reshaped,
             note: var_note,
             images: var_images,
             images_back: var_imagesBack,
-            at: var_at,
+            citations: var_citations,
         };
     }
 }
@@ -2671,11 +2680,12 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
             self.0.context_runs.into_into_dart().into_dart(),
             self.0.back.into_into_dart().into_dart(),
             self.0.back_runs.into_into_dart().into_dart(),
+            self.0.back_units.into_into_dart().into_dart(),
             self.0.reshaped.into_into_dart().into_dart(),
             self.0.note.into_into_dart().into_dart(),
             self.0.images.into_into_dart().into_dart(),
             self.0.images_back.into_into_dart().into_dart(),
-            self.0.at.into_into_dart().into_dart(),
+            self.0.citations.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3326,11 +3336,12 @@ impl SseEncode for crate::api::review::CardView {
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.context_runs, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.back_runs, serializer);
+        <Vec<crate::api::review::NoteUnit>>::sse_encode(self.back_units, serializer);
         <bool>::sse_encode(self.reshaped, serializer);
         <Vec<crate::api::review::NoteUnit>>::sse_encode(self.note, serializer);
         <Vec<crate::api::review::ImageView>>::sse_encode(self.images, serializer);
         <Vec<crate::api::review::ImageView>>::sse_encode(self.images_back, serializer);
-        <Option<String>>::sse_encode(self.at, serializer);
+        <Vec<String>>::sse_encode(self.citations, serializer);
     }
 }
 
@@ -4028,13 +4039,17 @@ mod io {
 
     // Section: imports
 
+    use flutter_rust_bridge::{
+        Handler, IntoIntoDart,
+        for_generated::{
+            Lifetimeable, Lockable,
+            byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt},
+            transform_result_dco,
+        },
+    };
+
     use super::*;
     use crate::api::review::*;
-    use flutter_rust_bridge::for_generated::byteorder::{
-        NativeEndian, ReadBytesExt, WriteBytesExt,
-    };
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
-    use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
 
@@ -4079,15 +4094,18 @@ mod web {
 
     // Section: imports
 
+    use flutter_rust_bridge::{
+        Handler, IntoIntoDart,
+        for_generated::{
+            Lifetimeable, Lockable,
+            byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt},
+            transform_result_dco, wasm_bindgen,
+            wasm_bindgen::prelude::*,
+        },
+    };
+
     use super::*;
     use crate::api::review::*;
-    use flutter_rust_bridge::for_generated::byteorder::{
-        NativeEndian, ReadBytesExt, WriteBytesExt,
-    };
-    use flutter_rust_bridge::for_generated::wasm_bindgen;
-    use flutter_rust_bridge::for_generated::wasm_bindgen::prelude::*;
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
-    use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
 

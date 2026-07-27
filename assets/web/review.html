@@ -211,7 +211,7 @@
      its box keeps its exact size and position — the note, the footer, and the layout
      never move. The corner cue is excluded so you can still un-hide. */
   .region.a.concealed > *:not(.cite-toggle) { visibility: hidden; }
-  .cite-err { color: var(--dim); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
+  .cite-err { color: var(--warn); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
   .front-text { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
   /* A multi-line front (a reversed card's alternatives) reads as centred lines
      rather than one run-on where the browser collapsed the newlines. */
@@ -283,12 +283,6 @@
   /* A reshaped list reveals as a left-aligned block, centered as a whole — its lines
      are an enumeration, so their left edge must line up. */
   .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
-  /* Every other multi-line answer is a centred stanza: each line centred on the card,
-     separated by a blank line so the lines read as alternatives, not as a paragraph.
-     Scoped to `.stanza`, never bare `.reveal` — a typed check's ✓/✗ lines and the
-     Explain key-point bullets are `.answer` inside a plain `.reveal`, and those are
-     enumerations that must stay tight. */
-  .reveal.stanza .answer + .answer { margin-top: 1.4em; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   code { font-family: var(--mono); color: var(--code); }
@@ -739,6 +733,7 @@
   .reveal-head .at { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* shared editor-style source panel for trace reveals and fact-card citations */
   .source-excerpt { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--excerpt-bg); }
+  .source-stack { width: 100%; display: flex; flex-direction: column; gap: 14px; }
   .source-file { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 7px 13px; border-bottom: 1px solid var(--line); background: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .source-code { margin: 0; padding: 9px 0; overflow-x: auto; }
   .source-line { display: flex; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; }
@@ -3231,10 +3226,9 @@ function renderBrowse() {
   }
   appendImages(q, c.images);
 
-  // Match the review path: any multi-line answer is a left-aligned block (centered
-  // as a whole); only a reshaped-list answer gets bullets.
-  const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
-  appendReveal(sec, c.back, c.back_runs, isReshapedList(c));
+  const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
+  if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true);
+  else appendAnswerUnits(sec, c.back_units);
   a.appendChild(sec);
   appendImages(a, c.images_back);
   a.classList.add("has-body"); // browse always shows the full answer
@@ -3259,11 +3253,11 @@ function fillBottom() {
   const a = document.getElementById("ansRegion");
   if (!a) return;
   a.innerHTML = "";
-  const citable = state.card.at && isAnswered();
+  const citations = state.card.citations || [];
+  const citable = citations.length > 0 && isAnswered();
   if (citable && citationView) {
-    // Source view: the cited excerpt takes the answer's place (swap, not stack).
-    if (state.card.citation) renderSourceExcerpt(a, state.card.citation);
-    else a.appendChild(el("div", "cite-err", state.card.citation_error || "source unavailable"));
+    // Source view: all cited excerpts take the answer's place in authored order.
+    renderSourceCitations(a, citations);
     setNote(true);
   } else if (isAcquire()) {
     if (effectiveDraw()) {
@@ -3303,7 +3297,11 @@ function fillBottom() {
   a.onclick = citable ? onCiteClick : null;
   if (citable) {
     const grp = el("span", "cite-toggle");
-    grp.title = citationView ? "show answer" : "show source " + state.card.at;
+    grp.title = citationView
+      ? "show answer"
+      : citations.length === 1
+        ? "show source " + citations[0].locator
+        : `show ${citations.length} sources`;
     grp.appendChild(el("span", "ci", citationView ? "¶" : "</>"));
     grp.appendChild(el("span", "k", "s"));
     a.appendChild(grp);
@@ -3312,7 +3310,7 @@ function fillBottom() {
   // un-hiding the revealed answer in place so you can self-test the encoding. `h` (or
   // a tap on the region) flips it both ways. Shown only once the answer is revealed
   // (nothing to hide before then), and never on a cited card — citation owns the corner.
-  const hidable = isAcquire() && !effectiveDraw() && !isAcquireChoice() && !state.card.at && revealed > 0;
+  const hidable = isAcquire() && !effectiveDraw() && !isAcquireChoice() && citations.length === 0 && revealed > 0;
   a.classList.toggle("hidable", hidable);
   a.classList.toggle("concealed", hidable && answerConcealed);
   if (hidable) {
@@ -3340,7 +3338,7 @@ function fillBottom() {
 
 // Swap the answer region between the worded answer and the cited source excerpt.
 function toggleCitation() {
-  if (!state || !state.card || !state.card.at || !isAnswered()) return;
+  if (!state || !state.card || !(state.card.citations || []).length || !isAnswered()) return;
   citationView = !citationView;
   fillBottom();
 }
@@ -3470,6 +3468,21 @@ function renderSourceExcerpt(parent, ex, terms) {
   panel.appendChild(code);
   if (ex.truncated) panel.appendChild(el("div", "source-truncated", "… excerpt truncated"));
   parent.appendChild(panel);
+}
+
+function renderSourceCitations(parent, citations) {
+  const stack = el("div", "source-stack");
+  for (const citation of citations || []) {
+    if (citation.excerpt) renderSourceExcerpt(stack, citation.excerpt);
+    else {
+      stack.appendChild(el(
+        "div",
+        "cite-err",
+        `⚠ ${citation.locator}: ${citation.error || "source unavailable"}`,
+      ));
+    }
+  }
+  parent.appendChild(stack);
 }
 
 // Tappable multiple-choice options.
@@ -3795,8 +3808,8 @@ function frozenDrawImg(dataUrl) {
 }
 
 // A reshaped multi-item answer (the `format` augment's list) reveals with
-// bullets; the card's own authored back lines (a poem, typing answers) are not
-// bulleted — only the reshape is, gated by `reshaped` from the server.
+// bullets. Authored physical lines remain available for line-reveal and typing,
+// but ordinary answers use `back_units`, where Markdown soft wraps are spaces.
 function isReshapedList(c) { return !!(c && c.reshaped && c.back.length > 1); }
 // Render revealed answer lines: a fenced ```code``` block becomes a <pre>
 // (monospace, indentation preserved); other lines are .answer divs, bulleted
@@ -3824,25 +3837,34 @@ function appendReveal(sec, lines, runs, isList) {
   }
 }
 
+function appendAnswerUnits(sec, units) {
+  for (const unit of units || []) {
+    if (unit.kind === "sentence") {
+      const answer = el("div", "answer");
+      if (unit.runs) appendRuns(answer, unit.runs); else answer.textContent = unit.text || "";
+      sec.appendChild(answer);
+    } else if (unit.kind === "code") {
+      const pre = el("pre", "code-block");
+      pre.textContent = (unit.lines || []).join("\n");
+      sec.appendChild(pre);
+    } else if (unit.kind === "checklist") {
+      appendChecklist(sec, unit.items);
+    }
+  }
+}
+
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 // The acquire view: a never-seen card shown answer-first, so you read it before
 // it's ever quizzed. One key ("Seen") records it; its first quiz comes ~1 min later.
-// Only a reshaped list wants a flush-left block: its lines are steps or bullets, and
-// a ragged left edge would break the enumeration. Any other multi-line answer — a few
-// translations, a couple of sentences — reads as a centred stanza instead, one blank
-// line between each, so a short line doesn't hang left of the centred prompt.
+// Only a reshaped list wants a flush-left block: its lines are steps or bullets.
 function leftAlignAnswer(c) { return isReshapedList(c); }
-// A multi-line answer that is neither a reshaped list nor a progressively-revealed
-// sequence reads as a centred stanza (each line centred, a blank line between). A
-// `line`-mode card is excluded: it reveals one line at a time and is intentionally
-// top-aligned (`filled`, see updateFade) so each new line lands at a stable spot —
-// the stanza gaps would only push it past the fold and lose the centred settle.
-function stanzaAnswer(c) { return !leftAlignAnswer(c) && state.mode !== "line" && c.back && c.back.length > 1; }
 function fillAcquire(a) {
   if (!a) return;
   const c = state.card;
-  const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
-  appendReveal(sec, c.back, c.back_runs, isReshapedList(c));
+  const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
+  if (state.mode === "line") appendReveal(sec, c.back, c.back_runs, false);
+  else if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true);
+  else appendAnswerUnits(sec, c.back_units);
   a.appendChild(sec);
   appendImages(a, c.images_back);
   a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in about a minute."));
@@ -3855,8 +3877,14 @@ function fillAnswer(a) {
 
   const c = state.card;
   const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
-  const sec = el("div", "reveal" + (stanzaAnswer(c) ? " stanza" : leftAlignAnswer(c) ? " list" : ""));
-  appendReveal(sec, c.back.slice(0, shown), c.back_runs && c.back_runs.slice(0, shown), isReshapedList(c));
+  const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
+  if (state.mode === "line") {
+    appendReveal(sec, c.back.slice(0, shown), c.back_runs && c.back_runs.slice(0, shown), false);
+  } else if (isReshapedList(c)) {
+    appendReveal(sec, c.back, c.back_runs, true);
+  } else {
+    appendAnswerUnits(sec, c.back_units);
+  }
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);
   // Attach the answer image to the region itself (a flex column), not to the
@@ -4426,7 +4454,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   // `s` swaps a cited card between its answer and its source, once answered.
-  if (state.card.at && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
+  if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
     e.preventDefault(); toggleCitation(); return;
   }
   // A never-seen card (acquire): recognition pick or recall reveal, then "Seen".

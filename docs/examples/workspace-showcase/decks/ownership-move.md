@@ -16,28 +16,28 @@ Snapshotted under assets so this example stays valid and walkable offline.
 Stack: a pointer, a length, and a capacity.
 Heap: the actual character contents.
 > Length is bytes currently used; capacity is bytes received from the allocator.
-<!-- at: 01.md -->
+<!-- at: 01.md @ xxh64:fbc4c018148dac41 -->
 <!-- id: 4mwwdfwyeb9nvsm2x03rchknj9 -->
 
 ## Given that layout, when you write `let s2 = s1`, what exactly gets copied?
 Only the stack data (pointer, length, capacity) is copied.
 The heap contents are not copied; `s1` and `s2` point at the same heap data.
-<!-- at: 02.md -->
+<!-- at: 02.md @ xxh64:16503ce6bd047bfc -->
 <!-- id: 0c76yd1ta5h68bhfk8mbb2fzcn -->
 
 ## If both `s1` and `s2` pointed at the same heap data and both went out of scope, what memory bug would occur?
 A double free: both would call `drop` on the same memory, risking corruption.
-<!-- at: 03.md -->
+<!-- at: 03.md @ xxh64:684012cb0bf8b6c9 -->
 <!-- id: 23wyjq03gnq8t81qyp0cbh0qda -->
 
 ## So how does Rust prevent that double free after `let s2 = s1`?
 It treats the assignment as a move: `s1` is considered no longer valid, so only `s2` frees the memory.
 Using `s1` afterward is a compile-time error.
 > A move is a shallow copy (pointer, length, capacity) plus invalidation of the source.
-<!-- at: 04.md -->
+<!-- at: 04.md @ xxh64:e493709594baa752 -->
 <!-- id: 7778gyq63jd49h6yrbw8w5q8m6 -->
 
 ## Does this mean Rust ever silently makes a deep copy of heap data?
 No. Rust never automatically deep-copies, so any automatic copy can be assumed cheap.
-<!-- at: 05.md -->
+<!-- at: 05.md @ xxh64:c09ba7870cc043c2 -->
 <!-- id: 3dyw29w4q19avx46bj6a9wy0nd -->

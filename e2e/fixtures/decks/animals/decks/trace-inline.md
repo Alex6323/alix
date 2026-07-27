@@ -10,5 +10,5 @@ source: trace-source.txt
 <!-- given: `Vec` — the collection being grown -->
 It calls `reserve` before inserting the element.
 > `reserve` establishes capacity first.
-<!-- at: 1 -->
+<!-- at: 1 @ xxh64:75905a565538542f -->
 <!-- id: 00000000000000000000000002 -->

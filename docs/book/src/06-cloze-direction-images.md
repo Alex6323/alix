@@ -104,17 +104,31 @@ source: src/string.rs
 
 ## What does the `String` struct hold?
 A `Vec<u8>` (its bytes).
-<!-- at: src/string.rs:1-3 -->
+<!-- at: src/string.rs:1-3 @ xxh64:0123456789abcdef -->
 ```
 
 The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses:
 `file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when `source:` is a single
-file. On reveal a `</>` marker appears on the answer: **click the answer** (or press
-`s`) to flip it to the same editor-style source panel used by trace walks, with
-the resolved file path and line-numbered excerpt, and back. The lines are read
-*live* from the source, so a moved or deleted file shows "source unavailable"
-rather than a stale quote. A short excerpt keeps the answer's centered vertical
-alignment; a long excerpt aligns to the top and scrolls.
+file. The `@ xxh64:...` value fingerprints the displayed source text; alix
+writes it when it creates a cited card or when you explicitly repair a
+hand-authored citation. A fact card may repeat the whole directive when its
+answer rests on several disjoint source ranges:
+
+```markdown
+<!-- at: src/state.rs:64-74 @ xxh64:0123456789abcdef -->
+<!-- at: src/state.rs:114-118 @ xxh64:123456789abcdef0 -->
+<!-- at: src/state.rs:152-158 @ xxh64:23456789abcdef01 -->
+```
+
+Each locator remains one contiguous range; separate directives never imply
+that disjoint code is adjacent. On reveal a `</>` marker appears on the answer:
+**click the answer** (or press `s`) to swap it for the same editor-style source
+panels used by trace walks, and back. Multiple excerpts are stacked in authored
+order inside the one scrollable answer region. For a live citation, alix shows
+the lines only when their fingerprint still matches. A moved, changed, deleted,
+ambiguous, or unfingerprinted excerpt shows a warning instead of unrelated
+lines, without hiding the other citations. Short evidence keeps the answer's
+centered vertical alignment; long evidence aligns to the top and scrolls.
 
 This is the same machinery trace walks use to reveal source, brought to ordinary
 fact cards. Like every directive, `<!-- at: -->` is not part of a card's identity:
@@ -122,8 +136,13 @@ adding a citation never resets its progress.
 
 You rarely write these by hand. Generating a deck from a local source
 ([`alix generate <path>`](11-generating-decks.md)) cites the lines each fact came
-from, and [`alix doctor`](17-command-reference.md) warns about a citation that no
-longer resolves. A workspace built with `alix generate` goes one further and
+from and fingerprints every citation. Plain
+[`alix doctor`](17-command-reference.md) reports missing fingerprints and
+fingerprint drift without writing. After reviewing the cited text,
+`alix doctor <deck> --repair-source-locators` stamps a missing fingerprint or
+rebases a uniquely relocated exact excerpt; changed or ambiguous excerpts
+remain untouched for semantic review. A workspace built with `alix generate`
+goes one further and
 **freezes** the cited excerpts into its `assets/`, so the workspace travels without
 the original source and the quotes never shift. It also records where they came
 from in an `<!-- origin: ... -->` directive, so the tutor can still reach the live

@@ -4,6 +4,7 @@
 - Recorded: 2026-07-25
 - Retrospective: No
 - Refines: [ADR 0002](0002-markdown-native-decks.md)
+- Refined by: [ADR 0020](0020-source-excerpt-integrity.md)
 
 ## Context
 

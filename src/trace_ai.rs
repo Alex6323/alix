@@ -84,28 +84,35 @@ pub(crate) fn snapshot(
     let mut ats: Vec<crate::deck::AtRewrite> = Vec::new();
 
     for card in &deck.cards {
-        let Some(locator) = card.at.as_deref() else {
-            continue;
-        };
-        match source_base.excerpt(locator) {
-            Ok(excerpt) => {
-                let n = start + copied.len() + 1;
-                let ext = excerpt_ext(&excerpt);
-                let name = format!("{n:02}.{ext}");
-                write_snippet(&assets_dir.join(&name), &excerpt)?;
-                copied.push(name.clone());
-                ats.push(crate::deck::AtRewrite {
-                    at: name,
-                    origin: excerpt_provenance(&excerpt, origin_root.as_deref()),
-                });
-            }
-            // Keep the original locator if the excerpt can't be read; warn later.
-            Err(_) => {
-                missing.push(locator.to_string());
-                ats.push(crate::deck::AtRewrite {
-                    at: locator.to_string(),
-                    origin: None,
-                });
+        for citation in &card.citations {
+            let excerpt = match citation.fingerprint {
+                Some(_) => source_base.checked_excerpt(citation),
+                None => source_base.excerpt(&citation.locator),
+            };
+            match excerpt {
+                Ok(excerpt) => {
+                    let n = start + copied.len() + 1;
+                    let ext = excerpt_ext(&excerpt);
+                    let name = format!("{n:02}.{ext}");
+                    write_snippet(&assets_dir.join(&name), &excerpt)?;
+                    copied.push(name.clone());
+                    ats.push(crate::deck::AtRewrite {
+                        at: name,
+                        fingerprint: Some(crate::source::excerpt_fingerprint(&excerpt)),
+                        origin: excerpt_provenance(&excerpt, origin_root.as_deref()),
+                        line: citation.line,
+                    });
+                }
+                // Keep the original locator if the excerpt can't be read; warn later.
+                Err(_) => {
+                    missing.push(citation.locator.clone());
+                    ats.push(crate::deck::AtRewrite {
+                        at: citation.locator.clone(),
+                        fingerprint: citation.fingerprint,
+                        origin: None,
+                        line: citation.line,
+                    });
+                }
             }
         }
     }
@@ -759,10 +766,13 @@ mod tests {
         assert!(text.contains("source: assets\n"), "{text}");
         assert!(text.contains("origin: "), "{text}");
         assert!(
-            text.contains("<!-- at: 01.rs from a.rs:2-3 -->\n"),
+            text.contains("<!-- at: 01.rs @ xxh64:") && text.contains(" from a.rs:2-3 -->\n"),
             "{text}"
         );
-        assert!(text.contains("<!-- at: 02.rs from b.rs:1 -->\n"), "{text}");
+        assert!(
+            text.contains("<!-- at: 02.rs @ xxh64:") && text.contains(" from b.rs:1 -->\n"),
+            "{text}"
+        );
         assert!(!text.contains("> from"), "{text}");
 
         let frozen = Deck::load(&deck_path).unwrap();
@@ -807,7 +817,7 @@ mod tests {
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(text.contains("source: assets\n"), "{text}");
         assert!(
-            text.contains("<!-- at: 01.md from notes.md:2 -->\n"),
+            text.contains("<!-- at: 01.md @ xxh64:") && text.contains(" from notes.md:2 -->\n"),
             "{text}"
         );
         assert!(!text.contains("> from"), "{text}");

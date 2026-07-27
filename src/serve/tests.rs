@@ -1236,12 +1236,13 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         "---\nsource: 29.rs\n---\n## q\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n",
     )
     .unwrap();
+    crate::source::stamp_citations(&deck_path).unwrap();
     // Stamped as in production: an unstamped card has no token and is never
     // servable.
     crate::stamp::stamp_deck(&deck_path).unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();
     let card = deck.cards[0].clone();
-    assert!(card.at_origin.is_some(), "the card is frozen");
+    assert!(card.citations[0].origin.is_some(), "the card is frozen");
 
     let store = Store::open(dir.path().join("p.json")).unwrap();
     let session = Session::new(
@@ -1329,6 +1330,7 @@ fn walk_deck(dir: &Path) -> crate::trace::Trace {
          <!-- at: 2 -->\n",
     )
     .unwrap();
+    crate::source::stamp_citations(&path).unwrap();
     crate::trace::Trace::from_deck(&Deck::load(&path).unwrap()).unwrap()
 }
 

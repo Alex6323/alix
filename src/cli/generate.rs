@@ -285,6 +285,9 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
         }
         let mut store = store_for(std::slice::from_ref(&target), None, config)?;
         let report = library::replace_deck(&dir, &name, &text, &mut store)?;
+        if Path::new(&source).exists() {
+            alix::source::stamp_citations(&target)?;
+        }
         println!(
             "Replaced {}: {} cards, wiped progress for {} card(s).",
             target.display(),
@@ -296,6 +299,9 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     let placed = library::place_deck(&dir, &name, &text)?;
     match placed.parse_error {
         None => {
+            if Path::new(&source).exists() {
+                alix::source::stamp_citations(&placed.path)?;
+            }
             println!("Wrote {} cards to {}", placed.cards, placed.path.display());
             Ok(())
         }
@@ -359,6 +365,7 @@ fn trace_build(
             .unwrap_or("trace.md");
         let mut store = store_for(std::slice::from_ref(&deck_path.to_path_buf()), None, config)?;
         let report = library::replace_deck(dir, name, &new_text, &mut store)?;
+        alix::source::stamp_citations(deck_path)?;
         println!(
             "Rebuilt {}: {} checkpoints, wiped progress for {} card(s). Review them \
              and their `at:` locators, then walk it from the picker.",
@@ -375,6 +382,7 @@ fn trace_build(
     if let Err(e) = alix::stamp::stamp_deck(deck_path) {
         eprintln!("warning: cannot stamp {}: {e}", deck_path.display());
     }
+    alix::source::stamp_citations(deck_path)?;
 
     let n = alix::parser::parse_str(&deck.subject, &cards)
         .map(|c| c.len())

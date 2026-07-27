@@ -63,11 +63,22 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
 pub(crate) fn note_units_with(card: &Card, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
     card.note
         .as_deref()
-        .map(|note| text_units_with(note, projector))
+        .map(|note| text_units_with(note, projector, true))
         .unwrap_or_default()
 }
 
-fn text_units_with(text: &str, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
+pub(crate) fn answer_units_with(
+    lines: &[String],
+    projector: &mut DisplayProjector,
+) -> Vec<NoteUnit> {
+    text_units_with(&lines.join("\n"), projector, false)
+}
+
+fn text_units_with(
+    text: &str,
+    projector: &mut DisplayProjector,
+    split_prose_sentences: bool,
+) -> Vec<NoteUnit> {
     let mut units = Vec::new();
     let mut code_fence = None;
     let mut code: Vec<String> = Vec::new();
@@ -84,7 +95,7 @@ fn text_units_with(text: &str, projector: &mut DisplayProjector) -> Vec<NoteUnit
                 code_fence = None;
             } else if code_fence.is_none() {
                 flush_checklist(&mut checklist, &mut units);
-                flush_prose(&mut prose, &mut units, projector);
+                flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
                 code_fence = Some(marker);
                 code.clear();
             } else {
@@ -102,13 +113,13 @@ fn text_units_with(text: &str, projector: &mut DisplayProjector) -> Vec<NoteUnit
             continue;
         }
         if let Some(mut items) = checklist_items_with(&[logical], projector) {
-            flush_prose(&mut prose, &mut units, projector);
+            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
             checklist.append(&mut items);
             continue;
         }
         if crate::inline::is_display_math_line(trimmed) {
             flush_checklist(&mut checklist, &mut units);
-            flush_prose(&mut prose, &mut units, projector);
+            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
             units.push(NoteUnit::Sentence {
                 text: trimmed.to_string(),
                 runs: projector.project(trimmed),
@@ -123,7 +134,7 @@ fn text_units_with(text: &str, projector: &mut DisplayProjector) -> Vec<NoteUnit
     }
 
     flush_checklist(&mut checklist, &mut units);
-    flush_prose(&mut prose, &mut units, projector);
+    flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
         units.push(NoteUnit::Code { lines: code });
@@ -140,7 +151,7 @@ pub(crate) fn front_units_with(
     front: &str,
     projector: &mut DisplayProjector,
 ) -> Option<Vec<NoteUnit>> {
-    let units = text_units_with(front, projector);
+    let units = text_units_with(front, projector, true);
     units
         .iter()
         .any(|unit| match unit {
@@ -169,8 +180,20 @@ fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>
     }
 }
 
-fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>, projector: &mut DisplayProjector) {
-    for sentence in split_sentences(prose) {
+fn flush_prose(
+    prose: &mut String,
+    units: &mut Vec<NoteUnit>,
+    projector: &mut DisplayProjector,
+    split_prose_sentences: bool,
+) {
+    let chunks = if split_prose_sentences {
+        split_sentences(prose)
+    } else if prose.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![prose.trim().to_string()]
+    };
+    for sentence in chunks {
         if !sentence.is_empty() {
             let runs = projector.project(&sentence);
             units.push(NoteUnit::Sentence {
@@ -281,6 +304,21 @@ mod tests {
     fn hard_wrapped_prose_joins_before_splitting() {
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
         assert_eq!(units, vec![sentence("A sentence spread across two lines.")]);
+    }
+
+    #[test]
+    fn ordinary_answer_units_join_authored_soft_wraps() {
+        let mut projector = DisplayProjector::default();
+        let lines = vec![
+            "`state::open_store` loads the initialized deck, requires its".to_string(),
+            "stable deck ID, and opens the document.".to_string(),
+        ];
+        assert_eq!(
+            answer_units_with(&lines, &mut projector),
+            vec![sentence(
+                "`state::open_store` loads the initialized deck, requires its stable deck ID, and opens the document."
+            )]
+        );
     }
 
     #[test]

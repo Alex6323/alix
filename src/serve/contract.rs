@@ -92,6 +92,10 @@ fn statedto_review_phase_wire_shape() {
             context_runs: vec![crate::inline::parse_inline("Chapter 4")],
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
+            back_units: vec![NoteUnit::Sentence {
+                text: "every value has one owner".to_string(),
+                runs: crate::inline::parse_inline("every value has one owner"),
+            }],
             reshaped: true,
             note: vec![
                 NoteUnit::Sentence {
@@ -130,16 +134,18 @@ fn statedto_review_phase_wire_shape() {
                     alt: None,
                 },
             ],
-            at: Some("string.rs:120-128".to_string()),
-            citation: Some(ExcerptDto {
-                path: "src/string.rs".to_string(),
-                lines: vec![LineDto {
-                    n: 120,
-                    text: "let s = String::new();".to_string(),
-                }],
-                truncated: false,
-            }),
-            citation_error: None,
+            citations: vec![CitationDto {
+                locator: "string.rs:120-128".to_string(),
+                excerpt: Some(ExcerptDto {
+                    path: "src/string.rs".to_string(),
+                    lines: vec![LineDto {
+                        n: 120,
+                        text: "let s = String::new();".to_string(),
+                    }],
+                    truncated: false,
+                }),
+                error: None,
+            }],
             crumb: Some(CrumbDto {
                 regions: vec!["intro".to_string(), "body".to_string()],
                 current: 1,
@@ -188,6 +194,11 @@ fn statedto_review_phase_wire_shape() {
                 "context_runs": [[{"text": "Chapter 4"}]],
                 "back": ["every value has one owner"],
                 "back_runs": [[{"text": "every value has one owner"}]],
+                "back_units": [{
+                    "kind": "sentence",
+                    "text": "every value has one owner",
+                    "runs": [{"text": "every value has one owner"}]
+                }],
                 "reshaped": true,
                 "note": [
                     {
@@ -219,13 +230,15 @@ fn statedto_review_phase_wire_shape() {
                     {"src": "/img/0123456789abcdef", "alt": "the stack pointer"},
                     {"src": "/img/fedcba9876543210", "alt": null}
                 ],
-                "at": "string.rs:120-128",
-                "citation": {
-                    "path": "src/string.rs",
-                    "lines": [{"n": 120, "text": "let s = String::new();"}],
-                    "truncated": false
-                },
-                "citation_error": null,
+                "citations": [{
+                    "locator": "string.rs:120-128",
+                    "excerpt": {
+                        "path": "src/string.rs",
+                        "lines": [{"n": 120, "text": "let s = String::new();"}],
+                        "truncated": false
+                    },
+                    "error": null
+                }],
                 "crumb": {
                     "regions": ["intro", "body"],
                     "current": 1,
@@ -527,6 +540,10 @@ fn carddto_wire_shape() {
             crate::inline::parse_inline("Use `**x**`"),
             crate::inline::parse_inline("*France*"),
         ],
+        back_units: vec![NoteUnit::Sentence {
+            text: "Use **x** France".to_string(),
+            runs: crate::inline::parse_inline("Use `**x**` *France*"),
+        }],
         reshaped: false,
         note: vec![NoteUnit::Sentence {
             text: "A **city**.".to_string(),
@@ -534,7 +551,7 @@ fn carddto_wire_shape() {
         }],
         images: Vec::new(),
         images_back: Vec::new(),
-        at: None,
+        citations: Vec::new(),
     });
     pin(
         "CardDto",
@@ -575,6 +592,16 @@ fn carddto_wire_shape() {
                 [{"text": "Use "}, {"text": "**x**", "code": true}],
                 [{"text": "France", "italic": true}]
             ],
+            "back_units": [{
+                "kind": "sentence",
+                "text": "Use **x** France",
+                "runs": [
+                    {"text": "Use "},
+                    {"text": "**x**", "code": true},
+                    {"text": " "},
+                    {"text": "France", "italic": true}
+                ]
+            }],
             "reshaped": false,
             "note": [{
                 "kind": "sentence",
@@ -583,9 +610,7 @@ fn carddto_wire_shape() {
             }],
             "images": [],
             "images_back": [],
-            "at": null,
-            "citation": null,
-            "citation_error": null,
+            "citations": [],
             "crumb": null
         }),
     );
@@ -628,13 +653,23 @@ fn carddto_math_wire_shape() {
         context_runs: vec![vec![display]],
         back: vec![r"\frac{1".to_string()],
         back_runs: vec![vec![error]],
+        back_units: vec![NoteUnit::Sentence {
+            text: r"\frac{1".to_string(),
+            runs: vec![InlineRun {
+                text: r"\frac{1".to_string(),
+                math: Some(MathView {
+                    display: false,
+                    svg: None,
+                    error: Some("ParseError: unexpected end".to_string()),
+                }),
+                ..InlineRun::default()
+            }],
+        }],
         reshaped: false,
         note: Vec::new(),
         images: Vec::new(),
         images_back: Vec::new(),
-        at: None,
-        citation: None,
-        citation_error: None,
+        citations: Vec::new(),
         crumb: None,
     };
     pin(
@@ -665,13 +700,22 @@ fn carddto_math_wire_shape() {
                     "error": "ParseError: unexpected end"
                 }
             }]],
+            "back_units": [{
+                "kind": "sentence",
+                "text": "\\frac{1",
+                "runs": [{
+                    "text": "\\frac{1",
+                    "math": {
+                        "display": false,
+                        "error": "ParseError: unexpected end"
+                    }
+                }]
+            }],
             "reshaped": false,
             "note": [],
             "images": [],
             "images_back": [],
-            "at": null,
-            "citation": null,
-            "citation_error": null,
+            "citations": [],
             "crumb": null
         }),
     );
@@ -911,13 +955,15 @@ fn browsedto_wire_shape() {
             context_runs: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
+            back_units: vec![NoteUnit::Sentence {
+                text: "a".to_string(),
+                runs: crate::inline::parse_inline("a"),
+            }],
             reshaped: false,
             note: Vec::new(),
             images: Vec::new(),
             images_back: Vec::new(),
-            at: None,
-            citation: None,
-            citation_error: None,
+            citations: Vec::new(),
             crumb: None,
         }],
     };
@@ -934,13 +980,16 @@ fn browsedto_wire_shape() {
                 "context_runs": [],
                 "back": ["a"],
                 "back_runs": [[{"text": "a"}]],
+                "back_units": [{
+                    "kind": "sentence",
+                    "text": "a",
+                    "runs": [{"text": "a"}]
+                }],
                 "reshaped": false,
                 "note": [],
                 "images": [],
                 "images_back": [],
-                "at": null,
-                "citation": null,
-                "citation_error": null,
+                "citations": [],
                 "crumb": null
             }]
         }),

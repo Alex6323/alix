@@ -164,8 +164,7 @@ struct CardDirectives {
     reveal_line: Option<usize>,
     input: Option<Input>,
     direction: Option<Direction>,
-    at: Option<String>,
-    at_origin: Option<String>,
+    citations: Vec<crate::card::SourceCitation>,
     origin: Option<String>,
     givens: Vec<String>,
 }
@@ -506,9 +505,16 @@ fn apply_directive(
             None => lints.push(bad_value(line, key, value)),
         },
         "at" => {
-            let (at, origin) = split_at_origin(&value);
-            directives.at = Some(at);
-            directives.at_origin = origin;
+            let (locator, fingerprint, origin, valid) = split_at(&value);
+            if !valid {
+                lints.push(bad_value(line, key, value));
+            }
+            directives.citations.push(crate::card::SourceCitation {
+                locator,
+                fingerprint,
+                origin,
+                line,
+            });
         }
         "origin" => directives.origin = Some(value),
         "given" => directives.givens.push(value),
@@ -522,12 +528,32 @@ fn apply_directive(
     Ok(())
 }
 
-// The separator is spaced (" from ") so a path like `from_x.rs` stays intact.
-fn split_at_origin(value: &str) -> (String, Option<String>) {
-    match value.split_once(" from ") {
-        Some((at, origin)) => (trim_ws(at).to_string(), Some(trim_ws(origin).to_string())),
-        None => (trim_ws(value).to_string(), None),
-    }
+fn split_at(value: &str) -> (String, Option<u64>, Option<String>, bool) {
+    let (at, origin) = match value.split_once(" from ") {
+        Some((at, origin)) => (at, Some(trim_ws(origin).to_string())),
+        None => (value, None),
+    };
+    let (locator, fingerprint, valid) = match at.rsplit_once(" @ ") {
+        Some((locator, fingerprint)) => {
+            let fingerprint = trim_ws(fingerprint);
+            let hex = fingerprint.strip_prefix("xxh64:");
+            let valid = hex.is_some_and(|hex| {
+                hex.len() == 16
+                    && hex.chars().all(|character| {
+                        character.is_ascii_digit() || ('a'..='f').contains(&character)
+                    })
+            });
+            (
+                trim_ws(locator).to_string(),
+                valid
+                    .then(|| hex.and_then(|hex| u64::from_str_radix(hex, 16).ok()))
+                    .flatten(),
+                valid,
+            )
+        }
+        None => (trim_ws(at).to_string(), None, true),
+    };
+    (locator, fingerprint, origin, valid)
 }
 
 // ── Card building and cloze ──
@@ -661,8 +687,7 @@ fn build_card(
                 card.token = directives.token.as_deref().map(Arc::from);
                 card.images = images;
                 card.images_back = images_back;
-                card.at = directives.at;
-                card.at_origin = directives.at_origin;
+                card.citations = directives.citations;
                 card.origin = directives.origin;
                 card.givens = directives.givens;
                 card.authored_distractors = distractors;
@@ -699,8 +724,7 @@ fn build_card(
         card.direction = directives.direction;
         card.images = images;
         card.images_back = images_back;
-        card.at = directives.at;
-        card.at_origin = directives.at_origin;
+        card.citations = directives.citations;
         card.origin = directives.origin;
         card.givens = directives.givens;
         cards.push(card);
@@ -1363,17 +1387,42 @@ mod tests {
     }
 
     #[test]
-    fn at_keeps_its_asset_from_origin_split() {
-        let deck = parse("## q\n---\na\n<!-- at: 29.rs from src/caching.rs:46-66 -->\n");
-        assert_eq!(Some("29.rs".to_string()), deck.cards[0].at);
+    fn at_is_repeatable_and_keeps_each_fingerprint_origin_pair() {
+        let deck = parse(
+            "## q\n---\na\n\
+             <!-- at: 29.rs @ xxh64:0123456789abcdef from src/caching.rs:46-66 -->\n\
+             <!-- at: src/store.rs:10-14 -->\n",
+        );
         assert_eq!(
-            Some("src/caching.rs:46-66".to_string()),
-            deck.cards[0].at_origin
+            vec![
+                crate::card::SourceCitation {
+                    locator: "29.rs".to_string(),
+                    fingerprint: Some(0x0123456789abcdef),
+                    origin: Some("src/caching.rs:46-66".to_string()),
+                    line: 4,
+                },
+                crate::card::SourceCitation {
+                    locator: "src/store.rs:10-14".to_string(),
+                    fingerprint: None,
+                    origin: None,
+                    line: 5,
+                },
+            ],
+            deck.cards[0].citations
         );
 
         let deck = parse("## q\n---\na\n<!-- at: src/from_x.rs:1-3 -->\n");
-        assert_eq!(Some("src/from_x.rs:1-3".to_string()), deck.cards[0].at);
-        assert_eq!(None, deck.cards[0].at_origin);
+        assert_eq!("src/from_x.rs:1-3", deck.cards[0].citations[0].locator);
+        assert_eq!(None, deck.cards[0].citations[0].fingerprint);
+        assert_eq!(None, deck.cards[0].citations[0].origin);
+    }
+
+    #[test]
+    fn an_invalid_at_fingerprint_is_linted_and_not_trusted() {
+        let deck = parse("## q\n---\na\n<!-- at: src/lib.rs:1-3 @ xxh64:ABC -->\n");
+        assert_eq!("src/lib.rs:1-3", deck.cards[0].citations[0].locator);
+        assert_eq!(None, deck.cards[0].citations[0].fingerprint);
+        assert_eq!(vec![bad(4, "at", "src/lib.rs:1-3 @ xxh64:ABC")], deck.lints);
     }
 
     #[test]
@@ -1702,8 +1751,12 @@ the answer
                 reveal_line: Some(30),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
-                at: Some("29.rs".into()),
-                at_origin: Some("src/caching.rs:46-66".into()),
+                citations: vec![crate::card::SourceCitation {
+                    locator: "29.rs".into(),
+                    fingerprint: None,
+                    origin: Some("src/caching.rs:46-66".into()),
+                    line: 33,
+                }],
                 origin: Some("/crate".into()),
                 givens: vec![
                     "state - the parser position".into(),
@@ -1723,8 +1776,15 @@ the answer
         assert_eq!(Some(Direction::Reverse), card.direction);
         assert!(card.images.is_empty());
         assert!(card.images_back.is_empty());
-        assert_eq!(Some("29.rs".to_string()), card.at);
-        assert_eq!(Some("src/caching.rs:46-66".to_string()), card.at_origin);
+        assert_eq!(
+            vec![crate::card::SourceCitation {
+                locator: "29.rs".into(),
+                fingerprint: None,
+                origin: Some("src/caching.rs:46-66".into()),
+                line: 33,
+            }],
+            card.citations
+        );
         assert_eq!(Some("/crate".to_string()), card.origin);
         assert_eq!(2, card.givens.len());
         assert_eq!(Some("4jkya9q3m8z0tw5v9y2b4n6d8f"), card.token.as_deref());

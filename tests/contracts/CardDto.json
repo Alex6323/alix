@@ -1,5 +1,4 @@
 {
-  "at": null,
   "back": [
     "Use **x**",
     "France"
@@ -21,8 +20,29 @@
       }
     ]
   ],
-  "citation": null,
-  "citation_error": null,
+  "back_units": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "text": "Use "
+        },
+        {
+          "code": true,
+          "text": "**x**"
+        },
+        {
+          "text": " "
+        },
+        {
+          "italic": true,
+          "text": "France"
+        }
+      ],
+      "text": "Use **x** France"
+    }
+  ],
+  "citations": [],
   "context": [],
   "context_runs": [],
   "crumb": null,

@@ -148,8 +148,10 @@ notes it.
 - `alix doctor [dir-or-deck]`: environment health checks, a one-line remedy per
   problem: the config parses, the progress store is readable, the decks dir
   scans, and the backend CLI is on your PATH. Name a **deck file** to lint it
-  in depth (syntax, `at:` locators, and frozen cards that have drifted from
-  their `origin:` source). Over a **folder or workspace** it also reports
+  in depth (syntax, fingerprinted `at:` locators, and frozen cards that have
+  drifted from their `origin:` source). It withholds stale excerpts and reports
+  a unique exact relocation, changed content, ambiguity, or a missing
+  fingerprint. Over a **folder or workspace** it also reports
   identity problems across the decks as a set: duplicate deck or card tokens
   (naming which copy keeps the earned progress), store keys matching no live
   card or deck (orphans, clear them with `alix reset --orphans`), a
@@ -166,5 +168,10 @@ notes it.
   and answers that should (correct ones, including full proofs). A failed must-not-pass probe
   is the serious direction (exam grades may be too lenient), while a missed
   should-pass probe only means the grader is harsher than intended. It's a
-  spot check, not a certification. Report-only: it fixes nothing itself.
+  spot check, not a certification. Without an explicit repair flag, doctor is
+  report-only and fixes nothing.
+- `alix doctor [dir-or-deck] --repair-source-locators`: after you review the
+  reported citations, stamp fingerprints on currently addressed excerpts and
+  apply unique exact locator rebases. Changed or multiply matching excerpts
+  remain untouched and make the command fail. Deck and card IDs are preserved.
 - `--config <path>`: use a different config file.

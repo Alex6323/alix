@@ -1,7 +1,6 @@
 {
   "cards": [
     {
-      "at": null,
       "back": [
         "a"
       ],
@@ -12,8 +11,18 @@
           }
         ]
       ],
-      "citation": null,
-      "citation_error": null,
+      "back_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "a"
+            }
+          ],
+          "text": "a"
+        }
+      ],
+      "citations": [],
       "context": [],
       "context_runs": [],
       "crumb": null,

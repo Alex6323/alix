@@ -34,8 +34,10 @@ How the source is recorded depends on its kind, and it matters later:
 - A **local source** is explored read-only with `Read`/`Glob`/`Grep`, and the
   deck opens with a `source:` line, so the **AI exam** can later grade your
   understanding against that same source (next chapter). Each fact that maps to
-  specific lines also gets a [`<!-- at: -->` citation](06-cloze-direction-images.md#source-citations),
-  so you can flip the card to its source on reveal.
+  specific lines also gets a fingerprinted
+  [`<!-- at: -->` citation](06-cloze-direction-images.md#source-citations), so
+  you can flip the card to its source on reveal without trusting a shifted
+  numeric range.
 
 ## Useful flags
 

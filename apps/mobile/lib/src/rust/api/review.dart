@@ -108,11 +108,12 @@ class CardView {
   final List<List<InlineRun>> contextRuns;
   final List<String> back;
   final List<List<InlineRun>> backRuns;
+  final List<NoteUnit> backUnits;
   final bool reshaped;
   final List<NoteUnit> note;
   final List<ImageView> images;
   final List<ImageView> imagesBack;
-  final String? at;
+  final List<String> citations;
 
   const CardView({
     required this.front,
@@ -122,11 +123,12 @@ class CardView {
     required this.contextRuns,
     required this.back,
     required this.backRuns,
+    required this.backUnits,
     required this.reshaped,
     required this.note,
     required this.images,
     required this.imagesBack,
-    this.at,
+    required this.citations,
   });
 
   @override
@@ -138,11 +140,12 @@ class CardView {
       contextRuns.hashCode ^
       back.hashCode ^
       backRuns.hashCode ^
+      backUnits.hashCode ^
       reshaped.hashCode ^
       note.hashCode ^
       images.hashCode ^
       imagesBack.hashCode ^
-      at.hashCode;
+      citations.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -156,11 +159,12 @@ class CardView {
           contextRuns == other.contextRuns &&
           back == other.back &&
           backRuns == other.backRuns &&
+          backUnits == other.backUnits &&
           reshaped == other.reshaped &&
           note == other.note &&
           images == other.images &&
           imagesBack == other.imagesBack &&
-          at == other.at;
+          citations == other.citations;
 }
 
 class CheckFeedback {

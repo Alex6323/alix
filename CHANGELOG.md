@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Plain fact cards can carry multiple `<!-- at: ... -->` citations. The adult
+  source view resolves every locator and stacks the editor-style excerpts in
+  authored order inside one scrollable answer region.
+- `alix doctor --repair-source-locators` explicitly fingerprints reviewed
+  source citations and rebases a uniquely relocated exact excerpt while
+  preserving deck and card IDs. Plain doctor remains read-only.
 - `alix doctor` flags aggregate `progress.json`/`augment.json` files that are
   never read, with the advice to back them up and delete them.
 - A private vulnerability-reporting policy and a tracked threat model covering
@@ -22,6 +28,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking (web/mobile APIs):** `CardDto` and the shared mobile `CardView`
+  replace the single `at` citation with ordered `citations`; web citation
+  entries carry their resolved excerpt or per-locator error. Both views also
+  gain `back_units`, the core projection used to render ordinary answer prose
+  independently of authored physical line wrapping.
+- **Breaking (pre-1.0):** every complete `<!-- at: ... -->` citation now carries
+  an `@ xxh64:...` excerpt fingerprint. Review, trace, tutor grounding, and
+  grading fail closed when the addressed text does not match, showing a warning
+  instead of unrelated source. Generated and frozen citations are stamped at
+  creation; hand-authored citations remain incomplete until explicitly
+  reviewed and stamped.
 - **Breaking (pre-1.0):** workspace member decks now live only under direct
   `decks/*.md` children. Manifests, assets, progress, and augmentation remain at
   the workspace root; relative member sources, origins, and images also anchor
@@ -72,6 +89,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Hard-wrapped Markdown answer prose no longer renders each source line as a
+  separate, widely spaced answer line. Ordinary flip and acquire views join
+  soft wraps; line reveal, typing, fenced code, and generated lists retain
+  their line structure.
 - State, deck, and manifest writes now sync the file's data before the atomic
   rename and the directory entry after it, so a power loss right after a save
   can no longer leave the only copy of a document empty; previously the bytes

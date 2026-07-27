@@ -1,8 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::{
+    hash::Hasher,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Result, anyhow, bail};
+use twox_hash::XxHash64;
 
-use crate::deck::{Deck, is_url};
+use crate::{
+    card::SourceCitation,
+    deck::{Deck, is_url},
+};
 
 /// Truncated (with a marker) beyond this, so a huge locator never floods the
 /// screen.
@@ -15,6 +22,72 @@ pub struct Excerpt {
     /// span, so an excerpt never has gaps).
     pub lines: Vec<(usize, String)>,
     pub truncated: bool,
+}
+
+#[derive(Debug)]
+pub enum CitationIntegrity {
+    Current(Excerpt),
+    Unfingerprinted { excerpt: Excerpt, fingerprint: u64 },
+    Relocated { excerpt: Excerpt, locator: String },
+    Changed,
+    Ambiguous { locators: Vec<String> },
+}
+
+pub fn excerpt_fingerprint(excerpt: &Excerpt) -> u64 {
+    fingerprint_lines(excerpt.lines.iter().map(|(_, line)| line.as_str()))
+}
+
+fn fingerprint_lines<'a>(lines: impl IntoIterator<Item = &'a str>) -> u64 {
+    let mut hasher = XxHash64::default();
+    for (index, line) in lines.into_iter().enumerate() {
+        if index > 0 {
+            hasher.write_u8(b'\n');
+        }
+        hasher.write(line.trim_end().as_bytes());
+    }
+    hasher.finish()
+}
+
+pub fn format_excerpt_fingerprint(fingerprint: u64) -> String {
+    format!("xxh64:{fingerprint:016x}")
+}
+
+pub fn stamp_citations(path: &Path) -> Result<usize> {
+    let deck = Deck::load(path)?;
+    let base = SourceBase::for_deck(&deck);
+    let mut stamped = 0;
+    let mut rewrites = Vec::new();
+    for card in &deck.cards {
+        for citation in &card.citations {
+            let fingerprint = match base.inspect_citation(citation)? {
+                CitationIntegrity::Current(_) => citation.fingerprint,
+                CitationIntegrity::Unfingerprinted { fingerprint, .. } => {
+                    stamped += 1;
+                    Some(fingerprint)
+                }
+                CitationIntegrity::Relocated { locator, .. } => {
+                    bail!("source excerpt moved to `{locator}` before it could be stamped")
+                }
+                CitationIntegrity::Changed => {
+                    bail!("source excerpt changed before it could be stamped")
+                }
+                CitationIntegrity::Ambiguous { locators } => bail!(
+                    "source excerpt matches several ranges before it could be stamped: {}",
+                    locators.join(", ")
+                ),
+            };
+            rewrites.push(crate::deck::AtRewrite {
+                at: citation.locator.clone(),
+                fingerprint,
+                origin: citation.origin.clone(),
+                line: citation.line,
+            });
+        }
+    }
+    if stamped > 0 {
+        crate::deck::set_source_citations(path, &rewrites)?;
+    }
+    Ok(stamped)
 }
 
 /// A URL or absent source yields the deck's own folder as the base and no
@@ -68,6 +141,89 @@ impl SourceBase {
 
     pub fn excerpt(&self, locator: &str) -> Result<Excerpt> {
         excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
+    }
+
+    pub fn inspect_citation(&self, citation: &SourceCitation) -> Result<CitationIntegrity> {
+        let current = self.excerpt(&citation.locator);
+        let Some(expected) = citation.fingerprint else {
+            let excerpt = current?;
+            return Ok(CitationIntegrity::Unfingerprinted {
+                fingerprint: excerpt_fingerprint(&excerpt),
+                excerpt,
+            });
+        };
+        if let Ok(excerpt) = &current
+            && excerpt_fingerprint(excerpt) == expected
+        {
+            return Ok(CitationIntegrity::Current(excerpt.clone()));
+        }
+
+        let (file, spec) = parse_locator(&citation.locator);
+        let Some(spec) = spec else {
+            return Ok(CitationIntegrity::Changed);
+        };
+        let path = self
+            .locator_path(file.as_deref())
+            .ok_or_else(|| anyhow!("cannot resolve source locator `{}`", citation.locator))?;
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| anyhow!("cannot read the source `{}`: {error}", path.display()))?;
+        let file_lines: Vec<&str> = text.lines().collect();
+        let (range_start, range_end) = parse_line_range(&spec);
+        let range_len = range_end.saturating_sub(range_start) + 1;
+        let fingerprint_len = range_len.min(MAX_EXCERPT_LINES);
+        if fingerprint_len == 0 || file_lines.len() < range_len {
+            return Ok(CitationIntegrity::Changed);
+        }
+
+        let mut matches = Vec::new();
+        for offset in 0..=file_lines.len() - range_len {
+            let window = &file_lines[offset..offset + fingerprint_len];
+            if fingerprint_lines(window.iter().copied()) == expected {
+                matches.push((
+                    excerpt_from_lines(
+                        &path,
+                        &file_lines,
+                        offset + 1,
+                        fingerprint_len,
+                        range_len > MAX_EXCERPT_LINES,
+                    ),
+                    relocated_locator(file.as_deref(), offset + 1, range_len),
+                ));
+            }
+        }
+        match matches.len() {
+            0 => Ok(CitationIntegrity::Changed),
+            1 => {
+                let (excerpt, locator) = matches.remove(0);
+                Ok(CitationIntegrity::Relocated { excerpt, locator })
+            }
+            _ => Ok(CitationIntegrity::Ambiguous {
+                locators: matches.into_iter().map(|(_, locator)| locator).collect(),
+            }),
+        }
+    }
+
+    pub fn checked_excerpt(&self, citation: &SourceCitation) -> Result<Excerpt> {
+        match self.inspect_citation(citation)? {
+            CitationIntegrity::Current(excerpt) => Ok(excerpt),
+            CitationIntegrity::Unfingerprinted { .. } => bail!(
+                "source excerpt has no fingerprint; review it, then run \
+                 `alix doctor --repair-source-locators`"
+            ),
+            CitationIntegrity::Relocated { locator, .. } => bail!(
+                "source excerpt moved to `{locator}`; run \
+                 `alix doctor --repair-source-locators` to rebase it"
+            ),
+            CitationIntegrity::Changed => {
+                bail!(
+                    "source excerpt changed or disappeared; review the citation before updating it"
+                )
+            }
+            CitationIntegrity::Ambiguous { locators } => bail!(
+                "source excerpt matches several ranges ({}); review the citation before updating it",
+                locators.join(", ")
+            ),
+        }
     }
 
     pub(crate) fn locator_path(&self, file: Option<&str>) -> Option<PathBuf> {
@@ -279,28 +435,56 @@ fn read_excerpt(path: &Path, spec: Option<&str>) -> Result<Excerpt> {
     let start = start.max(1);
     let end = end.min(file_lines.len());
 
-    let mut selected = Vec::new();
-    let mut truncated = false;
-    for line_number in start..=end {
-        if selected.len() >= MAX_EXCERPT_LINES {
-            truncated = true;
-            break;
-        }
-        selected.push((line_number, file_lines[line_number - 1].to_string()));
-    }
+    let requested = end.saturating_sub(start) + 1;
+    let selected = excerpt_from_lines(
+        path,
+        &file_lines,
+        start,
+        requested.min(MAX_EXCERPT_LINES),
+        requested > MAX_EXCERPT_LINES,
+    );
 
-    if selected.is_empty() {
+    if selected.lines.is_empty() {
         bail!(
             "locator points outside `{}` ({} lines)",
             path.display(),
             file_lines.len()
         );
     }
-    Ok(Excerpt {
+    Ok(selected)
+}
+
+fn excerpt_from_lines(
+    path: &Path,
+    file_lines: &[&str],
+    start: usize,
+    len: usize,
+    truncated: bool,
+) -> Excerpt {
+    let lines = file_lines
+        .iter()
+        .enumerate()
+        .skip(start.saturating_sub(1))
+        .take(len)
+        .map(|(index, line)| (index + 1, (*line).to_string()))
+        .collect();
+    Excerpt {
         path: path.to_path_buf(),
-        lines: selected,
+        lines,
         truncated,
-    })
+    }
+}
+
+fn relocated_locator(file: Option<&str>, start: usize, len: usize) -> String {
+    let range = if len == 1 {
+        start.to_string()
+    } else {
+        format!("{start}-{}", start + len - 1)
+    };
+    match file {
+        Some(file) => format!("{file}:{range}"),
+        None => range,
+    }
 }
 
 #[cfg(test)]
@@ -457,7 +641,7 @@ mod tests {
         );
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);
-        let locator = deck.cards[0].at.as_deref().unwrap();
+        let locator = &deck.cards[0].citations[0].locator;
         assert_eq!(
             vec![(2, "two".to_string()), (3, "three".to_string())],
             base.excerpt(locator).unwrap().lines
@@ -490,13 +674,13 @@ mod tests {
 
         assert_eq!(
             vec![(1, "r1".to_string()), (2, "r2".to_string())],
-            base.excerpt(deck.cards[0].at.as_deref().unwrap())
+            base.excerpt(&deck.cards[0].citations[0].locator)
                 .unwrap()
                 .lines
         );
         assert_eq!(
             vec![(3, "l3".to_string()), (4, "l4".to_string())],
-            base.excerpt(deck.cards[1].at.as_deref().unwrap())
+            base.excerpt(&deck.cards[1].citations[0].locator)
                 .unwrap()
                 .lines
         );
@@ -575,6 +759,131 @@ mod tests {
         let excerpt = read_excerpt(&path, None).unwrap();
         assert_eq!(MAX_EXCERPT_LINES, excerpt.lines.len());
         assert!(excerpt.truncated);
+    }
+
+    #[test]
+    fn excerpt_fingerprints_ignore_line_numbers_and_trailing_whitespace() {
+        let a = Excerpt {
+            path: PathBuf::from("a.rs"),
+            lines: vec![(4, "fn answer() {  ".into()), (5, "    42".into())],
+            truncated: false,
+        };
+        let b = Excerpt {
+            path: PathBuf::from("b.rs"),
+            lines: vec![(40, "fn answer() {".into()), (41, "    42".into())],
+            truncated: false,
+        };
+        assert_eq!(excerpt_fingerprint(&a), excerpt_fingerprint(&b));
+    }
+
+    #[test]
+    fn a_moved_excerpt_is_found_by_fingerprint() {
+        let directory = tempfile::tempdir().unwrap();
+        write(
+            directory.path(),
+            "code.rs",
+            "inserted\nalpha\nfn answer() {\n    42\n}\nomega\n",
+        );
+        let source = SourceBase {
+            base_dir: directory.path().to_path_buf(),
+            source_file: None,
+        };
+        let expected = Excerpt {
+            path: PathBuf::from("code.rs"),
+            lines: vec![
+                (2, "fn answer() {".into()),
+                (3, "    42".into()),
+                (4, "}".into()),
+            ],
+            truncated: false,
+        };
+        let citation = SourceCitation {
+            locator: "code.rs:2-4".into(),
+            fingerprint: Some(excerpt_fingerprint(&expected)),
+            origin: None,
+            line: 4,
+        };
+        let CitationIntegrity::Relocated { locator, excerpt } =
+            source.inspect_citation(&citation).unwrap()
+        else {
+            panic!("the exact excerpt should relocate");
+        };
+        assert_eq!("code.rs:3-5", locator);
+        assert_eq!("fn answer() {", excerpt.lines[0].1);
+    }
+
+    #[test]
+    fn a_changed_excerpt_is_not_relocated() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "alpha\nchanged\nomega\n");
+        let source = SourceBase {
+            base_dir: directory.path().to_path_buf(),
+            source_file: None,
+        };
+        let expected = Excerpt {
+            path: PathBuf::from("code.rs"),
+            lines: vec![(2, "original".into())],
+            truncated: false,
+        };
+        let citation = SourceCitation {
+            locator: "code.rs:2".into(),
+            fingerprint: Some(excerpt_fingerprint(&expected)),
+            origin: None,
+            line: 4,
+        };
+        assert!(matches!(
+            source.inspect_citation(&citation).unwrap(),
+            CitationIntegrity::Changed
+        ));
+    }
+
+    #[test]
+    fn duplicate_exact_excerpts_are_ambiguous() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "same\nother\nsame\n");
+        let source = SourceBase {
+            base_dir: directory.path().to_path_buf(),
+            source_file: None,
+        };
+        let expected = Excerpt {
+            path: PathBuf::from("code.rs"),
+            lines: vec![(2, "same".into())],
+            truncated: false,
+        };
+        let citation = SourceCitation {
+            locator: "code.rs:2".into(),
+            fingerprint: Some(excerpt_fingerprint(&expected)),
+            origin: None,
+            line: 4,
+        };
+        let CitationIntegrity::Ambiguous { locators } = source.inspect_citation(&citation).unwrap()
+        else {
+            panic!("duplicate excerpts should be ambiguous");
+        };
+        assert_eq!(vec!["code.rs:1", "code.rs:3"], locators);
+    }
+
+    #[test]
+    fn stamping_citations_writes_the_current_fingerprint_without_changing_ids() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "alpha\nbeta\ngamma\n");
+        let deck_path = write(
+            directory.path(),
+            "deck.md",
+            "---\nalix-id: \"deck1\"\nsource: .\n---\n\
+             ## q\nanswer\n<!-- at: code.rs:2-3 -->\n<!-- id: card1 -->\n",
+        );
+        assert_eq!(1, stamp_citations(&deck_path).unwrap());
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(text.contains("<!-- at: code.rs:2-3 @ xxh64:"));
+        let deck = Deck::load(&deck_path).unwrap();
+        assert_eq!(Some("card1".to_string()), deck.cards[0].id());
+        assert!(matches!(
+            SourceBase::for_deck(&deck)
+                .inspect_citation(&deck.cards[0].citations[0])
+                .unwrap(),
+            CitationIntegrity::Current(_)
+        ));
     }
 
     #[test]

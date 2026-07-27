@@ -31,13 +31,13 @@ source: .
 ## You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
 Only the stack data (pointer, length, capacity) is copied.
 So s1 and s2 point at the *same* heap allocation.
-<!-- at: src/ch04-01-what-is-ownership.md:290-297 -->
+<!-- at: src/ch04-01-what-is-ownership.md:290-297 @ xxh64:0123456789abcdef -->
 > The heap contents themselves are never copied here.
 
 ## So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
 Both would call drop on that memory (a double free).
 Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
-<!-- at: src/ch04-01-what-is-ownership.md:322-343 -->
+<!-- at: src/ch04-01-what-is-ownership.md:322-343 @ xxh64:123456789abcdef0 -->
 > Using s1 after the move is a compile-time error.
 ```
 
@@ -49,9 +49,10 @@ so the author controls the emphasis by choosing which terms to put in backticks.
 
 The `<!-- at: -->` locator is a single contiguous range `file:start-end` (or just line
 numbers when `source:` is one file) — never comma-separated, since a stitched
-excerpt makes disjoint code look adjacent. The lines are **read live from the
-source** each walk, so the excerpt is always current and the deck stays small —
-the source is the oracle, not an invented answer. When a tight excerpt leans on a
+excerpt makes disjoint code look adjacent. Its `@ xxh64:...` value fingerprints
+the displayed lines. A live walk reveals the source only while that fingerprint
+matches, so a shifted numeric range cannot silently show unrelated lines. When a
+tight excerpt leans on a
 symbol defined off-screen, name it with a `<!-- given: -->` line (`<!-- given: state — the
 parser's position so far -->`, repeatable); these show as a list under the question,
 so the excerpt stays focused without orphaning the names it needs.
@@ -69,8 +70,9 @@ alix generate mytrace.md
 The model explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
 its working directory, no write or shell access — finds the single load-bearing
 path, and writes the checkpoints (with their `<!-- at: -->` locators) back into the deck.
-The result is cached and version-controlled there, so review it (especially the
-locators) and edit freely; re-run it to regenerate.
+Alix fingerprints those locators before placing the result. The result is
+cached and version-controlled there, so review it (especially the locators) and
+edit freely; re-run it to regenerate.
 
 Building is one-shot, correctness-critical, and **fails silently** when the model
 is weak — you still get parseable checkpoints, just a loose chain you then drill.
@@ -162,22 +164,24 @@ a source ([`alix generate <dir>`](14-explore.md)), its final step
 snippet per checkpoint — and repoints each `<!-- at: -->` at them, so they never drift and
 the workspace is self-contained, without copying whole files. The freeze also
 records the live source root in an `origin:` directive and keeps each snippet's
-original location on its `<!-- at: -->` line, after ` from ` (`<!-- at: 12.rs from
-scheduler.rs:90-98 -->`) — so the tutor can still reach the real source and
+original location on its `<!-- at: -->` line, after ` from `. It also stamps the
+frozen text (`<!-- at: 12.rs @ xxh64:0123456789abcdef from
+scheduler.rs:90-98 -->`), so the tutor can still reach the real source and
 [`alix doctor`](17-command-reference.md) can tell when it has drifted. It's
 automatic for explored workspaces; a loose trace over a live source is left as-is.
 
 ## Checking the locators
 
 For a trace that *isn't* frozen — a loose `.md` over a live `source:` —
-[`alix doctor <deck>`](17-command-reference.md) validates that every `<!-- at: -->` still
-resolves into its source: it warns about a locator that names a missing file,
-runs past the end of the file, or (for a single-file source) gives bare line
-numbers it can't place. It's a quick structural check — *does this excerpt still
-exist?* — so a moved or trimmed source is caught before you walk into it, not
-mid-hop. (Frozen snapshots don't move, but `alix doctor` still validates each
-snippet — and, via the `origin:` they were frozen with, warns when the live
-source has **drifted** from the frozen excerpt.)
+[`alix doctor <deck>`](17-command-reference.md) validates that every
+`<!-- at: -->` still resolves and matches its fingerprint. A missing fingerprint,
+missing file, changed excerpt, or ambiguous exact match is reported without
+writing. If the exact text moved to one other range, doctor reports that safe
+rebase. After reviewing it, run
+`alix doctor <deck> --repair-source-locators` to stamp missing fingerprints and
+apply only unique exact rebases. Changed and ambiguous excerpts remain
+untouched. Frozen snapshots do not move, but doctor still verifies their
+captured text and separately reports live-origin drift.
 
 A trace deck degrades gracefully — even outside a walk it's a valid deck of
 `explain` cards. See `docs/examples/workspace-showcase/decks/ownership-move.md`

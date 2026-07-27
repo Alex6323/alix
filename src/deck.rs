@@ -481,7 +481,25 @@ fn replace_after_header(text: &str, fronts: &[usize], cards: &str) -> String {
 
 pub struct AtRewrite {
     pub at: String,
+    pub fingerprint: Option<u64>,
     pub origin: Option<String>,
+    pub line: usize,
+}
+
+pub fn set_source_citations(path: &Path, ats: &[AtRewrite]) -> Result<(), DeckError> {
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let existing = std::fs::read_to_string(path).map_err(io_err)?;
+    let (new_text, rewritten) = rewrite_source_citations(&existing, ats);
+    if rewritten != ats.len() {
+        return Err(io_err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("rewrote {rewritten} of {} source citations", ats.len()),
+        )));
+    }
+    write_deck_text(path, &new_text)
 }
 
 pub fn set_trace_snapshot(
@@ -505,8 +523,50 @@ pub fn set_trace_snapshot(
     write_deck_text(path, &new_text)
 }
 
-// A literal <!-- at: --> inside a code fence would be misread here; tool-generated decks never
-// produce one.
+fn at_indent(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    let body = trimmed.strip_prefix("<!--")?.strip_suffix("-->")?;
+    let (key, _value) = body.split_once(':')?;
+    key.trim()
+        .eq_ignore_ascii_case("at")
+        .then(|| &line[..line.len() - trimmed.len()])
+}
+
+fn format_at_rewrite(indent: &str, rewrite: &AtRewrite) -> String {
+    let mut value = rewrite.at.clone();
+    if let Some(fingerprint) = rewrite.fingerprint {
+        value.push_str(" @ ");
+        value.push_str(&crate::source::format_excerpt_fingerprint(fingerprint));
+    }
+    if let Some(origin) = &rewrite.origin {
+        value.push_str(" from ");
+        value.push_str(origin);
+    }
+    format!("{indent}<!-- at: {value} -->")
+}
+
+fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
+    let mut rewritten = 0;
+    let mut out = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let lineno = index + 1;
+        if let Some(rewrite) = ats.get(rewritten)
+            && rewrite.line == lineno
+            && let Some(indent) = at_indent(line)
+        {
+            out.push(format_at_rewrite(indent, rewrite));
+            rewritten += 1;
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    let mut joined = out.join("\n");
+    if text.ends_with('\n') && !joined.ends_with('\n') {
+        joined.push('\n');
+    }
+    (joined, rewritten)
+}
+
 fn rewrite_trace_snapshot(
     text: &str,
     frontmatter_span: Option<crate::parser::LineSpan>,
@@ -514,14 +574,6 @@ fn rewrite_trace_snapshot(
     origin: Option<&str>,
     ats: &[AtRewrite],
 ) -> String {
-    fn at_indent(line: &str) -> Option<&str> {
-        let trimmed = line.trim_start();
-        let body = trimmed.strip_prefix("<!--")?.strip_suffix("-->")?;
-        let (key, _value) = body.split_once(':')?;
-        key.trim()
-            .eq_ignore_ascii_case("at")
-            .then(|| &line[..line.len() - trimmed.len()])
-    }
     fn is_source_key(line: &str) -> bool {
         line.strip_prefix("source")
             .is_some_and(|rest| rest.trim_start().starts_with(':'))
@@ -542,12 +594,10 @@ fn rewrite_trace_snapshot(
             source_replaced = true;
         } else if !in_frontmatter
             && at_i < ats.len()
+            && ats[at_i].line == lineno
             && let Some(indent) = at_indent(line)
         {
-            match &ats[at_i].origin {
-                Some(o) => out.push(format!("{indent}<!-- at: {} from {o} -->", ats[at_i].at)),
-                None => out.push(format!("{indent}<!-- at: {} -->", ats[at_i].at)),
-            }
+            out.push(format_at_rewrite(indent, &ats[at_i]));
             at_i += 1;
         } else {
             out.push(line.to_string());
@@ -1543,11 +1593,15 @@ mod tests {
         let ats = [
             AtRewrite {
                 at: "01.rs".into(),
+                fingerprint: Some(0x0123456789abcdef),
                 origin: Some("src/a.rs:90-98".into()),
+                line: 8,
             },
             AtRewrite {
                 at: "02.rs".into(),
+                fingerprint: Some(0xfedcba9876543210),
                 origin: Some("src/b.rs:1".into()),
+                line: 11,
             },
         ];
         let out = rewrite_trace_snapshot(text, span, "assets", Some("/crate"), &ats);
@@ -1555,11 +1609,11 @@ mod tests {
         assert_eq!(1, out.matches("source:").count());
         assert!(out.contains("origin: /crate\n"), "{out}");
         assert!(
-            out.contains("<!-- at: 01.rs from src/a.rs:90-98 -->\n"),
+            out.contains("<!-- at: 01.rs @ xxh64:0123456789abcdef from src/a.rs:90-98 -->\n"),
             "{out}"
         );
         assert!(
-            out.contains("<!-- at: 02.rs from src/b.rs:1 -->\n"),
+            out.contains("<!-- at: 02.rs @ xxh64:fedcba9876543210 from src/b.rs:1 -->\n"),
             "{out}"
         );
         assert!(out.contains("trace: how X\n"));

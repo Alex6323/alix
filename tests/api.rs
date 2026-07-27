@@ -324,10 +324,10 @@ const TRACE_DECK: &str = "---\nalix-id: \"trace\"\ntrace: how it works\nsource: 
 ## Predict the first hop <!-- id: t1 -->\n\
 <!-- given: line — the input line -->\n\
 it reads the first line\n\
-<!-- at: 1 -->\n\
+<!-- at: 1 @ xxh64:cc98257fe4be8f5a -->\n\
 ## Predict the second hop <!-- id: t2 -->\n\
 it reads line two\n\
-<!-- at: 2 -->\n";
+<!-- at: 2 @ xxh64:ca7ffbd94d5e0037 -->\n";
 const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 
 /// Richer than [`spawn_test_server`]: the same open (no-token) server, but its

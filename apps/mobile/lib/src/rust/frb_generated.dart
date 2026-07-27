@@ -1449,8 +1449,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CardView dco_decode_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
     return CardView(
       front: dco_decode_String(arr[0]),
       frontRuns: dco_decode_list_inline_run(arr[1]),
@@ -1459,11 +1459,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       contextRuns: dco_decode_list_list_inline_run(arr[4]),
       back: dco_decode_list_String(arr[5]),
       backRuns: dco_decode_list_list_inline_run(arr[6]),
-      reshaped: dco_decode_bool(arr[7]),
-      note: dco_decode_list_note_unit(arr[8]),
-      images: dco_decode_list_image_view(arr[9]),
-      imagesBack: dco_decode_list_image_view(arr[10]),
-      at: dco_decode_opt_String(arr[11]),
+      backUnits: dco_decode_list_note_unit(arr[7]),
+      reshaped: dco_decode_bool(arr[8]),
+      note: dco_decode_list_note_unit(arr[9]),
+      images: dco_decode_list_image_view(arr[10]),
+      imagesBack: dco_decode_list_image_view(arr[11]),
+      citations: dco_decode_list_String(arr[12]),
     );
   }
 
@@ -2228,11 +2229,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_contextRuns = sse_decode_list_list_inline_run(deserializer);
     var var_back = sse_decode_list_String(deserializer);
     var var_backRuns = sse_decode_list_list_inline_run(deserializer);
+    var var_backUnits = sse_decode_list_note_unit(deserializer);
     var var_reshaped = sse_decode_bool(deserializer);
     var var_note = sse_decode_list_note_unit(deserializer);
     var var_images = sse_decode_list_image_view(deserializer);
     var var_imagesBack = sse_decode_list_image_view(deserializer);
-    var var_at = sse_decode_opt_String(deserializer);
+    var var_citations = sse_decode_list_String(deserializer);
     return CardView(
       front: var_front,
       frontRuns: var_frontRuns,
@@ -2241,11 +2243,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       contextRuns: var_contextRuns,
       back: var_back,
       backRuns: var_backRuns,
+      backUnits: var_backUnits,
       reshaped: var_reshaped,
       note: var_note,
       images: var_images,
       imagesBack: var_imagesBack,
-      at: var_at,
+      citations: var_citations,
     );
   }
 
@@ -3241,11 +3244,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_list_inline_run(self.contextRuns, serializer);
     sse_encode_list_String(self.back, serializer);
     sse_encode_list_list_inline_run(self.backRuns, serializer);
+    sse_encode_list_note_unit(self.backUnits, serializer);
     sse_encode_bool(self.reshaped, serializer);
     sse_encode_list_note_unit(self.note, serializer);
     sse_encode_list_image_view(self.images, serializer);
     sse_encode_list_image_view(self.imagesBack, serializer);
-    sse_encode_opt_String(self.at, serializer);
+    sse_encode_list_String(self.citations, serializer);
   }
 
   @protected

@@ -671,12 +671,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// The mode-specific answer body.
   Widget _body(BuildContext context, CardView card, AlixTokens tokens) {
     if (_hasChoices) return _options(tokens);
-    if (_state.mode == Mode.lineByLine && !_state.acquire) {
-      // Line mode keeps its revealed lines tight (no stanza gap).
+    if (_state.mode == Mode.lineByLine && (!_state.acquire || _revealed)) {
+      // Line mode keeps its authored lines distinct during review and acquire.
+      final visible = _state.acquire ? card.back.length : _revealedLines;
       return _revealLines(
         context,
-        card.back.take(_revealedLines).toList(),
-        card.backRuns.take(_revealedLines).toList(),
+        card.back.take(visible).toList(),
+        card.backRuns.take(visible).toList(),
         tokens,
         stanza: false,
       );
@@ -684,14 +685,38 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_isTyping && !_state.acquire) return _typing(context, card, tokens);
     if (_isExplain) return _explainBody(context, card, tokens);
     if (_revealed || _check != null) {
+      if (!card.reshaped) {
+        return _answerUnits(context, card.backUnits, tokens);
+      }
       return _revealLines(context, card.back, card.backRuns, tokens);
     }
     return const SizedBox.shrink();
   }
 
-  /// Revealed answer lines: monospace, neutral ink, centered. A plain
-  /// multi-line flip answer reads as a stanza (a blank line between lines);
-  /// line-mode and the explain answer stay tight.
+  Widget _answerUnits(
+    BuildContext context,
+    List<NoteUnit> units,
+    AlixTokens tokens,
+  ) {
+    final style = TextStyle(
+      fontFamily: _mono,
+      fontWeight: FontWeight.w500,
+      fontSize: 18,
+      height: 1.5,
+      color: Theme.of(context).colorScheme.onSurface,
+    );
+    return Column(
+      children: [
+        for (final (index, unit) in units.indexed) ...[
+          if (index > 0) const SizedBox(height: 10),
+          _unit(unit, tokens, style, TextAlign.center),
+        ],
+      ],
+    );
+  }
+
+  /// Revealed answer lines remain distinct for line reveal, typing feedback,
+  /// and generated list reshapes.
   Widget _revealLines(
     BuildContext context,
     List<String> lines,

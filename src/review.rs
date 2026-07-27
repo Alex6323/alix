@@ -31,11 +31,13 @@ pub struct CardView {
     pub back: Vec<String>,
     #[serde(default)]
     pub back_runs: Vec<Vec<InlineRun>>,
+    #[serde(default)]
+    pub back_units: Vec<NoteUnit>,
     pub reshaped: bool,
     pub note: Vec<NoteUnit>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
-    pub at: Option<String>,
+    pub citations: Vec<String>,
 }
 
 fn image_views(images: &[crate::card::CardImage]) -> Vec<ImageView> {
@@ -65,6 +67,7 @@ impl CardView {
             .map(|line| projector.project_context(line))
             .collect();
         let (back, back_runs) = project_lines(card.back_for_display(), projector);
+        let back_units = render::answer_units_with(card.back_for_display(), projector);
         CardView {
             front,
             front_runs,
@@ -73,11 +76,16 @@ impl CardView {
             context_runs,
             back,
             back_runs,
+            back_units,
             reshaped: card.display_back.is_some(),
             note: render::note_units_with(card, projector),
             images: image_views(&card.images),
             images_back: image_views(&card.images_back),
-            at: card.at.clone(),
+            citations: card
+                .citations
+                .iter()
+                .map(|citation| citation.locator.clone())
+                .collect(),
         }
     }
 }
@@ -593,10 +601,15 @@ mod tests {
     }
 
     #[test]
-    fn card_view_carries_the_raw_at_locator() {
-        let cards = parse("## q\n<!-- at: src/lib.rs:10-20 -->\na\n");
+    fn card_view_carries_all_raw_at_locators_in_authored_order() {
+        let cards = parse(
+            "## q\n\
+             <!-- at: src/lib.rs:10-20 -->\n\
+             <!-- at: src/store.rs:30-40 -->\n\
+             a\n",
+        );
         let view = CardView::from(&cards[0]);
-        assert_eq!(view.at.as_deref(), Some("src/lib.rs:10-20"));
+        assert_eq!(view.citations, ["src/lib.rs:10-20", "src/store.rs:30-40"]);
     }
 
     const FOUR: &str = "## q1\na1\n## q2\na2\n## q3\na3\n## q4\na4\n";

@@ -214,6 +214,11 @@ struct DoctorArgs {
     #[arg(long)]
     grading: bool,
 
+    /// Stamp reviewed source excerpts and rebase exact excerpts that moved
+    /// uniquely within their current file.
+    #[arg(long)]
+    repair_source_locators: bool,
+
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,

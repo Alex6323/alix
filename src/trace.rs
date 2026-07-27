@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Result, anyhow, bail};
 
 use crate::{
+    card::SourceCitation,
     deck::{Deck, is_url},
     depth::Depth,
     scheduler::{Fsrs, Grade, Scheduler},
@@ -55,6 +56,7 @@ pub struct Checkpoint {
     pub givens: Vec<String>,
     pub note: Option<String>,
     pub locator: Option<String>,
+    pub fingerprint: Option<u64>,
     pub at_origin: Option<String>,
     pub card_id: String,
     pub line: usize,
@@ -80,19 +82,28 @@ impl Trace {
         if deck.cards.is_empty() {
             bail!("the trace `{}` has no checkpoints", deck.subject);
         }
+        if let Some(card) = deck.cards.iter().find(|card| card.citations.len() > 1) {
+            bail!(
+                "trace checkpoint at line {} has multiple `at:` locators; \
+                 a checkpoint reveals one contiguous source range",
+                card.line
+            );
+        }
         // A checkpoint needs a stable id (the deck is stamped at open); an
         // unstamped card carries none and is skipped defensively.
         let checkpoints = deck
             .cards
             .iter()
             .filter_map(|c| {
+                let citation = c.citations.first();
                 Some(Checkpoint {
                     prompt: c.front.clone(),
                     points: c.back.clone(),
                     givens: c.givens.clone(),
                     note: c.note.clone(),
-                    locator: c.at.clone(),
-                    at_origin: c.at_origin.clone(),
+                    locator: citation.map(|citation| citation.locator.clone()),
+                    fingerprint: citation.and_then(|citation| citation.fingerprint),
+                    at_origin: citation.and_then(|citation| citation.origin.clone()),
                     card_id: c.id()?,
                     line: c.line,
                 })
@@ -124,7 +135,12 @@ impl Trace {
             .locator
             .as_deref()
             .ok_or_else(|| anyhow!("this checkpoint has no `at:` locator to reveal"))?;
-        self.source_base.excerpt(locator)
+        self.source_base.checked_excerpt(&SourceCitation {
+            locator: locator.to_string(),
+            fingerprint: checkpoint.fingerprint,
+            origin: checkpoint.at_origin.clone(),
+            line: checkpoint.line,
+        })
     }
 
     pub fn frozen_block(&self, checkpoint: &Checkpoint) -> Option<String> {
@@ -356,27 +372,29 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
     let source_base = SourceBase::for_deck(deck);
     let mut out = Vec::new();
     for card in &deck.cards {
-        let (Some(at), Some(at_origin)) = (card.at.as_deref(), card.at_origin.as_deref()) else {
-            continue;
-        };
-        let Some((file, _)) = parse_at_origin(Some(at_origin)) else {
-            continue;
-        };
-        let Ok(frozen) = source_base.excerpt(at) else {
-            continue;
-        };
-        match std::fs::read_to_string(origin_root.join(&file)) {
-            Err(_) => out.push(Drift {
-                line: card.line,
-                at: at_origin.to_string(),
-                gone: true,
-            }),
-            Ok(live) if !excerpt_occurs_in(&frozen, &live) => out.push(Drift {
-                line: card.line,
-                at: at_origin.to_string(),
-                gone: false,
-            }),
-            Ok(_) => {}
+        for citation in &card.citations {
+            let Some(at_origin) = citation.origin.as_deref() else {
+                continue;
+            };
+            let Some((file, _)) = parse_at_origin(Some(at_origin)) else {
+                continue;
+            };
+            let Ok(frozen) = source_base.excerpt(&citation.locator) else {
+                continue;
+            };
+            match std::fs::read_to_string(origin_root.join(&file)) {
+                Err(_) => out.push(Drift {
+                    line: card.line,
+                    at: at_origin.to_string(),
+                    gone: true,
+                }),
+                Ok(live) if !excerpt_occurs_in(&frozen, &live) => out.push(Drift {
+                    line: card.line,
+                    at: at_origin.to_string(),
+                    gone: false,
+                }),
+                Ok(_) => {}
+            }
         }
     }
     out
@@ -402,14 +420,10 @@ fn excerpt_occurs_in(frozen: &Excerpt, live: &str) -> bool {
     live_norm.contains(&block)
 }
 
-pub fn frozen_excerpt_block(
-    at: &str,
-    at_origin: Option<&str>,
-    source_base: &SourceBase,
-) -> Option<String> {
-    at_origin?;
-    let excerpt = source_base.excerpt(at).ok()?;
-    Some(render_frozen_block(excerpt, at_origin))
+pub fn frozen_excerpt_block(citation: &SourceCitation, source_base: &SourceBase) -> Option<String> {
+    citation.origin.as_deref()?;
+    let excerpt = source_base.checked_excerpt(citation).ok()?;
+    Some(render_frozen_block(excerpt, citation.origin.as_deref()))
 }
 
 #[cfg(test)]
@@ -505,6 +519,7 @@ mod tests {
              it reads lines two and three\n\
              <!-- at: 2-3 -->\n",
         );
+        crate::source::stamp_citations(&path).unwrap();
         Deck::load(&path).unwrap()
     }
 
@@ -533,6 +548,23 @@ mod tests {
     }
 
     #[test]
+    fn a_trace_checkpoint_rejects_multiple_source_ranges() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            dir.path(),
+            "t.md",
+            "---\ntrace: g\nsource: source.txt\n---\n\
+             ## q\na\n<!-- at: 1 -->\n<!-- at: 2 -->\n",
+        );
+        write(dir.path(), "source.txt", "one\ntwo\n");
+        let err = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("multiple `at:` locators"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
     fn excerpt_reads_live_from_the_single_source_file() {
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());
@@ -544,6 +576,39 @@ mod tests {
             vec![(2, "second".to_string()), (3, "third".to_string())],
             ex.lines
         );
+    }
+
+    #[test]
+    fn a_trace_does_not_reveal_a_relocated_excerpt_before_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = trace_deck(dir.path());
+        write(
+            dir.path(),
+            "source.txt",
+            "inserted\nfirst\nsecond\nthird\nfourth\n",
+        );
+        let trace = Trace::from_deck(&deck).unwrap();
+        let error = trace.excerpt(&trace.checkpoints[0]).unwrap_err();
+        assert!(format!("{error:#}").contains("moved to `2`"));
+    }
+
+    #[test]
+    fn tutor_grounding_drops_a_changed_frozen_excerpt() {
+        let dir = tempfile::tempdir().unwrap();
+        let assets = dir.path().join("assets");
+        std::fs::create_dir(&assets).unwrap();
+        write(&assets, "01.rs", "fn expected() {}\n");
+        let deck_path = write(
+            dir.path(),
+            "t.md",
+            "---\nsource: assets\n---\n\
+             ## q\na\n<!-- at: 01.rs from src/lib.rs:1 -->\n",
+        );
+        crate::source::stamp_citations(&deck_path).unwrap();
+        write(&assets, "01.rs", "fn changed() {}\n");
+        let deck = Deck::load(&deck_path).unwrap();
+        let base = SourceBase::for_deck(&deck);
+        assert!(frozen_excerpt_block(&deck.cards[0].citations[0], &base).is_none());
     }
 
     #[test]

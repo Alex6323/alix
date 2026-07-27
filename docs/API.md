@@ -543,13 +543,21 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `context_runs` | [[InlineRun]] | Display projection per cloze context line. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
+| `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, and checklists remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. |
 | `note` | [NoteUnitDto] | Post-answer note, as a tagged union. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
-| `at` | string? | `% at:` citation locator. |
-| `citation` | ExcerptDto? | Resolved citation excerpt. |
-| `citation_error` | string? | Why `at` failed to resolve. |
+| `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |
 | `crumb` | CrumbDto? | Topology breadcrumb (region heatmap). |
+
+### CitationDto
+
+`locator: string` is the authored locator, or the original live-source label
+for a frozen excerpt. `excerpt: ExcerptDto?` is that locator's resolved source
+panel. `error: string?` explains why this locator could not resolve or why its
+fingerprint no longer matches. A mismatched, missing, or ambiguous fingerprint
+never returns newly addressed source lines. Exactly one of `excerpt` and
+`error` is normally non-null when source access is configured.
 
 ### ImageDto
 
@@ -886,7 +894,7 @@ time; these derive `Deserialize` only, so, like `CreateCardReq`, they are
 documented here but not snapshot-pinned (§8).
 
 `RemoteCard`: `subject: string`, `front: string`, `back: [string]`, `at:
-string?` (the card's `% at:` citation locator, if any: carried through for
+string?` (one card citation locator, if any: carried through for
 completeness, though the ungrounded tutor prompt doesn't read it).
 
 `RemoteTurn`: one prior tutor exchange the client re-sends: `q: string`,

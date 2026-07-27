@@ -1,5 +1,4 @@
 {
-  "at": null,
   "back": [
     "\\frac{1"
   ],
@@ -14,8 +13,22 @@
       }
     ]
   ],
-  "citation": null,
-  "citation_error": null,
+  "back_units": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "math": {
+            "display": false,
+            "error": "ParseError: unexpected end"
+          },
+          "text": "\\frac{1"
+        }
+      ],
+      "text": "\\frac{1"
+    }
+  ],
+  "citations": [],
   "context": [
     "$$y^2$$"
   ],

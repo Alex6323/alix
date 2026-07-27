@@ -82,11 +82,12 @@ pub struct _CardView {
     pub context_runs: Vec<Vec<InlineRun>>,
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,
+    pub back_units: Vec<NoteUnit>,
     pub reshaped: bool,
     pub note: Vec<NoteUnit>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
-    pub at: Option<String>,
+    pub citations: Vec<String>,
 }
 
 #[flutter_rust_bridge::frb(mirror(ReviewState))]
@@ -385,7 +386,10 @@ impl ReviewSession {
             subject: card.subject.to_string(),
             front: card.front.clone(),
             back: card.back.clone(),
-            at: card.at.clone(),
+            at: card
+                .citations
+                .first()
+                .map(|citation| citation.locator.clone()),
             line: card.line,
         })
     }
