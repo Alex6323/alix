@@ -154,6 +154,12 @@ pub struct DeckProgress {
     pub reconstructed_at_ms: Option<u64>,
 }
 
+impl DeckProgress {
+    pub(crate) fn is_empty(&self) -> bool {
+        *self == DeckProgress::default()
+    }
+}
+
 // 21 days: the FSRS-community convention for a "mature" card.
 pub const MATURE_STABILITY_DAYS: f64 = 21.0;
 
@@ -168,7 +174,7 @@ pub enum VirtualKind {
 pub struct VirtualCard {
     pub id: String,
     pub kind: VirtualKind,
-    pub parent: String,
+    pub deck: String,
     pub text: String,
     pub created_ms: u64,
 }
@@ -259,13 +265,17 @@ pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> Ca
 struct DeckStoreFile {
     version: u32,
     deck_id: String,
+    // The current filename. Redundant with `deck_id` (the document is named
+    // `progress/<deck_id>.json`); kept for human inspection only, never a key.
     subject: String,
     revision: u64,
     cards: HashMap<String, CardState>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     records: HashMap<String, CardRecords>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    decks: HashMap<String, DeckProgress>,
+    // One deck per document, so its deck-level progress is a single value, not
+    // a map keyed by the (renameable) filename.
+    #[serde(default, skip_serializing_if = "DeckProgress::is_empty")]
+    deck: DeckProgress,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     virtual_cards: HashMap<String, VirtualCard>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -276,7 +286,7 @@ struct DeckStoreFile {
 pub(crate) struct StoreDocumentData {
     pub cards: HashMap<String, CardState>,
     pub records: HashMap<String, CardRecords>,
-    pub decks: HashMap<String, DeckProgress>,
+    pub deck: DeckProgress,
     pub virtual_cards: HashMap<String, VirtualCard>,
     pub writer: Option<Writer>,
 }
@@ -420,7 +430,7 @@ pub(crate) fn write_deck_data(
         revision,
         cards: data.cards.clone(),
         records: data.records.clone(),
-        decks: data.decks.clone(),
+        deck: data.deck,
         virtual_cards: data.virtual_cards.clone(),
         writer: data.writer.clone(),
     };
@@ -453,19 +463,14 @@ pub(crate) fn read_deck_data(
             actual: file.deck_id,
         });
     }
-    let old_subject = file.subject;
-    let subject = current_subject.unwrap_or(&old_subject).to_string();
-    let mut decks = file.decks;
+    // The document is this deck's, addressed by its stable id; the filename is
+    // display only. Deck-level state and virtual-card association follow the id,
+    // so a rename needs no rebinding; the subject is refreshed for display.
+    let subject = current_subject.unwrap_or(&file.subject).to_string();
     let mut virtual_cards = file.virtual_cards;
-    if old_subject != subject {
-        if let Some(progress) = decks.remove(&old_subject) {
-            decks.insert(subject.clone(), progress);
-        }
-        for card in virtual_cards.values_mut() {
-            if card.parent == old_subject {
-                card.parent.clone_from(&subject);
-            }
-        }
+    for card in virtual_cards.values_mut() {
+        card.deck.clear();
+        card.deck.push_str(expected_deck_id);
     }
     Ok((
         file.revision,
@@ -473,7 +478,7 @@ pub(crate) fn read_deck_data(
         StoreDocumentData {
             cards: file.cards,
             records: file.records,
-            decks,
+            deck: file.deck,
             virtual_cards,
             writer: file.writer,
         },
@@ -591,20 +596,16 @@ impl Store {
             });
         }
 
-        let old_subject = file.subject;
-        let mut decks = file.decks;
-        if old_subject != subject
-            && let Some(progress) = decks.remove(&old_subject)
-        {
-            decks.insert(subject.clone(), progress);
-        }
         let mut virtual_cards = file.virtual_cards;
-        if old_subject != subject {
-            for card in virtual_cards.values_mut() {
-                if card.parent == old_subject {
-                    card.parent.clone_from(&subject);
-                }
-            }
+        for card in virtual_cards.values_mut() {
+            card.deck.clear();
+            card.deck.push_str(&deck_id);
+        }
+        // Deck-level state is keyed by the stable id in memory, never by the
+        // filename; the document holds exactly one deck's progress.
+        let mut decks = HashMap::new();
+        if !file.deck.is_empty() {
+            decks.insert(deck_id.clone(), file.deck);
         }
         Ok(Self {
             path,
@@ -679,9 +680,11 @@ impl Store {
                         .insert(token.to_string(), deck_id.to_string());
                 }
             }
+            // Deck-level ownership is a trivial self-map: each document owns
+            // exactly its own deck's entry, keyed by that same stable id.
             owners
                 .decks
-                .insert(deck.subject.clone(), deck_id.to_string());
+                .insert(deck_id.to_string(), deck_id.to_string());
         }
         let mut documents = Vec::new();
         let mut loaded_decks = HashSet::new();
@@ -703,7 +706,15 @@ impl Store {
                 &deck_id,
                 "record",
             )?;
-            merge_owned(&mut decks, &mut owners.decks, &data.decks, &deck_id, "deck")?;
+            // Deck-level state is keyed by the stable id; each document owns
+            // exactly its own deck's entry, so no subject-collision is possible.
+            // The ownership self-map is registered unconditionally (even for
+            // an empty entry), so a later `insert_virtual` can still resolve
+            // this deck's ownership.
+            owners.decks.insert(deck_id.clone(), deck_id.clone());
+            if !data.deck.is_empty() {
+                decks.insert(deck_id.clone(), data.deck);
+            }
             merge_owned(
                 &mut virtual_cards,
                 &mut owners.virtual_cards,
@@ -796,7 +807,7 @@ impl Store {
             revision: next,
             cards: self.cards.clone(),
             records: self.records.clone(),
-            decks: self.decks.clone(),
+            deck: self.decks.get(deck_id).cloned().unwrap_or_default(),
             virtual_cards: self.virtual_cards.clone(),
             writer: self.writer_for_save(),
         };
@@ -833,7 +844,11 @@ impl Store {
             let data = StoreDocumentData {
                 cards: owned_values(&self.cards, &owners.cards, &document.deck_id),
                 records: owned_values(&self.records, &owners.records, &document.deck_id),
-                decks: owned_values(&self.decks, &owners.decks, &document.deck_id),
+                deck: self
+                    .decks
+                    .get(&document.deck_id)
+                    .cloned()
+                    .unwrap_or_default(),
                 virtual_cards: owned_values(
                     &self.virtual_cards,
                     &owners.virtual_cards,
@@ -983,7 +998,7 @@ impl Store {
 
     pub fn insert_virtual(&mut self, card: VirtualCard) {
         if let StoreBacking::Aggregate { owners, .. } = &mut self.backing
-            && let Some(deck_id) = owners.decks.get(&card.parent).cloned()
+            && let Some(deck_id) = owners.decks.get(&card.deck).cloned()
         {
             owners.cards.insert(card.id.clone(), deck_id.clone());
             owners.virtual_cards.insert(card.id.clone(), deck_id);
@@ -1039,7 +1054,7 @@ impl Store {
                 owners.virtual_cards.retain(|_, owner| owner != old_deck_id);
                 owners
                     .decks
-                    .insert(deck.subject.clone(), new_deck_id.to_string());
+                    .insert(new_deck_id.to_string(), new_deck_id.to_string());
                 for card in &deck.cards {
                     if let Some(card_id) = card.id() {
                         owners.cards.insert(card_id, new_deck_id.to_string());
@@ -1061,10 +1076,10 @@ impl Store {
 
     // A cloze block shares one sidecar entry per hole; drop them ALL here or
     // promoting one hole orphans the rest with colliding ids.
-    pub fn remove_virtual_block(&mut self, parent: &str, text: &str) -> usize {
+    pub fn remove_virtual_block(&mut self, deck_id: &str, text: &str) -> usize {
         let before = self.virtual_cards.len();
         self.virtual_cards
-            .retain(|_, vc| !(vc.parent == parent && vc.text == text));
+            .retain(|_, vc| !(vc.deck == deck_id && vc.text == text));
         before - self.virtual_cards.len()
     }
 
@@ -1072,64 +1087,64 @@ impl Store {
         self.virtual_cards.values()
     }
 
-    pub fn virtual_ids_with_content(&self, subject: &str, fingerprint: u64) -> Vec<String> {
+    pub fn virtual_ids_with_content(&self, deck_id: &str, fingerprint: u64) -> Vec<String> {
         self.virtual_cards
             .values()
-            .filter(|vc| vc.parent == subject && virtual_fingerprint(vc) == Some(fingerprint))
+            .filter(|vc| vc.deck == deck_id && virtual_fingerprint(vc) == Some(fingerprint))
             .map(|vc| vc.id.clone())
             .collect()
     }
 
-    pub fn virtual_cards_for(&self, subject: &str) -> Vec<&VirtualCard> {
+    pub fn virtual_cards_for(&self, deck_id: &str) -> Vec<&VirtualCard> {
         self.virtual_cards
             .values()
-            .filter(|v| v.parent == subject)
+            .filter(|v| v.deck == deck_id)
             .collect()
     }
 
-    pub fn deck_mastered(&self, subject: &str) -> bool {
-        self.deck_mastered_at(subject).is_some()
+    pub fn deck_mastered(&self, deck_id: &str) -> bool {
+        self.deck_mastered_at(deck_id).is_some()
     }
 
-    pub fn deck_mastered_at(&self, subject: &str) -> Option<u64> {
-        self.decks.get(subject).and_then(|d| d.mastered_at_ms)
+    pub fn deck_mastered_at(&self, deck_id: &str) -> Option<u64> {
+        self.decks.get(deck_id).and_then(|d| d.mastered_at_ms)
     }
 
     // A pass clears any prior failed-exam cooldown.
-    pub fn set_deck_mastered(&mut self, subject: &str, now_ms: u64) {
-        let entry = self.decks.entry(subject.to_string()).or_default();
+    pub fn set_deck_mastered(&mut self, deck_id: &str, now_ms: u64) {
+        let entry = self.decks.entry(deck_id.to_string()).or_default();
         entry.mastered_at_ms = Some(now_ms);
         entry.exam_failed_at_ms = None;
     }
 
-    pub fn exam_failed_at(&self, subject: &str) -> Option<u64> {
-        self.decks.get(subject).and_then(|d| d.exam_failed_at_ms)
+    pub fn exam_failed_at(&self, deck_id: &str) -> Option<u64> {
+        self.decks.get(deck_id).and_then(|d| d.exam_failed_at_ms)
     }
 
-    pub fn set_exam_failed(&mut self, subject: &str, now_ms: u64) {
+    pub fn set_exam_failed(&mut self, deck_id: &str, now_ms: u64) {
         self.decks
-            .entry(subject.to_string())
+            .entry(deck_id.to_string())
             .or_default()
             .exam_failed_at_ms = Some(now_ms);
     }
 
-    pub fn clear_deck_mastered(&mut self, subject: &str) -> bool {
-        self.decks.remove(subject).is_some()
+    pub fn clear_deck_mastered(&mut self, deck_id: &str) -> bool {
+        self.decks.remove(deck_id).is_some()
     }
 
-    pub fn last_depth(&self, subject: &str) -> Option<Depth> {
-        self.decks.get(subject).and_then(|d| d.last_depth)
+    pub fn last_depth(&self, deck_id: &str) -> Option<Depth> {
+        self.decks.get(deck_id).and_then(|d| d.last_depth)
     }
 
-    pub fn set_last_depth(&mut self, subject: &str, depth: Depth) {
+    pub fn set_last_depth(&mut self, deck_id: &str, depth: Depth) {
         self.decks
-            .entry(subject.to_string())
+            .entry(deck_id.to_string())
             .or_default()
             .last_depth = Some(depth);
     }
 
-    pub fn badge_earned(&self, subject: &str, depth: Depth) -> Option<u64> {
-        let deck = self.decks.get(subject)?;
+    pub fn badge_earned(&self, deck_id: &str, depth: Depth) -> Option<u64> {
+        let deck = self.decks.get(deck_id)?;
         match depth {
             Depth::Recognize => deck.recognized_at_ms,
             Depth::Recall => deck.recalled_at_ms,
@@ -1168,7 +1183,7 @@ impl Store {
     pub fn orphans(
         &self,
         known_card_ids: &HashSet<String>,
-        known_subjects: &HashSet<String>,
+        known_deck_ids: &HashSet<String>,
     ) -> Orphans {
         let mut cards: Vec<String> = self
             .cards
@@ -1179,7 +1194,7 @@ impl Store {
         let mut decks: Vec<String> = self
             .decks
             .keys()
-            .filter(|k| !known_subjects.contains(*k))
+            .filter(|k| !known_deck_ids.contains(*k))
             .cloned()
             .collect();
         cards.sort();
@@ -1194,8 +1209,8 @@ impl Store {
                 removed += 1;
             }
         }
-        for subject in &orphans.decks {
-            if self.decks.remove(subject).is_some() {
+        for deck_id in &orphans.decks {
+            if self.decks.remove(deck_id).is_some() {
                 removed += 1;
             }
         }
@@ -1221,7 +1236,7 @@ impl Store {
 
     // Wipes every family the deck owned at once, so deliberate destruction
     // leaves no orphan.
-    pub fn wipe_deck(&mut self, tokens: &HashSet<String>, subject: &str) -> usize {
+    pub fn wipe_deck(&mut self, tokens: &HashSet<String>, deck_id: &str) -> usize {
         let doomed: Vec<String> = self
             .cards
             .keys()
@@ -1239,11 +1254,11 @@ impl Store {
         for token in tokens {
             self.records.remove(token);
         }
-        self.decks.remove(subject);
+        self.decks.remove(deck_id);
         let virtuals: Vec<String> = self
             .virtual_cards
             .values()
-            .filter(|vc| vc.parent == subject)
+            .filter(|vc| vc.deck == deck_id)
             .map(|vc| vc.id.clone())
             .collect();
         for id in virtuals {
@@ -1273,7 +1288,7 @@ impl Orphans {
 
 pub fn cooldown_remaining_ms(
     store: &Store,
-    subject: &str,
+    deck_id: &str,
     cooldown_secs: u64,
     now_ms: u64,
 ) -> Option<u64> {
@@ -1281,7 +1296,7 @@ pub fn cooldown_remaining_ms(
         return None;
     }
     let until = store
-        .exam_failed_at(subject)?
+        .exam_failed_at(deck_id)?
         .saturating_add(cooldown_secs.saturating_mul(1000));
     (until > now_ms).then(|| until - now_ms)
 }
@@ -1300,7 +1315,7 @@ pub enum MintError {
 // identical content would otherwise mint a duplicate.
 pub fn mint_tutor_card(
     store: &mut Store,
-    subject: &str,
+    deck_id: &str,
     front: &str,
     back: &[String],
     now_ms: u64,
@@ -1328,7 +1343,7 @@ pub fn mint_tutor_card(
         text.push_str(line);
         text.push('\n');
     }
-    let cards = crate::parser::parse_str(subject, &text)
+    let cards = crate::parser::parse_str(deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
     let [card] = cards.as_slice() else {
         return Err(MintError::Malformed(
@@ -1341,7 +1356,7 @@ pub fn mint_tutor_card(
     let fingerprint = card.content_fingerprint;
     if deck_fingerprints.contains(&fingerprint)
         || !store
-            .virtual_ids_with_content(subject, fingerprint)
+            .virtual_ids_with_content(deck_id, fingerprint)
             .is_empty()
     {
         return Err(MintError::Duplicate);
@@ -1349,7 +1364,7 @@ pub fn mint_tutor_card(
     store.insert_virtual(VirtualCard {
         id: id.clone(),
         kind: VirtualKind::Tutor,
-        parent: subject.to_string(),
+        deck: deck_id.to_string(),
         text,
         created_ms: now_ms,
     });
@@ -1379,12 +1394,12 @@ pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
 
 // High-water: an already-earned date survives a later drop below the mature line.
 // Badges gate nothing here, bookkeeping only, never a lifecycle interaction.
-pub fn note_badges(store: &mut Store, subject: &str, cards: &[Card], now_ms: u64) {
+pub fn note_badges(store: &mut Store, deck_id: &str, cards: &[Card], now_ms: u64) {
     for depth in [Depth::Recognize, Depth::Recall, Depth::Reconstruct] {
-        if store.badge_earned(subject, depth).is_some() || !badge_solid(cards, store, depth) {
+        if store.badge_earned(deck_id, depth).is_some() || !badge_solid(cards, store, depth) {
             continue;
         }
-        let entry = store.decks.entry(subject.to_string()).or_default();
+        let entry = store.decks.entry(deck_id.to_string()).or_default();
         match depth {
             Depth::Recognize => entry.recognized_at_ms = Some(now_ms),
             Depth::Recall => entry.recalled_at_ms = Some(now_ms),
@@ -1400,7 +1415,7 @@ pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResu
         bail!("no virtual card with id {id} to promote");
     };
     let text = vc.text.clone();
-    let parent = vc.parent.clone();
+    let parent = vc.deck.clone();
 
     deck::append_cards(deck_path, &text)
         .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
@@ -1448,7 +1463,7 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
 /// gets a fresh random token, so a rerun must match by canonical content.
 pub fn store_remediation_cards(
     store: &mut Store,
-    subject: &str,
+    deck_id: &str,
     deck_fingerprints: &std::collections::HashSet<u64>,
     cards_text: &str,
     now_ms: u64,
@@ -1466,7 +1481,7 @@ pub fn store_remediation_cards(
             crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?;
         let block = stamp_block(block, &token);
         // A malformed block is a hard error, not a silently-dropped card.
-        let cards = crate::parser::parse_str(subject, &block)?;
+        let cards = crate::parser::parse_str(deck_id, &block)?;
         let Some(first) = cards.first() else {
             continue;
         };
@@ -1476,7 +1491,7 @@ pub fn store_remediation_cards(
         if deck_fingerprints.contains(&fingerprint) {
             continue;
         }
-        let existing = store.virtual_ids_with_content(subject, fingerprint);
+        let existing = store.virtual_ids_with_content(deck_id, fingerprint);
         if existing.is_empty() {
             for card in &cards {
                 let Some(id) = card.id() else {
@@ -1485,7 +1500,7 @@ pub fn store_remediation_cards(
                 store.insert_virtual(VirtualCard {
                     id: id.clone(),
                     kind: VirtualKind::Remediation,
-                    parent: subject.to_string(),
+                    deck: deck_id.to_string(),
                     text: block.clone(),
                     created_ms: now_ms,
                 });
@@ -1510,7 +1525,7 @@ pub fn store_remediation_cards(
 }
 
 fn virtual_fingerprint(vc: &VirtualCard) -> Option<u64> {
-    let cards = crate::parser::parse_str(&vc.parent, &vc.text).ok()?;
+    let cards = crate::parser::parse_str(&vc.deck, &vc.text).ok()?;
     let card = cards
         .iter()
         .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
@@ -1800,27 +1815,27 @@ mod tests {
         store.insert_virtual(VirtualCard {
             id: "vq".to_string(),
             kind: VirtualKind::Remediation,
-            parent: "rust.md".to_string(),
+            deck: "d1".to_string(),
             text: "## v <!-- id: vq -->\nb\n".to_string(),
             created_ms: 0,
         });
         store.get_or_insert("vq", 0);
-        store.set_last_depth("rust.md", Depth::Recall);
-        store.set_last_depth("deleted.md", Depth::Recall);
+        store.set_last_depth("d1", Depth::Recall);
+        store.set_last_depth("d2", Depth::Recall);
 
         let known_cards: HashSet<String> = ["live".to_string()].into_iter().collect();
-        let known_subjects: HashSet<String> = ["rust.md".to_string()].into_iter().collect();
-        let orphans = store.orphans(&known_cards, &known_subjects);
+        let known_deck_ids: HashSet<String> = ["d1".to_string()].into_iter().collect();
+        let orphans = store.orphans(&known_cards, &known_deck_ids);
         assert_eq!(vec!["gone".to_string()], orphans.cards);
-        assert_eq!(vec!["deleted.md".to_string()], orphans.decks);
+        assert_eq!(vec!["d2".to_string()], orphans.decks);
         assert_eq!(2, orphans.len());
 
         assert_eq!(2, store.prune_orphans(&orphans));
         assert!(store.get("live").is_some());
         assert!(store.get("vq").is_some());
-        assert_eq!(Some(Depth::Recall), store.last_depth("rust.md"));
+        assert_eq!(Some(Depth::Recall), store.last_depth("d1"));
         assert!(store.get("gone").is_none());
-        assert_eq!(None, store.last_depth("deleted.md"));
+        assert_eq!(None, store.last_depth("d2"));
     }
 
     #[test]
@@ -1855,32 +1870,32 @@ mod tests {
         store.get_or_insert("doom", 0);
         store.get_or_insert("doom-0", 0);
         store.ensure_records_raw("doom", &[a]);
-        store.set_deck_mastered("doomed.md", 1);
+        store.set_deck_mastered("doomed", 1);
         store.insert_virtual(VirtualCard {
             id: "vdoom".to_string(),
             kind: VirtualKind::Remediation,
-            parent: "doomed.md".to_string(),
+            deck: "doomed".to_string(),
             text: "## v <!-- id: vdoom -->\nx\n".to_string(),
             created_ms: 0,
         });
         store.get_or_insert("vdoom", 0);
         store.get_or_insert("keep", 0);
         store.ensure_records_raw("keep", &[a]);
-        store.set_deck_mastered("keep.md", 1);
+        store.set_deck_mastered("keep", 1);
 
         let tokens: HashSet<String> = ["doom".to_string()].into_iter().collect();
-        let wiped = store.wipe_deck(&tokens, "doomed.md");
+        let wiped = store.wipe_deck(&tokens, "doomed");
 
         assert_eq!(2, wiped, "the base and the hole schedule both count");
         assert!(store.get("doom").is_none());
         assert!(store.get("doom-0").is_none());
         assert!(store.records("doom").is_none());
-        assert!(!store.deck_mastered("doomed.md"));
+        assert!(!store.deck_mastered("doomed"));
         assert!(store.get_virtual("vdoom").is_none());
         assert!(store.get("vdoom").is_none());
         assert!(store.get("keep").is_some());
         assert!(store.records("keep").is_some());
-        assert!(store.deck_mastered("keep.md"));
+        assert!(store.deck_mastered("keep"));
     }
 
     #[test]
@@ -2080,7 +2095,7 @@ mod tests {
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
         store.get_or_insert("card1", 1);
-        store.set_deck_mastered("old.md", 2);
+        store.set_deck_mastered("deck1", 2);
         store.save().unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
@@ -2090,31 +2105,33 @@ mod tests {
 
         let reopened = Store::open_deck(&path, "deck1", "old.md").unwrap();
         assert!(reopened.get("card1").is_some());
-        assert!(reopened.deck_mastered("old.md"));
+        assert!(reopened.deck_mastered("deck1"));
     }
 
     #[test]
-    fn opening_a_deck_document_under_a_new_filename_rebinds_subject_state() {
+    fn opening_a_deck_document_under_a_new_filename_keeps_its_deck_level_state() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
-        store.set_deck_mastered("old.md", 2);
+        store.set_deck_mastered("deck1", 2);
         store.insert_virtual(VirtualCard {
             id: "virtual1".to_string(),
             kind: VirtualKind::Tutor,
-            parent: "old.md".to_string(),
+            deck: "deck1".to_string(),
             text: "## q <!-- id: virtual1 -->\na\n".to_string(),
             created_ms: 1,
         });
         store.save().unwrap();
 
+        // Deck-level state and virtual-card association follow the id, so a
+        // reopen under a new filename (same document, same deck_id) still
+        // finds them: the subject argument no longer rebinds anything.
         let renamed = Store::open_deck(&path, "deck1", "new.md").unwrap();
-        assert!(renamed.deck_mastered("new.md"));
-        assert!(!renamed.deck_mastered("old.md"));
+        assert!(renamed.deck_mastered("deck1"));
         assert_eq!(
             vec!["virtual1"],
             renamed
-                .virtual_cards_for("new.md")
+                .virtual_cards_for("deck1")
                 .into_iter()
                 .map(|card| card.id.as_str())
                 .collect::<Vec<_>>()
@@ -2260,19 +2277,19 @@ mod tests {
         let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
-        assert!(!store.deck_mastered("rust.md"));
-        assert_eq!(None, store.deck_mastered_at("rust.md"));
-        store.set_deck_mastered("rust.md", 1234);
-        assert!(store.deck_mastered("rust.md"));
-        assert_eq!(Some(1234), store.deck_mastered_at("rust.md"));
+        assert!(!store.deck_mastered("deck1"));
+        assert_eq!(None, store.deck_mastered_at("deck1"));
+        store.set_deck_mastered("deck1", 1234);
+        assert!(store.deck_mastered("deck1"));
+        assert_eq!(Some(1234), store.deck_mastered_at("deck1"));
         store.save().unwrap();
 
         let mut reloaded = Store::open(&path).unwrap();
-        assert!(reloaded.deck_mastered("rust.md"));
-        assert_eq!(Some(1234), reloaded.deck_mastered_at("rust.md"));
-        assert!(reloaded.clear_deck_mastered("rust.md"));
-        assert!(!reloaded.deck_mastered("rust.md"));
-        assert!(!reloaded.clear_deck_mastered("rust.md"));
+        assert!(reloaded.deck_mastered("deck1"));
+        assert_eq!(Some(1234), reloaded.deck_mastered_at("deck1"));
+        assert!(reloaded.clear_deck_mastered("deck1"));
+        assert!(!reloaded.deck_mastered("deck1"));
+        assert!(!reloaded.clear_deck_mastered("deck1"));
     }
 
     #[test]
@@ -2281,52 +2298,52 @@ mod tests {
         let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
-        assert_eq!(None, store.exam_failed_at("t.md"));
-        store.set_exam_failed("t.md", 5000);
-        assert_eq!(Some(5000), store.exam_failed_at("t.md"));
-        assert!(!store.deck_mastered("t.md"));
+        assert_eq!(None, store.exam_failed_at("deck1"));
+        store.set_exam_failed("deck1", 5000);
+        assert_eq!(Some(5000), store.exam_failed_at("deck1"));
+        assert!(!store.deck_mastered("deck1"));
         store.save().unwrap();
 
         let mut reloaded = Store::open(&path).unwrap();
-        assert_eq!(Some(5000), reloaded.exam_failed_at("t.md"));
-        reloaded.set_deck_mastered("t.md", 9000);
-        assert!(reloaded.deck_mastered("t.md"));
-        assert_eq!(None, reloaded.exam_failed_at("t.md"));
+        assert_eq!(Some(5000), reloaded.exam_failed_at("deck1"));
+        reloaded.set_deck_mastered("deck1", 9000);
+        assert!(reloaded.deck_mastered("deck1"));
+        assert_eq!(None, reloaded.exam_failed_at("deck1"));
     }
 
     #[test]
     fn per_deck_clear_drops_the_cooldown_too() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.md", 1);
-        assert!(store.clear_deck_mastered("t.md"));
-        assert_eq!(None, store.exam_failed_at("t.md"));
+        store.set_exam_failed("t", 1);
+        assert!(store.clear_deck_mastered("t"));
+        assert_eq!(None, store.exam_failed_at("t"));
     }
 
     #[test]
-    fn cooldown_remaining_is_none_for_a_subject_that_never_failed() {
+    fn cooldown_remaining_is_none_for_a_deck_that_never_failed() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("p.json")).unwrap();
-        assert_eq!(None, cooldown_remaining_ms(&store, "t.md", 3600, 0));
+        assert_eq!(None, cooldown_remaining_ms(&store, "t", 3600, 0));
     }
 
     #[test]
     fn cooldown_remaining_is_none_when_the_cooldown_is_disabled() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.md", 1_000);
-        assert_eq!(None, cooldown_remaining_ms(&store, "t.md", 0, 1_030_000));
+        store.set_exam_failed("t", 1_000);
+        assert_eq!(None, cooldown_remaining_ms(&store, "t", 0, 1_030_000));
     }
 
     #[test]
     fn cooldown_remaining_reports_the_exact_ms_left_inside_the_window() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.md", 1_000);
+        store.set_exam_failed("t", 1_000);
         let now = 1_000 + 30_000;
         assert_eq!(
             Some(3_600_000 - 30_000),
-            cooldown_remaining_ms(&store, "t.md", 3600, now)
+            cooldown_remaining_ms(&store, "t", 3600, now)
         );
     }
 
@@ -2334,10 +2351,10 @@ mod tests {
     fn cooldown_remaining_is_none_once_the_window_has_elapsed() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.md", 1_000);
+        store.set_exam_failed("t", 1_000);
         assert_eq!(
             None,
-            cooldown_remaining_ms(&store, "t.md", 3600, 1_000 + 3_600_001)
+            cooldown_remaining_ms(&store, "t", 3600, 1_000 + 3_600_001)
         );
     }
 
@@ -2345,9 +2362,9 @@ mod tests {
     fn clear_also_drops_deck_mastered() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_deck_mastered("a.md", 1);
+        store.set_deck_mastered("a", 1);
         store.clear();
-        assert!(!store.deck_mastered("a.md"));
+        assert!(!store.deck_mastered("a"));
     }
 
     #[test]
@@ -2373,14 +2390,14 @@ mod tests {
 
     const BORROW_TEXT: &str = "## What does the borrow checker enforce? <!-- id: vb1 -->\nExactly one mutable borrow, or many shared ones\n";
 
-    fn virtual_card(parent: &str, text: &str) -> VirtualCard {
-        let id = crate::parser::parse_str(parent, text).unwrap()[0]
+    fn virtual_card(deck_id: &str, text: &str) -> VirtualCard {
+        let id = crate::parser::parse_str(deck_id, text).unwrap()[0]
             .id()
             .unwrap();
         VirtualCard {
             id,
             kind: VirtualKind::Remediation,
-            parent: parent.to_string(),
+            deck: deck_id.to_string(),
             text: text.to_string(),
             created_ms: 1000,
         }
@@ -2390,13 +2407,13 @@ mod tests {
     fn insert_virtual_then_get_virtual_returns_it_with_fields_intact() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let vc = virtual_card("rust.md", BORROW_TEXT);
+        let vc = virtual_card("rust", BORROW_TEXT);
         let id = vc.id.clone();
 
         store.insert_virtual(vc);
 
         let got = store.get_virtual(&id).unwrap();
-        assert_eq!("rust.md", got.parent);
+        assert_eq!("rust", got.deck);
         assert_eq!(VirtualKind::Remediation, got.kind);
         assert_eq!(BORROW_TEXT, got.text);
         assert!(store.is_virtual(&id));
@@ -2407,7 +2424,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
-        let vc = virtual_card("rust.md", BORROW_TEXT);
+        // A per-deck document normalizes every virtual card's `deck` to its
+        // own id on load, so the fixture must already agree with `deck1`.
+        let vc = virtual_card("deck1", BORROW_TEXT);
         let id = vc.id.clone();
         store.insert_virtual(vc.clone());
         store.save().unwrap();
@@ -2418,19 +2437,19 @@ mod tests {
     }
 
     #[test]
-    fn virtual_cards_for_matches_on_parent_subject() {
+    fn virtual_cards_for_matches_on_owning_deck_id() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.insert_virtual(virtual_card("rust.md", "## f <!-- id: v1 -->\nback one\n"));
-        store.insert_virtual(virtual_card("rust.md", "## f <!-- id: v2 -->\nback two\n"));
-        store.insert_virtual(virtual_card("other.md", "## f <!-- id: v3 -->\nback one\n"));
+        store.insert_virtual(virtual_card("rust", "## f <!-- id: v1 -->\nback one\n"));
+        store.insert_virtual(virtual_card("rust", "## f <!-- id: v2 -->\nback two\n"));
+        store.insert_virtual(virtual_card("other", "## f <!-- id: v3 -->\nback one\n"));
 
-        let rust_cards = store.virtual_cards_for("rust.md");
+        let rust_cards = store.virtual_cards_for("rust");
         assert_eq!(2, rust_cards.len());
-        assert!(rust_cards.iter().all(|v| v.parent == "rust.md"));
+        assert!(rust_cards.iter().all(|v| v.deck == "rust"));
 
-        assert_eq!(1, store.virtual_cards_for("other.md").len());
-        assert!(store.virtual_cards_for("nonexistent.md").is_empty());
+        assert_eq!(1, store.virtual_cards_for("other").len());
+        assert!(store.virtual_cards_for("nonexistent").is_empty());
     }
 
     #[test]
@@ -2552,7 +2571,7 @@ mod tests {
             store.insert_virtual(VirtualCard {
                 id: id.clone(),
                 kind: VirtualKind::Remediation,
-                parent: "rust.md".to_string(),
+                deck: "rust.md".to_string(),
                 text: text.to_string(),
                 created_ms: 1000,
             });
@@ -2640,7 +2659,7 @@ mod tests {
         store.insert_virtual(VirtualCard {
             id: id.clone(),
             kind: VirtualKind::Tutor,
-            parent: "geo.md".to_string(),
+            deck: "geo.md".to_string(),
             text,
             created_ms: 5,
         });
@@ -2804,8 +2823,8 @@ mod tests {
                 ..Default::default()
             });
         }
-        note_badges(&mut store, "t.md", &cards, 1_000);
-        assert_eq!(Some(1_000), store.badge_earned("t.md", Depth::Recall));
+        note_badges(&mut store, "t", &cards, 1_000);
+        assert_eq!(Some(1_000), store.badge_earned("t", Depth::Recall));
 
         store.get_or_insert(&cards[0].id().unwrap(), 0).recall = Some(FsrsState {
             stability: 3.0,
@@ -2813,7 +2832,7 @@ mod tests {
         });
 
         assert!(!badge_solid(&cards, &store, Depth::Recall));
-        assert_eq!(Some(1_000), store.badge_earned("t.md", Depth::Recall));
+        assert_eq!(Some(1_000), store.badge_earned("t", Depth::Recall));
     }
 
     #[test]
@@ -2840,14 +2859,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");
         let mut store = Store::open(&path).unwrap();
-        assert_eq!(None, store.last_depth("t.md"));
+        assert_eq!(None, store.last_depth("p"));
 
-        store.set_last_depth("t.md", Depth::Reconstruct);
-        assert_eq!(Some(Depth::Reconstruct), store.last_depth("t.md"));
+        store.set_last_depth("p", Depth::Reconstruct);
+        assert_eq!(Some(Depth::Reconstruct), store.last_depth("p"));
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
-        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("t.md"));
+        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("p"));
     }
 
     #[test]
@@ -3147,7 +3166,7 @@ mod tests {
             assert_eq!(created, virtuals.len());
 
             for vc in &virtuals {
-                let synth = crate::parser::parse_str(&vc.parent, &vc.text)
+                let synth = crate::parser::parse_str(&vc.deck, &vc.text)
                     .unwrap()
                     .into_iter()
                     .find(|c| c.id().as_deref() == Some(vc.id.as_str()))
@@ -3180,7 +3199,7 @@ mod tests {
             .virtual_cards_for("d.md")
             .iter()
             .map(|vc| {
-                crate::parser::parse_str(&vc.parent, &vc.text)
+                crate::parser::parse_str(&vc.deck, &vc.text)
                     .unwrap()
                     .remove(0)
             })

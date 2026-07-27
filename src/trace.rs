@@ -476,9 +476,10 @@ mod tests {
         // Stamped at open in production, so the checkpoint carries a token id.
         crate::stamp::stamp_deck(&deck_path).unwrap();
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        let deck_id = deck.deck_token.clone().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        assert!(!store.deck_mastered(&deck.subject));
+        assert!(!store.deck_mastered(&deck_id));
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
         // Manually graduates the checkpoint (FSRS `Review`) to satisfy the
@@ -494,10 +495,10 @@ mod tests {
             f.state = 2; // Review state (graduated)
         }
 
-        assert!(!store.deck_mastered(&deck.subject));
+        assert!(!store.deck_mastered(&deck_id));
         assert_eq!(DeckState::ExamDue, deck.state(&store));
 
-        store.set_deck_mastered(&deck.subject, 99);
+        store.set_deck_mastered(&deck_id, 99);
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 

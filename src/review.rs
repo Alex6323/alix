@@ -875,7 +875,7 @@ mod tests {
         store.insert_virtual(VirtualCard {
             id: synth.id().unwrap(),
             kind: VirtualKind::Remediation,
-            parent: "deck.md".to_string(),
+            deck: "deck.md".to_string(),
             text: text.to_string(),
             created_ms: T0,
         });

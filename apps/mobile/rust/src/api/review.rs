@@ -241,9 +241,10 @@ pub struct ReviewSession {
     augment: alix::augment::AugmentCache,
     topology_name: Option<String>,
     deck_path: PathBuf,
-    // Captured off the loaded Deck, never re-derived from deck_path by hand:
-    // a differing subject (even by extension/case) silently forks dedup.
-    subject: String,
+    // The stable alix-id: deck-level store state (mastery, virtual-card
+    // association) is keyed by this, captured off the loaded Deck rather
+    // than re-derived from deck_path by hand.
+    deck_token: String,
     // Dedup baseline for remediation/tutor cards, keyed by content not id:
     // a fresh mint carries a random token, so only content can catch a dupe.
     deck_fingerprints: HashSet<u64>,
@@ -261,7 +262,7 @@ impl ReviewSession {
     ) -> Result<ReviewSession> {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
-        let subject = loaded.subject.clone();
+        let deck_token = loaded.deck_token.clone().unwrap_or_default();
         let deck_fingerprints: HashSet<u64> =
             loaded.cards.iter().map(|c| c.content_fingerprint).collect();
         let has_exam = loaded.has_exam();
@@ -302,7 +303,7 @@ impl ReviewSession {
             augment: build.augment,
             topology_name: build.topology_name,
             deck_path,
-            subject,
+            deck_token,
             deck_fingerprints,
             has_exam,
         })
@@ -399,10 +400,9 @@ impl ReviewSession {
         back: Vec<String>,
         now_ms: u64,
     ) -> Result<String> {
-        let Some(card) = self.session.current() else {
+        if self.session.current().is_none() {
             bail!("no card is current to mint a tutor card against");
-        };
-        let subject = card.subject.to_string();
+        }
         // Dedup by content, not id: a mint carries a fresh random token.
         let deck_fingerprints: HashSet<u64> = self
             .session
@@ -412,7 +412,7 @@ impl ReviewSession {
             .collect();
         let id = alix::store::mint_tutor_card(
             &mut self.store,
-            &subject,
+            &self.deck_token,
             &front,
             &back,
             now_ms,
@@ -445,7 +445,7 @@ impl ReviewSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
-        self.store.set_deck_mastered(&self.subject, now_ms);
+        self.store.set_deck_mastered(&self.deck_token, now_ms);
         self.store.save()?;
         Ok(())
     }
@@ -456,7 +456,7 @@ impl ReviewSession {
     pub fn apply_remediation(&mut self, cards_text: String, now_ms: u64) -> Result<u32> {
         let count = alix::store::store_remediation_cards(
             &mut self.store,
-            &self.subject,
+            &self.deck_token,
             &self.deck_fingerprints,
             &cards_text,
             now_ms,
@@ -621,9 +621,9 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
 pub struct WalkSession {
     walk: alix::trace::Walk,
     store: alix::store::Store,
-    // Captured off the loaded Deck, never re-derived by hand: a differing
-    // subject silently forks dedup (mirrors ReviewSession's own field).
-    subject: String,
+    // The stable alix-id: deck-level store state (mastery, exam cooldown) is
+    // keyed by this, captured off the loaded Deck rather than re-derived.
+    deck_token: String,
     #[expect(dead_code)] // no walk-side remediation flow yet to dedup against
     deck_fingerprints: HashSet<u64>,
     has_exam: bool,
@@ -639,7 +639,7 @@ impl WalkSession {
     ) -> Result<WalkSession> {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
-        let subject = loaded.subject.clone();
+        let deck_token = loaded.deck_token.clone().unwrap_or_default();
         let deck_fingerprints: HashSet<u64> =
             loaded.cards.iter().map(|c| c.content_fingerprint).collect();
         let has_exam = loaded.has_exam();
@@ -675,7 +675,7 @@ impl WalkSession {
         Ok(WalkSession {
             walk: build.walk,
             store,
-            subject,
+            deck_token,
             deck_fingerprints,
             has_exam,
         })
@@ -708,7 +708,7 @@ impl WalkSession {
     pub fn exam_cooldown_ms(&self, now_ms: u64) -> Option<u64> {
         alix::store::cooldown_remaining_ms(
             &self.store,
-            &self.subject,
+            &self.deck_token,
             alix::config::ExamConfig::default().retry_cooldown_secs,
             now_ms,
         )
@@ -716,14 +716,14 @@ impl WalkSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
-        self.store.set_deck_mastered(&self.subject, now_ms);
+        self.store.set_deck_mastered(&self.deck_token, now_ms);
         self.store.save()?;
         Ok(())
     }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_exam_failed(&mut self, now_ms: u64) -> Result<()> {
-        self.store.set_exam_failed(&self.subject, now_ms);
+        self.store.set_exam_failed(&self.deck_token, now_ms);
         self.store.save()?;
         Ok(())
     }
@@ -1284,16 +1284,20 @@ mod tests {
         let root = dir.path();
         write(&root.join("d.md"), "## q\na\n");
         let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let deck_id = alix::deck::Deck::load(root.join("d.md"))
+            .unwrap()
+            .deck_token
+            .unwrap();
         assert!(
-            !reopened_store(root, "d.md").deck_mastered("d.md"),
+            !reopened_store(root, "d.md").deck_mastered(&deck_id),
             "fresh store: not mastered"
         );
 
         s.apply_exam_passed(LATER).unwrap();
 
         let reopened = reopened_store(root, "d.md");
-        assert!(reopened.deck_mastered("d.md"));
-        assert_eq!(reopened.deck_mastered_at("d.md"), Some(LATER));
+        assert!(reopened.deck_mastered(&deck_id));
+        assert_eq!(reopened.deck_mastered_at(&deck_id), Some(LATER));
     }
 
     #[test]
@@ -1302,6 +1306,10 @@ mod tests {
         let root = dir.path();
         write(&root.join("d.md"), "## capital of france?\nParis\n");
         let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let deck_id = alix::deck::Deck::load(root.join("d.md"))
+            .unwrap()
+            .deck_token
+            .unwrap();
         let remediation =
             "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n".to_string();
         let created = s.apply_remediation(remediation.clone(), LATER).unwrap();
@@ -1315,7 +1323,7 @@ mod tests {
         );
         let fingerprint =
             alix::parser::content_fingerprint("capital of germany?", &["Berlin".to_string()]);
-        let berlin_ids = reopened.virtual_ids_with_content("d.md", fingerprint);
+        let berlin_ids = reopened.virtual_ids_with_content(&deck_id, fingerprint);
         assert_eq!(berlin_ids.len(), 1, "the berlin block minted one virtual");
         let vc = reopened
             .get_virtual(&berlin_ids[0])
@@ -1664,6 +1672,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let deck = trace_fixture(root);
+        let deck_id = alix::deck::Deck::load(&deck).unwrap().deck_token.unwrap();
         let mut s = WalkSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
@@ -1687,7 +1696,7 @@ mod tests {
         assert!(
             !alix::state::open_store(&deck, &store_path)
                 .unwrap()
-                .deck_mastered("t.md"),
+                .deck_mastered(&deck_id),
             "fresh: not yet mastered"
         );
         s.apply_exam_passed(T0 + cooldown_ms + 1).unwrap();
@@ -1696,9 +1705,9 @@ mod tests {
             "the flag is captured at open, not derived from the store"
         );
         let reopened = alix::state::open_store(&deck, &store_path).unwrap();
-        assert!(reopened.deck_mastered("t.md"));
+        assert!(reopened.deck_mastered(&deck_id));
         assert_eq!(
-            reopened.deck_mastered_at("t.md"),
+            reopened.deck_mastered_at(&deck_id),
             Some(T0 + cooldown_ms + 1)
         );
     }

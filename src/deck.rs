@@ -215,7 +215,7 @@ impl Deck {
         if total == 0 {
             return DeckState::NotStarted;
         }
-        if store.deck_mastered(&self.subject) {
+        if store.deck_mastered(self.deck_token.as_deref().unwrap_or_default()) {
             return DeckState::Finished;
         }
         let gated = self.cards.iter().all(|c| session::has_graduated(c, store));
@@ -886,7 +886,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
+            "---\nalix-id: \"d1\"\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -894,7 +894,7 @@ mod tests {
         retire(&mut store, &deck.cards[0].id().unwrap());
         assert_eq!(DeckState::ExamDue, deck.state(&store));
 
-        store.set_deck_mastered(&deck.subject, 1);
+        store.set_deck_mastered(deck.deck_token.as_deref().unwrap(), 1);
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
@@ -972,13 +972,13 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
+            "---\nalix-id: \"d1\"\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
-        store.set_deck_mastered(&deck.subject, 1);
+        store.set_deck_mastered(deck.deck_token.as_deref().unwrap(), 1);
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
@@ -998,7 +998,7 @@ mod tests {
         let basics = write_deck(
             dir.path(),
             "basics.md",
-            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
+            "---\nalix-id: \"basics1\"\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1014,7 +1014,7 @@ mod tests {
         assert_eq!(DeckState::ExamDue, basics.state(&store));
         assert!(is_locked(&advanced, dd, &store));
 
-        store.set_deck_mastered(&basics.subject, 1);
+        store.set_deck_mastered(basics.deck_token.as_deref().unwrap(), 1);
         assert!(!is_locked(&advanced, dd, &store));
     }
 
@@ -1143,7 +1143,11 @@ mod tests {
     #[test]
     fn lock_sees_through_a_source_less_prereq_to_a_sourced_ancestor() {
         let dir = tempfile::tempdir().unwrap();
-        write_deck(dir.path(), "a.md", "---\nsource: https://x\n---\n## a\n1\n");
+        write_deck(
+            dir.path(),
+            "a.md",
+            "---\nalix-id: \"a1\"\nsource: https://x\n---\n## a\n1\n",
+        );
         write_deck(
             dir.path(),
             "b.md",
@@ -1163,7 +1167,7 @@ mod tests {
         assert!(is_locked(&c, dd, &store));
         retire(&mut store, &b.cards[0].id().unwrap());
         assert!(is_locked(&c, dd, &store));
-        store.set_deck_mastered(&a.subject, 1);
+        store.set_deck_mastered(a.deck_token.as_deref().unwrap(), 1);
         assert!(!is_locked(&c, dd, &store));
     }
 

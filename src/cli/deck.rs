@@ -290,7 +290,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 .cloned()
                 .collect();
             for (k, vc) in store
-                .virtual_cards_for(&deck.subject)
+                .virtual_cards_for(deck.deck_token.as_deref().unwrap_or_default())
                 .into_iter()
                 .filter(|v| !deck_ids.contains(&v.id))
                 .filter(|v| !alix::session::is_retired_id(&v.id, &store, retire_after_days))

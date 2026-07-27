@@ -502,26 +502,26 @@ pub fn is_virtual_reviewable(
 
 pub fn has_reviewable_virtual(
     store: &Store,
-    subject: &str,
+    deck_id: &str,
     scheduler: &dyn Scheduler,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
     store
-        .virtual_cards_for(subject)
+        .virtual_cards_for(deck_id)
         .into_iter()
         .any(|vc| is_virtual_reviewable(vc, store, scheduler, now_ms, retire_after_days))
 }
 
 pub fn count_reviewable_virtual(
     store: &Store,
-    subject: &str,
+    deck_id: &str,
     scheduler: &dyn Scheduler,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> usize {
     store
-        .virtual_cards_for(subject)
+        .virtual_cards_for(deck_id)
         .into_iter()
         .filter(|vc| is_virtual_reviewable(vc, store, scheduler, now_ms, retire_after_days))
         .count()
@@ -529,14 +529,14 @@ pub fn count_reviewable_virtual(
 
 pub fn count_due_soon_virtual(
     store: &Store,
-    subject: &str,
+    deck_id: &str,
     scheduler: &dyn Scheduler,
     now_ms: u64,
     window_ms: u64,
     retire_after_days: Option<u32>,
 ) -> usize {
     store
-        .virtual_cards_for(subject)
+        .virtual_cards_for(deck_id)
         .into_iter()
         .filter(|vc| !is_retired_id(&vc.id, store, retire_after_days))
         .filter(|vc| {
@@ -670,20 +670,20 @@ mod tests {
         Box::new(crate::scheduler::Fsrs::default())
     }
 
-    fn insert_virtual(store: &mut Store, parent: &str, back: &str, created_ms: u64) -> Card {
+    fn insert_virtual(store: &mut Store, deck_id: &str, back: &str, created_ms: u64) -> Card {
         let slug: String = back
             .chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase();
         let text = format!("## virtual front <!-- id: v{slug} -->\n{back}\n");
-        let mut card = crate::parser::parse_str(parent, &text).unwrap().remove(0);
+        let mut card = crate::parser::parse_str(deck_id, &text).unwrap().remove(0);
         card.line = 1_000_000;
         let id = card.id().unwrap();
         store.insert_virtual(VirtualCard {
             id: id.clone(),
             kind: crate::store::VirtualKind::Remediation,
-            parent: parent.to_string(),
+            deck: deck_id.to_string(),
             text,
             created_ms,
         });

@@ -980,8 +980,18 @@ pub fn run_review(
                     Some(grade) => {
                         let now = now_ms();
                         r.session.grade(&mut *store, grade, now);
-                        if let Some(subject) = r.files.paths.keys().next() {
-                            store::note_badges(&mut *store, subject, r.session.cards(), now);
+                        // A reviewing session is always a single deck; its
+                        // token isn't carried on `Reviewing`, so it's read
+                        // back off the deck file.
+                        if let Some(deck_id) = r
+                            .files
+                            .paths
+                            .values()
+                            .next()
+                            .and_then(|path| crate::deck::Deck::load(path).ok())
+                            .and_then(|deck| deck.deck_token)
+                        {
+                            store::note_badges(&mut *store, &deck_id, r.session.cards(), now);
                         }
                         flush_mutation(store, store_dirty, save_error);
                         r.rotate_variant();
@@ -1145,11 +1155,24 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(card) = r.session.current() else {
+                if r.session.current().is_none() {
+                    respond_status(request, 409);
+                    continue;
+                }
+                // A reviewing session is always a single deck; its token
+                // isn't carried on `Reviewing`, so it's read back off the
+                // deck file.
+                let Some(deck_id) = r
+                    .files
+                    .paths
+                    .values()
+                    .next()
+                    .and_then(|path| crate::deck::Deck::load(path).ok())
+                    .and_then(|deck| deck.deck_token)
+                else {
                     respond_status(request, 409);
                     continue;
                 };
-                let subject = card.subject.to_string();
                 // Dedup by content fingerprint, not id: a mint carries a
                 // fresh random token, so identical content still collides.
                 let deck_fingerprints: std::collections::HashSet<u64> = r
@@ -1161,7 +1184,7 @@ pub fn run_review(
                 let now = now_ms();
                 match store::mint_tutor_card(
                     &mut *store,
-                    &subject,
+                    &deck_id,
                     &req.front,
                     &req.back,
                     now,
@@ -1223,7 +1246,7 @@ pub fn run_review(
                                 Ok(t) => {
                                     if let Some(ms) = exam::cooldown_remaining_ms(
                                         store,
-                                        &deck.subject,
+                                        deck.deck_token.as_deref().unwrap_or_default(),
                                         exam_cfg.retry_cooldown_secs,
                                         now_ms(),
                                     ) {
@@ -1236,6 +1259,7 @@ pub fn run_review(
                                         t.description.clone(),
                                         t.compression_rubric(),
                                         deck.subject.clone(),
+                                        deck.deck_token.clone().unwrap_or_default(),
                                         strictness,
                                         exam_cfg.clone(),
                                         ask_cfg.clone(),
@@ -1690,6 +1714,7 @@ pub fn run_review(
                             t.description.clone(),
                             t.compression_rubric(),
                             deck.subject.clone(),
+                            deck.deck_token.clone().unwrap_or_default(),
                             strictness,
                             exam_cfg.clone(),
                             ask_cfg.clone(),

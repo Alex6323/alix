@@ -389,11 +389,9 @@ fn workspace_findings(dir: &Path) -> Report {
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {
             let mut known_cards: HashSet<String> = HashSet::new();
-            let mut known_subjects: HashSet<String> = HashSet::new();
             let mut any_fresh = false;
             for path in &deck_files {
                 if let Ok(deck) = Deck::load(path) {
-                    known_subjects.insert(deck.subject.clone());
                     for card in &deck.cards {
                         if let Some(id) = card.id() {
                             if store.get(&id).is_none() {
@@ -404,7 +402,7 @@ fn workspace_findings(dir: &Path) -> Report {
                     }
                 }
             }
-            let orphans = store.orphans(&known_cards, &known_subjects);
+            let orphans = store.orphans(&known_cards, &known_deck_ids);
             for key in &orphans.cards {
                 report.warn(format!(
                     "orphaned store key (card) `{key}` matches no card in {}",
@@ -1093,7 +1091,7 @@ mod tests {
         )
         .unwrap();
         store.get_or_insert("orphancard", 0);
-        store.set_last_depth("ghostdeck.md", alix::depth::Depth::Recall);
+        store.set_last_depth("orphan-owner", alix::depth::Depth::Recall);
         store.save().unwrap();
 
         let report = workspace_findings(dir);

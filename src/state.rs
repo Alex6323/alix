@@ -106,7 +106,7 @@ pub fn retire_replaced_progress(store_path: &Path, deck_id: &str) -> Result<bool
         let (_, _, data) = store::read_deck_data(&progress, deck_id, None)?;
         if !data.cards.is_empty()
             || !data.records.is_empty()
-            || !data.decks.is_empty()
+            || !data.deck.is_empty()
             || !data.virtual_cards.is_empty()
         {
             return Ok(false);
@@ -158,6 +158,8 @@ fn progress_document_for(store_path: &Path, deck_id: &str) -> Result<PathBuf, St
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     fn deck(path: &Path, deck_id: &str, card_id: &str) {
@@ -232,7 +234,7 @@ mod tests {
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
         store.get_or_insert("card1", 1);
-        store.set_deck_mastered("old.md", 1);
+        store.set_deck_mastered("deck1", 1);
         store.save().unwrap();
         std::fs::rename(&old_path, &new_path).unwrap();
 
@@ -240,7 +242,39 @@ mod tests {
 
         assert_eq!(dir.path().join("progress/deck1.json"), renamed.path());
         assert!(renamed.get("card1").is_some());
-        assert!(renamed.deck_mastered("new.md"));
+        assert!(renamed.deck_mastered("deck1"));
+    }
+
+    #[test]
+    fn aggregate_open_finds_deck_level_state_by_alix_id_after_a_rename() {
+        // The prior bug: doctor/`reset --orphans` scan through
+        // `open_aggregate_store`, which (unlike `open_store`) passes no
+        // `current_subject` hint, so a subject-keyed rebind never fires
+        // there. Deck-level state and orphan detection must key off the
+        // stable alix-id, never off the filename, or a plain rename
+        // orphans the deck's mastery/badge/last-depth state.
+        let dir = tempfile::tempdir().unwrap();
+        let old_path = dir.path().join("old.md");
+        deck(&old_path, "deck1", "card1");
+        let mut store = open_store(&old_path, dir.path()).unwrap();
+        store.set_deck_mastered("deck1", 1);
+        store.save().unwrap();
+
+        let new_path = dir.path().join("new.md");
+        std::fs::rename(&old_path, &new_path).unwrap();
+
+        let aggregate = open_aggregate_store(dir.path()).unwrap();
+        assert!(
+            aggregate.deck_mastered("deck1"),
+            "deck-level state must survive a rename, found by the alix-id"
+        );
+
+        let known_deck_ids: HashSet<String> = std::iter::once("deck1".to_string()).collect();
+        let orphans = aggregate.orphans(&HashSet::new(), &known_deck_ids);
+        assert!(
+            orphans.decks.is_empty(),
+            "a renamed-but-still-known deck must not report as an orphan: {orphans:?}"
+        );
     }
 
     #[test]

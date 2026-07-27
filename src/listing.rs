@@ -248,7 +248,7 @@ fn deck_summary(
     };
     let (mastered, exam_due, ready, locked) = match (&deck, store) {
         (Some(d), Some(s)) => {
-            let mastered = s.deck_mastered(&d.subject);
+            let mastered = s.deck_mastered(d.deck_token.as_deref().unwrap_or_default());
             let state = d.state(s);
             (
                 mastered,
@@ -261,7 +261,7 @@ fn deck_summary(
     };
     let last_depth = match (&deck, store, augment) {
         (Some(d), Some(s), Some(a)) => s
-            .last_depth(&d.subject)
+            .last_depth(d.deck_token.as_deref().unwrap_or_default())
             .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
         _ => Depth::default(),
     };
@@ -318,7 +318,13 @@ fn deck_due(
             now_ms,
             retire,
         )
-        || session::has_reviewable_virtual(store, &deck.subject, &scheduler, now_ms, retire)
+        || session::has_reviewable_virtual(
+            store,
+            deck.deck_token.as_deref().unwrap_or_default(),
+            &scheduler,
+            now_ms,
+            retire,
+        )
 }
 
 pub fn deadline_ready(mastered: bool, finished: bool, has_exam: bool) -> bool {
@@ -360,7 +366,7 @@ pub struct DeckStatus {
     pub new_cards: bool,
 }
 
-fn badge_depth_for(subject: &str, cards: &[Card], store: &Store) -> (Option<Depth>, bool) {
+fn badge_depth_for(deck_id: &str, cards: &[Card], store: &Store) -> (Option<Depth>, bool) {
     const DEPTHS: [Depth; 3] = [Depth::Reconstruct, Depth::Recall, Depth::Recognize];
     if let Some(depth) = DEPTHS
         .into_iter()
@@ -370,7 +376,7 @@ fn badge_depth_for(subject: &str, cards: &[Card], store: &Store) -> (Option<Dept
     }
     let earned = DEPTHS
         .into_iter()
-        .find(|&depth| store.badge_earned(subject, depth).is_some());
+        .find(|&depth| store.badge_earned(deck_id, depth).is_some());
     let dotted = earned.is_some();
     (earned, dotted)
 }
@@ -399,11 +405,12 @@ pub fn deck_status(
         .count();
     // "mastered" is reserved for passing the exam; a deck without exam
     // grounding that's merely fully drilled stays "done".
-    let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(&deck.subject);
+    let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+    let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(deck_id);
     let badge = match state {
         DeckState::Finished if mastered => {
             let mut s = "mastered 🎉".to_string();
-            if let Some(at) = store.deck_mastered_at(&deck.subject) {
+            if let Some(at) = store.deck_mastered_at(deck_id) {
                 let ago = crate::time::humanize_ms(session::now_ms().saturating_sub(at));
                 s.push_str(&format!(" · {ago} ago"));
             }
@@ -448,7 +455,7 @@ pub fn deck_status(
         review.retire_after_days,
     ) || session::has_reviewable_virtual(
         store,
-        &deck.subject,
+        deck_id,
         &scheduler,
         now,
         review.retire_after_days,
@@ -470,7 +477,7 @@ pub fn deck_status(
         || reviewable_recognize
         || reviewable_recall
         || reviewable_reconstruct;
-    let (badge_depth, badge_dotted) = badge_depth_for(&deck.subject, &deck.cards, store);
+    let (badge_depth, badge_dotted) = badge_depth_for(deck_id, &deck.cards, store);
     let new_cards = deck
         .cards
         .iter()
@@ -858,15 +865,15 @@ mod tests {
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
         write(
             &ws.join("decks/base.md"),
-            "---\nsource: https://x\n---\n## q <!-- id: qbase -->\na\n",
+            "---\nalix-id: \"base1\"\nsource: https://x\n---\n## q <!-- id: qbase -->\na\n",
         );
         write(
             &ws.join("decks/advanced.md"),
-            "---\nrequires: base\n---\n## q2 <!-- id: qadv -->\nb\n",
+            "---\nalix-id: \"adv1\"\nrequires: base\n---\n## q2 <!-- id: qadv -->\nb\n",
         );
         write(
             &ws.join("decks/walk.md"),
-            "---\ntrace: How it flows\n---\n## hop? <!-- id: qhop -->\nstep\n",
+            "---\nalix-id: \"walk1\"\ntrace: How it flows\n---\n## hop? <!-- id: qhop -->\nstep\n",
         );
 
         let store_path = workspace::store_path(&ws);
@@ -916,7 +923,7 @@ mod tests {
 
         let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
         let base_deck = Deck::load(ws.join("decks/base.md")).unwrap();
-        store.set_deck_mastered(&base_deck.subject, T0 + 1_000);
+        store.set_deck_mastered(base_deck.deck_token.as_deref().unwrap(), T0 + 1_000);
         store.save().unwrap();
 
         let rows = list_members(root, &ws, &review, T0 + 1_000);
@@ -941,7 +948,7 @@ mod tests {
 
         let store_path = workspace::root_store_path(root);
         let mut store = crate::state::open_store(&root.join("d.md"), &store_path).unwrap();
-        store.set_last_depth("d.md", Depth::Reconstruct);
+        store.set_last_depth("d", Depth::Reconstruct);
         store.save().unwrap();
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
@@ -1089,15 +1096,15 @@ mod tests {
         }
     }
 
-    fn insert_due_virtual_card(store: &mut Store, subject: &str) {
+    fn insert_due_virtual_card(store: &mut Store, deck_id: &str) {
         let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
-        let id = crate::parser::parse_str(subject, &text).unwrap()[0]
+        let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
             .id()
             .unwrap();
         store.insert_virtual(crate::store::VirtualCard {
             id: id.clone(),
             kind: crate::store::VirtualKind::Remediation,
-            parent: subject.to_string(),
+            deck: deck_id.to_string(),
             text,
             created_ms: 0,
         });
@@ -1108,7 +1115,11 @@ mod tests {
     fn deck_status_reviewable_true_when_only_a_virtual_card_is_due() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.md");
-        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
+        std::fs::write(
+            &deck_path,
+            "---\nalix-id: \"rust\"\n---\n## q1 <!-- id: q1 -->\na1\n",
+        )
+        .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
@@ -1130,7 +1141,7 @@ mod tests {
         assert_eq!("done ✓", status.badge);
         assert!(!status.reviewable);
 
-        insert_due_virtual_card(&mut store, &deck.subject);
+        insert_due_virtual_card(&mut store, deck.deck_token.as_deref().unwrap());
         let status = deck_status(
             &deck,
             &store,
@@ -1389,7 +1400,7 @@ mod tests {
         let deck_path = dir.path().join("rust.md");
         std::fs::write(
             &deck_path,
-            "## q1 <!-- id: q1 -->\na1\n## q2 <!-- id: q2 -->\na2\n## q3 <!-- id: q3 -->\na3\n",
+            "---\nalix-id: \"rust\"\n---\n## q1 <!-- id: q1 -->\na1\n## q2 <!-- id: q2 -->\na2\n## q3 <!-- id: q3 -->\na3\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -1410,7 +1421,7 @@ mod tests {
         );
         assert_eq!("1/3", before.badge);
 
-        insert_due_virtual_card(&mut store, &deck.subject);
+        insert_due_virtual_card(&mut store, deck.deck_token.as_deref().unwrap());
         let after = deck_status(
             &deck,
             &store,
@@ -1462,14 +1473,23 @@ mod tests {
     fn an_earned_but_lapsed_badge_shows_dotted() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.md");
-        std::fs::write(&deck_path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
+        std::fs::write(
+            &deck_path,
+            "---\nalix-id: \"rust\"\n---\n## q1 <!-- id: q1 -->\na1\n",
+        )
+        .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
         store.get_or_insert(&card_id, now).recall = Some(mature(now, 25.0));
-        crate::store::note_badges(&mut store, &deck.subject, &deck.cards, now);
+        crate::store::note_badges(
+            &mut store,
+            deck.deck_token.as_deref().unwrap(),
+            &deck.cards,
+            now,
+        );
 
         store.get_or_insert(&card_id, now).recall = Some(mature(now, 5.0));
 

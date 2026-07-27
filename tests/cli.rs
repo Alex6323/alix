@@ -81,7 +81,7 @@ fn write_progress_document(
         &path,
         format!(
             "{{\"version\":1,\"deck_id\":\"{deck_id}\",\"subject\":\"{subject}\",\
-             \"revision\":1,\"cards\":{{{cards}}},\"records\":{{}},\"decks\":{{}},\
+             \"revision\":1,\"cards\":{{{cards}}},\"records\":{{}},\
              \"virtual_cards\":{{}},\"writer\":null}}"
         ),
     )
@@ -427,7 +427,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
         .unwrap();
         store.get_or_insert(&cards[0].id().unwrap(), 0);
     }
-    store.set_deck_mastered("a.md", 0);
+    store.set_deck_mastered("decka", 0);
     store.save().unwrap();
 
     let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
@@ -436,7 +436,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     let reloaded = decks_store(&[&a, &b], &store_path);
     assert_eq!(0, reloaded.len(), "member card progress should be gone");
     assert!(
-        !reloaded.deck_mastered("a.md"),
+        !reloaded.deck_mastered("decka"),
         "the mastered flag should be cleared"
     );
 }
@@ -480,28 +480,28 @@ fn reset_all_clears_a_seeded_store() {
     assert!(reloaded.get("math1").is_none());
 }
 
-/// A minimal virtual card belonging to `parent`, for seeding a store directly
+/// A minimal virtual card owned by `deck_id`, for seeding a store directly
 /// via the lib rather than hand-authoring its on-disk JSON shape. Its id is the
-/// `Card::id` of the card `parse(parent, text)` yields, identical to a deck
-/// card. The literal `<!-- id: -->` token is derived from `parent`: identity is
-/// the token now, so two parents' sample cards must not share one.
-fn sample_virtual_card(parent: &str) -> alix::store::VirtualCard {
+/// `Card::id` of the card `parse(deck_id, text)` yields, identical to a deck
+/// card. The literal `<!-- id: -->` token is derived from `deck_id`: identity is
+/// the token now, so two decks' sample cards must not share one.
+fn sample_virtual_card(deck_id: &str) -> alix::store::VirtualCard {
     let token: String = format!(
         "v{}",
-        parent
+        deck_id
             .chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase()
     );
     let text = format!("## front <!-- id: {token} -->\nback\n");
-    let id = alix::parser::parse_str(parent, &text).unwrap()[0]
+    let id = alix::parser::parse_str(deck_id, &text).unwrap()[0]
         .id()
         .unwrap();
     alix::store::VirtualCard {
         id,
         kind: alix::store::VirtualKind::Remediation,
-        parent: parent.to_string(),
+        deck: deck_id.to_string(),
         text,
         created_ms: 0,
     }
@@ -542,18 +542,34 @@ fn reset_all_clears_virtual_cards() {
 
 #[test]
 fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
-    // Orphaned progress: a store key matching no live card or deck (a stripped
-    // id comment, a hand-deleted deck) is evidence. A normal reset never sweeps
-    // it; only the explicit `reset --orphans` does.
+    // Orphaned progress: a store key matching no live card, or a whole
+    // progress document matching no live deck (a stripped id comment, a
+    // hand-deleted deck), is evidence. A normal reset never sweeps it; only
+    // the explicit `reset --orphans` does. A deck-level orphan is now a
+    // whole `progress/<id>.json` document (deck-level state is single-valued
+    // per document, not a shared map), so a second real deck keeps
+    // `reset --orphans` from collapsing to a single-document open that would
+    // never see it.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK); // card id `math1`
+    write(
+        dir.path(),
+        "other.md",
+        "---\nalix-id: \"otherdeck\"\n---\n## other <!-- id: other1 -->\nb\n",
+    );
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
     store.get_or_insert("math1", 0); // the live card
     store.get_or_insert("orphan1", 0); // an orphaned card key
-    store.set_last_depth("ghost.md", alix::depth::Depth::Recall); // an orphaned deck key
     store.save().unwrap();
+    // A hand-deleted deck's progress document: a deck_id with no matching
+    // `.md` file, carrying non-empty deck-level state.
+    let ghost = write_progress_document(&store_path, "ghost", "ghost.md", "");
+    let ghost_text = std::fs::read_to_string(&ghost)
+        .unwrap()
+        .replace("\"cards\":{}", "\"cards\":{},\"deck\":{\"last_depth\":\"recall\"}");
+    std::fs::write(&ghost, ghost_text).unwrap();
 
     // A normal full-deck reset clears the live card but leaves the orphans,
     // proof they are never auto-pruned.
@@ -575,8 +591,10 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
         "the orphan card must survive: {after}"
     );
     assert!(
-        after.contains("ghost.md"),
-        "the orphan deck key must survive: {after}"
+        std::fs::read_to_string(&ghost)
+            .unwrap()
+            .contains("last_depth"),
+        "the orphaned deck's document must survive a normal reset"
     );
 
     // `reset --orphans` over the folder clears exactly the orphaned keys.
@@ -600,8 +618,10 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
         "orphan card not cleared: {after}"
     );
     assert!(
-        !after.contains("ghost.md"),
-        "orphan deck key not cleared: {after}"
+        !std::fs::read_to_string(&ghost)
+            .unwrap()
+            .contains("last_depth"),
+        "orphan deck document not cleared"
     );
 }
 
@@ -617,12 +637,12 @@ fn deck_reset_drops_that_decks_virtual_cards() {
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    let math_vc = sample_virtual_card("math.md");
+    let math_vc = sample_virtual_card("mathdeck");
     let math_id = math_vc.id.clone();
     store.insert_virtual(math_vc);
     store.save().unwrap();
     let mut other_store = deck_store(&other, &store_path);
-    let other_vc = sample_virtual_card("other.md");
+    let other_vc = sample_virtual_card("otherdeck");
     let other_id = other_vc.id.clone();
     other_store.insert_virtual(other_vc);
     other_store.save().unwrap();
@@ -663,8 +683,8 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         .unwrap();
     let mut store = deck_store(&deck, &store_path);
     store.get_or_insert(&card_id, 0);
-    store.set_deck_mastered("math.md", 0);
-    store.insert_virtual(sample_virtual_card("math.md"));
+    store.set_deck_mastered("mathdeck", 0);
+    store.insert_virtual(sample_virtual_card("mathdeck"));
     store.save().unwrap();
     let before = std::fs::read_to_string(store.path()).unwrap();
 
@@ -681,11 +701,11 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         "the store on disk must be untouched by a declined/failed reset"
     );
     let reloaded = deck_store(&deck, &store_path);
-    assert!(reloaded.deck_mastered("math.md"), "mastered flag wiped");
+    assert!(reloaded.deck_mastered("mathdeck"), "mastered flag wiped");
     assert!(reloaded.get(&card_id).is_some(), "authored progress wiped");
     assert_eq!(
         1,
-        reloaded.virtual_cards_for("math.md").len(),
+        reloaded.virtual_cards_for("mathdeck").len(),
         "virtual card wiped"
     );
 }
@@ -699,7 +719,7 @@ fn confirmed_virtual_only_deck_reset_clears_virtual() {
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    store.insert_virtual(sample_virtual_card("math.md"));
+    store.insert_virtual(sample_virtual_card("mathdeck"));
     store.save().unwrap();
 
     let out = alix(&[
@@ -712,7 +732,7 @@ fn confirmed_virtual_only_deck_reset_clears_virtual() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
     let reloaded = deck_store(&deck, &store_path);
-    assert_eq!(0, reloaded.virtual_cards_for("math.md").len());
+    assert_eq!(0, reloaded.virtual_cards_for("mathdeck").len());
 }
 
 #[test]
@@ -843,7 +863,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
 
     let store_path = dir.path().join("state");
     let mut store = deck_store(&deck, &store_path);
-    let vc = sample_virtual_card("parts.md");
+    let vc = sample_virtual_card("parts");
     let virtual_id = vc.id.clone();
     store.insert_virtual(vc);
     store.save().unwrap();
@@ -896,7 +916,7 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     store.insert_virtual(alix::store::VirtualCard {
         id: real_id.clone(), // collides with the real deck card's id — simulates an orphan
         kind: alix::store::VirtualKind::Remediation,
-        parent: "parts.md".to_string(),
+        deck: "parts".to_string(),
         // Must reproduce `real_id` when parsed (`synthesize_virtual` matches by
         // id), so an orphan left behind by a partial promote uses the same text
         // as the now-real deck card it collides with.

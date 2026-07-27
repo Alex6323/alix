@@ -170,8 +170,8 @@ fn resolve<T: Copy + PartialEq>(
 /// collides with a real card's.
 pub const VIRTUAL_LINE_BASE: usize = 1_000_000;
 
-/// `subject` must equal `vc.parent`, or the id won't reproduce (`Card::id`
-/// hashes the subject).
+/// `subject` sets only the reproduced `Card::subject` (display); `Card::id`
+/// is token-derived and unaffected by it.
 pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Option<Card> {
     let mut card = parser::parse_str(subject, &vc.text)
         .ok()?
@@ -451,11 +451,17 @@ pub fn select(
         .next()
         .map(|s| Arc::from(s.as_str()))
         .unwrap_or_else(|| Arc::from(label.as_str()));
+    let deck_id: Arc<str> = decks
+        .values()
+        .next()
+        .and_then(|d| d.deck_token.as_deref())
+        .map(Arc::from)
+        .unwrap_or_else(|| Arc::from(label.as_str()));
     // Quirk: a `--region` focus always excludes virtual cards (they belong to
     // no topology).
     if region_sel.is_none() {
         for (k, vc) in store
-            .virtual_cards_for(subject.as_ref())
+            .virtual_cards_for(deck_id.as_ref())
             .into_iter()
             .filter(|v| !session::is_retired_id(&v.id, store, review.retire_after_days))
             .filter(|v| !deck_card_ids.contains(&v.id)) // collision belt-and-suspenders
@@ -489,7 +495,7 @@ pub fn select(
     );
 
     let depth = depth_sel
-        .or_else(|| store.last_depth(subject.as_ref()))
+        .or_else(|| store.last_depth(deck_id.as_ref()))
         .unwrap_or_else(|| default_depth(&cards, &augment));
     let options = SessionOptions {
         max_new: opts.max_new.unwrap_or(cfg.pacing.max_new),
@@ -536,7 +542,7 @@ pub fn select(
     // Quirk: this write always fires even when the built session has nothing
     // due, so a restart still reopens at the last-chosen depth.
     let resolved_depth = session.depth();
-    store.set_last_depth(subject.as_ref(), resolved_depth);
+    store.set_last_depth(deck_id.as_ref(), resolved_depth);
     if let Err(e) = store.save() {
         eprintln!("warning: could not save progress: {e}");
     }
@@ -898,15 +904,15 @@ it reads line two\n\
         );
     }
 
-    fn insert_virtual_card(store: &mut Store, subject: &str) {
+    fn insert_virtual_card(store: &mut Store, deck_id: &str) {
         let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
-        let id = crate::parser::parse_str(subject, &text).unwrap()[0]
+        let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
             .id()
             .unwrap();
         store.insert_virtual(VirtualCard {
             id: id.clone(),
             kind: VirtualKind::Remediation,
-            parent: subject.to_string(),
+            deck: deck_id.to_string(),
             text,
             created_ms: 0,
         });
@@ -949,7 +955,7 @@ it reads line two\n\
         // bare `None` here would fall through to the real global data dir.
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
-        insert_virtual_card(&mut store, "rust.md");
+        insert_virtual_card(&mut store, "rust");
 
         let Selected::Review(build) = select(
             vec![path],
@@ -997,7 +1003,7 @@ it reads line two\n\
         });
         cache.save().unwrap();
 
-        insert_virtual_card(&mut store, "rust.md");
+        insert_virtual_card(&mut store, "dtok1");
 
         let Selected::Review(build) = select(
             vec![path],
@@ -1024,7 +1030,7 @@ it reads line two\n\
         let vc = VirtualCard {
             id: id.clone(),
             kind: VirtualKind::Remediation,
-            parent: subject.to_string(),
+            deck: subject.to_string(),
             text,
             created_ms: 0,
         };
@@ -1058,7 +1064,7 @@ it reads line two\n\
         // bare `None` here would fall through to the real global data dir.
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
-        insert_virtual_card(&mut store, "rust.md");
+        insert_virtual_card(&mut store, "rust");
         let virtual_card = crate::parser::parse_str(
             "rust.md",
             "## virtual front <!-- id: vq1 -->\nvirtual back\n",
@@ -1116,7 +1122,7 @@ it reads line two\n\
             ..Default::default()
         };
         select(vec![deck.clone()], &mut store, &cfg, &explicit).unwrap();
-        assert_eq!(Some(Depth::Recognize), store.last_depth("d.md"));
+        assert_eq!(Some(Depth::Recognize), store.last_depth("d"));
 
         let Selected::Review(build) =
             select(vec![deck], &mut store, &cfg, &SelectOptions::default()).unwrap()

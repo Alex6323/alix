@@ -191,9 +191,10 @@ mod tests {
         );
         write_deck(root.join("fresh.md"), "## q\na\n");
 
-        let base_subject = alix::deck::Deck::load(root.join("base.md"))
+        let base_deck_id = alix::deck::Deck::load(root.join("base.md"))
             .unwrap()
-            .subject;
+            .deck_token
+            .unwrap();
         let base_id = alix::deck::Deck::load(root.join("base.md")).unwrap().cards[0]
             .id()
             .expect("the fixture stamps its own id");
@@ -212,7 +213,7 @@ mod tests {
         assert!(!fresh.has_exam);
 
         let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
-        store.set_deck_mastered(&base_subject, T0 + 1_000);
+        store.set_deck_mastered(&base_deck_id, T0 + 1_000);
         store.save().unwrap();
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000));
         let base = rows.iter().find(|r| r.title == "base").unwrap();
@@ -371,9 +372,13 @@ mod tests {
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
         assert_eq!(alix::depth::Depth::default(), row.last_depth);
 
+        let deck_id = alix::deck::Deck::load(root.join("d.md"))
+            .unwrap()
+            .deck_token
+            .unwrap();
         let store_path = alix::workspace::root_store_path(root);
         let mut store = alix::state::open_store(&root.join("d.md"), &store_path).unwrap();
-        store.set_last_depth("d.md", alix::depth::Depth::Reconstruct);
+        store.set_last_depth(&deck_id, alix::depth::Depth::Reconstruct);
         store.save().unwrap();
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));

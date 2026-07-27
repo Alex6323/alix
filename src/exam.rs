@@ -300,6 +300,7 @@ pub enum SittingKind {
 pub struct Sitting {
     kind: SittingKind,
     subject: String,
+    deck_token: String,
     deck_fingerprints: HashSet<u64>,
     strictness: Strictness,
     cfg: ExamConfig,
@@ -330,6 +331,7 @@ impl Sitting {
         Self {
             kind: SittingKind::Source,
             subject: deck.subject.clone(),
+            deck_token: deck.deck_token.clone().unwrap_or_default(),
             deck_fingerprints: deck.cards.iter().map(|c| c.content_fingerprint).collect(),
             strictness,
             cfg,
@@ -354,6 +356,7 @@ impl Sitting {
         description: String,
         rubric: Vec<String>,
         subject: String,
+        deck_token: String,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
@@ -365,6 +368,7 @@ impl Sitting {
         Self {
             kind: SittingKind::Trace,
             subject,
+            deck_token,
             deck_fingerprints: HashSet::new(),
             strictness,
             cfg,
@@ -592,17 +596,17 @@ impl Sitting {
         let advanced = was_pending && self.pending.is_none();
         match effect {
             Some(Effect::Passed) => {
-                store.set_deck_mastered(&self.subject, now_ms);
+                store.set_deck_mastered(&self.deck_token, now_ms);
                 let _ = store.save();
             }
             Some(Effect::TraceFailed) => {
-                store.set_exam_failed(&self.subject, now_ms);
+                store.set_exam_failed(&self.deck_token, now_ms);
                 let _ = store.save();
             }
             Some(Effect::RemediationCards(cards)) => {
                 match crate::store::store_remediation_cards(
                     store,
-                    &self.subject,
+                    &self.deck_token,
                     &self.deck_fingerprints,
                     &cards,
                     now_ms,
@@ -1517,7 +1521,7 @@ mod tests {
         let path = dir.join("d.md");
         std::fs::write(
             &path,
-            "---\nsource: https://x\n---\n## c <!-- id: qc -->\na\n",
+            "---\nalix-id: \"d1\"\nsource: https://x\n---\n## c <!-- id: qc -->\na\n",
         )
         .unwrap();
         Deck::load(&path).unwrap()
@@ -1561,7 +1565,7 @@ mod tests {
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
         assert_eq!(vec!["the move rule"], s.gaps());
-        assert!(!store.deck_mastered("d.md"));
+        assert!(!store.deck_mastered("d1"));
 
         assert!(s.can_remediate());
         let snapshot = std::fs::read(dir.path().join("d.md")).unwrap();
@@ -1570,7 +1574,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
         assert_eq!(snapshot, std::fs::read(dir.path().join("d.md")).unwrap());
-        let virtuals = store.virtual_cards_for("d.md");
+        let virtuals = store.virtual_cards_for("d1");
         assert_eq!(1, virtuals.len());
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
         let synth = parser::parse_str("d.md", &virtuals[0].text).unwrap();
@@ -1609,7 +1613,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
 
-        let virtuals = store.virtual_cards_for("d.md");
+        let virtuals = store.virtual_cards_for("d1");
         assert_eq!(1, virtuals.len());
         assert_eq!(Some(virtuals.len()), s.remediated_count());
     }
@@ -1640,7 +1644,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("d.md"));
+        assert!(store.deck_mastered("d1"));
         assert!(!s.can_remediate());
     }
 
@@ -1679,10 +1683,10 @@ mod tests {
         let after = std::fs::read(&deck_path).unwrap();
         assert_eq!(before, after, "remediation must never touch the deck file");
 
-        let virtuals = store.virtual_cards_for("d.md");
+        let virtuals = store.virtual_cards_for("d1");
         assert_eq!(1, virtuals.len());
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
-        assert_eq!("d.md", virtuals[0].parent);
+        assert_eq!("d1", virtuals[0].deck);
     }
 
     #[test]
@@ -1714,7 +1718,7 @@ mod tests {
         s.remediate();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        assert!(!store.virtual_cards_for("d.md").is_empty());
+        assert!(!store.virtual_cards_for("d1").is_empty());
 
         let cli_dir2 = tempfile::tempdir().unwrap();
         let cli2 = branching_cli(
@@ -1735,9 +1739,9 @@ mod tests {
         s2.submit();
         drain(&mut s2, &mut store);
         assert!(s2.result().unwrap().passed);
-        assert!(store.deck_mastered("d.md"));
+        assert!(store.deck_mastered("d1"));
 
-        for vc in store.virtual_cards_for("d.md") {
+        for vc in store.virtual_cards_for("d1") {
             assert!(
                 !is_retired_id(
                     &vc.id,
@@ -1907,6 +1911,7 @@ mod tests {
             "how a moves".to_string(),
             vec!["it advances".to_string()],
             "t.txt".to_string(),
+            "t1".to_string(),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(cli),
@@ -1933,7 +1938,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("t.txt"));
+        assert!(store.deck_mastered("t1"));
         assert!(!s.can_remediate());
     }
 
@@ -1953,8 +1958,8 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
-        assert!(!store.deck_mastered("t.txt"));
-        assert!(store.exam_failed_at("t.txt").is_some());
+        assert!(!store.deck_mastered("t1"));
+        assert!(store.exam_failed_at("t1").is_some());
         assert!(!s.can_remediate());
     }
 }

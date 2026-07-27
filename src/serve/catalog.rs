@@ -99,7 +99,7 @@ pub(super) fn deck_item_dto(
             let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
             let last_depth = depth_name(
                 store
-                    .last_depth(&deck.subject)
+                    .last_depth(deck.deck_token.as_deref().unwrap_or_default())
                     .unwrap_or_else(|| crate::depth::default_depth(&deck.cards, augment)),
             );
             DeckItemDto {
@@ -219,7 +219,7 @@ pub(super) fn workspace_members(
             };
             let last_depth = match (store, augment.as_ref(), deck.as_ref()) {
                 (Some(st), Some(ag), Some(d)) => st
-                    .last_depth(&d.subject)
+                    .last_depth(d.deck_token.as_deref().unwrap_or_default())
                     .unwrap_or_else(|| crate::depth::default_depth(&d.cards, ag)),
                 _ => Depth::default(),
             };

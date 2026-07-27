@@ -145,7 +145,12 @@ pub fn replace_deck(
 
     // The store saves first: a failed augment save then strands only
     // unreachable cache entries, never store orphans.
-    let wiped_cards = store.wipe_deck(&old_card_tokens, &file);
+    let old_deck_id = old_deck_tokens
+        .iter()
+        .next()
+        .map(String::as_str)
+        .unwrap_or_default();
+    let wiped_cards = store.wipe_deck(&old_card_tokens, old_deck_id);
     store
         .save()
         .context("saving the store after replacing a deck")?;
@@ -193,9 +198,10 @@ pub fn reset_decks<'a>(
 ) -> Result<usize> {
     let mut n = 0;
     for deck in decks {
-        store.clear_deck_mastered(&deck.subject);
+        let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+        store.clear_deck_mastered(deck_id);
         let virtual_ids: Vec<String> = store
-            .virtual_cards_for(&deck.subject)
+            .virtual_cards_for(deck_id)
             .iter()
             .map(|vc| vc.id.clone())
             .collect();
@@ -287,15 +293,23 @@ mod tests {
     #[test]
     fn resetting_a_deck_clears_only_that_decks_progress() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("a.md"), "## qa <!-- id: qa -->\nans-a\n").unwrap();
-        std::fs::write(dir.path().join("b.md"), "## qb <!-- id: qb -->\nans-b\n").unwrap();
+        std::fs::write(
+            dir.path().join("a.md"),
+            "---\nalix-id: \"da\"\n---\n## qa <!-- id: qa -->\nans-a\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("b.md"),
+            "---\nalix-id: \"db\"\n---\n## qb <!-- id: qb -->\nans-b\n",
+        )
+        .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();
         let deck_b = Deck::load(dir.path().join("b.md")).unwrap();
 
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.get_or_insert(&deck_a.cards[0].id().unwrap(), 0);
         store.get_or_insert(&deck_b.cards[0].id().unwrap(), 0);
-        store.set_deck_mastered(&deck_a.subject, 0);
+        store.set_deck_mastered(deck_a.deck_token.as_deref().unwrap(), 0);
 
         let n = reset_decks(&mut store, [&deck_a]).unwrap();
         assert_eq!(1, n);
@@ -307,22 +321,22 @@ mod tests {
             store.get(&deck_b.cards[0].id().unwrap()).is_some(),
             "b's schedule intact"
         );
-        assert!(!store.deck_mastered(&deck_a.subject));
+        assert!(!store.deck_mastered(deck_a.deck_token.as_deref().unwrap()));
     }
 
-    fn virtual_card(parent: &str, back: &str) -> crate::store::VirtualCard {
+    fn virtual_card(deck_id: &str, back: &str) -> crate::store::VirtualCard {
         let slug: String = back.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
         let text = format!(
             "## front <!-- id: v{} -->\n{back}\n",
             slug.to_ascii_lowercase()
         );
-        let id = crate::parser::parse_str(parent, &text).unwrap()[0]
+        let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
             .id()
             .unwrap();
         crate::store::VirtualCard {
             id,
             kind: crate::store::VirtualKind::Remediation,
-            parent: parent.to_string(),
+            deck: deck_id.to_string(),
             text,
             created_ms: 0,
         }
@@ -394,19 +408,19 @@ mod tests {
 
         // Deck A: a card schedule, deck-family mastery, records, a parented virtual.
         store.get_or_insert("c1", 0);
-        store.set_deck_mastered("a.md", 1);
+        store.set_deck_mastered("da1", 1);
         store.ensure_records_raw("c1", &[]);
         store.insert_virtual(crate::store::VirtualCard {
             id: "va1".into(),
             kind: crate::store::VirtualKind::Remediation,
-            parent: "a.md".into(),
+            deck: "da1".into(),
             text: "## v <!-- id: va1 -->\nvans\n".into(),
             created_ms: 0,
         });
         store.get_or_insert("va1", 0);
         // Deck B (shares the store): its own schedule + mastery.
         store.get_or_insert("cb1", 0);
-        store.set_deck_mastered("b.md", 1);
+        store.set_deck_mastered("db1", 1);
         store.save().unwrap();
 
         let cache_path = WorkspaceFiles::new(dir.path()).augment();
@@ -429,12 +443,12 @@ mod tests {
 
         assert_eq!(1, report.wiped_cards);
         assert!(store.get("c1").is_none());
-        assert!(!store.deck_mastered("a.md"));
+        assert!(!store.deck_mastered("da1"));
         assert!(store.records("c1").is_none());
         assert!(store.get_virtual("va1").is_none());
         assert!(store.get("va1").is_none());
         assert!(store.get("cb1").is_some());
-        assert!(store.deck_mastered("b.md"));
+        assert!(store.deck_mastered("db1"));
 
         let cache = AugmentCache::open(&cache_path);
         assert!(cache.distractors("c1", 1).is_none());
@@ -449,7 +463,7 @@ mod tests {
         write_deck(dir.path(), "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         store.get_or_insert("c1", 0);
-        store.set_deck_mastered("a.md", 1);
+        store.set_deck_mastered("da1", 1);
         store.ensure_records_raw("c1", &[]);
         store.save().unwrap();
 
@@ -457,7 +471,8 @@ mod tests {
 
         let deck = Deck::load(dir.path().join("a.md")).unwrap();
         let known_ids: HashSet<String> = deck.cards.iter().filter_map(|c| c.id()).collect();
-        let orphans = store.orphans(&known_ids, &once("a.md"));
+        let known_deck_id = deck.deck_token.clone().unwrap();
+        let orphans = store.orphans(&known_ids, &once(&known_deck_id));
         assert!(orphans.is_empty(), "{orphans:?}");
     }
 
@@ -634,7 +649,7 @@ mod tests {
             store.insert_virtual(crate::store::VirtualCard {
                 id: vid.into(),
                 kind: crate::store::VirtualKind::Tutor,
-                parent: "d.md".into(),
+                deck: "d.md".into(),
                 text: format!("## promoted <!-- id: {vid} -->\npans\n"),
                 created_ms: 0,
             });
@@ -691,12 +706,16 @@ mod tests {
     #[test]
     fn resetting_a_deck_drops_its_virtual_cards_but_keeps_anothers() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("a.md"), "## qa <!-- id: qa -->\nans-a\n").unwrap();
+        std::fs::write(
+            dir.path().join("a.md"),
+            "---\nalix-id: \"da\"\n---\n## qa <!-- id: qa -->\nans-a\n",
+        )
+        .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();
 
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let vc_a = virtual_card("a.md", "vc-a");
-        let vc_other = virtual_card("other.md", "vc-other");
+        let vc_a = virtual_card("da", "vc-a");
+        let vc_other = virtual_card("other", "vc-other");
         let (id_a, id_other) = (vc_a.id.clone(), vc_other.id.clone());
         store.insert_virtual(vc_a);
         store.insert_virtual(vc_other);

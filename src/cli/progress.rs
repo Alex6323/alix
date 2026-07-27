@@ -64,11 +64,12 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
                 passes += state.total_passes;
             }
         }
+        let deck_id = deck.deck_token.as_deref().unwrap_or_default();
         // Virtual (remediation) cards count toward "due" (now and within
         // 24h), never toward the card count below: they aren't deck content.
         due_now += alix::session::count_reviewable_virtual(
             &store,
-            &deck.subject,
+            deck_id,
             &scheduler,
             now,
             review.retire_after_days,
@@ -77,7 +78,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let due_now_recall = due_now;
         due_24h += alix::session::count_due_soon_virtual(
             &store,
-            &deck.subject,
+            deck_id,
             &scheduler,
             now,
             86_400_000,
@@ -88,7 +89,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
             DeckState::NotStarted => "not started",
             DeckState::Started => "in progress",
             DeckState::ExamDue => "exam due",
-            DeckState::Finished if store.deck_mastered(&deck.subject) => "mastered ✓",
+            DeckState::Finished if store.deck_mastered(deck_id) => "mastered ✓",
             DeckState::Finished => "finished ✓",
         };
         println!("{} ({} cards)", deck.display_name(), deck.cards.len());
@@ -254,12 +255,13 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
             .filter(|(id, _)| store.get(id).is_some())
             .map(|(id, c)| (id, c.front.clone()))
             .collect();
-        let mastered = decks_full
-            .iter()
-            .any(|deck| store.deck_mastered(&deck.subject));
+        fn deck_id(deck: &Deck) -> &str {
+            deck.deck_token.as_deref().unwrap_or_default()
+        }
+        let mastered = decks_full.iter().any(|deck| store.deck_mastered(deck_id(deck)));
         let virtual_ids: Vec<String> = decks_full
             .iter()
-            .flat_map(|deck| store.virtual_cards_for(&deck.subject))
+            .flat_map(|deck| store.virtual_cards_for(deck_id(deck)))
             .map(|vc| vc.id.clone())
             .collect();
 
@@ -317,10 +319,10 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
     // An unstamped card has no id and no store entry, so it's neither known
     // nor an orphan.
     let mut known_cards: HashSet<String> = HashSet::new();
-    let mut known_subjects: HashSet<String> = HashSet::new();
+    let mut known_deck_tokens: HashSet<String> = HashSet::new();
     for path in &deck_paths {
         if let Ok(deck) = Deck::load(path) {
-            known_subjects.insert(deck.subject.clone());
+            known_deck_tokens.extend(deck.deck_token.clone());
             known_cards.extend(deck.cards.iter().filter_map(Card::id));
         }
     }
@@ -329,7 +331,7 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
         .or_else(alix::store::default_store_path)
         .context("cannot determine the data directory")?;
     let mut store = state::open_stores(&deck_paths, &store_path)?;
-    let orphans = store.orphans(&known_cards, &known_subjects);
+    let orphans = store.orphans(&known_cards, &known_deck_tokens);
     if orphans.is_empty() {
         println!("No orphaned progress to reset.");
         return Ok(());
