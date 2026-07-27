@@ -32,6 +32,23 @@ fn unconfigured_token_leaves_everything_open() {
 }
 
 #[test]
+fn tutor_origin_context_requires_a_fetch_capable_grant() {
+    assert!(can_fetch_origin(&AskConfig::default()));
+
+    let no_fetch = AskConfig {
+        allowed_tools: Vec::new(),
+        ..AskConfig::default()
+    };
+    assert!(!can_fetch_origin(&no_fetch));
+
+    let codex = AskConfig {
+        backend: crate::config::BackendKind::Codex,
+        ..AskConfig::default()
+    };
+    assert!(!can_fetch_origin(&codex));
+}
+
+#[test]
 fn token_guards_only_the_api() {
     let t = Some("secret");
     assert!(is_authorized("/", None, None, t));
@@ -711,7 +728,7 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     );
 
     let store = Store::open(dir.path().join("progress/deck1.json")).unwrap();
-    let augment = AugmentCache::open(crate::augment::augment_path_for(store.path()));
+    let augment = AugmentCache::open_for_workspace(dir.path()).unwrap();
     let dto = deck_item_dto(
         &entry,
         &store,
@@ -872,7 +889,8 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
         label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
-        source_roots: HashMap::new(),
+        origin_urls: HashMap::new(),
+        origin_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
         augment,
@@ -1134,7 +1152,8 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
-        source_roots: HashMap::new(),
+        origin_urls: HashMap::new(),
+        origin_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
         augment: crate::augment::AugmentCache::open(deck.with_extension("generated.json")),
@@ -1225,9 +1244,8 @@ fn poll_ask_error_resets_session() {
 }
 
 #[test]
-fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spawning() {
-    // Points at a nonexistent CLI binary: if the source-not-found short-circuit
-    // works, it's never touched.
+fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
+    let _lock = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("29.rs"), "fn real() {}\n").unwrap();
     let deck_path = dir.path().join("d.md");
@@ -1254,9 +1272,9 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
     );
     let mut decks = HashMap::new();
     decks.insert("d.md".to_string(), deck_path);
-    let mut source_roots = HashMap::new();
+    let mut origin_roots = HashMap::new();
     // Configured (`source_access` opted in), but unresolved on disk.
-    source_roots.insert("d.md".to_string(), dir.path().join("gone-origin"));
+    origin_roots.insert("d.md".to_string(), dir.path().join("gone-origin"));
     let mut source_bases = HashMap::new();
     source_bases.insert("d.md".to_string(), SourceBase::for_deck(&deck));
     let mut r = Reviewing::new(SessionBuild {
@@ -1264,30 +1282,40 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
-        source_roots,
+        origin_urls: HashMap::new(),
+        origin_roots,
         source_bases,
         topology_name: None,
         augment: crate::augment::AugmentCache::open(dir.path().join("a.generated.json")),
     });
 
-    let cfg = crate::testutil::ask_config(&dir.path().join("no-such-claude-binary"));
+    let cli = crate::testutil::fake_reply(dir.path(), "from the frozen excerpt");
+    let cfg = crate::testutil::ask_config(&cli);
     assert!(r.start_ask(
         &cfg,
         Audience::Adult,
         AskAction::Question("why?".to_string())
     ));
 
-    // Answered synchronously (no thread/channel): the reply is already in the
-    // transcript on the very next read.
-    assert!(r.ask.pending.is_none(), "the backend was never spawned");
-    assert_eq!(1, r.ask.transcript.len());
-    assert_eq!("why?", r.ask.transcript[0].0);
-    assert_eq!(ask::SOURCE_NOT_FOUND, r.ask.transcript[0].1);
-    assert!(!r.ask_dto(None, None).thinking, "never stuck thinking");
-
-    let (status, error) = r.poll_ask();
-    assert_eq!((None, None), (status, error));
-    assert_eq!(1, r.ask.transcript.len(), "poll_ask doesn't double-answer");
+    let dto = r.ask_dto(None, None);
+    assert!(dto.thinking);
+    assert_eq!(Some(ask::FROZEN_ONLY_WARNING.to_string()), dto.status);
+    for _ in 0..500 {
+        let (_, error) = r.poll_ask();
+        assert!(error.is_none(), "{error:?}");
+        if !r.ask_dto(None, None).thinking {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        vec![("why?".to_string(), "from the frozen excerpt".to_string())],
+        r.ask.transcript
+    );
+    assert_eq!(
+        Some(ask::FROZEN_ONLY_WARNING.to_string()),
+        r.ask_dto(None, None).status
+    );
 }
 
 #[test]
@@ -1621,7 +1649,7 @@ fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
     let deck = Deck::load(&deck_path).unwrap();
 
     let store = Store::open(dir.path().join("progress/deck1.json")).unwrap();
-    let augment = AugmentCache::open(crate::augment::augment_path_for(store.path()));
+    let augment = AugmentCache::open_for_workspace(dir.path()).unwrap();
 
     let dto = deck_drawer_dto(&augment, &store, &deck);
     assert_eq!(Some("A short intro."), dto.preamble.as_deref());

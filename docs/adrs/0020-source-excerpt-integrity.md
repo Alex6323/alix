@@ -5,6 +5,7 @@
 - Retrospective: No
 - Refines: [ADR 0015](0015-frozen-source-snapshots.md),
   [ADR 0018](0018-explicit-deck-initialization.md)
+- Refined by: [ADR 0021](0021-deck-owned-frozen-assets.md)
 
 ## Context
 

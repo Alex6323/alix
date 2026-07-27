@@ -1593,11 +1593,7 @@ pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
             .extension()
             .is_some_and(|extension| extension == "json");
     let mut out = if direct {
-        let mut conflicts = conflict_copies(store_path);
-        conflicts.extend(conflict_copies(&crate::augment::augment_path_for(
-            store_path,
-        )));
-        conflicts
+        conflict_copies(store_path)
     } else {
         let progress = if store_path
             .file_name()
@@ -1607,11 +1603,7 @@ pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
         } else {
             store_path.join("progress")
         };
-        let mut conflicts = conflict_documents(&progress);
-        conflicts.extend(conflict_documents(&crate::augment::augment_path_for(
-            &progress,
-        )));
-        conflicts
+        conflict_documents(&progress)
     };
     out.sort();
     out.dedup();
@@ -2041,20 +2033,15 @@ mod tests {
     }
 
     #[test]
-    fn sync_conflicts_finds_per_deck_progress_and_augmentation_copies() {
+    fn sync_conflicts_finds_per_deck_progress_copies() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("progress")).unwrap();
-        std::fs::create_dir(dir.path().join("augment")).unwrap();
         let progress = dir
             .path()
             .join("progress/deck1.sync-conflict-20260714-phone.json");
-        let augment = dir
-            .path()
-            .join("augment/deck2.sync-conflict-20260714-laptop.json");
         std::fs::write(&progress, "{}").unwrap();
-        std::fs::write(&augment, "{}").unwrap();
 
-        assert_eq!(sync_conflicts(dir.path()), vec![augment, progress]);
+        assert_eq!(sync_conflicts(dir.path()), vec![progress]);
     }
 
     #[test]

@@ -117,6 +117,12 @@ deliberately widen the provider CLI's permissions through `permission_mode`,
 `allowed_tools`, or provider-specific configuration, and then owns that wider
 trust decision.
 
+URL origins are current external context rather than captured evidence. Alix
+supplies frozen excerpts regardless; it fetches a URL origin only when the
+backend supports `WebFetch` and that tool is allowed. Without a usable origin,
+the tutor continues from frozen evidence and reports that it cannot verify the
+full current source.
+
 Received workspace manifests are untrusted configuration. Before using AI on a
 received workspace, inspect `source_access`, `origin`, links, citations, and
 frozen excerpts. A portable manifest can request source access, and an origin
@@ -188,13 +194,14 @@ The most relevant deterministic checks currently live beside their controls:
 
 - `src/serve/tests.rs`: token scope and authorization behavior;
 - `src/serve/respond.rs`: constant-time token comparison and capped reads;
-- `src/deck.rs`: explicit-origin precedence and no source-root inference;
+- `src/deck.rs`: explicit-origin precedence and no origin-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
 - `src/share.rs`: outgoing filtering and defensive receive sanitization;
-- `src/state.rs`: state-root layout and stable-ID document routing;
+- `src/state.rs` and `src/workspace.rs`: typed user-file and workspace-file
+  routing by stable deck ID;
 - `src/store.rs`: per-deck atomic replacement, revisions, writer markers, and
   sync conflicts;
 - `src/fsio.rs`: durable file replacement (data and directory-entry sync

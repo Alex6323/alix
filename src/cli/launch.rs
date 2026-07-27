@@ -8,7 +8,9 @@ use alix::{
     assemble::{self, open_store},
     config::Config,
     recent::RecentDecks,
-    serve, tutorial, workspace,
+    serve,
+    state::UserFiles,
+    tutorial, workspace,
 };
 use anyhow::{Context, Result, bail};
 
@@ -48,13 +50,12 @@ pub(crate) fn generate_token() -> Result<String> {
 pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let scoped = args.dir.is_some();
-    let (decks_dir, instance_store, recent_path) = match &args.dir {
+    let (decks_dir, user_root) = match &args.dir {
         None => {
             let dir = config.decks_dir().context("cannot determine ~/decks")?;
             tutorial::seed_new_decks_dir(&dir);
-            let store = workspace::root_store_path(&dir);
-            let recent = dir.join("recent.json");
-            (dir, Some(store), recent)
+            let user_root = workspace::root_store_path(&dir);
+            (dir, user_root)
         }
         Some(path) if path.is_file() => bail!(
             "`alix <deck>` was removed — run `alix` and pick the deck there, \
@@ -62,13 +63,10 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
             path.parent().unwrap_or_else(|| Path::new(".")).display()
         ),
         Some(path) if !path.is_dir() => bail!("`{}` is not a folder", path.display()),
-        Some(path) => (
-            path.clone(),
-            Some(workspace::root_store_path(path)),
-            path.join("recent.json"),
-        ),
+        Some(path) => (path.clone(), workspace::root_store_path(path)),
     };
-    let recent = RecentDecks::load(recent_path);
+    let recent = RecentDecks::load(UserFiles::new(&user_root).recent());
+    let instance_store = Some(user_root);
     let store = open_store(instance_store.clone())?;
     let addr = serve_addr(args.port, args.lan, &config);
     // Bind before announcing: a taken port errors here rather than after printing a success URL.

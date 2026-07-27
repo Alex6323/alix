@@ -395,7 +395,8 @@ pub const LOCAL_MANIFEST: &str = "alix.local.toml";
 
 impl ReviewConfig {
     pub fn for_workspace(self, workspace_dir: &Path) -> Self {
-        let Ok(text) = std::fs::read_to_string(workspace_dir.join(LOCAL_MANIFEST)) else {
+        let local_manifest = crate::state::UserFiles::new(workspace_dir).local_manifest();
+        let Ok(text) = std::fs::read_to_string(local_manifest) else {
             return self;
         };
         let Ok(raw) = toml::from_str::<RawLocalConfig>(&text) else {
@@ -946,7 +947,7 @@ fn parse_ramp_days(s: &str) -> Result<u32> {
 }
 
 pub fn local_review_lint(dir: &Path) -> Vec<String> {
-    let path = dir.join(LOCAL_MANIFEST);
+    let path = crate::state::UserFiles::new(dir).local_manifest();
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
         Err(_) => return Vec::new(),
@@ -1066,7 +1067,7 @@ pub fn default_config_toml() -> &'static str {
 # a local source tree bigger than this many bytes (0 = always proceed silently).
 # preflight_threshold = 5000000
 
-# AI deck generation (`alix deck <source>`). Reuses the [ask] command,
+# AI deck generation (`alix generate <source>`). Reuses the [ask] command,
 # permission mode and tool allowlist (WebFetch reads the page).
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
@@ -1076,8 +1077,9 @@ pub fn default_config_toml() -> &'static str {
 # prompt = ""                   # full prompt override; may use {url} and {max_cards}
 # review = false                # run a second pass to drop redundant cards (--review)
 
-# AI exam (`alix exam <deck>`). Generates open understanding questions from
-# the deck's `% source:` and grades typed answers; passing marks the deck
+# AI exam. Generates open understanding questions from the deck's frozen or
+# live `source:` plus a public URL `origin:` when present, then grades typed
+# answers; passing marks the deck
 # "mastered" and unlocks its dependents. Reuses the [ask] command, permission
 # mode and tool allowlist (WebFetch reads a source URL).
 [exam]

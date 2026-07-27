@@ -8,10 +8,11 @@ depth, where there is one. Run any command with `--help` for its full flags.
 - `alix`: serve the web app: the deck [picker](02-getting-started.md) over
   your decks directory (`~/decks`), printing its URL.
 - `alix <dir>`: serve that folder as a **self-contained scoped root**: its own
-  catalog, with its own per-deck `progress/` and `augment/` state plus
-  `recent.json` inside the folder, so several instances can run side by side. A
-  [workspace](08-workspaces.md) dir opens the picker drilled into it, with its
-  own state root.
+  catalog and shareable `augment/` and `assets/`, with private per-deck
+  `progress/` plus `recent.json` colocated by default. A
+  [workspace](08-workspaces.md) dir opens the picker drilled into it; its
+  `store` setting may relocate the private user files without moving shareable
+  material.
 
 Every review starts from the picker. There's no direct deck launch. Browsing a
 deck read-only, sitting the AI exam, and walking a [trace](13-trace-decks.md)
@@ -54,8 +55,8 @@ port. Ctrl-C or closing the terminal stops them together.
 
 `alix stats`, `alix list`, and `alix reset` each take a **deck file, a plain
 folder, or a [workspace](08-workspaces.md)**: a folder or workspace expands to
-its member decks, and each deck resolves to the state root the launcher would
-serve it with (`--store` > its workspace's store > a served folder or
+its member decks, and each deck resolves to the user-files root the launcher
+would serve it with (`--store` > its workspace's store > a served folder or
 configured decks root > the global store). Inside that boundary, progress is
 loaded from `progress/<alix-id>.json`; folder-wide commands aggregate the
 relevant documents in memory without creating an authoritative combined file.
@@ -80,8 +81,9 @@ the deck file. There's no separate command for it.
 
 ## The AI features
 
-**`alix generate <source>`** is the one AI-authoring verb. What it makes
-follows the source:
+**`alix generate <source>`** is the one AI-authoring verb. `--origin <URL>`
+retains a public current source for later tutor and exam context after local
+evidence is frozen. What generate makes follows the source:
 
 - a **web page URL or a local file** → one
   [facts deck](11-generating-decks.md) (`-o/--output`, `--cards`, `--review`,
@@ -104,12 +106,19 @@ The rest of the AI-and-deck surface:
   with stable deck and card IDs. Uninitialized `.md` files are ignored by
   discovery and never stamped merely because they contain `##` headings.
 - `alix deck augment <deck> --target <...>`: precompute AI augmentations
-  (choices, notes, questions, keypoints, format, order).
+  (choices, notes, questions, keypoints, format, order). The augmentation
+  document stays beside the deck. `--store` affects only the private progress
+  needed when the `format` target considers virtual cards.
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
 - `alix workspace init <dir>`: scaffold an empty
   [workspace](08-workspaces.md): an `alix.toml` (`--title` names it) and an
   empty `decks/` plus `assets/`. Grow it with the `--workspace` flags above.
+- `alix workspace update <dir>`: reconcile frozen source-backed members with
+  their recorded local origins. The first run stages an exact sibling
+  workspace for review; `--apply` publishes it without another model call and
+  `--discard` removes it. Changed or obsolete learning propositions retire
+  their old card IDs; replacements receive fresh IDs.
 - `alix workspace deadline <dir> [<date>|clear]`: show, set, or clear a
   workspace's personal "ready by" date (`--config <path>`); no argument prints
   the current one. Workspace-only, see [Workspaces](08-workspaces.md).
@@ -130,7 +139,8 @@ notes it.
   staged first so your personal state stays home: `progress/`, the recent list,
   `alix.local.toml`, temporary files, and conflict or backup files never travel.
   Matching `augment/<alix-id>.json` documents do travel, including when sharing
-  one deck. Tell the receiver the code wormhole prints. No wormhole around?
+  one deck. A single frozen deck also carries its complete
+  `assets/<alix-id>/` directory. Tell the receiver the code wormhole prints. No wormhole around?
   `--zip [--output <path>]` writes the same staged copy as a `.zip` to mail or
   hand over instead.
 - `alix receive <code-or-zip>`: fetch what someone shared, by wormhole code
@@ -157,9 +167,10 @@ notes it.
   card or deck (orphans, clear them with `alix reset --orphans`), a
   non-canonical token, a frontmatter that can't be stamped, and cards still
   awaiting a token. It also names deck-like Markdown ignored until explicitly
-  initialized, invalid or orphaned per-deck state documents, aggregate
-  `progress.json`/`augment.json` files that are never read, and
-  synchronization conflict copies. `--backends` additionally
+  initialized, invalid or orphaned per-deck progress or augmentation documents,
+  and synchronization conflict copies. Workspace checks also reject live source
+  evidence, missing or cross-deck assets, local images outside the owning deck
+  directory, and SHA-256 filenames that do not match their bytes. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few

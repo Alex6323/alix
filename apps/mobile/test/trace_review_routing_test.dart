@@ -16,19 +16,27 @@ import 'support/deck_fixture.dart';
 const traceDeck = '''
 ---
 trace: Parser walk
-source: assets
+source: assets/tracemd/sha256-8093e53dbc3fe8722bd6cc3701e91bc9226f5b2529035008ec4339d09339ff9e.rs + sha256-f918dcc184b484285f8aa0494af33fb197a75902be5f781247074857038ae584.rs
 ---
 ## A `ReadingCloze` block just ended. What is handed to `parse_cloze_cards`?
 The accumulated cloze `text` plus the block's start and end line numbers.
-<!-- at: 55.rs from src/parser.rs:406-447 -->
+<!-- at: sha256-8093e53dbc3fe8722bd6cc3701e91bc9226f5b2529035008ec4339d09339ff9e.rs:1 from src/parser.rs:406-447 -->
 
 ## Why does this scan use bytes rather than chars?
 Cloze `start`/`end` are byte positions, so counting must be in bytes.
-<!-- at: 57.rs from src/parser.rs:470-529 -->
+<!-- at: sha256-f918dcc184b484285f8aa0494af33fb197a75902be5f781247074857038ae584.rs:1 from src/parser.rs:470-529 -->
 ''';
 
 Directory traceRoot() {
   final root = Directory.systemTemp.createTempSync('alix-trace-routing-');
+  final assets = Directory('${root.path}/assets/tracemd')
+    ..createSync(recursive: true);
+  File(
+    '${assets.path}/sha256-8093e53dbc3fe8722bd6cc3701e91bc9226f5b2529035008ec4339d09339ff9e.rs',
+  ).writeAsStringSync('parse_cloze_cards evidence\n');
+  File(
+    '${assets.path}/sha256-f918dcc184b484285f8aa0494af33fb197a75902be5f781247074857038ae584.rs',
+  ).writeAsStringSync('byte offsets evidence\n');
   writeTestDeck('${root.path}/trace.md', traceDeck);
   writeTestDeck('${root.path}/facts.md', '# Facts\n\n## q?\na\n');
   return root;

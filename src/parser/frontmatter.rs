@@ -20,7 +20,7 @@ pub struct Frontmatter {
 
 // Leading indentation doesn't match: a `---` inside a YAML block scalar can't
 // accidentally close the frontmatter.
-fn closes_frontmatter(line: &str) -> bool {
+pub(super) fn closes_frontmatter(line: &str) -> bool {
     line.strip_prefix("---")
         .is_some_and(|rest| rest.chars().all(|c| WHITESPACE.contains(&c)))
 }

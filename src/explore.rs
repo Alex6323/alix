@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     ask,
@@ -17,7 +17,7 @@ use crate::{
     source::{self, resolve_source},
     store::Store,
     title,
-    trace_ai::{self, build_run_config, clean_to_cards},
+    trace_ai::{build_run_config, clean_to_cards},
     workspace,
 };
 
@@ -399,6 +399,7 @@ pub fn materialize(
     goal: &str,
     title: Option<&str>,
     source: &str,
+    origin: Option<&str>,
     filled: Option<&HashMap<usize, String>>,
 ) -> Result<Materialized> {
     let mut items = parse_plan(plan);
@@ -437,11 +438,8 @@ pub fn materialize(
     ));
     // The source root the tutor grounds against and drift detection reads;
     // cascades into each member deck's `origin`, overridable per deck/card.
-    if let Some(root) = &root {
-        manifest.push_str(&format!(
-            "origin = \"{}\"\n",
-            toml_escape(&root.display().to_string())
-        ));
+    if let Some(origin) = origin.or_else(|| root.as_ref().and_then(|path| path.to_str())) {
+        manifest.push_str(&format!("origin = \"{}\"\n", toml_escape(origin)));
     }
     fs::write(dir.join(crate::workspace::MANIFEST), manifest)?;
 
@@ -525,13 +523,27 @@ pub fn merge_built(
     fs::create_dir_all(dest).with_context(|| format!("cannot create {}", dest.display()))?;
     let mut moved = 0;
     let mut conflicts = Vec::new();
-    for entry in
-        fs::read_dir(staging).with_context(|| format!("cannot read {}", staging.display()))?
-    {
-        let entry = entry?;
+    let mut entries: Vec<_> = fs::read_dir(staging)
+        .with_context(|| format!("cannot read {}", staging.display()))?
+        .collect::<std::io::Result<_>>()?;
+    entries.sort_by_key(|entry| {
+        let name = entry.file_name();
+        if name == crate::assets::ROOT {
+            0
+        } else if name == crate::workspace::DECKS {
+            2
+        } else {
+            1
+        }
+    });
+    for entry in entries {
         let name = entry.file_name().to_string_lossy().into_owned();
         let from = entry.path();
         let to = dest.join(&name);
+        if name == crate::assets::ROOT && from.is_dir() {
+            moved += merge_assets(&from, &to, force, &mut conflicts)?;
+            continue;
+        }
         if name == crate::workspace::DECKS && from.is_dir() {
             fs::create_dir_all(&to).with_context(|| format!("cannot create {}", to.display()))?;
             for member in
@@ -585,46 +597,102 @@ pub fn merge_built(
     Ok(MergeReport { moved, conflicts })
 }
 
-/// A cited deck that can't be frozen almost always has a broken or stale
-/// `source:`, reported here rather than left as a silently empty `assets/`.
+fn merge_assets(from: &Path, to: &Path, force: bool, conflicts: &mut Vec<String>) -> Result<usize> {
+    fs::create_dir_all(to).with_context(|| format!("cannot create {}", to.display()))?;
+    let mut moved = 0;
+    for entry in fs::read_dir(from).with_context(|| format!("cannot read {}", from.display()))? {
+        let entry = entry?;
+        let source = entry.path();
+        let destination = to.join(entry.file_name());
+        if source.is_dir() {
+            fs::create_dir_all(&destination)
+                .with_context(|| format!("cannot create {}", destination.display()))?;
+            for object in fs::read_dir(&source)? {
+                let object = object?;
+                let target = destination.join(object.file_name());
+                if target.is_file() {
+                    if fs::read(object.path())? != fs::read(&target)? {
+                        bail!(
+                            "content-addressed asset {} has different bytes in the destination",
+                            target.display()
+                        );
+                    }
+                    fs::remove_file(object.path())?;
+                } else {
+                    share::move_into(&object.path(), &target)?;
+                    moved += 1;
+                }
+            }
+            let _ = fs::remove_dir(&source);
+            continue;
+        }
+        if destination.exists() && !force {
+            conflicts.push(format!(
+                "{}/{}",
+                crate::assets::ROOT,
+                entry.file_name().to_string_lossy()
+            ));
+            continue;
+        }
+        if destination.exists() {
+            fs::remove_file(&destination)?;
+        }
+        share::move_into(&source, &destination)?;
+        moved += 1;
+    }
+    let _ = fs::remove_dir(from);
+    Ok(moved)
+}
+
 #[derive(Debug, Default)]
-pub struct SnapshotSummary {
+pub struct FreezeSummary {
     pub decks: usize,
     pub files: usize,
     pub failed: Vec<String>,
 }
 
-/// Skips a deck with no citations; one that cites but can't be read is
-/// recorded in [`SnapshotSummary::failed`], never silently dropped.
-pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
-    let mut summary = SnapshotSummary::default();
+pub fn freeze_workspace(dir: &Path) -> Result<FreezeSummary> {
+    let mut summary = FreezeSummary::default();
     let ws = workspace::Workspace::load(dir)?;
-    // The workspace-wide origin (`alix.toml [defaults] origin`): a deck whose
-    // source root matches it inherits it; one that diverges writes its own.
-    let workspace_origin = ws.settings.origin.as_deref().map(PathBuf::from);
-    for member in ws.members {
+    let mut members = ws.members;
+    members.extend(workspace::uninitialized_deck_files(dir)?);
+    members.sort();
+    members.dedup();
+    for member in members {
+        let text = match std::fs::read_to_string(&member) {
+            Ok(text) => text,
+            Err(_) => continue,
+        };
         let Ok(deck) = Deck::load(&member) else {
             continue;
         };
-        if !(deck.is_trace() || deck.cards.iter().any(|c| !c.citations.is_empty())) {
+        if deck.deck_token.is_none() && deck.cards.is_empty() {
             continue;
         }
-        // `summary.files` is the running snippet count, passed as the start so each
-        // deck's snippets get unique names in the shared `assets/`.
-        match trace_ai::snapshot(&deck, summary.files, workspace_origin.as_deref()) {
+        let has_local_image = crate::parser::image_references(&text)
+            .iter()
+            .any(|image| !crate::deck::is_url(&image.source));
+        if deck.deck_token.is_some() && deck.sources.is_empty() && !has_local_image {
+            continue;
+        }
+        let result = if deck.deck_token.is_some() {
+            crate::assets::freeze_member(&member).map_err(|error| anyhow!("{error:#}"))
+        } else {
+            crate::assets::initialize(&member)
+                .map(|report| report.freeze.unwrap_or_default())
+                .map_err(|error| anyhow!("{error:#}"))
+        };
+        match result {
             Ok(report) => {
-                summary.decks += 1;
-                summary.files += report.copied.len();
-                for missing in &report.missing {
-                    eprintln!(
-                        "warning: {}: cited file not found, not frozen: {missing}",
-                        member.display()
-                    );
+                let files = report.evidence + report.images;
+                if files > 0 {
+                    summary.decks += 1;
+                    summary.files += files;
                 }
             }
-            // The deck cites local excerpts but none could be frozen (almost
-            // always a broken/stale `source:`); record it, don't swallow it.
-            Err(e) => summary.failed.push(format!("{}: {e:#}", member.display())),
+            Err(error) => summary
+                .failed
+                .push(format!("{}: {error:#}", member.display())),
         }
     }
     Ok(summary)
@@ -794,8 +862,16 @@ Spine   a -> b
         let dir = std::env::temp_dir().join(format!("alix-explore-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
-        let report =
-            materialize(SAMPLE_PLAN, &dir, "understand the repo", None, ".", None).unwrap();
+        let report = materialize(
+            SAMPLE_PLAN,
+            &dir,
+            "understand the repo",
+            None,
+            ".",
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(2, report.traces);
         assert_eq!(1, report.decks);
         assert_eq!(0, report.filled);
@@ -823,7 +899,7 @@ Spine   a -> b
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        materialize(SAMPLE_PLAN, &dir, "g", None, ".", None).unwrap();
+        materialize(SAMPLE_PLAN, &dir, "g", None, ".", None, None).unwrap();
 
         assert_eq!(
             "existing",
@@ -846,11 +922,37 @@ Spine   a -> b
             Some("Repo Internals"),
             ".",
             None,
+            None,
         )
         .unwrap();
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(manifest.contains("title = \"Repo Internals\""));
         assert!(manifest.contains("description = \"the goal\""));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn materialize_keeps_an_explicit_public_origin_in_the_manifest() {
+        let dir = std::env::temp_dir().join(format!("alix-explore-origin-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+
+        materialize(
+            SAMPLE_PLAN,
+            &dir,
+            "the goal",
+            None,
+            ".",
+            Some("https://example.org/source"),
+            None,
+        )
+        .unwrap();
+
+        let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
+        assert!(
+            manifest.contains("origin = \"https://example.org/source\""),
+            "{manifest}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -886,7 +988,7 @@ back a
                 .to_string(),
         );
 
-        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", Some(&filled)).unwrap();
+        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", None, Some(&filled)).unwrap();
         assert_eq!(1, report.filled);
 
         let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();
@@ -1007,7 +1109,7 @@ back a
     }
 
     #[test]
-    fn a_directory_entry_merges_as_one_unit_under_the_same_collision_rule() {
+    fn workspace_assets_merge_per_entry_without_replacing_the_directory() {
         let (staging, dest) = merge_test_dirs("dir");
         fs::create_dir_all(staging.join("assets")).unwrap();
         fs::write(staging.join("assets/img.svg"), "new\n").unwrap();
@@ -1025,7 +1127,7 @@ back a
         fs::write(staging.join("assets/img.svg"), "newer\n").unwrap();
         let report = merge_built(&staging, &dest, false, &mut store).unwrap();
         assert_eq!(0, report.moved);
-        assert_eq!(vec!["assets".to_string()], report.conflicts);
+        assert_eq!(vec!["assets/img.svg".to_string()], report.conflicts);
         assert_eq!(
             "new\n",
             fs::read_to_string(dest.join("assets/img.svg")).unwrap()
@@ -1035,13 +1137,17 @@ back a
     }
 
     #[test]
-    fn snapshot_workspace_freezes_traces_and_cited_facts() {
+    fn freeze_workspace_owns_content_addressed_trace_and_fact_excerpts() {
         let dir = std::env::temp_dir().join(format!("alix-snap-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("src")).unwrap();
         fs::create_dir_all(dir.join("decks")).unwrap();
         fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
-        fs::write(dir.join("alix.toml"), "[defaults]\n").unwrap();
+        fs::write(
+            dir.join("alix.toml"),
+            "[defaults]\norigin = \"https://example.org/current\"\n",
+        )
+        .unwrap();
         let src = dir.join("src");
         fs::write(
             dir.join("decks/01-t.md"),
@@ -1061,22 +1167,34 @@ back a
         .unwrap();
         fs::write(dir.join("decks/03-plain.md"), "# d\n## q\na\n").unwrap();
 
-        let summary = snapshot_workspace(&dir).unwrap();
+        let summary = freeze_workspace(&dir).unwrap();
         assert_eq!((2, 2), (summary.decks, summary.files));
         assert!(summary.failed.is_empty(), "{:?}", summary.failed);
-        assert!(dir.join("assets/01.rs").is_file());
-        assert!(dir.join("assets/02.rs").is_file());
+        let trace_name = crate::assets::object_name(b"x\ny\n", "rs");
+        let fact_name = crate::assets::object_name(b"z\n", "rs");
+        assert!(dir.join(format!("assets/trace/{trace_name}")).is_file());
+        assert!(dir.join(format!("assets/facts/{fact_name}")).is_file());
         assert!(!dir.join("assets/a.rs").exists());
         let fact = fs::read_to_string(dir.join("decks/02-d.md")).unwrap();
-        assert!(fact.contains("source: assets\n"), "{fact}");
+        assert!(
+            fact.contains(&format!("source: \"assets/facts/{fact_name}\"")),
+            "{fact}"
+        );
+        assert!(
+            fact.contains("origin: \"https://example.org/current\""),
+            "{fact}"
+        );
         assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
-        assert!(fact.contains("<!-- at: 0"), "{fact}");
+        assert!(
+            fact.contains(&format!("<!-- at: {fact_name} @ xxh64:")),
+            "{fact}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn snapshot_workspace_surfaces_a_deck_whose_source_cannot_be_frozen() {
+    fn freeze_workspace_surfaces_a_deck_whose_source_cannot_be_frozen() {
         let dir = std::env::temp_dir().join(format!("alix-snap-fail-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("decks")).unwrap();
@@ -1090,7 +1208,7 @@ back a
         )
         .unwrap();
 
-        let summary = snapshot_workspace(&dir).unwrap();
+        let summary = freeze_workspace(&dir).unwrap();
         assert_eq!(0, summary.decks);
         assert_eq!(1, summary.failed.len(), "{:?}", summary.failed);
         assert!(

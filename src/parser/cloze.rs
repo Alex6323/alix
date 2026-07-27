@@ -136,7 +136,7 @@ fn scan_image<'a>(
     inner
 }
 
-fn scan_src(paren: &str) -> Option<(String, &str)> {
+pub(super) fn scan_src(paren: &str) -> Option<(String, &str)> {
     match paren.strip_prefix('<') {
         Some(bracketed) => bracketed_src(bracketed),
         None => unbracketed_src(paren),

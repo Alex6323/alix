@@ -190,7 +190,7 @@ pub(super) fn workspace_members(
         Some(instance_store)
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
-    let augment = store.and_then(|store| AugmentCache::open_for_store(store.path()).ok());
+    let augment = AugmentCache::open_for_workspace(&e.path).ok();
     // Load each member deck once, deriving its status, whether it has a
     // topology, and its last-used session depth from the same parse.
     let loaded: Vec<(Option<picker::DeckStatus>, bool, &'static str)> = paths
@@ -358,7 +358,7 @@ pub(super) fn deck_catalog(
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
     let mut folders = Vec::new();
-    let augment = AugmentCache::open_for_store(store.path())
+    let augment = AugmentCache::open_for_workspace(decks_dir)
         .unwrap_or_else(|_| AugmentCache::open(Path::new("")));
     for e in picker::catalog(decks_dir, recent, cache) {
         if e.is_workspace {

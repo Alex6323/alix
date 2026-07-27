@@ -122,10 +122,19 @@ pub(crate) fn resolve_source(
 pub struct SourceBase {
     base_dir: PathBuf,
     source_file: Option<PathBuf>,
+    boundary_error: Option<String>,
 }
 
 impl SourceBase {
     pub fn for_deck(deck: &Deck) -> Self {
+        Self::new(deck, true)
+    }
+
+    pub(crate) fn for_live_deck(deck: &Deck) -> Self {
+        Self::new(deck, false)
+    }
+
+    fn new(deck: &Deck, enforce_frozen: bool) -> Self {
         let first = deck.sources.first();
         let multi = first.is_some_and(|source| source.contains(" + "));
         let content_root = crate::workspace::content_root(&deck.path);
@@ -136,10 +145,31 @@ impl SourceBase {
         Self {
             base_dir,
             source_file: if multi { None } else { source_file },
+            boundary_error: if enforce_frozen
+                && crate::workspace::root_for_deck(&deck.path).is_some()
+                && deck.deck_token.is_some()
+                && !deck.sources.is_empty()
+            {
+                if deck.is_frozen() {
+                    crate::assets::validate_member(deck)
+                        .err()
+                        .map(|error| format!("{error:#}"))
+                } else {
+                    Some(
+                        "initialized workspace members must use deck-owned frozen evidence"
+                            .to_string(),
+                    )
+                }
+            } else {
+                None
+            },
         }
     }
 
     pub fn excerpt(&self, locator: &str) -> Result<Excerpt> {
+        if let Some(error) = &self.boundary_error {
+            bail!("{error}");
+        }
         excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
     }
 
@@ -233,7 +263,6 @@ impl SourceBase {
 
 /// A value may join several paths with " + " (first a full path, rest
 /// relative to its directory, e.g. `<crate>/README.md + src/lib.rs`).
-#[cfg(any(feature = "full", test))]
 pub(crate) fn source_paths(value: &str, base: Option<&Path>) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut anchor: Option<PathBuf> = None;
@@ -581,7 +610,9 @@ mod tests {
     #[test]
     fn relabel_for_display_uses_the_at_origin() {
         let excerpt = Excerpt {
-            path: PathBuf::from("/ws/assets/30.rs"),
+            path: PathBuf::from(
+                "/ws/assets/deck1/sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.rs",
+            ),
             lines: vec![
                 (1, "a".to_string()),
                 (2, "b".to_string()),
@@ -787,6 +818,7 @@ mod tests {
         let source = SourceBase {
             base_dir: directory.path().to_path_buf(),
             source_file: None,
+            boundary_error: None,
         };
         let expected = Excerpt {
             path: PathBuf::from("code.rs"),
@@ -819,6 +851,7 @@ mod tests {
         let source = SourceBase {
             base_dir: directory.path().to_path_buf(),
             source_file: None,
+            boundary_error: None,
         };
         let expected = Excerpt {
             path: PathBuf::from("code.rs"),
@@ -844,6 +877,7 @@ mod tests {
         let source = SourceBase {
             base_dir: directory.path().to_path_buf(),
             source_file: None,
+            boundary_error: None,
         };
         let expected = Excerpt {
             path: PathBuf::from("code.rs"),

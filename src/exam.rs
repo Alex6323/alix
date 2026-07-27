@@ -78,16 +78,37 @@ pub fn generate_questions(
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
 ) -> Result<Vec<ExamQuestion>> {
-    if deck.sources.is_empty() {
-        bail!("the deck declares no `source:` to examine against");
+    let sources = examination_sources(deck);
+    if sources.is_empty() {
+        bail!("the deck declares no `source:` or URL `origin:` to examine against");
+    }
+    if let Some(error) = source_boundary_error(deck) {
+        bail!("{error}");
     }
     let root = workspace::content_root(&deck.path);
-    generate_questions_from(&deck.sources, Some(&root), cfg, ask_cfg)
+    generate_questions_from(&sources, Some(&root), cfg, ask_cfg)
+}
+
+fn examination_sources(deck: &Deck) -> Vec<String> {
+    let mut sources = deck.sources.clone();
+    if let Some(origin) = deck.origin_url()
+        && !sources.contains(&origin)
+    {
+        sources.push(origin);
+    }
+    sources
+}
+
+fn source_boundary_error(deck: &Deck) -> Option<String> {
+    (workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some())
+        .then(|| crate::assets::validate_member(deck).err())
+        .flatten()
+        .map(|error| format!("{error:#}"))
 }
 
 pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()> {
-    for source in &deck.sources {
-        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
+    for source in examination_sources(deck) {
+        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(&source))?;
     }
     Ok(())
 }
@@ -296,12 +317,16 @@ pub struct Sitting {
 
 impl Sitting {
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
-        let pending = Pending::Questions(spawn_questions(
-            deck.sources.clone(),
-            Some(workspace::content_root(&deck.path)),
-            cfg.clone(),
-            ask_cfg.clone(),
-        ));
+        let boundary_error = source_boundary_error(deck);
+        let source_ready = boundary_error.is_none();
+        let pending = source_ready.then(|| {
+            Pending::Questions(spawn_questions(
+                deck.sources.clone(),
+                Some(workspace::content_root(&deck.path)),
+                cfg.clone(),
+                ask_cfg.clone(),
+            ))
+        });
         Self {
             kind: SittingKind::Source,
             subject: deck.subject.clone(),
@@ -309,14 +334,18 @@ impl Sitting {
             strictness,
             cfg,
             ask_cfg,
-            phase: Phase::Generating,
+            phase: if source_ready {
+                Phase::Generating
+            } else {
+                Phase::Results
+            },
             questions: Vec::new(),
             answers: Vec::new(),
             current: 0,
             result: None,
-            pending: Some(pending),
-            error: None,
-            pending_since: Some(crate::time::now_ms()),
+            pending,
+            error: boundary_error,
+            pending_since: source_ready.then(crate::time::now_ms),
             remediated_count: None,
         }
     }
@@ -630,30 +659,22 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
             urls.push(src.clone());
             continue;
         }
-        // A value may join several files with " + "; skip any that can't be read rather than
-        // failing.
         for path in crate::source::source_paths(src, base) {
-            match std::fs::read_to_string(&path) {
-                Ok(text) => {
-                    let label = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| path.display().to_string());
-                    let (truncated_text, was_truncated) = truncate(&text);
-                    if was_truncated {
-                        eprintln!(
-                            "note: `{}` is larger than {} KB and was truncated for the exam prompt",
-                            label,
-                            MAX_SOURCE_BYTES / 1_000
-                        );
-                    }
-                    files.push((label, truncated_text));
-                }
-                Err(e) => eprintln!(
-                    "warning: skipping unreadable `source:` {}: {e}",
-                    path.display()
-                ),
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("cannot read `source:` {}", path.display()))?;
+            let label = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            let (truncated_text, was_truncated) = truncate(&text);
+            if was_truncated {
+                eprintln!(
+                    "note: `{}` is larger than {} KB and was truncated for the exam prompt",
+                    label,
+                    MAX_SOURCE_BYTES / 1_000
+                );
             }
+            files.push((label, truncated_text));
         }
     }
     if urls.is_empty() && files.is_empty() {
@@ -990,6 +1011,20 @@ mod tests {
             preamble: None,
             trace: None,
         }
+    }
+
+    #[test]
+    fn an_origin_url_joins_frozen_sources_for_exam_grounding() {
+        let mut deck = deck_with_sources(&["assets/deck1/sha256-evidence.md"]);
+        deck.settings.origin = Some("https://example.org/current".to_string());
+
+        assert_eq!(
+            vec![
+                "assets/deck1/sha256-evidence.md".to_string(),
+                "https://example.org/current".to_string()
+            ],
+            examination_sources(&deck)
+        );
     }
 
     #[test]

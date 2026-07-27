@@ -62,10 +62,10 @@ fn decks_store(decks: &[&str], state_root: &Path) -> alix::store::Store {
     alix::state::open_stores(&paths, state_root).unwrap()
 }
 
-fn augmentation_text(deck: &str, state_root: &Path) -> String {
+fn augmentation_text(deck: &str) -> String {
     let deck = alix::deck::Deck::load(deck).unwrap();
     let deck_id = deck.deck_token.as_deref().unwrap();
-    let path = alix::state::Layout::new(state_root).augment_for(deck_id);
+    let path = alix::workspace::WorkspaceFiles::for_deck(&deck.path).augment_for(deck_id);
     std::fs::read_to_string(path).unwrap()
 }
 
@@ -75,7 +75,7 @@ fn write_progress_document(
     subject: &str,
     cards: &str,
 ) -> PathBuf {
-    let path = alix::state::Layout::new(state_root).progress_for(deck_id);
+    let path = alix::state::UserFiles::new(state_root).progress_for(deck_id);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
         &path,
@@ -667,7 +667,7 @@ fn a_corrupt_progress_document_fails_without_overwriting_it() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let garbage = "{ this is not valid json";
     let state_root = dir.path().join("state");
-    let store = alix::state::Layout::new(&state_root).progress_for("mathdeck");
+    let store = alix::state::UserFiles::new(&state_root).progress_for("mathdeck");
     std::fs::create_dir_all(store.parent().unwrap()).unwrap();
     std::fs::write(&store, garbage).unwrap();
 
@@ -741,7 +741,7 @@ fn augment_target_format_caches_a_reshape() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
     // The reshape is cached in the state root, not written back into the deck.
-    let cached = augmentation_text(&deck, &store);
+    let cached = augmentation_text(&deck);
     assert!(cached.contains("\"A\""), "augmentation: {cached}");
     assert!(cached.contains("LineByLine"), "augmentation: {cached}");
     // The card's own text and token are untouched (format is display-only). The
@@ -797,7 +797,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
-    let cached = augmentation_text(&deck, &store_path);
+    let cached = augmentation_text(&deck);
     assert!(
         cached.contains(virtual_id.as_str()),
         "augmentation should key a format entry by the virtual card's id: {cached}"
@@ -1449,7 +1449,7 @@ fn stats_on_a_loose_deck_resolves_the_decks_dir_root_store_like_review_does() {
     let cfg = cfg.to_str().unwrap();
 
     let garbage = "{ this is not valid json";
-    let progress = alix::state::Layout::new(decks.path()).progress_for("mathdeck");
+    let progress = alix::state::UserFiles::new(decks.path()).progress_for("mathdeck");
     std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
     std::fs::write(&progress, garbage).unwrap();
 
@@ -1477,7 +1477,7 @@ fn reset_all_clears_the_decks_dir_root_store_not_the_global_one() {
     let cfg = cfg.to_str().unwrap();
 
     let garbage = "{ this is not valid json";
-    let progress = alix::state::Layout::new(decks.path()).progress_for("mathdeck");
+    let progress = alix::state::UserFiles::new(decks.path()).progress_for("mathdeck");
     std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
     std::fs::write(&progress, garbage).unwrap();
 
@@ -1546,7 +1546,10 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     let mut progress = alix::state::open_store(Path::new(&deck), &sender_decks).unwrap();
     progress.get_or_insert("math1", 1);
     progress.save().unwrap();
-    let mut augmentation = alix::state::open_augment(Path::new(&deck), &sender_decks).unwrap();
+    let mut augmentation = alix::augment::AugmentCache::open_for_deck(
+        &alix::deck::Deck::load(Path::new(&deck)).unwrap(),
+    )
+    .unwrap();
     augmentation.set_note("math1", "shared note".to_string(), 9);
     augmentation.save().unwrap();
     let out_dir = sender.path().join("out");
@@ -1573,7 +1576,10 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     let received_state = receiver.path().join("decks");
     let received_progress = alix::state::open_store(&received_deck, &received_state).unwrap();
     assert!(received_progress.get("math1").is_none());
-    let received_augmentation = alix::state::open_augment(&received_deck, &received_state).unwrap();
+    let received_augmentation = alix::augment::AugmentCache::open_for_deck(
+        &alix::deck::Deck::load(&received_deck).unwrap(),
+    )
+    .unwrap();
     assert_eq!(Some("shared note"), received_augmentation.note("math1", 9));
 
     std::fs::write(
@@ -1581,8 +1587,10 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
         "---\nalix-id: \"mathdeck\"\n---\n## changed <!-- id: math1 -->\nlocal\n",
     )
     .unwrap();
-    let mut changed_augmentation =
-        alix::state::open_augment(&received_deck, &received_state).unwrap();
+    let mut changed_augmentation = alix::augment::AugmentCache::open_for_deck(
+        &alix::deck::Deck::load(&received_deck).unwrap(),
+    )
+    .unwrap();
     changed_augmentation.set_note("math1", "local note".to_string(), 9);
     changed_augmentation.save().unwrap();
 
@@ -1593,7 +1601,10 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     );
     assert!(replaced.status.success(), "stderr: {}", stderr(&replaced));
     assert_eq!(VALID_DECK, std::fs::read_to_string(&received_deck).unwrap());
-    let received_augmentation = alix::state::open_augment(&received_deck, &received_state).unwrap();
+    let received_augmentation = alix::augment::AugmentCache::open_for_deck(
+        &alix::deck::Deck::load(&received_deck).unwrap(),
+    )
+    .unwrap();
     assert_eq!(Some("shared note"), received_augmentation.note("math1", 9));
 }
 
@@ -1952,6 +1963,43 @@ fn generate_single_deck_writes_a_deck_file() {
 }
 
 #[test]
+fn generate_single_deck_keeps_the_explicit_public_origin() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(
+        dir.path(),
+        "---\nlink: https://mirror.example/page\n---\n\n## Generated Q\nGenerated A\n",
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+
+    let out = alix(&[
+        "generate",
+        "https://mirror.example/page",
+        "--origin",
+        "https://canonical.example/page",
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let deck = std::fs::read_to_string(ws.join("decks/gen.md")).unwrap();
+    assert!(
+        deck.contains("origin: \"https://canonical.example/page\""),
+        "{deck}"
+    );
+}
+
+#[test]
 fn generate_single_deck_print_flag_prints_without_writing() {
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");
@@ -2205,9 +2253,44 @@ fn augment_choices_caches_distractors_for_two_cards() {
         "{}",
         stdout(&out)
     );
-    let cached = augmentation_text(&deck, &store);
+    let cached = augmentation_text(&deck);
     assert!(cached.contains("W1"), "{cached}");
     assert!(cached.contains("W3"), "{cached}");
+    assert!(
+        !store.join("augment").exists(),
+        "--store selects user files and must not relocate workspace augmentation"
+    );
+}
+
+#[test]
+fn a_workspace_store_override_does_not_relocate_augmentation() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(
+        workspace.join("alix.toml"),
+        "title = \"Quiz\"\nstore = \"user-files\"\n",
+    )
+    .unwrap();
+    let deck = write(
+        &workspace.join("decks"),
+        "quiz.md",
+        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+    );
+    let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"]}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "deck", "augment", &deck, "--target", "choices", "--config", &config,
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(workspace.join("augment/quiz.json").is_file());
+    assert!(!workspace.join("user-files/augment").exists());
 }
 
 #[test]
@@ -2237,17 +2320,12 @@ fn augment_notes_caches_a_trivia_note() {
         &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    let cached = augmentation_text(&deck, &store);
+    let cached = augmentation_text(&deck);
     assert!(cached.contains("a fun fact"), "{cached}");
 }
 
 #[test]
-fn augment_without_a_store_flag_caches_beside_the_decks_dir_root_store() {
-    // Mirrors `stats_on_a_loose_deck_resolves_the_decks_dir_root_store_like_review_does`:
-    // with no `--store`, the augmentation must land in the decks-dir state
-    // root used by review, not the global platform state root (the pre-fix
-    // bug: `common::store_for` had no decks-dir fallback, so a loose deck's
-    // augmentations went missing at review time).
+fn augment_without_a_store_flag_caches_beside_the_loose_deck() {
     let decks = tempfile::tempdir().unwrap();
     let deck = write(
         decks.path(),
@@ -2272,7 +2350,7 @@ fn augment_without_a_store_flag_caches_beside_the_decks_dir_root_store() {
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
-    let cached = augmentation_text(&deck, decks.path());
+    let cached = augmentation_text(&deck);
     assert!(cached.contains("a fun fact"), "{cached}");
 }
 
@@ -2303,7 +2381,7 @@ fn augment_questions_caches_a_reworded_variant() {
         &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    let cached = augmentation_text(&deck, &store);
+    let cached = augmentation_text(&deck);
     assert!(cached.contains("Rephrased Q1?"), "{cached}");
 }
 
@@ -2367,7 +2445,7 @@ fn augment_keypoints_caches_decomposed_claims() {
         &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    let cached = augmentation_text(&deck, &store);
+    let cached = augmentation_text(&deck);
     assert!(cached.contains("point one"), "{cached}");
     assert!(cached.contains("point two"), "{cached}");
 }
@@ -2633,6 +2711,96 @@ fn workspace_init_on_an_existing_workspace_errors() {
         "stderr: {}",
         stderr(&second)
     );
+}
+
+#[test]
+fn workspace_update_previews_then_applies_without_a_second_backend_call() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path().join("workspace");
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    std::fs::write(source.join("facts.rs"), "old\nnew\n").unwrap();
+    let deck = workspace.join("decks/facts.md");
+    std::fs::write(
+        &deck,
+        format!(
+            "---\nalix-id: \"deck1\"\nsource: {}\n---\n## Old? <!-- id: oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
+            alix::parser::yaml_quote(source.to_str().unwrap())
+        ),
+    )
+    .unwrap();
+    alix::assets::freeze_member(&deck).unwrap();
+    let proposal = format!(
+        "---\nalix-id: \"deck1\"\nsource: {}\norigin: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
+        alix::parser::yaml_quote(source.to_str().unwrap()),
+        alix::parser::yaml_quote(source.to_str().unwrap())
+    );
+    let cli = fake_claude(dir.path(), &proposal);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let preview = alix(&[
+        "workspace",
+        "update",
+        workspace.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+
+    assert!(preview.status.success(), "stderr: {}", stderr(&preview));
+    assert!(
+        stdout(&preview).contains("1 retired, 1 new"),
+        "stdout: {}",
+        stdout(&preview)
+    );
+    assert!(
+        alix::deck::Deck::load(&deck)
+            .unwrap()
+            .cards
+            .iter()
+            .any(|card| card.id().as_deref() == Some("oldcard"))
+    );
+    std::fs::remove_file(&cli).unwrap();
+
+    let applied = alix(&[
+        "workspace",
+        "update",
+        workspace.to_str().unwrap(),
+        "--apply",
+    ]);
+
+    assert!(applied.status.success(), "stderr: {}", stderr(&applied));
+    let updated = alix::deck::Deck::load(&deck).unwrap();
+    assert_eq!("New?", updated.cards[0].front);
+    assert_ne!(Some("oldcard"), updated.cards[0].id().as_deref());
+    assert!(!alix::workspace_update::staging_path(&workspace).exists());
+}
+
+#[test]
+fn workspace_update_discard_leaves_the_workspace_untouched() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    let staging = alix::workspace_update::staging_path(&workspace);
+    std::fs::create_dir(&staging).unwrap();
+    std::fs::write(staging.join("proposal"), "candidate").unwrap();
+
+    let out = alix(&[
+        "workspace",
+        "update",
+        workspace.to_str().unwrap(),
+        "--discard",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(!staging.exists());
+    assert!(workspace.join("alix.toml").is_file());
 }
 
 // ── `alix reset`: remaining branches ─────────────────────────────────────────

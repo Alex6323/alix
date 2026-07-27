@@ -1,6 +1,7 @@
 # 0015: Frozen source snapshots
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0021](0021-deck-owned-frozen-assets.md)
 - Recorded: 2026-07-24
 - Retrospective: Yes
 - Refined by: [ADR 0020](0020-source-excerpt-integrity.md)

@@ -199,12 +199,10 @@ pub fn keypoint_grade(covered: u32, total: u32) -> Grade {
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn seed_choice_distractors(deck_path: String, root_dir: String) -> Result<()> {
+pub fn seed_choice_distractors(deck_path: String, _root_dir: String) -> Result<()> {
     let deck_pb = PathBuf::from(&deck_path);
     let deck = alix::deck::Deck::load(&deck_pb)?;
-    let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
-    let store = alix::assemble::store_for(std::slice::from_ref(&deck_pb), Some(&root_store))?;
-    let mut cache = alix::augment::AugmentCache::open_for_store(store.path())?;
+    let mut cache = alix::augment::AugmentCache::open_for_deck(&deck)?;
     for card in &deck.cards {
         if let Some(id) = card.id() {
             cache.set_distractors(
@@ -843,7 +841,7 @@ mod tests {
             "## capital of france?\nParis\n",
         );
 
-        for (deck, state_root) in [
+        for (deck, user_root) in [
             (root.join("loose.md"), root.to_path_buf()),
             (root.join("ws/decks/member.md"), root.join("ws")),
         ] {
@@ -854,7 +852,7 @@ mod tests {
             );
             s.grade(Grade::Pass, Some(LATER)).unwrap();
             let deck_id = alix::deck::Deck::load(&deck).unwrap().deck_token.unwrap();
-            let store_file = alix::state::Layout::new(&state_root).progress_for(&deck_id);
+            let store_file = alix::state::UserFiles::new(&user_root).progress_for(&deck_id);
             let json = std::fs::read_to_string(&store_file).unwrap();
             assert!(
                 json.contains("\"recall\"") && json.contains("\"history\""),
@@ -947,9 +945,7 @@ mod tests {
         );
         alix::stamp::stamp_deck(&root.join("d.md")).unwrap();
         let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
-        let store_path = alix::workspace::root_store_path(root);
-        let store = alix::state::open_store(&root.join("d.md"), &store_path).unwrap();
-        let mut cache = alix::augment::AugmentCache::open_for_store(store.path()).unwrap();
+        let mut cache = alix::augment::AugmentCache::open_for_deck(&loaded).unwrap();
         for card in &loaded.cards {
             cache.set_distractors(
                 &card.id().expect("the fixture stamps its own id"),
@@ -1000,10 +996,8 @@ mod tests {
             "no cached keypoints: the rubric is the authored back"
         );
 
-        let store_path = alix::workspace::root_store_path(root);
         let deck = alix::deck::Deck::load(root.join("d.md")).unwrap();
-        let store = alix::state::open_store(&root.join("d.md"), &store_path).unwrap();
-        let mut cache = alix::augment::AugmentCache::open_for_store(store.path()).unwrap();
+        let mut cache = alix::augment::AugmentCache::open_for_deck(&deck).unwrap();
         cache.set_keypoints(
             &deck.cards[0].id().expect("the fixture stamps its own id"),
             vec!["one claim".to_string()],
@@ -1355,11 +1349,11 @@ mod tests {
         walk: Vec<String>,
         regions: Vec<(&str, Vec<String>)>,
     ) {
-        let store_path = alix::workspace::root_store_path(root);
-        let layout = alix::state::Layout::new(&store_path);
-        let mut cache =
-            alix::augment::AugmentCache::open_deck(layout.augment_for(deck_token), deck_token)
-                .unwrap();
+        let mut cache = alix::augment::AugmentCache::open_deck(
+            alix::workspace::WorkspaceFiles::new(root).augment_for(deck_token),
+            deck_token,
+        )
+        .unwrap();
         cache.add_topology(alix::augment::Topology {
             name: "auto".to_string(),
             principle: "test order".to_string(),

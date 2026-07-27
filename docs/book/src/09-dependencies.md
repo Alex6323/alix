@@ -41,11 +41,13 @@ gate is the **exam**, not drilling. You can review any deck at any time, in any
 order; what `requires:` controls is **exam order**: a deck with a `source:`
 can't sit its exam until each of its *sourced* prerequisites has passed its own
 exam, and passing a foundation's exam unlocks the exams that build on it. A
-**source-less** prerequisite has no exam to pass, so it never gates: its edge is
-just a suggested order in the tree. (`alix doctor` warns when a sourced deck
-requires a source-less one, since that edge can't gate an exam; add a `source:`
-to the prerequisite to make it real.) (A **trace** masters by passing its exam
-(retracing the path from memory) so it gates and unlocks like any sourced deck.)
+prerequisite with neither `source:` evidence nor a public URL `origin:` has no
+exam to pass, so it never gates: its edge is just a suggested order in the
+tree. (`alix doctor` warns when an exam-grounded deck requires one without exam
+grounding, since that edge can't gate an exam; add evidence or a URL origin to
+the prerequisite to make it real.) (A **trace** masters by passing its exam
+(retracing the path from memory) so it gates and unlocks like any exam-grounded
+deck.)
 
 In the picker a deck whose exam is locked shows a 🔒, but it stays **drillable**:
 only the exam waits on the prerequisites.

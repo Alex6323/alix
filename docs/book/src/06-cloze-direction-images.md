@@ -141,9 +141,9 @@ from and fingerprints every citation. Plain
 fingerprint drift without writing. After reviewing the cited text,
 `alix doctor <deck> --repair-source-locators` stamps a missing fingerprint or
 rebases a uniquely relocated exact excerpt; changed or ambiguous excerpts
-remain untouched for semantic review. A workspace built with `alix generate`
-goes one further and
-**freezes** the cited excerpts into its `assets/`, so the workspace travels without
-the original source and the quotes never shift. It also records where they came
-from in an `<!-- origin: ... -->` directive, so the tutor can still reach the live
-source, and `alix doctor` can flag a frozen card whose source has since **drifted**.
+remain untouched for semantic review. Initializing a workspace member goes one
+further and **freezes** its source evidence and local images below
+`assets/<alix-id>/`, so the deck travels without the original source and the
+quotes never shift. `origin:` and each citation's `from` value preserve where
+the evidence came from for drift reporting without making runtime review depend
+on the live source.

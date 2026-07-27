@@ -76,8 +76,10 @@ test("a stale source range warns instead of showing unrelated lines", async ({ p
 
   const warning = page.locator(".source-stack .cite-err");
   await expect(warning).toBeVisible();
-  await expect(warning).toContainText("⚠ 1-3");
-  await expect(warning).toContainText("moved to `5-7`");
+  await expect(warning).toContainText(":1-3");
+  await expect(warning).toContainText("moved to `");
+  await expect(warning).toContainText(":5-7`");
+  await expect(warning).toContainText("alix doctor --repair-source-locators");
   await expect(page.locator(".source-stack .source-excerpt")).toHaveCount(0);
   await expect(page.locator(".source-stack")).not.toContainText("wrong()");
 });

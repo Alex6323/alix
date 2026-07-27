@@ -33,6 +33,9 @@ spanish/
 ├── decks/
 │   └── verbs.md
 ├── assets/
+│   ├── icon.svg
+│   └── <alix-id>/
+│       └── sha256-<digest>.<ext>
 ├── progress/
 └── augment/
 ```
@@ -49,6 +52,44 @@ by discovery. Root-level Markdown is never a workspace member, so README-style
 prose and notes can live beside `alix.toml` without becoming picker entries or
 being stamped. A generic frontmatter `id` is ordinary document metadata and
 does not initialize a deck.
+
+Initialization also makes the member portable. Explicit source files are copied
+in full, directory-backed citations are copied as bounded excerpts, and local
+card images are copied into `assets/<alix-id>/`. Every managed filename is the
+SHA-256 address of its exact bytes. The deck is not initialized successfully if
+required evidence or an image cannot be copied.
+
+## Updating from the live source
+
+Frozen evidence is deliberately stable. It does not follow later source edits
+in the background. Reconcile every frozen source-backed member explicitly:
+
+```sh
+alix workspace update ~/decks/spanish
+```
+
+The command gives its AI backend read-only access to each recorded local
+`origin`, then writes one exact proposal into a dot-prefixed sibling workspace.
+The original workspace remains untouched. Inspect the proposed decks and
+evidence there, then publish those exact bytes without another model call:
+
+```sh
+alix workspace update ~/decks/spanish --apply
+```
+
+Use `--discard` instead to remove the proposal. Apply refuses if an original
+deck changed after staging.
+
+A card ID belongs to one learning proposition. An unchanged question and
+answer may keep its ID while its note or source locator improves. If the
+question, answer, cloze, or learning image changes, the old card and ID retire
+together and the replacement receives a fresh ID during staging. Obsolete
+cards are removed rather than rewritten in place under their old learning
+history.
+
+The first update implementation accepts local file and directory origins. A
+remote URL origin remains review and tutor context, but cannot yet be captured
+as a new portable snapshot.
 
 Now open the cluster and drill its members one at a time:
 
@@ -102,28 +143,35 @@ The session depth (Recognize/Recall/Reconstruct) isn't a workspace setting.
 It's picked per session, the same as for a loose deck (see
 [Reveal & session depths](04-review-modes.md)).
 
-## Its own progress
+## Its own files
 
-A workspace keeps its state **at the workspace root**, split by stable deck ID:
+A workspace keeps shareable material at the workspace root and private
+learning state in its selected user-files root:
 
 ```text
-progress/<alix-id>.json   # private schedules, history, exams, virtual cards
 augment/<alix-id>.json    # shareable generated choices, notes, and topologies
+assets/<alix-id>/         # shareable frozen excerpts and local images
+progress/<alix-id>.json   # private schedules, history, exams, virtual cards
 ```
 
-This state is separate from the equivalent directories in your main decks
-folder. Renaming a deck file leaves both paths unchanged because the filename
-comes from its `alix-id`, not its display name. A `store = "..."` line in
-`alix.toml` overrides the state-root directory.
+Renaming a deck file leaves these paths unchanged because the name comes from
+its `alix-id`, not its display name. By default the private files are colocated
+with the workspace, so folder synchronization carries progress too. A
+`store = "..."` line in `alix.toml` moves only private files such as
+`progress/` and `recent.json`; augmentation and assets stay beside the decks
+they describe.
 
 That makes a workspace a **self-contained, portable unit** for moving, backup,
 and folder synchronization: authored decks in `decks/`, frozen excerpts and
-icons in `assets/`, and state all live under one boundary. Sharing is
-deliberately narrower and strips personal progress. Decks outside any workspace
-use the state root in your decks directory. The CLI commands (`alix
-stats`/`list`/`reset`) take a deck file, a plain folder, **or a workspace**: a
-folder or workspace expands to its member decks, each resolved against the same
-state root the launcher would serve it with (`--store <path>` still overrides).
+images in deck-owned `assets/<alix-id>/` directories, workspace icons directly
+in `assets/`, and shareable augmentation all live under one boundary. Sharing
+strips progress and local configuration while carrying the matching
+augmentation and assets. Decks outside any workspace keep shareable material
+beside the deck and private files in the selected user-files root. The CLI
+commands (`alix stats`/`list`/`reset`) take a deck file, a plain folder, **or a
+workspace**: a folder or workspace expands to its member decks, each resolved
+against the same user-files root the launcher would use (`--store <path>` still
+overrides private files only).
 
 ## In the picker
 
@@ -163,8 +211,9 @@ with its `decks/` structure intact.
 other side runs `alix receive <code>` and gets it beside their own decks, ready
 to serve with `alix <dir>`. Precomputed augmentation documents matching the
 shared decks travel: the AI content comes along, unrelated augmentation and
-progress do not. A single-deck share follows the same rule and lands as a normal
-`.md` deck plus its augmentation. Also available from the web UI's ☰ menu
+progress do not. A single-deck share carries the `.md` member, its complete
+`assets/<alix-id>/` directory, and its matching augmentation. Also available
+from the web UI's ☰ menu
 (**Share…** / **Add deck…** → Receive), with a `.zip` download/upload fallback
 when neither side has `wormhole` installed.
 

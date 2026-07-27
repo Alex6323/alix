@@ -19,7 +19,8 @@ pub struct DeckInfo {
     pub path: PathBuf,
     pub deck_token: Option<String>,
     pub links: Vec<String>,
-    pub source_root: Option<PathBuf>,
+    pub origin_url: Option<String>,
+    pub origin_root: Option<PathBuf>,
     pub source_access: bool,
     pub source_base: SourceBase,
 }

@@ -11,6 +11,7 @@ pub mod answer;
 #[cfg(feature = "full")]
 pub mod ask;
 pub mod assemble;
+pub mod assets;
 pub mod augment;
 #[cfg(feature = "full")]
 pub mod augment_ai;
@@ -71,6 +72,8 @@ pub mod trace;
 pub mod trace_ai;
 pub mod tutorial;
 pub mod workspace;
+#[cfg(feature = "full")]
+pub mod workspace_update;
 
 // Only the AI-facing modules use these fake-CLI helpers, and they're all
 // gated behind `full`.

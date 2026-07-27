@@ -27,11 +27,12 @@ needn't repeat it as a `link:`. The reverse doesn't hold: a `link:` stays
 tutor-only and never becomes exam ground truth: keep supplementary reading (a
 blog post, an SO answer) as `link:` so the exam ignores it.
 
-Once every card in a sourced deck has **graduated** (reached FSRS's review phase,
-past the initial learning steps) the deck is **exam due** rather than finished:
-drilled, but not yet counted, so it doesn't unlock its dependents yet. (A
-source-less deck simply becomes *finished* when all its cards graduate, unlocking
-its dependents directly.)
+Once every card in an exam-grounded deck has **graduated** (reached FSRS's
+review phase, past the initial learning steps) the deck is **exam due** rather
+than finished: drilled, but not yet counted, so it doesn't unlock its
+dependents yet. A deck with neither `source:` evidence nor a public URL
+`origin:` simply becomes *finished* when all its cards graduate, unlocking its
+dependents directly.
 
 ## Sitting the exam
 

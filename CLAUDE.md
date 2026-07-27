@@ -109,6 +109,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make test` | Run the test suite (the primary gate). |
 | `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
 | `make lint` | `cargo clippy --all-targets`. |
+| `make deps-check` | Reject newly introduced incompatible dependency families against the reviewed baseline; run before and after changing dependencies. |
 | `make pre-1-0-check` | Reject backwards-compatibility vocabulary in production code while the package is `0.x`. |
 | `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |
 | `make toolchain-check` | Enforce exact production toolchains, full-SHA Action references, and named drift-only exceptions. |
@@ -377,11 +378,14 @@ to this codebase. When in doubt, mirror the surrounding code.
   `## [Unreleased]` → Changed. Persisted format versions for replacement
   designs restart at `1`. Migration policy begins only after 1.0.
 - **No new dependency without a one-line reason.** Each crate added is permanent
-  maintenance and supply-chain surface — reach for std or an existing dep first,
-  and when a new one genuinely earns its place, say why in the commit. The
-  Cargo.toml comment states only what the dep is *for* (its purpose, one line);
-  the justification against these rules goes in the commit message, never into
-  the file.
+  maintenance and supply-chain surface; reach for std or an existing dep first.
+  Run `make deps-check` before editing dependency requirements and again after
+  resolving the lockfile. Align with an already compiled compatible family when
+  possible; a baseline change requires explicit maintainer review. When a new
+  dependency genuinely earns its place, say why in the commit. The Cargo.toml
+  comment states only what the dep is *for* (its purpose, one line); the
+  justification against these rules goes in the commit message, never into the
+  file.
 - **Counterweight to the above: don't hand-roll a correctness-critical commodity.** A standard,
   well-specified algorithm (scheduler, standard-format parser, crypto) should come from a
   maintained crate — re-implementing it from a spec is the *higher*-risk choice. Separate a

@@ -833,8 +833,8 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
                 dto.note_runs = c.note.as_deref().map(|note| projector.project(note));
                 match trace.excerpt(c) {
                     Ok(ex) => {
-                        // For a frozen-snapshot asset, relabel to the ORIGINAL
-                        // source so the gutter shows real line numbers, not the asset's.
+                        // Relabel a content-addressed excerpt to its authored source
+                        // so the gutter shows authored line numbers.
                         let (ex, label) = relabel_for_display(ex, c.at_origin.as_deref());
                         if let Some(label) = label {
                             dto.locator = Some(label);
@@ -981,8 +981,8 @@ pub(super) fn review_state(
                 if let Some(base) = r.source_bases.get(&*c.subject) {
                     match base.checked_excerpt(citation) {
                         Ok(ex) => {
-                            // Relabel a frozen-snapshot asset to its real source
-                            // and line numbers, so the citation reads
+                            // Relabel a content-addressed excerpt to its authored
+                            // source and line numbers, so the citation reads
                             // `store.rs:36-66`, not the asset's own numbering.
                             let (ex, label) = relabel_for_display(ex, citation.origin.as_deref());
                             if let Some(label) = label {

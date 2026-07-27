@@ -8,14 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix workspace update <dir>` reconciles frozen source-backed members with
+  their recorded local origins. It stages an exact sibling workspace for
+  review, then `--apply` publishes those same bytes without another model call
+  or `--discard` removes them. Retained IDs require unchanged learning content;
+  changed and obsolete cards retire with their IDs, while replacements receive
+  fresh IDs during staging.
 - Plain fact cards can carry multiple `<!-- at: ... -->` citations. The adult
   source view resolves every locator and stacks the editor-style excerpts in
   authored order inside one scrollable answer region.
 - `alix doctor --repair-source-locators` explicitly fingerprints reviewed
   source citations and rebases a uniquely relocated exact excerpt while
   preserving deck and card IDs. Plain doctor remains read-only.
-- `alix doctor` flags aggregate `progress.json`/`augment.json` files that are
-  never read, with the advice to back them up and delete them.
 - A private vulnerability-reporting policy and a tracked threat model covering
   local files, LAN pairing, AI providers, sharing, persistence, mobile, and
   release boundaries.
@@ -28,6 +32,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Dependency changes now pass a reviewed duplicate-family gate through
+  `make deps-check`, preventing an avoidable second compiled version from
+  entering the graph unnoticed.
+- **Breaking (pre-1.0):** initializing a source-backed workspace member now
+  freezes explicit source files, bounded directory citations, and local card
+  images before success. Exact bytes live under
+  `assets/<alix-id>/sha256-<digest>.<ext>`; frozen `source:` values enumerate
+  their evidence files, runtime source consumers fail closed on live,
+  cross-deck, missing, or corrupted assets, and `origin:` is separately gated
+  current context rather than a replacement for frozen evidence.
+- Single-deck sharing now carries and validates the complete deck-owned asset
+  directory plus matching augmentation while continuing to exclude progress.
+  Generated workspaces freeze in hidden staging before publication, and merges
+  add immutable objects without replacing unrelated decks' assets.
+- **Breaking (pre-1.0):** typed `WorkspaceFiles` and `UserFiles` owners now
+  separate shareable deck material from private learning state. Assets and
+  per-deck augmentation stay with the workspace content; `--store` and a
+  workspace `store` setting relocate only progress and recent history. Sharing
+  carries matching assets and augmentation while excluding progress and local
+  configuration.
+- Tutor and exam grounding now combines frozen evidence with an optional
+  current origin. URL origins are fetched only when the backend and tool grant
+  permit it; local origins still require explicit source access. The tutor
+  continues from frozen evidence with a visible warning when the full current
+  source is unavailable. `alix generate --origin <URL>` retains a portable
+  current source in generated decks and workspace defaults.
 - **Breaking (web/mobile APIs):** `CardDto` and the shared mobile `CardView`
   replace the single `at` citation with ordered `citations`; web citation
   entries carry their resolved excerpt or per-locator error. Both views also
@@ -40,12 +70,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   creation; hand-authored citations remain incomplete until explicitly
   reviewed and stamped.
 - **Breaking (pre-1.0):** workspace member decks now live only under direct
-  `decks/*.md` children. Manifests, assets, progress, and augmentation remain at
-  the workspace root; relative member sources, origins, and images also anchor
-  there. Workspace creation and every generation/import/receive surface write
-  the new shape, while `alix doctor` reports initialized root decks that are not
-  discovered. Existing workspaces must move their deck files into `decks/`
-  without changing `alix-id` or card IDs.
+  `decks/*.md` children. Manifests, assets, and augmentation remain at the
+  workspace root; private progress is colocated there by default but may use a
+  separate user-files root. Relative member sources, origins, and images anchor
+  at the workspace. Workspace creation and every generation/import/receive
+  surface write the new shape, while `alix doctor` reports initialized root
+  decks that are not discovered. Existing workspaces must move their deck files
+  into `decks/` without changing `alix-id` or card IDs.
 - **Breaking (pre-1.0):** progress and AI augmentation now live in independently
   versioned documents per initialized deck:
   `progress/<alix-id>.json` and `augment/<alix-id>.json`. Renaming a deck keeps
@@ -75,7 +106,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking (pre-1.0):** grounded tutor filesystem access now requires an
   explicit deck or workspace `origin`. A local `source` citation still supplies
   the card's evidence, but alix no longer guesses a wider project root from
-  `Cargo.toml`, `.git`, or other markers.
+  `Cargo.toml`, `.git`, or other markers. A public URL origin can supply current
+  context when `WebFetch` is available.
 - Trace source excerpts now highlight exact, case-sensitive terms that the checkpoint author marked as inline code in its key points.
 - **Additive (web API):** card display projection now comes from the shared Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`, and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays in index lockstep with its existing text field. `CardDto` continues to expose text fallback for clients that ignore the new fields.
 - **Additive (web/mobile APIs):** trace walk state now carries inline-run projections for its description, checkpoint prompt, givens, key points, and note alongside the existing raw strings.

@@ -378,7 +378,7 @@ fn warn_if_source_stale(id: &str, display: &str, root: &Path) {
     }
 }
 
-/// The five library calls that turn (source, goal) into a filled, snapshotted
+/// The five library calls that turn (source, goal) into a filled, frozen
 /// workspace — the same sequence `alix explore --build` runs internally.
 fn build_workspace(
     root: &Path,
@@ -391,10 +391,16 @@ fn build_workspace(
     let source: &str = &source_text;
     let (plan, filled) = alix::explore::explore_and_fill(source, goal, &config.trace, &config.ask)
         .context("explore/fill failed")?;
-    let report = alix::explore::materialize(&plan, ws, goal, Some(title), source, Some(&filled))
-        .context("failed to materialize the workspace")?;
-    if let Err(e) = alix::explore::snapshot_workspace(&report.dir) {
-        eprintln!("warning: source snapshot failed: {e}");
+    let report =
+        alix::explore::materialize(&plan, ws, goal, Some(title), source, None, Some(&filled))
+            .context("failed to materialize the workspace")?;
+    let frozen =
+        alix::explore::freeze_workspace(&report.dir).context("failed to freeze source assets")?;
+    if !frozen.failed.is_empty() {
+        bail!(
+            "source assets could not be frozen:\n{}",
+            frozen.failed.join("\n")
+        );
     }
     if std::env::var("ALIX_REVIEW_ICON").as_deref() == Ok("1")
         && let Err(e) = alix::icon::generate(&report.dir, None, &config.ask)

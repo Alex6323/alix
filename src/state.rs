@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::{
-    augment::{self, AugmentCache},
     deck::{Deck, DeckError},
     store::{self, Store, StoreError},
 };
@@ -20,8 +19,6 @@ pub enum StateError {
     Deck(#[from] DeckError),
     #[error(transparent)]
     Store(#[from] StoreError),
-    #[error(transparent)]
-    Augment(#[from] augment::AugmentError),
     #[error("{path}: deck is not initialized")]
     MissingDeckId { path: PathBuf },
     #[error("{path}: expected a progress document or directory")]
@@ -29,28 +26,35 @@ pub enum StateError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Layout {
-    pub root: PathBuf,
-    pub progress: PathBuf,
-    pub augment: PathBuf,
+pub struct UserFiles {
+    root: PathBuf,
 }
 
-impl Layout {
+impl UserFiles {
     pub fn new(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref().to_path_buf();
         Self {
-            progress: root.join("progress"),
-            augment: root.join("augment"),
-            root,
+            root: root.as_ref().to_path_buf(),
         }
     }
 
-    pub fn progress_for(&self, deck_id: &str) -> PathBuf {
-        self.progress.join(format!("{deck_id}.json"))
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
-    pub fn augment_for(&self, deck_id: &str) -> PathBuf {
-        self.augment.join(format!("{deck_id}.json"))
+    pub fn progress(&self) -> PathBuf {
+        self.root.join("progress")
+    }
+
+    pub fn progress_for(&self, deck_id: &str) -> PathBuf {
+        self.progress().join(format!("{deck_id}.json"))
+    }
+
+    pub fn recent(&self) -> PathBuf {
+        self.root.join("recent.json")
+    }
+
+    pub fn local_manifest(&self) -> PathBuf {
+        self.root.join(crate::config::LOCAL_MANIFEST)
     }
 }
 
@@ -61,65 +65,43 @@ pub fn deck_id_from_document(path: &Path) -> Option<&str> {
         .filter(|id| !id.is_empty())
 }
 
-pub fn open_store(deck_path: &Path, state_root: &Path) -> Result<Store, StateError> {
-    let (layout, deck) = prepare(deck_path, state_root)?;
-    let deck_id = require_deck_id(&deck, deck_path)?;
-    let mut store = Store::open_deck(
-        layout.progress_for(deck_id),
-        deck_id.to_string(),
-        deck.subject,
-    )?;
+pub fn open_store(deck_path: &Path, user_root: &Path) -> Result<Store, StateError> {
+    let (files, deck, deck_id) = prepare(deck_path, user_root)?;
+    let mut store = Store::open_deck(files.progress_for(&deck_id), deck_id, deck.subject)?;
     store.device = store::device_label();
     Ok(store)
 }
 
-pub fn open_stores(deck_paths: &[PathBuf], state_root: &Path) -> Result<Store, StateError> {
+pub fn open_stores(deck_paths: &[PathBuf], user_root: &Path) -> Result<Store, StateError> {
     if let [deck_path] = deck_paths {
-        return open_store(deck_path, state_root);
+        return open_store(deck_path, user_root);
     }
     let decks = deck_paths
         .iter()
         .map(Deck::load)
         .collect::<Result<Vec<_>, _>>()?;
-    let mut store = Store::open_for_decks(Layout::new(state_root).progress, &decks)?;
+    let mut store = Store::open_for_decks(UserFiles::new(user_root).progress(), &decks)?;
     store.device = store::device_label();
     Ok(store)
 }
 
-pub fn open_aggregate_store(state_root: &Path) -> Result<Store, StateError> {
-    let mut store = Store::open(Layout::new(state_root).progress)?;
+pub fn open_aggregate_store(user_root: &Path) -> Result<Store, StateError> {
+    let mut store = Store::open(UserFiles::new(user_root).progress())?;
     store.device = store::device_label();
     Ok(store)
 }
 
-pub fn open_augment(deck_path: &Path, state_root: &Path) -> Result<AugmentCache, StateError> {
-    let (layout, deck) = prepare(deck_path, state_root)?;
-    let deck_id = require_deck_id(&deck, deck_path)?;
-    Ok(AugmentCache::open_deck(
-        layout.augment_for(deck_id),
-        deck_id,
-    )?)
-}
-
-pub fn open_augment_read_only(
-    deck_id: &str,
-    state_root: &Path,
-) -> Result<AugmentCache, StateError> {
-    Ok(AugmentCache::open_deck(
-        Layout::new(state_root).augment_for(deck_id),
-        deck_id,
-    )?)
-}
-
-pub fn prepare(deck_path: &Path, state_root: &Path) -> Result<(Layout, Deck), StateError> {
+pub fn prepare(
+    deck_path: &Path,
+    user_root: &Path,
+) -> Result<(UserFiles, Deck, String), StateError> {
     let deck = Deck::load(deck_path)?;
-    require_deck_id(&deck, deck_path)?;
-    Ok((Layout::new(state_root), deck))
+    let deck_id = require_deck_id(&deck, deck_path)?.to_string();
+    Ok((UserFiles::new(user_root), deck, deck_id))
 }
 
-pub fn retire_replaced_deck(store_path: &Path, deck_id: &str) -> Result<bool, StateError> {
+pub fn retire_replaced_progress(store_path: &Path, deck_id: &str) -> Result<bool, StateError> {
     let progress = progress_document_for(store_path, deck_id)?;
-    let augment = augment::augment_path_for(&progress);
     if progress.is_file() {
         let (_, _, data) = store::read_deck_data(&progress, deck_id, None)?;
         if !data.cards.is_empty()
@@ -129,16 +111,6 @@ pub fn retire_replaced_deck(store_path: &Path, deck_id: &str) -> Result<bool, St
         {
             return Ok(false);
         }
-    }
-    if augment.is_file() {
-        let (_, data) = augment::read_deck_data(&augment, deck_id)?;
-        if !data.cards.is_empty() || !data.topologies.is_empty() {
-            return Ok(false);
-        }
-        std::fs::remove_file(&augment).map_err(|source| StateError::Io {
-            path: augment,
-            source,
-        })?;
     }
     if progress.is_file() {
         std::fs::remove_file(&progress).map_err(|source| StateError::Io {
@@ -199,16 +171,13 @@ mod tests {
     }
 
     #[test]
-    fn a_state_root_addresses_both_documents_by_deck_id() {
-        let layout = Layout::new("/data/alix");
+    fn user_files_address_private_documents() {
+        let files = UserFiles::new("/data/alix");
         assert_eq!(
             Path::new("/data/alix/progress/deck1.json"),
-            layout.progress_for("deck1")
+            files.progress_for("deck1")
         );
-        assert_eq!(
-            Path::new("/data/alix/augment/deck1.json"),
-            layout.augment_for("deck1")
-        );
+        assert_eq!(Path::new("/data/alix/recent.json"), files.recent());
     }
 
     #[test]

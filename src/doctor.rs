@@ -76,7 +76,7 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
             );
         }
     };
-    let progress = crate::state::Layout::new(&path).progress;
+    let progress = crate::state::UserFiles::new(&path).progress();
     match crate::store::Store::open(progress) {
         Ok(store) => Finding::ok(
             "store",
@@ -134,15 +134,7 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             .into_owned();
         match Deck::load(path) {
             Ok(deck) => {
-                let augment = path.parent().and_then(|dir| {
-                    deck.deck_token.as_deref().and_then(|deck_id| {
-                        crate::state::open_augment_read_only(
-                            deck_id,
-                            &workspace::root_store_path(dir),
-                        )
-                        .ok()
-                    })
-                });
+                let augment = crate::augment::AugmentCache::open_for_deck(&deck).ok();
                 for diagnostic in crate::math::diagnostics(&deck.cards, augment.as_ref()) {
                     malformed_math.push(format!("{name}: {diagnostic}"));
                 }

@@ -84,6 +84,7 @@ grading and card identity keep using the source text.
 | `alix generate <source>` | Draft a deck, a trace (`--trace`), or a whole workspace |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix workspace init <dir>` | Scaffold an empty workspace to grow into |
+| `alix workspace update <dir>` | Stage a source-aware card update; inspect it, then `--apply` |
 | `alix workspace deadline <dir> [<date>\|clear]` | Show, set, or clear a workspace's "ready by" date |
 | `alix <dir>` | Serve a folder or workspace as its own scoped instance |
 | `alix deck import <file.tsv>` | Import an Anki TSV export (`--workspace` places it) |
@@ -116,9 +117,10 @@ Each links to its chapter in the manual:
   → [Workspaces](docs/book/src/08-workspaces.md), [Explore](docs/book/src/14-explore.md)
 - **A local web app** for review and the exam, LAN-shareable, no accounts or
   database. → [The web app](docs/book/src/15-the-web-app.md)
-- **Self-contained, portable decks.** Your decks and their progress live in one
-  folder; drop it in a cloud drive (Dropbox, iCloud, Syncthing) and it follows
-  you across devices, no accounts. → [Configuration](docs/book/src/16-configuration.md)
+- **Self-contained, portable decks.** Decks, frozen assets, and generated
+  augmentation travel together. Progress is colocated by default for cloud
+  drive or Syncthing use, or can stay in a private user-files root, no accounts.
+  → [Configuration](docs/book/src/16-configuration.md)
 - **A personal deadline on a workspace**, with scheduling that leans toward it
   and a readiness readout. → [Workspaces](docs/book/src/08-workspaces.md)
 - **A paired phone** can borrow your desktop's AI for the tutor and the exam,

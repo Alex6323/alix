@@ -382,7 +382,7 @@ fn spawn_full_server_fixture(
             .map(|deck| deck.path.clone())
             .collect::<Vec<_>>();
         let mut seed = alix::state::open_stores(&deck_paths, &store_path).unwrap();
-        let mut aug = AugmentCache::open_for_decks(seed.path(), &decks).unwrap();
+        let mut aug = AugmentCache::open_for_decks(dir.path(), &decks).unwrap();
         for card in parser::parse_str("choice.md", CHOICE_DECK).unwrap() {
             seed.get_or_insert(&card.id().unwrap(), 0);
         }
@@ -860,7 +860,8 @@ fn a_workspace_row_name_is_not_selectable() {
 #[test]
 fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store() {
     let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
-    let ws_store = alix::state::Layout::new(guard.dir().join("animals")).progress_for("animalone");
+    let ws_store =
+        alix::state::UserFiles::new(guard.dir().join("animals")).progress_for("animalone");
     assert!(!ws_store.exists(), "no review has happened yet");
 
     let decks_resp = http(&base, "GET", "/api/decks", &[], &[]);
@@ -887,7 +888,7 @@ fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store(
         "the workspace's own progress document must receive the grade write"
     );
     assert!(
-        !alix::state::Layout::new(state_root(guard.dir()))
+        !alix::state::UserFiles::new(state_root(guard.dir()))
             .progress_for("sample")
             .exists(),
         "the instance state root must not receive a workspace member's progress"
@@ -1586,7 +1587,8 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
             let cards = parser::parse_str("frb.md", CLOZE_DECK).unwrap();
             let deck_path = dir.join("frb.md");
             let fixture_state = state_root(dir);
-            let mut cache = alix::state::open_augment(&deck_path, &fixture_state).unwrap();
+            let deck = alix::deck::Deck::load(&deck_path).unwrap();
+            let mut cache = alix::augment::AugmentCache::open_for_deck(&deck).unwrap();
             for c in &cards {
                 cache.set_distractors(
                     &c.id().unwrap(),

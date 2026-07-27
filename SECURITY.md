@@ -48,15 +48,16 @@ Alix is local-first, but some optional features cross trust boundaries:
 - the web server binds to loopback by default; LAN mode is for a trusted local
   network and uses plain HTTP with a bearer-style pairing token;
 - AI features run a separately installed provider CLI and may send prompts,
-  card content, cited excerpts, or explicitly granted live-source context to
-  that provider;
+  card content, cited excerpts, fetched public origins, or explicitly granted
+  local-origin context to that provider;
 - a `source` citation identifies evidence but does not activate Alix's
   live-source grant; `[ask] source_access = true` also requires an explicit
   deck or workspace `origin`;
 - each per-deck progress document supports one active writer; independently
   owned decks may be written on different devices, but synchronization conflict
   warnings are not authentication or a same-deck merge protocol; and
-- received decks, archives, workspace manifests, snapshots, and generated
+- received decks, archives, workspace manifests, frozen source and image
+  assets, and generated
   Markdown are untrusted input and may disclose their authored contents when
   reviewed, shared, or sent to an AI provider.
 

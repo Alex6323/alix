@@ -16,6 +16,9 @@ use crate::{
 
 pub type Exchange = (String, String);
 
+pub const FROZEN_ONLY_WARNING: &str =
+    "The tutor has the frozen excerpts, but not the full original source context.";
+
 pub enum Reply {
     Answer(String),
     Error(String),
@@ -104,19 +107,16 @@ fn random_uuid() -> String {
     )
 }
 
-pub const SOURCE_NOT_FOUND: &str =
-    "I couldn't find the source material of this card to provide a grounded answer.";
-
 pub fn question_prompt(
     card: &Card,
     audience: Audience,
     links: &[String],
     question: &str,
     first: bool,
-    source_root: Option<&Path>,
+    origin_root: Option<&Path>,
     frozen: Option<&str>,
 ) -> String {
-    let mut p = question_context(card, audience, links, first, source_root, frozen);
+    let mut p = question_context(card, audience, links, first, origin_root, frozen);
     p.push_str("\nThe user's question: ");
     p.push_str(question);
     p
@@ -130,10 +130,10 @@ pub fn question_prompt_with_history(
     links: &[String],
     prior: &[Exchange],
     question: &str,
-    source_root: Option<&Path>,
+    origin_root: Option<&Path>,
     frozen: Option<&str>,
 ) -> String {
-    let mut p = question_context(card, audience, links, true, source_root, frozen);
+    let mut p = question_context(card, audience, links, true, origin_root, frozen);
     for (q, a) in prior {
         p.push_str("\nThe user's question: ");
         p.push_str(q);
@@ -175,7 +175,7 @@ fn question_context(
     audience: Audience,
     links: &[String],
     first: bool,
-    source_root: Option<&Path>,
+    origin_root: Option<&Path>,
     frozen: Option<&str>,
 ) -> String {
     let mut p = String::new();
@@ -196,31 +196,35 @@ fn question_context(
     }
     p.push_str("The card being reviewed:\n\n");
     push_card(&mut p, card);
-    match (frozen, source_root) {
-        (Some(excerpt), root) => {
+    match (frozen, origin_root) {
+        (Some(excerpt), Some(root)) => {
             p.push_str(
                 "\nThe exact code this card is about, frozen when the card was made \
-                 — treat it as the GROUND TRUTH, since it's what the learner sees:\n\n",
+                 is the evidence the learner sees. Treat it as the GROUND TRUTH for \
+                 what the card teaches:\n\n",
             );
             p.push_str(excerpt);
-            if let Some(root) = root {
-                p.push_str(&format!(
-                    "\nYour working directory is the live source at {}. The snippet \
-                     above may have moved or changed since; READ the surrounding \
-                     source there (Read, Glob, Grep) to explain how this excerpt \
-                     fits the rest of the code — but ground your answer in the \
-                     snippet above, not a drifted copy. If you cannot find this code \
-                     anywhere in the source, reply exactly: \"{SOURCE_NOT_FOUND}\"\n",
-                    root.display()
-                ));
-            } else {
-                // serve.rs's start_ask already short-circuits this case; this arm is the lib-level
-                // fallback for other callers (e.g. the trace-walk tutor).
-                p.push_str(&format!(
-                    "\nThe live source this came from is unavailable, so reply \
-                     exactly: \"{SOURCE_NOT_FOUND}\"\n"
-                ));
-            }
+            p.push_str(&format!(
+                "\nThe broader original source is available at {}, your working \
+                 directory. READ it for surrounding context and to check whether the \
+                 frozen evidence or card has become outdated. Do not silently replace \
+                 the frozen evidence. If the current source contradicts it, clearly \
+                 tell the learner that the card may be outdated.\n",
+                root.display()
+            ));
+        }
+        (Some(excerpt), None) => {
+            p.push_str(
+                "\nThe exact code this card is about, frozen when the card was made \
+                 is the evidence the learner sees. Treat it as the GROUND TRUTH for \
+                 what the card teaches:\n\n",
+            );
+            p.push_str(excerpt);
+            p.push_str(
+                "\nUse that frozen evidence and any origin link listed above to explain \
+                 the card. If an origin link contradicts the frozen evidence, clearly \
+                 tell the learner that the card may be outdated.\n",
+            );
         }
         (None, Some(root)) => {
             p.push_str(&format!(
@@ -236,7 +240,7 @@ fn question_context(
     p
 }
 
-pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
+pub fn with_origin_root(cfg: &AskConfig, root: &Path) -> AskConfig {
     let mut grounded = cfg.clone();
     grounded.cwd = Some(root.to_path_buf());
     for tool in ["Read", "Glob", "Grep"] {
@@ -659,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn frozen_prompt_inlines_the_excerpt_and_grounds_for_context() {
+    fn frozen_prompt_uses_the_asset_and_the_available_origin_context() {
         let block = "src/caching.rs:46-66\n46\tfn get_object() {}\n";
         let p = question_prompt(
             &card(),
@@ -673,8 +677,9 @@ mod tests {
         assert!(p.contains("GROUND TRUTH"), "{p}");
         assert!(p.contains("src/caching.rs:46-66"), "{p}");
         assert!(p.contains("/crate"), "{p}");
-        assert!(p.contains("surrounding source"), "{p}");
-        let gone = question_prompt(
+        assert!(p.contains("READ it for surrounding context"), "{p}");
+        assert!(p.contains("card may be outdated"), "{p}");
+        let portable = question_prompt(
             &card(),
             Audience::Adult,
             &[],
@@ -683,7 +688,9 @@ mod tests {
             None,
             Some(block),
         );
-        assert!(gone.contains(SOURCE_NOT_FOUND), "{gone}");
+        assert!(portable.contains("GROUND TRUTH"), "{portable}");
+        assert!(portable.contains("any origin link"), "{portable}");
+        assert!(!portable.contains("/crate"), "{portable}");
     }
 
     #[test]

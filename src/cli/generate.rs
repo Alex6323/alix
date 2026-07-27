@@ -10,6 +10,11 @@ use crate::{
 
 pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
+    if let Some(origin) = &args.origin
+        && !alix::deck::is_url(origin)
+    {
+        bail!("`--origin` must be an http or https URL");
+    }
     let goal = args
         .goal
         .as_deref()
@@ -150,8 +155,16 @@ fn build_workspace(
         goal,
         args.title.as_deref(),
         source,
+        args.origin.as_deref(),
         Some(&filled),
     )?;
+    let frozen = alix::explore::freeze_workspace(&staging)?;
+    if !frozen.failed.is_empty() {
+        bail!(
+            "the generated workspace was not published because its evidence could not be frozen:\n{}",
+            frozen.failed.join("\n")
+        );
+    }
     let existing_decks = alix::workspace::deck_files(&dir);
     let mut store = store_for(&existing_decks, None, config)
         .with_context(|| format!("opening the store for {}", dir.display()))?;
@@ -178,22 +191,13 @@ fn build_workspace(
         }
         eprintln!("re-run with --force to overwrite, or move them in by hand.");
     }
-    match alix::explore::snapshot_workspace(&dir) {
-        Ok(summary) => {
-            if summary.decks > 0 {
-                println!(
-                    "{DIM}Froze {} excerpt(s) from {} deck(s) into {}/assets — \
-                     the citations won't drift.{RESET}",
-                    summary.files,
-                    summary.decks,
-                    dir.display(),
-                );
-            }
-            for failed in &summary.failed {
-                eprintln!("warning: could not freeze {failed}");
-            }
-        }
-        Err(e) => eprintln!("warning: could not snapshot the source: {e:#}"),
+    if frozen.files > 0 {
+        println!(
+            "{DIM}Froze {} source and image asset(s) for {} deck(s) into {}/assets.{RESET}",
+            frozen.files,
+            frozen.decks,
+            dir.display(),
+        );
     }
     match args.icon.as_deref() {
         Some(src) => match alix::icon::install(&dir, src) {
@@ -232,6 +236,9 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask)?;
+    if let Some(origin) = &args.origin {
+        text = alix::deck::with_origin(&text, origin)?;
+    }
 
     if args.review || gen_cfg.review {
         eprintln!("Reviewing the deck to remove redundant cards…");
@@ -365,7 +372,6 @@ fn trace_build(
             .unwrap_or("trace.md");
         let mut store = store_for(std::slice::from_ref(&deck_path.to_path_buf()), None, config)?;
         let report = library::replace_deck(dir, name, &new_text, &mut store)?;
-        alix::source::stamp_citations(deck_path)?;
         println!(
             "Rebuilt {}: {} checkpoints, wiped progress for {} card(s). Review them \
              and their `at:` locators, then walk it from the picker.",
@@ -377,12 +383,10 @@ fn trace_build(
     }
 
     alix::deck::set_trace_checkpoints(deck_path, &cards)?;
-    // Stamp at birth (mints token ids); failure is loud but non-fatal since
-    // review-open stamps again.
-    if let Err(e) = alix::stamp::stamp_deck(deck_path) {
-        eprintln!("warning: cannot stamp {}: {e}", deck_path.display());
+    let initialized = alix::assets::initialize(deck_path)?;
+    if initialized.freeze.is_none() {
+        alix::source::stamp_citations(deck_path)?;
     }
-    alix::source::stamp_citations(deck_path)?;
 
     let n = alix::parser::parse_str(&deck.subject, &cards)
         .map(|c| c.len())
@@ -428,10 +432,13 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
     let trace = parser::yaml_quote(&format!(
         "exploring {name} — what it is, its parts, and its spine"
     ));
-    let deck_text = format!(
+    let mut deck_text = format!(
         "---\ntrace: {trace}\nsource: {}\n\n---\n\n{checkpoints}\n",
         parser::yaml_quote(&source)
     );
+    if let Some(origin) = &args.origin {
+        deck_text = alix::deck::with_origin(&deck_text, origin)?;
+    }
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
     let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
     let out = if args.workspace.is_some() {

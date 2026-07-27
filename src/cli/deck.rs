@@ -5,7 +5,7 @@ use alix::{
     augment::{self, AugmentCache},
     augment_ai,
     card::Card,
-    config::{self, Config},
+    config::Config,
     generate, import, library, parser, workspace,
 };
 use anyhow::{Context, Result, bail};
@@ -13,15 +13,71 @@ use chrono::NaiveDate;
 
 use crate::{
     AugmentArgs, AugmentTarget, DeckInitArgs, ImportArgs, WorkspaceDeadlineArgs, WorkspaceInitArgs,
+    WorkspaceUpdateArgs,
     common::{deck_out_dir, one_line, store_for, truncate},
 };
 
+pub(crate) fn workspace_update_cmd(args: WorkspaceUpdateArgs) -> Result<()> {
+    if args.discard {
+        if alix::workspace_update::discard(&args.dir)? {
+            println!(
+                "Discarded {}.",
+                alix::workspace_update::staging_path(
+                    &args.dir.canonicalize().unwrap_or_else(|_| args.dir.clone())
+                )
+                .display()
+            );
+        } else {
+            println!("No staged workspace update exists.");
+        }
+        return Ok(());
+    }
+    if args.apply {
+        let report = alix::workspace_update::apply(&args.dir)?;
+        print_workspace_update_report("Applied", &report);
+        return Ok(());
+    }
+
+    let config = Config::load(args.config.as_deref())?;
+    eprintln!(
+        "Reconciling {} against its live origins (one AI call per source-backed deck)…",
+        args.dir.display()
+    );
+    let report = alix::workspace_update::stage(&args.dir, &config.generate, &config.ask)?;
+    print_workspace_update_report("Staged", &report);
+    println!(
+        "Review the exact proposal at {}. Apply it with `alix workspace update {} --apply`, or discard it with `--discard`.",
+        report.staging.display(),
+        args.dir.display()
+    );
+    Ok(())
+}
+
+fn print_workspace_update_report(action: &str, report: &alix::workspace_update::UpdateReport) {
+    let retained = report.decks.iter().map(|deck| deck.retained).sum::<usize>();
+    let retired = report.decks.iter().map(|deck| deck.retired).sum::<usize>();
+    let added = report.decks.iter().map(|deck| deck.added).sum::<usize>();
+    println!(
+        "{action} {} deck(s): {retained} retained, {retired} retired, {added} new.",
+        report.decks.len()
+    );
+    for deck in &report.decks {
+        println!(
+            "  {}: {} retained, {} retired, {} new",
+            deck.path.display(),
+            deck.retained,
+            deck.retired,
+            deck.added
+        );
+    }
+}
+
 pub(crate) fn init_cmd(args: DeckInitArgs) -> Result<()> {
-    let outcome = alix::stamp::stamp_deck(&args.deck)?;
+    let outcome = alix::assets::initialize(&args.deck)?;
     println!(
         "Initialized {} ({} card ids assigned)",
         args.deck.display(),
-        outcome.minted_cards.len()
+        outcome.stamp.minted_cards.len()
     );
     Ok(())
 }
@@ -35,13 +91,8 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let ask_cfg = augment_ai::run_config(&config.ai, &config.ask);
     let guidance = args.with.as_deref();
 
-    let store = store_for(
-        std::slice::from_ref(&args.deck),
-        args.store.clone(),
-        &config,
-    )?;
-    let cache_path = augment::augment_path_for(store.path());
-    let mut cache = AugmentCache::open_for_store(store.path())?;
+    let mut cache = AugmentCache::open_for_deck(&deck)?;
+    let cache_path = cache.path().to_path_buf();
     let fp_by_id: std::collections::HashMap<String, u64> = deck
         .cards
         .iter()
@@ -169,6 +220,11 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             (walked, total, "a review order")
         }
         AugmentTarget::Format => {
+            let store = store_for(
+                std::slice::from_ref(&args.deck),
+                args.store.clone(),
+                &config,
+            )?;
             // Cloze, promoted, and retired cards are excluded (mirrors the
             // review's injection filters), so a card is never formatted twice
             // or after resting.
@@ -297,7 +353,8 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
          # reveal = \"flip\"              # flip | cloze | line\n\
          # order = \"scheduled\"          # scheduled | sequential\n"
     );
-    std::fs::write(args.dir.join("alix.toml"), manifest)
+    let workspace_files = alix::workspace::WorkspaceFiles::new(&args.dir);
+    std::fs::write(workspace_files.manifest(), manifest)
         .with_context(|| format!("cannot write {}/alix.toml", args.dir.display()))?;
     let local = "# Personal pacing for THIS workspace — never shared (`alix share` leaves it\n\
          # home). Uncomment a key to override your global [review] config here.\n\
@@ -311,8 +368,11 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
          # limit = 40                   # cap on total cards per session\n\
          # deadline = \"2026-09-01\"     # make me ready by this date (picker readout + drilling ramp)\n\
          # deadline_ramp = \"14d\"       # how early the pre-deadline retention ramp starts (\"2w\"; \"0\" = cap only)\n";
-    std::fs::write(args.dir.join(config::LOCAL_MANIFEST), local)
-        .with_context(|| format!("cannot write {}/alix.local.toml", args.dir.display()))?;
+    std::fs::write(
+        alix::state::UserFiles::new(&args.dir).local_manifest(),
+        local,
+    )
+    .with_context(|| format!("cannot write {}/alix.local.toml", args.dir.display()))?;
     println!(
         "Initialized {} — alix.toml (shared manifest) and alix.local.toml (your\n\
          personal pacing, never shared) document their keys inline. Add decks:\n\

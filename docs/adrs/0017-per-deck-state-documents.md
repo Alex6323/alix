@@ -1,6 +1,7 @@
 # 0017: Per-deck state documents
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0022](0022-workspace-and-user-file-ownership.md)
 - Recorded: 2026-07-25
 - Retrospective: No
 - Refines: [ADR 0001](0001-local-first-files.md) and

@@ -20,10 +20,10 @@ taking precedence. Each links to the chapter that explains it in full.
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `link` | deck | [tutor reference](10-tutor.md) URL, tutor-only (repeatable). |
 | `source` | deck | [Exam ground truth](12-the-ai-exam.md) (URL/file, repeatable); also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. |
-| `origin` | deck · card | Explicit live-source root for [tutor](10-tutor.md) grounding and [`alix doctor`](17-command-reference.md) drift detection (usually set in a workspace's `alix.toml`; a relative path resolves from that workspace or deck). A [frozen deck](14-explore.md) keeps `source: assets` while `origin` records where those snapshots came from. |
+| `origin` | deck · card | Explicit current source for [tutor](10-tutor.md) context, exam grounding, and frozen-source drift reporting (usually set in a workspace's `alix.toml`; a relative path resolves from that workspace or deck). Frozen evidence lives below `assets/<alix-id>/` and remains authoritative; a usable local path or URL adds context rather than replacing it. |
 | `trace` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
 | `at` | card | A repeatable fingerprinted locator into the `source` (`file:lines @ xxh64:...`): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
-| `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name — meaning` (repeatable). |
+| `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
 
 Media (images, and later audio/video) isn't a directive: write a standard
 Markdown `![alt](src)` where you want one to appear, and its position decides

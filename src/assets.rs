@@ -1,0 +1,861 @@
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
+
+use sha2::{Digest, Sha256};
+use thiserror::Error;
+
+use crate::{
+    deck::{AtRewrite, Deck, DeckError},
+    source::{CitationIntegrity, Excerpt, SourceBase},
+};
+
+pub const ROOT: &str = "assets";
+const DIGEST_PREFIX: &str = "sha256-";
+
+#[derive(Debug, Error)]
+pub enum AssetError {
+    #[error("deck ID `{0}` is not valid")]
+    InvalidDeckId(String),
+    #[error("asset name `{0}` is not content-addressed")]
+    InvalidName(String),
+    #[error("asset `{path}` does not match its content address")]
+    DigestMismatch { path: PathBuf },
+    #[error("{0} is not a member of an Alix workspace")]
+    NotWorkspaceMember(PathBuf),
+    #[error("{0} has no stable deck ID")]
+    MissingDeckId(PathBuf),
+    #[error("remote source `{0}` cannot be frozen")]
+    RemoteSource(String),
+    #[error("{0} uses live source instead of deck-owned content-addressed assets")]
+    LiveSource(PathBuf),
+    #[error("source `{0}` is missing or is not a regular file or directory")]
+    MissingSource(PathBuf),
+    #[error("source directory `{0}` has no cited evidence to freeze")]
+    UncitedDirectory(PathBuf),
+    #[error("source `{0}` is not UTF-8 text")]
+    NonTextSource(PathBuf),
+    #[error("citation `{locator}` is outside every declared source")]
+    CitationOutsideSource { locator: String },
+    #[error("cannot freeze citation `{locator}`: {message}")]
+    Citation { locator: String, message: String },
+    #[error("image `{0}` is outside the workspace and declared source boundaries")]
+    ImageOutsideBoundary(PathBuf),
+    #[error("image `{0}` is missing or is not a regular file")]
+    MissingImage(PathBuf),
+    #[error("{path}: {source}")]
+    Deck {
+        path: PathBuf,
+        #[source]
+        source: DeckError,
+    },
+    #[error("{path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum InitializeError {
+    #[error("cannot read {path}: {source}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error(transparent)]
+    Stamp(#[from] crate::stamp::StampError),
+    #[error(transparent)]
+    Freeze(#[from] AssetError),
+    #[error("cannot restore {path} after initialization failed: {source}")]
+    Restore {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct FreezeReport {
+    pub evidence: usize,
+    pub images: usize,
+}
+
+#[derive(Debug)]
+pub struct InitializeReport {
+    pub stamp: crate::stamp::StampOutcome,
+    pub freeze: Option<FreezeReport>,
+}
+
+enum SourceInput {
+    File { path: PathBuf, name: String },
+    Directory { path: PathBuf, citations: usize },
+}
+
+pub fn deck_dir(workspace_root: &Path, deck_id: &str) -> Result<PathBuf, AssetError> {
+    if !crate::token::is_valid(deck_id) {
+        return Err(AssetError::InvalidDeckId(deck_id.to_string()));
+    }
+    Ok(crate::workspace::WorkspaceFiles::new(workspace_root).assets_for(deck_id))
+}
+
+pub fn normalized_extension(path: &Path, text: bool) -> String {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|value| {
+            !value.is_empty()
+                && value
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric())
+        });
+    extension.unwrap_or_else(|| if text { "txt" } else { "bin" }.to_string())
+}
+
+pub fn object_name(bytes: &[u8], extension: &str) -> String {
+    let digest = Sha256::digest(bytes);
+    format!(
+        "{DIGEST_PREFIX}{}.{extension}",
+        digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    )
+}
+
+pub fn write_object(
+    workspace_root: &Path,
+    deck_id: &str,
+    bytes: &[u8],
+    extension: &str,
+) -> Result<PathBuf, AssetError> {
+    let directory = deck_dir(workspace_root, deck_id)?;
+    let name = object_name(bytes, extension);
+    let path = directory.join(&name);
+    if path.is_file() {
+        verify_object(&path)?;
+        return Ok(path);
+    }
+    std::fs::create_dir_all(&directory).map_err(|source| AssetError::Io {
+        path: directory.clone(),
+        source,
+    })?;
+    let tmp = directory.join(format!(".{name}.tmp"));
+    crate::fsio::replace_file(&tmp, &path, bytes).map_err(|source| AssetError::Io {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(path)
+}
+
+pub fn freeze_member(path: &Path) -> Result<FreezeReport, AssetError> {
+    let workspace_root = crate::workspace::root_for_deck(path)
+        .ok_or_else(|| AssetError::NotWorkspaceMember(path.to_path_buf()))?;
+    let (_, _, defaults, _) =
+        crate::workspace::read_manifest(&workspace_root.join(crate::workspace::MANIFEST));
+    let deck = Deck::load_with_defaults(path, &defaults).map_err(|source| AssetError::Deck {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let deck_id = deck
+        .deck_token
+        .as_deref()
+        .ok_or_else(|| AssetError::MissingDeckId(path.to_path_buf()))?;
+    let owned_dir = deck_dir(workspace_root, deck_id)?;
+    let owned_dir_existed = owned_dir.exists();
+    let root_existed = workspace_root.join(ROOT).exists();
+    let result = freeze_member_inner(workspace_root, &deck);
+    if result.is_err() && !owned_dir_existed {
+        let _ = std::fs::remove_dir_all(&owned_dir);
+        if !root_existed {
+            let _ = std::fs::remove_dir(workspace_root.join(ROOT));
+        }
+    }
+    result
+}
+
+pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
+    let original = std::fs::read(path).map_err(|source| InitializeError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let stamp = crate::stamp::stamp_deck(path)?;
+    let freeze = if crate::workspace::root_for_deck(path).is_some() {
+        match freeze_member(path) {
+            Ok(report) => Some(report),
+            Err(error) => {
+                let tmp = path.with_extension("md.restore.tmp");
+                crate::fsio::replace_file(&tmp, path, &original).map_err(|source| {
+                    InitializeError::Restore {
+                        path: path.to_path_buf(),
+                        source,
+                    }
+                })?;
+                return Err(error.into());
+            }
+        }
+    } else {
+        None
+    };
+    Ok(InitializeReport { stamp, freeze })
+}
+
+fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeReport, AssetError> {
+    if deck.is_frozen() {
+        validate_member(deck)?;
+        return Ok(FreezeReport {
+            evidence: deck
+                .sources
+                .iter()
+                .flat_map(|source| crate::source::source_paths(source, Some(workspace_root)))
+                .count(),
+            images: 0,
+        });
+    }
+    let text = read_text(&deck.path)?;
+    let parsed = crate::parser::parse(&deck.subject, &text).map_err(|source| AssetError::Deck {
+        path: deck.path.clone(),
+        source: DeckError::Parse {
+            path: deck.path.clone(),
+            source,
+        },
+    })?;
+    let deck_id = deck
+        .deck_token
+        .as_deref()
+        .ok_or_else(|| AssetError::MissingDeckId(deck.path.clone()))?;
+    let source_expression = (!deck.sources.is_empty()).then(|| deck.sources.join(" + "));
+    let mut inputs = freeze_explicit_sources(workspace_root, deck_id, deck)?;
+    let source_base = SourceBase::for_live_deck(deck);
+    let mut evidence = ordered_file_evidence(&inputs);
+    let mut evidence_seen: HashSet<String> = evidence.iter().cloned().collect();
+    let mut citations = Vec::new();
+
+    for card in &deck.cards {
+        for citation in &card.citations {
+            let excerpt = citation_excerpt(&source_base, citation)?;
+            let input_index = source_owner(&inputs, &excerpt).ok_or_else(|| {
+                AssetError::CitationOutsideSource {
+                    locator: citation.locator.clone(),
+                }
+            })?;
+            let locator = match &mut inputs[input_index] {
+                SourceInput::File { name, .. } => locator_for_full_file(name, &excerpt),
+                SourceInput::Directory { citations, .. } => {
+                    *citations += 1;
+                    let bytes = canonical_excerpt_bytes(&excerpt);
+                    let extension = normalized_extension(&excerpt.path, true);
+                    let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
+                    let name = file_name(&object)?;
+                    if evidence_seen.insert(name.clone()) {
+                        evidence.push(name.clone());
+                    }
+                    name
+                }
+            };
+            citations.push(AtRewrite {
+                at: locator,
+                fingerprint: Some(crate::source::excerpt_fingerprint(&excerpt)),
+                origin: Some(excerpt_provenance(&excerpt, &inputs[input_index])),
+                line: citation.line,
+            });
+        }
+    }
+    for input in &inputs {
+        if let SourceInput::Directory { path, citations } = input
+            && *citations == 0
+        {
+            return Err(AssetError::UncitedDirectory(path.clone()));
+        }
+    }
+    if source_expression.is_some() && evidence.is_empty() {
+        return Err(AssetError::UncitedDirectory(
+            crate::workspace::content_root(&deck.path),
+        ));
+    }
+
+    let mut image_rewrites = Vec::new();
+    let mut image_objects = HashSet::new();
+    let boundaries = source_boundaries(workspace_root, &inputs);
+    for image in crate::parser::image_references(&text) {
+        if crate::deck::is_url(&image.source) {
+            continue;
+        }
+        let source = resolve_image_source(workspace_root, &image.source)?;
+        if !boundaries
+            .iter()
+            .any(|boundary| source.starts_with(boundary))
+        {
+            return Err(AssetError::ImageOutsideBoundary(source));
+        }
+        if !source.is_file() {
+            return Err(AssetError::MissingImage(source));
+        }
+        let bytes = read_bytes(&source)?;
+        let extension = normalized_extension(&source, false);
+        let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
+        let name = file_name(&object)?;
+        image_objects.insert(name.clone());
+        image_rewrites.push((image.destination, format!("{ROOT}/{deck_id}/{name}")));
+    }
+
+    let frozen_source = (!evidence.is_empty()).then(|| {
+        let mut parts = Vec::with_capacity(evidence.len());
+        parts.push(format!("{ROOT}/{deck_id}/{}", evidence[0]));
+        parts.extend(evidence.iter().skip(1).cloned());
+        parts.join(" + ")
+    });
+    let origin = deck
+        .settings
+        .origin
+        .as_deref()
+        .or(source_expression.as_deref());
+    let rewritten = crate::deck::rewrite_frozen_assets(
+        &text,
+        parsed.frontmatter_span,
+        frozen_source.as_deref(),
+        origin,
+        &citations,
+        &image_rewrites,
+    )
+    .map_err(|source| AssetError::Deck {
+        path: deck.path.clone(),
+        source,
+    })?;
+    let verified =
+        crate::parser::parse(&deck.subject, &rewritten).map_err(|source| AssetError::Deck {
+            path: deck.path.clone(),
+            source: DeckError::Parse {
+                path: deck.path.clone(),
+                source,
+            },
+        })?;
+    if verified.deck_token.as_deref() != Some(deck_id) {
+        return Err(AssetError::MissingDeckId(deck.path.clone()));
+    }
+    crate::deck::write_deck_text(&deck.path, &rewritten).map_err(|source| AssetError::Deck {
+        path: deck.path.clone(),
+        source,
+    })?;
+    Ok(FreezeReport {
+        evidence: evidence.len(),
+        images: image_objects.len(),
+    })
+}
+
+fn freeze_explicit_sources(
+    workspace_root: &Path,
+    deck_id: &str,
+    deck: &Deck,
+) -> Result<Vec<SourceInput>, AssetError> {
+    let mut inputs = Vec::new();
+    for source in &deck.sources {
+        if crate::deck::is_url(source) {
+            return Err(AssetError::RemoteSource(source.clone()));
+        }
+        for path in crate::source::source_paths(source, Some(workspace_root)) {
+            let path = path
+                .canonicalize()
+                .map_err(|_| AssetError::MissingSource(path.clone()))?;
+            if path.is_file() {
+                let bytes = read_bytes(&path)?;
+                std::str::from_utf8(&bytes).map_err(|_| AssetError::NonTextSource(path.clone()))?;
+                let extension = normalized_extension(&path, true);
+                let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
+                inputs.push(SourceInput::File {
+                    path,
+                    name: file_name(&object)?,
+                });
+            } else if path.is_dir() {
+                inputs.push(SourceInput::Directory { path, citations: 0 });
+            } else {
+                return Err(AssetError::MissingSource(path));
+            }
+        }
+    }
+    Ok(inputs)
+}
+
+fn ordered_file_evidence(inputs: &[SourceInput]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    inputs
+        .iter()
+        .filter_map(|input| match input {
+            SourceInput::File { name, .. } if seen.insert(name.clone()) => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn citation_excerpt(
+    source_base: &SourceBase,
+    citation: &crate::card::SourceCitation,
+) -> Result<Excerpt, AssetError> {
+    match source_base
+        .inspect_citation(citation)
+        .map_err(|error| AssetError::Citation {
+            locator: citation.locator.clone(),
+            message: format!("{error:#}"),
+        })? {
+        CitationIntegrity::Current(excerpt)
+        | CitationIntegrity::Unfingerprinted { excerpt, .. } => Ok(excerpt),
+        CitationIntegrity::Relocated { locator, .. } => Err(AssetError::Citation {
+            locator: citation.locator.clone(),
+            message: format!("the excerpt moved to `{locator}`"),
+        }),
+        CitationIntegrity::Changed => Err(AssetError::Citation {
+            locator: citation.locator.clone(),
+            message: "the excerpt changed or disappeared".to_string(),
+        }),
+        CitationIntegrity::Ambiguous { locators } => Err(AssetError::Citation {
+            locator: citation.locator.clone(),
+            message: format!(
+                "the excerpt matches several ranges: {}",
+                locators.join(", ")
+            ),
+        }),
+    }
+}
+
+fn source_owner(inputs: &[SourceInput], excerpt: &Excerpt) -> Option<usize> {
+    let path = excerpt.path.canonicalize().ok()?;
+    inputs.iter().position(|input| match input {
+        SourceInput::File { path: source, .. } => path == *source,
+        SourceInput::Directory { path: source, .. } => path.starts_with(source),
+    })
+}
+
+fn canonical_excerpt_bytes(excerpt: &Excerpt) -> Vec<u8> {
+    let mut text = excerpt
+        .lines
+        .iter()
+        .map(|(_, line)| line.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    text.push('\n');
+    text.into_bytes()
+}
+
+fn locator_for_full_file(name: &str, excerpt: &Excerpt) -> String {
+    let first = excerpt.lines.first().map(|line| line.0).unwrap_or(1);
+    let last = excerpt.lines.last().map(|line| line.0).unwrap_or(first);
+    if first == last {
+        format!("{name}:{first}")
+    } else {
+        format!("{name}:{first}-{last}")
+    }
+}
+
+fn excerpt_provenance(excerpt: &Excerpt, input: &SourceInput) -> String {
+    let first = excerpt.lines.first().map(|line| line.0).unwrap_or(1);
+    let last = excerpt.lines.last().map(|line| line.0).unwrap_or(first);
+    let path = match input {
+        SourceInput::File { path, .. } => path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string()),
+        SourceInput::Directory { path, .. } => excerpt
+            .path
+            .canonicalize()
+            .unwrap_or_else(|_| excerpt.path.clone())
+            .strip_prefix(path)
+            .unwrap_or(&excerpt.path)
+            .to_string_lossy()
+            .into_owned(),
+    };
+    if first == last {
+        format!("{path}:{first}")
+    } else {
+        format!("{path}:{first}-{last}")
+    }
+}
+
+fn source_boundaries(workspace_root: &Path, inputs: &[SourceInput]) -> Vec<PathBuf> {
+    let mut boundaries = vec![
+        workspace_root
+            .canonicalize()
+            .unwrap_or_else(|_| workspace_root.to_path_buf()),
+    ];
+    for input in inputs {
+        let boundary = match input {
+            SourceInput::File { path, .. } => path.parent().unwrap_or(path),
+            SourceInput::Directory { path, .. } => path,
+        };
+        if !boundaries.contains(&boundary.to_path_buf()) {
+            boundaries.push(boundary.to_path_buf());
+        }
+    }
+    boundaries
+}
+
+fn resolve_image_source(workspace_root: &Path, source: &str) -> Result<PathBuf, AssetError> {
+    let path = Path::new(source);
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace_root.join(path)
+    };
+    path.canonicalize()
+        .map_err(|_| AssetError::MissingImage(path))
+}
+
+pub fn validate_member(deck: &Deck) -> Result<(), AssetError> {
+    let workspace_root = crate::workspace::root_for_deck(&deck.path)
+        .ok_or_else(|| AssetError::NotWorkspaceMember(deck.path.clone()))?;
+    validate_at_root(deck, workspace_root)
+}
+
+pub fn validate_at_root(deck: &Deck, root: &Path) -> Result<(), AssetError> {
+    let deck_id = deck
+        .deck_token
+        .as_deref()
+        .ok_or_else(|| AssetError::MissingDeckId(deck.path.clone()))?;
+    let owned = deck_dir(root, deck_id)?;
+    if !deck.is_frozen() {
+        return Err(AssetError::LiveSource(deck.path.clone()));
+    }
+    for source in &deck.sources {
+        for path in crate::source::source_paths(source, Some(root)) {
+            let canonical = path.canonicalize().map_err(|source| AssetError::Io {
+                path: path.clone(),
+                source,
+            })?;
+            let canonical_owned = owned.canonicalize().map_err(|source| AssetError::Io {
+                path: owned.clone(),
+                source,
+            })?;
+            if !canonical.starts_with(&canonical_owned) {
+                return Err(AssetError::CitationOutsideSource {
+                    locator: path.display().to_string(),
+                });
+            }
+            verify_object(&canonical)?;
+        }
+    }
+    validate_owned_dir(root, deck_id)?;
+    Ok(())
+}
+
+pub fn validate_owned_dir(root: &Path, deck_id: &str) -> Result<(), AssetError> {
+    let owned = deck_dir(root, deck_id)?;
+    for entry in std::fs::read_dir(&owned).map_err(|source| AssetError::Io {
+        path: owned.clone(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| AssetError::Io {
+            path: owned.clone(),
+            source,
+        })?;
+        let path = entry.path();
+        if !path.is_file() {
+            return Err(AssetError::InvalidName(path.display().to_string()));
+        }
+        verify_object(&path)?;
+    }
+    Ok(())
+}
+
+pub fn validate_image(deck: &Deck, source: &str) -> Result<(), AssetError> {
+    let workspace_root = crate::workspace::root_for_deck(&deck.path)
+        .ok_or_else(|| AssetError::NotWorkspaceMember(deck.path.clone()))?;
+    validate_image_at_root(deck, workspace_root, source)
+}
+
+pub fn validate_image_at_root(deck: &Deck, root: &Path, source: &str) -> Result<(), AssetError> {
+    let deck_id = deck
+        .deck_token
+        .as_deref()
+        .ok_or_else(|| AssetError::MissingDeckId(deck.path.clone()))?;
+    let path = resolve_image_source(root, source)?;
+    let owned = deck_dir(root, deck_id)?;
+    let canonical_owned = owned.canonicalize().map_err(|source| AssetError::Io {
+        path: owned,
+        source,
+    })?;
+    if !path.starts_with(&canonical_owned) {
+        return Err(AssetError::ImageOutsideBoundary(path));
+    }
+    verify_object(&path)
+}
+
+fn read_text(path: &Path) -> Result<String, AssetError> {
+    std::fs::read_to_string(path).map_err(|source| AssetError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn read_bytes(path: &Path) -> Result<Vec<u8>, AssetError> {
+    std::fs::read(path).map_err(|source| AssetError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn file_name(path: &Path) -> Result<String, AssetError> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| AssetError::InvalidName(path.display().to_string()))
+}
+
+pub fn verify_object(path: &Path) -> Result<(), AssetError> {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| AssetError::InvalidName(path.display().to_string()))?;
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| AssetError::InvalidName(name.to_string()))?;
+    let stem = name
+        .strip_suffix(&format!(".{extension}"))
+        .and_then(|value| value.strip_prefix(DIGEST_PREFIX))
+        .filter(|value| value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit()))
+        .ok_or_else(|| AssetError::InvalidName(name.to_string()))?;
+    let bytes = std::fs::read(path).map_err(|source| AssetError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let expected = object_name(&bytes, extension);
+    if expected == name && stem.chars().all(|c| !c.is_ascii_uppercase()) {
+        Ok(())
+    } else {
+        Err(AssetError::DigestMismatch {
+            path: path.to_path_buf(),
+        })
+    }
+}
+
+pub fn is_object_name(name: &str) -> bool {
+    let Some((stem, extension)) = name.rsplit_once('.') else {
+        return false;
+    };
+    let Some(digest) = stem.strip_prefix(DIGEST_PREFIX) else {
+        return false;
+    };
+    digest.len() == 64
+        && digest
+            .chars()
+            .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
+        && !extension.is_empty()
+        && extension
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() && !character.is_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn workspace() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("decks")).unwrap();
+        std::fs::write(directory.path().join("alix.toml"), "").unwrap();
+        directory
+    }
+
+    #[test]
+    fn object_names_are_exact_byte_sha256_addresses() {
+        assert_eq!(
+            "sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.rs",
+            object_name(b"abc", "rs")
+        );
+        assert_ne!(object_name(b"abc", "rs"), object_name(b"abc\n", "rs"));
+    }
+
+    #[test]
+    fn extensions_are_normalized_and_untrusted_values_fall_back() {
+        assert_eq!("png", normalized_extension(Path::new("diagram.PNG"), false));
+        assert_eq!(
+            "txt",
+            normalized_extension(Path::new("source.weird-name"), true)
+        );
+        assert_eq!("bin", normalized_extension(Path::new("image"), false));
+    }
+
+    #[test]
+    fn identical_objects_in_one_deck_reuse_the_same_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = write_object(directory.path(), "deck1", b"same", "txt").unwrap();
+        let second = write_object(directory.path(), "deck1", b"same", "txt").unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(b"same", std::fs::read(first).unwrap().as_slice());
+    }
+
+    #[test]
+    fn identical_objects_in_two_decks_have_distinct_owned_paths() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = write_object(directory.path(), "deck1", b"same", "txt").unwrap();
+        let second = write_object(directory.path(), "deck2", b"same", "txt").unwrap();
+
+        assert_ne!(first, second);
+        assert_eq!(first.file_name(), second.file_name());
+    }
+
+    #[test]
+    fn an_existing_corrupt_object_is_rejected_instead_of_reused() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = write_object(directory.path(), "deck1", b"original", "txt").unwrap();
+        std::fs::write(&path, "changed").unwrap();
+
+        let error = write_object(directory.path(), "deck1", b"original", "txt").unwrap_err();
+        assert!(matches!(error, AssetError::DigestMismatch { .. }));
+    }
+
+    #[test]
+    fn object_validation_rejects_noncanonical_names() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("human-name.png");
+        std::fs::write(&path, "bytes").unwrap();
+
+        assert!(matches!(
+            verify_object(&path),
+            Err(AssetError::InvalidName(_))
+        ));
+        assert!(!is_object_name("human-name.png"));
+    }
+
+    #[test]
+    fn freezing_a_file_source_preserves_exact_bytes_and_ingests_images() {
+        let directory = workspace();
+        let source = directory.path().join("notes.md");
+        std::fs::write(&source, "one \r\ntwo\r\nthree\r\n").unwrap();
+        std::fs::write(directory.path().join("diagram.PNG"), [0, 1, 2, 255]).unwrap();
+        let path = directory.path().join("decks/facts.md");
+        let text = format!(
+            "---\nalix-id: \"deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\na\n<!-- at: notes.md:2 -->\n",
+            crate::parser::yaml_quote(&source.display().to_string())
+        );
+        std::fs::write(&path, &text).unwrap();
+
+        let report = freeze_member(&path).unwrap();
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        let deck = Deck::load(&path).unwrap();
+
+        assert_eq!(
+            FreezeReport {
+                evidence: 1,
+                images: 1
+            },
+            report
+        );
+        assert!(deck.is_frozen());
+        assert!(frozen.contains(&format!(
+            "origin: {}",
+            crate::parser::yaml_quote(&source.display().to_string())
+        )));
+        let evidence = crate::source::source_paths(&deck.sources[0], Some(directory.path()));
+        assert_eq!(1, evidence.len());
+        assert_eq!(
+            b"one \r\ntwo\r\nthree\r\n",
+            std::fs::read(&evidence[0]).unwrap().as_slice()
+        );
+        let image_name = object_name(&[0, 1, 2, 255], "png");
+        assert!(frozen.contains(&format!("](assets/deck1/{image_name})")));
+        assert_eq!(
+            [0, 1, 2, 255],
+            std::fs::read(directory.path().join(format!("assets/deck1/{image_name}")))
+                .unwrap()
+                .as_slice()
+        );
+        assert!(frozen.contains("from notes.md:2"));
+    }
+
+    #[test]
+    fn freezing_a_directory_stores_only_canonical_cited_excerpts() {
+        let directory = workspace();
+        let source = directory.path().join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("lib.rs"), "a  \nb\nc\n").unwrap();
+        std::fs::write(source.join("uncited.rs"), "secret\n").unwrap();
+        let path = directory.path().join("decks/trace.md");
+        std::fs::write(
+            &path,
+            format!(
+                "---\nalix-id: \"deck2\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                crate::parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+
+        let report = freeze_member(&path).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let evidence = crate::source::source_paths(&deck.sources[0], Some(directory.path()));
+
+        assert_eq!(
+            FreezeReport {
+                evidence: 1,
+                images: 0
+            },
+            report
+        );
+        assert_eq!(1, evidence.len());
+        assert_eq!(b"b\nc\n", std::fs::read(&evidence[0]).unwrap().as_slice());
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        assert!(!frozen.contains("uncited.rs"));
+        assert!(frozen.contains("from lib.rs:2-3"));
+    }
+
+    #[test]
+    fn a_directory_without_citations_is_rejected_without_partial_assets() {
+        let directory = workspace();
+        let source = directory.path().join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("lib.rs"), "a\n").unwrap();
+        let path = directory.path().join("decks/plain.md");
+        let text = format!(
+            "---\nalix-id: \"deck3\"\nsource: {}\n---\n## q\na\n",
+            crate::parser::yaml_quote(&source.display().to_string())
+        );
+        std::fs::write(&path, &text).unwrap();
+
+        let error = freeze_member(&path).unwrap_err();
+
+        assert!(matches!(error, AssetError::UncitedDirectory(_)));
+        assert_eq!(text, std::fs::read_to_string(&path).unwrap());
+        assert!(!directory.path().join("assets/deck3").exists());
+    }
+
+    #[test]
+    fn a_missing_image_keeps_the_deck_and_removes_new_assets() {
+        let directory = workspace();
+        let source = directory.path().join("notes.md");
+        std::fs::write(&source, "a\n").unwrap();
+        let path = directory.path().join("decks/facts.md");
+        let text = format!(
+            "---\nalix-id: \"deck4\"\nsource: {}\n---\n## q\n![d](missing.png)\na\n",
+            crate::parser::yaml_quote(&source.display().to_string())
+        );
+        std::fs::write(&path, &text).unwrap();
+
+        let error = freeze_member(&path).unwrap_err();
+
+        assert!(matches!(error, AssetError::MissingImage(_)));
+        assert_eq!(text, std::fs::read_to_string(&path).unwrap());
+        assert!(!directory.path().join("assets/deck4").exists());
+    }
+
+    #[test]
+    fn failed_initialization_restores_the_exact_uninitialized_deck() {
+        let directory = workspace();
+        let path = directory.path().join("decks/remote.md");
+        let original = b"---\nsource: https://example.test/source.md\n---\n## q\na\n";
+        std::fs::write(&path, original).unwrap();
+
+        let error = initialize(&path).unwrap_err();
+
+        assert!(matches!(
+            error,
+            InitializeError::Freeze(AssetError::RemoteSource(_))
+        ));
+        assert_eq!(original, std::fs::read(&path).unwrap().as_slice());
+        assert_eq!(None, Deck::load(&path).unwrap().deck_token);
+        assert!(!directory.path().join(ROOT).exists());
+    }
+}

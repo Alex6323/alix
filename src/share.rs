@@ -27,7 +27,7 @@ fn stays_home(name: &str) -> bool {
         || name.ends_with(".json.tmp")
 }
 
-pub fn stage_path(path: &Path, state_root: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
+pub fn stage_path(path: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
     if path.is_dir() {
         let name = path
             .file_name()
@@ -44,11 +44,21 @@ pub fn stage_path(path: &Path, state_root: &Path, stage_root: &Path) -> Result<(
     let Some(deck_id) = deck.deck_token.as_deref() else {
         return Ok((path.to_path_buf(), 1));
     };
-    let augmentation = crate::state::Layout::new(state_root).augment_for(deck_id);
-    if !augmentation.is_file() {
+    let content_root = crate::workspace::root_for_deck(path)
+        .or_else(|| path.parent())
+        .unwrap_or_else(|| Path::new("."));
+    let augmentation = crate::workspace::WorkspaceFiles::new(content_root).augment_for(deck_id);
+    let owned_assets = crate::assets::deck_dir(content_root, deck_id)?;
+    let has_assets = owned_assets.is_dir();
+    if crate::workspace::root_for_deck(path).is_some() || has_assets {
+        validate_bundle_material(&deck, content_root)?;
+    }
+    if !augmentation.is_file() && !has_assets {
         return Ok((path.to_path_buf(), 1));
     }
-    crate::augment::read_deck_data(&augmentation, deck_id)?;
+    if augmentation.is_file() {
+        crate::augment::read_deck_data(&augmentation, deck_id)?;
+    }
 
     let file_name = path
         .file_name()
@@ -56,25 +66,71 @@ pub fn stage_path(path: &Path, state_root: &Path, stage_root: &Path) -> Result<(
         .unwrap_or("deck.md");
     let stem = file_name.strip_suffix(".md").unwrap_or(file_name);
     let stage = stage_root.join(format!("{stem}.alix-deck"));
-    std::fs::create_dir_all(stage.join("augment"))
+    std::fs::create_dir_all(&stage)
         .with_context(|| format!("cannot create {}", stage.display()))?;
     std::fs::copy(path, stage.join(file_name))
         .with_context(|| format!("cannot copy {}", path.display()))?;
-    std::fs::copy(
-        &augmentation,
-        stage.join("augment").join(format!("{deck_id}.json")),
-    )
-    .with_context(|| format!("cannot copy {}", augmentation.display()))?;
+    let mut count = 2;
+    if augmentation.is_file() {
+        std::fs::create_dir_all(stage.join("augment"))
+            .with_context(|| format!("cannot create {}", stage.display()))?;
+        std::fs::copy(
+            &augmentation,
+            stage.join("augment").join(format!("{deck_id}.json")),
+        )
+        .with_context(|| format!("cannot copy {}", augmentation.display()))?;
+        count += 1;
+    }
+    if has_assets {
+        let destination = stage.join("assets").join(deck_id);
+        copy_tree(&owned_assets, &destination)?;
+        count += count_files(&destination)?;
+    }
     let marker = serde_json::to_string_pretty(&DeckBundle {
         version: DECK_BUNDLE_VERSION,
         deck: file_name.to_string(),
     })?;
     std::fs::write(stage.join(DECK_BUNDLE_MARKER), marker)
         .with_context(|| format!("cannot write {}", stage.display()))?;
-    Ok((stage, 3))
+    Ok((stage, count))
+}
+
+fn validate_bundle_material(deck: &crate::deck::Deck, root: &Path) -> Result<()> {
+    if !deck.sources.is_empty() {
+        crate::assets::validate_at_root(deck, root)?;
+    }
+    let text = std::fs::read_to_string(&deck.path)
+        .with_context(|| format!("cannot read {}", deck.path.display()))?;
+    for image in crate::parser::image_references(&text) {
+        if !crate::deck::is_url(&image.source) {
+            crate::assets::validate_image_at_root(deck, root, &image.source)?;
+        }
+    }
+    if let Some(deck_id) = deck.deck_token.as_deref()
+        && crate::assets::deck_dir(root, deck_id)?.is_dir()
+    {
+        crate::assets::validate_owned_dir(root, deck_id)?;
+    }
+    Ok(())
+}
+
+fn count_files(dir: &Path) -> Result<usize> {
+    let mut count = 0;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.path().is_dir() {
+            count += count_files(&entry.path())?;
+        } else {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
+    if crate::workspace::is_workspace(dir) {
+        validate_workspace_material(dir)?;
+    }
     std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
     let deck_ids: std::collections::HashSet<String> = crate::workspace::deck_files(dir)
         .into_iter()
@@ -99,6 +155,34 @@ pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
         }
     }
     Ok(staged)
+}
+
+fn validate_workspace_material(root: &Path) -> Result<()> {
+    let decks = crate::workspace::deck_files(root);
+    let mut deck_ids = std::collections::HashSet::new();
+    for path in decks {
+        let deck = crate::deck::Deck::load(&path)?;
+        if let Some(deck_id) = deck.deck_token.as_deref() {
+            deck_ids.insert(deck_id.to_string());
+        }
+        validate_bundle_material(&deck, root)?;
+    }
+    let assets = root.join(crate::assets::ROOT);
+    for entry in std::fs::read_dir(&assets).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !deck_ids.contains(&name) {
+            bail!(
+                "{} is not owned by a deck in this workspace",
+                path.display()
+            );
+        }
+        crate::assets::validate_owned_dir(root, &name)?;
+    }
+    Ok(())
 }
 
 fn stage_augmentation(
@@ -398,6 +482,9 @@ pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>
     } else {
         Vec::new()
     };
+    if got.is_dir() && crate::workspace::is_workspace(&got) {
+        validate_workspace_material(&got)?;
+    }
     let dest = dest_dir.join(&name);
     if dest.exists() {
         bail!("{} already exists — move it aside first", dest.display());
@@ -441,9 +528,13 @@ pub fn land_deck_bundle_with_force(
         .deck_token
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("{} is not initialized", source_deck.display()))?;
+    validate_single_asset_set(bundle, deck_id)?;
+    validate_bundle_material(&deck, bundle)?;
     let source_augmentation = bundle.join("augment").join(format!("{deck_id}.json"));
-    let (source_revision, source_data) =
-        crate::augment::read_deck_data(&source_augmentation, deck_id)?;
+    let source_augmentation = source_augmentation
+        .is_file()
+        .then(|| crate::augment::read_deck_data(&source_augmentation, deck_id))
+        .transpose()?;
 
     std::fs::create_dir_all(dest_dir)
         .with_context(|| format!("cannot create {}", dest_dir.display()))?;
@@ -464,38 +555,74 @@ pub fn land_deck_bundle_with_force(
     std::fs::copy(&source_deck, &staged_deck)
         .with_context(|| format!("cannot stage {}", destination.display()))?;
 
-    let state_root = crate::workspace::root_store_path(dest_dir);
-    let (layout, _) = match crate::state::prepare(&staged_deck, &state_root) {
-        Ok(prepared) => prepared,
-        Err(error) => {
-            let _ = std::fs::remove_file(&staged_deck);
-            return Err(error.into());
+    let source_assets = bundle.join("assets").join(deck_id);
+    if source_assets.is_dir() {
+        let asset_root = crate::workspace::root_for_member_dir(dest_dir).unwrap_or(dest_dir);
+        let destination_assets = crate::assets::deck_dir(asset_root, deck_id)?;
+        std::fs::create_dir_all(&destination_assets)
+            .with_context(|| format!("cannot create {}", destination_assets.display()))?;
+        for entry in std::fs::read_dir(&source_assets)? {
+            let entry = entry?;
+            let source = entry.path();
+            let destination_asset = destination_assets.join(entry.file_name());
+            if destination_asset.is_file() {
+                if std::fs::read(&source)? != std::fs::read(&destination_asset)? {
+                    let _ = std::fs::remove_file(&staged_deck);
+                    bail!(
+                        "{} already exists with different bytes",
+                        destination_asset.display()
+                    );
+                }
+            } else {
+                std::fs::copy(&source, &destination_asset)
+                    .with_context(|| format!("cannot copy {}", destination_asset.display()))?;
+            }
         }
-    };
-    let destination_augmentation = layout.augment_for(deck_id);
-    let destination_revision = if destination_augmentation.is_file() {
-        let (revision, data) = crate::augment::read_deck_data(&destination_augmentation, deck_id)?;
-        if !force && data != source_data && (!data.cards.is_empty() || !data.topologies.is_empty())
-        {
-            let _ = std::fs::remove_file(&staged_deck);
-            bail!(
-                "{} already has different augmentation for deck `{deck_id}`",
-                destination_augmentation.display()
-            );
-        }
-        revision
-    } else {
-        0
-    };
-    crate::augment::write_deck_data(
-        &destination_augmentation,
-        deck_id,
-        source_revision.max(destination_revision.saturating_add(1)),
-        &source_data,
-    )?;
+    }
+    if let Some((source_revision, source_data)) = source_augmentation {
+        let workspace_root = crate::workspace::root_for_member_dir(dest_dir).unwrap_or(dest_dir);
+        let destination_augmentation =
+            crate::workspace::WorkspaceFiles::new(workspace_root).augment_for(deck_id);
+        let destination_revision = if destination_augmentation.is_file() {
+            let (revision, data) =
+                crate::augment::read_deck_data(&destination_augmentation, deck_id)?;
+            if !force
+                && data != source_data
+                && (!data.cards.is_empty() || !data.topologies.is_empty())
+            {
+                let _ = std::fs::remove_file(&staged_deck);
+                bail!(
+                    "{} already has different augmentation for deck `{deck_id}`",
+                    destination_augmentation.display()
+                );
+            }
+            revision
+        } else {
+            0
+        };
+        crate::augment::write_deck_data(
+            &destination_augmentation,
+            deck_id,
+            source_revision.max(destination_revision.saturating_add(1)),
+            &source_data,
+        )?;
+    }
     move_into(&staged_deck, &destination)
         .with_context(|| format!("cannot write {}", destination.display()))?;
     Ok((marker.deck, stripped))
+}
+
+fn validate_single_asset_set(root: &Path, deck_id: &str) -> Result<()> {
+    let assets = root.join(crate::assets::ROOT);
+    for entry in std::fs::read_dir(&assets).into_iter().flatten().flatten() {
+        if !entry.path().is_dir() || entry.file_name() != std::ffi::OsStr::new(deck_id) {
+            bail!(
+                "{} does not belong in a single-deck share for `{deck_id}`",
+                entry.path().display()
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -545,31 +672,63 @@ mod tests {
     }
 
     #[test]
+    fn staging_rejects_a_live_source_workspace_member_before_copying_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks = workspace.join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::write(workspace.join(crate::workspace::MANIFEST), "").unwrap();
+        std::fs::write(workspace.join("notes.md"), "evidence\n").unwrap();
+        let deck = decks.join("facts.md");
+        std::fs::write(
+            &deck,
+            "---\nalix-id: deck1\nsource: notes.md\n---\n## q <!-- id: card1 -->\na\n",
+        )
+        .unwrap();
+        let stage = dir.path().join("stage");
+
+        let error = stage_path(&deck, &stage).unwrap_err();
+
+        assert!(format!("{error:#}").contains("content-addressed"));
+        assert!(!stage.exists());
+    }
+
+    #[test]
     fn a_single_deck_round_trip_carries_augmentation_but_not_progress() {
         let dir = tempfile::tempdir().unwrap();
         let sender = dir.path().join("sender");
         std::fs::create_dir(&sender).unwrap();
+        std::fs::create_dir_all(sender.join("assets/deck1")).unwrap();
+        let source_name = crate::assets::object_name(b"evidence\n", "txt");
+        std::fs::write(sender.join("assets/deck1").join(&source_name), "evidence\n").unwrap();
         let deck_path = sender.join("math.md");
         std::fs::write(
             &deck_path,
-            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+            format!(
+                "---\nalix-id: deck1\nsource: assets/deck1/{source_name}\n---\n\
+                 ## q <!-- id: card1 -->\na\n<!-- at: {source_name}:1 -->\n"
+            ),
         )
         .unwrap();
         let mut progress = crate::state::open_store(&deck_path, &sender).unwrap();
         progress.get_or_insert("card1", 1);
         progress.save().unwrap();
-        let mut augmentation = crate::state::open_augment(&deck_path, &sender).unwrap();
+        let mut augmentation = crate::augment::AugmentCache::open_for_deck(
+            &crate::deck::Deck::load(&deck_path).unwrap(),
+        )
+        .unwrap();
         augmentation.set_note("card1", "shared note".to_string(), 7);
         augmentation.save().unwrap();
 
         let transfer = dir.path().join("transfer");
         std::fs::create_dir(&transfer).unwrap();
-        let (bundle, count) = stage_path(&deck_path, &sender, &transfer).unwrap();
+        let (bundle, count) = stage_path(&deck_path, &transfer).unwrap();
 
-        assert_eq!(3, count);
+        assert_eq!(4, count);
         assert!(is_deck_bundle(&bundle));
         assert!(bundle.join("math.md").is_file());
         assert!(bundle.join("augment/deck1.json").is_file());
+        assert!(bundle.join("assets/deck1").join(&source_name).is_file());
         assert!(!bundle.join("progress").exists());
 
         let receiver = dir.path().join("receiver");
@@ -580,11 +739,17 @@ mod tests {
         let received_deck = receiver.join("math.md");
         let received_progress = crate::state::open_store(&received_deck, &receiver).unwrap();
         assert!(received_progress.get("card1").is_none());
-        let received_augmentation = crate::state::open_augment(&received_deck, &receiver).unwrap();
+        assert!(receiver.join("assets/deck1").join(&source_name).is_file());
+        let received_augmentation = crate::augment::AugmentCache::open_for_deck(
+            &crate::deck::Deck::load(&received_deck).unwrap(),
+        )
+        .unwrap();
         assert_eq!(Some("shared note"), received_augmentation.note("card1", 7));
 
-        let mut changed_augmentation =
-            crate::state::open_augment(&received_deck, &receiver).unwrap();
+        let mut changed_augmentation = crate::augment::AugmentCache::open_for_deck(
+            &crate::deck::Deck::load(&received_deck).unwrap(),
+        )
+        .unwrap();
         changed_augmentation.set_note("card1", "local note".to_string(), 7);
         changed_augmentation.save().unwrap();
         std::fs::write(
@@ -599,8 +764,69 @@ mod tests {
             std::fs::read_to_string(&deck_path).unwrap(),
             std::fs::read_to_string(&received_deck).unwrap()
         );
-        let received_augmentation = crate::state::open_augment(&received_deck, &receiver).unwrap();
+        let received_augmentation = crate::augment::AugmentCache::open_for_deck(
+            &crate::deck::Deck::load(&received_deck).unwrap(),
+        )
+        .unwrap();
         assert_eq!(Some("shared note"), received_augmentation.note("card1", 7));
+    }
+
+    #[test]
+    fn receiving_rejects_corrupted_assets_before_writing_the_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let sender = dir.path().join("sender");
+        std::fs::create_dir_all(sender.join("assets/deck1")).unwrap();
+        let name = crate::assets::object_name(b"evidence\n", "txt");
+        std::fs::write(sender.join("assets/deck1").join(&name), "evidence\n").unwrap();
+        let deck = sender.join("facts.md");
+        std::fs::write(
+            &deck,
+            format!(
+                "---\nalix-id: deck1\nsource: assets/deck1/{name}\n---\n\
+                 ## q <!-- id: card1 -->\na\n"
+            ),
+        )
+        .unwrap();
+        let transfer = dir.path().join("transfer");
+        std::fs::create_dir(&transfer).unwrap();
+        let (bundle, _) = stage_path(&deck, &transfer).unwrap();
+        std::fs::write(bundle.join("assets/deck1").join(&name), "changed\n").unwrap();
+        let receiver = dir.path().join("receiver");
+
+        let error = land_deck_bundle(&bundle, &receiver).unwrap_err();
+
+        assert!(format!("{error:#}").contains("content address"));
+        assert!(!receiver.join("facts.md").exists());
+        assert!(!receiver.join("augment/deck1.json").exists());
+    }
+
+    #[test]
+    fn receiving_rejects_assets_owned_by_an_unrelated_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let sender = dir.path().join("sender");
+        std::fs::create_dir_all(sender.join("assets/deck1")).unwrap();
+        let name = crate::assets::object_name(b"evidence\n", "txt");
+        std::fs::write(sender.join("assets/deck1").join(&name), "evidence\n").unwrap();
+        let deck = sender.join("facts.md");
+        std::fs::write(
+            &deck,
+            format!(
+                "---\nalix-id: deck1\nsource: assets/deck1/{name}\n---\n\
+                 ## q <!-- id: card1 -->\na\n"
+            ),
+        )
+        .unwrap();
+        let transfer = dir.path().join("transfer");
+        std::fs::create_dir(&transfer).unwrap();
+        let (bundle, _) = stage_path(&deck, &transfer).unwrap();
+        std::fs::create_dir_all(bundle.join("assets/deck2")).unwrap();
+        std::fs::write(bundle.join("assets/deck2").join(&name), "evidence\n").unwrap();
+        let receiver = dir.path().join("receiver");
+
+        let error = land_deck_bundle(&bundle, &receiver).unwrap_err();
+
+        assert!(format!("{error:#}").contains("does not belong"));
+        assert!(!receiver.join("facts.md").exists());
     }
 
     #[test]

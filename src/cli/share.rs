@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use alix::{assemble, config::Config, workspace};
+use alix::{config::Config, workspace};
 use anyhow::{Context, Result, bail};
 
 use crate::{ReceiveArgs, ShareArgs, common::deck_out_dir};
 
 pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
-    let config = Config::load(None)?;
     let path = &args.path;
     let name = path
         .file_name()
@@ -18,18 +17,7 @@ pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
     if path.is_dir() && !workspace::has_decks(path) {
         bail!("no decks in `{}`; nothing to share", path.display());
     }
-    let state_root = assemble::store_path_for(std::slice::from_ref(path), None)
-        .or_else(|| {
-            config
-                .decks_dir()
-                .map(|decks| workspace::root_store_path(&decks))
-        })
-        .unwrap_or_else(|| {
-            path.parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf()
-        });
-    let (to_send, staged) = alix::share::stage_path(path, &state_root, tmp.path())?;
+    let (to_send, staged) = alix::share::stage_path(path, tmp.path())?;
 
     if args.zip {
         let stem = name.strip_suffix(".md").unwrap_or(&name);

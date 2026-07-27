@@ -29,6 +29,11 @@ use crate::{
     trace_ai,
 };
 
+pub(super) fn can_fetch_origin(cfg: &AskConfig) -> bool {
+    cfg.allowed_tools.iter().any(|tool| tool == "WebFetch")
+        && crate::backend::ensure_source_reachable(cfg, true).is_ok()
+}
+
 pub(super) struct Reviewing {
     pub(super) session: Session,
     pub(super) label: String,
@@ -36,7 +41,8 @@ pub(super) struct Reviewing {
     pub(super) images: HashMap<String, PathBuf>,
     pub(super) ask: Ask,
     pub(super) links: HashMap<String, Vec<String>>,
-    pub(super) source_roots: HashMap<String, PathBuf>,
+    pub(super) origin_urls: HashMap<String, String>,
+    pub(super) origin_roots: HashMap<String, PathBuf>,
     pub(super) source_bases: HashMap<String, SourceBase>,
     pub(super) augment: AugmentCache,
     pub(super) present_seq: u64,
@@ -68,6 +74,7 @@ pub(super) struct Ask {
     pub(super) subject: Option<String>,
     pub(super) pending: Option<Pending>,
     pub(super) draft: Option<ask::DraftCard>,
+    pub(super) context_warning: Option<String>,
 }
 
 impl Ask {
@@ -78,6 +85,7 @@ impl Ask {
             subject: None,
             pending: None,
             draft: None,
+            context_warning: None,
         }
     }
 
@@ -85,6 +93,7 @@ impl Ask {
         if self.subject != subject {
             self.transcript.clear();
             self.draft = None;
+            self.context_warning = None;
             self.subject = subject;
         }
     }
@@ -100,7 +109,7 @@ impl Ask {
                 })
                 .collect(),
             thinking: self.pending.is_some(),
-            status,
+            status: status.or_else(|| self.context_warning.clone()),
             error,
             draft: self.draft.as_ref().map(|d| DraftCardDto {
                 front: d.front.clone(),
@@ -118,6 +127,7 @@ impl Ask {
         links: &[String],
         root: Option<&Path>,
         frozen: Option<&str>,
+        has_origin_context: bool,
         action: AskAction,
     ) -> bool {
         if self.pending.is_some() {
@@ -129,8 +139,10 @@ impl Ask {
         {
             return false;
         }
+        self.context_warning =
+            (frozen.is_some() && !has_origin_context).then(|| ask::FROZEN_ONLY_WARNING.to_string());
         let run_cfg = match root {
-            Some(r) => ask::with_source_root(cfg, r),
+            Some(r) => ask::with_origin_root(cfg, r),
             None => cfg.clone(),
         };
         let args = self.cli.args_in(run_cfg.cwd.as_deref());
@@ -169,16 +181,6 @@ impl Ask {
             purpose,
             card: card.clone(),
         });
-        true
-    }
-
-    fn answer_immediately(&mut self, card: &Card, question: String, answer: String) -> bool {
-        if self.pending.is_some() {
-            return false;
-        }
-        self.align(card.id());
-        // self.cli is deliberately left untouched: no real turn happened.
-        self.transcript.push((question, answer));
         true
     }
 
@@ -485,7 +487,8 @@ impl Reviewing {
             images,
             ask: Ask::new(),
             links: build.links,
-            source_roots: build.source_roots,
+            origin_roots: build.origin_roots,
+            origin_urls: build.origin_urls,
             source_bases: build.source_bases,
             augment: build.augment,
             present_seq: now_ms(),
@@ -537,15 +540,25 @@ impl Reviewing {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
-        let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
-        let root = self.source_roots.get(&*card.subject).map(|deck_root| {
-            card.origin
-                .as_deref()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| deck_root.clone())
-        });
-        let frozen = root.as_ref().and_then(|_| {
-            let base = self.source_bases.get(&*card.subject)?;
+        let mut links = self.links.get(&*card.subject).cloned().unwrap_or_default();
+        let card_origin_url = card
+            .origin
+            .as_deref()
+            .filter(|origin| crate::deck::is_url(origin))
+            .map(str::to_string);
+        let origin_url = card_origin_url.or_else(|| self.origin_urls.get(&*card.subject).cloned());
+        if let Some(origin) = &origin_url
+            && !links.contains(origin)
+        {
+            links.push(origin.clone());
+        }
+        let root = card
+            .origin
+            .as_deref()
+            .filter(|origin| !crate::deck::is_url(origin))
+            .map(PathBuf::from)
+            .or_else(|| self.origin_roots.get(&*card.subject).cloned());
+        let frozen = self.source_bases.get(&*card.subject).and_then(|base| {
             let blocks = card
                 .citations
                 .iter()
@@ -553,19 +566,9 @@ impl Reviewing {
                 .collect::<Vec<_>>();
             (!blocks.is_empty()).then(|| blocks.join("\n\n"))
         });
-        let live_root = root.as_deref().filter(|r| r.exists());
-        // answering here avoids a round trip that would just have the model
-        // echo SOURCE_NOT_FOUND verbatim
-        if let AskAction::Question(q) = &action
-            && frozen.is_some()
-            && live_root.is_none()
-        {
-            return self.ask.answer_immediately(
-                &card,
-                q.clone(),
-                ask::SOURCE_NOT_FOUND.to_string(),
-            );
-        }
+        let live_root = root.as_deref().filter(|path| path.exists());
+        let has_origin_context =
+            live_root.is_some() || origin_url.is_some_and(|_| can_fetch_origin(cfg));
         self.ask.start(
             cfg,
             audience,
@@ -573,6 +576,7 @@ impl Reviewing {
             &links,
             live_root,
             frozen.as_deref(),
+            has_origin_context,
             action,
         )
     }
@@ -1196,15 +1200,11 @@ impl Sharing {
     }
 }
 
-pub(super) fn stage_for_share(
-    path: &Path,
-    state_root: &Path,
-    tmp: &tempfile::TempDir,
-) -> Result<PathBuf> {
+pub(super) fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<PathBuf> {
     if !path.is_file() && !crate::workspace::has_decks(path) {
         bail!("no decks in `{}` — nothing to share", path.display());
     }
-    share::stage_path(path, state_root, tmp.path()).map(|(stage, _)| stage)
+    share::stage_path(path, tmp.path()).map(|(stage, _)| stage)
 }
 
 pub(super) struct Receiving {
@@ -1321,13 +1321,20 @@ impl Walking {
         };
         let root = cfg
             .source_access
-            .then(|| self.walk.trace().origin.clone())
+            .then(|| self.walk.trace().origin_root.clone())
             .flatten();
-        let frozen = root.as_ref().and_then(|_| {
-            let c = self.walk.checkpoint()?;
-            self.walk.trace().frozen_block(c)
-        });
-        let live_root = root.as_deref().filter(|r| r.exists());
+        let frozen = self
+            .walk
+            .checkpoint()
+            .and_then(|checkpoint| self.walk.trace().frozen_block(checkpoint));
+        let live_root = root.as_deref().filter(|path| path.exists());
+        let has_origin_context = live_root.is_some()
+            || self
+                .walk
+                .trace()
+                .origin_url
+                .as_ref()
+                .is_some_and(|_| can_fetch_origin(cfg));
         let action = match question {
             Some(q) => AskAction::Question(q),
             None => AskAction::Condense,
@@ -1336,9 +1343,10 @@ impl Walking {
             cfg,
             audience,
             &card,
-            &[],
+            &self.walk.trace().links,
             live_root,
             frozen.as_deref(),
+            has_origin_context,
             action,
         )
     }

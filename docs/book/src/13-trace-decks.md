@@ -155,20 +155,29 @@ through their own SRS. After a fail the exam **cools down** for a while before y
 can re-sit it, so the graded feedback can't simply be pasted back into the one
 fixed question (`[exam] retry_cooldown_secs`, default one hour; `0` disables it).
 
-## Snapshotting
+## Immediate freezing
 
-Because `<!-- at: file:lines -->` reads the **live** source, editing a traced file would
-shift every excerpt to the wrong lines. So when you create a workspace by exploring
-a source ([`alix generate <dir>`](14-explore.md)), its final step
-**freezes** the cited excerpts into the workspace's `assets/` folder — one tiny
-snippet per checkpoint — and repoints each `<!-- at: -->` at them, so they never drift and
-the workspace is self-contained, without copying whole files. The freeze also
-records the live source root in an `origin:` directive and keeps each snippet's
-original location on its `<!-- at: -->` line, after ` from `. It also stamps the
-frozen text (`<!-- at: 12.rs @ xxh64:0123456789abcdef from
-scheduler.rs:90-98 -->`), so the tutor can still reach the real source and
-[`alix doctor`](17-command-reference.md) can tell when it has drifted. It's
-automatic for explored workspaces; a loose trace over a live source is left as-is.
+Because `<!-- at: file:lines -->` reads the **live** source, editing a traced
+file could shift every excerpt to unrelated lines. Initializing any workspace
+member therefore freezes its evidence immediately. An explicitly named source
+file is copied in full. A source directory is reduced to the excerpts cited by
+its cards, so Alix does not export an entire repository.
+
+Every copied file lives below `assets/<alix-id>/` and is named
+`sha256-<digest>.<ext>`, where the digest covers its exact stored bytes. The
+deck's `source:` enumerates those files, and each `<!-- at: -->` points at the
+corresponding content-addressed name. The line also retains its normalized
+excerpt fingerprint and original locator:
+
+```markdown
+<!-- at: sha256-<digest>.rs @ xxh64:0123456789abcdef from scheduler.rs:90-98 -->
+```
+
+Review, tutor grounding, and exams always use the frozen evidence. `origin:`
+and `from` retain provenance for drift reporting and a future deliberate source
+update. When available and permitted, the tutor and exam may also consult the
+current origin for surrounding context and staleness detection; it never
+replaces the frozen excerpt. A loose trace over a live source is left as-is.
 
 ## Checking the locators
 
@@ -180,10 +189,10 @@ writing. If the exact text moved to one other range, doctor reports that safe
 rebase. After reviewing it, run
 `alix doctor <deck> --repair-source-locators` to stamp missing fingerprints and
 apply only unique exact rebases. Changed and ambiguous excerpts remain
-untouched. Frozen snapshots do not move, but doctor still verifies their
+untouched. Frozen assets do not move, but doctor still verifies their
 captured text and separately reports live-origin drift.
 
 A trace deck degrades gracefully — even outside a walk it's a valid deck of
 `explain` cards. See `docs/examples/workspace-showcase/decks/ownership-move.md`
-for a complete trace, a frozen snapshot over The Rust Book's ownership
+for a complete trace, frozen evidence from The Rust Book's ownership
 chapter, so it walks offline.

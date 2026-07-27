@@ -45,9 +45,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         return vec![folder_summary(root, root, review, now_ms)];
     }
     let root_store = crate::state::open_aggregate_store(&workspace::root_store_path(root)).ok();
-    let augment = root_store
-        .as_ref()
-        .and_then(|store| AugmentCache::open_for_store(store.path()).ok());
+    let augment = AugmentCache::open_for_workspace(root).ok();
     let mut names: Vec<PathBuf> = std::fs::read_dir(root)
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
@@ -117,9 +115,7 @@ fn member_rows(
     now_ms: u64,
 ) -> (Vec<PathBuf>, Vec<(DeckSummary, bool)>) {
     let store = member_store(root, dir);
-    let augment = store
-        .as_ref()
-        .and_then(|store| AugmentCache::open_for_store(store.path()).ok());
+    let augment = AugmentCache::open_for_workspace(dir).ok();
     let paths: Vec<PathBuf> = match workspace::Workspace::load(dir) {
         Ok(ws) => ws.members,
         Err(_) => return (Vec::new(), Vec::new()),
@@ -162,6 +158,7 @@ fn deadline_for(
 
 pub fn sync_conflicts_under(root: &Path) -> Vec<PathBuf> {
     let mut out = store::sync_conflicts(&workspace::root_store_path(root));
+    out.extend(crate::augment::sync_conflicts(root));
     let mut entries: Vec<PathBuf> = std::fs::read_dir(root)
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
@@ -173,8 +170,11 @@ pub fn sync_conflicts_under(root: &Path) -> Vec<PathBuf> {
         }
         if path.is_dir() && workspace::is_workspace(&path) {
             out.extend(store::sync_conflicts(&workspace::store_path(&path)));
+            out.extend(crate::augment::sync_conflicts(&path));
         }
     }
+    out.sort();
+    out.dedup();
     out
 }
 
@@ -397,8 +397,8 @@ pub fn deck_status(
         .iter()
         .filter(|card| session::has_graduated(card, store))
         .count();
-    // "mastered" is reserved for passing the exam; a source-less deck that's
-    // merely fully drilled stays "done".
+    // "mastered" is reserved for passing the exam; a deck without exam
+    // grounding that's merely fully drilled stays "done".
     let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(&deck.subject);
     let badge = match state {
         DeckState::Finished if mastered => {
@@ -661,8 +661,8 @@ mod tests {
         assert_eq!(vec![("facts", false), ("How it flows", true)], flags);
     }
 
-    fn settle(state_root: &Path, deck_path: &Path) {
-        let mut store = crate::state::open_store(deck_path, state_root).unwrap();
+    fn settle(user_root: &Path, deck_path: &Path) {
+        let mut store = crate::state::open_store(deck_path, user_root).unwrap();
         let deck = Deck::load(deck_path).unwrap();
         let scheduler = Fsrs::default();
         for card in &deck.cards {
@@ -771,18 +771,26 @@ mod tests {
         write(&root.join("ws/decks/m.md"), "## q <!-- id: qm -->\na\n");
 
         std::fs::create_dir(root.join("progress")).unwrap();
+        std::fs::create_dir(root.join("augment")).unwrap();
         std::fs::create_dir(root.join("ws/progress")).unwrap();
+        std::fs::create_dir(root.join("ws/augment")).unwrap();
         let root_conflict = root.join("progress/loose.sync-conflict-20260714-101112-AAAAAAA.json");
+        let root_augment = root.join("augment/loose.sync-conflict-20260714-101112-DDDDDDD.json");
         let ws_conflict =
             root.join("ws/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
+        let ws_augment = root.join("ws/augment/member.sync-conflict-20260715-101112-EEEEEEE.json");
         write(&root_conflict, "{}");
+        write(&root_augment, "{}");
         write(&ws_conflict, "{}");
+        write(&ws_augment, "{}");
         write(
             &root.join("ws/notes.sync-conflict-20260715-101112-CCCCCCC.json"),
             "{}",
         );
 
-        assert_eq!(sync_conflicts_under(root), vec![root_conflict, ws_conflict]);
+        let mut expected = vec![root_conflict, root_augment, ws_conflict, ws_augment];
+        expected.sort();
+        assert_eq!(sync_conflicts_under(root), expected);
         assert_eq!(
             sync_conflicts_under(&root.join("nowhere")),
             Vec::<PathBuf>::new()

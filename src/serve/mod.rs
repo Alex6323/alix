@@ -509,7 +509,7 @@ pub fn run_review(
                             ),
                         ) {
                             (Ok(deck), Ok(s)) => {
-                                let augment = match AugmentCache::open_for_store(s.path()) {
+                                let augment = match AugmentCache::open_for_deck(&deck) {
                                     Ok(augment) => augment,
                                     Err(_) => {
                                         respond_json(request, &DeckDrawerDto::default());
@@ -786,14 +786,7 @@ pub fn run_review(
                 let started = tempfile::tempdir()
                     .map_err(|e| anyhow!("{e}"))
                     .and_then(|tmp| {
-                        let state_root =
-                            crate::assemble::store_path_for(
-                                std::slice::from_ref(&path),
-                                None,
-                            )
-                            .unwrap_or_else(|| crate::workspace::root_store_path(decks_dir));
-                        let to_send =
-                            stage_for_share(&path, &state_root, &tmp)?;
+                        let to_send = stage_for_share(&path, &tmp)?;
                         let job = share::send_spawn(&to_send)?;
                         Ok(Sharing {
                             job,
@@ -845,14 +838,7 @@ pub fn run_review(
                     continue;
                 };
                 let zipped = tempfile::tempdir().ok().and_then(|tmp| {
-                    let state_root =
-                        crate::assemble::store_path_for(
-                            std::slice::from_ref(&path),
-                            None,
-                        )
-                        .unwrap_or_else(|| crate::workspace::root_store_path(decks_dir));
-                    let staged =
-                        stage_for_share(&path, &state_root, &tmp).ok()?;
+                    let staged = stage_for_share(&path, &tmp).ok()?;
                     let out = tmp.path().join("share.zip");
                     share::zip_to(&staged, &out).ok()?;
                     std::fs::read(&out).ok()
@@ -1383,7 +1369,11 @@ pub fn run_review(
                             .collect();
                         let deck_tokens: Vec<String> =
                             decks.iter().filter_map(|deck| deck.deck_token.clone()).collect();
-                        let Ok(cache) = AugmentCache::open_for_decks(store.path(), &decks) else {
+                        let workspace_root = workspace_dir
+                            .clone()
+                            .or_else(|| files.first().map(|path| crate::workspace::content_root(path)))
+                            .unwrap_or_else(|| decks_dir.clone());
+                        let Ok(cache) = AugmentCache::open_for_decks(&workspace_root, &decks) else {
                             respond_status(request, 409);
                             continue;
                         };
@@ -1692,7 +1682,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                if !deck.is_trace() && deck.sources.is_empty() {
+                if !deck.has_exam() {
                     respond_status(request, 409);
                     continue;
                 }

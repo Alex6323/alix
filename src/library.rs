@@ -6,10 +6,12 @@ use std::{
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    augment::{self, AugmentCache},
+    assets,
+    augment::AugmentCache,
     deck::Deck,
-    parser, stamp,
+    parser,
     store::Store,
+    workspace::{self, WorkspaceFiles},
 };
 
 #[derive(Debug)]
@@ -32,23 +34,24 @@ pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
     }
     let parsed = parser::parse_str(&file, text);
     write_body(&path, text)?;
-    Ok(match parsed {
+    match parsed {
         Ok(cards) => {
-            if let Err(e) = stamp::stamp_deck(&path) {
-                eprintln!("warning: cannot stamp {}: {e}", path.display());
+            if let Err(error) = assets::initialize(&path) {
+                let _ = std::fs::remove_file(&path);
+                return Err(error.into());
             }
-            Placed {
+            Ok(Placed {
                 path,
                 cards: cards.len(),
                 parse_error: None,
-            }
+            })
         }
-        Err(e) => Placed {
+        Err(e) => Ok(Placed {
             path,
             cards: 0,
             parse_error: Some(format!("{e:#}")),
-        },
-    })
+        }),
+    }
 }
 
 fn write_body(path: &Path, text: &str) -> Result<()> {
@@ -114,19 +117,29 @@ pub fn replace_deck(
     }
 
     std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    if path.exists() {
+    let backup = if path.exists() {
         let bak = dir.join(format!("{file}.bak"));
         std::fs::rename(&path, &bak)
             .with_context(|| format!("cannot keep {} as {}", path.display(), bak.display()))?;
-    }
+        Some(bak)
+    } else {
+        None
+    };
     write_body(&path, text)?;
 
-    // Loud but non-fatal; review-open stamps again.
-    let minted = match stamp::stamp_deck(&path) {
-        Ok(outcome) => outcome.minted_cards.len(),
-        Err(e) => {
-            eprintln!("warning: cannot stamp {}: {e}", path.display());
-            0
+    let minted = match assets::initialize(&path) {
+        Ok(outcome) => outcome.stamp.minted_cards.len(),
+        Err(error) => {
+            let _ = std::fs::remove_file(&path);
+            if let Some(backup) = &backup {
+                std::fs::rename(backup, &path).with_context(|| {
+                    format!(
+                        "cannot restore {} after the replacement failed",
+                        path.display()
+                    )
+                })?;
+            }
+            return Err(error.into());
         }
     };
 
@@ -136,9 +149,11 @@ pub fn replace_deck(
     store
         .save()
         .context("saving the store after replacing a deck")?;
-    let cache_path = augment::augment_path_for(store.path());
+    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
+    let workspace_files = WorkspaceFiles::new(workspace_root);
+    let cache_path = workspace_files.augment();
     if cache_path.exists() {
-        let mut cache = AugmentCache::open_for_store(store.path())?;
+        let mut cache = AugmentCache::open_for_workspace(workspace_root)?;
         if cache.wipe_tokens(&old_card_tokens, &old_deck_tokens) {
             cache
                 .save()
@@ -148,8 +163,18 @@ pub fn replace_deck(
     if old_deck_tokens.len() == 1
         && let Some(deck_id) = old_deck_tokens.iter().next()
     {
-        crate::state::retire_replaced_deck(store.path(), deck_id)
-            .context("retiring the replaced deck's state documents")?;
+        if crate::state::retire_replaced_progress(store.path(), deck_id)
+            .context("retiring the replaced deck's progress")?
+        {
+            let augmentation = workspace_files.augment_for(deck_id);
+            if augmentation.is_file() {
+                let (_, data) = crate::augment::read_deck_data(&augmentation, deck_id)?;
+                if data.cards.is_empty() && data.topologies.is_empty() {
+                    std::fs::remove_file(&augmentation)
+                        .with_context(|| format!("cannot remove {}", augmentation.display()))?;
+                }
+            }
+        }
         let replacement = Deck::load(&path).context("loading the stamped replacement deck")?;
         store
             .rebind_replaced_deck(deck_id, &replacement)
@@ -215,6 +240,21 @@ mod tests {
             deck.cards.iter().all(|c| c.id().is_some()),
             "every card stamped"
         );
+    }
+
+    #[test]
+    fn failed_workspace_freezing_removes_the_uninitialized_candidate() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join(crate::workspace::DECKS);
+        std::fs::create_dir(&decks).unwrap();
+        std::fs::write(dir.path().join(crate::workspace::MANIFEST), "").unwrap();
+
+        let error =
+            place_deck(&decks, "facts", "---\nsource: missing.md\n---\n## q\na\n").unwrap_err();
+
+        assert!(format!("{error:#}").contains("missing.md"));
+        assert!(!decks.join("facts.md").exists());
+        assert!(!dir.path().join(crate::assets::ROOT).exists());
     }
 
     #[test]
@@ -369,9 +409,8 @@ mod tests {
         store.set_deck_mastered("b.md", 1);
         store.save().unwrap();
 
-        // Augment cache beside the store: A's card entry + A's topology, plus B's.
-        let cache_path = augment::augment_path_for(store.path());
-        let mut cache = AugmentCache::open_for_decks(store.path(), &decks).unwrap();
+        let cache_path = WorkspaceFiles::new(dir.path()).augment();
+        let mut cache = AugmentCache::open_for_decks(dir.path(), &decks).unwrap();
         cache.set_distractors("c1", vec!["x".into()], 1);
         cache.add_topology(crate::augment::Topology {
             name: "auto".into(),
@@ -458,7 +497,7 @@ mod tests {
         aggregate.get_or_insert("c2", 0);
         aggregate.save().unwrap();
         let mut augmentation = AugmentCache::open_for_decks(
-            aggregate.path(),
+            dir.path(),
             &paths
                 .iter()
                 .map(Deck::load)
@@ -567,7 +606,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("d.md");
             std::fs::write(&path, MARKER_FIXTURE).unwrap();
-            stamp::stamp_deck(&path).unwrap();
+            crate::stamp::stamp_deck(&path).unwrap();
             let text = std::fs::read_to_string(&path).unwrap();
             let deck = crate::parser::parse("d.md", &text).unwrap();
             assert!(deck.cards.iter().all(|c| c.token.is_some()));

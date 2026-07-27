@@ -491,8 +491,8 @@ impl AugmentCache {
         })
     }
 
-    pub fn open_for_decks(store_path: &Path, decks: &[Deck]) -> Result<Self, AugmentError> {
-        let path = augment_path_for(store_path);
+    pub fn open_for_decks(workspace_root: &Path, decks: &[Deck]) -> Result<Self, AugmentError> {
+        let path = crate::workspace::WorkspaceFiles::new(workspace_root).augment();
         let mut owners = HashMap::new();
         let mut deck_ids = HashSet::new();
         for deck in decks {
@@ -515,16 +515,24 @@ impl AugmentCache {
         Self::open_aggregate(path, owners, deck_ids)
     }
 
-    pub fn open_for_store(store_path: &Path) -> Result<Self, AugmentError> {
-        let path = augment_path_for(store_path);
-        match crate::state::deck_id_from_document(&path).filter(|_| {
-            path.parent()
-                .and_then(Path::file_name)
-                .is_some_and(|name| name == "augment")
-        }) {
-            Some(deck_id) => Self::open_deck(&path, deck_id),
-            None => Ok(Self::open(path)),
-        }
+    pub fn open_for_workspace(workspace_root: &Path) -> Result<Self, AugmentError> {
+        let path = crate::workspace::WorkspaceFiles::new(workspace_root).augment();
+        Self::open_aggregate(path, HashMap::new(), HashSet::new())
+    }
+
+    pub fn open_for_deck(deck: &Deck) -> Result<Self, AugmentError> {
+        let deck_id = deck
+            .deck_token
+            .as_deref()
+            .ok_or_else(|| AugmentError::MissingDeckId {
+                subject: deck.subject.clone(),
+            })?;
+        let path = crate::workspace::WorkspaceFiles::for_deck(&deck.path).augment_for(deck_id);
+        Self::open_deck(path, deck_id)
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     pub fn save(&self) -> Result<(), AugmentError> {
@@ -1046,6 +1054,37 @@ impl AugmentCache {
         self.topologies.retain(|t| !t.belongs_to(deck_tokens));
     }
 
+    pub fn remove_cards(&mut self, card_ids: &HashSet<String>) -> bool {
+        let cards_before = self.cards.len();
+        self.cards.retain(|id, _| !card_ids.contains(id));
+        let mut changed = self.cards.len() != cards_before;
+        for topology in &mut self.topologies {
+            let walk_before = topology.walk.len();
+            topology.walk.retain(|id| !card_ids.contains(id));
+            let edges_before = topology.edges.len();
+            topology
+                .edges
+                .retain(|edge| !card_ids.contains(&edge.from) && !card_ids.contains(&edge.to));
+            let regions_before = topology
+                .regions
+                .iter()
+                .map(|region| region.cards.len())
+                .sum::<usize>();
+            for region in &mut topology.regions {
+                region.cards.retain(|id| !card_ids.contains(id));
+            }
+            changed |= walk_before != topology.walk.len()
+                || edges_before != topology.edges.len()
+                || regions_before
+                    != topology
+                        .regions
+                        .iter()
+                        .map(|region| region.cards.len())
+                        .sum::<usize>();
+        }
+        changed
+    }
+
     /// Token-scoped, unlike [`clear_all`](Self::clear_all)'s exact ids, so a
     /// stale entry under a wiped token goes too. Does not save.
     pub fn wipe_tokens(
@@ -1080,27 +1119,23 @@ pub struct CoverageSummary {
     pub topologies: Vec<String>,
 }
 
-pub fn augment_path_for(store_path: &Path) -> PathBuf {
-    if store_path
-        .parent()
-        .and_then(Path::file_name)
-        .is_some_and(|name| name == "progress")
-        && store_path.extension().is_some_and(|ext| ext == "json")
-        && let (Some(root), Some(name)) = (
-            store_path.parent().and_then(Path::parent),
-            store_path.file_name(),
-        )
-    {
-        return root.join("augment").join(name);
-    }
-    if store_path
-        .file_name()
-        .is_some_and(|name| name == "progress")
-        && let Some(root) = store_path.parent()
-    {
-        return root.join("augment");
-    }
-    store_path.join("augment")
+pub fn sync_conflicts(workspace_root: &Path) -> Vec<PathBuf> {
+    let mut conflicts: Vec<PathBuf> =
+        std::fs::read_dir(crate::workspace::WorkspaceFiles::new(workspace_root).augment())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(crate::workspace::is_conflict_name)
+            })
+            .collect();
+    conflicts.sort();
+    conflicts
 }
 
 #[derive(Clone, Debug)]
@@ -1142,6 +1177,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn sync_conflicts_finds_per_deck_augmentation_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("augment")).unwrap();
+        let conflict = dir
+            .path()
+            .join("augment/deck2.sync-conflict-20260714-laptop.json");
+        std::fs::write(&conflict, "{}").unwrap();
+
+        assert_eq!(sync_conflicts(dir.path()), vec![conflict]);
     }
 
     #[test]
@@ -1312,18 +1359,6 @@ mod tests {
             Some(&["x".to_string()][..]),
             cache.distractors("not-a-token", FP)
         );
-    }
-
-    #[test]
-    fn a_state_root_contains_the_augmentation_directory() {
-        let p = augment_path_for(Path::new("/data/alix"));
-        assert_eq!(Path::new("/data/alix/augment"), p);
-    }
-
-    #[test]
-    fn per_deck_augment_path_mirrors_the_progress_document() {
-        let p = augment_path_for(Path::new("/data/alix/progress/deck1.json"));
-        assert_eq!(Path::new("/data/alix/augment/deck1.json"), p);
     }
 
     #[test]

@@ -67,9 +67,11 @@ pub struct Trace {
     pub description: String,
     pub subject: String,
     pub source: Option<String>,
+    pub links: Vec<String>,
+    pub origin_url: Option<String>,
     pub checkpoints: Vec<Checkpoint>,
     pub deck_path: PathBuf,
-    pub origin: Option<PathBuf>,
+    pub origin_root: Option<PathBuf>,
     source_base: SourceBase,
 }
 
@@ -114,9 +116,11 @@ impl Trace {
             description,
             subject: deck.subject.clone(),
             source,
+            links: deck.reference_links(),
+            origin_url: deck.origin_url(),
             checkpoints,
             deck_path: deck.path.clone(),
-            origin: deck.source_root(),
+            origin_root: deck.origin_root(),
             source_base: SourceBase::for_deck(deck),
         })
     }
@@ -221,10 +225,6 @@ pub struct LocatorIssue {
     pub checkpoint: usize,
     pub message: String,
 }
-
-/// The directory under a workspace where a snapshotted trace's excerpts are
-/// frozen.
-pub(crate) const SNAPSHOT_DIR: &str = "assets";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -341,8 +341,6 @@ pub struct Summary {
     pub weak: Vec<usize>,
 }
 
-/// The frozen asset is the anchor the tutor reasons from; live source is
-/// only for context.
 fn render_frozen_block(excerpt: Excerpt, at_origin: Option<&str>) -> String {
     let (excerpt, label) = relabel_for_display(excerpt, at_origin);
     let mut s = String::new();
@@ -366,7 +364,7 @@ pub struct Drift {
 /// A *moved* excerpt that's otherwise unchanged is NOT flagged (the block is
 /// searched across the whole file).
 pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
-    let Some(origin_root) = deck.source_root() else {
+    let Some(origin_root) = deck.origin_root() else {
         return Vec::new();
     };
     let source_base = SourceBase::for_deck(deck);
@@ -595,17 +593,20 @@ mod tests {
     #[test]
     fn tutor_grounding_drops_a_changed_frozen_excerpt() {
         let dir = tempfile::tempdir().unwrap();
-        let assets = dir.path().join("assets");
-        std::fs::create_dir(&assets).unwrap();
-        write(&assets, "01.rs", "fn expected() {}\n");
+        let assets = dir.path().join("assets/deck1");
+        std::fs::create_dir_all(&assets).unwrap();
+        let name = crate::assets::object_name(b"fn expected() {}\n", "rs");
+        write(&assets, &name, "fn expected() {}\n");
         let deck_path = write(
             dir.path(),
             "t.md",
-            "---\nsource: assets\n---\n\
-             ## q\na\n<!-- at: 01.rs from src/lib.rs:1 -->\n",
+            &format!(
+                "---\nsource: assets/deck1/{name}\n---\n\
+                 ## q\na\n<!-- at: {name}:1 from src/lib.rs:1 -->\n"
+            ),
         );
         crate::source::stamp_citations(&deck_path).unwrap();
-        write(&assets, "01.rs", "fn changed() {}\n");
+        write(&assets, &name, "fn changed() {}\n");
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);
         assert!(frozen_excerpt_block(&deck.cards[0].citations[0], &base).is_none());
@@ -792,7 +793,7 @@ mod tests {
     }
 
     #[cfg(feature = "full")]
-    fn snapshot_workspace(root: &Path) -> PathBuf {
+    fn frozen_workspace(root: &Path) -> PathBuf {
         std::fs::create_dir_all(root.join("src")).unwrap();
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
         write(&root.join("src"), "b.rs", "one\ntwo\n");
@@ -817,8 +818,8 @@ mod tests {
     fn drifted_cards_flags_a_changed_or_missing_excerpt() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let deck_path = snapshot_workspace(root);
-        crate::trace_ai::snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
+        let deck_path = frozen_workspace(root);
+        crate::assets::initialize(&deck_path).unwrap();
 
         assert!(drifted_cards(&Deck::load(&deck_path).unwrap()).is_empty());
 

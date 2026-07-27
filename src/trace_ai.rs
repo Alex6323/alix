@@ -1,19 +1,19 @@
 //! Split out of `trace` so the core trace walk compiles without the AI backend.
 
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::mpsc::{Receiver, channel},
 };
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 
 use crate::{
     ask,
     backend::{backend_for, ensure_source_reachable},
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
-    source::{Excerpt, SourceBase, resolve_source},
-    trace::{Checkpoint, Delta, SNAPSHOT_DIR},
+    source::resolve_source,
+    trace::{Checkpoint, Delta},
 };
 
 pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -42,149 +42,6 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
         bail!("the build produced no checkpoints");
     }
     Ok(cards)
-}
-
-#[derive(Debug)]
-pub(crate) struct SnapshotReport {
-    pub copied: Vec<String>,
-    pub missing: Vec<String>,
-}
-
-pub(crate) fn snapshot(
-    deck: &Deck,
-    start: usize,
-    workspace_origin: Option<&Path>,
-) -> Result<SnapshotReport> {
-    let Some(workspace_root) = crate::workspace::root_for_deck(&deck.path) else {
-        bail!(
-            "a deck snapshots into its workspace's `assets/`, but {} is not in a \
-             workspace (no `alix.toml`).",
-            deck.path.display()
-        );
-    };
-    let source = deck
-        .sources
-        .first()
-        .ok_or_else(|| anyhow!("{} declares no `source:` to snapshot", deck.subject))?;
-    if is_url(source) {
-        bail!("`{source}` is a URL — there are no local excerpts to snapshot");
-    }
-
-    let origin_root = deck.source_root();
-    let deck_origin = match (&origin_root, workspace_origin) {
-        (Some(o), Some(ws)) if same_path(o, ws) => None, // workspace default covers it
-        (Some(o), _) => Some(o.display().to_string()),
-        (None, _) => None,
-    };
-
-    let source_base = SourceBase::for_deck(deck);
-    let assets_dir = workspace_root.join(SNAPSHOT_DIR);
-    let mut copied = Vec::new();
-    let mut missing = Vec::new();
-    let mut ats: Vec<crate::deck::AtRewrite> = Vec::new();
-
-    for card in &deck.cards {
-        for citation in &card.citations {
-            let excerpt = match citation.fingerprint {
-                Some(_) => source_base.checked_excerpt(citation),
-                None => source_base.excerpt(&citation.locator),
-            };
-            match excerpt {
-                Ok(excerpt) => {
-                    let n = start + copied.len() + 1;
-                    let ext = excerpt_ext(&excerpt);
-                    let name = format!("{n:02}.{ext}");
-                    write_snippet(&assets_dir.join(&name), &excerpt)?;
-                    copied.push(name.clone());
-                    ats.push(crate::deck::AtRewrite {
-                        at: name,
-                        fingerprint: Some(crate::source::excerpt_fingerprint(&excerpt)),
-                        origin: excerpt_provenance(&excerpt, origin_root.as_deref()),
-                        line: citation.line,
-                    });
-                }
-                // Keep the original locator if the excerpt can't be read; warn later.
-                Err(_) => {
-                    missing.push(citation.locator.clone());
-                    ats.push(crate::deck::AtRewrite {
-                        at: citation.locator.clone(),
-                        fingerprint: citation.fingerprint,
-                        origin: None,
-                        line: citation.line,
-                    });
-                }
-            }
-        }
-    }
-    if copied.is_empty() {
-        bail!(
-            "{} has no readable `at:` excerpts to snapshot",
-            deck.subject
-        );
-    }
-
-    crate::deck::set_trace_snapshot(&deck.path, SNAPSHOT_DIR, deck_origin.as_deref(), &ats)?;
-
-    Ok(SnapshotReport { copied, missing })
-}
-
-fn excerpt_ext(excerpt: &Excerpt) -> String {
-    excerpt
-        .path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("txt")
-        .to_string()
-}
-
-fn excerpt_provenance(excerpt: &Excerpt, origin_root: Option<&Path>) -> Option<String> {
-    let first = excerpt.lines.first()?.0;
-    let last = excerpt.lines.last()?.0;
-    let rel = origin_root
-        .and_then(|root| path_relative_to(&excerpt.path, root))
-        .or_else(|| {
-            excerpt
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| "source".to_string());
-    Some(if first == last {
-        format!("{rel}:{first}")
-    } else {
-        format!("{rel}:{first}-{last}")
-    })
-}
-
-fn path_relative_to(path: &Path, root: &Path) -> Option<String> {
-    let path = path.canonicalize().ok()?;
-    let root = root.canonicalize().ok()?;
-    path.strip_prefix(&root)
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-}
-
-fn same_path(a: &Path, b: &Path) -> bool {
-    match (a.canonicalize(), b.canonicalize()) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
-    }
-}
-
-fn write_snippet(dest: &Path, excerpt: &Excerpt) -> Result<()> {
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("cannot create {}", parent.display()))?;
-    }
-    let mut body: String = excerpt
-        .lines
-        .iter()
-        .map(|(_, line)| line.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    body.push('\n');
-    std::fs::write(dest, body).with_context(|| format!("cannot write {}", dest.display()))?;
-    Ok(())
 }
 
 pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -549,6 +406,8 @@ fn parse_grade(raw: &str) -> Result<(Delta, String)> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::trace::Trace;
 
@@ -724,7 +583,7 @@ mod tests {
         assert!(cards.contains("<!-- at: 2 -->"));
     }
 
-    fn snapshot_workspace(root: &Path) -> PathBuf {
+    fn freeze_workspace(root: &Path) -> PathBuf {
         std::fs::create_dir_all(root.join("src")).unwrap();
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
         write(&root.join("src"), "b.rs", "one\ntwo\n");
@@ -745,32 +604,39 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_freezes_excerpts_with_provenance() {
+    fn immediate_freezing_keeps_trace_excerpts_with_provenance() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let deck_path = snapshot_workspace(root);
+        let deck_path = freeze_workspace(root);
+        let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
+        let deck_id = deck.deck_token.as_deref().unwrap();
+        let first = crate::assets::object_name(b"beta\ngamma\n", "rs");
+        let second = crate::assets::object_name(b"one\n", "rs");
 
-        let report = snapshot(&deck, 0, None).unwrap();
-        assert_eq!(2, report.copied.len());
-        assert!(report.missing.is_empty());
-        assert!(root.join("ws/assets/01.rs").is_file());
-        assert!(root.join("ws/assets/02.rs").is_file());
+        assert_eq!(2, report.freeze.unwrap().evidence);
+        assert!(root.join(format!("ws/assets/{deck_id}/{first}")).is_file());
+        assert!(root.join(format!("ws/assets/{deck_id}/{second}")).is_file());
         assert!(!root.join("ws/assets/a.rs").exists());
         assert_eq!(
             "beta\ngamma\n",
-            std::fs::read_to_string(root.join("ws/assets/01.rs")).unwrap()
+            std::fs::read_to_string(root.join(format!("ws/assets/{deck_id}/{first}"))).unwrap()
         );
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(text.contains("source: assets\n"), "{text}");
+        assert!(
+            text.contains(&format!("source: \"assets/{deck_id}/{first} + {second}\"")),
+            "{text}"
+        );
         assert!(text.contains("origin: "), "{text}");
         assert!(
-            text.contains("<!-- at: 01.rs @ xxh64:") && text.contains(" from a.rs:2-3 -->\n"),
+            text.contains(&format!("<!-- at: {first} @ xxh64:"))
+                && text.contains(" from a.rs:2-3 -->\n"),
             "{text}"
         );
         assert!(
-            text.contains("<!-- at: 02.rs @ xxh64:") && text.contains(" from b.rs:1 -->\n"),
+            text.contains(&format!("<!-- at: {second} @ xxh64:"))
+                && text.contains(" from b.rs:1 -->\n"),
             "{text}"
         );
         assert!(!text.contains("> from"), "{text}");
@@ -785,11 +651,11 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_drift_is_gone_after_editing_upstream() {
+    fn frozen_trace_is_unchanged_after_editing_upstream() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let deck_path = snapshot_workspace(root);
-        snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
+        let deck_path = freeze_workspace(root);
+        crate::assets::initialize(&deck_path).unwrap();
         std::fs::write(root.join("src/a.rs"), "TOTALLY\nDIFFERENT\n").unwrap();
         let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
         let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
@@ -800,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_freezes_single_file_source() {
+    fn immediate_freezing_preserves_the_complete_single_file_source() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(root, "notes.md", "L1\nL2\nL3\n");
@@ -811,13 +677,20 @@ mod tests {
             "t.md",
             "---\ntrace: t\nsource: ../notes.md\n---\n## hop\np\n<!-- at: 2 -->\n",
         );
-        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
-        assert_eq!(1, report.copied.len());
-        assert!(root.join("ws/assets/01.md").is_file());
+        let report = crate::assets::initialize(&deck_path).unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let deck_id = deck.deck_token.as_deref().unwrap();
+        let name = crate::assets::object_name(b"L1\nL2\nL3\n", "md");
+        assert_eq!(1, report.freeze.unwrap().evidence);
+        assert!(root.join(format!("ws/assets/{deck_id}/{name}")).is_file());
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(text.contains("source: assets\n"), "{text}");
         assert!(
-            text.contains("<!-- at: 01.md @ xxh64:") && text.contains(" from notes.md:2 -->\n"),
+            text.contains(&format!("source: \"assets/{deck_id}/{name}\"")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("<!-- at: {name}:2 @ xxh64:"))
+                && text.contains(" from notes.md:2 -->\n"),
             "{text}"
         );
         assert!(!text.contains("> from"), "{text}");
@@ -825,11 +698,11 @@ mod tests {
         let frozen = Deck::load(&deck_path).unwrap();
         let trace = Trace::from_deck(&frozen).unwrap();
         let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
-        assert_eq!(vec![(1, "L2".to_string())], ex.lines);
+        assert_eq!(vec![(2, "L2".to_string())], ex.lines);
     }
 
     #[test]
-    fn snapshot_freezes_a_multi_file_plus_joined_source() {
+    fn immediate_freezing_preserves_every_explicit_joined_file() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("src")).unwrap();
@@ -844,15 +717,28 @@ mod tests {
              ## q1\np\n<!-- at: a.rs:2-3 -->\n\
              ## q2\np\n<!-- at: b.rs:1 -->\n",
         );
-        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
-        assert_eq!(2, report.copied.len(), "both ` + ` files freeze");
-        assert!(report.missing.is_empty(), "{:?}", report.missing);
-        assert!(root.join("ws/assets/01.rs").is_file());
-        assert!(root.join("ws/assets/02.rs").is_file());
+        let report = crate::assets::initialize(&deck_path).unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let deck_id = deck.deck_token.as_deref().unwrap();
+        assert_eq!(2, report.freeze.unwrap().evidence);
+        assert!(
+            root.join(format!(
+                "ws/assets/{deck_id}/{}",
+                crate::assets::object_name(b"alpha\nbeta\ngamma\n", "rs")
+            ))
+            .is_file()
+        );
+        assert!(
+            root.join(format!(
+                "ws/assets/{deck_id}/{}",
+                crate::assets::object_name(b"one\ntwo\n", "rs")
+            ))
+            .is_file()
+        );
     }
 
     #[test]
-    fn snapshot_refuses_non_workspace_and_url() {
+    fn freezing_refuses_non_workspace_and_remote_sources() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let loose = write(
@@ -860,8 +746,9 @@ mod tests {
             "t.md",
             "---\ntrace: t\nsource: .\n---\n## h\np\n<!-- at: x.rs:1 -->\n",
         );
-        let err = snapshot(&Deck::load(&loose).unwrap(), 0, None).unwrap_err();
-        assert!(format!("{err:#}").contains("not in a workspace"), "{err:#}");
+        crate::stamp::stamp_deck(&loose).unwrap();
+        let err = crate::assets::freeze_member(&loose).unwrap_err();
+        assert!(format!("{err:#}").contains("not a member"), "{err:#}");
 
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
@@ -870,7 +757,7 @@ mod tests {
             "u.md",
             "---\ntrace: t\nsource: https://example.com/p\n---\n## h\np\n<!-- at: 1 -->\n",
         );
-        let err = snapshot(&Deck::load(&url).unwrap(), 0, None).unwrap_err();
-        assert!(format!("{err:#}").contains("URL"), "{err:#}");
+        let err = crate::assets::initialize(&url).unwrap_err();
+        assert!(format!("{err:#}").contains("remote source"), "{err:#}");
     }
 }

@@ -11,6 +11,51 @@ use crate::deck::DeckSettings;
 pub const MANIFEST: &str = "alix.toml";
 pub const DECKS: &str = "decks";
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkspaceFiles {
+    root: PathBuf,
+}
+
+impl WorkspaceFiles {
+    pub fn new(root: impl AsRef<Path>) -> Self {
+        Self {
+            root: root.as_ref().to_path_buf(),
+        }
+    }
+
+    pub fn for_deck(path: &Path) -> Self {
+        Self::new(content_root(path))
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn decks(&self) -> PathBuf {
+        self.root.join(DECKS)
+    }
+
+    pub fn assets(&self) -> PathBuf {
+        self.root.join(crate::assets::ROOT)
+    }
+
+    pub fn assets_for(&self, deck_id: &str) -> PathBuf {
+        self.assets().join(deck_id)
+    }
+
+    pub fn augment(&self) -> PathBuf {
+        self.root.join("augment")
+    }
+
+    pub fn augment_for(&self, deck_id: &str) -> PathBuf {
+        self.augment().join(format!("{deck_id}.json"))
+    }
+
+    pub fn manifest(&self) -> PathBuf {
+        self.root.join(MANIFEST)
+    }
+}
+
 #[derive(Deserialize, Default)]
 struct Manifest {
     title: Option<String>,
@@ -280,7 +325,7 @@ pub fn manifest_icon(dir: &Path) -> Option<String> {
 
 pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Result<()> {
     use anyhow::{Context, bail};
-    let path = dir.join(crate::config::LOCAL_MANIFEST);
+    let path = crate::state::UserFiles::new(dir).local_manifest();
     // Clearing a deadline that was never set, with no file to touch, is a
     // true no-op: don't create the manifest as a side effect.
     if date.is_none() && !path.is_file() {
@@ -494,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn store_path_honors_a_relative_or_absolute_state_root_override() {
+    fn store_path_honors_a_relative_or_absolute_user_root_override() {
         let dir = tempfile::tempdir().unwrap();
         write(&dir.path().join(MANIFEST), "store = \"sub/state\"\n");
         assert_eq!(dir.path().join("sub/state"), store_path(dir.path()));
@@ -521,7 +566,7 @@ mod tests {
     }
 
     #[test]
-    fn root_store_path_uses_the_plain_folder_as_its_state_root() {
+    fn root_store_path_uses_the_plain_folder_as_its_user_root() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(root_store_path(dir.path()), dir.path());
     }
@@ -536,6 +581,21 @@ mod tests {
         .unwrap();
         assert_eq!(root_store_path(dir.path()), dir.path().join("custom-state"));
         assert_eq!(root_store_path(dir.path()), store_path(dir.path()));
+    }
+
+    #[test]
+    fn workspace_files_address_only_shareable_workspace_content() {
+        let files = WorkspaceFiles::new("/data/workspace");
+        assert_eq!(Path::new("/data/workspace/decks"), files.decks());
+        assert_eq!(
+            Path::new("/data/workspace/assets/deck1"),
+            files.assets_for("deck1")
+        );
+        assert_eq!(
+            Path::new("/data/workspace/augment/deck1.json"),
+            files.augment_for("deck1")
+        );
+        assert_eq!(Path::new("/data/workspace/alix.toml"), files.manifest());
     }
 
     #[test]

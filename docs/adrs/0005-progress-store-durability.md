@@ -3,8 +3,11 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
-- Refined by: [ADR 0017](0017-per-deck-state-documents.md), which makes one
-  versioned document per deck the persistence and conflict boundary.
+- Refined by:
+  [ADR 0017](0017-per-deck-state-documents.md), which makes one versioned
+  document per deck the persistence and conflict boundary, and
+  [ADR 0022](0022-workspace-and-user-file-ownership.md), which names progress
+  as private user-owned state.
 
 ## Decision history
 
@@ -113,7 +116,7 @@ remain bounded and must not execute content.
   conflict-copy discovery, and their tests.
 - `src/recent.rs` uses the same temporary-file replacement pattern.
 - `src/workspace.rs` and `src/cli/common.rs` resolve the correct folder-local
-  state root for every operation.
+  user root for progress operations.
 - Store tests reject unsupported versions, mismatched owners, and stale
   revisions.
 

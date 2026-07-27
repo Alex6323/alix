@@ -191,32 +191,6 @@ function runAugment(target) {
   });
 }
 
-// `source: assets` (a bare directory, the "frozen snapshot" convention —
-// see src/deck.rs Deck::is_frozen) makes exam generation fail outright:
-// exam.rs's source_section() reads each `source:` value as a single file
-// path and only supports " + "-joined multi-file lists, so a directory just
-// errors ("Is a directory") and, with no readable source left, the exam
-// bails with "none of the deck's `source:` paths could be read to examine
-// against" — confirmed via a direct /api/exam/start probe. That looks like a
-// real product gap (source_section doesn't expand a directory the way the
-// citation/trace resolvers do), not something to patch in the app from a
-// capture script — flagged in the report instead. Worked around HERE, in the
-// scratch copy only, by pointing the frontmatter at the exact per-card files
-// its own `at:` citations already name (01.md..10.md), which source_paths()
-// already supports via " + ". Never touches ~/alix-demo.
-function fixHeroSourceForExam() {
-  const text = fs.readFileSync(HERO_FILE, "utf8");
-  const files = Array.from(
-    { length: 10 },
-    (_, i) => `  - "assets/${String(i + 1).padStart(2, "0")}.md"`,
-  ).join("\n");
-  const fixed = text.replace(/^source:\s*["']?assets["']?\s*$/m, `source:\n${files}`);
-  if (fixed !== text) {
-    fs.writeFileSync(HERO_FILE, fixed);
-    log("worked around the `source: assets` exam bug in the scratch copy (see comment above)");
-  }
-}
-
 function ensureAugmented() {
   const state = heroAugmentState();
   log("hero deck augment cache:", state);
@@ -896,7 +870,6 @@ async function main() {
   copyOnce(DEMO_SRC, DEMO_DIR, "alix-demo");
   copyOnce(KIDS_SRC, KIDS_DIR, "alix-kids");
 
-  fixHeroSourceForExam();
   if (wants(1) || wants(2) || wants(3) || wants(8)) ensureAugmented();
 
   freePort(DEMO_PORT);

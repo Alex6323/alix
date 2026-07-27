@@ -55,12 +55,12 @@ fn store_for_with_default(
     instance: Option<&Path>,
     default: Option<PathBuf>,
 ) -> Result<Store> {
-    let state_root = store_path_for(paths, None).or_else(|| instance.map(Path::to_path_buf));
-    let state_root = match state_root {
+    let user_root = store_path_for(paths, None).or_else(|| instance.map(Path::to_path_buf));
+    let user_root = match user_root {
         Some(path) => path,
         None => default.context("cannot determine the data directory")?,
     };
-    state::open_stores(paths, &state_root).context("cannot open deck progress")
+    state::open_stores(paths, &user_root).context("cannot open deck progress")
 }
 
 #[derive(Clone, Copy)]
@@ -93,7 +93,8 @@ pub struct SessionBuild {
     pub label: String,
     pub decks: HashMap<String, PathBuf>,
     pub links: HashMap<String, Vec<String>>,
-    pub source_roots: HashMap<String, PathBuf>,
+    pub origin_urls: HashMap<String, String>,
+    pub origin_roots: HashMap<String, PathBuf>,
     pub source_bases: HashMap<String, SourceBase>,
     pub topology_name: Option<String>,
     pub augment: AugmentCache,
@@ -211,7 +212,8 @@ pub fn load_decks(
                 path: deck.path.clone(),
                 deck_token: deck.deck_token.clone(),
                 links: deck.reference_links(),
-                source_root: deck.source_root(),
+                origin_url: deck.origin_url(),
+                origin_root: deck.origin_root(),
                 source_access: false,
                 source_base: SourceBase::for_deck(&deck),
             },
@@ -402,8 +404,8 @@ pub fn select(
     let deck_card_ids: std::collections::HashSet<String> =
         cards.iter().filter_map(Card::id).collect();
 
-    let mut augment =
-        AugmentCache::open_for_store(store.path()).context("cannot open deck augmentation")?;
+    let mut augment = AugmentCache::open_for_workspace(&workspace::content_root(deck))
+        .context("cannot open deck augmentation")?;
     // Records must land before the session build reaches any `get_or_insert`.
     if realign_and_record(store, &mut augment, &cards) {
         if let Err(e) = augment.save() {
@@ -543,10 +545,18 @@ pub fn select(
         .iter()
         .map(|(subject, info)| (subject.clone(), info.links.clone()))
         .collect();
-    let source_roots = decks
+    let origin_urls = decks
+        .iter()
+        .filter_map(|(subject, info)| {
+            info.origin_url
+                .clone()
+                .map(|origin| (subject.clone(), origin))
+        })
+        .collect();
+    let origin_roots = decks
         .iter()
         .filter(|(_, info)| info.source_access)
-        .filter_map(|(subject, info)| info.source_root.clone().map(|root| (subject.clone(), root)))
+        .filter_map(|(subject, info)| info.origin_root.clone().map(|root| (subject.clone(), root)))
         .collect();
     let source_bases = decks
         .iter()
@@ -558,15 +568,15 @@ pub fn select(
         label,
         decks: subject_paths(decks),
         links,
-        source_roots,
+        origin_urls,
+        origin_roots,
         source_bases,
         topology_name,
         augment,
     }))
 }
 
-pub fn browse(paths: Vec<PathBuf>, instance: Option<&Path>) -> Result<CardsBuild> {
-    let default = instance.map(Path::to_path_buf).or_else(default_store_path);
+pub fn browse(paths: Vec<PathBuf>, _instance: Option<&Path>) -> Result<CardsBuild> {
     let [deck] = paths.as_slice() else {
         bail!("browse one deck at a time (merging decks was removed)");
     };
@@ -580,9 +590,8 @@ pub fn browse(paths: Vec<PathBuf>, instance: Option<&Path>) -> Result<CardsBuild
     let (mut cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
     let label = deck_label;
 
-    let store = open_store(store_path_for(&expanded.decks, None).or(default))?;
-    let augment =
-        AugmentCache::open_for_store(store.path()).context("cannot open deck augmentation")?;
+    let augment = AugmentCache::open_for_workspace(&workspace::content_root(deck))
+        .context("cannot open deck augmentation")?;
     for card in &mut cards {
         augment.apply_format(card);
         if let Some(note) = card
@@ -974,7 +983,7 @@ it reads line two\n\
         let card_id = deck.cards[0].id().unwrap();
         let deck_token = deck.deck_token.clone().unwrap();
 
-        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
+        let mut cache = AugmentCache::open_for_deck(&deck).unwrap();
         cache.add_topology(Topology {
             name: "auto".to_string(),
             principle: "test".to_string(),
@@ -1058,7 +1067,8 @@ it reads line two\n\
         .remove(0);
         let virtual_id = virtual_card.id().unwrap();
 
-        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let mut cache = AugmentCache::open_for_deck(&deck).unwrap();
         cache.set_format(
             &virtual_id,
             augment::Format {
@@ -1131,7 +1141,8 @@ it reads line two\n\
         // (never hand-computed).
         let loaded = Deck::load(&deck_path).unwrap();
         let card_id = loaded.cards[0].id().unwrap();
-        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
+        let mut cache =
+            AugmentCache::open_for_decks(dir.path(), std::slice::from_ref(&loaded)).unwrap();
         cache.set_distractors(
             &card_id,
             vec!["w1".into(), "w2".into(), "w3".into()],
@@ -1203,8 +1214,8 @@ it reads line two\n\
         let id = raw.cards[0].id().unwrap();
         assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
 
-        let store = store_for(std::slice::from_ref(&path), None).unwrap();
-        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
+        let loaded = Deck::load(&path).unwrap();
+        let mut cache = AugmentCache::open_for_decks(&ws, std::slice::from_ref(&loaded)).unwrap();
         cache.set_format(
             &id,
             augment::Format {
@@ -1250,7 +1261,8 @@ it reads line two\n\
         let loaded = crate::deck::Deck::load(&deck).unwrap();
         let id = loaded.cards[0].id().unwrap();
         let fingerprint = loaded.cards[0].content_fingerprint;
-        let mut cache = AugmentCache::open_for_store(store.path()).unwrap();
+        let mut cache =
+            AugmentCache::open_for_decks(dir.path(), std::slice::from_ref(&loaded)).unwrap();
         cache.set_note(&id, "seeded".to_string(), fingerprint);
         cache.save().unwrap();
 

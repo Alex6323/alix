@@ -25,6 +25,7 @@ yourself (`alix generate` [a trace](13-trace-decks.md) or
 
 ```sh
 alix generate . --goal "how review scheduling works" --workspace ~/decks/scheduling/
+alix generate . --origin https://example.com/project --workspace ~/decks/project/
 ```
 
 Without `--plan`, the plan's size decides. A one-item plan collapses to a single
@@ -39,10 +40,15 @@ predict-verify checkpoints for the traces, fact cards for the decks — so the
 with `requires:` so they unlock in dependency order, each `source:` pointing
 back at the real source. Writing the whole set from one understanding keeps the
 items **coherent** (each builds on its prerequisites instead of repeating them).
-As a final step it [freezes the cited excerpts](13-trace-decks.md) of every
-cited deck — traces and fact decks with
-[`<!-- at: -->` citations](06-cloze-direction-images.md#source-citations) alike — into
-the workspace's `assets/`, so it's self-contained and its locators never drift.
+Before the hidden staging workspace becomes visible, Alix initializes every
+complete member and [freezes its evidence](13-trace-decks.md). Explicit source
+files, bounded directory citations, and local card images land below each
+member's `assets/<alix-id>/` directory. A missing or changed required source
+aborts publication instead of leaving a live or partially frozen workspace.
+`--origin <URL>` records a public current source in the workspace defaults.
+Tutor and exam calls can use it for wider context and staleness checks after
+the local generation source is gone, while review continues to use the frozen
+assets.
 
 The destination is `--workspace <dir>`, defaulting to a folder named after the
 source under your decks directory.

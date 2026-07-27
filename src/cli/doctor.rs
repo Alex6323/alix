@@ -94,12 +94,9 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
         ));
     }
 
-    let augment = path.parent().and_then(|dir| {
-        deck.deck_token.as_deref().and_then(|deck_id| {
-            alix::state::open_augment_read_only(deck_id, &alix::workspace::root_store_path(dir))
-                .ok()
-        })
-    });
+    let augment = Deck::load(path)
+        .ok()
+        .and_then(|deck| alix::augment::AugmentCache::open_for_deck(&deck).ok());
     for diagnostic in alix::math::diagnostics(&deck.cards, augment.as_ref()) {
         report.warn(format!("{}: {diagnostic}", path.display()));
     }
@@ -187,7 +184,37 @@ fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
 }
 
 fn deck_resource_findings(deck: &Deck, report: &mut Report) {
-    // Advisory only: the deck still works, the web server just 404s the image.
+    let managed = workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some();
+    let mut source_assets_valid = true;
+    if managed && !deck.sources.is_empty() {
+        if !deck.is_frozen() {
+            report.error(format!(
+                "{}: initialized workspace member uses live `source:` evidence; initialize or update it to freeze deck-owned assets",
+                deck.path.display()
+            ));
+            source_assets_valid = false;
+        } else if let Err(error) = alix::assets::validate_member(deck) {
+            report.error(format!(
+                "{}: frozen source assets are invalid: {error:#}",
+                deck.path.display()
+            ));
+            source_assets_valid = false;
+        }
+    }
+    if managed && let Ok(text) = std::fs::read_to_string(&deck.path) {
+        for image in alix::parser::image_references(&text) {
+            if alix::deck::is_url(&image.source) {
+                continue;
+            }
+            if let Err(error) = alix::assets::validate_image(deck, &image.source) {
+                report.error(format!(
+                    "{}: image `{}` is not a valid deck-owned asset: {error:#}",
+                    deck.path.display(),
+                    image.source
+                ));
+            }
+        }
+    }
     for card in &deck.cards {
         for image in card.images.iter().chain(&card.images_back) {
             if !image.src.exists() {
@@ -225,41 +252,43 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             Err(e) => report.warn(format!("{}: {e:#}", deck.subject)),
         }
     }
-    let base = SourceBase::for_deck(deck);
-    for card in &deck.cards {
-        for citation in &card.citations {
-            let detail = match base.inspect_citation(citation) {
-                Ok(CitationIntegrity::Current(_)) => None,
-                Ok(CitationIntegrity::Unfingerprinted { .. }) => Some(
-                    "has no excerpt fingerprint; review it, then run \
-                     `alix doctor --repair-source-locators`"
-                        .to_string(),
-                ),
-                Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
-                    "the exact excerpt moved to `{locator}`; run \
-                     `alix doctor --repair-source-locators` to rebase it"
-                )),
-                Ok(CitationIntegrity::Changed) => {
-                    Some("the excerpt changed or disappeared; review it manually".to_string())
+    if source_assets_valid {
+        let base = SourceBase::for_deck(deck);
+        for card in &deck.cards {
+            for citation in &card.citations {
+                let detail = match base.inspect_citation(citation) {
+                    Ok(CitationIntegrity::Current(_)) => None,
+                    Ok(CitationIntegrity::Unfingerprinted { .. }) => Some(
+                        "has no excerpt fingerprint; review it, then run \
+                         `alix doctor --repair-source-locators`"
+                            .to_string(),
+                    ),
+                    Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
+                        "the exact excerpt moved to `{locator}`; run \
+                         `alix doctor --repair-source-locators` to rebase it"
+                    )),
+                    Ok(CitationIntegrity::Changed) => {
+                        Some("the excerpt changed or disappeared; review it manually".to_string())
+                    }
+                    Ok(CitationIntegrity::Ambiguous { locators }) => Some(format!(
+                        "the excerpt matches several ranges ({}); review it manually",
+                        locators.join(", ")
+                    )),
+                    Err(error) => Some(format!("{error:#}")),
+                };
+                if let Some(detail) = detail {
+                    report.warn(format!(
+                        "{}: card at line {}: `at: {}` {detail}",
+                        deck.subject, card.line, citation.locator
+                    ));
                 }
-                Ok(CitationIntegrity::Ambiguous { locators }) => Some(format!(
-                    "the excerpt matches several ranges ({}); review it manually",
-                    locators.join(", ")
-                )),
-                Err(error) => Some(format!("{error:#}")),
-            };
-            if let Some(detail) = detail {
-                report.warn(format!(
-                    "{}: card at line {}: `at: {}` {detail}",
-                    deck.subject, card.line, citation.locator
-                ));
             }
         }
     }
     for prereq in alix::deck::nongating_prerequisites(deck) {
         report.warn(format!(
-            "{}: requires source-less `{prereq}`: this edge doesn't gate its exam; \
-             add a `source:` to `{prereq}` to make it a real prerequisite",
+            "{}: requires ungrounded `{prereq}`: this edge doesn't gate its exam; \
+             add `source:` evidence or a URL `origin:` to make it a real prerequisite",
             deck.subject
         ));
     }
@@ -398,17 +427,18 @@ fn workspace_findings(dir: &Path) -> Report {
                 );
             }
         }
-        Err(error) => report.error(format!("state layout: {error}")),
+        Err(error) => report.error(format!("user files: {error}")),
     }
-    if let Err(error) = alix::augment::AugmentCache::open_for_store(&store_path) {
-        report.error(format!("augmentation state: {error}"));
+    if let Err(error) = alix::augment::AugmentCache::open_for_workspace(dir) {
+        report.error(format!("workspace augmentation: {error}"));
     }
-    let layout = alix::state::Layout::new(&store_path);
-    for (kind, state_dir) in [
-        ("progress", layout.progress.as_path()),
-        ("augmentation", layout.augment.as_path()),
+    let user_files = alix::state::UserFiles::new(&store_path);
+    let workspace_files = alix::workspace::WorkspaceFiles::new(dir);
+    for (kind, data_dir) in [
+        ("progress", user_files.progress()),
+        ("augmentation", workspace_files.augment()),
     ] {
-        for entry in std::fs::read_dir(state_dir).into_iter().flatten().flatten() {
+        for entry in std::fs::read_dir(data_dir).into_iter().flatten().flatten() {
             let path = entry.path();
             let name = path
                 .file_name()
@@ -421,10 +451,7 @@ fn workspace_findings(dir: &Path) -> Report {
                 continue;
             }
             let Some(deck_id) = alix::state::deck_id_from_document(&path) else {
-                report.warn(format!(
-                    "unrecognized {kind} state document {}",
-                    path.display()
-                ));
+                report.warn(format!("unrecognized {kind} document {}", path.display()));
                 continue;
             };
             let document_error = match kind {
@@ -436,29 +463,25 @@ fn workspace_findings(dir: &Path) -> Report {
                     .map(|error| error.to_string()),
             };
             if let Some(error) = document_error {
-                report.error(format!("{kind} state document: {error}"));
+                report.error(format!("{kind} document: {error}"));
                 continue;
             }
             if !known_deck_ids.contains(deck_id) {
                 report.warn(format!(
-                    "orphaned {kind} state document {} belongs to no deck in {}",
+                    "orphaned {kind} document {} belongs to no deck in {}",
                     path.display(),
                     dir.display()
                 ));
             }
         }
     }
-    for name in ["progress.json", "augment.json"] {
-        let stray = store_path.join(name);
-        if stray.is_file() {
-            report.warn(format!(
-                "{}: aggregate state file is never read (state lives in per-deck documents \
-                 under `progress/` and `augment/`); back it up and delete it",
-                stray.display()
-            ));
-        }
-    }
     for conflict in alix::store::sync_conflicts(&store_path) {
+        report.warn(format!(
+            "synchronization conflict needs deliberate recovery: {}",
+            conflict.display()
+        ));
+    }
+    for conflict in alix::augment::sync_conflicts(dir) {
         report.warn(format!(
             "synchronization conflict needs deliberate recovery: {}",
             conflict.display()
@@ -778,6 +801,91 @@ mod tests {
         );
     }
 
+    #[test]
+    fn doctor_rejects_an_initialized_workspace_member_with_live_source_without_mutating_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join(alix::workspace::DECKS);
+        std::fs::create_dir(&decks).unwrap();
+        w(dir.path(), alix::workspace::MANIFEST, "");
+        w(dir.path(), "notes.md", "evidence\n");
+        let path = decks.join("facts.md");
+        std::fs::write(
+            &path,
+            "---\nalix-id: deck1\nsource: notes.md\n---\n## q <!-- id: card1 -->\na\n",
+        )
+        .unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report
+                .errors
+                .join("\n")
+                .contains("uses live `source:` evidence")
+        );
+        assert_eq!(before, std::fs::read(&path).unwrap());
+        assert!(!dir.path().join(alix::assets::ROOT).exists());
+    }
+
+    #[test]
+    fn doctor_rejects_a_frozen_asset_whose_bytes_do_not_match_its_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join(alix::workspace::DECKS);
+        let assets = dir.path().join("assets/deck1");
+        std::fs::create_dir(&decks).unwrap();
+        std::fs::create_dir_all(&assets).unwrap();
+        w(dir.path(), alix::workspace::MANIFEST, "");
+        let name = alix::assets::object_name(b"expected\n", "txt");
+        std::fs::write(assets.join(&name), "changed\n").unwrap();
+        std::fs::write(
+            decks.join("facts.md"),
+            format!(
+                "---\nalix-id: deck1\nsource: assets/deck1/{name}\n---\n\
+                 ## q <!-- id: card1 -->\na\n"
+            ),
+        )
+        .unwrap();
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report
+                .errors
+                .join("\n")
+                .contains("does not match its content address")
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_an_image_owned_by_another_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join(alix::workspace::DECKS);
+        let other_assets = dir.path().join("assets/deck2");
+        std::fs::create_dir(&decks).unwrap();
+        std::fs::create_dir_all(&other_assets).unwrap();
+        w(dir.path(), alix::workspace::MANIFEST, "");
+        let name = alix::assets::object_name(b"image", "png");
+        std::fs::write(other_assets.join(&name), "image").unwrap();
+        std::fs::write(
+            decks.join("facts.md"),
+            format!(
+                "---\nalix-id: deck1\n---\n\
+                 ## q <!-- id: card1 -->\n![diagram](assets/deck2/{name})\na\n"
+            ),
+        )
+        .unwrap();
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report
+                .errors
+                .join("\n")
+                .contains("is not a valid deck-owned asset")
+        );
+    }
+
     fn w(dir: &Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
     }
@@ -865,7 +973,8 @@ mod tests {
             alix::parser::parse("cached.md", &std::fs::read_to_string(&path).unwrap()).unwrap();
         let card = &parsed.cards[0];
         let id = card.id().unwrap();
-        let mut augment = alix::state::open_augment(&path, dir.path()).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let mut augment = alix::augment::AugmentCache::open_for_deck(&deck).unwrap();
         augment.set_distractors(
             &id,
             vec![r"$\frac{1$".to_string()],
@@ -1020,8 +1129,8 @@ mod tests {
             "dangling `at:` citation: {warnings}"
         );
         assert!(
-            warnings.contains("requires source-less") && warnings.contains("`sourceless`"),
-            "dead `% requires:`: {warnings}"
+            warnings.contains("requires ungrounded") && warnings.contains("`sourceless`"),
+            "dead `requires:`: {warnings}"
         );
         assert!(
             warnings.contains("card content without ids"),
@@ -1037,8 +1146,8 @@ mod tests {
             "deck.md",
             "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
         );
-        let state_root = dir.path();
-        alix::state::open_store(&dir.path().join("deck.md"), state_root)
+        let user_root = dir.path();
+        alix::state::open_store(&dir.path().join("deck.md"), user_root)
             .unwrap()
             .save()
             .unwrap();
@@ -1059,32 +1168,8 @@ mod tests {
         let report = workspace_findings(dir.path());
         let warnings = report.warnings.join("\n");
 
-        assert!(warnings.contains("orphaned augmentation state document"));
+        assert!(warnings.contains("orphaned augmentation document"));
         assert!(warnings.contains(&conflict.display().to_string()));
-    }
-
-    #[test]
-    fn doctor_flags_unread_aggregate_state_files() {
-        let dir = tempfile::tempdir().unwrap();
-        w(
-            dir.path(),
-            "deck.md",
-            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
-        );
-        w(dir.path(), "progress.json", r#"{"version":1,"cards":{}}"#);
-        w(dir.path(), "augment.json", r#"{"version":1,"cards":{}}"#);
-
-        let report = workspace_findings(dir.path());
-        let warnings = report.warnings.join("\n");
-
-        assert!(
-            warnings.contains("progress.json") && warnings.contains("never read"),
-            "aggregate progress warning: {warnings}"
-        );
-        assert!(
-            warnings.contains("augment.json"),
-            "aggregate augment warning: {warnings}"
-        );
     }
 
     #[test]

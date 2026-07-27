@@ -99,8 +99,8 @@ deadline` refuses a non-workspace directory and points at `alix workspace
 init`.
 
 The picker's ready percent counts a deadline's member decks as ready once
-mastered (or finished, for a source-less deck), and mastery itself rests on
-the [AI exam](12-the-ai-exam.md)'s sampled questions, not a check of every
+mastered, or finished when they have no exam grounding. Mastery itself rests
+on the [AI exam](12-the-ai-exam.md)'s sampled questions, not a check of every
 card. Treat ready% as evidence toward readiness, not proof of it.
 
 How deeply you drill is never configuration: it's the **session depth** you
@@ -163,28 +163,32 @@ settings:
 ## Decks directory and storage
 
 By default `alix` looks for decks in `~/decks`; set `decks_dir` to change it.
-Persisted state lives **in that folder**, one document per initialized deck:
+Shareable material and private user files default to that folder, one document
+per initialized deck:
 
 ```text
 <decks_dir>/
-├── progress/<alix-id>.json
 ├── augment/<alix-id>.json
+├── progress/<alix-id>.json
 └── recent.json
 ```
 
 `progress/` is private, indispensable learning state: schedules, review
 history, exam state, virtual cards, and the last writer. `augment/` is
 regenerable, shareable material: generated choices, notes, key points,
-variants, and topologies. The stable `alix-id`, not the Markdown filename,
-selects both documents, so renaming a deck keeps its state.
+variants, and topologies. It stays beside the deck so sharing the deck can
+carry its generated study material without carrying personal history. The
+stable `alix-id`, not the Markdown filename, selects both documents, so
+renaming a deck keeps their ownership stable.
 
-Bare `alix` and `alix <dir>` use the same state root when `<dir>` is the
+Bare `alix` and `alix <dir>` use the same user-files root when `<dir>` is the
 configured `decks_dir`. A workspace, or any other folder served with `alix
-<dir>`, keeps its own directories inside that folder. The
+<dir>`, keeps its shareable `augment/` and `assets/` beside its decks. The
 `stats`/`list`/`reset` commands take a deck, folder, or workspace and resolve
-the same documents, with `--store <directory>` as a state-root override. A
-workspace's `store = "..."` manifest setting is also a state-root directory,
-relative to the workspace unless absolute.
+the same private progress documents. `--store <directory>` and a workspace's
+`store = "..."` manifest setting override only the user-files root for
+`progress/` and `recent.json`; they do not relocate augmentation or assets.
+Relative workspace `store` values are anchored to the workspace.
 
 Each document carries its owner ID, format version, and revision. Saves write a
 sibling `.json.tmp` and atomically rename it into place. A process that can see
@@ -194,16 +198,17 @@ synchronization into a transaction.
 
 Alix is pre-1.0 and reads only the current version-1 per-deck documents. A
 persisted-state format break is handled before installing that build: back up
-the state root, perform any one-time conversion outside production Alix, and
+the affected files, perform any one-time conversion outside production Alix, and
 verify the result with `alix doctor <folder>`. Production does not contain
 runtime compatibility branches or converters for superseded pre-1.0 layouts.
 
 ### Multi-device via your cloud drive
 
-Because your decks and their progress live in one folder, put that folder in a
-cloud drive you already use (Dropbox, iCloud, OneDrive, Syncthing) and it
-follows you across devices. Alix stays unaware that the folder is synced and
-uploads nothing itself.
+With the defaults, your decks, augmentation, assets, and progress live in one
+folder. Put that folder in a cloud drive you already use (Dropbox, iCloud,
+OneDrive, Syncthing) and it follows you across devices. Set `store` when you
+want progress and recent history to remain private to one device. Alix stays
+unaware that the folder is synced and uploads nothing itself.
 
 For a free, no-account option that fits alix's local-first grain,
 [Syncthing](https://syncthing.net) works well: install it on each machine, pair

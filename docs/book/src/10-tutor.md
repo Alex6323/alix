@@ -65,14 +65,16 @@ card's identity.
 
 ## Grounding a frozen card: `origin:`
 
-A workspace frozen by `alix generate`'s workspace build shows you *snapshots* of its
-source (the `assets/` copies), not the live files. When you ask about one of those
-cards, the tutor reads the **live source** the snapshot came from (recorded in the
-deck's `origin:`) for surrounding context, while keeping the frozen excerpt you
-see as the anchor, so it never reasons about a drifted copy. If the live source is
-gone, it says so plainly instead of guessing. In review, that reply comes back
-immediately, with no model call. The same grounding applies when you ask during a
-trace walk.
+A frozen workspace card is grounded in its deck-owned `assets/<alix-id>/`
+evidence. The tutor receives the exact excerpt shown during review, so deleting
+or editing the live source cannot silently change its ground truth.
+
+`origin:` records where that evidence came from and can give the tutor broader
+current context. A URL origin is fetched when the selected backend can use
+`WebFetch`. A local origin is readable only when `[ask] source_access = true`.
+The tutor always receives the frozen excerpt first; current origin context can
+explain the surrounding material or detect drift, but never silently replaces
+the captured evidence.
 
 Local file grounding is opt-in with `[ask] source_access = true`. An explicit
 deck or workspace `origin` defines the readable root. Without one, alix does
@@ -80,6 +82,11 @@ not grant the tutor filesystem access: `source` identifies the cited evidence,
 but it never implicitly authorizes the surrounding project. This keeps decks
 portable across profile-managed deck directories and makes every wider
 live-source grant deliberate and reviewable.
+
+When no usable origin is available, the tutor still works from the frozen
+excerpt and card context. The Ask status warns that it lacks the full current
+source, so the learner can distinguish an evidence-grounded explanation from a
+freshness check against the origin.
 
 ## How it's sandboxed
 

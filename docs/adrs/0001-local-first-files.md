@@ -3,8 +3,11 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
-- Refined by: [ADR 0017](0017-per-deck-state-documents.md), which narrows
-  workspace-wide state files to stable-ID per-deck documents.
+- Refined by:
+  [ADR 0017](0017-per-deck-state-documents.md), which narrows workspace-wide
+  state files to stable-ID per-deck documents, and
+  [ADR 0022](0022-workspace-and-user-file-ownership.md), which separates
+  shareable workspace files from private user files.
 
 ## Decision history
 
@@ -40,10 +43,11 @@ Markdown deck files are the canonical source for authored learning content.
 Users can create and edit them with ordinary text tools, and Alix reads them
 directly rather than importing them into an application-owned database.
 
-Personal state is stored in explicit files. A folder or workspace normally
-keeps per-deck review history under `progress/`, generated augmentation under
-`augment/`, and recent activity in `recent.json` beside its decks.
-Configuration may override the state root.
+Private user state is stored in explicit files. A folder or workspace normally
+keeps per-deck review history under `progress/` and recent activity in
+`recent.json` beside its decks; configuration may override that user root.
+Generated augmentation is shareable content under `augment/` beside the deck
+and does not follow the private override.
 
 Alix itself provides no account or cloud storage. Users may copy or synchronize
 their folders with tools they choose. Sharing a folder strips personal state,

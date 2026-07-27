@@ -231,6 +231,9 @@ enum WorkspaceAction {
     /// `assets/` dir, no decks yet. Grow it with `alix generate … --workspace
     /// <dir>` or `alix deck import … --workspace <dir>`.
     Init(WorkspaceInitArgs),
+    /// Reconcile frozen source-backed decks with their live origins. The first
+    /// run stages an exact proposal; inspect it, then rerun with `--apply`.
+    Update(WorkspaceUpdateArgs),
     /// Show, set, or clear this workspace's personal "ready by" deadline.
     Deadline(WorkspaceDeadlineArgs),
 }
@@ -243,6 +246,24 @@ struct WorkspaceInitArgs {
     /// The workspace's display title (default: the folder name).
     #[arg(long)]
     title: Option<String>,
+}
+
+#[derive(Args)]
+struct WorkspaceUpdateArgs {
+    /// The workspace directory.
+    dir: PathBuf,
+
+    /// Publish the exact existing staged proposal without another AI call.
+    #[arg(long, conflicts_with = "discard")]
+    apply: bool,
+
+    /// Delete the existing staged proposal without changing the workspace.
+    #[arg(long, conflicts_with = "apply")]
+    discard: bool,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -295,6 +316,11 @@ struct GenerateArgs {
     /// or a deck that declares `trace:` in its frontmatter, whose checkpoints
     /// are then built in place.
     source: String,
+
+    /// Public source URL retained as the workspace or deck origin for tutor
+    /// context, exam grounding, and staleness checks.
+    #[arg(long, value_name = "URL")]
+    origin: Option<String>,
 
     /// The learning goal that scopes what is generated (default: understand
     /// the whole source).
@@ -428,8 +454,8 @@ struct AugmentArgs {
     /// What to augment, mirroring the review concepts: `choices` (distractors),
     /// `notes` (trivia / mnemonics), `questions` (reworded phrasings rotated at
     /// review), or `order` (a graph of how the cards relate plus a suggested
-    /// walk that puts foundations first). All are cached beside your progress,
-    /// never written into the deck; review reads them.
+    /// walk that puts foundations first). All are cached in the workspace's
+    /// augmentation document, never written into the deck; review reads them.
     #[arg(long, value_enum)]
     target: AugmentTarget,
 
@@ -438,8 +464,8 @@ struct AugmentArgs {
     #[arg(long)]
     with: Option<String>,
 
-    /// State-root directory containing `progress/` and `augment/` (default:
-    /// resolved from the deck, like `stats`/`list`/`reset`).
+    /// User-files root used to include virtual cards while augmenting. It does
+    /// not change where workspace augmentation is written.
     #[arg(long)]
     store: Option<PathBuf>,
 
@@ -545,8 +571,8 @@ struct ResetArgs {
     #[arg(short = 'y', long)]
     yes: bool,
 
-    /// State-root directory (default: resolved from the target, or the
-    /// decks-dir state root for `--all`/`--card` with no target).
+    /// User-files directory (default: resolved from the target, or the
+    /// decks-dir user root for `--all`/`--card` with no target).
     #[arg(long)]
     store: Option<PathBuf>,
 
@@ -582,6 +608,7 @@ fn main() -> Result<()> {
         },
         Some(Command::Workspace(action)) => match action {
             WorkspaceAction::Init(args) => deck::workspace_init_cmd(args),
+            WorkspaceAction::Update(args) => deck::workspace_update_cmd(args),
             WorkspaceAction::Deadline(args) => deck::workspace_deadline_cmd(args),
         },
         Some(Command::Share(args)) => share::share_cmd(args),

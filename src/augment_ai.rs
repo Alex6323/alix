@@ -899,7 +899,7 @@ mod tests {
         let map = generate(&items, 3, None, &ask_config(&cli), None).unwrap();
 
         let deck_id = deck.deck_token.as_deref().unwrap();
-        let cache_path = crate::state::Layout::new(dir.path()).augment_for(deck_id);
+        let cache_path = crate::workspace::WorkspaceFiles::new(dir.path()).augment_for(deck_id);
         let mut cache = crate::augment::AugmentCache::open_deck(&cache_path, deck_id).unwrap();
         let fp_by_id: HashMap<String, u64> = deck
             .cards

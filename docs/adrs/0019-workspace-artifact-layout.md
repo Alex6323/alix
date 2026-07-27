@@ -6,6 +6,8 @@
 - Refines: [ADR 0001](0001-local-first-files.md),
   [ADR 0015](0015-frozen-source-snapshots.md), and
   [ADR 0017](0017-per-deck-state-documents.md)
+- Refined by:
+  [ADR 0022](0022-workspace-and-user-file-ownership.md)
 
 ## Context
 
@@ -20,9 +22,9 @@ root, state root, asset root, source-reference root, and prerequisite directory.
 The resulting assumption is repeated across desktop, web, mobile, sharing,
 generation, doctor, and source grounding.
 
-The workspace is already the portable content and state boundary. Its internal
-artifact classes need one fixed structure that every client can derive without
-configuration or recursive search.
+The workspace is already the portable content boundary and the default
+location for private user files. Its internal artifact classes need one fixed
+structure that every client can derive without recursive search.
 
 ## Decision
 
@@ -39,6 +41,11 @@ A workspace uses this layout:
 └── augment/
 ```
 
+As refined by ADR 0022, this tree shows the default colocated user files.
+`store` may relocate progress and recent history, while the manifest, decks,
+assets, augmentation, and workspace-scoped local manifest remain anchored to
+the workspace.
+
 `alix.toml`, when present at a directory root, establishes the workspace
 structure. Initialized member decks are direct children of `decks/`. Root-level
 Markdown is not workspace membership and may be ordinary documentation.
@@ -50,8 +57,9 @@ only inside a workspace.
 
 Every path role has one anchor:
 
-- shared and local manifests, assets, progress, augmentation, icons, and
-  relative `store` overrides use the workspace root;
+- shared and local manifests, assets, augmentation, icons, and relative
+  `store` overrides use the workspace root;
+- progress uses the selected user root, which defaults to the workspace;
 - relative `source`, `origin`, and image references authored in a workspace
   member also use the workspace root;
 - `requires` resolves among sibling members in `decks/`;
@@ -115,8 +123,8 @@ workspace members under `decks/` and has no flat-layout reader or converter.
 Existing workspaces are backed up and moved externally before release.
 
 Deck and card identities do not change, so their per-deck progress and
-augmentation documents remain addressed by the same IDs at the unchanged
-workspace state root.
+augmentation documents remain addressed by the same IDs even when progress
+uses a separate user root.
 
 ## Security
 

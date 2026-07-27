@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, ops::Range, path::PathBuf, sync::Arc};
 
 use thiserror::Error;
 
@@ -18,7 +18,7 @@ pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
 pub use frontmatter::{Frontmatter, yaml_quote};
-use frontmatter::{bad_value, parse_frontmatter, parse_reveal};
+use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
 const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
@@ -36,6 +36,12 @@ pub struct ParsedDeck {
     pub cards: Vec<Card>,
     pub lints: Vec<Lint>,
     pub frontmatter_span: Option<LineSpan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageReference {
+    pub source: String,
+    pub destination: Range<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,6 +140,86 @@ pub fn deck_identity(text: &str) -> Result<Option<String>, ParseError> {
     let mut lints = Vec::new();
     let (frontmatter, _, _) = parse_frontmatter(&lines, &mut lints)?;
     Ok(frontmatter.alix_id)
+}
+
+pub fn image_references(text: &str) -> Vec<ImageReference> {
+    let mut references = Vec::new();
+    let mut offset = 0;
+    let mut frontmatter = false;
+    let mut saw_content = false;
+
+    for segment in text.split_inclusive('\n') {
+        let line = segment.strip_suffix('\n').unwrap_or(segment);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if !saw_content && !trim_ws(line).is_empty() {
+            saw_content = true;
+            if line == "---" {
+                frontmatter = true;
+                offset += segment.len();
+                continue;
+            }
+        }
+        if frontmatter {
+            if closes_frontmatter(line) {
+                frontmatter = false;
+            }
+            offset += segment.len();
+            continue;
+        }
+        image_references_in_line(line, offset, &mut references);
+        offset += segment.len();
+    }
+    references
+}
+
+fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageReference>) {
+    let mut cursor = 0;
+    while let Some(relative) = line[cursor..].find("![") {
+        let marker = cursor + relative;
+        if escaped_marker(line, marker) {
+            cursor = marker + 2;
+            continue;
+        }
+        let alt_start = marker + 2;
+        let Some(alt_end_relative) = line[alt_start..].find(']') else {
+            break;
+        };
+        let alt_end = alt_start + alt_end_relative;
+        let Some(paren) = line
+            .get(alt_end + 1..)
+            .and_then(|tail| tail.strip_prefix('('))
+        else {
+            cursor = alt_end + 1;
+            continue;
+        };
+        let Some((source, after)) = cloze::scan_src(paren) else {
+            cursor = alt_end + 1;
+            continue;
+        };
+        let consumed = paren.len() - after.len();
+        let paren_start = alt_end + 2;
+        let destination = if paren.starts_with('<') {
+            paren_start + 1..paren_start + consumed.saturating_sub(2)
+        } else {
+            paren_start..paren_start + consumed.saturating_sub(1)
+        };
+        if destination.start <= destination.end && destination.end <= line.len() {
+            out.push(ImageReference {
+                source,
+                destination: offset + destination.start..offset + destination.end,
+            });
+        }
+        cursor = paren_start + consumed;
+    }
+}
+
+fn escaped_marker(line: &str, marker: usize) -> bool {
+    let slashes = line[..marker]
+        .chars()
+        .rev()
+        .take_while(|character| *character == '\\')
+        .count();
+    slashes % 2 == 1
 }
 
 // ── Internal representation ──
@@ -1862,6 +1948,29 @@ the answer
         let card = &deck.cards[0];
         assert_eq!(vec![PathBuf::from("d.png")], img_srcs(&card.images_back));
         assert_eq!(vec!["before", "```", "```"], card.back);
+    }
+
+    #[test]
+    fn image_references_report_exact_destination_byte_spans() {
+        let text =
+            "---\ntitle: x\n---\n## q\n![one](images/Moon.PNG)\n![two](<with space/a.png>)\n";
+        let references = image_references(text);
+
+        assert_eq!(2, references.len());
+        assert_eq!("images/Moon.PNG", references[0].source);
+        assert_eq!("images/Moon.PNG", &text[references[0].destination.clone()]);
+        assert_eq!("with space/a.png", references[1].source);
+        assert_eq!("with space/a.png", &text[references[1].destination.clone()]);
+    }
+
+    #[test]
+    fn image_references_ignore_escaped_markers_and_match_fenced_card_images() {
+        let text = "## q\n\\![escaped](a.png)\n```\n![code](b.png)\n```\n![real](c.png)\n";
+        let references = image_references(text);
+
+        assert_eq!(2, references.len());
+        assert_eq!("b.png", references[0].source);
+        assert_eq!("c.png", references[1].source);
     }
 
     #[test]
