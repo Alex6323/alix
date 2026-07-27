@@ -44,6 +44,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 anyhow = "1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"], optional = true }
+# flush unsaved review state and exit cleanly on Ctrl-C/SIGTERM
+ctrlc = { version = "3", features = ["termination"], optional = true }
 directories = "6"
 getrandom = "0.2" # portable OS CSPRNG: identity-token minting + the serve pairing token
 qrcodegen = { version = "1.8.0", optional = true } # zero-dep QR encoder for the terminal pairing QR (`--lan`)
@@ -69,7 +71,7 @@ default = ["full"]
 # `full` is every non-core capability: the web server, the AI backend and all its
 # consumers, and sharing. `--no-default-features` builds the lean core the mobile
 # client cross-compiles. See CONTRIBUTING.md.
-full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:clap"]
+full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:clap", "dep:ctrlc"]
 
 [dev-dependencies]
 proptest = "1" # property-test the freeze-forever card-id invariants (framing injectivity, control rejection)

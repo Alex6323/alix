@@ -38,6 +38,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Review progress now persists as it happens: every grade, acquire, exam
+  flag, badge, and card mutation writes the deck's progress document before
+  the response returns, so closing the browser or killing the server
+  mid-session no longer loses the sitting. The former session-batched flush
+  (one write per transition) is gone; transition flushes remain as backstops.
+- The server drains its workers, flushes any unsaved state, and exits cleanly
+  on Ctrl-C or SIGTERM instead of dying mid-request.
 - Dependency changes now pass a reviewed duplicate-family gate through
   `make deps-check`, preventing an avoidable second compiled version from
   entering the graph unnoticed.

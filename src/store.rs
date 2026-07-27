@@ -783,43 +783,6 @@ impl Store {
         }
     }
 
-    /// Cheap conflict peek: errors with `StaleRevision` once another writer
-    /// has replaced a document this store loaded, without writing anything.
-    pub fn check_revision(&self) -> Result<(), StoreError> {
-        match &self.backing {
-            StoreBacking::Deck {
-                deck_id, revision, ..
-            } => {
-                let loaded = revision.load(Ordering::Relaxed);
-                let disk = deck_revision(&self.path, deck_id)?;
-                if disk != loaded {
-                    return Err(StoreError::StaleRevision {
-                        path: self.path.clone(),
-                        loaded,
-                        disk,
-                    });
-                }
-                Ok(())
-            }
-            StoreBacking::Aggregate { documents, .. } => {
-                let documents = documents
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                for document in documents.iter() {
-                    let disk = deck_revision(&document.path, &document.deck_id)?;
-                    if disk != document.revision {
-                        return Err(StoreError::StaleRevision {
-                            path: document.path.clone(),
-                            loaded: document.revision,
-                            disk,
-                        });
-                    }
-                }
-                Ok(())
-            }
-        }
-    }
-
     fn save_deck(
         &self,
         deck_id: &str,
@@ -2189,27 +2152,6 @@ mod tests {
             Err(error) => error,
         };
         assert!(matches!(error, StoreError::DeckOwner { .. }));
-    }
-
-    #[test]
-    fn check_revision_flags_a_document_replaced_on_disk() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("progress/deck1.json");
-        Store::open_deck(&path, "deck1", "d.md")
-            .unwrap()
-            .save()
-            .unwrap();
-        let session = Store::open_deck(&path, "deck1", "d.md").unwrap();
-        assert!(session.check_revision().is_ok());
-
-        let mut other = Store::open_deck(&path, "deck1", "d.md").unwrap();
-        other.get_or_insert("card1", 1);
-        other.save().unwrap();
-
-        assert!(matches!(
-            session.check_revision(),
-            Err(StoreError::StaleRevision { .. })
-        ));
     }
 
     #[test]

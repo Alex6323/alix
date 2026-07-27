@@ -955,6 +955,22 @@ fn post_api_grade_passed_returns_the_next_state_dto() {
 }
 
 #[test]
+fn a_grade_is_on_disk_before_its_response_returns() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+
+    assert_eq!(200, resp.status);
+    let document = state_root(guard.dir.path()).join("progress/sample.json");
+    let json = std::fs::read_to_string(&document).unwrap_or_default();
+    assert!(
+        json.contains("\"s1\"") && json.contains("\"history\""),
+        "the graded card persists without waiting for a session transition: {json}"
+    );
+}
+
+#[test]
 fn a_concurrent_writer_surfaces_save_error_in_the_review_state() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
@@ -1774,7 +1790,7 @@ fn post_api_deselect_returns_to_the_picker_state_dto() {
 // ── Session-batched store flush ─────────────────────────────────────────
 
 #[test]
-fn a_grade_does_not_rewrite_the_store_mid_session() {
+fn a_grade_persists_immediately_and_survives_deselect() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
 
@@ -1782,10 +1798,9 @@ fn a_grade_does_not_rewrite_the_store_mid_session() {
     assert_eq!(200, resp.status);
 
     let on_disk = open_deck_store(guard.dir(), "sample.md");
-    assert_eq!(
-        None,
-        on_disk.last_review_ms(),
-        "the grade must stay in memory while the session is active"
+    assert!(
+        on_disk.last_review_ms().is_some(),
+        "the grade reaches disk on the grade itself, not at a later transition"
     );
 
     let resp = post_json(&base, "/api/deselect", "{}");
@@ -1793,7 +1808,7 @@ fn a_grade_does_not_rewrite_the_store_mid_session() {
     let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert!(
         on_disk.last_review_ms().is_some(),
-        "deselect must flush the graded card to disk"
+        "deselect leaves the flushed card in place"
     );
 }
 

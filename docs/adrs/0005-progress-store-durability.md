@@ -20,6 +20,15 @@ On 2026-07-26 the shared write path gained data and directory-entry syncing
 around the atomic rename, closing the power-loss window that could leave a
 replaced document empty; stale sessions now also surface their failed saves
 through the review API instead of only the server log.
+On 2026-07-27 session mutations stopped deferring: every store mutation
+flushes its per-deck document before the response returns, and the server
+drains and flushes on Ctrl-C/SIGTERM, replacing the 2026-07-19
+session-batched flush whose accepted loss window this closes. An append-only
+review journal was considered for the same goal and rejected: document sizes
+keep the fsync as the dominant cost either way, and a durability log's
+resulting-state deltas would not serve a future merge log's per-device
+semantic events, so the journal remains a roadmap option on its original
+triggers.
 
 ## Context
 

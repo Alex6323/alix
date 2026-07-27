@@ -3000,3 +3000,68 @@ fn reset_by_text_query_with_no_match_reports_nothing() {
         stdout(&out)
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn sigterm_flushes_and_exits_the_server_cleanly() {
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "d.md",
+        "---\nalix-id: sigdeck\n---\n## q <!-- id: sig1 -->\na\n",
+    );
+    assert!(alix(&["deck", "init", &deck]).status.success());
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_alix"))
+        .arg(dir.path())
+        .args(["--port", "0"])
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path())
+        .env("XDG_DATA_HOME", home.path())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn the alix server");
+
+    // Readiness: the URL line prints only after the socket is bound.
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if line.contains("http://") {
+                let _ = ready_tx.send(());
+                break;
+            }
+        }
+    });
+    ready_rx
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the server never printed its URL");
+
+    assert!(
+        Command::new("kill")
+            .arg(child.id().to_string())
+            .status()
+            .expect("failed to run kill")
+            .success()
+    );
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("failed to poll the server") {
+            break status;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the server did not exit after SIGTERM"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    assert!(
+        status.success(),
+        "SIGTERM must drain and exit cleanly, not kill the process: {status:?}"
+    );
+}

@@ -178,16 +178,13 @@ fn flush_store(store: &Store, dirty: &mut bool, save_error: &mut Option<String>)
     }
 }
 
-// Runs on every store mutation: a cheap revision peek turns a concurrent
-// writer into a visible state-DTO error at the next response instead of a
-// silent save failure at session end.
-fn note_dirty(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
+// Runs on every store mutation: the grade (or exam flag, badge, removal) is
+// on disk before its response returns, so killing the server or closing the
+// browser mid-session loses nothing already answered. A failed save lands in
+// `save_error` for the state DTO; the transition-time flushes stay as backstops.
+fn flush_mutation(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
     *dirty = true;
-    if save_error.is_none()
-        && let Err(e) = store.check_revision()
-    {
-        *save_error = Some(e.to_string());
-    }
+    flush_store(store, dirty, save_error);
 }
 
 pub fn run_review(
@@ -986,7 +983,7 @@ pub fn run_review(
                         if let Some(subject) = r.files.paths.keys().next() {
                             store::note_badges(&mut *store, subject, r.session.cards(), now);
                         }
-                        note_dirty(store, store_dirty, save_error);
+                        flush_mutation(store, store_dirty, save_error);
                         r.rotate_variant();
                         respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
                     }
@@ -1008,7 +1005,7 @@ pub fn run_review(
                     continue;
                 };
                 r.session.acquire_current(&mut *store, now_ms());
-                note_dirty(store, store_dirty, save_error);
+                flush_mutation(store, store_dirty, save_error);
                 r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
@@ -1054,7 +1051,7 @@ pub fn run_review(
                             store.remove(&id);
                         }
                     }
-                    note_dirty(store, store_dirty, save_error);
+                    flush_mutation(store, store_dirty, save_error);
                     r.files.remove_block(&subject, line);
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
@@ -1084,7 +1081,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
-                note_dirty(store, store_dirty, save_error);
+                flush_mutation(store, store_dirty, save_error);
                 r.session.poll(store, now_ms());
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
@@ -1171,7 +1168,7 @@ pub fn run_review(
                     &deck_fingerprints,
                 ) {
                     Ok(id) => {
-                        note_dirty(store, store_dirty, save_error);
+                        flush_mutation(store, store_dirty, save_error);
                         respond_json(request, &CreateCardResp { id });
                     }
                     Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
@@ -1488,7 +1485,7 @@ pub fn run_review(
                 match delta {
                     Some(delta) => {
                         w.walk.grade(&mut *store, delta, now_ms());
-                        note_dirty(store, store_dirty, save_error);
+                        flush_mutation(store, store_dirty, save_error);
                         w.clear_grade();
                         respond_json(request, &walk_dto(w));
                     }
@@ -1841,6 +1838,18 @@ pub fn run_review(
                 );
         }
     });
+
+    // Workers have drained (unblock relay), so the lock is free: one last
+    // flush covers any mutation whose own save failed transiently.
+    let ServeState {
+        store,
+        mut store_dirty,
+        mut save_error,
+        ..
+    } = state
+        .into_inner()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    flush_store(&store, &mut store_dirty, &mut save_error);
     Ok(())
 }
 
