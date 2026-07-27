@@ -292,6 +292,16 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             deck.subject
         ));
     }
+    for req in &deck.requires {
+        if alix::deck::resolve_dep(req, deck.path.parent(), deck.path.parent()).is_none() {
+            report.warn(format!(
+                "{}: requires `{req}` but no such deck exists here (dangling \
+                 prerequisite); `requires:` is authored by filename, so a renamed or \
+                 deleted prerequisite breaks the edge",
+                deck.subject
+            ));
+        }
+    }
 }
 
 fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
@@ -1005,6 +1015,32 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|warning| warning.contains("generated keypoint"))
+        );
+    }
+
+    #[test]
+    fn doctor_flags_a_dangling_requires_but_not_a_resolvable_one() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "base.md", "## a\n1\n");
+        let dangling = dir.path().join("dangling.md");
+        w(dir.path(), "dangling.md", "---\nrequires: ghost\n---\n## q\na\n");
+        let resolvable = dir.path().join("resolvable.md");
+        w(dir.path(), "resolvable.md", "---\nrequires: base\n---\n## q\na\n");
+
+        let mut report = Report::default();
+        deck_findings(&dangling, true, &mut report);
+        deck_findings(&resolvable, true, &mut report);
+
+        let dangling_warnings: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("dangling prerequisite"))
+            .collect();
+        assert_eq!(1, dangling_warnings.len(), "{:#?}", report.warnings);
+        assert!(
+            dangling_warnings[0].contains("`ghost`"),
+            "{}",
+            dangling_warnings[0]
         );
     }
 
