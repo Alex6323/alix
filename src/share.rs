@@ -19,6 +19,13 @@ struct DeckBundle {
     deck: String,
 }
 
+struct DeckBundleParts {
+    deck_id: String,
+    augmentation: PathBuf,
+    owned_assets: PathBuf,
+    has_assets: bool,
+}
+
 fn stays_home(name: &str) -> bool {
     PERSONAL.contains(&name)
         || name.starts_with('.')
@@ -40,9 +47,28 @@ pub fn stage_path(path: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
     if !path.is_file() {
         bail!("`{}` is neither a deck file nor a folder", path.display());
     }
+    let Some(parts) = deck_bundle_parts(path)? else {
+        return Ok((path.to_path_buf(), 1));
+    };
+    if !parts.augmentation.is_file() && !parts.has_assets {
+        return Ok((path.to_path_buf(), 1));
+    }
+    stage_deck_bundle_with_parts(path, stage_root, &parts)
+}
+
+pub fn stage_deck_bundle(path: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
+    if !path.is_file() {
+        bail!("`{}` is not a deck file", path.display());
+    }
+    let parts = deck_bundle_parts(path)?
+        .ok_or_else(|| anyhow::anyhow!("{} is not initialized", path.display()))?;
+    stage_deck_bundle_with_parts(path, stage_root, &parts)
+}
+
+fn deck_bundle_parts(path: &Path) -> Result<Option<DeckBundleParts>> {
     let deck = crate::deck::Deck::load(path)?;
     let Some(deck_id) = deck.deck_token.as_deref() else {
-        return Ok((path.to_path_buf(), 1));
+        return Ok(None);
     };
     let content_root = crate::workspace::root_for_deck(path)
         .or_else(|| path.parent())
@@ -53,13 +79,22 @@ pub fn stage_path(path: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
     if crate::workspace::root_for_deck(path).is_some() || has_assets {
         validate_bundle_material(&deck, content_root)?;
     }
-    if !augmentation.is_file() && !has_assets {
-        return Ok((path.to_path_buf(), 1));
-    }
     if augmentation.is_file() {
         crate::augment::read_deck_data(&augmentation, deck_id)?;
     }
+    Ok(Some(DeckBundleParts {
+        deck_id: deck_id.to_string(),
+        augmentation,
+        owned_assets,
+        has_assets,
+    }))
+}
 
+fn stage_deck_bundle_with_parts(
+    path: &Path,
+    stage_root: &Path,
+    parts: &DeckBundleParts,
+) -> Result<(PathBuf, usize)> {
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -71,19 +106,21 @@ pub fn stage_path(path: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
     std::fs::copy(path, stage.join(file_name))
         .with_context(|| format!("cannot copy {}", path.display()))?;
     let mut count = 2;
-    if augmentation.is_file() {
+    if parts.augmentation.is_file() {
         std::fs::create_dir_all(stage.join("augment"))
             .with_context(|| format!("cannot create {}", stage.display()))?;
         std::fs::copy(
-            &augmentation,
-            stage.join("augment").join(format!("{deck_id}.json")),
+            &parts.augmentation,
+            stage
+                .join("augment")
+                .join(format!("{}.json", parts.deck_id)),
         )
-        .with_context(|| format!("cannot copy {}", augmentation.display()))?;
+        .with_context(|| format!("cannot copy {}", parts.augmentation.display()))?;
         count += 1;
     }
-    if has_assets {
-        let destination = stage.join("assets").join(deck_id);
-        copy_tree(&owned_assets, &destination)?;
+    if parts.has_assets {
+        let destination = stage.join("assets").join(&parts.deck_id);
+        copy_tree(&parts.owned_assets, &destination)?;
         count += count_files(&destination)?;
     }
     let marker = serde_json::to_string_pretty(&DeckBundle {
@@ -769,6 +806,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(Some("shared note"), received_augmentation.note("card1", 7));
+    }
+
+    #[test]
+    fn the_explicit_bundle_builder_stages_an_initialized_deck_without_sidecars() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("facts.md");
+        std::fs::write(
+            &deck,
+            "---\nalix-id: deck1\n---\n## q\nanswer\n<!-- id: card1 -->\n",
+        )
+        .unwrap();
+        let transfer = dir.path().join("transfer");
+
+        let (bundle, count) = stage_deck_bundle(&deck, &transfer).unwrap();
+
+        assert_eq!(2, count);
+        assert!(is_deck_bundle(&bundle));
+        assert!(bundle.join("facts.md").is_file());
     }
 
     #[test]

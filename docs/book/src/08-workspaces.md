@@ -91,6 +91,30 @@ The first update implementation accepts local file and directory origins. A
 remote URL origin remains review and tutor context, but cannot yet be captured
 as a new portable snapshot.
 
+## Moving decks between workspaces
+
+A workspace deck owns more than its Markdown file. Transfer it with Alix so its
+frozen evidence and augmentation follow the stable deck ID:
+
+```sh
+alix deck copy ~/decks/spanish/decks/verbs.md ~/decks/exam
+alix deck move ~/decks/spanish/decks/verbs.md ~/decks/exam
+```
+
+Both commands preserve the filename, deck ID, and card IDs. Copy installs the
+same public bundle that wormhole sharing sends: the deck,
+`assets/<alix-id>/`, and `augment/<alix-id>.json`. It never copies progress.
+Move requires confirmation, installs that public bundle first, carries
+`progress/<alix-id>.json` when the workspaces use different user roots, then
+removes the source. Workspaces configured to use one shared user root already
+address the same progress document by deck ID, so no progress file moves.
+
+The destination must be another Alix workspace. Transfer refuses overwrites,
+stable-ID collisions, missing required decks, and moves that would break a
+source deck's dependents. An inherited or relative `origin` is written
+explicitly into the transferred deck so the destination cannot reinterpret its
+live provenance through unrelated workspace defaults.
+
 Now open the cluster and drill its members one at a time:
 
 ```sh

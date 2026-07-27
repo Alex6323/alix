@@ -145,6 +145,78 @@ fn check_accepts_a_valid_deck() {
 }
 
 #[test]
+fn deck_copy_lands_the_public_deck_and_reports_the_boundary() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    let destination = dir.path().join("destination");
+    std::fs::create_dir_all(source.join("decks")).unwrap();
+    std::fs::create_dir_all(destination.join("decks")).unwrap();
+    std::fs::write(source.join("alix.toml"), "").unwrap();
+    std::fs::write(destination.join("alix.toml"), "").unwrap();
+    let deck = write(
+        &source.join("decks"),
+        "facts.md",
+        "---\nalix-id: deck1\n---\n## q\nanswer\n<!-- id: card1 -->\n",
+    );
+
+    let out = alix(&["deck", "copy", &deck, destination.to_str().unwrap()]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("progress moved: no"),
+        "stdout: {}",
+        stdout(&out)
+    );
+    assert!(destination.join("decks/facts.md").is_file());
+    assert!(Path::new(&deck).is_file());
+}
+
+#[test]
+fn deck_move_requires_confirmation_and_reports_progress() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    let destination = dir.path().join("destination");
+    std::fs::create_dir_all(source.join("decks")).unwrap();
+    std::fs::create_dir_all(destination.join("decks")).unwrap();
+    std::fs::write(source.join("alix.toml"), "").unwrap();
+    std::fs::write(destination.join("alix.toml"), "").unwrap();
+    let deck = write(
+        &source.join("decks"),
+        "facts.md",
+        "---\nalix-id: deck1\n---\n## q\nanswer\n<!-- id: card1 -->\n",
+    );
+    write_progress_document(&source, "deck1", "facts.md", "");
+
+    let refused = alix(&["deck", "move", &deck, destination.to_str().unwrap()]);
+
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("pass --yes"),
+        "stderr: {}",
+        stderr(&refused)
+    );
+    assert!(Path::new(&deck).is_file());
+
+    let moved = alix(&[
+        "deck",
+        "move",
+        &deck,
+        destination.to_str().unwrap(),
+        "--yes",
+    ]);
+
+    assert!(moved.status.success(), "stderr: {}", stderr(&moved));
+    assert!(
+        stdout(&moved).contains("progress moved: yes"),
+        "stdout: {}",
+        stdout(&moved)
+    );
+    assert!(!Path::new(&deck).exists());
+    assert!(destination.join("decks/facts.md").is_file());
+    assert!(destination.join("progress/deck1.json").is_file());
+}
+
+#[test]
 fn a_deck_file_argument_errors_with_a_picker_pointer() {
     // `alix <deck>` was removed — the picker is the one way into a review. The
     // guard fires before any server binds, so this is testable headless.

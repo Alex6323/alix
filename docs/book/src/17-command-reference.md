@@ -109,6 +109,12 @@ The rest of the AI-and-deck surface:
   (choices, notes, questions, keypoints, format, order). The augmentation
   document stays beside the deck. `--store` affects only the private progress
   needed when the `format` target considers virtual cards.
+- `alix deck copy <deck> <workspace>`: copy one initialized workspace member,
+  its owned frozen assets, and its augmentation into another workspace. Stable
+  deck and card IDs are preserved; progress is not copied.
+- `alix deck move <deck> <workspace> [--yes]`: move the same public bundle,
+  carry progress when the workspaces use different user roots, then remove the
+  source. Refuses missing prerequisites and source dependents.
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
 - `alix workspace init <dir>`: scaffold an empty

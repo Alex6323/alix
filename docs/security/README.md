@@ -147,6 +147,13 @@ orphaned augmentation documents stay home. Frozen `assets/` are intentionally
 shareable evidence and may contain proprietary or private source excerpts;
 review the staged workspace before sending it.
 
+Local `alix deck copy` and `alix deck move` call the same single-deck bundle
+builder, sanitizer, validator, and installer as wormhole sharing. Copy cannot
+carry progress because progress is outside that public bundle. Move handles the
+matching progress document separately, publishes and validates the destination
+before deleting the source deck, and refuses occupied destination paths or
+stable deck-ID collisions (`src/share.rs`, `src/deck_transfer.rs`).
+
 Received archives, decks, images, URLs, manifests, and source locators remain
 untrusted. Sanitizing personal state does not certify the remaining content as
 safe or accurate.
@@ -200,6 +207,8 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
 - `src/share.rs`: outgoing filtering and defensive receive sanitization;
+- `src/deck_transfer.rs`: local transfer preflight, private progress handling,
+  destination-first publication, and source-deletion rollback;
 - `src/state.rs` and `src/workspace.rs`: typed user-file and workspace-file
   routing by stable deck ID;
 - `src/store.rs`: per-deck atomic replacement, revisions, writer markers, and

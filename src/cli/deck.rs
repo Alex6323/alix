@@ -12,9 +12,9 @@ use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 
 use crate::{
-    AugmentArgs, AugmentTarget, DeckInitArgs, ImportArgs, WorkspaceDeadlineArgs, WorkspaceInitArgs,
-    WorkspaceUpdateArgs,
-    common::{deck_out_dir, one_line, store_for, truncate},
+    AugmentArgs, AugmentTarget, DeckInitArgs, DeckMoveArgs, DeckTransferArgs, ImportArgs,
+    WorkspaceDeadlineArgs, WorkspaceInitArgs, WorkspaceUpdateArgs,
+    common::{confirm, deck_out_dir, one_line, store_for, truncate},
 };
 
 pub(crate) fn workspace_update_cmd(args: WorkspaceUpdateArgs) -> Result<()> {
@@ -80,6 +80,54 @@ pub(crate) fn init_cmd(args: DeckInitArgs) -> Result<()> {
         outcome.stamp.minted_cards.len()
     );
     Ok(())
+}
+
+pub(crate) fn copy_cmd(args: DeckTransferArgs) -> Result<()> {
+    let report = alix::deck_transfer::transfer(
+        &args.deck,
+        &args.workspace,
+        alix::deck_transfer::TransferMode::Copy,
+    )?;
+    print_transfer_report("Copied", &report);
+    Ok(())
+}
+
+pub(crate) fn move_cmd(args: DeckMoveArgs) -> Result<()> {
+    if !confirm(
+        &format!(
+            "Move {} to {} and remove the source?",
+            args.deck.display(),
+            args.workspace.display()
+        ),
+        args.yes,
+    )? {
+        println!("Move cancelled.");
+        return Ok(());
+    }
+    let report = alix::deck_transfer::transfer(
+        &args.deck,
+        &args.workspace,
+        alix::deck_transfer::TransferMode::Move,
+    )?;
+    print_transfer_report("Moved", &report);
+    Ok(())
+}
+
+fn print_transfer_report(action: &str, report: &alix::deck_transfer::TransferReport) {
+    println!(
+        "{action} {} to {}.",
+        report.source.display(),
+        report.destination.display()
+    );
+    println!(
+        "  {} asset file(s), augmentation: {}, progress moved: {}",
+        report.assets,
+        if report.augmentation { "yes" } else { "no" },
+        if report.progress { "yes" } else { "no" }
+    );
+    for path in &report.leftovers {
+        eprintln!("warning: source cleanup left {}", path.display());
+    }
 }
 
 /// Foreground: any Claude error surfaces here, not mid-review.

@@ -430,6 +430,10 @@ struct GenerateDeckArgs {
 enum DeckAction {
     /// Initialize a hand-authored Markdown file as an Alix deck.
     Init(DeckInitArgs),
+    /// Copy a workspace deck and its shareable files into another workspace.
+    Copy(DeckTransferArgs),
+    /// Move a workspace deck, its shareable files, and its progress.
+    Move(DeckMoveArgs),
     /// Augment an existing deck with Claude: multiple-choice distractors, or
     /// trivia notes. Augmentations are deliberate and persisted, so review stays
     /// instant and fully offline.
@@ -444,6 +448,25 @@ enum DeckAction {
 struct DeckInitArgs {
     /// The Markdown file to initialize with stable deck and card IDs.
     deck: PathBuf,
+}
+
+#[derive(Args)]
+struct DeckTransferArgs {
+    /// An initialized direct member of an Alix workspace.
+    deck: PathBuf,
+    /// The destination Alix workspace.
+    workspace: PathBuf,
+}
+
+#[derive(Args)]
+struct DeckMoveArgs {
+    /// An initialized direct member of an Alix workspace.
+    deck: PathBuf,
+    /// The destination Alix workspace.
+    workspace: PathBuf,
+    /// Skip the confirmation prompt.
+    #[arg(short = 'y', long)]
+    yes: bool,
 }
 
 #[derive(Args)]
@@ -603,6 +626,8 @@ fn main() -> Result<()> {
         Some(Command::Generate(args)) => generate::generate_cmd(args),
         Some(Command::Deck(action)) => match action {
             DeckAction::Init(args) => deck::init_cmd(args),
+            DeckAction::Copy(args) => deck::copy_cmd(args),
+            DeckAction::Move(args) => deck::move_cmd(args),
             DeckAction::Augment(args) => deck::augment_cmd(args),
             DeckAction::Import(args) => deck::import_cmd(args),
         },

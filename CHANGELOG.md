@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix deck copy <deck> <workspace>` and
+  `alix deck move <deck> <workspace>` transfer one initialized workspace member
+  with its owned frozen assets and augmentation. Both reuse the same public
+  bundle boundary as wormhole sharing; copy excludes progress, while confirmed
+  move carries progress between distinct user roots and removes the source only
+  after the destination is complete.
 - `alix workspace update <dir>` reconciles frozen source-backed members with
   their recorded local origins. It stages an exact sibling workspace for
   review, then `--apply` publishes those same bytes without another model call
