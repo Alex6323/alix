@@ -52,6 +52,11 @@ pub fn format_excerpt_fingerprint(fingerprint: u64) -> String {
     format!("xxh64:{fingerprint:016x}")
 }
 
+/// The ADR 0026 locator fingerprint field value, e.g. `xxh64-0123456789abcdef`.
+pub fn format_locator_fingerprint(fingerprint: u64) -> String {
+    format!("xxh64-{fingerprint:016x}")
+}
+
 pub fn stamp_citations(path: &Path) -> Result<usize> {
     let deck = Deck::load(path)?;
     let base = SourceBase::for_deck(&deck);
@@ -307,6 +312,81 @@ pub(crate) fn parse_locator(locator: &str) -> (Option<String>, Option<String>) {
         return (None, Some(locator.to_string()));
     }
     (Some(locator.to_string()), None)
+}
+
+/// The parsed named-field locator, ADR 0026 ("Locator fields"): `at` is the
+/// real `<src>:<lines>` (or lines-only, or whole-file) form; `fingerprint` is
+/// the `xxh64-<hex>` change-detector; `asset` is the `sha256-<hex>.<ext>`
+/// frozen object name, present only on a frozen citation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocatorFields {
+    pub at: String,
+    pub fingerprint: Option<String>,
+    pub asset: Option<String>,
+}
+
+fn take_locator_field(
+    tokens: &[&str],
+    index: &mut usize,
+    key: &str,
+    required: bool,
+    whole: &str,
+) -> Result<Option<String>> {
+    if tokens.get(*index) != Some(&key) {
+        if required {
+            bail!("locator `{whole}` must start with `{key}`");
+        }
+        return Ok(None);
+    }
+    let field_value = tokens.get(*index + 1).copied().unwrap_or("");
+    if field_value.is_empty() {
+        bail!("locator `{whole}` has `{key}` with no value");
+    }
+    *index += 2;
+    Ok(Some(field_value.to_string()))
+}
+
+/// The frozen locator tokenizer (ADR 0026): the value is split on single
+/// spaces into a strictly alternating `at:`/`fingerprint:`/`asset:` key and
+/// value stream, in that canonical order, each key at most once. Any unknown
+/// key, duplicate key, unpaired token, or leftover content is a hard error
+/// with no partial extraction, so an old ` @ `/` from ` locator can never
+/// parse as a partial new one.
+pub fn parse_locator_fields(value: &str) -> Result<LocatorFields> {
+    let trimmed = value.trim();
+    let tokens: Vec<&str> = trimmed.split(' ').collect();
+    let mut index = 0;
+
+    let at = take_locator_field(&tokens, &mut index, "at:", true, trimmed)?.unwrap_or_default();
+    let fingerprint = take_locator_field(&tokens, &mut index, "fingerprint:", false, trimmed)?;
+    let asset = take_locator_field(&tokens, &mut index, "asset:", false, trimmed)?;
+
+    if index != tokens.len() {
+        bail!(
+            "locator `{trimmed}` has unexpected content starting at `{}`",
+            tokens[index]
+        );
+    }
+
+    Ok(LocatorFields {
+        at,
+        fingerprint,
+        asset,
+    })
+}
+
+/// Emits the canonical `at: <src>:<lines> fingerprint: xxh64-<hex> asset:
+/// sha256-<hex>.<ext>` form, omitting absent optional fields; round-trips
+/// with `parse_locator_fields`.
+pub fn format_locator_fields(fields: &LocatorFields) -> String {
+    let mut formatted = format!("at: {}", fields.at);
+    if let Some(fingerprint) = &fields.fingerprint {
+        formatted.push_str(&format!(" fingerprint: {fingerprint}"));
+    }
+    if let Some(asset) = &fields.asset {
+        formatted.push_str(&format!(" asset: {asset}"));
+    }
+    formatted
 }
 
 fn is_line_spec(value: &str) -> bool {
@@ -743,6 +823,135 @@ mod tests {
             (Some("notes.md".to_string()), None),
             parse_locator("notes.md")
         );
+    }
+
+    #[test]
+    fn format_locator_fingerprint_uses_the_dash_form() {
+        assert_eq!(
+            "xxh64-0123456789abcdef",
+            format_locator_fingerprint(0x0123456789abcdef)
+        );
+    }
+
+    #[test]
+    fn parse_locator_fields_parses_the_canonical_three_field_locator() {
+        let fields = parse_locator_fields(
+            "at: notes.md:12-18 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs",
+        )
+        .unwrap();
+        assert_eq!(
+            LocatorFields {
+                at: "notes.md:12-18".to_string(),
+                fingerprint: Some("xxh64-0123456789abcdef".to_string()),
+                asset: Some("sha256-abc123.rs".to_string()),
+            },
+            fields
+        );
+    }
+
+    #[test]
+    fn parse_locator_fields_accepts_at_only() {
+        let fields = parse_locator_fields("at: notes.md:12-18").unwrap();
+        assert_eq!(
+            LocatorFields {
+                at: "notes.md:12-18".to_string(),
+                fingerprint: None,
+                asset: None,
+            },
+            fields
+        );
+    }
+
+    #[test]
+    fn parse_locator_fields_accepts_at_and_fingerprint_without_asset() {
+        let fields =
+            parse_locator_fields("at: notes.md:12-18 fingerprint: xxh64-0123456789abcdef")
+                .unwrap();
+        assert_eq!(
+            LocatorFields {
+                at: "notes.md:12-18".to_string(),
+                fingerprint: Some("xxh64-0123456789abcdef".to_string()),
+                asset: None,
+            },
+            fields
+        );
+    }
+
+    #[test]
+    fn parse_locator_fields_accepts_a_lines_only_at_value() {
+        let fields = parse_locator_fields("at: 12-18").unwrap();
+        assert_eq!(
+            LocatorFields {
+                at: "12-18".to_string(),
+                fingerprint: None,
+                asset: None,
+            },
+            fields
+        );
+    }
+
+    #[test]
+    fn parse_locator_fields_accepts_a_whole_file_at_value() {
+        let fields = parse_locator_fields("at: notes.md").unwrap();
+        assert_eq!(
+            LocatorFields {
+                at: "notes.md".to_string(),
+                fingerprint: None,
+                asset: None,
+            },
+            fields
+        );
+    }
+
+    #[test]
+    fn parse_locator_fields_rejects_an_old_style_locator() {
+        let error =
+            parse_locator_fields("at: 29.rs @ xxh64:0123456789abcdef from src/x.rs:1-3")
+                .unwrap_err();
+        assert!(format!("{error:#}").contains("unexpected content"));
+    }
+
+    #[test]
+    fn parse_locator_fields_rejects_an_unknown_key() {
+        assert!(parse_locator_fields("foo: bar").is_err());
+    }
+
+    #[test]
+    fn parse_locator_fields_rejects_a_duplicate_key() {
+        assert!(parse_locator_fields("at: a:1 at: b:2").is_err());
+    }
+
+    #[test]
+    fn parse_locator_fields_rejects_a_fingerprint_key_with_no_value() {
+        assert!(parse_locator_fields("at: notes.md:12-18 fingerprint:").is_err());
+    }
+
+    #[test]
+    fn parse_locator_fields_rejects_a_space_in_the_path() {
+        assert!(parse_locator_fields("at: my notes.md:1-2").is_err());
+    }
+
+    #[test]
+    fn parse_locator_fields_rejects_a_missing_at_field() {
+        assert!(parse_locator_fields("fingerprint: xxh64-0123456789abcdef").is_err());
+    }
+
+    #[test]
+    fn parse_locator_fields_rejects_asset_out_of_canonical_order() {
+        assert!(
+            parse_locator_fields(
+                "at: notes.md asset: sha256-abc123.rs fingerprint: xxh64-0123456789abcdef"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn format_locator_fields_round_trips_the_canonical_form() {
+        let canonical =
+            "at: notes.md:12-18 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs";
+        let fields = parse_locator_fields(canonical).unwrap();
+        assert_eq!(canonical, format_locator_fields(&fields));
     }
 
     #[test]
