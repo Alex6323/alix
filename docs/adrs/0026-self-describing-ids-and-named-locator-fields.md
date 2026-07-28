@@ -120,13 +120,17 @@ A source citation is `<!-- at: <src>:<lines> fingerprint: xxh64-<hex> asset: sha
   baseline (what the card was authored against), NOT a substitute source for
   the AI: the tutor and examiner ground against the live source (a local path
   or a fetchable origin URL) and must tell the user when it is unavailable
-  rather than silently degrade. Exception, deliberate: a self-contained frozen
-  workspace whose `source:` lives inside `assets/` (the shipped example
-  traces) is its own source by construction. A citation's `asset:` object is
-  ALWAYS excerpt-shaped, for every source kind: one uniform reader rule, no
-  object-shape heuristic. The whole-file snapshot of a single-file source
-  survives separately as the `source:` object (the file is the declared source
-  unit); it is not what `asset:` names.
+  rather than silently degrade. A citation's `asset:` object is ALWAYS
+  excerpt-shaped, for every source kind: one uniform reader rule, no
+  object-shape heuristic, no whole-file object concept (an excerpt spans the
+  whole file only when the citation cites the whole file). And `source:`
+  NEVER points into `assets/` (ruled 2026-07-28): assets are fragments by
+  construction, and an examiner or tutor grounded on fragments will
+  confidently fill gaps, which must be prevented at all costs. Freezing
+  therefore does not rewrite `source:`; a frozen deck keeps its real origin
+  (path or URL). Offline, an exam on a frozen deck reports the missing live
+  source instead of running; review and walks stay offline on frozen
+  excerpts (display, not AI grounding).
 - Reader semantics: when `asset:` is present, the asset's bytes are read in
   full and fingerprint verification targets them (integrity of the evidence);
   display numbers the excerpt from `at:`'s start line (presentation
@@ -218,6 +222,10 @@ Surfaces the migration must cover (enumerated so none is silent):
   progress: renamed, never wiped.
 - Augment sidecars: rewrite internal card-id keys and `deck_token` in place;
   preserved, not wiped.
+- A deck whose `source:` points into `assets/` (the pre-ruling frozen shape):
+  the tool rewrites it to the recorded origin (workspace or deck `origin:`
+  metadata); with no recorded origin it lists the deck for manual repair, and
+  `doctor` flags a `source:` inside `assets/` as un-converted.
 - Progress: reset (deleted). Old `progress/<bareid>.json` that survives is
   positively flagged by `doctor` as un-migrated.
 - In-repo committed decks, test fixtures, and frozen example traces: rewritten
@@ -259,10 +267,10 @@ unintended bytes.
   state documents; the wrong-type `card-` in `requires:` case; the prefix-aware
   canonical-token check.
 - Frozen-citation reader: excerpt and fingerprint target the asset bytes read
-  in full, displayed at `at:`-derived numbering; regression-test the
-  directory-source (excerpt object) and single-file-source (whole-file object)
-  cases, and that uncited lines of a cited directory-source file never enter
-  the asset.
+  in full, displayed at `at:`-derived numbering; regression-test that every
+  source kind freezes excerpt objects, that uncited lines of a cited file
+  never enter an asset, and that freezing leaves the deck's `source:` line
+  untouched.
 - Contract snapshots regenerate to the prefixed id and the inverted locator wire
   value; `docs/API.md` matches.
 - The disposable tool is tested on fixtures (including a frozen deck with assets
