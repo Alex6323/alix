@@ -678,16 +678,16 @@ mod tests {
         std::fs::create_dir_all(src.join("decks")).unwrap();
         std::fs::write(
             src.join("decks/deck.md"),
-            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         )
         .unwrap();
         touch(&src, "alix.toml");
         touch(&src, "recent.json");
         touch(&src, "alix.local.toml");
         std::fs::create_dir(src.join("progress")).unwrap();
-        touch(&src.join("progress"), "deck1.json");
+        touch(&src.join("progress"), "deck-deck1.json");
         std::fs::create_dir(src.join("augment")).unwrap();
-        touch(&src.join("augment"), "deck1.json");
+        touch(&src.join("augment"), "deck-deck1.json");
         touch(&src.join("augment"), "orphan.json");
         touch(&src.join("assets"), "icon.svg");
 
@@ -696,11 +696,11 @@ mod tests {
 
         assert_eq!(
             4, n,
-            "decks/deck.md, alix.toml, augment/deck1.json, assets/icon.svg"
+            "decks/deck.md, alix.toml, augment/deck-deck1.json, assets/icon.svg"
         );
         assert!(stage.join("decks/deck.md").exists());
         assert!(stage.join("alix.toml").exists());
-        assert!(stage.join("augment/deck1.json").exists());
+        assert!(stage.join("augment/deck-deck1.json").exists());
         assert!(!stage.join("augment/orphan.json").exists());
         assert!(stage.join("assets/icon.svg").exists());
         assert!(!stage.join("progress").exists());
@@ -719,7 +719,7 @@ mod tests {
         let deck = decks.join("facts.md");
         std::fs::write(
             &deck,
-            "---\nalix-id: deck1\nsource: notes.md\n---\n## q <!-- id: card1 -->\na\n",
+            "---\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n",
         )
         .unwrap();
         let stage = dir.path().join("stage");
@@ -735,26 +735,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let sender = dir.path().join("sender");
         std::fs::create_dir(&sender).unwrap();
-        std::fs::create_dir_all(sender.join("assets/deck1")).unwrap();
+        std::fs::create_dir_all(sender.join("assets/deck-deck1")).unwrap();
         let source_name = crate::assets::object_name(b"evidence\n", "txt");
-        std::fs::write(sender.join("assets/deck1").join(&source_name), "evidence\n").unwrap();
+        std::fs::write(sender.join("assets/deck-deck1").join(&source_name), "evidence\n").unwrap();
         let deck_path = sender.join("math.md");
         std::fs::write(
             &deck_path,
             format!(
-                "---\nalix-id: deck1\nsource: assets/deck1/{source_name}\n---\n\
-                 ## q <!-- id: card1 -->\na\n<!-- at: {source_name}:1 -->\n"
+                "---\nid: deck-deck1\nsource: assets/deck-deck1/{source_name}\n---\n\
+                 ## q <!-- id: card-card1 -->\na\n<!-- at: {source_name}:1 -->\n"
             ),
         )
         .unwrap();
         let mut progress = crate::state::open_store(&deck_path, &sender).unwrap();
-        progress.get_or_insert("card1", 1);
+        progress.get_or_insert("card-card1", 1);
         progress.save().unwrap();
         let mut augmentation = crate::augment::AugmentCache::open_for_deck(
             &crate::deck::Deck::load(&deck_path).unwrap(),
         )
         .unwrap();
-        augmentation.set_note("card1", "shared note".to_string(), 7);
+        augmentation.set_note("card-card1", "shared note".to_string(), 7);
         augmentation.save().unwrap();
 
         let transfer = dir.path().join("transfer");
@@ -764,8 +764,8 @@ mod tests {
         assert_eq!(4, count);
         assert!(is_deck_bundle(&bundle));
         assert!(bundle.join("math.md").is_file());
-        assert!(bundle.join("augment/deck1.json").is_file());
-        assert!(bundle.join("assets/deck1").join(&source_name).is_file());
+        assert!(bundle.join("augment/deck-deck1.json").is_file());
+        assert!(bundle.join("assets/deck-deck1").join(&source_name).is_file());
         assert!(!bundle.join("progress").exists());
 
         let receiver = dir.path().join("receiver");
@@ -775,23 +775,23 @@ mod tests {
         assert!(stripped.is_empty());
         let received_deck = receiver.join("math.md");
         let received_progress = crate::state::open_store(&received_deck, &receiver).unwrap();
-        assert!(received_progress.get("card1").is_none());
-        assert!(receiver.join("assets/deck1").join(&source_name).is_file());
+        assert!(received_progress.get("card-card1").is_none());
+        assert!(receiver.join("assets/deck-deck1").join(&source_name).is_file());
         let received_augmentation = crate::augment::AugmentCache::open_for_deck(
             &crate::deck::Deck::load(&received_deck).unwrap(),
         )
         .unwrap();
-        assert_eq!(Some("shared note"), received_augmentation.note("card1", 7));
+        assert_eq!(Some("shared note"), received_augmentation.note("card-card1", 7));
 
         let mut changed_augmentation = crate::augment::AugmentCache::open_for_deck(
             &crate::deck::Deck::load(&received_deck).unwrap(),
         )
         .unwrap();
-        changed_augmentation.set_note("card1", "local note".to_string(), 7);
+        changed_augmentation.set_note("card-card1", "local note".to_string(), 7);
         changed_augmentation.save().unwrap();
         std::fs::write(
             &received_deck,
-            "---\nalix-id: deck1\n---\n## changed <!-- id: card1 -->\nlocally\n",
+            "---\nid: deck-deck1\n---\n## changed <!-- id: card-card1 -->\nlocally\n",
         )
         .unwrap();
 
@@ -805,7 +805,7 @@ mod tests {
             &crate::deck::Deck::load(&received_deck).unwrap(),
         )
         .unwrap();
-        assert_eq!(Some("shared note"), received_augmentation.note("card1", 7));
+        assert_eq!(Some("shared note"), received_augmentation.note("card-card1", 7));
     }
 
     #[test]
@@ -814,7 +814,7 @@ mod tests {
         let deck = dir.path().join("facts.md");
         std::fs::write(
             &deck,
-            "---\nalix-id: deck1\n---\n## q\nanswer\n<!-- id: card1 -->\n",
+            "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let transfer = dir.path().join("transfer");
@@ -830,52 +830,52 @@ mod tests {
     fn receiving_rejects_corrupted_assets_before_writing_the_deck() {
         let dir = tempfile::tempdir().unwrap();
         let sender = dir.path().join("sender");
-        std::fs::create_dir_all(sender.join("assets/deck1")).unwrap();
+        std::fs::create_dir_all(sender.join("assets/deck-deck1")).unwrap();
         let name = crate::assets::object_name(b"evidence\n", "txt");
-        std::fs::write(sender.join("assets/deck1").join(&name), "evidence\n").unwrap();
+        std::fs::write(sender.join("assets/deck-deck1").join(&name), "evidence\n").unwrap();
         let deck = sender.join("facts.md");
         std::fs::write(
             &deck,
             format!(
-                "---\nalix-id: deck1\nsource: assets/deck1/{name}\n---\n\
-                 ## q <!-- id: card1 -->\na\n"
+                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                 ## q <!-- id: card-card1 -->\na\n"
             ),
         )
         .unwrap();
         let transfer = dir.path().join("transfer");
         std::fs::create_dir(&transfer).unwrap();
         let (bundle, _) = stage_path(&deck, &transfer).unwrap();
-        std::fs::write(bundle.join("assets/deck1").join(&name), "changed\n").unwrap();
+        std::fs::write(bundle.join("assets/deck-deck1").join(&name), "changed\n").unwrap();
         let receiver = dir.path().join("receiver");
 
         let error = land_deck_bundle(&bundle, &receiver).unwrap_err();
 
         assert!(format!("{error:#}").contains("content address"));
         assert!(!receiver.join("facts.md").exists());
-        assert!(!receiver.join("augment/deck1.json").exists());
+        assert!(!receiver.join("augment/deck-deck1.json").exists());
     }
 
     #[test]
     fn receiving_rejects_assets_owned_by_an_unrelated_deck() {
         let dir = tempfile::tempdir().unwrap();
         let sender = dir.path().join("sender");
-        std::fs::create_dir_all(sender.join("assets/deck1")).unwrap();
+        std::fs::create_dir_all(sender.join("assets/deck-deck1")).unwrap();
         let name = crate::assets::object_name(b"evidence\n", "txt");
-        std::fs::write(sender.join("assets/deck1").join(&name), "evidence\n").unwrap();
+        std::fs::write(sender.join("assets/deck-deck1").join(&name), "evidence\n").unwrap();
         let deck = sender.join("facts.md");
         std::fs::write(
             &deck,
             format!(
-                "---\nalix-id: deck1\nsource: assets/deck1/{name}\n---\n\
-                 ## q <!-- id: card1 -->\na\n"
+                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                 ## q <!-- id: card-card1 -->\na\n"
             ),
         )
         .unwrap();
         let transfer = dir.path().join("transfer");
         std::fs::create_dir(&transfer).unwrap();
         let (bundle, _) = stage_path(&deck, &transfer).unwrap();
-        std::fs::create_dir_all(bundle.join("assets/deck2")).unwrap();
-        std::fs::write(bundle.join("assets/deck2").join(&name), "evidence\n").unwrap();
+        std::fs::create_dir_all(bundle.join("assets/deck-deck2")).unwrap();
+        std::fs::write(bundle.join("assets/deck-deck2").join(&name), "evidence\n").unwrap();
         let receiver = dir.path().join("receiver");
 
         let error = land_deck_bundle(&bundle, &receiver).unwrap_err();

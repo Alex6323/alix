@@ -1273,7 +1273,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("decks")).unwrap();
         std::fs::write(
             dir.path().join("decks/a.md"),
-            "---\nalix-id: \"a\"\n---\n## q\na\n",
+            "---\nid: \"deck-a\"\n---\n## q\na\n",
         )
         .unwrap();
         std::fs::write(
@@ -1296,7 +1296,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("decks")).unwrap();
         std::fs::write(
             dir.path().join("decks/a.md"),
-            "---\nalix-id: \"a\"\n---\n## q\na\n",
+            "---\nid: \"deck-a\"\n---\n## q\na\n",
         )
         .unwrap();
         std::fs::write(

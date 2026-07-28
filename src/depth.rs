@@ -112,7 +112,7 @@ mod tests {
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase();
-        let text = format!("## q <!-- id: q{slug}x -->\n{back}\n");
+        let text = format!("## q <!-- id: card-q{slug}x -->\n{back}\n");
         parser::parse_str("t.md", &text).unwrap().remove(0)
     }
 

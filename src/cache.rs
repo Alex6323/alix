@@ -165,7 +165,7 @@ mod tests {
     fn an_unchanged_mtime_and_size_serves_every_derivation_from_cache() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        write(&path, "---\nalix-id: \"d\"\n---\n# Old Title\n\n## q\na\n");
+        write(&path, "---\nid: \"deck-d\"\n---\n# Old Title\n\n## q\na\n");
         let mut cache = DeckCache::default();
         assert!(cache.is_deck(&path));
         assert_eq!(Some("Old Title".to_string()), cache.label(&path));
@@ -185,13 +185,13 @@ mod tests {
     fn a_size_change_invalidates_the_entry() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        write(&path, "---\nalix-id: \"d\"\n---\n# Old Title\n\n## q\na\n");
+        write(&path, "---\nid: \"deck-d\"\n---\n# Old Title\n\n## q\na\n");
         let mut cache = DeckCache::default();
         assert_eq!(Some("Old Title".to_string()), cache.label(&path));
 
         write(
             &path,
-            "---\nalix-id: \"d\"\n---\n# A New Title Grown Longer\n\n## q\na\n",
+            "---\nid: \"deck-d\"\n---\n# A New Title Grown Longer\n\n## q\na\n",
         );
 
         assert_eq!(
@@ -204,12 +204,12 @@ mod tests {
     fn an_mtime_change_with_equal_size_invalidates_the_entry() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        write(&path, "---\nalix-id: \"d\"\n---\n# Title A\n\n## q\na\n");
+        write(&path, "---\nid: \"deck-d\"\n---\n# Title A\n\n## q\na\n");
         let mut cache = DeckCache::default();
         assert_eq!(Some("Title A".to_string()), cache.label(&path));
         let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
 
-        write(&path, "---\nalix-id: \"d\"\n---\n# Title B\n\n## q\na\n");
+        write(&path, "---\nid: \"deck-d\"\n---\n# Title B\n\n## q\na\n");
         set_mtime(&path, mtime + Duration::from_secs(1));
 
         assert_eq!(Some("Title B".to_string()), cache.label(&path));
@@ -220,14 +220,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write(
             &dir.path().join("a.md"),
-            "---\nalix-id: \"a\"\n---\n## q\na\n",
+            "---\nid: \"deck-a\"\n---\n## q\na\n",
         );
         let mut cache = DeckCache::default();
         assert_eq!(vec![dir.path().join("a.md")], cache.members(dir.path()));
 
         write(
             &dir.path().join("b.md"),
-            "---\nalix-id: \"b\"\n---\n## q2\nb\n",
+            "---\nid: \"deck-b\"\n---\n## q2\nb\n",
         );
 
         assert_eq!(
@@ -240,7 +240,7 @@ mod tests {
     fn a_vanished_file_is_answered_uncached() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("gone.md");
-        write(&path, "---\nalix-id: \"gone\"\n---\n## q\na\n");
+        write(&path, "---\nid: \"deck-gone\"\n---\n## q\na\n");
         let mut cache = DeckCache::default();
         assert!(cache.is_deck(&path));
 

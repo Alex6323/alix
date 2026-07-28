@@ -869,7 +869,7 @@ mod tests {
     #[test]
     fn promotable_flags_a_virtual_card_only() {
         let (mut store, augment, _dir) = fixtures();
-        let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n";
+        let text = "## virtual front <!-- id: card-vq1 -->\nvirtual back\n";
         let mut synth = parser::parse_str("deck.md", text).unwrap().remove(0);
         synth.line = 1_000_000;
         store.insert_virtual(VirtualCard {

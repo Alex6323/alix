@@ -676,7 +676,7 @@ mod tests {
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase();
-        let text = format!("## virtual front <!-- id: v{slug} -->\n{back}\n");
+        let text = format!("## virtual front <!-- id: card-v{slug} -->\n{back}\n");
         let mut card = crate::parser::parse_str(deck_id, &text).unwrap().remove(0);
         card.line = 1_000_000;
         let id = card.id().unwrap();

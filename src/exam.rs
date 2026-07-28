@@ -1521,7 +1521,7 @@ mod tests {
         let path = dir.join("d.md");
         std::fs::write(
             &path,
-            "---\nalix-id: \"d1\"\nsource: https://x\n---\n## c <!-- id: qc -->\na\n",
+            "---\nid: \"deck-d1\"\nsource: https://x\n---\n## c <!-- id: card-qc -->\na\n",
         )
         .unwrap();
         Deck::load(&path).unwrap()
@@ -1565,7 +1565,7 @@ mod tests {
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
         assert_eq!(vec!["the move rule"], s.gaps());
-        assert!(!store.deck_mastered("d1"));
+        assert!(!store.deck_mastered("deck-d1"));
 
         assert!(s.can_remediate());
         let snapshot = std::fs::read(dir.path().join("d.md")).unwrap();
@@ -1574,7 +1574,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
         assert_eq!(snapshot, std::fs::read(dir.path().join("d.md")).unwrap());
-        let virtuals = store.virtual_cards_for("d1");
+        let virtuals = store.virtual_cards_for("deck-d1");
         assert_eq!(1, virtuals.len());
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
         let synth = parser::parse_str("d.md", &virtuals[0].text).unwrap();
@@ -1613,7 +1613,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
 
-        let virtuals = store.virtual_cards_for("d1");
+        let virtuals = store.virtual_cards_for("deck-d1");
         assert_eq!(1, virtuals.len());
         assert_eq!(Some(virtuals.len()), s.remediated_count());
     }
@@ -1644,7 +1644,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("d1"));
+        assert!(store.deck_mastered("deck-d1"));
         assert!(!s.can_remediate());
     }
 
@@ -1683,10 +1683,10 @@ mod tests {
         let after = std::fs::read(&deck_path).unwrap();
         assert_eq!(before, after, "remediation must never touch the deck file");
 
-        let virtuals = store.virtual_cards_for("d1");
+        let virtuals = store.virtual_cards_for("deck-d1");
         assert_eq!(1, virtuals.len());
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
-        assert_eq!("d1", virtuals[0].deck);
+        assert_eq!("deck-d1", virtuals[0].deck);
     }
 
     #[test]
@@ -1718,7 +1718,7 @@ mod tests {
         s.remediate();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        assert!(!store.virtual_cards_for("d1").is_empty());
+        assert!(!store.virtual_cards_for("deck-d1").is_empty());
 
         let cli_dir2 = tempfile::tempdir().unwrap();
         let cli2 = branching_cli(
@@ -1739,9 +1739,9 @@ mod tests {
         s2.submit();
         drain(&mut s2, &mut store);
         assert!(s2.result().unwrap().passed);
-        assert!(store.deck_mastered("d1"));
+        assert!(store.deck_mastered("deck-d1"));
 
-        for vc in store.virtual_cards_for("d1") {
+        for vc in store.virtual_cards_for("deck-d1") {
             assert!(
                 !is_retired_id(
                     &vc.id,

@@ -217,9 +217,9 @@ mod tests {
             .unwrap_or("deck")
             .replace('-', "");
         let text = if let Some(rest) = text.strip_prefix("---\n") {
-            format!("---\nalix-id: \"{id}\"\n{rest}")
+            format!("---\nid: \"deck-{id}\"\n{rest}")
         } else {
-            format!("---\nalix-id: \"{id}\"\n---\n{text}")
+            format!("---\nid: \"deck-{id}\"\n---\n{text}")
         };
         std::fs::write(path, text).unwrap();
     }

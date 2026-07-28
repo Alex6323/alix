@@ -492,7 +492,7 @@ mod tests {
         let path = root.join("decks").join(name);
         std::fs::write(
             &path,
-            format!("---\nalix-id: deck1\n{frontmatter}---\n## q\nanswer\n<!-- id: card1 -->\n"),
+            format!("---\nid: deck-deck1\n{frontmatter}---\n## q\nanswer\n<!-- id: card-card1 -->\n"),
         )
         .unwrap();
         path
@@ -506,19 +506,19 @@ mod tests {
         workspace(&source, None, "");
         workspace(&destination, None, "");
         let asset_name = crate::assets::object_name(b"evidence\n", "txt");
-        std::fs::create_dir_all(source.join("assets/deck1")).unwrap();
-        std::fs::write(source.join("assets/deck1").join(&asset_name), "evidence\n").unwrap();
+        std::fs::create_dir_all(source.join("assets/deck-deck1")).unwrap();
+        std::fs::write(source.join("assets/deck-deck1").join(&asset_name), "evidence\n").unwrap();
         let deck = deck(
             &source,
             "facts.md",
-            &format!("source: assets/deck1/{asset_name}\n"),
+            &format!("source: assets/deck-deck1/{asset_name}\n"),
         );
         let loaded = Deck::load(&deck).unwrap();
         let mut augmentation = crate::augment::AugmentCache::open_for_deck(&loaded).unwrap();
-        augmentation.set_note("card1", "note".to_string(), 1);
+        augmentation.set_note("card-card1", "note".to_string(), 1);
         augmentation.save().unwrap();
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
-        progress.get_or_insert("card1", 1);
+        progress.get_or_insert("card-card1", 1);
         progress.save().unwrap();
 
         let report = transfer(&deck, &destination, TransferMode::Copy).unwrap();
@@ -532,9 +532,9 @@ mod tests {
             std::fs::read_to_string(&deck).unwrap(),
             std::fs::read_to_string(&copied).unwrap()
         );
-        assert!(destination.join("assets/deck1").join(&asset_name).is_file());
-        assert!(destination.join("augment/deck1.json").is_file());
-        assert!(!destination.join("progress/deck1.json").exists());
+        assert!(destination.join("assets/deck-deck1").join(&asset_name).is_file());
+        assert!(destination.join("augment/deck-deck1.json").is_file());
+        assert!(!destination.join("progress/deck-deck1.json").exists());
     }
 
     #[test]
@@ -546,9 +546,9 @@ mod tests {
         workspace(&destination, None, "");
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
-        progress.get_or_insert("card1", 1);
+        progress.get_or_insert("card-card1", 1);
         progress.save().unwrap();
-        let progress_bytes = std::fs::read(source.join("progress/deck1.json")).unwrap();
+        let progress_bytes = std::fs::read(source.join("progress/deck-deck1.json")).unwrap();
 
         let report = transfer(&deck, &destination, TransferMode::Move).unwrap();
 
@@ -558,9 +558,9 @@ mod tests {
         assert!(destination.join("decks/facts.md").is_file());
         assert_eq!(
             progress_bytes,
-            std::fs::read(destination.join("progress/deck1.json")).unwrap()
+            std::fs::read(destination.join("progress/deck-deck1.json")).unwrap()
         );
-        assert!(!source.join("progress/deck1.json").exists());
+        assert!(!source.join("progress/deck-deck1.json").exists());
     }
 
     #[test]
@@ -574,13 +574,13 @@ mod tests {
         std::fs::write(destination.join("alix.toml"), "store = \"../user\"\n").unwrap();
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &user).unwrap();
-        progress.get_or_insert("card1", 1);
+        progress.get_or_insert("card-card1", 1);
         progress.save().unwrap();
 
         let report = transfer(&deck, &destination, TransferMode::Move).unwrap();
 
         assert!(!report.progress);
-        assert!(user.join("progress/deck1.json").is_file());
+        assert!(user.join("progress/deck-deck1.json").is_file());
     }
 
     #[test]
@@ -599,13 +599,13 @@ mod tests {
 
         std::fs::write(
             source.join("decks/dependent.md"),
-            "---\nalix-id: deck2\nrequires:\n  - facts\n---\n## q\nanswer\n<!-- id: card2 -->\n",
+            "---\nid: deck-deck2\nrequires:\n  - facts\n---\n## q\nanswer\n<!-- id: card-card2 -->\n",
         )
         .unwrap();
         let destination_requirement = destination.join("decks/foundations.md");
         std::fs::write(
             &destination_requirement,
-            "---\nalix-id: base\n---\n## q\nanswer\n<!-- id: basecard -->\n",
+            "---\nid: deck-base\n---\n## q\nanswer\n<!-- id: card-basecard -->\n",
         )
         .unwrap();
 
@@ -626,7 +626,7 @@ mod tests {
         let deck = deck(&source, "facts.md", "");
         std::fs::write(
             destination.join("decks/other.md"),
-            "---\nalix-id: deck1\n---\n## q\nanswer\n<!-- id: other -->\n",
+            "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-other -->\n",
         )
         .unwrap();
 
@@ -649,8 +649,8 @@ mod tests {
         transfer(&deck, &destination, TransferMode::Copy).unwrap();
 
         let copied = Deck::load(destination.join("decks/facts.md")).unwrap();
-        assert_eq!(Some("deck1"), copied.deck_token.as_deref());
-        assert_eq!(Some("card1".to_string()), copied.cards[0].id());
+        assert_eq!(Some("deck-deck1"), copied.deck_token.as_deref());
+        assert_eq!(Some("card-card1".to_string()), copied.cards[0].id());
         assert_eq!(
             Some(
                 source
@@ -673,7 +673,7 @@ mod tests {
         workspace(&destination, None, "");
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
-        progress.get_or_insert("card1", 1);
+        progress.get_or_insert("card-card1", 1);
         progress.save().unwrap();
 
         let error = transfer_with_remove(&deck, &destination, TransferMode::Move, |_| {
@@ -687,7 +687,7 @@ mod tests {
         assert!(format!("{error:#}").contains("cannot remove"));
         assert!(deck.is_file());
         assert!(!destination.join("decks/facts.md").exists());
-        assert!(!destination.join("progress/deck1.json").exists());
+        assert!(!destination.join("progress/deck-deck1.json").exists());
     }
 
     #[cfg(unix)]
@@ -703,9 +703,9 @@ mod tests {
         let deck = deck(&source, "facts.md", "");
         let loaded = Deck::load(&deck).unwrap();
         let mut augmentation = crate::augment::AugmentCache::open_for_deck(&loaded).unwrap();
-        augmentation.set_note("card1", "note".to_string(), 1);
+        augmentation.set_note("card-card1", "note".to_string(), 1);
         augmentation.save().unwrap();
-        let source_augmentation = source.join("augment/deck1.json");
+        let source_augmentation = source.join("augment/deck-deck1.json");
         std::fs::set_permissions(
             source.join("augment"),
             std::fs::Permissions::from_mode(0o555),
@@ -722,6 +722,6 @@ mod tests {
         assert_eq!(vec![source_augmentation], report.leftovers);
         assert!(!deck.exists());
         assert!(destination.join("decks/facts.md").is_file());
-        assert!(destination.join("augment/deck1.json").is_file());
+        assert!(destination.join("augment/deck-deck1.json").is_file());
     }
 }

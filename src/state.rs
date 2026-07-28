@@ -166,7 +166,7 @@ mod tests {
         std::fs::write(
             path,
             format!(
-                "---\nalix-id: \"{deck_id}\"\n---\n## question <!-- id: {card_id} -->\nanswer\n"
+                "---\nid: \"deck-{deck_id}\"\n---\n## question <!-- id: card-{card_id} -->\nanswer\n"
             ),
         )
         .unwrap();
@@ -205,14 +205,14 @@ mod tests {
         deck(&deck_path, "deck1", "card1");
 
         let mut store = open_store(&deck_path, dir.path()).unwrap();
-        store.get_or_insert("card1", 1);
+        store.get_or_insert("card-card1", 1);
         store.save().unwrap();
 
         assert_eq!(
-            dir.path().join("progress/deck1.json"),
+            dir.path().join("progress/deck-deck1.json"),
             store.path().to_path_buf()
         );
-        assert!(dir.path().join("progress/deck1.json").is_file());
+        assert!(dir.path().join("progress/deck-deck1.json").is_file());
         assert_eq!(
             vec![dir.path().join("deck.md"), dir.path().join("progress")],
             {
@@ -233,16 +233,16 @@ mod tests {
         let new_path = dir.path().join("new.md");
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
-        store.get_or_insert("card1", 1);
-        store.set_deck_mastered("deck1", 1);
+        store.get_or_insert("card-card1", 1);
+        store.set_deck_mastered("deck-deck1", 1);
         store.save().unwrap();
         std::fs::rename(&old_path, &new_path).unwrap();
 
         let renamed = open_store(&new_path, dir.path()).unwrap();
 
-        assert_eq!(dir.path().join("progress/deck1.json"), renamed.path());
-        assert!(renamed.get("card1").is_some());
-        assert!(renamed.deck_mastered("deck1"));
+        assert_eq!(dir.path().join("progress/deck-deck1.json"), renamed.path());
+        assert!(renamed.get("card-card1").is_some());
+        assert!(renamed.deck_mastered("deck-deck1"));
     }
 
     #[test]
@@ -251,15 +251,15 @@ mod tests {
         // `open_aggregate_store`, which (unlike `open_store`) passes no
         // `current_subject` hint, so a subject-keyed rebind never fires
         // there. Deck-level state and orphan detection must key off the
-        // stable alix-id, never off the filename, or a plain rename
+        // stable deck id, never off the filename, or a plain rename
         // orphans the deck's mastery/badge/last-depth state.
         let dir = tempfile::tempdir().unwrap();
         let old_path = dir.path().join("old.md");
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
-        store.set_deck_mastered("deck1", 1);
-        store.set_exam_failed("deck1", 42);
-        store.set_last_depth("deck1", crate::depth::Depth::Recall);
+        store.set_deck_mastered("deck-deck1", 1);
+        store.set_exam_failed("deck-deck1", 42);
+        store.set_last_depth("deck-deck1", crate::depth::Depth::Recall);
         store.save().unwrap();
 
         let new_path = dir.path().join("new.md");
@@ -267,21 +267,22 @@ mod tests {
 
         let aggregate = open_aggregate_store(dir.path()).unwrap();
         assert!(
-            aggregate.deck_mastered("deck1"),
-            "deck-level state must survive a rename, found by the alix-id"
+            aggregate.deck_mastered("deck-deck1"),
+            "deck-level state must survive a rename, found by the deck id"
         );
         assert_eq!(
             Some(42),
-            aggregate.exam_failed_at("deck1"),
-            "exam-failed state must survive a rename, found by the alix-id"
+            aggregate.exam_failed_at("deck-deck1"),
+            "exam-failed state must survive a rename, found by the deck id"
         );
         assert_eq!(
             Some(crate::depth::Depth::Recall),
-            aggregate.last_depth("deck1"),
-            "last-depth state must survive a rename, found by the alix-id"
+            aggregate.last_depth("deck-deck1"),
+            "last-depth state must survive a rename, found by the deck id"
         );
 
-        let known_deck_ids: HashSet<String> = std::iter::once("deck1".to_string()).collect();
+        let known_deck_ids: HashSet<String> =
+            std::iter::once("deck-deck1".to_string()).collect();
         let orphans = aggregate.orphans(&HashSet::new(), &known_deck_ids);
         assert!(
             orphans.decks.is_empty(),
@@ -298,14 +299,14 @@ mod tests {
         deck(&second_path, "deck2", "card2");
         let paths = [first_path, second_path];
         let mut aggregate = open_stores(&paths, dir.path()).unwrap();
-        aggregate.get_or_insert("card1", 1);
-        aggregate.get_or_insert("card2", 1);
+        aggregate.get_or_insert("card-card1", 1);
+        aggregate.get_or_insert("card-card2", 1);
         aggregate.save().unwrap();
-        let first = dir.path().join("progress/deck1.json");
-        let second = dir.path().join("progress/deck2.json");
+        let first = dir.path().join("progress/deck-deck1.json");
+        let second = dir.path().join("progress/deck-deck2.json");
         let second_before = std::fs::read(&second).unwrap();
 
-        aggregate.remove("card1");
+        aggregate.remove("card-card1");
         aggregate.save().unwrap();
 
         assert_ne!(std::fs::read(first).unwrap(), second_before);

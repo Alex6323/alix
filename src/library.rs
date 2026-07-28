@@ -295,12 +295,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nalix-id: \"da\"\n---\n## qa <!-- id: qa -->\nans-a\n",
+            "---\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nalix-id: \"db\"\n---\n## qb <!-- id: qb -->\nans-b\n",
+            "---\nid: \"deck-db\"\n---\n## qb <!-- id: card-qb -->\nans-b\n",
         )
         .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();
@@ -327,7 +327,7 @@ mod tests {
     fn virtual_card(deck_id: &str, back: &str) -> crate::store::VirtualCard {
         let slug: String = back.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
         let text = format!(
-            "## front <!-- id: v{} -->\n{back}\n",
+            "## front <!-- id: card-v{} -->\n{back}\n",
             slug.to_ascii_lowercase()
         );
         let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
@@ -345,7 +345,7 @@ mod tests {
     fn write_deck(dir: &Path, name: &str, deck_token: &str, card_token: &str) {
         std::fs::write(
             dir.join(name),
-            format!("---\nalix-id: \"{deck_token}\"\n---\n## q <!-- id: {card_token} -->\nans\n"),
+            format!("---\nid: \"deck-{deck_token}\"\n---\n## q <!-- id: card-{card_token} -->\nans\n"),
         )
         .unwrap();
     }
@@ -407,34 +407,34 @@ mod tests {
         let mut store = crate::state::open_stores(&paths, dir.path()).unwrap();
 
         // Deck A: a card schedule, deck-family mastery, records, a parented virtual.
-        store.get_or_insert("c1", 0);
-        store.set_deck_mastered("da1", 1);
-        store.ensure_records_raw("c1", &[]);
+        store.get_or_insert("card-c1", 0);
+        store.set_deck_mastered("deck-da1", 1);
+        store.ensure_records_raw("card-c1", &[]);
         store.insert_virtual(crate::store::VirtualCard {
-            id: "va1".into(),
+            id: "card-va1".into(),
             kind: crate::store::VirtualKind::Remediation,
-            deck: "da1".into(),
-            text: "## v <!-- id: va1 -->\nvans\n".into(),
+            deck: "deck-da1".into(),
+            text: "## v <!-- id: card-va1 -->\nvans\n".into(),
             created_ms: 0,
         });
-        store.get_or_insert("va1", 0);
+        store.get_or_insert("card-va1", 0);
         // Deck B (shares the store): its own schedule + mastery.
-        store.get_or_insert("cb1", 0);
-        store.set_deck_mastered("db1", 1);
+        store.get_or_insert("card-cb1", 0);
+        store.set_deck_mastered("deck-db1", 1);
         store.save().unwrap();
 
         let cache_path = WorkspaceFiles::new(dir.path()).augment();
         let mut cache = AugmentCache::open_for_decks(dir.path(), &decks).unwrap();
-        cache.set_distractors("c1", vec!["x".into()], 1);
+        cache.set_distractors("card-c1", vec!["x".into()], 1);
         cache.add_topology(crate::augment::Topology {
             name: "auto".into(),
-            deck_token: "da1".into(),
+            deck_token: "deck-da1".into(),
             ..Default::default()
         });
-        cache.set_distractors("cb1", vec!["y".into()], 1);
+        cache.set_distractors("card-cb1", vec!["y".into()], 1);
         cache.add_topology(crate::augment::Topology {
             name: "auto".into(),
-            deck_token: "db1".into(),
+            deck_token: "deck-db1".into(),
             ..Default::default()
         });
         cache.save().unwrap();
@@ -442,19 +442,19 @@ mod tests {
         let report = replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
 
         assert_eq!(1, report.wiped_cards);
-        assert!(store.get("c1").is_none());
-        assert!(!store.deck_mastered("da1"));
-        assert!(store.records("c1").is_none());
-        assert!(store.get_virtual("va1").is_none());
-        assert!(store.get("va1").is_none());
-        assert!(store.get("cb1").is_some());
-        assert!(store.deck_mastered("db1"));
+        assert!(store.get("card-c1").is_none());
+        assert!(!store.deck_mastered("deck-da1"));
+        assert!(store.records("card-c1").is_none());
+        assert!(store.get_virtual("card-va1").is_none());
+        assert!(store.get("card-va1").is_none());
+        assert!(store.get("card-cb1").is_some());
+        assert!(store.deck_mastered("deck-db1"));
 
         let cache = AugmentCache::open(&cache_path);
-        assert!(cache.distractors("c1", 1).is_none());
-        assert!(!cache.has_topology_for(&once("da1")));
-        assert!(cache.distractors("cb1", 1).is_some());
-        assert!(cache.has_topology_for(&once("db1")));
+        assert!(cache.distractors("card-c1", 1).is_none());
+        assert!(!cache.has_topology_for(&once("deck-da1")));
+        assert!(cache.distractors("card-cb1", 1).is_some());
+        assert!(cache.has_topology_for(&once("deck-db1")));
     }
 
     #[test]
@@ -462,9 +462,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
-        store.get_or_insert("c1", 0);
-        store.set_deck_mastered("da1", 1);
-        store.ensure_records_raw("c1", &[]);
+        store.get_or_insert("card-c1", 0);
+        store.set_deck_mastered("deck-da1", 1);
+        store.ensure_records_raw("card-c1", &[]);
         store.save().unwrap();
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
@@ -508,8 +508,8 @@ mod tests {
         write_deck(dir.path(), "b.md", "db1", "c2");
         let paths = [dir.path().join("a.md"), dir.path().join("b.md")];
         let mut aggregate = crate::state::open_stores(&paths, dir.path()).unwrap();
-        aggregate.get_or_insert("c1", 0);
-        aggregate.get_or_insert("c2", 0);
+        aggregate.get_or_insert("card-c1", 0);
+        aggregate.get_or_insert("card-c2", 0);
         aggregate.save().unwrap();
         let mut augmentation = AugmentCache::open_for_decks(
             dir.path(),
@@ -520,22 +520,22 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        augmentation.set_note("c1", "first".to_string(), 1);
-        augmentation.set_note("c2", "second".to_string(), 1);
+        augmentation.set_note("card-c1", "first".to_string(), 1);
+        augmentation.set_note("card-c2", "second".to_string(), 1);
         augmentation.save().unwrap();
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut aggregate).unwrap();
 
-        assert!(!dir.path().join("progress/da1.json").exists());
-        assert!(!dir.path().join("augment/da1.json").exists());
-        assert!(dir.path().join("progress/db1.json").exists());
-        assert!(dir.path().join("augment/db1.json").exists());
+        assert!(!dir.path().join("progress/deck-da1.json").exists());
+        assert!(!dir.path().join("augment/deck-da1.json").exists());
+        assert!(dir.path().join("progress/deck-db1.json").exists());
+        assert!(dir.path().join("augment/deck-db1.json").exists());
         let untouched =
-            Store::open_deck(dir.path().join("progress/db1.json"), "db1", "b.md").unwrap();
-        assert!(untouched.get("c2").is_some());
+            Store::open_deck(dir.path().join("progress/deck-db1.json"), "deck-db1", "b.md").unwrap();
+        assert!(untouched.get("card-c2").is_some());
         let untouched_augmentation =
-            AugmentCache::open_deck(dir.path().join("augment/db1.json"), "db1").unwrap();
-        assert_eq!(Some("second"), untouched_augmentation.note("c2", 1));
+            AugmentCache::open_deck(dir.path().join("augment/deck-db1.json"), "deck-db1").unwrap();
+        assert_eq!(Some("second"), untouched_augmentation.note("card-c2", 1));
     }
 
     #[test]
@@ -561,7 +561,7 @@ mod tests {
         );
     }
 
-    /// One fixture: frontmatter without `alix-id:`, a divided card (fence + note +
+    /// One fixture: frontmatter without `id:`, a divided card (fence + note +
     /// escaped divider + trailing-space front), and a two-hole cloze card.
     const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\blank{alpha} and \\blank{beta} here\n> cloze note\n";
 
@@ -631,7 +631,7 @@ mod tests {
         {
             let dir = tempfile::tempdir().unwrap();
             let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();
-            let added = "aaaaaaaaaaaaaaaaaaaaaaaaap";
+            let added = "card-aaaaaaaaaaaaaaaaaaaaaaaaap";
             crate::deck::append_cards(
                 &placed.path,
                 &format!("## added <!-- id: {added} -->\nans\n"),
@@ -645,7 +645,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();
             let mut store = crate::state::open_store(&placed.path, dir.path()).unwrap();
-            let vid = "pvzzzzzzzzzzzzzzzzzzzzzzzzz";
+            let vid = "card-pvzzzzzzzzzzzzzzzzzzzzzzzzz";
             store.insert_virtual(crate::store::VirtualCard {
                 id: vid.into(),
                 kind: crate::store::VirtualKind::Tutor,
@@ -669,11 +669,11 @@ mod tests {
     #[test]
     fn a_trace_rebuild_routes_through_replace_and_wipes_the_old_checkpoints() {
         let dir = tempfile::tempdir().unwrap();
-        let existing = "---\nalix-id: \"da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: c1 -->\nold\n";
+        let existing = "---\nid: \"deck-da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: card-c1 -->\nold\n";
         let path = dir.path().join("t.md");
         std::fs::write(&path, existing).unwrap();
         let mut store = crate::state::open_store(&path, dir.path()).unwrap();
-        store.get_or_insert("c1", 0);
+        store.get_or_insert("card-c1", 0);
         store.save().unwrap();
 
         let new_text = crate::deck::trace_checkpoint_text(
@@ -687,7 +687,7 @@ mod tests {
 
         replace_deck(dir.path(), "t", &new_text, &mut store).unwrap();
 
-        assert!(store.get("c1").is_none());
+        assert!(store.get("card-c1").is_none());
         let now = std::fs::read_to_string(dir.path().join("t.md")).unwrap();
         assert!(now.contains("new cp"));
         let rebuilt = crate::parser::parse("t.md", &now).unwrap();
@@ -697,7 +697,7 @@ mod tests {
             "the rebuilt checkpoint is stamped"
         );
         assert_ne!(
-            Some("c1"),
+            Some("card-c1"),
             rebuilt.cards[0].token.as_deref(),
             "old token must not survive as the rebuilt card id"
         );
@@ -708,14 +708,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nalix-id: \"da\"\n---\n## qa <!-- id: qa -->\nans-a\n",
+            "---\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
         )
         .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();
 
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let vc_a = virtual_card("da", "vc-a");
-        let vc_other = virtual_card("other", "vc-other");
+        let vc_a = virtual_card("deck-da", "vc-a");
+        let vc_other = virtual_card("deck-other", "vc-other");
         let (id_a, id_other) = (vc_a.id.clone(), vc_other.id.clone());
         store.insert_virtual(vc_a);
         store.insert_virtual(vc_other);

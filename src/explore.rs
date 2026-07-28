@@ -1085,18 +1085,18 @@ back a
         fs::create_dir_all(staging.join("decks")).unwrap();
         fs::write(
             dest.join("decks/01-a.md"),
-            "---\nalix-id: \"da1\"\n---\n## old <!-- id: c1 -->\nold\n",
+            "---\nid: \"deck-da1\"\n---\n## old <!-- id: card-c1 -->\nold\n",
         )
         .unwrap();
         fs::write(staging.join("decks/01-a.md"), "## new q\nnew ans\n").unwrap();
         let mut store = crate::state::open_store(&dest.join("decks/01-a.md"), &dest).unwrap();
-        store.get_or_insert("c1", 0);
+        store.get_or_insert("card-c1", 0);
         store.save().unwrap();
 
         let report = merge_built(&staging, &dest, true, &mut store).unwrap();
 
         assert_eq!(1, report.moved);
-        assert!(store.get("c1").is_none());
+        assert!(store.get("card-c1").is_none());
         assert!(dest.join("decks/01-a.md.bak").exists());
         assert!(
             fs::read_to_string(dest.join("decks/01-a.md"))
@@ -1152,7 +1152,7 @@ back a
         fs::write(
             dir.join("decks/01-t.md"),
             format!(
-                "---\nalix-id: \"trace\"\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
+                "---\nid: \"deck-trace\"\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
                 src.display()
             ),
         )
@@ -1160,7 +1160,7 @@ back a
         fs::write(
             dir.join("decks/02-d.md"),
             format!(
-                "---\nalix-id: \"facts\"\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
+                "---\nid: \"deck-facts\"\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
                 src.display()
             ),
         )
@@ -1170,14 +1170,13 @@ back a
         let summary = freeze_workspace(&dir).unwrap();
         assert_eq!((2, 2), (summary.decks, summary.files));
         assert!(summary.failed.is_empty(), "{:?}", summary.failed);
-        let trace_name = crate::assets::object_name(b"x\ny\n", "rs");
-        let fact_name = crate::assets::object_name(b"z\n", "rs");
-        assert!(dir.join(format!("assets/trace/{trace_name}")).is_file());
-        assert!(dir.join(format!("assets/facts/{fact_name}")).is_file());
+        let whole_name = crate::assets::object_name(b"x\ny\nz\n", "rs");
+        assert!(dir.join(format!("assets/deck-trace/{whole_name}")).is_file());
+        assert!(dir.join(format!("assets/deck-facts/{whole_name}")).is_file());
         assert!(!dir.join("assets/a.rs").exists());
         let fact = fs::read_to_string(dir.join("decks/02-d.md")).unwrap();
         assert!(
-            fact.contains(&format!("source: \"assets/facts/{fact_name}\"")),
+            fact.contains(&format!("source: \"assets/deck-facts/{whole_name}\"")),
             "{fact}"
         );
         assert!(
@@ -1186,7 +1185,8 @@ back a
         );
         assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
         assert!(
-            fact.contains(&format!("<!-- at: {fact_name} @ xxh64:")),
+            fact.contains("<!-- at: a.rs:3 fingerprint: xxh64-")
+                && fact.contains(&format!(" asset: {whole_name} -->")),
             "{fact}"
         );
 
@@ -1202,7 +1202,7 @@ back a
         fs::write(
             dir.join("decks/01-broken.md"),
             format!(
-                "---\nalix-id: \"broken\"\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
+                "---\nid: \"deck-broken\"\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
                 dir.display()
             ),
         )
