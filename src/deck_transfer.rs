@@ -758,7 +758,12 @@ mod tests {
             std::fs::Permissions::from_mode(0o755),
         )
         .unwrap();
-        assert_eq!(vec![source_augmentation], report.leftovers);
+        // The report canonicalizes; on macOS the raw tempdir path differs
+        // (/var vs /private/var), so compare canonical forms.
+        assert_eq!(
+            vec![source_augmentation.canonicalize().unwrap()],
+            report.leftovers
+        );
         assert!(!deck.exists());
         assert!(destination.join("decks/facts.md").is_file());
         assert!(destination.join("augment/deck-deck1.json").is_file());

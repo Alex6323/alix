@@ -1244,6 +1244,16 @@ back a
 
     #[test]
     fn rewrite_scope_anchors_a_repo_relative_scope_without_doubling() {
+        // The property under test is WHICH files get selected, not the
+        // separator shape, so compare with separators normalized: on Windows
+        // Path::join-built expectations and rewrite_scope's string output mix
+        // `\` and `/` differently while naming the same files.
+        fn slashed(paths: Vec<String>) -> Vec<String> {
+            paths
+                .into_iter()
+                .map(|path| path.replace('\\', "/"))
+                .collect()
+        }
         let root = std::env::temp_dir().join(format!("alix-scope-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let crate_src = root.join("crates/mycrate/src");
@@ -1253,27 +1263,33 @@ back a
         let source = root.join("crates/mycrate");
 
         assert_eq!(
-            vec![lib.clone()],
-            rewrite_scope("crates/mycrate/src/lib.rs", Some(&source))
+            slashed(vec![lib.clone()]),
+            slashed(rewrite_scope("crates/mycrate/src/lib.rs", Some(&source)))
         );
         assert_eq!(
-            vec![lib.clone()],
-            rewrite_scope("src/lib.rs", Some(&source))
+            slashed(vec![lib.clone()]),
+            slashed(rewrite_scope("src/lib.rs", Some(&source)))
         );
         assert_eq!(
-            vec![source.display().to_string()],
-            rewrite_scope(".", Some(&source))
+            slashed(vec![source.display().to_string()]),
+            slashed(rewrite_scope(".", Some(&source)))
         );
-        assert_eq!(vec![lib.clone()], rewrite_scope(&lib, Some(&source)));
+        assert_eq!(
+            slashed(vec![lib.clone()]),
+            slashed(rewrite_scope(&lib, Some(&source)))
+        );
         // A " + "-joined plan scope splits into one list entry per source,
         // later parts anchored to the first entry's directory.
         fs::write(crate_src.join("other.rs"), "x\n").unwrap();
         assert_eq!(
-            vec![
+            slashed(vec![
                 lib.clone(),
                 crate_src.join("other.rs").display().to_string()
-            ],
-            rewrite_scope("crates/mycrate/src/lib.rs + other.rs", Some(&source))
+            ]),
+            slashed(rewrite_scope(
+                "crates/mycrate/src/lib.rs + other.rs",
+                Some(&source)
+            ))
         );
 
         let _ = fs::remove_dir_all(&root);

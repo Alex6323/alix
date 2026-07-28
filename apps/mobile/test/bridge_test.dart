@@ -57,16 +57,16 @@ Directory makeRoot() {
   final root = Directory.systemTemp.createTempSync('alix-decks-');
   writeTestDeck(
     '${root.path}/loose.md',
-    '# Loose\n\n## capital of france? <!-- id: capital -->\nParis\n',
+    '# Loose\n\n## capital of france? <!-- id: card-capital -->\nParis\n',
   );
   Directory('${root.path}/ws/decks').createSync(recursive: true);
   File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
   writeTestDeck(
     '${root.path}/ws/decks/m.md',
-    '## q1 <!-- id: q1 -->\na1\n\n'
-        '## q2 <!-- id: q2 -->\na2\n\n'
-        '## q3 <!-- id: q3 -->\na3\n\n'
-        '## q4 <!-- id: q4 -->\na4\n',
+    '## q1 <!-- id: card-q1 -->\na1\n\n'
+        '## q2 <!-- id: card-q2 -->\na2\n\n'
+        '## q3 <!-- id: card-q3 -->\na3\n\n'
+        '## q4 <!-- id: card-q4 -->\na4\n',
   );
   return root;
 }
@@ -133,7 +133,7 @@ void main() {
     final choiceDeck = '${root.path}/choice.md';
     writeTestDeck(
       choiceDeck,
-      '## What does \$E = mc^2\$ describe? <!-- id: choice -->\n'
+      '## What does \$E = mc^2\$ describe? <!-- id: card-choice -->\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
       '> Energy and mass use \$E = mc^2\$.\n'
@@ -167,7 +167,7 @@ void main() {
     final displayDeck = '${root.path}/display.md';
     writeTestDeck(
       displayDeck,
-      '## Evaluate <!-- id: display -->\n'
+      '## Evaluate <!-- id: card-display -->\n'
       '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
     );
     final display = ReviewSession.open(
@@ -184,7 +184,7 @@ void main() {
     final clozeDeck = '${root.path}/cloze.md';
     writeTestDeck(
       clozeDeck,
-      '## Complete <!-- id: cloze -->\n'
+      '## Complete <!-- id: card-cloze -->\n'
       '\$x = \\blank{alpha} + \\blank{beta}\$\n',
     );
     final cloze = ReviewSession.open(
@@ -206,7 +206,7 @@ void main() {
     final explainDeck = '${root.path}/explain.md';
     writeTestDeck(
       explainDeck,
-      '## Explain <!-- id: explain -->\n'
+      '## Explain <!-- id: card-explain -->\n'
       'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
       'The discriminant is \$b^2 - 4ac\$.\n',
     );
@@ -714,7 +714,7 @@ void main() {
     final deck = '${root.path}/why.md';
     writeTestDeck(
       deck,
-      '## why does spacing work? <!-- id: why -->\n'
+      '## why does spacing work? <!-- id: card-why -->\n'
       'recall strengthens the memory\n'
       'stronger memories fade more slowly\n',
     );
@@ -778,7 +778,7 @@ void main() {
     final choiceDeck = '${root.path}/choice.md';
     writeTestDeck(
       choiceDeck,
-      '## What does \$E = mc^2\$ describe? <!-- id: choice -->\n'
+      '## What does \$E = mc^2\$ describe? <!-- id: card-choice -->\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
       '> Energy and mass use \$E = mc^2\$.\n'
@@ -805,7 +805,7 @@ void main() {
     final displayDeck = '${root.path}/display.md';
     writeTestDeck(
       displayDeck,
-      '## Evaluate <!-- id: display -->\n'
+      '## Evaluate <!-- id: card-display -->\n'
       '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
     );
     await tester.pumpWidget(
@@ -834,7 +834,7 @@ void main() {
     final clozeDeck = '${root.path}/cloze.md';
     writeTestDeck(
       clozeDeck,
-      '## Complete <!-- id: cloze -->\n'
+      '## Complete <!-- id: card-cloze -->\n'
       '\$x = \\blank{alpha} + \\blank{beta}\$\n',
     );
     await tester.pumpWidget(
@@ -856,7 +856,7 @@ void main() {
     final explainDeck = '${root.path}/explain.md';
     writeTestDeck(
       explainDeck,
-      '## Explain <!-- id: explain -->\n'
+      '## Explain <!-- id: card-explain -->\n'
       'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
       'The discriminant is \$b^2 - 4ac\$.\n',
     );
@@ -889,7 +889,7 @@ void main() {
     final malformedDeck = '${root.path}/malformed.md';
     writeTestDeck(
       malformedDeck,
-      '## Broken \$\\frac{1\$ <!-- id: malformed -->\n'
+      '## Broken \$\\frac{1\$ <!-- id: card-malformed -->\n'
       'still reviewable\n',
     );
     await tester.pumpWidget(

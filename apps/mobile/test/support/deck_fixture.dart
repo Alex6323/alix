@@ -5,7 +5,7 @@ void writeTestDeck(String path, String contents, {String? id}) {
   final deckId =
       id ?? filename.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toLowerCase();
   final initialized = contents.startsWith('---\n')
-      ? contents.replaceFirst('---\n', '---\nalix-id: "$deckId"\n')
-      : '---\nalix-id: "$deckId"\n---\n$contents';
+      ? contents.replaceFirst('---\n', '---\nid: "deck-$deckId"\n')
+      : '---\nid: "deck-$deckId"\n---\n$contents';
   File(path).writeAsStringSync(initialized);
 }

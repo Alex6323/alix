@@ -1663,12 +1663,15 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
         &ask
     ));
 
-    for _ in 0..1_000_000 {
+    // Deadline-based: a fixed yield count can elapse before the fake CLI
+    // processes even finish on a slow runner.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while std::time::Instant::now() < deadline {
         aug.poll(&ai, &ask);
         if aug.pending.is_none() && aug.queue.is_empty() {
             break;
         }
-        std::thread::yield_now();
+        std::thread::sleep(std::time::Duration::from_millis(2));
     }
     assert!(
         aug.pending.is_none() && aug.queue.is_empty(),
@@ -1726,9 +1729,14 @@ fn a_scoped_instance_always_keeps_its_current_dir() {
     let current = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
     let cfg = current.path().join("config.toml");
+    // Forward slashes: in a TOML basic string a Windows `\U...` path reads as
+    // an (invalid) escape sequence.
     std::fs::write(
         &cfg,
-        format!("decks_dir = \"{}\"\n", other.path().display()),
+        format!(
+            "decks_dir = \"{}\"\n",
+            other.path().display().to_string().replace('\\', "/")
+        ),
     )
     .unwrap();
     let dir = effective_decks_dir(true, Some(&cfg), current.path());
@@ -1740,9 +1748,13 @@ fn an_unscoped_instance_follows_a_config_naming_a_different_dir() {
     let current = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
     let cfg = current.path().join("config.toml");
+    // Forward slashes: see a_scoped_instance_always_keeps_its_current_dir.
     std::fs::write(
         &cfg,
-        format!("decks_dir = \"{}\"\n", other.path().display()),
+        format!(
+            "decks_dir = \"{}\"\n",
+            other.path().display().to_string().replace('\\', "/")
+        ),
     )
     .unwrap();
     let dir = effective_decks_dir(false, Some(&cfg), current.path());

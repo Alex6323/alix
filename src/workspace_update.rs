@@ -924,12 +924,16 @@ mod tests {
 
     fn workspace(source_text: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
         let directory = tempfile::tempdir().unwrap();
-        fs::create_dir(directory.path().join(workspace::DECKS)).unwrap();
-        fs::write(directory.path().join(workspace::MANIFEST), "").unwrap();
-        let source = directory.path().join("source");
+        // Staging canonicalizes the workspace root; on macOS the raw tempdir
+        // path traverses the /var -> /private/var symlink, so the fixture must
+        // embed the canonical form or `source:` comparisons spuriously differ.
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join(workspace::DECKS)).unwrap();
+        fs::write(root.join(workspace::MANIFEST), "").unwrap();
+        let source = root.join("source");
         fs::create_dir(&source).unwrap();
         fs::write(source.join("code.rs"), source_text).unwrap();
-        let deck = directory.path().join("decks/facts.md");
+        let deck = root.join("decks/facts.md");
         fs::write(
             &deck,
             format!(

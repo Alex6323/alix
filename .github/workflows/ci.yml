@@ -47,6 +47,9 @@ jobs:
       # `make check` includes pre-1-0-check, whose script runs ripgrep; the
       # runner image does not ship it.
       - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      # deps-check inspects `cargo tree --locked --offline`, which needs the
+      # registry populated on a fresh runner.
+      - run: cargo fetch
       - run: make check
 
   # The persistence and path-sensitive suites on the other two supported

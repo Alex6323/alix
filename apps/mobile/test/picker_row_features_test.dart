@@ -259,7 +259,7 @@ void main() {
       // needs an explicit id to count as due.
       writeTestDeck(
         '${root.path}/plain.md',
-        '# Plain\n\n## q <!-- id: q1 -->\na\n',
+        '# Plain\n\n## q <!-- id: card-q1 -->\na\n',
       );
 
       await tester.pumpWidget(MaterialApp(
@@ -288,31 +288,26 @@ void main() {
     Directory mixedRoot() {
       final root = tempRoot('alix-picker-mastered-');
       File('${root.path}/a-active.md').writeAsStringSync(
-        '---\nalix-id: activea\n---\n# Active A\n\n'
-        '## q <!-- id: activeaq -->\na\n',
+        '---\nid: "deck-activea"\n---\n# Active A\n\n'
+        '## q <!-- id: card-activeaq -->\na\n',
       );
       File('${root.path}/b-active.md').writeAsStringSync(
-        '---\nalix-id: activeb\n---\n# Active B\n\n'
-        '## q <!-- id: activebq -->\na\n',
+        '---\nid: "deck-activeb"\n---\n# Active B\n\n'
+        '## q <!-- id: card-activebq -->\na\n',
       );
       File('${root.path}/z-mastered.md').writeAsStringSync(
-        '---\nalix-id: masteredz\n---\n# Mastered Z\n\n'
-        '## q <!-- id: masteredzq -->\na\n',
+        '---\nid: "deck-masteredz"\n---\n# Mastered Z\n\n'
+        '## q <!-- id: card-masteredzq -->\na\n',
       );
       Directory('${root.path}/progress').createSync();
-      File('${root.path}/progress/masteredz.json').writeAsStringSync(
+      File('${root.path}/progress/deck-masteredz.json').writeAsStringSync(
         jsonEncode({
           'version': 1,
-          'deck_id': 'masteredz',
+          'deck_id': 'deck-masteredz',
           'subject': 'z-mastered.md',
           'revision': 1,
           'cards': {},
-          'records': {},
-          'decks': {
-            'z-mastered.md': {'mastered_at_ms': 1},
-          },
-          'virtual_cards': {},
-          'writer': null,
+          'deck': {'mastered_at_ms': 1},
         }),
       );
       return root;

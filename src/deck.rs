@@ -1948,17 +1948,22 @@ mod tests {
     fn absolute_card_image_is_used_as_is() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
+        // A platform-absolute path: `/elsewhere/...` is not absolute on
+        // Windows, where it would get drive-anchored instead of kept as-is.
+        let absolute = dir
+            .path()
+            .join("elsewhere/moon.png")
+            .display()
+            .to_string()
+            .replace('\\', "/");
         std::fs::write(
             &path,
-            "## q\nWaxing\n![](/elsewhere/moon.png)\n![](crescent.png)\n",
+            format!("## q\nWaxing\n![]({absolute})\n![](crescent.png)\n"),
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
-            vec![
-                PathBuf::from("/elsewhere/moon.png"),
-                dir.path().join("crescent.png"),
-            ],
+            vec![PathBuf::from(&absolute), dir.path().join("crescent.png")],
             resolved_back_images(&deck)
         );
     }

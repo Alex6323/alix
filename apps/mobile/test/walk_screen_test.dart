@@ -55,11 +55,11 @@ void main() {
       '---\n'
       '## Predict the first hop\n'
       'it reads the first line\n'
-      '<!-- at: 1 @ xxh64:cc98257fe4be8f5a -->\n'
+      '<!-- at: 1 fingerprint: xxh64-cc98257fe4be8f5a -->\n'
       '\n'
       '## Predict the second hop\n'
       'it reads lines two and three\n'
-      '<!-- at: 2-3 @ xxh64:c08dd9f69eb16b43 -->\n',
+      '<!-- at: 2-3 fingerprint: xxh64-c08dd9f69eb16b43 -->\n',
     );
     return root;
   }
@@ -77,7 +77,7 @@ void main() {
       '---\n'
       '## Predict the hop\n'
       'it reads the first line\n'
-      '<!-- at: 1 @ xxh64:cc98257fe4be8f5a -->\n',
+      '<!-- at: 1 fingerprint: xxh64-cc98257fe4be8f5a -->\n',
     );
     return root;
   }
@@ -95,7 +95,7 @@ void main() {
       '---\n'
       '## Predict the source lookup\n'
       '`origin` flows through `resolve_source_root`.\n'
-      '<!-- at: 1 @ xxh64:8923fa595c31a52f -->\n',
+      '<!-- at: 1 fingerprint: xxh64-8923fa595c31a52f -->\n',
     );
     return root;
   }
