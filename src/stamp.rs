@@ -269,6 +269,54 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
     }
 }
 
+/// 1-based lines of card `<!-- id: -->` markers away from the position
+/// `stamp_deck` mints at: the marker's own line closing its card block.
+/// Flags a marker trailing the `## ` front and a standalone marker with card
+/// content after it; both parse, so this is a `doctor` hygiene signal.
+pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut fence: Option<char> = None;
+    let mut block_end: Option<usize> = None;
+    for (index, raw) in text.lines().enumerate() {
+        let line = index + 1;
+        if let Some(ch) = fence {
+            if parser::closes_fence(raw, ch) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(ch) = parser::fence_opener(raw) {
+            fence = Some(ch);
+            continue;
+        }
+        if let Some(rest) = raw.strip_prefix("## ") {
+            block_end = Some(block_end_line(text, line));
+            if heading_id_marker(rest) {
+                found.push(line);
+            }
+            continue;
+        }
+        let trimmed = raw.trim_matches(&WS[..]);
+        if let Some(body) = trimmed
+            .strip_prefix("<!--")
+            .and_then(|s| s.strip_suffix("-->"))
+            && matches!(parser::directive(body), Some((key, _)) if key == "id")
+            && let Some(end) = block_end
+            && line != end
+        {
+            found.push(line);
+        }
+    }
+    found
+}
+
+fn heading_id_marker(rest: &str) -> bool {
+    let (_, bodies) = parser::split_trailing_comments(rest);
+    bodies
+        .iter()
+        .any(|body| matches!(parser::directive(body), Some((key, _)) if key == "id"))
+}
+
 fn line_terminator(text: &str, line: usize) -> &'static str {
     let Some(start) = nth_line_start(text, line) else {
         return "\n";
@@ -359,6 +407,39 @@ mod tests {
         let path = dir.path().join(name);
         fs::write(&path, text).unwrap();
         path
+    }
+
+    #[test]
+    fn a_marker_trailing_the_front_line_is_misplaced() {
+        let text = "## q <!-- id: card-q1 -->\na\n";
+        assert_eq!(vec![1], misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_standalone_marker_with_card_content_after_it_is_misplaced() {
+        let text = "## q\na\n<!-- id: card-q1 -->\n<!-- at: notes.md:2 -->\n";
+        assert_eq!(vec![3], misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_marker_closing_its_card_is_canonical() {
+        let text = "## q\na\n<!-- at: notes.md:2 -->\n<!-- id: card-q1 -->\n\n## r\nb\n<!-- id: card-r1 -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_marker_lookalike_inside_a_fence_is_not_a_marker() {
+        let text = "## q\na\n```\n<!-- id: card-fake -->\n```\n<!-- id: card-q1 -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn freshly_stamped_output_carries_no_misplaced_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(&dir, "deck.md", FIXTURE);
+        stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(&stamped));
     }
 
     #[test]

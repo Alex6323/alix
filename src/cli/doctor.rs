@@ -138,6 +138,14 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
         }
     }
 
+    for line in alix::stamp::misplaced_id_markers(&text) {
+        report.warn(format!(
+            "{}: card id marker at line {line} is not the last line of its card; move it \
+             there (the position stamping mints at)",
+            path.display()
+        ));
+    }
+
     if deck.deck_token.is_none() && deck.frontmatter_span.is_some() && deck.frontmatter.unspliceable
     {
         report.warn(format!(
@@ -1428,6 +1436,33 @@ mod tests {
         assert!(
             warnings.contains("card content without ids"),
             "unstamped warning: {warnings}"
+        );
+        assert!(
+            warnings.contains("is not the last line of its card"),
+            "misplaced id marker: {warnings}"
+        );
+    }
+
+    #[test]
+    fn doctor_accepts_a_canonically_closed_id_marker_without_warning() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        w(
+            dir,
+            "facts.md",
+            "---\nid: deck-deck1\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
+        );
+        w(dir, "notes.md", "one\n");
+
+        let report = workspace_findings(dir);
+
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("is not the last line of its card")),
+            "canonical marker flagged: {:#?}",
+            report.warnings
         );
     }
 

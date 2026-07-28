@@ -165,14 +165,15 @@ notes it.
   problem: the config parses, the progress store is readable, the decks dir
   scans, and the backend CLI is on your PATH. Name a **deck file** to lint it
   in depth (syntax, fingerprinted `at:` locators, and frozen cards that have
-  drifted from their `origin:` source). It withholds stale excerpts and reports
+  drifted from their live source). It withholds stale excerpts and reports
   a unique exact relocation, changed content, ambiguity, or a missing
   fingerprint. Over a **folder or workspace** it also reports
   identity problems across the decks as a set: duplicate deck or card tokens
   (naming which copy keeps the earned progress), store keys matching no live
   card or deck (orphans, clear them with `alix reset --orphans`), a
-  non-canonical token, a frontmatter that can't be stamped, and cards still
-  awaiting a token. It also names deck-like Markdown ignored until explicitly
+  non-canonical token, a frontmatter that can't be stamped, an id marker away
+  from its card's closing line (the position stamping mints at), and cards
+  still awaiting a token. It also names deck-like Markdown ignored until explicitly
   initialized, invalid or orphaned per-deck progress or augmentation documents,
   and synchronization conflict copies. Workspace checks also reject live source
   evidence, missing or cross-deck assets, local images outside the owning deck

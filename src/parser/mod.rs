@@ -529,7 +529,7 @@ fn heading(
     Ok((front, directives))
 }
 
-fn split_trailing_comments(text: &str) -> (String, Vec<String>) {
+pub(crate) fn split_trailing_comments(text: &str) -> (String, Vec<String>) {
     let mut text = trim_ws(text);
     let mut bodies = Vec::new();
     while let Some(prefix) = text.strip_suffix("-->") {
@@ -558,7 +558,7 @@ fn strip_trailing_hashes(text: &str) -> &str {
     }
 }
 
-fn directive(body: &str) -> Option<(String, String)> {
+pub(crate) fn directive(body: &str) -> Option<(String, String)> {
     let (key, value) = trim_ws(body).split_once(':')?;
     let key = trim_ws(key).to_ascii_lowercase();
     if key.is_empty() || key.contains(char::is_whitespace) {

@@ -36,6 +36,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Committed manual-QA examples for graphical math rendering and a self-contained workspace with a frozen Rust ownership trace.
 - the picker's focus drawer now shows a deck's preamble (the prose written under its `#` title), which was parsed but never surfaced before
 - `alix doctor` flags a dangling `requires:` (one naming a deck that does not exist), so a renamed or deleted prerequisite is reported instead of silently dropping the gating edge.
+- `alix doctor` warns when a card's `<!-- id: -->` marker is not the card's closing line (the position stamping mints at), so a hand-placed marker drifts back to the canonical shape instead of scattering through the deck.
 
 ### Changed
 
