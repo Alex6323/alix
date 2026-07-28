@@ -220,6 +220,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A Recognize session now paces first contact like every other depth: at most
+  `max_new` never-met cards enter per session, and an explicit `--new` is
+  honored there (it was silently ignored). Already-met cards still awaiting
+  recognition all enter, uncapped, so the recognition sweep keeps its contract.
+  Previously a fresh authored-choice deck, which defaults to Recognize, opened
+  its whole deck in one session.
+- A cached review order (`alix deck augment --target order`) now applies at
+  Recognize; the walk sorts the session before any `limit` truncation, so a
+  limit keeps the topologically first cards.
 - The multiple-choice quiz no longer highlights a hovered option like the
   keyboard-focused one; keyboard focus is the single highlight and the mouse
   gives no visual state.

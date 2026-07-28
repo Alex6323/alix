@@ -802,6 +802,37 @@ it reads line two\n\
     }
 
     #[test]
+    fn an_explicit_max_new_is_honored_when_the_depth_defaults_to_recognize() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        write_initialized(
+            &path,
+            "## q1 <!-- id: card-q1 -->\n- [x] a1\n- [ ] w1\n\
+             ## q2 <!-- id: card-q2 -->\n- [x] a2\n- [ ] w2\n\
+             ## q3 <!-- id: card-q3 -->\n- [x] a3\n- [ ] w3\n\
+             ## q4 <!-- id: card-q4 -->\n- [x] a4\n- [ ] w4\n",
+        );
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+
+        let selected = select(
+            vec![path],
+            &mut store,
+            &test_config(),
+            &SelectOptions {
+                max_new: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let Selected::Review(build) = selected else {
+            panic!("a facts deck selects a review session");
+        };
+        assert_eq!(Depth::Recognize, build.session.depth());
+        assert_eq!(2, build.session.initial_size);
+    }
+
+    #[test]
     fn review_open_records_every_deck_card_including_cloze_holes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");

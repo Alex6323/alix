@@ -377,20 +377,41 @@ fn build_queue(
     now_ms: u64,
 ) -> VecDeque<usize> {
     if options.depth == Depth::Recognize {
-        let mut order: Vec<usize> = (0..cards.len())
-            .filter(|&i| !is_retired(&cards[i], store, options.retire_after_days))
-            .filter(|&i| {
-                options.cram
-                    || cards[i]
-                        .id()
-                        .and_then(|id| store.get(&id))
-                        .is_none_or(|s| s.recognized_ms.is_none())
-            })
-            .collect();
+        let mut order: Vec<usize> = Vec::new();
+        let mut fresh_left = options.max_new;
+        for (i, card) in cards.iter().enumerate() {
+            match card.id().and_then(|id| store.get(&id)) {
+                Some(_) if is_retired(card, store, options.retire_after_days) => {}
+                Some(state) => {
+                    if options.cram || state.recognized_ms.is_none() {
+                        order.push(i);
+                    }
+                }
+                None => {
+                    if fresh_left > 0 {
+                        fresh_left -= 1;
+                        order.push(i);
+                    }
+                }
+            }
+        }
+        if let Some(topo) = &options.topology {
+            order.sort_by_key(|&i| {
+                cards[i]
+                    .id()
+                    .as_deref()
+                    .and_then(|id| topo.rank_of(id))
+                    .unwrap_or(usize::MAX)
+            });
+        }
         if let Some(limit) = options.limit {
             order.truncate(limit);
         }
-        return separate_siblings(order, cards);
+        return if options.topology.is_some() {
+            order.into()
+        } else {
+            separate_siblings(order, cards)
+        };
     }
 
     let depth = options.depth;
@@ -2199,6 +2220,145 @@ mod tests {
             1_000,
         );
         assert_eq!(1, s.remaining());
+    }
+
+    #[test]
+    fn recognize_caps_never_met_intake_at_max_new() {
+        let (store, _dir) = empty_store();
+        let s = Session::new(
+            cards(22),
+            &store,
+            sched(),
+            SessionOptions {
+                max_new: 10,
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            1_000,
+        );
+        assert_eq!(10, s.initial_size);
+    }
+
+    #[test]
+    fn recognize_met_but_unrecognized_cards_enter_uncapped() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(20);
+        for c in &all[..15] {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let s = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                max_new: 3,
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            1_000,
+        );
+        assert_eq!(18, s.initial_size, "15 met plus 3 of the 5 never-met");
+    }
+
+    #[test]
+    fn recognize_with_a_topology_serves_in_walk_order() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        for c in &all {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let topo = topology_order(&[&all[2], &all[1], &all[0]]);
+        let mut s = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1_000_000,
+        );
+        assert_eq!("front 2", s.current().unwrap().front);
+        s.grade(&mut store, Grade::Pass, 1_000_000);
+        assert_eq!("front 1", s.current().unwrap().front);
+        s.grade(&mut store, Grade::Pass, 1_000_000);
+        assert_eq!("front 0", s.current().unwrap().front);
+    }
+
+    #[test]
+    fn recognize_without_a_topology_keeps_deck_order() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        for c in &all {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let mut s = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            1_000_000,
+        );
+        assert_eq!("front 0", s.current().unwrap().front);
+        s.grade(&mut store, Grade::Pass, 1_000_000);
+        assert_eq!("front 1", s.current().unwrap().front);
+        s.grade(&mut store, Grade::Pass, 1_000_000);
+        assert_eq!("front 2", s.current().unwrap().front);
+    }
+
+    #[test]
+    fn recognize_topology_reorders_but_never_chooses_which_fresh_cards_enter() {
+        let (store, _dir) = empty_store();
+        let all = cards(3);
+        let topo = topology_order(&[&all[2], &all[1], &all[0]]);
+        let s = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                max_new: 2,
+                depth: Depth::Recognize,
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1_000,
+        );
+        assert_eq!(2, s.initial_size, "the cap picks in deck order");
+        assert_eq!(
+            "front 1",
+            s.current().unwrap().front,
+            "the walk reorders the picked pair"
+        );
+    }
+
+    #[test]
+    fn recognize_limit_keeps_the_topologically_first_cards() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        for c in &all {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let topo = topology_order(&[&all[2], &all[1], &all[0]]);
+        let mut s = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                limit: Some(2),
+                depth: Depth::Recognize,
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1_000_000,
+        );
+        assert_eq!(2, s.initial_size);
+        assert_eq!("front 2", s.current().unwrap().front);
+        s.grade(&mut store, Grade::Pass, 1_000_000);
+        assert_eq!("front 1", s.current().unwrap().front);
     }
 
     fn mature_fsrs(due_ms: u64) -> FsrsState {

@@ -69,8 +69,10 @@ sets the floor before *any* just-seen card (a miss, a wrong pick) may return,
 so nothing you moved off comes straight back. `"0"` disables both gaps. Each session
 introduces up to 10 new cards (`[review] max_new` in the config changes that;
 `--new N` on the launch overrides it per instance); start another session for
-more. This is the first step of a card's life: *acquire*, then let its
-depth(s) schedule it.
+more. This holds at every depth, Recognize included: a Recognize session admits
+at most `max_new` cards you have never met, while every already-met card still
+awaiting recognition enters uncapped. This is the first step of a card's life:
+*acquire*, then let its depth(s) schedule it.
 
 ## Session depths: Recognize, Recall, Reconstruct
 
@@ -150,8 +152,9 @@ Need to review everything now, schedule be damned, the night before an exam?
 **Cram** ignores due times and shows every card that isn't retired. It's a
 per-launch tick-box in the picker's Learn ▾ menu (key `c` while the menu is
 open); plain **Learn** never crams. At Recognize, cram is the repeatable quiz:
-it serves *every* card, including the already-recognized ones a normal
-Recognize session would skip.
+it serves every card you have met, including the already-recognized ones a
+normal Recognize session would skip (never-met intake stays paced by
+`max_new`).
 
 Cram changes **which cards are queued, never how a due card is graded**: a
 card that was genuinely due grades exactly like a normal review: full
