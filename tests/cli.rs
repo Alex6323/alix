@@ -98,7 +98,7 @@ fn stderr(out: &Output) -> String {
 }
 
 const VALID_DECK: &str =
-    "---\nalix-id: \"mathdeck\"\n---\n## What is 2 + 2? <!-- id: math1 -->\n4\n";
+    "---\nid: \"deck-mathdeck\"\n---\n## What is 2 + 2? <!-- id: card-math1 -->\n4\n";
 
 #[test]
 fn profile_add_list_and_remove_are_hermetic() {
@@ -156,7 +156,7 @@ fn deck_copy_lands_the_public_deck_and_reports_the_boundary() {
     let deck = write(
         &source.join("decks"),
         "facts.md",
-        "---\nalix-id: deck1\n---\n## q\nanswer\n<!-- id: card1 -->\n",
+        "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
     );
 
     let out = alix(&["deck", "copy", &deck, destination.to_str().unwrap()]);
@@ -183,9 +183,9 @@ fn deck_move_requires_confirmation_and_reports_progress() {
     let deck = write(
         &source.join("decks"),
         "facts.md",
-        "---\nalix-id: deck1\n---\n## q\nanswer\n<!-- id: card1 -->\n",
+        "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
     );
-    write_progress_document(&source, "deck1", "facts.md", "");
+    write_progress_document(&source, "deck-deck1", "facts.md", "");
 
     let refused = alix(&["deck", "move", &deck, destination.to_str().unwrap()]);
 
@@ -213,7 +213,7 @@ fn deck_move_requires_confirmation_and_reports_progress() {
     );
     assert!(!Path::new(&deck).exists());
     assert!(destination.join("decks/facts.md").is_file());
-    assert!(destination.join("progress/deck1.json").is_file());
+    assert!(destination.join("progress/deck-deck1.json").is_file());
 }
 
 #[test]
@@ -301,7 +301,7 @@ fn workspace_deadline_shows_sets_and_clears() {
     std::fs::write(ws.join("alix.toml"), "title = \"Ws\"\n").unwrap();
     std::fs::write(
         ws.join("decks/cards.md"),
-        "---\nalix-id: \"cards\"\n---\n## Q?\nA\n",
+        "---\nid: \"deck-cards\"\n---\n## Q?\nA\n",
     )
     .unwrap();
 
@@ -378,12 +378,12 @@ fn stats_on_a_folder_reports_every_deck_inside() {
     write(
         dir.path(),
         "alpha.md",
-        "---\nalix-id: alpha\n---\n## a? <!-- id: a1 -->\na\n",
+        "---\nid: deck-alpha\n---\n## a? <!-- id: card-a1 -->\na\n",
     );
     write(
         dir.path(),
         "beta.md",
-        "---\nalix-id: beta\n---\n## b? <!-- id: b1 -->\nb\n",
+        "---\nid: deck-beta\n---\n## b? <!-- id: card-b1 -->\nb\n",
     );
     let store = dir.path().join("state");
     let out = alix(&[
@@ -410,12 +410,12 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     let a = write(
         &members,
         "a.md",
-        "---\nalix-id: decka\n---\n## qa <!-- id: qa1 -->\nans-a\n",
+        "---\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
     );
     let b = write(
         &members,
         "b.md",
-        "---\nalix-id: deckb\n---\n## qb <!-- id: qb1 -->\nans-b\n",
+        "---\nid: deck-deckb\n---\n## qb <!-- id: card-qb1 -->\nans-b\n",
     );
     let store_path = ws.clone();
     let mut store = decks_store(&[&a, &b], &store_path);
@@ -427,7 +427,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
         .unwrap();
         store.get_or_insert(&cards[0].id().unwrap(), 0);
     }
-    store.set_deck_mastered("decka", 0);
+    store.set_deck_mastered("deck-decka", 0);
     store.save().unwrap();
 
     let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
@@ -436,7 +436,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     let reloaded = decks_store(&[&a, &b], &store_path);
     assert_eq!(0, reloaded.len(), "member card progress should be gone");
     assert!(
-        !reloaded.deck_mastered("decka"),
+        !reloaded.deck_mastered("deck-decka"),
         "the mastered flag should be cleared"
     );
 }
@@ -461,7 +461,7 @@ fn reset_all_clears_a_seeded_store() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let state_root = dir.path().join("state");
     let mut store = deck_store(&deck, &state_root);
-    store.get_or_insert("math1", 0);
+    store.get_or_insert("card-math1", 0);
     store.save().unwrap();
     let out = alix(&[
         "reset",
@@ -477,7 +477,7 @@ fn reset_all_clears_a_seeded_store() {
         stdout(&out)
     );
     let reloaded = deck_store(&deck, &state_root);
-    assert!(reloaded.get("math1").is_none());
+    assert!(reloaded.get("card-math1").is_none());
 }
 
 /// A minimal virtual card owned by `deck_id`, for seeding a store directly
@@ -494,7 +494,7 @@ fn sample_virtual_card(deck_id: &str) -> alix::store::VirtualCard {
             .collect::<String>()
             .to_ascii_lowercase()
     );
-    let text = format!("## front <!-- id: {token} -->\nback\n");
+    let text = format!("## front <!-- id: card-{token} -->\nback\n");
     let id = alix::parser::parse_str(deck_id, &text).unwrap()[0]
         .id()
         .unwrap();
@@ -555,17 +555,17 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     write(
         dir.path(),
         "other.md",
-        "---\nalix-id: \"otherdeck\"\n---\n## other <!-- id: other1 -->\nb\n",
+        "---\nid: \"deck-otherdeck\"\n---\n## other <!-- id: card-other1 -->\nb\n",
     );
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    store.get_or_insert("math1", 0); // the live card
+    store.get_or_insert("card-math1", 0); // the live card
     store.get_or_insert("orphan1", 0); // an orphaned card key
     store.save().unwrap();
     // A hand-deleted deck's progress document: a deck_id with no matching
     // `.md` file, carrying non-empty deck-level state.
-    let ghost = write_progress_document(&store_path, "ghost", "ghost.md", "");
+    let ghost = write_progress_document(&store_path, "deck-ghost", "ghost.md", "");
     let ghost_text = std::fs::read_to_string(&ghost)
         .unwrap()
         .replace("\"cards\":{}", "\"cards\":{},\"deck\":{\"last_depth\":\"recall\"}");
@@ -583,7 +583,7 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let after = std::fs::read_to_string(store.path()).unwrap();
     assert!(
-        !after.contains("math1"),
+        !after.contains("card-math1"),
         "the live card should be reset: {after}"
     );
     assert!(
@@ -632,17 +632,17 @@ fn deck_reset_drops_that_decks_virtual_cards() {
     let other = write(
         dir.path(),
         "other.md",
-        "---\nalix-id: otherdeck\n---\n## Other <!-- id: other1 -->\nanswer\n",
+        "---\nid: deck-otherdeck\n---\n## Other <!-- id: card-other1 -->\nanswer\n",
     );
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    let math_vc = sample_virtual_card("mathdeck");
+    let math_vc = sample_virtual_card("deck-mathdeck");
     let math_id = math_vc.id.clone();
     store.insert_virtual(math_vc);
     store.save().unwrap();
     let mut other_store = deck_store(&other, &store_path);
-    let other_vc = sample_virtual_card("otherdeck");
+    let other_vc = sample_virtual_card("deck-otherdeck");
     let other_id = other_vc.id.clone();
     other_store.insert_virtual(other_vc);
     other_store.save().unwrap();
@@ -683,8 +683,8 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         .unwrap();
     let mut store = deck_store(&deck, &store_path);
     store.get_or_insert(&card_id, 0);
-    store.set_deck_mastered("mathdeck", 0);
-    store.insert_virtual(sample_virtual_card("mathdeck"));
+    store.set_deck_mastered("deck-mathdeck", 0);
+    store.insert_virtual(sample_virtual_card("deck-mathdeck"));
     store.save().unwrap();
     let before = std::fs::read_to_string(store.path()).unwrap();
 
@@ -701,11 +701,11 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         "the store on disk must be untouched by a declined/failed reset"
     );
     let reloaded = deck_store(&deck, &store_path);
-    assert!(reloaded.deck_mastered("mathdeck"), "mastered flag wiped");
+    assert!(reloaded.deck_mastered("deck-mathdeck"), "mastered flag wiped");
     assert!(reloaded.get(&card_id).is_some(), "authored progress wiped");
     assert_eq!(
         1,
-        reloaded.virtual_cards_for("mathdeck").len(),
+        reloaded.virtual_cards_for("deck-mathdeck").len(),
         "virtual card wiped"
     );
 }
@@ -719,7 +719,7 @@ fn confirmed_virtual_only_deck_reset_clears_virtual() {
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    store.insert_virtual(sample_virtual_card("mathdeck"));
+    store.insert_virtual(sample_virtual_card("deck-mathdeck"));
     store.save().unwrap();
 
     let out = alix(&[
@@ -732,7 +732,7 @@ fn confirmed_virtual_only_deck_reset_clears_virtual() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
     let reloaded = deck_store(&deck, &store_path);
-    assert_eq!(0, reloaded.virtual_cards_for("mathdeck").len());
+    assert_eq!(0, reloaded.virtual_cards_for("deck-mathdeck").len());
 }
 
 #[test]
@@ -740,7 +740,7 @@ fn an_unsupported_progress_document_version_is_rejected() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let state_root = dir.path().join("state");
-    let store = write_progress_document(&state_root, "mathdeck", "math.md", "");
+    let store = write_progress_document(&state_root, "deck-mathdeck", "math.md", "");
     let text =
         std::fs::read_to_string(&store)
             .unwrap()
@@ -759,7 +759,7 @@ fn a_corrupt_progress_document_fails_without_overwriting_it() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let garbage = "{ this is not valid json";
     let state_root = dir.path().join("state");
-    let store = alix::state::UserFiles::new(&state_root).progress_for("mathdeck");
+    let store = alix::state::UserFiles::new(&state_root).progress_for("deck-mathdeck");
     std::fs::create_dir_all(store.parent().unwrap()).unwrap();
     std::fs::write(&store, garbage).unwrap();
 
@@ -805,7 +805,7 @@ fn augment_target_format_caches_a_reshape() {
     let deck = write(
         dir.path(),
         "parts.md",
-        "---\nalix-id: \"parts\"\n---\n## List the parts <!-- id: parts1 -->\nA, B, C\n",
+        "---\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n",
     );
     // The model returns a structured reshape for card index 0: a list body and a
     // line-by-line mode suggestion.
@@ -840,12 +840,12 @@ fn augment_target_format_caches_a_reshape() {
     // deck identity remains the initialized identity.
     let deck_after = std::fs::read_to_string(&deck).unwrap();
     assert!(
-        deck_after.contains("## List the parts <!-- id: parts1 -->\nA, B, C\n"),
+        deck_after.contains("## List the parts <!-- id: card-parts1 -->\nA, B, C\n"),
         "card text and token preserved: {deck_after}"
     );
     assert!(
-        deck_after.starts_with("---\nalix-id: \""),
-        "the deck keeps its initialized frontmatter alix-id: {deck_after}"
+        deck_after.starts_with("---\nid: \"deck-"),
+        "the deck keeps its initialized frontmatter id: {deck_after}"
     );
 }
 
@@ -858,12 +858,12 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
     let deck = write(
         dir.path(),
         "parts.md",
-        "---\nalix-id: \"parts\"\n---\n## List the parts <!-- id: parts1 -->\nA, B, C\n",
+        "---\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n",
     );
 
     let store_path = dir.path().join("state");
     let mut store = deck_store(&deck, &store_path);
-    let vc = sample_virtual_card("parts");
+    let vc = sample_virtual_card("deck-parts");
     let virtual_id = vc.id.clone();
     store.insert_virtual(vc);
     store.save().unwrap();
@@ -905,7 +905,7 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     // `assemble::select`'s injection does, or the same card gets warmed twice.
     let dir = TempDir::new().unwrap();
     let deck_text =
-        "---\nalix-id: \"parts\"\n---\n## List the parts <!-- id: parts1 -->\nA, B, C\n";
+        "---\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n";
     let deck = write(dir.path(), "parts.md", deck_text);
     let real_id = alix::parser::parse_str("parts.md", deck_text).unwrap()[0]
         .id()
@@ -916,7 +916,7 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     store.insert_virtual(alix::store::VirtualCard {
         id: real_id.clone(), // collides with the real deck card's id — simulates an orphan
         kind: alix::store::VirtualKind::Remediation,
-        deck: "parts".to_string(),
+        deck: "deck-parts".to_string(),
         // Must reproduce `real_id` when parsed (`synthesize_virtual` matches by
         // id), so an orphan left behind by a partial promote uses the same text
         // as the now-real deck card it collides with.
@@ -1270,7 +1270,7 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
     // Card 1: recall=review (state 2), reconstruct=learning (state 1), recognized.
     // Card 2: recall=learning only — no reconstruct schedule, not recognized.
     let deck_text =
-        "---\nalix-id: cardsdeck\n---\n## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n";
+        "---\nid: deck-cardsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n";
     let deck = write(dir.path(), "cards.md", deck_text);
     let cards = alix::parser::parse_str("cards.md", deck_text).unwrap();
     let (id1, id2) = (cards[0].id().unwrap(), cards[1].id().unwrap());
@@ -1281,7 +1281,7 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
     let state_root = dir.path().join("state");
     write_progress_document(
         &state_root,
-        "cardsdeck",
+        "deck-cardsdeck",
         "cards.md",
         &format!("{card1},{card2}"),
     );
@@ -1303,14 +1303,14 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
 #[test]
 fn stats_shows_per_depth_due_counts() {
     let dir = TempDir::new().unwrap();
-    let deck_text = "---\nalix-id: statsdeck\n---\n## Q1 <!-- id: q1 -->\nA1\n";
+    let deck_text = "---\nid: deck-statsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n";
     let deck = write(dir.path(), "stats.md", deck_text);
     let card_id = alix::parser::parse_str("stats.md", deck_text).unwrap()[0]
         .id()
         .unwrap();
     let card = both_depths_due_card(&card_id);
     let state_root = dir.path().join("state");
-    write_progress_document(&state_root, "statsdeck", "stats.md", &card);
+    write_progress_document(&state_root, "deck-statsdeck", "stats.md", &card);
     let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
@@ -1503,7 +1503,7 @@ fn doctor_surfaces_a_malformed_image_embed() {
     let deck = write(
         dir.path(),
         "marker.md",
-        "## q <!-- id: markerq01 -->\nanswer\n![]()\n![x](oops\n",
+        "## q <!-- id: card-markerq01 -->\nanswer\n![]()\n![x](oops\n",
     );
     let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
@@ -1517,7 +1517,7 @@ fn doctor_warns_on_a_missing_image_referenced_by_the_embed() {
     let deck = write(
         dir.path(),
         "pic.md",
-        "## pic <!-- id: picq01 -->\nphoto\n![](gone.png)\n",
+        "## pic <!-- id: card-picq01 -->\nphoto\n![](gone.png)\n",
     );
     let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
@@ -1541,7 +1541,7 @@ fn stats_on_a_loose_deck_resolves_the_decks_dir_root_store_like_review_does() {
     let cfg = cfg.to_str().unwrap();
 
     let garbage = "{ this is not valid json";
-    let progress = alix::state::UserFiles::new(decks.path()).progress_for("mathdeck");
+    let progress = alix::state::UserFiles::new(decks.path()).progress_for("deck-mathdeck");
     std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
     std::fs::write(&progress, garbage).unwrap();
 
@@ -1569,7 +1569,7 @@ fn reset_all_clears_the_decks_dir_root_store_not_the_global_one() {
     let cfg = cfg.to_str().unwrap();
 
     let garbage = "{ this is not valid json";
-    let progress = alix::state::UserFiles::new(decks.path()).progress_for("mathdeck");
+    let progress = alix::state::UserFiles::new(decks.path()).progress_for("deck-mathdeck");
     std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
     std::fs::write(&progress, garbage).unwrap();
 
@@ -1636,13 +1636,13 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     std::fs::create_dir(&sender_decks).unwrap();
     let deck = write(&sender_decks, "math.md", VALID_DECK);
     let mut progress = alix::state::open_store(Path::new(&deck), &sender_decks).unwrap();
-    progress.get_or_insert("math1", 1);
+    progress.get_or_insert("card-math1", 1);
     progress.save().unwrap();
     let mut augmentation = alix::augment::AugmentCache::open_for_deck(
         &alix::deck::Deck::load(Path::new(&deck)).unwrap(),
     )
     .unwrap();
-    augmentation.set_note("math1", "shared note".to_string(), 9);
+    augmentation.set_note("card-math1", "shared note".to_string(), 9);
     augmentation.save().unwrap();
     let out_dir = sender.path().join("out");
     std::fs::create_dir(&out_dir).unwrap();
@@ -1667,23 +1667,23 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     let received_deck = receiver.path().join("decks/math.md");
     let received_state = receiver.path().join("decks");
     let received_progress = alix::state::open_store(&received_deck, &received_state).unwrap();
-    assert!(received_progress.get("math1").is_none());
+    assert!(received_progress.get("card-math1").is_none());
     let received_augmentation = alix::augment::AugmentCache::open_for_deck(
         &alix::deck::Deck::load(&received_deck).unwrap(),
     )
     .unwrap();
-    assert_eq!(Some("shared note"), received_augmentation.note("math1", 9));
+    assert_eq!(Some("shared note"), received_augmentation.note("card-math1", 9));
 
     std::fs::write(
         &received_deck,
-        "---\nalix-id: \"mathdeck\"\n---\n## changed <!-- id: math1 -->\nlocal\n",
+        "---\nid: \"deck-mathdeck\"\n---\n## changed <!-- id: card-math1 -->\nlocal\n",
     )
     .unwrap();
     let mut changed_augmentation = alix::augment::AugmentCache::open_for_deck(
         &alix::deck::Deck::load(&received_deck).unwrap(),
     )
     .unwrap();
-    changed_augmentation.set_note("math1", "local note".to_string(), 9);
+    changed_augmentation.set_note("card-math1", "local note".to_string(), 9);
     changed_augmentation.save().unwrap();
 
     let replaced = alix_env(
@@ -1697,7 +1697,7 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
         &alix::deck::Deck::load(&received_deck).unwrap(),
     )
     .unwrap();
-    assert_eq!(Some("shared note"), received_augmentation.note("math1", 9));
+    assert_eq!(Some("shared note"), received_augmentation.note("card-math1", 9));
 }
 
 #[test]
@@ -1707,7 +1707,7 @@ fn share_zip_of_a_workspace_folder_strips_personal_state() {
     let members = ws.join("decks");
     std::fs::create_dir_all(&members).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
-    write(&members, "a.md", "---\nalix-id: \"a\"\n---\n## q\na\n");
+    write(&members, "a.md", "---\nid: \"deck-a\"\n---\n## q\na\n");
     std::fs::create_dir(ws.join("progress")).unwrap();
     write(&ws.join("progress"), "a.json", "{}");
     let out_dir = dir.path().join("out");
@@ -1922,7 +1922,7 @@ fn generate_refuses_to_rebuild_trace_checkpoints_without_force() {
     let stub = write(
         dir.path(),
         "t.md",
-        "---\ntrace: how it works\nsource: .\n---\n## old checkpoint <!-- id: c1 -->\nold point\n<!-- at: 1 -->\n",
+        "---\ntrace: how it works\nsource: .\n---\n## old checkpoint <!-- id: card-c1 -->\nold point\n<!-- at: 1 -->\n",
     );
     let original = std::fs::read_to_string(&stub).unwrap();
 
@@ -2319,7 +2319,7 @@ fn augment_choices_caches_distractors_for_two_cards() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n",
+        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"], "1": ["W3", "W4"]}"#);
     let config = write(
@@ -2367,7 +2367,7 @@ fn a_workspace_store_override_does_not_relocate_augmentation() {
     let deck = write(
         &workspace.join("decks"),
         "quiz.md",
-        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"]}"#);
     let config = write(
@@ -2381,7 +2381,7 @@ fn a_workspace_store_override_does_not_relocate_augmentation() {
     ]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(workspace.join("augment/quiz.json").is_file());
+    assert!(workspace.join("augment/deck-quiz.json").is_file());
     assert!(!workspace.join("user-files/augment").exists());
 }
 
@@ -2391,7 +2391,7 @@ fn augment_notes_caches_a_trivia_note() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": "a fun fact"}"#);
     let config = write(
@@ -2422,7 +2422,7 @@ fn augment_without_a_store_flag_caches_beside_the_loose_deck() {
     let deck = write(
         decks.path(),
         "quiz.md",
-        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(decks.path(), r#"{"0": "a fun fact"}"#);
 
@@ -2452,7 +2452,7 @@ fn augment_questions_caches_a_reworded_variant() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["Rephrased Q1?"]}"#);
     let config = write(
@@ -2483,7 +2483,7 @@ fn augment_questions_on_a_cloze_only_deck_errors() {
     let deck = write(
         dir.path(),
         "c.md",
-        "---\nalix-id: \"cloze\"\n---\n## Complete <!-- id: c1 -->\nThe capital of France is \\blank{Paris}.\n",
+        "---\nid: \"deck-cloze\"\n---\n## Complete <!-- id: card-c1 -->\nThe capital of France is \\blank{Paris}.\n",
     );
     let config = write(
         dir.path(),
@@ -2516,7 +2516,7 @@ fn augment_keypoints_caches_decomposed_claims() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n",
+        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["point one", "point two"]}"#);
     let config = write(
@@ -2548,7 +2548,7 @@ fn augment_order_prints_and_caches_the_walk() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nalix-id: \"quiz\"\n---\n## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n",
+        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n",
     );
     let cli = fake_claude(
         dir.path(),
@@ -2584,7 +2584,7 @@ fn augment_on_an_empty_deck_errors_without_calling_the_backend() {
     let deck = write(
         dir.path(),
         "empty.md",
-        "---\nalix-id: emptydeck\n---\n# Nothing\n",
+        "---\nid: deck-emptydeck\n---\n# Nothing\n",
     );
     let config = write(
         dir.path(),
@@ -2627,7 +2627,7 @@ fn deck_init_stamps_an_intended_markdown_deck() {
         stdout(&out)
     );
     let stamped = std::fs::read_to_string(&deck).unwrap();
-    assert!(stamped.starts_with("---\nalix-id: \""), "{stamped}");
+    assert!(stamped.starts_with("---\nid: \"deck-"), "{stamped}");
     assert_eq!(1, stamped.matches("<!-- id: ").count(), "{stamped}");
 }
 
@@ -2658,7 +2658,7 @@ fn deck_init_refuses_a_generic_frontmatter_id_without_changing_it() {
 
     assert!(!out.status.success());
     assert!(
-        stderr(&out).contains("rename it to `alix-id:`"),
+        stderr(&out).contains("`deck-<token>` id"),
         "stderr: {}",
         stderr(&out)
     );
@@ -2818,14 +2818,14 @@ fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     std::fs::write(
         &deck,
         format!(
-            "---\nalix-id: \"deck1\"\nsource: {}\n---\n## Old? <!-- id: oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
+            "---\nid: \"deck-deck1\"\nsource: {}\n---\n## Old? <!-- id: card-oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
             alix::parser::yaml_quote(source.to_str().unwrap())
         ),
     )
     .unwrap();
     alix::assets::freeze_member(&deck).unwrap();
     let proposal = format!(
-        "---\nalix-id: \"deck1\"\nsource: {}\norigin: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
+        "---\nid: \"deck-deck1\"\nsource: {}\norigin: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
         alix::parser::yaml_quote(source.to_str().unwrap()),
         alix::parser::yaml_quote(source.to_str().unwrap())
     );
@@ -2855,7 +2855,7 @@ fn workspace_update_previews_then_applies_without_a_second_backend_call() {
             .unwrap()
             .cards
             .iter()
-            .any(|card| card.id().as_deref() == Some("oldcard"))
+            .any(|card| card.id().as_deref() == Some("card-oldcard"))
     );
     std::fs::remove_file(&cli).unwrap();
 
@@ -2869,7 +2869,7 @@ fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     assert!(applied.status.success(), "stderr: {}", stderr(&applied));
     let updated = alix::deck::Deck::load(&deck).unwrap();
     assert_eq!("New?", updated.cards[0].front);
-    assert_ne!(Some("oldcard"), updated.cards[0].id().as_deref());
+    assert_ne!(Some("card-oldcard"), updated.cards[0].id().as_deref());
     assert!(!alix::workspace_update::staging_path(&workspace).exists());
 }
 
@@ -2958,7 +2958,7 @@ fn reset_by_token_card_id_without_a_target() {
 #[test]
 fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
     let dir = TempDir::new().unwrap();
-    let deck_text = "---\nalix-id: geography\n---\n## Capital of Japan? <!-- id: gj1 -->\nTokyo\n\n## Largest planet? <!-- id: gp1 -->\nJupiter\n";
+    let deck_text = "---\nid: deck-geography\n---\n## Capital of Japan? <!-- id: card-gj1 -->\nTokyo\n\n## Largest planet? <!-- id: card-gp1 -->\nJupiter\n";
     let deck = write(dir.path(), "geo.md", deck_text);
     let cards = alix::parser::parse_str("geo.md", deck_text).unwrap();
     let store_path = dir.path().join("state");
@@ -3001,7 +3001,7 @@ fn reset_by_text_query_with_no_match_reports_nothing() {
     let deck = write(
         dir.path(),
         "geo.md",
-        "---\nalix-id: geography\n---\n## Capital of Japan? <!-- id: gj1 -->\nTokyo\n",
+        "---\nid: deck-geography\n---\n## Capital of Japan? <!-- id: card-gj1 -->\nTokyo\n",
     );
     let store_path = dir.path().join("state");
     let out = alix(&[
@@ -3029,7 +3029,7 @@ fn sigterm_flushes_and_exits_the_server_cleanly() {
     let deck = write(
         dir.path(),
         "d.md",
-        "---\nalix-id: sigdeck\n---\n## q <!-- id: sig1 -->\na\n",
+        "---\nid: deck-sigdeck\n---\n## q <!-- id: card-sig1 -->\na\n",
     );
     assert!(alix(&["deck", "init", &deck]).status.success());
 

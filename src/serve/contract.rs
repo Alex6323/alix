@@ -174,7 +174,7 @@ fn statedto_review_phase_wire_shape() {
         promotable: true,
         label: "rust.md".to_string(),
         save_error: Some(
-            "progress/rust1.json: stale progress revision 3; disk is at 4".to_string(),
+            "progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
         ),
     };
     pin(
@@ -263,7 +263,7 @@ fn statedto_review_phase_wire_shape() {
             "can_restart": true,
             "promotable": true,
             "label": "rust.md",
-            "save_error": "progress/rust1.json: stale progress revision 3; disk is at 4"
+            "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4"
         }),
     );
 }
@@ -1112,12 +1112,12 @@ fn askdto_with_draft_wire_shape() {
 
 #[test]
 fn createcardresp_wire_shape() {
-    // A card's wire id is its identity token verbatim, or a suffixed
-    // `token-N` / `token-r` for a cloze hole / reversed twin.
+    // A card's wire id is its prefixed identity: `card-<token>`, or a suffixed
+    // `card-<token>-N` / `card-<token>-r` for a cloze hole / reversed twin.
     let dto = CreateCardResp {
-        id: "9w2c7xkq4m".to_string(),
+        id: "card-9w2c7xkq4m".to_string(),
     };
-    pin("CreateCardResp", &dto, json!({"id": "9w2c7xkq4m"}));
+    pin("CreateCardResp", &dto, json!({"id": "card-9w2c7xkq4m"}));
 }
 
 #[test]

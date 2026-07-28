@@ -181,7 +181,7 @@ deck; synchronous, no polling. Both endpoints are adult-only (`403` when
 `[serve] audience = "kids"`) and both require an active review (`409`);
 `/api/ask/card/create` further `409`s when the review has no current card,
 and rejects an unparseable body with `400`. Success is `200` with `{"id":
-"<token>"}` (`CreateCardResp`), not `201`: alix's JSON responder
+"card-<token>"}` (`CreateCardResp`), not `201`: alix's JSON responder
 always answers `200` on success, so "created" is expressed by the DTO shape,
 not the status line. A duplicate (the card's canonical content already exists
 in the deck, authored or virtual) or malformed front/back (empty after
@@ -229,8 +229,8 @@ only augmentation documents whose stable IDs match its initialized decks and
 recursively excludes `progress/`, recent state, local pacing, temporary files,
 backups, hidden files, and conflict copies. A single
 deck with augmentation or deck-owned assets travels in an internal bundle
-containing the `.md` file, `assets/<deck-id>/`, and
-`augment/<deck-id>.json` when present. Progress never travels. `deck` is the same resolution-map name
+containing the `.md` file, `assets/deck-<token>/`, and
+`augment/deck-<token>.json` when present. Progress never travels. `deck` is the same resolution-map name
 `/api/select` uses; absent/`null` shares the served root. `phase` walks
 `"staging"` (job started, no code yet) → `"code"`
 (`code` set, show it to the other side) → `"sent"`, or `"error"` at any
@@ -557,8 +557,9 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 
 ### CitationDto
 
-`locator: string` is the authored locator, or the original live-source label
-for a frozen excerpt. `excerpt: ExcerptDto?` is that locator's resolved source
+`locator: string` is the citation's `at:` source label (its real
+`<src>:<lines>`), which for a frozen excerpt is the original source path
+re-pointed from the frozen asset. `excerpt: ExcerptDto?` is that locator's resolved source
 panel. `error: string?` explains why this locator could not resolve or why its
 fingerprint no longer matches. A mismatched, missing, or ambiguous fingerprint
 never returns newly addressed source lines. Exactly one of `excerpt` and
@@ -702,15 +703,17 @@ clients use it to name who is answering), `model: string`, `effort: string`
 `front: string`, `back: [string]`, the learner's edited draft. It derives
 `Deserialize` only, so it is documented here but not snapshot-pinned (§8's
 "request bodies aren't snapshot-tested" note). `CreateCardResp`: `id: string`
-is the newly minted virtual card's identity token, matching how the store keys
-ids.
+is the newly minted virtual card's prefixed id (`card-<token>`), matching how
+the store keys ids.
 
 **Card id format.** A card id is always a JSON **string** on the wire (it has
 always been, since JSON object keys are strings). Its *value* is the card's
-identity **token** verbatim: a bare `token` for a plain card, `token-N` for
-cloze hole *N* (0-based document order), or `token-r` for the reversed half of
-a dual-direction card. It is no longer a decimal `u64`. Clients must treat an
-id as an opaque string and never parse it as a number.
+prefixed **id**: `card-<token>` for a plain card, `card-<token>-N` for
+cloze hole *N* (0-based document order), or `card-<token>-r` for the reversed
+half of a dual-direction card. Deck ids are `deck-<token>` and name the deck's
+state documents (`progress/deck-<token>.json`, `augment/deck-<token>.json`) and
+asset directory (`assets/deck-<token>/`). It is no longer a decimal `u64`.
+Clients must treat an id as an opaque string and never parse it as a number.
 
 ### VersionDto
 

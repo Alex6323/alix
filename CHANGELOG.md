@@ -39,6 +39,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking (pre-1.0):** deck ids are now self-describing and prefixed. A deck
+  declares `id: "deck-<token>"` (the `id:` frontmatter key replaces `alix-id:`),
+  and every card marker is `<!-- id: card-<token> -->` (`card-<token>-N` for a
+  cloze hole, `card-<token>-r` for a reversed twin). The same prefixed id names
+  the deck's state documents (`progress/deck-<token>.json`,
+  `augment/deck-<token>.json`) and asset directory (`assets/deck-<token>/`), and
+  `requires:` accepts a `deck-<token>` id so a prerequisite survives a rename.
+  Source citations use named fields, `<!-- at: <src>:<lines> fingerprint:
+  xxh64-<hex> asset: sha256-<hex>.<ext> -->`, replacing the old ` @ xxh64:`
+  form: `at:` is always the real source path, and `asset:` (present only on a
+  frozen citation) holds the cited excerpt exactly. Freezing no longer rewrites
+  `source:`; a frozen deck keeps its real origin. Old-format decks fail to load
+  loudly and the deck conversion tool rewrites them; there is no runtime reader
+  for the old shape. `alix doctor` flags an un-converted bare-token state
+  document or a `source:` that points into `assets/`.
 - Progress and augmentation documents now reject an unrecognized field instead
   of ignoring it. Before, renaming or removing a field in a future build would
   let old documents load with that field silently dropped, losing that data on
@@ -57,10 +72,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking (pre-1.0):** initializing a source-backed workspace member now
   freezes explicit source files, bounded directory citations, and local card
   images before success. Exact bytes live under
-  `assets/<alix-id>/sha256-<digest>.<ext>`; frozen `source:` values enumerate
-  their evidence files, runtime source consumers fail closed on live,
-  cross-deck, missing, or corrupted assets, and `origin:` is separately gated
-  current context rather than a replacement for frozen evidence.
+  `assets/deck-<token>/sha256-<digest>.<ext>` and hold the cited excerpts;
+  `source:` stays the deck's real origin, runtime source consumers fail closed
+  on live, cross-deck, missing, or corrupted assets, and `origin:` is separately
+  gated current context rather than a replacement for frozen evidence.
 - Single-deck sharing now carries and validates the complete deck-owned asset
   directory plus matching augmentation while continuing to exclude progress.
   Generated workspaces freeze in hidden staging before publication, and merges
@@ -83,7 +98,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gain `back_units`, the core projection used to render ordinary answer prose
   independently of authored physical line wrapping.
 - **Breaking (pre-1.0):** every complete `<!-- at: ... -->` citation now carries
-  an `@ xxh64:...` excerpt fingerprint. Review, trace, tutor grounding, and
+  a named `fingerprint: xxh64-...` field. Review, trace, tutor grounding, and
   grading fail closed when the addressed text does not match, showing a warning
   instead of unrelated source. Generated and frozen citations are stamped at
   creation; hand-authored citations remain incomplete until explicitly
@@ -95,10 +110,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at the workspace. Workspace creation and every generation/import/receive
   surface write the new shape, while `alix doctor` reports initialized root
   decks that are not discovered. Existing workspaces must move their deck files
-  into `decks/` without changing `alix-id` or card IDs.
+  into `decks/` without changing its `id:` or card ids.
 - **Breaking (pre-1.0):** progress and AI augmentation now live in independently
   versioned documents per initialized deck:
-  `progress/<alix-id>.json` and `augment/<alix-id>.json`. Renaming a deck keeps
+  `progress/deck-<token>.json` and `augment/deck-<token>.json`. Renaming a deck keeps
   its state, reviewing different decks on different synced devices no longer
   rewrites one shared file, and stale local revisions fail instead of silently
   replacing a newer document. This is a clean pre-1.0 format break: production
@@ -110,12 +125,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   progress, temporary, backup, and conflict material.
 - **Breaking (pre-1.0):** a hand-authored Markdown file must be explicitly
   initialized with `alix deck init <file>` before it appears in the picker or
-  can be reviewed or augmented. A valid opening-frontmatter `alix-id` now
-  authorizes machine stamping; a generic `id` is ordinary metadata and grants
-  no write authority. Existing decks must rename the old `id` key to `alix-id`
-  without changing its token. Opening an initialized deck still assigns IDs to
-  newly added cards, while ordinary `.md` prose with `##` headings is ignored
-  and never modified.
+  can be reviewed or augmented. `alix deck init` stamps a fresh
+  `id: "deck-<token>"`; a frontmatter `id:` whose value is not a `deck-<token>`
+  id is rejected rather than adopted. Opening an initialized deck still assigns
+  ids to newly added cards, while ordinary `.md` prose with `##` headings is
+  ignored and never modified.
 - Production CI and release workflows now select exact Rust, Flutter, Java,
   Node, Android NDK, FRB codegen, mdBook, and coverage-tool versions. Every
   directly referenced GitHub Action uses an immutable commit SHA, a blocking
