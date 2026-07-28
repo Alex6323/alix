@@ -12,7 +12,7 @@ use crate::{
     augment::{AugmentCache, Topology, TopologyOrder},
     card::Card,
     config::{AskConfig, ReviewConfig},
-    deck::{Deck, DeckSettings},
+    deck::{Deck, DeckSettings, SourceLayers},
     depth::{Depth, default_depth},
     parser,
     scheduler::Fsrs,
@@ -93,8 +93,8 @@ pub struct SessionBuild {
     pub label: String,
     pub decks: HashMap<String, PathBuf>,
     pub links: HashMap<String, Vec<String>>,
-    pub origin_urls: HashMap<String, String>,
-    pub origin_roots: HashMap<String, PathBuf>,
+    pub source_layers: HashMap<String, SourceLayers>,
+    pub base_roots: HashMap<String, PathBuf>,
     pub source_bases: HashMap<String, SourceBase>,
     pub topology_name: Option<String>,
     pub augment: AugmentCache,
@@ -213,8 +213,8 @@ pub fn load_decks(
                 path: deck.path.clone(),
                 deck_token: deck.deck_token.clone(),
                 links: deck.reference_links(),
-                origin_url: deck.origin_url(),
-                origin_root: deck.origin_root(),
+                source_layers: deck.source_layers(),
+                base_root: deck.base_root(),
                 source_access: false,
                 source_base: SourceBase::for_deck(&deck),
             },
@@ -546,21 +546,27 @@ pub fn select(
 
     let links = decks
         .values()
-        .map(|info| (info.deck_token.clone().unwrap_or_default(), info.links.clone()))
-        .collect();
-    let origin_urls = decks
-        .values()
-        .filter_map(|info| {
-            info.origin_url
-                .clone()
-                .map(|origin| (info.deck_token.clone().unwrap_or_default(), origin))
+        .map(|info| {
+            (
+                info.deck_token.clone().unwrap_or_default(),
+                info.links.clone(),
+            )
         })
         .collect();
-    let origin_roots = decks
+    let source_layers = decks
+        .values()
+        .map(|info| {
+            (
+                info.deck_token.clone().unwrap_or_default(),
+                info.source_layers.clone(),
+            )
+        })
+        .collect();
+    let base_roots = decks
         .values()
         .filter(|info| info.source_access)
         .filter_map(|info| {
-            info.origin_root
+            info.base_root
                 .clone()
                 .map(|root| (info.deck_token.clone().unwrap_or_default(), root))
         })
@@ -580,8 +586,8 @@ pub fn select(
         label,
         decks: deck_id_paths(decks),
         links,
-        origin_urls,
-        origin_roots,
+        source_layers,
+        base_roots,
         source_bases,
         topology_name,
         augment,
@@ -855,8 +861,16 @@ it reads line two\n\
         )
         .unwrap();
 
-        assert_eq!(1, store.get("card-fillcard-1").unwrap().total_reviews, "alpha");
-        assert_eq!(2, store.get("card-fillcard-0").unwrap().total_reviews, "beta");
+        assert_eq!(
+            1,
+            store.get("card-fillcard-1").unwrap().total_reviews,
+            "alpha"
+        );
+        assert_eq!(
+            2,
+            store.get("card-fillcard-0").unwrap().total_reviews,
+            "beta"
+        );
     }
 
     #[test]
@@ -1249,7 +1263,10 @@ it reads line two\n\
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
         let path = ws.join("decks/d.md");
-        write_initialized(&path, "## List the parts <!-- id: card-qlist -->\nA, B, C\n");
+        write_initialized(
+            &path,
+            "## List the parts <!-- id: card-qlist -->\nA, B, C\n",
+        );
 
         let raw = browse(vec![path.clone()], None).unwrap();
         let id = raw.cards[0].id().unwrap();

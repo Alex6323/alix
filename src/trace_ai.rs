@@ -591,7 +591,7 @@ mod tests {
         write(
             &root.join("ws"),
             "alix.toml",
-            "title = \"W\"\n\n[defaults]\norigin = \"../src\"\n",
+            "title = \"W\"\nsource = \"../src\"\n",
         );
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(
@@ -628,7 +628,7 @@ mod tests {
             text.contains("source: ../src"),
             "the live source declaration stays untouched: {text}"
         );
-        assert!(text.contains("origin: "), "{text}");
+        assert!(!text.contains("origin:"), "freezing stamps nothing: {text}");
         assert!(
             text.contains("<!-- at: a.rs:2-3 fingerprint: xxh64-")
                 && text.contains(&format!(" asset: {first} -->\n")),
@@ -683,7 +683,9 @@ mod tests {
         let excerpt_name = crate::assets::object_name(b"L2\n", "md");
         assert_eq!(1, report.freeze.unwrap().evidence);
         assert!(
-            !root.join(format!("ws/assets/{deck_id}/{whole_name}")).exists(),
+            !root
+                .join(format!("ws/assets/{deck_id}/{whole_name}"))
+                .exists(),
             "no whole-file object is written"
         );
         assert!(
@@ -767,12 +769,17 @@ mod tests {
 
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
+        // A URL source holds no freezable bytes, so a citation with no local
+        // source to land in refuses the freeze.
         let url = write(
             &root.join("ws/decks"),
             "u.md",
             "---\ntrace: t\nsource: https://example.com/p\n---\n## h\np\n<!-- at: 1 -->\n",
         );
         let err = crate::assets::initialize(&url).unwrap_err();
-        assert!(format!("{err:#}").contains("remote source"), "{err:#}");
+        assert!(
+            format!("{err:#}").contains("cannot freeze citation"),
+            "{err:#}"
+        );
     }
 }

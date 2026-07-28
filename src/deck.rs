@@ -23,7 +23,6 @@ pub struct DeckSettings {
     pub order: Option<Order>,
     pub direction: Option<Direction>,
     pub exam_strictness: Option<Strictness>,
-    pub origin: Option<String>,
 }
 
 impl DeckSettings {
@@ -36,12 +35,6 @@ impl DeckSettings {
                 "order" => settings.order = Order::parse(value),
                 "direction" => settings.direction = Direction::parse(value),
                 "strictness" => settings.exam_strictness = Strictness::parse(value),
-                "origin" => {
-                    let v = value.trim();
-                    if !v.is_empty() {
-                        settings.origin = Some(v.to_string());
-                    }
-                }
                 _ => {}
             }
         }
@@ -56,7 +49,6 @@ impl DeckSettings {
             direction: frontmatter.direction,
             // Learner setting: a deck never ships grading rigor.
             exam_strictness: None,
-            origin: frontmatter.origin.clone(),
         }
     }
 
@@ -66,7 +58,6 @@ impl DeckSettings {
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
-        self.origin = self.origin.clone().or_else(|| defaults.origin.clone());
     }
 }
 
@@ -195,7 +186,7 @@ impl Deck {
     }
 
     pub fn has_exam(&self) -> bool {
-        self.is_trace() || !self.sources.is_empty() || self.origin_url().is_some()
+        self.is_trace() || !self.sources.is_empty() || !self.workspace_sources().is_empty()
     }
 
     pub fn display_name(&self) -> String {
@@ -238,55 +229,82 @@ impl Deck {
 
     pub fn reference_links(&self) -> Vec<String> {
         let mut out = self.links.clone();
-        for src in &self.sources {
-            if is_url(src) && !out.contains(src) {
-                out.push(src.clone());
+        for url in self.source_urls() {
+            if !out.contains(&url) {
+                out.push(url);
             }
-        }
-        if let Some(origin) = self.origin_url()
-            && !out.contains(&origin)
-        {
-            out.push(origin);
         }
         out
     }
 
-    pub fn origin_url(&self) -> Option<String> {
-        self.effective_origin().filter(|origin| is_url(origin))
+    /// The workspace manifest's `source`: the material the workspace is about,
+    /// layered under every member's own sources as supporting context.
+    pub fn workspace_sources(&self) -> Vec<String> {
+        crate::workspace::manifest_source(&crate::workspace::content_root(&self.path))
     }
 
-    pub fn origin_root(&self) -> Option<PathBuf> {
-        let origin = self.effective_origin()?;
-        (!is_url(&origin)).then(|| {
-            let content_root = crate::workspace::content_root(&self.path);
-            resolve_origin_root(&origin, &content_root)
-        })
+    pub fn source_layers(&self) -> SourceLayers {
+        let own = self.sources.clone();
+        let workspace = self
+            .workspace_sources()
+            .into_iter()
+            .filter(|source| !own.contains(source))
+            .collect();
+        SourceLayers { own, workspace }
     }
 
-    pub fn effective_origin(&self) -> Option<String> {
-        let content_root = crate::workspace::content_root(&self.path);
-        if let Some(origin) = &self.settings.origin {
-            return Some(origin.clone());
+    pub fn source_urls(&self) -> Vec<String> {
+        let layers = self.source_layers();
+        let mut out = Vec::new();
+        for source in layers.own.iter().chain(&layers.workspace) {
+            if is_url(source) && !out.contains(source) {
+                out.push(source.clone());
+            }
         }
-        let (_, _, workspace_settings, _) =
-            crate::workspace::read_manifest(&content_root.join(crate::workspace::MANIFEST));
-        workspace_settings.origin
+        out
+    }
+
+    /// The single mechanical base: the deck's first local-path source, falling
+    /// back to the workspace source when the deck declares none (ADR 0026).
+    pub fn base_root(&self) -> Option<PathBuf> {
+        let layers = self.source_layers();
+        let local = layers
+            .own
+            .iter()
+            .chain(&layers.workspace)
+            .find(|source| !is_url(source))?;
+        let content_root = crate::workspace::content_root(&self.path);
+        Some(resolve_base_root(local, &content_root))
     }
 
     pub fn is_frozen(&self) -> bool {
-        self.cards
-            .iter()
-            .any(|card| card.citations.iter().any(|citation| citation.asset.is_some()))
+        self.cards.iter().any(|card| {
+            card.citations
+                .iter()
+                .any(|citation| citation.asset.is_some())
+        })
     }
 }
 
-fn resolve_origin_root(origin: &str, deck_dir: &Path) -> PathBuf {
-    let origin = origin.split(" + ").next().unwrap_or(origin).trim();
-    let origin = Path::new(origin);
-    let path = if origin.is_absolute() {
-        origin.to_path_buf()
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SourceLayers {
+    pub own: Vec<String>,
+    pub workspace: Vec<String>,
+}
+
+impl SourceLayers {
+    pub fn is_empty(&self) -> bool {
+        self.own.is_empty() && self.workspace.is_empty()
+    }
+}
+
+fn resolve_base_root(source: &str, content_root: &Path) -> PathBuf {
+    let first = source.split(" + ").next().unwrap_or(source).trim();
+    let first = Path::new(first);
+    let path = if first.is_absolute() {
+        first.to_path_buf()
     } else {
-        deck_dir.join(origin)
+        content_root.join(first)
     };
     let path = path.canonicalize().unwrap_or(path);
     if path.is_file() {
@@ -638,7 +656,7 @@ fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
     (joined, rewritten)
 }
 
-pub fn with_origin(text: &str, origin: &str) -> Result<String, DeckError> {
+pub fn with_sources(text: &str, sources: &[String]) -> Result<String, DeckError> {
     let parsed = parser::parse("deck.md", text).map_err(|source| DeckError::Parse {
         path: PathBuf::from("deck.md"),
         source,
@@ -659,9 +677,9 @@ pub fn with_origin(text: &str, origin: &str) -> Result<String, DeckError> {
         let line_number = index + 1;
         if line_number > open && line_number < close {
             if let Some(key) = top_level_yaml_key(line) {
-                skipping = key == "origin";
+                skipping = key == "source";
                 if skipping && !inserted {
-                    out.push(format!("origin: {}", parser::yaml_quote(origin)));
+                    push_source_lines(&mut out, sources);
                     inserted = true;
                 }
                 if skipping {
@@ -673,7 +691,7 @@ pub fn with_origin(text: &str, origin: &str) -> Result<String, DeckError> {
             }
         }
         if line_number == close && !inserted {
-            out.push(format!("origin: {}", parser::yaml_quote(origin)));
+            push_source_lines(&mut out, sources);
             inserted = true;
         }
         out.push(line.to_string());
@@ -685,11 +703,36 @@ pub fn with_origin(text: &str, origin: &str) -> Result<String, DeckError> {
     Ok(joined)
 }
 
+pub fn with_added_source(text: &str, value: &str) -> Result<String, DeckError> {
+    let parsed = parser::parse("deck.md", text).map_err(|source| DeckError::Parse {
+        path: PathBuf::from("deck.md"),
+        source,
+    })?;
+    let mut sources = parsed.frontmatter.source.clone();
+    if sources.iter().any(|existing| existing == value) {
+        return Ok(text.to_string());
+    }
+    sources.push(value.to_string());
+    with_sources(text, &sources)
+}
+
+fn push_source_lines(out: &mut Vec<String>, sources: &[String]) {
+    match sources {
+        [] => {}
+        [only] => out.push(format!("source: {}", parser::yaml_quote(only))),
+        many => {
+            out.push("source:".to_string());
+            for source in many {
+                out.push(format!("  - {}", parser::yaml_quote(source)));
+            }
+        }
+    }
+}
+
 pub(crate) fn rewrite_frozen_assets(
     text: &str,
     frontmatter_span: Option<crate::parser::LineSpan>,
     source: Option<&str>,
-    origin: Option<&str>,
     ats: &[AtRewrite],
     replacements: &[(Range<usize>, String)],
 ) -> Result<String, DeckError> {
@@ -697,7 +740,7 @@ pub(crate) fn rewrite_frozen_assets(
     let Some((open, close)) = frontmatter_span else {
         return Ok(rewrite_source_citations(&text, ats).0);
     };
-    let mut inserted = false;
+    let mut inserted = source.is_none();
     let mut skipping = false;
     let mut at_index = 0;
     let mut out: Vec<String> = Vec::new();
@@ -708,9 +751,9 @@ pub(crate) fn rewrite_frozen_assets(
             if let Some(key) = top_level_yaml_key(line) {
                 // With no replacement source, the deck's own `source:` stays
                 // untouched (ADR 0026: freezing never rewrites it).
-                skipping = key == "origin" || (source.is_some() && key == "source");
+                skipping = source.is_some() && key == "source";
                 if skipping && !inserted {
-                    push_frozen_frontmatter(&mut out, source, origin);
+                    push_replacement_source(&mut out, source);
                     inserted = true;
                 }
                 if skipping {
@@ -724,7 +767,7 @@ pub(crate) fn rewrite_frozen_assets(
             continue;
         }
         if line_number == close && !inserted {
-            push_frozen_frontmatter(&mut out, source, origin);
+            push_replacement_source(&mut out, source);
             inserted = true;
         }
         if at_index < ats.len()
@@ -794,12 +837,9 @@ fn top_level_yaml_key(line: &str) -> Option<&str> {
         .filter(|key| !key.is_empty())
 }
 
-fn push_frozen_frontmatter(out: &mut Vec<String>, source: Option<&str>, origin: Option<&str>) {
+fn push_replacement_source(out: &mut Vec<String>, source: Option<&str>) {
     if let Some(source) = source {
         out.push(format!("source: {}", parser::yaml_quote(source)));
-    }
-    if let Some(origin) = origin {
-        out.push(format!("origin: {}", parser::yaml_quote(origin)));
     }
 }
 
@@ -1540,89 +1580,7 @@ mod tests {
     }
 
     #[test]
-    fn origin_cascades_workspace_then_deck() {
-        let mut deck =
-            DeckSettings::from_directives(&[("origin".to_string(), "/deck".to_string())]);
-        deck.fill_from(&DeckSettings::from_directives(&[(
-            "origin".to_string(),
-            "/ws".to_string(),
-        )]));
-        assert_eq!(Some("/deck".to_string()), deck.origin);
-        let mut bare = DeckSettings::default();
-        bare.fill_from(&DeckSettings::from_directives(&[(
-            "origin".to_string(),
-            "/ws".to_string(),
-        )]));
-        assert_eq!(Some("/ws".to_string()), bare.origin);
-    }
-
-    #[test]
-    fn origin_root_resolves_a_relative_deck_origin() {
-        let dir = tempfile::tempdir().unwrap();
-        let decks = dir.path().join("decks");
-        let source = dir.path().join("source");
-        std::fs::create_dir_all(&decks).unwrap();
-        std::fs::create_dir_all(&source).unwrap();
-        let path = write_deck(
-            &decks,
-            "d.md",
-            "---\nsource: ../source/file.rs\norigin: ../source\n---\n## f\nb\n",
-        );
-
-        assert_eq!(
-            Some(source.canonicalize().unwrap()),
-            Deck::load(path).unwrap().origin_root()
-        );
-    }
-
-    #[test]
-    fn frozen_source_keeps_its_local_origin_available_separately() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().join("workspace");
-        let source = dir.path().join("source");
-        let decks = workspace.join(crate::workspace::DECKS);
-        std::fs::create_dir_all(&decks).unwrap();
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::write(workspace.join(crate::workspace::MANIFEST), "").unwrap();
-        let path = write_deck(
-            &decks,
-            "d.md",
-            "---\nid: deck-deck1\n\
-             source: assets/deck1/sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.rs\n\
-             origin: ../source\n---\n## f\nb\n",
-        );
-        let deck = Deck::load(path).unwrap();
-
-        assert_eq!(Some(source.canonicalize().unwrap()), deck.origin_root());
-    }
-
-    #[test]
-    fn origin_root_prefers_a_workspace_origin() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().join("workspace");
-        let source = dir.path().join("source");
-        let members = workspace.join(crate::workspace::DECKS);
-        std::fs::create_dir_all(&members).unwrap();
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::write(
-            workspace.join(crate::workspace::MANIFEST),
-            "[defaults]\norigin = \"../source\"\n",
-        )
-        .unwrap();
-        let path = write_deck(
-            &members,
-            "d.md",
-            "---\nsource: ../source/file.rs\n---\n## f\nb\n",
-        );
-
-        assert_eq!(
-            Some(source.canonicalize().unwrap()),
-            Deck::load(path).unwrap().origin_root()
-        );
-    }
-
-    #[test]
-    fn origin_root_is_not_inferred_from_a_source_path() {
+    fn base_root_derives_from_the_first_local_source() {
         let dir = tempfile::tempdir().unwrap();
         let decks = dir.path().join("decks");
         let source = dir.path().join("project/src/lib.rs");
@@ -1635,31 +1593,155 @@ mod tests {
             &format!("---\nsource: {}\n---\n## f\nb\n", source.to_string_lossy()),
         );
 
-        assert_eq!(None, Deck::load(path).unwrap().origin_root());
+        // ADR 0026: the deck's first local-path source IS the mechanical base;
+        // a file source resolves to its directory.
+        assert_eq!(
+            Some(source.parent().unwrap().canonicalize().unwrap()),
+            Deck::load(path).unwrap().base_root()
+        );
     }
 
     #[test]
-    fn reference_links_union_url_sources_and_origin_excluding_files_and_dupes() {
+    fn base_root_resolves_a_relative_source_against_the_content_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join("decks");
+        let source = dir.path().join("source");
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        let path = write_deck(&decks, "d.md", "---\nsource: ../source\n---\n## f\nb\n");
+
+        assert_eq!(
+            Some(source.canonicalize().unwrap()),
+            Deck::load(path).unwrap().base_root()
+        );
+    }
+
+    #[test]
+    fn base_root_skips_url_sources_and_falls_back_to_the_workspace_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let source = dir.path().join("source");
+        let members = workspace.join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            workspace.join(crate::workspace::MANIFEST),
+            "source = \"../source\"\n",
+        )
+        .unwrap();
+        let path = write_deck(
+            &members,
+            "d.md",
+            "---\nsource: https://example.org/page\n---\n## f\nb\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+
+        assert_eq!(Some(source.canonicalize().unwrap()), deck.base_root());
+
+        let own = write_deck(
+            &members,
+            "own.md",
+            "---\nsource: ../source/file.rs\n---\n## f\nb\n",
+        );
+        std::fs::write(source.join("file.rs"), "x\n").unwrap();
+        // The deck's own local source wins over the workspace source.
+        assert_eq!(
+            Some(source.canonicalize().unwrap()),
+            Deck::load(own).unwrap().base_root()
+        );
+    }
+
+    #[test]
+    fn a_deck_without_any_local_source_has_no_base_root() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nlink: https://a.example\nsource:\n  - https://b.example\n  - notes.md\n  - https://a.example\norigin: https://origin.example\n---\n## f\nb\n",
+            "---\nsource: https://example.org/page\n---\n## f\nb\n",
+        );
+        assert_eq!(None, Deck::load(path).unwrap().base_root());
+    }
+
+    #[test]
+    fn source_layers_carry_the_workspace_source_without_shadowing() {
+        let dir = tempfile::tempdir().unwrap();
+        let members = dir.path().join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            dir.path().join(crate::workspace::MANIFEST),
+            "source = [\"https://ws.example\", \"notes.md\"]\n",
+        )
+        .unwrap();
+        let path = write_deck(&members, "d.md", "---\nsource: own.rs\n---\n## f\nb\n");
+        let deck = Deck::load(&path).unwrap();
+
+        assert_eq!(
+            SourceLayers {
+                own: vec!["own.rs".to_string()],
+                workspace: vec!["https://ws.example".to_string(), "notes.md".to_string()],
+            },
+            deck.source_layers()
+        );
+        assert!(deck.has_exam());
+    }
+
+    #[test]
+    fn a_workspace_source_alone_confers_an_exam() {
+        let dir = tempfile::tempdir().unwrap();
+        let members = dir.path().join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            dir.path().join(crate::workspace::MANIFEST),
+            "source = \"notes.md\"\n",
+        )
+        .unwrap();
+        let path = write_deck(&members, "d.md", "## f\nb\n");
+        assert!(Deck::load(&path).unwrap().has_exam());
+
+        let bare = tempfile::tempdir().unwrap();
+        let alone = write_deck(bare.path(), "d.md", "## f\nb\n");
+        assert!(!Deck::load(&alone).unwrap().has_exam());
+    }
+
+    #[test]
+    fn a_local_source_confers_an_exam() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.md", "---\nsource: notes.md\n---\n## f\nb\n");
+        assert!(Deck::load(&path).unwrap().has_exam());
+    }
+
+    #[test]
+    fn reference_links_union_deck_and_workspace_url_sources_excluding_files_and_dupes() {
+        let dir = tempfile::tempdir().unwrap();
+        let members = dir.path().join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            dir.path().join(crate::workspace::MANIFEST),
+            "source = \"https://ws.example\"\n",
+        )
+        .unwrap();
+        let path = write_deck(
+            &members,
+            "d.md",
+            "---\nlink: https://a.example\nsource:\n  - https://b.example\n  - notes.md\n  - https://a.example\n---\n## f\nb\n",
         );
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
             vec![
                 "https://a.example",
                 "https://b.example",
-                "https://origin.example"
+                "https://ws.example"
             ],
             deck.reference_links()
         );
         assert_eq!(
-            Some("https://origin.example".to_string()),
-            deck.origin_url()
+            vec![
+                "https://b.example",
+                "https://a.example",
+                "https://ws.example"
+            ],
+            deck.source_urls()
         );
-        assert_eq!(None, deck.origin_root());
     }
 
     #[test]
@@ -1930,20 +2012,19 @@ mod tests {
 
     #[test]
     fn frozen_asset_rewrite_replaces_yaml_lists_and_image_destinations() {
-        let text = "---\nsource:\n  - ../README.md\n  - ../src/lib.rs\norigin: ..\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src/lib.rs:2 -->\n";
+        let text = "---\nsource:\n  - ../README.md\n  - ../src/lib.rs\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src/lib.rs:2 -->\n";
         let parsed = parser::parse("t.md", text).unwrap();
         let image = parser::image_references(text).remove(0);
         let ats = [AtRewrite {
             at: "src/lib.rs:2".into(),
             fingerprint: Some(7),
             asset: Some("sha256-source.rs".into()),
-            line: 12,
+            line: 11,
         }];
 
         let out = rewrite_frozen_assets(
             text,
             parsed.frontmatter_span,
-            Some("assets/deck/sha256-source.rs"),
             Some("../source tree"),
             &ats,
             &[(image.destination, "assets/deck/sha256-image.png".into())],
@@ -1951,9 +2032,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(1, out.matches("source:").count(), "{out}");
-        assert_eq!(1, out.matches("origin:").count(), "{out}");
-        assert!(out.contains("source: \"assets/deck/sha256-source.rs\"\n"));
-        assert!(out.contains("origin: \"../source tree\"\n"));
+        assert!(out.contains("source: \"../source tree\"\n"));
         assert!(out.contains("title: kept\n"));
         assert!(out.contains("![diagram](<assets/deck/sha256-image.png>)"));
         assert!(out.contains(
@@ -1964,38 +2043,62 @@ mod tests {
     }
 
     #[test]
-    fn frozen_asset_rewrite_without_a_source_preserves_the_source_yaml() {
-        let text = "---\nsource: ../src\norigin: old\n---\n## q\na\n<!-- at: src/lib.rs:2 -->\n";
+    fn frozen_asset_rewrite_without_a_source_preserves_the_source_yaml_and_stamps_nothing() {
+        let text = "---\nsource: ../src\n---\n## q\na\n<!-- at: src/lib.rs:2 -->\n";
         let parsed = parser::parse("t.md", text).unwrap();
         let ats = [AtRewrite {
             at: "src/lib.rs:2".into(),
             fingerprint: Some(7),
             asset: Some("sha256-source.rs".into()),
-            line: 7,
+            line: 6,
         }];
 
-        let out =
-            rewrite_frozen_assets(text, parsed.frontmatter_span, None, Some("../src"), &ats, &[])
-                .unwrap();
+        let out = rewrite_frozen_assets(text, parsed.frontmatter_span, None, &ats, &[]).unwrap();
 
         assert!(out.contains("source: ../src\n"), "{out}");
-        assert!(out.contains("origin: \"../src\"\n"), "{out}");
-        assert_eq!(1, out.matches("origin:").count(), "{out}");
+        assert!(!out.contains("origin:"), "freezing stamps nothing: {out}");
         assert!(out.contains(
             "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
         ));
     }
 
     #[test]
-    fn with_origin_preserves_source_yaml_and_replaces_the_origin() {
-        let text = "---\nsource:\n  - a.md\n  - b.md\norigin: old\ntrace: t\n---\n## q\na\n";
-        let out = with_origin(text, "https://example.org/current").unwrap();
-        assert!(out.contains("source:\n  - a.md\n  - b.md\n"), "{out}");
+    fn with_sources_replaces_the_source_list_preserving_other_yaml() {
+        let text = "---\nsource:\n  - a.md\n  - b.md\ntrace: t\n---\n## q\na\n";
+        let out = with_sources(
+            text,
+            &["/abs/a.md".to_string(), "https://example.org".to_string()],
+        )
+        .unwrap();
         assert!(
-            out.contains("origin: \"https://example.org/current\"\n"),
+            out.contains("source:\n  - \"/abs/a.md\"\n  - \"https://example.org\"\n"),
             "{out}"
         );
         assert!(out.contains("trace: t\n"), "{out}");
-        assert_eq!(1, out.matches("origin:").count(), "{out}");
+        assert_eq!(1, out.matches("source:").count(), "{out}");
+        assert!(!out.contains("a.md\n  - b.md"), "{out}");
+    }
+
+    #[test]
+    fn with_added_source_appends_once_and_keeps_an_existing_value() {
+        let text = "---\nsource: page.md\n---\n## q\na\n";
+        let out = with_added_source(text, "https://example.org/current").unwrap();
+        assert!(
+            out.contains("source:\n  - \"page.md\"\n  - \"https://example.org/current\"\n"),
+            "{out}"
+        );
+        assert_eq!(
+            out,
+            with_added_source(&out, "https://example.org/current").unwrap(),
+            "adding a duplicate is a no-op"
+        );
+
+        let sourceless = "---\ntrace: t\n---\n## q\na\n";
+        let out = with_added_source(sourceless, "https://example.org/current").unwrap();
+        assert!(
+            out.contains("source: \"https://example.org/current\"\n"),
+            "{out}"
+        );
+        assert!(out.contains("trace: t\n"), "{out}");
     }
 }

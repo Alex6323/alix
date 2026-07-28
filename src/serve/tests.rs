@@ -32,20 +32,20 @@ fn unconfigured_token_leaves_everything_open() {
 }
 
 #[test]
-fn tutor_origin_context_requires_a_fetch_capable_grant() {
-    assert!(can_fetch_origin(&AskConfig::default()));
+fn tutor_url_source_context_requires_a_fetch_capable_grant() {
+    assert!(can_fetch_url_sources(&AskConfig::default()));
 
     let no_fetch = AskConfig {
         allowed_tools: Vec::new(),
         ..AskConfig::default()
     };
-    assert!(!can_fetch_origin(&no_fetch));
+    assert!(!can_fetch_url_sources(&no_fetch));
 
     let codex = AskConfig {
         backend: crate::config::BackendKind::Codex,
         ..AskConfig::default()
     };
-    assert!(!can_fetch_origin(&codex));
+    assert!(!can_fetch_url_sources(&codex));
 }
 
 #[test]
@@ -895,8 +895,8 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
         label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
-        origin_urls: HashMap::new(),
-        origin_roots: HashMap::new(),
+        source_layers: HashMap::new(),
+        base_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
         augment,
@@ -1161,8 +1161,8 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
-        origin_urls: HashMap::new(),
-        origin_roots: HashMap::new(),
+        source_layers: HashMap::new(),
+        base_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
         augment: crate::augment::AugmentCache::open(deck.with_extension("generated.json")),
@@ -1253,7 +1253,7 @@ fn poll_ask_error_resets_session() {
 }
 
 #[test]
-fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
+fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let _lock = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("alix.toml"), "").unwrap();
@@ -1284,11 +1284,11 @@ fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
     );
     let mut decks = HashMap::new();
     decks.insert("deck-frozendeck1".to_string(), deck_path);
-    let mut origin_roots = HashMap::new();
+    let mut base_roots = HashMap::new();
     // Configured (`source_access` opted in), but unresolved on disk.
-    origin_roots.insert(
+    base_roots.insert(
         "deck-frozendeck1".to_string(),
-        dir.path().join("gone-origin"),
+        dir.path().join("gone-source"),
     );
     let mut source_bases = HashMap::new();
     source_bases.insert("deck-frozendeck1".to_string(), SourceBase::for_deck(&deck));
@@ -1297,8 +1297,8 @@ fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
         label: "d.md".to_string(),
         decks,
         links: HashMap::new(),
-        origin_urls: HashMap::new(),
-        origin_roots,
+        source_layers: HashMap::new(),
+        base_roots,
         source_bases,
         topology_name: None,
         augment: crate::augment::AugmentCache::open(dir.path().join("a.generated.json")),

@@ -49,7 +49,7 @@ frontmatter.
 - Remove cards the current source no longer supports.
 - Add only important new propositions that deepen understanding.
 - Keep one idea per card and avoid duplicates.
-- Keep `source:` and `origin:` exactly as supplied in the input deck.
+- Keep `source:` exactly as supplied in the input deck.
 - Use live `<!-- at: path:start-end -->` locators relative to the source root. \
 Read the real lines and never guess. Do not include fingerprints or `from`.
 - Keep the Alix Markdown deck grammar exactly.
@@ -165,8 +165,8 @@ fn stage_members(
                 path.display()
             );
         }
-        let origin = deck_origin(&deck)?;
-        let live_source = live_source_expression(&origin, root)?;
+        let pointer = reconcile_pointer(&deck)?;
+        let live_source = live_source_expression(&pointer, root)?;
         let relative = relative_member(path, root)?;
         let staged_path = staging.join(&relative);
         let baseline = digest_file(path)?;
@@ -174,14 +174,14 @@ fn stage_members(
             WorkspaceFiles::new(root).augment_for(deck.deck_token.as_deref().unwrap_or_default());
         let augment_baseline = digest_optional(&augment_path)?;
 
-        let live_deck = live_proposal_text(&deck, &live_source, &origin)?;
+        let live_deck = live_proposal_text(&deck, &live_source)?;
         let proposed = reconcile(&live_deck, &live_source, generate, ask)?;
         fs::write(&staged_path, proposed.as_bytes())
             .with_context(|| format!("cannot write {}", staged_path.display()))?;
 
         let candidate = Deck::load_with_defaults(&staged_path, &workspace.settings)
             .with_context(|| format!("cannot load proposed deck {}", staged_path.display()))?;
-        validate_proposal_metadata(&deck, &candidate, &live_source, &origin)?;
+        validate_proposal_metadata(&deck, &candidate, &live_source)?;
         let identity = validate_unstamped_proposal(&deck, &candidate)?;
 
         let initialized = assets::initialize(&staged_path)
@@ -236,7 +236,7 @@ fn stage_members(
 
     if staged_decks.is_empty() {
         bail!(
-            "{} has no frozen source-backed members with a local origin",
+            "{} has no frozen source-backed members with a local source",
             root.display()
         );
     }
@@ -325,7 +325,7 @@ fn copy_workspace_for_staging(root: &Path, staging: &Path) -> Result<()> {
     Ok(())
 }
 
-fn live_proposal_text(deck: &Deck, source: &str, origin: &str) -> Result<String> {
+fn live_proposal_text(deck: &Deck, source: &str) -> Result<String> {
     let text = fs::read_to_string(&deck.path)
         .with_context(|| format!("cannot read {}", deck.path.display()))?;
     let parsed = parser::parse(&deck.subject, &text)
@@ -346,24 +346,17 @@ fn live_proposal_text(deck: &Deck, source: &str, origin: &str) -> Result<String>
             });
         }
     }
-    crate::deck::rewrite_frozen_assets(
-        &text,
-        parsed.frontmatter_span,
-        Some(source),
-        Some(origin),
-        &ats,
-        &[],
-    )
-    .map_err(Into::into)
+    crate::deck::rewrite_frozen_assets(&text, parsed.frontmatter_span, Some(source), &ats, &[])
+        .map_err(Into::into)
 }
 
 fn reconcile(
     live_deck: &str,
-    origin: &str,
+    source: &str,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
 ) -> Result<String> {
-    let cwd = origin_working_directory(origin)?;
+    let cwd = source_working_directory(source)?;
     let mut run = ask.clone();
     run.allowed_tools = vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()];
     run.cwd = Some(cwd);
@@ -392,43 +385,56 @@ fn clean_model_output(raw: &str) -> Result<String> {
     Ok(text)
 }
 
-fn deck_origin(deck: &Deck) -> Result<String> {
-    let origin = deck
-        .effective_origin()
-        .ok_or_else(|| anyhow::anyhow!("{} has no recorded origin", deck.path.display()))?;
-    if crate::deck::is_url(&origin) {
-        bail!(
-            "{} has remote origin `{origin}`; remote workspace update is not supported yet",
-            deck.path.display()
-        );
+/// The reconcile pointer (ADR 0026): the member's own first local-path source,
+/// workspace source as fallback.
+fn reconcile_pointer(deck: &Deck) -> Result<String> {
+    let layers = deck.source_layers();
+    if let Some(local) = layers
+        .own
+        .iter()
+        .chain(&layers.workspace)
+        .find(|source| !crate::deck::is_url(source))
+    {
+        return Ok(local.clone());
     }
-    Ok(origin)
+    match layers.own.iter().chain(&layers.workspace).next() {
+        Some(url) => bail!(
+            "{} has only remote source `{url}`; remote workspace update is not supported yet",
+            deck.path.display()
+        ),
+        None => bail!(
+            "{} declares no source to reconcile against",
+            deck.path.display()
+        ),
+    }
 }
 
-fn live_source_expression(origin: &str, root: &Path) -> Result<String> {
-    let paths = crate::source::source_paths(origin, Some(root));
+fn live_source_expression(source: &str, root: &Path) -> Result<String> {
+    let paths = crate::source::source_paths(source, Some(root));
     if paths.is_empty() {
-        bail!("origin `{origin}` resolves to no local source");
+        bail!("source `{source}` resolves to no local file or directory");
     }
     paths
         .into_iter()
         .map(|path| {
             path.canonicalize()
-                .with_context(|| format!("cannot read live origin {}", path.display()))
+                .with_context(|| format!("cannot read live source {}", path.display()))
                 .and_then(|path| path_string(&path))
         })
         .collect::<Result<Vec<_>>>()
         .map(|paths| paths.join(" + "))
 }
 
-fn origin_working_directory(origin: &str) -> Result<PathBuf> {
-    let first = crate::source::source_paths(origin, None)
+fn source_working_directory(source: &str) -> Result<PathBuf> {
+    let first = crate::source::source_paths(source, None)
         .into_iter()
         .next()
-        .ok_or_else(|| anyhow::anyhow!("origin `{origin}` resolves to no local source"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("source `{source}` resolves to no local file or directory")
+        })?;
     let path = first
         .canonicalize()
-        .with_context(|| format!("cannot read live origin {}", first.display()))?;
+        .with_context(|| format!("cannot read live source {}", first.display()))?;
     Ok(if path.is_file() {
         path.parent().unwrap_or(&path).to_path_buf()
     } else {
@@ -436,12 +442,7 @@ fn origin_working_directory(origin: &str) -> Result<PathBuf> {
     })
 }
 
-fn validate_proposal_metadata(
-    current: &Deck,
-    candidate: &Deck,
-    source: &str,
-    origin: &str,
-) -> Result<()> {
+fn validate_proposal_metadata(current: &Deck, candidate: &Deck, source: &str) -> Result<()> {
     if candidate.deck_token != current.deck_token {
         bail!("{} changed its stable deck ID", candidate.path.display());
     }
@@ -459,12 +460,6 @@ fn validate_proposal_metadata(
     if candidate.sources != vec![source.to_string()] {
         bail!(
             "{} changed `source:` instead of preserving the supplied live source",
-            candidate.path.display()
-        );
-    }
-    if candidate.settings.origin.as_deref() != Some(origin) {
-        bail!(
-            "{} changed `origin:` instead of preserving provenance",
             candidate.path.display()
         );
     }
@@ -946,8 +941,7 @@ mod tests {
 
     fn proposal(source: &Path, body: &str) -> String {
         format!(
-            "---\nid: \"deck-deck1\"\nsource: {}\norigin: {}\n---\n{body}",
-            parser::yaml_quote(&source.display().to_string()),
+            "---\nid: \"deck-deck1\"\nsource: {}\n---\n{body}",
             parser::yaml_quote(&source.display().to_string())
         )
     }

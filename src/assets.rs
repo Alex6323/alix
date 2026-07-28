@@ -26,8 +26,6 @@ pub enum AssetError {
     NotWorkspaceMember(PathBuf),
     #[error("{0} has no stable deck ID")]
     MissingDeckId(PathBuf),
-    #[error("remote source `{0}` cannot be frozen")]
-    RemoteSource(String),
     #[error("source `{0}` is missing or is not a regular file or directory")]
     MissingSource(PathBuf),
     #[error("frozen asset `{0}` is missing")]
@@ -221,7 +219,6 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
     if deck_dir(workspace_root, deck_id)?.is_dir() {
         validate_owned_dir(workspace_root, deck_id)?;
     }
-    let source_expression = (!deck.sources.is_empty()).then(|| deck.sources.join(" + "));
     let inputs = declared_source_inputs(workspace_root, deck)?;
     let source_base = SourceBase::for_deck(deck);
     let mut evidence: Vec<String> = Vec::new();
@@ -283,16 +280,10 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
         image_rewrites.push((image.destination, format!("{ROOT}/{deck_id}/{name}")));
     }
 
-    let origin = deck
-        .settings
-        .origin
-        .as_deref()
-        .or(source_expression.as_deref());
     let rewritten = crate::deck::rewrite_frozen_assets(
         &text,
         parsed.frontmatter_span,
         None,
-        origin,
         &citations,
         &image_rewrites,
     )
@@ -327,8 +318,10 @@ fn declared_source_inputs(
 ) -> Result<Vec<SourceInput>, AssetError> {
     let mut inputs = Vec::new();
     for source in &deck.sources {
+        // A URL source grounds the exam and tutor but holds no freezable
+        // bytes; citations must land in a local source below (ADR 0026).
         if crate::deck::is_url(source) {
-            return Err(AssetError::RemoteSource(source.clone()));
+            continue;
         }
         for path in crate::source::source_paths(source, Some(workspace_root)) {
             let path = path
@@ -689,10 +682,10 @@ mod tests {
             deck.sources,
             "the live source declaration stays untouched"
         );
-        assert!(frozen.contains(&format!(
-            "origin: {}",
-            crate::parser::yaml_quote(&source.display().to_string())
-        )));
+        assert!(
+            !frozen.contains("origin:"),
+            "freezing stamps nothing: {frozen}"
+        );
         let image_name = object_name(&[0, 1, 2, 255], "png");
         assert!(frozen.contains(&format!("](assets/deck-deck1/{image_name})")));
         assert_eq!(
@@ -904,17 +897,57 @@ mod tests {
     fn failed_initialization_restores_the_exact_uninitialized_deck() {
         let directory = workspace();
         let path = directory.path().join("decks/remote.md");
-        let original = b"---\nsource: https://example.test/source.md\n---\n## q\na\n";
+        let original =
+            b"---\nsource: https://example.test/source.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n";
         std::fs::write(&path, original).unwrap();
 
         let error = initialize(&path).unwrap_err();
 
         assert!(matches!(
             error,
-            InitializeError::Freeze(AssetError::RemoteSource(_))
+            InitializeError::Freeze(AssetError::Citation { .. })
         ));
         assert_eq!(original, std::fs::read(&path).unwrap().as_slice());
         assert_eq!(None, Deck::load(&path).unwrap().deck_token);
         assert!(!directory.path().join(ROOT).exists());
+    }
+
+    #[test]
+    fn a_url_source_blocks_no_initialization_and_contributes_no_frozen_inputs() {
+        let directory = workspace();
+        std::fs::write(directory.path().join("notes.md"), "one\ntwo\n").unwrap();
+        let path = directory.path().join("decks/mixed.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck-deck1\"\nsource:\n  - https://example.test/page\n  - notes.md\n---\n\
+             ## q\na\n<!-- at: notes.md:2 -->\n",
+        )
+        .unwrap();
+
+        let report = freeze_member(&path).unwrap();
+
+        assert_eq!(
+            FreezeReport {
+                evidence: 1,
+                images: 0
+            },
+            report
+        );
+        assert!(Deck::load(&path).unwrap().is_frozen());
+
+        let url_only = directory.path().join("decks/url-only.md");
+        std::fs::write(
+            &url_only,
+            "---\nsource: https://example.test/page\n---\n## q\na\n",
+        )
+        .unwrap();
+        let report = initialize(&url_only).unwrap();
+        assert_eq!(
+            Some(FreezeReport {
+                evidence: 0,
+                images: 0
+            }),
+            report.freeze
+        );
     }
 }

@@ -278,6 +278,37 @@ fn doctor_warns_about_a_malformed_deadline_without_failing() {
 }
 
 #[test]
+fn doctor_reports_an_obsolete_manifest_origin_key() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "[defaults]\norigin = \"../src\"\n").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    write(&ws.join("decks"), "cards.md", VALID_DECK);
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+    let err = stderr(&out);
+    assert!(err.contains("`origin`"), "stderr: {err}");
+    assert!(err.contains("deck conversion tool"), "stderr: {err}");
+}
+
+#[test]
+fn doctor_nudges_a_long_source_list_toward_its_common_root() {
+    let dir = TempDir::new().unwrap();
+    for name in ["a.rs", "b.rs", "c.rs", "d.rs"] {
+        std::fs::write(dir.path().join(name), "x\n").unwrap();
+    }
+    let deck = write(
+        dir.path(),
+        "cards.md",
+        "---\nid: \"deck-deck1\"\nsource:\n  - a.rs\n  - b.rs\n  - c.rs\n  - d.rs\n---\n## q\na\n<!-- id: card-card1 -->\n",
+    );
+    let out = alix(&["doctor", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("4 expressions"), "stderr: {err}");
+    assert!(err.contains("common root"), "stderr: {err}");
+}
+
+#[test]
 fn workspace_init_writes_both_documented_manifests() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("fresh");
@@ -566,9 +597,10 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     // A hand-deleted deck's progress document: a deck_id with no matching
     // `.md` file, carrying non-empty deck-level state.
     let ghost = write_progress_document(&store_path, "deck-ghost", "ghost.md", "");
-    let ghost_text = std::fs::read_to_string(&ghost)
-        .unwrap()
-        .replace("\"cards\":{}", "\"cards\":{},\"deck\":{\"last_depth\":\"recall\"}");
+    let ghost_text = std::fs::read_to_string(&ghost).unwrap().replace(
+        "\"cards\":{}",
+        "\"cards\":{},\"deck\":{\"last_depth\":\"recall\"}",
+    );
     std::fs::write(&ghost, ghost_text).unwrap();
 
     // A normal full-deck reset clears the live card but leaves the orphans,
@@ -701,7 +733,10 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         "the store on disk must be untouched by a declined/failed reset"
     );
     let reloaded = deck_store(&deck, &store_path);
-    assert!(reloaded.deck_mastered("deck-mathdeck"), "mastered flag wiped");
+    assert!(
+        reloaded.deck_mastered("deck-mathdeck"),
+        "mastered flag wiped"
+    );
     assert!(reloaded.get(&card_id).is_some(), "authored progress wiped");
     assert_eq!(
         1,
@@ -1269,8 +1304,7 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
     let dir = TempDir::new().unwrap();
     // Card 1: recall=review (state 2), reconstruct=learning (state 1), recognized.
     // Card 2: recall=learning only — no reconstruct schedule, not recognized.
-    let deck_text =
-        "---\nid: deck-cardsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n";
+    let deck_text = "---\nid: deck-cardsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n";
     let deck = write(dir.path(), "cards.md", deck_text);
     let cards = alix::parser::parse_str("cards.md", deck_text).unwrap();
     let (id1, id2) = (cards[0].id().unwrap(), cards[1].id().unwrap());
@@ -1672,7 +1706,10 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
         &alix::deck::Deck::load(&received_deck).unwrap(),
     )
     .unwrap();
-    assert_eq!(Some("shared note"), received_augmentation.note("card-math1", 9));
+    assert_eq!(
+        Some("shared note"),
+        received_augmentation.note("card-math1", 9)
+    );
 
     std::fs::write(
         &received_deck,
@@ -1697,7 +1734,10 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
         &alix::deck::Deck::load(&received_deck).unwrap(),
     )
     .unwrap();
-    assert_eq!(Some("shared note"), received_augmentation.note("card-math1", 9));
+    assert_eq!(
+        Some("shared note"),
+        received_augmentation.note("card-math1", 9)
+    );
 }
 
 #[test]
@@ -2055,11 +2095,11 @@ fn generate_single_deck_writes_a_deck_file() {
 }
 
 #[test]
-fn generate_single_deck_keeps_the_explicit_public_origin() {
+fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(
         dir.path(),
-        "---\nlink: https://mirror.example/page\n---\n\n## Generated Q\nGenerated A\n",
+        "---\nlink: https://mirror.example/page\nsource: https://mirror.example/page\n---\n\n## Generated Q\nGenerated A\n",
     );
     let config = write(
         dir.path(),
@@ -2073,7 +2113,7 @@ fn generate_single_deck_keeps_the_explicit_public_origin() {
     let out = alix(&[
         "generate",
         "https://mirror.example/page",
-        "--origin",
+        "--source-url",
         "https://canonical.example/page",
         "--config",
         &config,
@@ -2086,9 +2126,12 @@ fn generate_single_deck_keeps_the_explicit_public_origin() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let deck = std::fs::read_to_string(ws.join("decks/gen.md")).unwrap();
     assert!(
-        deck.contains("origin: \"https://canonical.example/page\""),
+        deck.contains(
+            "source:\n  - \"https://mirror.example/page\"\n  - \"https://canonical.example/page\""
+        ),
         "{deck}"
     );
+    assert!(!deck.contains("origin"), "{deck}");
 }
 
 #[test]
@@ -2825,8 +2868,7 @@ fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     .unwrap();
     alix::assets::freeze_member(&deck).unwrap();
     let proposal = format!(
-        "---\nid: \"deck-deck1\"\nsource: {}\norigin: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
-        alix::parser::yaml_quote(source.to_str().unwrap()),
+        "---\nid: \"deck-deck1\"\nsource: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
         alix::parser::yaml_quote(source.to_str().unwrap())
     );
     let cli = fake_claude(dir.path(), &proposal);

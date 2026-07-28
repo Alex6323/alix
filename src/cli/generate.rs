@@ -10,10 +10,10 @@ use crate::{
 
 pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
-    if let Some(origin) = &args.origin
-        && !alix::deck::is_url(origin)
+    if let Some(url) = &args.source_url
+        && !alix::deck::is_url(url)
     {
-        bail!("`--origin` must be an http or https URL");
+        bail!("`--source-url` must be an http or https URL");
     }
     let goal = args
         .goal
@@ -155,7 +155,7 @@ fn build_workspace(
         goal,
         args.title.as_deref(),
         source,
-        args.origin.as_deref(),
+        args.source_url.as_deref(),
         Some(&filled),
     )?;
     let frozen = alix::explore::freeze_workspace(&staging)?;
@@ -236,8 +236,8 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask)?;
-    if let Some(origin) = &args.origin {
-        text = alix::deck::with_origin(&text, origin)?;
+    if let Some(url) = &args.source_url {
+        text = alix::deck::with_added_source(&text, url)?;
     }
 
     if args.review || gen_cfg.review {
@@ -436,8 +436,8 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
         "---\ntrace: {trace}\nsource: {}\n\n---\n\n{checkpoints}\n",
         parser::yaml_quote(&source)
     );
-    if let Some(origin) = &args.origin {
-        deck_text = alix::deck::with_origin(&deck_text, origin)?;
+    if let Some(url) = &args.source_url {
+        deck_text = alix::deck::with_added_source(&deck_text, url)?;
     }
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
     let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));

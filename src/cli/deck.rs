@@ -40,7 +40,7 @@ pub(crate) fn workspace_update_cmd(args: WorkspaceUpdateArgs) -> Result<()> {
 
     let config = Config::load(args.config.as_deref())?;
     eprintln!(
-        "Reconciling {} against its live origins (one AI call per source-backed deck)…",
+        "Reconciling {} against its live sources (one AI call per source-backed deck)…",
         args.dir.display()
     );
     let report = alix::workspace_update::stage(&args.dir, &config.generate, &config.ask)?;

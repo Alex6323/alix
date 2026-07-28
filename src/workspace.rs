@@ -62,9 +62,31 @@ struct Manifest {
     description: Option<String>,
     icon: Option<String>,
     store: Option<String>,
+    source: Option<ManifestSource>,
     source_access: Option<bool>,
     #[serde(default)]
     defaults: BTreeMap<String, toml::Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ManifestSource {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl ManifestSource {
+    fn into_values(self) -> Vec<String> {
+        let values = match self {
+            Self::One(value) => vec![value],
+            Self::Many(values) => values,
+        };
+        values
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +95,7 @@ pub struct Workspace {
     pub title: Option<String>,
     pub description: Option<String>,
     pub settings: DeckSettings,
+    pub source: Vec<String>,
     pub members: Vec<PathBuf>,
     pub icon: Option<PathBuf>,
 }
@@ -80,6 +103,7 @@ pub struct Workspace {
 impl Workspace {
     pub fn load(dir: impl AsRef<Path>) -> io::Result<Workspace> {
         let path = dir.as_ref().to_path_buf();
+        ensure_manifest_reads(&path.join(MANIFEST))?;
         let members = match members(&path) {
             Ok(members) => members,
             Err(error) if error.kind() == io::ErrorKind::NotFound && has_manifest(&path) => {
@@ -88,12 +112,14 @@ impl Workspace {
             Err(error) => return Err(error),
         };
         let (title, description, settings, icon_key) = read_manifest(&path.join(MANIFEST));
+        let source = manifest_source(&path);
         let icon = resolve_icon(&path, icon_key.as_deref());
         Ok(Workspace {
             path,
             title,
             description,
             settings,
+            source,
             members,
             icon,
         })
@@ -107,6 +133,46 @@ impl Workspace {
                 .unwrap_or_default()
         })
     }
+}
+
+/// The one loud manifest check: `origin` (top-level or under `[defaults]`) is a
+/// recognized-obsolete key, not an ignorable unknown one.
+fn ensure_manifest_reads(path: &Path) -> io::Result<()> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Ok(());
+    };
+    let Ok(value) = toml::from_str::<toml::Value>(&text) else {
+        return Ok(());
+    };
+    let top = value.get("origin").is_some();
+    let defaults = value
+        .get("defaults")
+        .and_then(|defaults| defaults.get("origin"))
+        .is_some();
+    if top || defaults {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "`origin` in {} is no longer read (a workspace declares its material with a \
+                 top-level `source`); run the deck conversion tool to rewrite it",
+                path.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+pub fn manifest_source(dir: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(dir.join(MANIFEST)) else {
+        return Vec::new();
+    };
+    let Ok(manifest) = toml::from_str::<Manifest>(&text) else {
+        return Vec::new();
+    };
+    manifest
+        .source
+        .map(ManifestSource::into_values)
+        .unwrap_or_default()
 }
 
 /// A missing or malformed manifest yields no title/description and default
@@ -428,6 +494,52 @@ mod tests {
         assert_eq!("rust", ws.display_name());
         assert!(ws.settings.reveal.is_none());
         assert_eq!(1, ws.members.len());
+    }
+
+    #[test]
+    fn manifest_source_accepts_a_string_or_a_list() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join(MANIFEST),
+            "source = \"https://x.example\"\n",
+        );
+        assert_eq!(
+            vec!["https://x.example".to_string()],
+            Workspace::load(dir.path()).unwrap().source
+        );
+
+        write(
+            &dir.path().join(MANIFEST),
+            "source = [\"https://x.example\", \"  \", \"notes.md\"]\n",
+        );
+        assert_eq!(
+            vec!["https://x.example".to_string(), "notes.md".to_string()],
+            manifest_source(dir.path())
+        );
+
+        write(&dir.path().join(MANIFEST), "title = \"W\"\n");
+        assert!(Workspace::load(dir.path()).unwrap().source.is_empty());
+    }
+
+    #[test]
+    fn a_manifest_origin_key_fails_the_workspace_load_naming_the_conversion_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join(MANIFEST),
+            "origin = \"https://x.example\"\n",
+        );
+        let error = Workspace::load(dir.path()).unwrap_err();
+        assert!(
+            error.to_string().contains("deck conversion tool"),
+            "{error}"
+        );
+
+        write(
+            &dir.path().join(MANIFEST),
+            "title = \"W\"\n\n[defaults]\norigin = \"../src\"\n",
+        );
+        let error = Workspace::load(dir.path()).unwrap_err();
+        assert!(error.to_string().contains("no longer read"), "{error}");
     }
 
     #[test]

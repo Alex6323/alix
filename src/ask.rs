@@ -107,16 +107,24 @@ fn random_uuid() -> String {
     )
 }
 
+/// Everything the tutor is grounded on, layered per ADR 0026: the deck's own
+/// sources are the primary grounding, the workspace source supporting context.
+#[derive(Clone, Copy, Debug)]
+pub struct TutorContext<'a> {
+    pub links: &'a [String],
+    pub sources: &'a crate::deck::SourceLayers,
+    pub root: Option<&'a Path>,
+    pub frozen: Option<&'a str>,
+}
+
 pub fn question_prompt(
     card: &Card,
     audience: Audience,
-    links: &[String],
+    context: &TutorContext,
     question: &str,
     first: bool,
-    origin_root: Option<&Path>,
-    frozen: Option<&str>,
 ) -> String {
-    let mut p = question_context(card, audience, links, first, origin_root, frozen);
+    let mut p = question_context(card, audience, context, first);
     p.push_str("\nThe user's question: ");
     p.push_str(question);
     p
@@ -127,13 +135,11 @@ pub fn question_prompt(
 pub fn question_prompt_with_history(
     card: &Card,
     audience: Audience,
-    links: &[String],
+    context: &TutorContext,
     prior: &[Exchange],
     question: &str,
-    origin_root: Option<&Path>,
-    frozen: Option<&str>,
 ) -> String {
-    let mut p = question_context(card, audience, links, true, origin_root, frozen);
+    let mut p = question_context(card, audience, context, true);
     for (q, a) in prior {
         p.push_str("\nThe user's question: ");
         p.push_str(q);
@@ -170,33 +176,55 @@ fn preamble(audience: Audience) -> &'static str {
     }
 }
 
+fn push_link_group(p: &mut String, heading: &str, links: &[&String]) {
+    if links.is_empty() {
+        return;
+    }
+    p.push_str(heading);
+    p.push('\n');
+    for link in links {
+        p.push_str(link);
+        p.push('\n');
+    }
+}
+
 fn question_context(
     card: &Card,
     audience: Audience,
-    links: &[String],
+    context: &TutorContext,
     first: bool,
-    origin_root: Option<&Path>,
-    frozen: Option<&str>,
 ) -> String {
+    let TutorContext {
+        links,
+        sources,
+        root,
+        frozen,
+    } = *context;
     let mut p = String::new();
     if first {
         p.push_str(preamble(audience));
-        if !links.is_empty() {
+        let is_url = crate::deck::is_url;
+        let own: Vec<&String> = sources.own.iter().filter(|s| is_url(s)).collect();
+        let workspace: Vec<&String> = sources.workspace.iter().filter(|s| is_url(s)).collect();
+        let other: Vec<&String> = links
+            .iter()
+            .filter(|link| !own.contains(link) && !workspace.contains(link))
+            .collect();
+        if !own.is_empty() || !workspace.is_empty() || !other.is_empty() {
             p.push_str(
-                "\nReference links for this deck — fetch them (WebFetch) when \
-                 they can improve an answer; you only need to read each \
+                "\nReference material for this deck; fetch links with WebFetch \
+                 when they can improve an answer; you only need to read each \
                  once:\n",
             );
-            for link in links {
-                p.push_str(link);
-                p.push('\n');
-            }
+            push_link_group(&mut p, "Deck sources (the primary grounding):", &own);
+            push_link_group(&mut p, "Workspace source (supporting context):", &workspace);
+            push_link_group(&mut p, "Related links:", &other);
         }
         p.push('\n');
     }
     p.push_str("The card being reviewed:\n\n");
     push_card(&mut p, card);
-    match (frozen, origin_root) {
+    match (frozen, root) {
         (Some(excerpt), Some(root)) => {
             p.push_str(
                 "\nThe exact code this card is about, frozen when the card was made \
@@ -221,8 +249,8 @@ fn question_context(
             );
             p.push_str(excerpt);
             p.push_str(
-                "\nUse that frozen evidence and any origin link listed above to explain \
-                 the card. If an origin link contradicts the frozen evidence, clearly \
+                "\nUse that frozen evidence and any source link listed above to explain \
+                 the card. If a live source contradicts the frozen evidence, clearly \
                  tell the learner that the card may be outdated.\n",
             );
         }
@@ -240,7 +268,7 @@ fn question_context(
     p
 }
 
-pub fn with_origin_root(cfg: &AskConfig, root: &Path) -> AskConfig {
+pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
     let mut grounded = cfg.clone();
     grounded.cwd = Some(root.to_path_buf());
     for tool in ["Read", "Glob", "Grep"] {
@@ -531,17 +559,33 @@ mod tests {
         )
     }
 
+    static NO_SOURCES: crate::deck::SourceLayers = crate::deck::SourceLayers {
+        own: Vec::new(),
+        workspace: Vec::new(),
+    };
+
+    fn ctx<'a>(
+        links: &'a [String],
+        root: Option<&'a Path>,
+        frozen: Option<&'a str>,
+    ) -> TutorContext<'a> {
+        TutorContext {
+            links,
+            sources: &NO_SOURCES,
+            root,
+            frozen,
+        }
+    }
+
     #[test]
     fn first_question_prompt_has_instructions_and_links() {
         let links = vec!["https://docs.rs/tokio".to_string()];
         let p = question_prompt(
             &card(),
             Audience::Adult,
-            &links,
+            &ctx(&links, None, None),
             "and why that?",
             true,
-            None,
-            None,
         );
         assert!(p.contains("concise tutor"));
         assert!(!p.contains("working directory"));
@@ -554,16 +598,41 @@ mod tests {
     }
 
     #[test]
+    fn first_prompt_labels_deck_and_workspace_sources_apart_from_links() {
+        let links = vec![
+            "https://own.example".to_string(),
+            "https://context.example".to_string(),
+            "https://docs.rs/tokio".to_string(),
+        ];
+        let sources = crate::deck::SourceLayers {
+            own: vec!["https://own.example".to_string()],
+            workspace: vec!["https://context.example".to_string()],
+        };
+        let context = TutorContext {
+            links: &links,
+            sources: &sources,
+            root: None,
+            frozen: None,
+        };
+        let p = question_prompt(&card(), Audience::Adult, &context, "why?", true);
+        let own = p.find("Deck sources (the primary grounding):").unwrap();
+        let workspace = p.find("Workspace source (supporting context):").unwrap();
+        let other = p.find("Related links:").unwrap();
+        assert!(own < workspace && workspace < other, "{p}");
+        assert!(p.find("https://own.example").unwrap() < workspace, "{p}");
+        assert!(p.find("https://docs.rs/tokio").unwrap() > other, "{p}");
+        assert_eq!(1, p.matches("https://own.example").count(), "{p}");
+    }
+
+    #[test]
     fn followup_prompt_is_short_but_carries_the_card() {
         let links = vec!["https://docs.rs/tokio".to_string()];
         let p = question_prompt(
             &card(),
             Audience::Adult,
-            &links,
+            &ctx(&links, None, None),
             "next q",
             false,
-            None,
-            None,
         );
         assert!(!p.contains("concise tutor"));
         assert!(!p.contains("docs.rs"));
@@ -583,11 +652,9 @@ mod tests {
         let p = question_prompt_with_history(
             &card(),
             Audience::Adult,
-            &[],
+            &ctx(&[], None, None),
             &prior,
             "and lifetimes?",
-            None,
-            None,
         );
         assert!(p.contains("concise tutor"), "{p}");
         assert!(p.contains("Front: Why?"), "{p}");
@@ -606,20 +673,16 @@ mod tests {
         let first = question_prompt(
             &card(),
             Audience::Adult,
-            &links,
+            &ctx(&links, None, None),
             "and lifetimes?",
             true,
-            None,
-            None,
         );
         let empty = question_prompt_with_history(
             &card(),
             Audience::Adult,
-            &links,
+            &ctx(&links, None, None),
             &[],
             "and lifetimes?",
-            None,
-            None,
         );
         assert_eq!(
             first, empty,
@@ -630,16 +693,38 @@ mod tests {
     #[test]
     fn an_empty_history_prompt_is_exactly_the_first_turn_prompt() {
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let first = question_prompt(&card(), Audience::Adult, &links, "why?", true, None, None);
-        let empty =
-            question_prompt_with_history(&card(), Audience::Adult, &links, &[], "why?", None, None);
+        let first = question_prompt(
+            &card(),
+            Audience::Adult,
+            &ctx(&links, None, None),
+            "why?",
+            true,
+        );
+        let empty = question_prompt_with_history(
+            &card(),
+            Audience::Adult,
+            &ctx(&links, None, None),
+            &[],
+            "why?",
+        );
         assert_eq!(first, empty, "empty history must equal the first turn");
 
         let root = Some(Path::new("/repo/x"));
         let frozen = Some("src/caching.rs:46-66\n46\tfn get_object() {}\n");
-        let first = question_prompt(&card(), Audience::Adult, &[], "why?", true, root, frozen);
-        let empty =
-            question_prompt_with_history(&card(), Audience::Adult, &[], &[], "why?", root, frozen);
+        let first = question_prompt(
+            &card(),
+            Audience::Adult,
+            &ctx(&[], root, frozen),
+            "why?",
+            true,
+        );
+        let empty = question_prompt_with_history(
+            &card(),
+            Audience::Adult,
+            &ctx(&[], root, frozen),
+            &[],
+            "why?",
+        );
         assert_eq!(
             first, empty,
             "grounded empty history must equal the first turn"
@@ -651,11 +736,9 @@ mod tests {
         let p = question_prompt(
             &card(),
             Audience::Adult,
-            &[],
+            &ctx(&[], Some(Path::new("/repo/x")), None),
             "is that right?",
             false,
-            Some(Path::new("/repo/x")),
-            None,
         );
         assert!(p.contains("/repo/x"));
         assert!(p.contains("READ the actual files"));
@@ -663,16 +746,14 @@ mod tests {
     }
 
     #[test]
-    fn frozen_prompt_uses_the_asset_and_the_available_origin_context() {
+    fn frozen_prompt_uses_the_asset_and_the_available_source_context() {
         let block = "src/caching.rs:46-66\n46\tfn get_object() {}\n";
         let p = question_prompt(
             &card(),
             Audience::Adult,
-            &[],
+            &ctx(&[], Some(Path::new("/crate")), Some(block)),
             "explain",
             true,
-            Some(Path::new("/crate")),
-            Some(block),
         );
         assert!(p.contains("GROUND TRUTH"), "{p}");
         assert!(p.contains("src/caching.rs:46-66"), "{p}");
@@ -682,27 +763,31 @@ mod tests {
         let portable = question_prompt(
             &card(),
             Audience::Adult,
-            &[],
+            &ctx(&[], None, Some(block)),
             "explain",
             true,
-            None,
-            Some(block),
         );
         assert!(portable.contains("GROUND TRUTH"), "{portable}");
-        assert!(portable.contains("any origin link"), "{portable}");
+        assert!(portable.contains("any source link"), "{portable}");
         assert!(!portable.contains("/crate"), "{portable}");
     }
 
     #[test]
     fn first_prompt_without_links_offers_none() {
-        let p = question_prompt(&card(), Audience::Adult, &[], "q", true, None, None);
-        assert!(!p.contains("Reference links"));
+        let p = question_prompt(&card(), Audience::Adult, &ctx(&[], None, None), "q", true);
+        assert!(!p.contains("Reference material"));
     }
 
     #[test]
     fn kids_audience_uses_the_kid_safe_preamble() {
-        let adult = question_prompt(&card(), Audience::Adult, &[], "why?", true, None, None);
-        let kids = question_prompt(&card(), Audience::Kids, &[], "why?", true, None, None);
+        let adult = question_prompt(
+            &card(),
+            Audience::Adult,
+            &ctx(&[], None, None),
+            "why?",
+            true,
+        );
+        let kids = question_prompt(&card(), Audience::Kids, &ctx(&[], None, None), "why?", true);
         assert!(adult.contains("concise tutor"), "{adult}");
         assert!(!kids.contains("concise tutor"), "{kids}");
         assert!(kids.to_lowercase().contains("kid"), "{kids}");
@@ -1006,11 +1091,9 @@ mod tests {
         let prompt = question_prompt(
             &card(),
             Audience::Kids,
-            &[],
+            &ctx(&[], None, None),
             "why is it Because?",
             true,
-            None,
-            None,
         );
         let rx = spawn(config(&cli, 10), prompt, Vec::new());
         match rx.recv_timeout(Duration::from_secs(10)).unwrap() {

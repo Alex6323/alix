@@ -142,7 +142,14 @@ pub struct SourceBase {
 
 impl SourceBase {
     pub fn for_deck(deck: &Deck) -> Self {
-        let first = deck.sources.first();
+        // The single mechanical base (ADR 0026): the deck's first local-path
+        // source, falling back to the workspace source when it declares none.
+        let layers = deck.source_layers();
+        let first = layers
+            .own
+            .iter()
+            .chain(&layers.workspace)
+            .find(|source| !is_url(source));
         let multi = first.is_some_and(|source| source.contains(" + "));
         let content_root = crate::workspace::content_root(&deck.path);
         let (base_dir, source_file) = resolve_source(
@@ -1154,7 +1161,11 @@ mod tests {
         let (base, asset) = frozen_base(directory.path(), "alpha\nbeta\ngamma\n");
         let content = Excerpt {
             path: PathBuf::from("x.rs"),
-            lines: vec![(46, "alpha".into()), (47, "beta".into()), (48, "gamma".into())],
+            lines: vec![
+                (46, "alpha".into()),
+                (47, "beta".into()),
+                (48, "gamma".into()),
+            ],
             truncated: false,
         };
         let citation = SourceCitation {

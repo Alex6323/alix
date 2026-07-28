@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::{
     ask,
     config::{AskConfig, ExamConfig, Strictness},
-    deck::{self, Deck},
+    deck::{self, Deck, SourceLayers},
     store::Store,
     workspace,
 };
@@ -80,7 +80,7 @@ pub fn generate_questions(
 ) -> Result<Vec<ExamQuestion>> {
     let sources = examination_sources(deck);
     if sources.is_empty() {
-        bail!("the deck declares no `source:` or URL `origin:` to examine against");
+        bail!("the deck and its workspace declare no `source:` to examine against");
     }
     if let Some(error) = source_boundary_error(deck) {
         bail!("{error}");
@@ -89,14 +89,10 @@ pub fn generate_questions(
     generate_questions_from(&sources, Some(&root), cfg, ask_cfg)
 }
 
-fn examination_sources(deck: &Deck) -> Vec<String> {
-    let mut sources = deck.sources.clone();
-    if let Some(origin) = deck.origin_url()
-        && !sources.contains(&origin)
-    {
-        sources.push(origin);
-    }
-    sources
+/// Both layers, told apart (ADR 0026): the deck's own sources are the primary
+/// grounding, the workspace source is supporting context, never shadowed.
+fn examination_sources(deck: &Deck) -> SourceLayers {
+    deck.source_layers()
 }
 
 fn source_boundary_error(deck: &Deck) -> Option<String> {
@@ -107,19 +103,20 @@ fn source_boundary_error(deck: &Deck) -> Option<String> {
 }
 
 pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()> {
-    for source in examination_sources(deck) {
-        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(&source))?;
+    let sources = examination_sources(deck);
+    for source in sources.own.iter().chain(&sources.workspace) {
+        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
     }
     Ok(())
 }
 
 fn generate_questions_from(
-    sources: &[String],
+    sources: &SourceLayers,
     base: Option<&Path>,
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
 ) -> Result<Vec<ExamQuestion>> {
-    for source in sources {
+    for source in sources.own.iter().chain(&sources.workspace) {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
     }
     let prompt = questions_prompt(sources, base, cfg)?;
@@ -201,7 +198,7 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
 }
 
 pub fn spawn_questions(
-    sources: Vec<String>,
+    sources: SourceLayers,
     base: Option<PathBuf>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
@@ -322,7 +319,7 @@ impl Sitting {
         let source_ready = boundary_error.is_none();
         let pending = source_ready.then(|| {
             Pending::Questions(spawn_questions(
-                deck.sources.clone(),
+                examination_sources(deck),
                 Some(workspace::content_root(&deck.path)),
                 cfg.clone(),
                 ask_cfg.clone(),
@@ -655,7 +652,13 @@ fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     }
 }
 
-fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
+#[derive(Default)]
+struct LayerSection {
+    urls: Vec<String>,
+    files: Vec<(String, String)>,
+}
+
+fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> {
     let mut urls = Vec::new();
     let mut files = Vec::new();
     for src in sources {
@@ -681,25 +684,51 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
             files.push((label, truncated_text));
         }
     }
-    if urls.is_empty() && files.is_empty() {
-        bail!("none of the deck's `source:` paths could be read to examine against");
+    Ok(LayerSection { urls, files })
+}
+
+fn source_section(sources: &SourceLayers, base: Option<&Path>) -> Result<String> {
+    let own = split_layer(&sources.own, base)?;
+    let workspace = split_layer(&sources.workspace, base)?;
+    if own.urls.is_empty()
+        && own.files.is_empty()
+        && workspace.urls.is_empty()
+        && workspace.files.is_empty()
+    {
+        bail!("none of the declared `source:` paths could be read to examine against");
     }
 
     let mut out = String::new();
-    if !urls.is_empty() {
+    if !own.urls.is_empty() {
         out.push_str(
-            "Read these source pages with the WebFetch tool (fetch each once) — \
-             they are the ground truth for this exam:\n",
+            "Read these source pages with the WebFetch tool (fetch each once); \
+             they are the deck's own sources, the primary grounding for this exam:\n",
         );
-        for url in &urls {
+        for url in &own.urls {
             out.push_str("  - ");
             out.push_str(url);
             out.push('\n');
         }
     }
-    for (label, text) in &files {
+    if !workspace.urls.is_empty() {
+        out.push_str(
+            "Also read these workspace source pages (supporting context, \
+             not the primary grounding):\n",
+        );
+        for url in &workspace.urls {
+            out.push_str("  - ");
+            out.push_str(url);
+            out.push('\n');
+        }
+    }
+    for (label, text) in &own.files {
         out.push_str(&format!(
-            "\nSource file `{label}` (the ground truth for this exam):\n<<<SOURCE\n{text}\nSOURCE\n"
+            "\nSource file `{label}` (a deck source, primary grounding for this exam):\n<<<SOURCE\n{text}\nSOURCE\n"
+        ));
+    }
+    for (label, text) in &workspace.files {
+        out.push_str(&format!(
+            "\nWorkspace source file `{label}` (supporting context, not the primary grounding):\n<<<SOURCE\n{text}\nSOURCE\n"
         ));
     }
     Ok(out)
@@ -719,7 +748,11 @@ fn truncate(text: &str) -> (String, bool) {
     )
 }
 
-fn questions_prompt(sources: &[String], base: Option<&Path>, cfg: &ExamConfig) -> Result<String> {
+fn questions_prompt(
+    sources: &SourceLayers,
+    base: Option<&Path>,
+    cfg: &ExamConfig,
+) -> Result<String> {
     let sources = source_section(sources, base)?;
     let mut prompt = format!(
         "You are a strict examiner writing an oral exam that verifies a student \
@@ -1003,7 +1036,9 @@ mod tests {
 
     fn deck_with_sources(srcs: &[&str]) -> Deck {
         Deck {
-            path: std::path::PathBuf::from("/tmp/d.md"),
+            // A root that cannot exist, so no stray manifest supplies a
+            // workspace source to these fixtures.
+            path: std::path::PathBuf::from("/alix-nonexistent-test-root/d.md"),
             subject: "d.md".to_string(),
             deck_token: None,
             cards: Vec::new(),
@@ -1017,25 +1052,83 @@ mod tests {
         }
     }
 
+    fn url_layers(own: &[&str]) -> SourceLayers {
+        SourceLayers {
+            own: own.iter().map(|s| s.to_string()).collect(),
+            workspace: Vec::new(),
+        }
+    }
+
     #[test]
-    fn an_origin_url_joins_frozen_sources_for_exam_grounding() {
-        let mut deck = deck_with_sources(&["assets/deck1/sha256-evidence.md"]);
-        deck.settings.origin = Some("https://example.org/current".to_string());
+    fn a_workspace_source_joins_deck_sources_as_its_own_labeled_layer() {
+        let dir = tempfile::tempdir().unwrap();
+        let members = dir.path().join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            dir.path().join(crate::workspace::MANIFEST),
+            "source = \"https://example.org/current\"\n",
+        )
+        .unwrap();
+        let path = members.join("d.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
 
         assert_eq!(
-            vec![
-                "assets/deck1/sha256-evidence.md".to_string(),
-                "https://example.org/current".to_string()
-            ],
+            SourceLayers {
+                own: vec!["https://example.org/own".to_string()],
+                workspace: vec!["https://example.org/current".to_string()],
+            },
+            examination_sources(&deck)
+        );
+        assert!(deck.has_exam());
+    }
+
+    #[test]
+    fn a_workspace_source_duplicated_by_the_deck_is_not_layered_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        let members = dir.path().join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            dir.path().join(crate::workspace::MANIFEST),
+            "source = \"https://example.org/own\"\n",
+        )
+        .unwrap();
+        let path = members.join("d.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+
+        assert_eq!(
+            url_layers(&["https://example.org/own"]),
             examination_sources(&deck)
         );
     }
 
     #[test]
+    fn questions_prompt_labels_deck_and_workspace_layers() {
+        let sources = SourceLayers {
+            own: vec!["https://example.org/own".to_string()],
+            workspace: vec!["https://example.org/context".to_string()],
+        };
+        let p = questions_prompt(&sources, None, &ExamConfig::default()).unwrap();
+        let own_at = p.find("https://example.org/own").unwrap();
+        let workspace_at = p.find("https://example.org/context").unwrap();
+        assert!(p.contains("primary grounding"));
+        assert!(p.contains("supporting context"));
+        assert!(own_at < workspace_at, "{p}");
+    }
+
+    #[test]
     fn questions_prompt_carries_source_strictness_and_json_shape() {
-        let deck = deck_with_sources(&["https://example.org/ownership"]);
-        let p =
-            questions_prompt(&deck.sources, deck.path.parent(), &ExamConfig::default()).unwrap();
+        let sources = url_layers(&["https://example.org/ownership"]);
+        let p = questions_prompt(&sources, None, &ExamConfig::default()).unwrap();
         assert!(p.contains("https://example.org/ownership"));
         assert!(p.contains("WebFetch"));
         assert!(p.contains("strict examiner"));
@@ -1046,13 +1139,13 @@ mod tests {
 
     #[test]
     fn questions_prompt_honors_num_questions_and_extra() {
-        let deck = deck_with_sources(&["https://x"]);
+        let sources = url_layers(&["https://x"]);
         let cfg = ExamConfig {
             num_questions: 3,
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let p = questions_prompt(&deck.sources, deck.path.parent(), &cfg).unwrap();
+        let p = questions_prompt(&sources, None, &cfg).unwrap();
         assert!(p.contains("exactly 3 open-ended questions"));
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on lifetimes."));
@@ -1275,7 +1368,7 @@ mod tests {
         };
         // No exec_lock: the gate fires before any subprocess is forked.
         let rx = spawn_questions(
-            vec!["https://example.org/doc".to_string()],
+            url_layers(&["https://example.org/doc"]),
             None,
             ExamConfig::default(),
             ask_cfg,
@@ -1478,9 +1571,10 @@ mod tests {
             preamble: None,
             trace: None,
         };
-        let section = source_section(&deck.sources, deck.path.parent()).unwrap();
+        let section = source_section(&deck.source_layers(), deck.path.parent()).unwrap();
         assert!(section.contains("the ground truth text"));
         assert!(section.contains("notes.md"));
+        assert!(section.contains("primary grounding"));
         std::fs::remove_dir_all(&dir).ok();
     }
 

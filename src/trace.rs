@@ -66,10 +66,10 @@ pub struct Trace {
     pub subject: String,
     pub source: Option<String>,
     pub links: Vec<String>,
-    pub origin_url: Option<String>,
+    pub source_layers: crate::deck::SourceLayers,
     pub checkpoints: Vec<Checkpoint>,
     pub deck_path: PathBuf,
-    pub origin_root: Option<PathBuf>,
+    pub base_root: Option<PathBuf>,
     source_base: SourceBase,
 }
 
@@ -115,10 +115,10 @@ impl Trace {
             subject: deck.subject.clone(),
             source,
             links: deck.reference_links(),
-            origin_url: deck.origin_url(),
+            source_layers: deck.source_layers(),
             checkpoints,
             deck_path: deck.path.clone(),
-            origin_root: deck.origin_root(),
+            base_root: deck.base_root(),
             source_base: SourceBase::for_deck(deck),
         })
     }
@@ -359,7 +359,7 @@ pub struct Drift {
 /// A *moved* excerpt that's otherwise unchanged is NOT flagged (the block is
 /// searched across the whole file).
 pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
-    let Some(origin_root) = deck.origin_root() else {
+    let Some(base_root) = deck.base_root() else {
         return Vec::new();
     };
     let source_base = SourceBase::for_deck(deck);
@@ -375,7 +375,7 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
             let Ok(frozen) = source_base.citation_excerpt(citation) else {
                 continue;
             };
-            match std::fs::read_to_string(origin_root.join(&file)) {
+            match std::fs::read_to_string(base_root.join(&file)) {
                 Err(_) => out.push(Drift {
                     line: card.line,
                     at: citation.locator.clone(),
@@ -847,7 +847,7 @@ mod tests {
         write(
             &root.join("ws"),
             "alix.toml",
-            "title = \"W\"\n\n[defaults]\norigin = \"../src\"\n",
+            "title = \"W\"\nsource = \"../src\"\n",
         );
         write(
             &root.join("ws/decks"),

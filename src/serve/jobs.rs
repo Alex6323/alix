@@ -29,7 +29,7 @@ use crate::{
     trace_ai,
 };
 
-pub(super) fn can_fetch_origin(cfg: &AskConfig) -> bool {
+pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
     cfg.allowed_tools.iter().any(|tool| tool == "WebFetch")
         && crate::backend::ensure_source_reachable(cfg, true).is_ok()
 }
@@ -41,8 +41,8 @@ pub(super) struct Reviewing {
     pub(super) images: HashMap<String, PathBuf>,
     pub(super) ask: Ask,
     pub(super) links: HashMap<String, Vec<String>>,
-    pub(super) origin_urls: HashMap<String, String>,
-    pub(super) origin_roots: HashMap<String, PathBuf>,
+    pub(super) source_layers: HashMap<String, crate::deck::SourceLayers>,
+    pub(super) base_roots: HashMap<String, PathBuf>,
     pub(super) source_bases: HashMap<String, SourceBase>,
     pub(super) augment: AugmentCache,
     pub(super) present_seq: u64,
@@ -118,16 +118,13 @@ impl Ask {
         }
     }
 
-    #[expect(clippy::too_many_arguments)] // each is a distinct, named tutor input
     fn start(
         &mut self,
         cfg: &AskConfig,
         audience: Audience,
         card: &Card,
-        links: &[String],
-        root: Option<&Path>,
-        frozen: Option<&str>,
-        has_origin_context: bool,
+        context: &ask::TutorContext,
+        has_source_context: bool,
         action: AskAction,
     ) -> bool {
         if self.pending.is_some() {
@@ -139,10 +136,10 @@ impl Ask {
         {
             return false;
         }
-        self.context_warning =
-            (frozen.is_some() && !has_origin_context).then(|| ask::FROZEN_ONLY_WARNING.to_string());
-        let run_cfg = match root {
-            Some(r) => ask::with_origin_root(cfg, r),
+        self.context_warning = (context.frozen.is_some() && !has_source_context)
+            .then(|| ask::FROZEN_ONLY_WARNING.to_string());
+        let run_cfg = match context.root {
+            Some(r) => ask::with_source_root(cfg, r),
             None => cfg.clone(),
         };
         let args = self.cli.args_in(run_cfg.cwd.as_deref());
@@ -152,17 +149,9 @@ impl Ask {
         let (prompt, purpose) = match action {
             AskAction::Question(q) => {
                 let prompt = if keeps_session {
-                    ask::question_prompt(card, audience, links, &q, !self.cli.started, root, frozen)
+                    ask::question_prompt(card, audience, context, &q, !self.cli.started)
                 } else {
-                    ask::question_prompt_with_history(
-                        card,
-                        audience,
-                        links,
-                        &self.transcript,
-                        &q,
-                        root,
-                        frozen,
-                    )
+                    ask::question_prompt_with_history(card, audience, context, &self.transcript, &q)
                 };
                 (prompt, Purpose::Question(q))
             }
@@ -284,15 +273,15 @@ impl RemoteAsk {
     ) -> Self {
         let card = remote_card(card);
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
-        let prompt = ask::question_prompt_with_history(
-            &card,
-            Audience::Adult,
-            &[],
-            &prior,
-            question,
-            None,
-            None,
-        );
+        let no_sources = crate::deck::SourceLayers::default();
+        let context = ask::TutorContext {
+            links: &[],
+            sources: &no_sources,
+            root: None,
+            frozen: None,
+        };
+        let prompt =
+            ask::question_prompt_with_history(&card, Audience::Adult, &context, &prior, question);
         Self::spawn(cfg, prompt, RemoteAskPurpose::Question)
     }
 
@@ -487,8 +476,8 @@ impl Reviewing {
             images,
             ask: Ask::new(),
             links: build.links,
-            origin_roots: build.origin_roots,
-            origin_urls: build.origin_urls,
+            base_roots: build.base_roots,
+            source_layers: build.source_layers,
             source_bases: build.source_bases,
             augment: build.augment,
             present_seq: now_ms(),
@@ -540,24 +529,13 @@ impl Reviewing {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
-        let mut links = self.links.get(&*card.deck_id).cloned().unwrap_or_default();
-        let card_origin_url = card
-            .origin
-            .as_deref()
-            .filter(|origin| crate::deck::is_url(origin))
-            .map(str::to_string);
-        let origin_url = card_origin_url.or_else(|| self.origin_urls.get(&*card.deck_id).cloned());
-        if let Some(origin) = &origin_url
-            && !links.contains(origin)
-        {
-            links.push(origin.clone());
-        }
-        let root = card
-            .origin
-            .as_deref()
-            .filter(|origin| !crate::deck::is_url(origin))
-            .map(PathBuf::from)
-            .or_else(|| self.origin_roots.get(&*card.deck_id).cloned());
+        let links = self.links.get(&*card.deck_id).cloned().unwrap_or_default();
+        let no_sources = crate::deck::SourceLayers::default();
+        let sources = self
+            .source_layers
+            .get(&*card.deck_id)
+            .unwrap_or(&no_sources);
+        let root = self.base_roots.get(&*card.deck_id).cloned();
         let frozen = self.source_bases.get(&*card.deck_id).and_then(|base| {
             let blocks = card
                 .citations
@@ -567,18 +545,21 @@ impl Reviewing {
             (!blocks.is_empty()).then(|| blocks.join("\n\n"))
         });
         let live_root = root.as_deref().filter(|path| path.exists());
-        let has_origin_context =
-            live_root.is_some() || origin_url.is_some_and(|_| can_fetch_origin(cfg));
-        self.ask.start(
-            cfg,
-            audience,
-            &card,
-            &links,
-            live_root,
-            frozen.as_deref(),
-            has_origin_context,
-            action,
-        )
+        let has_url_source = sources
+            .own
+            .iter()
+            .chain(&sources.workspace)
+            .any(|source| crate::deck::is_url(source));
+        let has_source_context =
+            live_root.is_some() || (has_url_source && can_fetch_url_sources(cfg));
+        let context = ask::TutorContext {
+            links: &links,
+            sources,
+            root: live_root,
+            frozen: frozen.as_deref(),
+        };
+        self.ask
+            .start(cfg, audience, &card, &context, has_source_context, action)
     }
 
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
@@ -1321,34 +1302,33 @@ impl Walking {
         };
         let root = cfg
             .source_access
-            .then(|| self.walk.trace().origin_root.clone())
+            .then(|| self.walk.trace().base_root.clone())
             .flatten();
         let frozen = self
             .walk
             .checkpoint()
             .and_then(|checkpoint| self.walk.trace().frozen_block(checkpoint));
         let live_root = root.as_deref().filter(|path| path.exists());
-        let has_origin_context = live_root.is_some()
-            || self
-                .walk
-                .trace()
-                .origin_url
-                .as_ref()
-                .is_some_and(|_| can_fetch_origin(cfg));
+        let sources = &self.walk.trace().source_layers;
+        let has_url_source = sources
+            .own
+            .iter()
+            .chain(&sources.workspace)
+            .any(|source| crate::deck::is_url(source));
+        let has_source_context =
+            live_root.is_some() || (has_url_source && can_fetch_url_sources(cfg));
         let action = match question {
             Some(q) => AskAction::Question(q),
             None => AskAction::Condense,
         };
-        self.ask.start(
-            cfg,
-            audience,
-            &card,
-            &self.walk.trace().links,
-            live_root,
-            frozen.as_deref(),
-            has_origin_context,
-            action,
-        )
+        let context = ask::TutorContext {
+            links: &self.walk.trace().links,
+            sources,
+            root: live_root,
+            frozen: frozen.as_deref(),
+        };
+        self.ask
+            .start(cfg, audience, &card, &context, has_source_context, action)
     }
 
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {

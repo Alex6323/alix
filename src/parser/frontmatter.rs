@@ -14,7 +14,6 @@ pub struct Frontmatter {
     pub order: Option<Order>,
     pub input: Option<Input>,
     pub direction: Option<Direction>,
-    pub origin: Option<String>,
     pub unspliceable: bool,
 }
 
@@ -131,15 +130,7 @@ fn load_frontmatter(
                 Some(direction) => frontmatter.direction = Some(direction),
                 None => lints.push(bad_value(line, key, describe(value))),
             },
-            "origin" => match value {
-                Yaml::String(s) => {
-                    let v = trim_ws(s);
-                    if !v.is_empty() {
-                        frontmatter.origin = Some(v.to_string());
-                    }
-                }
-                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
-            },
+            "origin" => return Err(ParseError::ObsoleteOrigin(line)),
             // Reserved for future deck metadata: ignored without a lint.
             "tags" | "license" | "author" | "language" | "revision" | "generated-by"
             | "generated-at" => {}

@@ -70,7 +70,7 @@ fn transfer_with_remove(
     let transfer = Transfer::prepare(source, destination_workspace, mode)?;
     let scratch = tempfile::tempdir().context("cannot create deck transfer staging directory")?;
     let (bundle, _) = share::stage_deck_bundle(&transfer.source, scratch.path())?;
-    transfer.materialize_origin(&bundle)?;
+    transfer.materialize_sources(&bundle)?;
     transfer.verify_staged_identity(&bundle)?;
 
     if let Err(error) = share::land_deck_bundle(&bundle, &transfer.destination_files.decks()) {
@@ -209,15 +209,27 @@ impl Transfer {
         })
     }
 
-    fn materialize_origin(&self, bundle: &Path) -> Result<()> {
-        let Some(origin) = self.deck.effective_origin() else {
-            return Ok(());
+    /// A transferred deck leaves its workspace behind, so its layered sources
+    /// (own, else the source workspace's) materialize into its own `source:`
+    /// list, with relative local paths made absolute against the old root.
+    fn materialize_sources(&self, bundle: &Path) -> Result<()> {
+        let layers = self.deck.source_layers();
+        let sources = if layers.own.is_empty() {
+            &layers.workspace
+        } else {
+            &layers.own
         };
+        if sources.is_empty() {
+            return Ok(());
+        }
+        let materialized: Vec<String> = sources
+            .iter()
+            .map(|source| materialized_source(source, &self.source_root))
+            .collect();
         let staged_deck = self.staged_deck(bundle)?;
         let text = std::fs::read_to_string(&staged_deck)
             .with_context(|| format!("cannot read {}", staged_deck.display()))?;
-        let origin = materialized_origin(&origin, &self.source_root);
-        let text = deck::with_origin(&text, &origin)?;
+        let text = deck::with_sources(&text, &materialized)?;
         deck::write_deck_text(&staged_deck, &text)?;
         Ok(())
     }
@@ -378,8 +390,8 @@ fn ensure_requirements_resolve(deck: &Deck, destination_decks: &Path) -> Result<
     Ok(())
 }
 
-fn materialized_origin(origin: &str, source_root: &Path) -> String {
-    origin
+fn materialized_source(source: &str, source_root: &Path) -> String {
+    source
         .split(" + ")
         .map(str::trim)
         .map(|part| {
@@ -492,7 +504,9 @@ mod tests {
         let path = root.join("decks").join(name);
         std::fs::write(
             &path,
-            format!("---\nid: deck-deck1\n{frontmatter}---\n## q\nanswer\n<!-- id: card-card1 -->\n"),
+            format!(
+                "---\nid: deck-deck1\n{frontmatter}---\n## q\nanswer\n<!-- id: card-card1 -->\n"
+            ),
         )
         .unwrap();
         path
@@ -507,12 +521,12 @@ mod tests {
         workspace(&destination, None, "");
         let asset_name = crate::assets::object_name(b"evidence\n", "txt");
         std::fs::create_dir_all(source.join("assets/deck-deck1")).unwrap();
-        std::fs::write(source.join("assets/deck-deck1").join(&asset_name), "evidence\n").unwrap();
-        let deck = deck(
-            &source,
-            "facts.md",
-            &format!("source: assets/deck-deck1/{asset_name}\n"),
-        );
+        std::fs::write(
+            source.join("assets/deck-deck1").join(&asset_name),
+            "evidence\n",
+        )
+        .unwrap();
+        let deck = deck(&source, "facts.md", "");
         let loaded = Deck::load(&deck).unwrap();
         let mut augmentation = crate::augment::AugmentCache::open_for_deck(&loaded).unwrap();
         augmentation.set_note("card-card1", "note".to_string(), 1);
@@ -532,7 +546,12 @@ mod tests {
             std::fs::read_to_string(&deck).unwrap(),
             std::fs::read_to_string(&copied).unwrap()
         );
-        assert!(destination.join("assets/deck-deck1").join(&asset_name).is_file());
+        assert!(
+            destination
+                .join("assets/deck-deck1")
+                .join(&asset_name)
+                .is_file()
+        );
         assert!(destination.join("augment/deck-deck1.json").is_file());
         assert!(!destination.join("progress/deck-deck1.json").exists());
     }
@@ -637,11 +656,37 @@ mod tests {
     }
 
     #[test]
-    fn inherited_relative_origins_are_materialized_without_changing_ids() {
+    fn an_own_relative_source_is_materialized_against_the_old_workspace_root() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "[defaults]\norigin = \"material\"\n");
+        workspace(&source, None, "");
+        workspace(&destination, None, "");
+        std::fs::create_dir(source.join("material")).unwrap();
+        let deck = deck(&source, "facts.md", "source: material\n");
+
+        transfer(&deck, &destination, TransferMode::Copy).unwrap();
+
+        let copied = Deck::load(destination.join("decks/facts.md")).unwrap();
+        assert_eq!(
+            vec![
+                source
+                    .join("material")
+                    .canonicalize()
+                    .unwrap()
+                    .display()
+                    .to_string()
+            ],
+            copied.sources
+        );
+    }
+
+    #[test]
+    fn an_inherited_relative_workspace_source_is_materialized_without_changing_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let destination = dir.path().join("destination");
+        workspace(&source, None, "source = \"material\"\n");
         workspace(&destination, None, "");
         std::fs::create_dir(source.join("material")).unwrap();
         let deck = deck(&source, "facts.md", "");
@@ -652,15 +697,15 @@ mod tests {
         assert_eq!(Some("deck-deck1"), copied.deck_token.as_deref());
         assert_eq!(Some("card-card1".to_string()), copied.cards[0].id());
         assert_eq!(
-            Some(
+            vec![
                 source
                     .join("material")
                     .canonicalize()
                     .unwrap()
                     .display()
                     .to_string()
-            ),
-            copied.settings.origin
+            ],
+            copied.sources
         );
     }
 

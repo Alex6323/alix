@@ -399,7 +399,7 @@ pub fn materialize(
     goal: &str,
     title: Option<&str>,
     source: &str,
-    origin: Option<&str>,
+    public_url: Option<&str>,
     filled: Option<&HashMap<usize, String>>,
 ) -> Result<Materialized> {
     let mut items = parse_plan(plan);
@@ -432,14 +432,11 @@ pub fn materialize(
     if let Some(title) = title {
         manifest.push_str(&format!("title = \"{}\"\n", toml_escape(title)));
     }
-    manifest.push_str(&format!(
-        "description = \"{}\"\n\n[defaults]\n",
-        toml_escape(goal)
-    ));
-    // The source root the tutor grounds against and drift detection reads;
-    // cascades into each member deck's `origin`, overridable per deck/card.
-    if let Some(origin) = origin.or_else(|| root.as_ref().and_then(|path| path.to_str())) {
-        manifest.push_str(&format!("origin = \"{}\"\n", toml_escape(origin)));
+    manifest.push_str(&format!("description = \"{}\"\n", toml_escape(goal)));
+    // The workspace `source`: the material the workspace is about, layered
+    // under every member deck's own sources (ADR 0026).
+    if let Some(source) = public_url.or_else(|| root.as_ref().and_then(|path| path.to_str())) {
+        manifest.push_str(&format!("source = \"{}\"\n", toml_escape(source)));
     }
     fs::write(dir.join(crate::workspace::MANIFEST), manifest)?;
 
@@ -879,7 +876,8 @@ Spine   a -> b
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(manifest.contains("description = \"understand the repo\""));
         assert!(!manifest.contains("title ="));
-        assert!(manifest.contains("[defaults]"));
+        assert!(manifest.contains("source = "), "{manifest}");
+        assert!(!manifest.contains("origin"), "{manifest}");
 
         let deck = fs::read_to_string(dir.join("decks/01-the-deck-format.md")).unwrap();
         assert!(deck.contains("# The Deck Format"));
@@ -933,8 +931,8 @@ Spine   a -> b
     }
 
     #[test]
-    fn materialize_keeps_an_explicit_public_origin_in_the_manifest() {
-        let dir = std::env::temp_dir().join(format!("alix-explore-origin-{}", std::process::id()));
+    fn materialize_prefers_an_explicit_public_url_as_the_manifest_source() {
+        let dir = std::env::temp_dir().join(format!("alix-explore-src-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
         materialize(
@@ -950,7 +948,7 @@ Spine   a -> b
 
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(
-            manifest.contains("origin = \"https://example.org/source\""),
+            manifest.contains("source = \"https://example.org/source\""),
             "{manifest}"
         );
 
@@ -1145,7 +1143,7 @@ back a
         fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
         fs::write(
             dir.join("alix.toml"),
-            "[defaults]\norigin = \"https://example.org/current\"\n",
+            "source = \"https://example.org/current\"\n",
         )
         .unwrap();
         let src = dir.join("src");
@@ -1172,7 +1170,10 @@ back a
         assert!(summary.failed.is_empty(), "{:?}", summary.failed);
         let trace_name = crate::assets::object_name(b"x\ny\n", "rs");
         let fact_name = crate::assets::object_name(b"z\n", "rs");
-        assert!(dir.join(format!("assets/deck-trace/{trace_name}")).is_file());
+        assert!(
+            dir.join(format!("assets/deck-trace/{trace_name}"))
+                .is_file()
+        );
         assert!(dir.join(format!("assets/deck-facts/{fact_name}")).is_file());
         assert!(!dir.join("assets/a.rs").exists());
         let fact = fs::read_to_string(dir.join("decks/02-d.md")).unwrap();
@@ -1181,10 +1182,7 @@ back a
             "the live source declaration stays untouched: {fact}"
         );
         assert!(!fact.contains("source: \"assets/"), "{fact}");
-        assert!(
-            fact.contains("origin: \"https://example.org/current\""),
-            "{fact}"
-        );
+        assert!(!fact.contains("origin:"), "freezing stamps nothing: {fact}");
         assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
         assert!(
             fact.contains("<!-- at: a.rs:3 fingerprint: xxh64-")

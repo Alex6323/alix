@@ -15,7 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   move carries progress between distinct user roots and removes the source only
   after the destination is complete.
 - `alix workspace update <dir>` reconciles frozen source-backed members with
-  their recorded local origins. It stages an exact sibling workspace for
+  their live local sources. It stages an exact sibling workspace for
   review, then `--apply` publishes those same bytes without another model call
   or `--discard` removes them. Retained IDs require unchanged learning content;
   changed and obsolete cards retire with their IDs, while replacements receive
@@ -50,7 +50,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   xxh64-<hex> asset: sha256-<hex>.<ext> -->`, replacing the old ` @ xxh64:`
   form: `at:` is always the real source path, and `asset:` (present only on a
   frozen citation) holds the cited excerpt exactly. Freezing no longer rewrites
-  `source:`; a frozen deck keeps its real origin. Old-format decks fail to load
+  `source:` and stamps nothing; a frozen deck keeps its real source. The
+  `origin:` key (deck frontmatter, card directives, and the workspace manifest)
+  merged into the multi-valued `source:`; a workspace manifest may declare a
+  top-level `source` (the material the workspace is about), which the tutor and
+  examiner receive as layered supporting context under the deck's own sources
+  and which `has_exam` counts. Old-format decks fail to load
   loudly and the deck conversion tool rewrites them; there is no runtime reader
   for the old shape. `alix doctor` flags an un-converted bare-token state
   document or a `source:` that points into `assets/`.
@@ -73,9 +78,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   freezes explicit source files, bounded directory citations, and local card
   images before success. Exact bytes live under
   `assets/deck-<token>/sha256-<digest>.<ext>` and hold the cited excerpts;
-  `source:` stays the deck's real origin, runtime source consumers fail closed
-  on live, cross-deck, missing, or corrupted assets, and `origin:` is separately
-  gated current context rather than a replacement for frozen evidence.
+  `source:` stays the deck's real material, and runtime source consumers fail
+  closed on live, cross-deck, missing, or corrupted assets. A URL-valued
+  `source:` grounds the exam and tutor but holds no freezable bytes; citations
+  must land in a local source.
 - Single-deck sharing now carries and validates the complete deck-owned asset
   directory plus matching augmentation while continuing to exclude progress.
   Generated workspaces freeze in hidden staging before publication, and merges
@@ -86,12 +92,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   workspace `store` setting relocate only progress and recent history. Sharing
   carries matching assets and augmentation while excluding progress and local
   configuration.
-- Tutor and exam grounding now combines frozen evidence with an optional
-  current origin. URL origins are fetched only when the backend and tool grant
-  permit it; local origins still require explicit source access. The tutor
-  continues from frozen evidence with a visible warning when the full current
-  source is unavailable. `alix generate --origin <URL>` retains a portable
-  current source in generated decks and workspace defaults.
+- Tutor and exam grounding now combines frozen evidence with the live
+  `source:` values, deck and workspace layered apart (deck sources are the
+  primary grounding, the workspace source supporting context). URL sources are
+  fetched only when the backend and tool grant permit it; local sources still
+  require explicit source access. The tutor continues from frozen evidence with
+  a visible warning when the full current source is unavailable.
+  `alix generate --source-url <URL>` records a portable public URL as an
+  additional deck source or the generated workspace's `source`.
 - **Breaking (web/mobile APIs):** `CardDto` and the shared mobile `CardView`
   replace the single `at` citation with ordered `citations`; web citation
   entries carry their resolved excerpt or per-locator error. Both views also
@@ -106,7 +114,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking (pre-1.0):** workspace member decks now live only under direct
   `decks/*.md` children. Manifests, assets, and augmentation remain at the
   workspace root; private progress is colocated there by default but may use a
-  separate user-files root. Relative member sources, origins, and images anchor
+  separate user-files root. Relative member sources and images anchor
   at the workspace. Workspace creation and every generation/import/receive
   surface write the new shape, while `alix doctor` reports initialized root
   decks that are not discovered. Existing workspaces must move their deck files
@@ -137,9 +145,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the repository's exact Rust pin and lockfile, and scheduled drift jobs remain
   the explicit non-publishing path for testing current upstream toolchains.
 - **Breaking (pre-1.0):** grounded tutor filesystem access now requires an
-  explicit deck or workspace `origin`. A local `source` citation still supplies
+  explicitly declared deck or workspace `source`; its root is the deck's first
+  local-path source (workspace source as fallback). A citation still supplies
   the card's evidence, but alix no longer guesses a wider project root from
-  `Cargo.toml`, `.git`, or other markers. A public URL origin can supply current
+  `Cargo.toml`, `.git`, or other markers. A public URL source can supply current
   context when `WebFetch` is available.
 - Trace source excerpts now highlight exact, case-sensitive terms that the checkpoint author marked as inline code in its key points.
 - **Additive (web API):** card display projection now comes from the shared Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`, and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays in index lockstep with its existing text field. `CardDto` continues to expose text fallback for clients that ignore the new fields.

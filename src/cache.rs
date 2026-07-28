@@ -47,6 +47,7 @@ struct ManifestMeta {
     title: Option<String>,
     description: Option<String>,
     settings: DeckSettings,
+    source: Vec<String>,
     icon: Option<String>,
 }
 
@@ -120,6 +121,7 @@ impl DeckCache {
             title: meta.title,
             description: meta.description,
             settings: meta.settings,
+            source: meta.source,
             members,
             icon,
         }
@@ -138,10 +140,15 @@ impl DeckCache {
 
 fn read_manifest_meta(path: &Path) -> ManifestMeta {
     let (title, description, settings, icon) = workspace::read_manifest(path);
+    let source = path
+        .parent()
+        .map(workspace::manifest_source)
+        .unwrap_or_default();
     ManifestMeta {
         title,
         description,
         settings,
+        source,
         icon,
     }
 }

@@ -166,9 +166,10 @@ entry carrying its own optional guidance steer (poll `GET /api/augment` while
 `thinking`; the growing `transcript` carries the whole exchange.
 `POST /api/ask/note` condenses the exchange into a deck note. The walk has its
 own mirror: `/api/walk/ask`, `/api/walk/ask/note`, `GET /api/walk/ask`.
-Frozen excerpts are always supplied as evidence. When no usable current
-`origin` is available, `status` carries a deterministic warning that the tutor
-has only the frozen evidence rather than the full current source.
+Frozen excerpts are always supplied as evidence. When no usable live
+`source:` (deck or workspace) is available, `status` carries a deterministic
+warning that the tutor has only the frozen evidence rather than the full
+current source.
 
 `POST /api/ask/card/draft` asks the tutor to distill the conversation into one
 draft card, following the same polling pattern: it starts a background call
@@ -305,8 +306,8 @@ server resolves **its own copy** of the named deck, by the same resolution
 trace deck now sits too (since 0.6.0): it opens straight in `answering`
 with the path's one fixed compression question, graded the same way the
 browser's own trace exam is (`RemoteExamDto.is_trace` tells the two apart,
-§6). A non-trace deck with neither `source:` evidence nor a public URL
-`origin:` is still refused outright (409): there is nothing to examine. The
+§6). A non-trace deck with no `source:` at either level (deck or workspace)
+is still refused outright (409): there is nothing to examine. The
 browser's `requires:` deck lock and trace re-sit
 cooldown are read from the server's own store, which is not the phone's
 truth, so a remote sitting skips both checks: it can start on a deck the web
@@ -483,7 +484,7 @@ first, same as a double `POST`.
 | GET | `/api/remote/ask` | – | `RemoteAskDto` (poll) | – |
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 409 a turn is already thinking |
-| POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a non-trace deck with neither source evidence nor a URL origin / a trace deck with no checkpoints / the backend can't reach a non-trace deck's grounding |
+| POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a non-trace deck with no deck or workspace source / a trace deck with no checkpoints / the backend can't reach a non-trace deck's grounding |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
 | POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
@@ -689,7 +690,7 @@ choice index is disclosed.
 
 `AskDto`: `transcript: [{q, a}]`, `thinking: bool`, `status: string?`,
 `error: string?`, `draft: DraftCardDto?`. `status` may report that only frozen
-evidence is available when the current origin cannot be used. `draft` is the last card the tutor
+evidence is available when the live source cannot be used. `draft` is the last card the tutor
 drafted from the conversation (`POST /api/ask/card/draft`, §4.5); it persists
 until the subject changes. `DraftCardDto`: `front: string`, `back:
 [string]`. `AskInfoDto`: `backend: string` (the configured AI backend's

@@ -191,8 +191,8 @@ fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
 }
 
 /// A pre-conversion frozen deck pointed `source:` at its own asset objects; the
-/// prefixed-id format keeps `source:` at the deck's real origin, so a value
-/// inside `assets/` is un-converted (a bare-fragment source an examiner would
+/// prefixed-id format keeps `source:` at the real material, so a value inside
+/// `assets/` is un-converted (a bare-fragment source an examiner would
 /// confidently fill gaps around).
 fn source_points_into_assets(source: &str) -> bool {
     if alix::deck::is_url(source) {
@@ -219,7 +219,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         if source_points_into_assets(source) {
             report.warn(format!(
                 "{}: `source:` points into `assets/` (`{source}`); a frozen deck keeps its \
-                 real origin, not its asset objects; back it up and run the deck conversion \
+                 real source, not its asset objects; back it up and run the deck conversion \
                  tool to rewrite it",
                 deck.path.display()
             ));
@@ -332,10 +332,18 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             }
         }
     }
+    if deck.sources.len() > 3 {
+        report.warn(format!(
+            "{}: `source:` lists {} expressions; point at their common root instead \
+             (a directory source covers its files)",
+            deck.path.display(),
+            deck.sources.len()
+        ));
+    }
     for prereq in alix::deck::nongating_prerequisites(deck) {
         report.warn(format!(
             "{}: requires ungrounded `{prereq}`: this edge doesn't gate its exam; \
-             add `source:` evidence or a URL `origin:` to make it a real prerequisite",
+             give it a `source:` (deck or workspace) to make it a real prerequisite",
             deck.subject
         ));
     }
@@ -347,14 +355,15 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                     report.warn(format!(
                         "{}: requires deck id `{req}` but no deck here carries it \
                          (dangling prerequisite); the prerequisite may have been deleted \
-                         or live elsewhere",
+                         or live elsewhere; if you meant a file of that name, write the \
+                         `.md` extension (`{req}.md`)",
                         deck.subject
                     ));
                 }
                 if let Some(shadow) = alix::deck::resolve_dep(req, dir, dir) {
                     report.warn(format!(
                         "{}: the file {} is named like the required deck id `{req}`; \
-                         the id wins, the file is not the prerequisite (write `./{req}` \
+                         the id wins, the file is not the prerequisite (write `{req}.md` \
                          to require the file itself)",
                         deck.subject,
                         shadow.display()
@@ -435,6 +444,11 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
 
 fn workspace_findings(dir: &Path) -> Report {
     let mut report = Report::default();
+    if alix::workspace::has_manifest(dir)
+        && let Err(error) = alix::workspace::Workspace::load(dir)
+    {
+        report.error(format!("{error}"));
+    }
     for path in alix::workspace::misplaced_deck_files(dir).unwrap_or_default() {
         report.warn(format!(
             "{}: workspace decks belong in {}; this file is not discovered",
@@ -937,10 +951,7 @@ mod tests {
         let report = workspace_findings(dir.path());
 
         assert!(
-            report
-                .errors
-                .join("\n")
-                .contains("live `at:` citation"),
+            report.errors.join("\n").contains("live `at:` citation"),
             "{:#?}",
             report.errors
         );
@@ -1494,8 +1505,11 @@ mod tests {
         let report = workspace_findings(dir.path());
 
         assert!(
-            report.warnings.iter().any(|warning| warning.contains("un-converted")
-                && warning.contains("deck conversion tool")),
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("un-converted")
+                    && warning.contains("deck conversion tool")),
             "un-converted state document: {:#?}",
             report.warnings
         );
@@ -1523,8 +1537,11 @@ mod tests {
         let report = workspace_findings(dir.path());
 
         assert!(
-            report.warnings.iter().any(|warning| warning.contains("points into `assets/`")
-                && warning.contains("deck conversion tool")),
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("points into `assets/`")
+                    && warning.contains("deck conversion tool")),
             "source into assets: {:#?}",
             report.warnings
         );
@@ -1551,7 +1568,10 @@ mod tests {
         let report = workspace_findings(dir.path());
 
         assert!(
-            !report.warnings.iter().any(|warning| warning.contains("un-converted")),
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("un-converted")),
             "clean workspace flagged un-converted: {:#?}",
             report.warnings
         );

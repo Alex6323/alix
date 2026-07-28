@@ -87,6 +87,10 @@ pub enum ParseError {
         "line {0}: `alix-id:` is no longer read; run the deck conversion tool to rewrite this deck to the prefixed-id format"
     )]
     ObsoleteAlixId(usize),
+    #[error(
+        "line {0}: `origin:` is no longer read (it merged into the multi-valued `source:`); run the deck conversion tool to rewrite this deck"
+    )]
+    ObsoleteOrigin(usize),
     #[error("line {line}: control character {found} outside the whitespace set")]
     ControlChar { line: usize, found: String },
     #[error("line {0}: card front is empty")]
@@ -266,7 +270,6 @@ struct CardDirectives {
     input: Option<Input>,
     direction: Option<Direction>,
     citations: Vec<crate::card::SourceCitation>,
-    origin: Option<String>,
     givens: Vec<String>,
 }
 
@@ -563,7 +566,7 @@ fn directive(body: &str) -> Option<(String, String)> {
 fn is_known_card_key(key: &str) -> bool {
     matches!(
         key,
-        "id" | "reveal" | "input" | "direction" | "at" | "origin" | "given"
+        "id" | "reveal" | "input" | "direction" | "at" | "given"
     )
 }
 
@@ -632,7 +635,7 @@ fn apply_directive(
                 line,
             });
         }
-        "origin" => directives.origin = Some(value),
+        "origin" => return Err(ParseError::ObsoleteOrigin(line)),
         "given" => directives.givens.push(value),
         _ => lints.push(Lint {
             line,
@@ -778,7 +781,6 @@ fn build_card(
                 card.images = images;
                 card.images_back = images_back;
                 card.citations = directives.citations;
-                card.origin = directives.origin;
                 card.givens = directives.givens;
                 card.authored_distractors = distractors;
                 cards.push(card);
@@ -816,7 +818,6 @@ fn build_card(
         card.images = images;
         card.images_back = images_back;
         card.citations = directives.citations;
-        card.origin = directives.origin;
         card.givens = directives.givens;
         cards.push(card);
         return Ok(());
@@ -1700,14 +1701,24 @@ mod tests {
     }
 
     #[test]
-    fn origin_follows_the_leniency_model_of_comparable_keys() {
-        let deck = parse("---\norigin: \"   \"\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.origin);
-        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+    fn a_frontmatter_origin_key_is_a_hard_error_naming_the_conversion_tool() {
+        let e = err("---\norigin: /crate\n---\n## q\na\n");
+        assert_eq!(ParseError::ObsoleteOrigin(2), e);
+        assert!(e.to_string().contains("deck conversion tool"), "{e}");
 
-        let deck = parse("---\norigin: 5\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.origin);
-        assert_eq!(vec![bad(2, "origin", "an integer")], deck.lints);
+        // The key itself is obsolete: the value's type never softens it.
+        let e = err("---\norigin: 5\n---\n## q\na\n");
+        assert_eq!(ParseError::ObsoleteOrigin(2), e);
+    }
+
+    #[test]
+    fn a_card_origin_directive_is_a_hard_error_naming_the_conversion_tool() {
+        let e = err("## q\na\n<!-- origin: /crate -->\n");
+        assert_eq!(ParseError::ObsoleteOrigin(3), e);
+        assert!(e.to_string().contains("deck conversion tool"), "{e}");
+
+        let e = err("## q\na\n<!-- origin: -->\n");
+        assert_eq!(ParseError::ObsoleteOrigin(3), e);
     }
 
     #[test]
@@ -1937,7 +1948,6 @@ reveal: line
 order: sequential
 input: draw
 direction: both
-origin: /crate
 tags: [a, b]
 license: MIT
 author: someone
@@ -1956,7 +1966,6 @@ the answer
 <!-- input: type -->
 <!-- direction: reverse -->
 <!-- at: src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->
-<!-- origin: /crate -->
 <!-- given: state - the parser position -->
 <!-- given: partial - the card -->
 "#;
@@ -1972,7 +1981,6 @@ the answer
                 order: Some(Order::Sequential),
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
-                origin: Some("/crate".into()),
                 unspliceable: false,
             },
             document.frontmatter
@@ -1983,16 +1991,15 @@ the answer
             CardDirectives {
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(30),
+                reveal_line: Some(29),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 citations: vec![crate::card::SourceCitation {
                     locator: "src/caching.rs:46-66".into(),
                     fingerprint: Some(0x0123456789abcdef),
                     asset: Some("sha256-abc123.rs".into()),
-                    line: 33,
+                    line: 32,
                 }],
-                origin: Some("/crate".into()),
                 givens: vec![
                     "state - the parser position".into(),
                     "partial - the card".into(),
@@ -2016,11 +2023,10 @@ the answer
                 locator: "src/caching.rs:46-66".into(),
                 fingerprint: Some(0x0123456789abcdef),
                 asset: Some("sha256-abc123.rs".into()),
-                line: 33,
+                line: 32,
             }],
             card.citations
         );
-        assert_eq!(Some("/crate".to_string()), card.origin);
         assert_eq!(2, card.givens.len());
         assert_eq!(
             Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f"),

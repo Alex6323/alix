@@ -231,7 +231,7 @@ enum WorkspaceAction {
     /// `assets/` dir, no decks yet. Grow it with `alix generate … --workspace
     /// <dir>` or `alix deck import … --workspace <dir>`.
     Init(WorkspaceInitArgs),
-    /// Reconcile frozen source-backed decks with their live origins. The first
+    /// Reconcile frozen source-backed decks with their live sources. The first
     /// run stages an exact proposal; inspect it, then rerun with `--apply`.
     Update(WorkspaceUpdateArgs),
     /// Show, set, or clear this workspace's personal "ready by" deadline.
@@ -317,10 +317,10 @@ struct GenerateArgs {
     /// are then built in place.
     source: String,
 
-    /// Public source URL retained as the workspace or deck origin for tutor
-    /// context, exam grounding, and staleness checks.
+    /// Public URL recorded as an additional `source:` (the workspace `source`
+    /// for a generated workspace) for tutor context and exam grounding.
     #[arg(long, value_name = "URL")]
-    origin: Option<String>,
+    source_url: Option<String>,
 
     /// The learning goal that scopes what is generated (default: understand
     /// the whole source).
