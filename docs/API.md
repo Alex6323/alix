@@ -532,6 +532,7 @@ The review-session payload; returned by every review action.
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything due/new right now. |
 | `promotable` | bool | Current card is a virtual (remediation) card. |
+| `next_due_ms` | number? | Present only at `done`: the soonest epoch-millis instant a scheduled card next comes due, so an empty sitting can say when to return. Absent on a live session and when nothing is scheduled. Clients format it terse and approximate (e.g. "next due in 4 min"), never ticking. |
 | `label` | string | Session header label *(presentational)*. |
 | `save_error` | string? | Absent while saving works. Set (human-readable reason) once session progress can no longer be persisted, e.g. another writer replaced this deck's progress document; it stays set until a save succeeds, so clients should show it persistently and advise reopening the deck. |
 

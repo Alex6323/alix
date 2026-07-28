@@ -110,6 +110,7 @@ pub struct _ReviewState {
     pub acquired: u32,
     pub can_restart: bool,
     pub promotable: bool,
+    pub next_due_ms: Option<u64>,
 }
 
 #[flutter_rust_bridge::frb(mirror(ChoiceFeedback))]

@@ -7,6 +7,12 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Added
+
+- The empty "Nothing due." session summary now shows one quiet line saying when
+  the next card is due (for example "Next due in 4 min." during an acquire
+  cooldown), instead of only reading "Nothing due."
+
 ### Changed
 
 - **Breaking:** synced progress and AI augmentation now use one versioned JSON

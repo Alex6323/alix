@@ -101,6 +101,8 @@ pub(super) struct StateDto {
     pub(super) exam_due: Vec<String>,
     pub(super) can_restart: bool,
     pub(super) promotable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) next_due_ms: Option<u64>,
     pub(super) label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) save_error: Option<String>,
@@ -921,6 +923,7 @@ pub(super) fn review_state(
             exam_due: Vec::new(),
             can_restart: false,
             promotable: false,
+            next_due_ms: None,
             label: "select decks".to_string(),
             save_error: save_error.map(str::to_string),
         };
@@ -1033,6 +1036,7 @@ pub(super) fn review_state(
         exam_due,
         can_restart: s.can_restart,
         promotable: s.promotable,
+        next_due_ms: s.next_due_ms,
         label: r.label.clone(),
         save_error: save_error.map(str::to_string),
     }

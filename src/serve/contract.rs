@@ -47,6 +47,7 @@ fn statedto_select_phase_wire_shape() {
         exam_due: Vec::new(),
         can_restart: false,
         promotable: false,
+        next_due_ms: None,
         label: "select decks".to_string(),
         save_error: None,
     };
@@ -172,6 +173,7 @@ fn statedto_review_phase_wire_shape() {
         exam_due: vec!["rust.md".to_string()],
         can_restart: true,
         promotable: true,
+        next_due_ms: None,
         label: "rust.md".to_string(),
         save_error: Some(
             "progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
@@ -264,6 +266,63 @@ fn statedto_review_phase_wire_shape() {
             "promotable": true,
             "label": "rust.md",
             "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4"
+        }),
+    );
+}
+
+#[test]
+fn statedto_done_phase_carries_the_next_due_instant() {
+    let dto = StateDto {
+        kind: "review",
+        phase: "done",
+        card: None,
+        choices: None,
+        choice_runs: None,
+        keypoints: None,
+        keypoint_runs: None,
+        acquire: false,
+        mode: "flip",
+        depth: "recall",
+        input: "type",
+        remaining: 0,
+        initial: 0,
+        reviews: 0,
+        passed: 0,
+        failed: 0,
+        acquired: 0,
+        exam_due: Vec::new(),
+        can_restart: false,
+        promotable: false,
+        next_due_ms: Some(1_700_000_100_000),
+        label: "rust.md".to_string(),
+        save_error: None,
+    };
+    pin(
+        "StateDto.done",
+        &dto,
+        json!({
+            "kind": "review",
+            "phase": "done",
+            "card": null,
+            "choices": null,
+            "choice_runs": null,
+            "keypoints": null,
+            "keypoint_runs": null,
+            "acquire": false,
+            "mode": "flip",
+            "depth": "recall",
+            "input": "type",
+            "remaining": 0,
+            "initial": 0,
+            "reviews": 0,
+            "passed": 0,
+            "failed": 0,
+            "acquired": 0,
+            "exam_due": [],
+            "can_restart": false,
+            "promotable": false,
+            "next_due_ms": 1_700_000_100_000_u64,
+            "label": "rust.md"
         }),
     );
 }

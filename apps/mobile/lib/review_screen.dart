@@ -1413,6 +1413,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
+  // Terse "next due" phrase for an empty session, mirroring the web's
+  // nextDueNote(). No seconds, no ticking; null when there is no instant or it
+  // has already passed.
+  String? _nextDueNote(BigInt? ms) {
+    if (ms == null) return null;
+    final delta = ms.toInt() - DateTime.now().millisecondsSinceEpoch;
+    if (delta <= 0) return null;
+    final min = (delta / 60000).round();
+    if (min < 60) return 'Next due in ${min < 1 ? 1 : min} min.';
+    final hr = (delta / 3600000).round();
+    if (hr < 24) return 'Next due in $hr h.';
+    final days = (delta / 86400000).round();
+    return days <= 1 ? 'Next due tomorrow.' : 'Next due in $days days.';
+  }
+
   /// The session-complete summary, mirroring the web's renderSummary().
   Widget _done(BuildContext context) {
     final theme = Theme.of(context);
@@ -1429,6 +1444,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
         : acquired > 0
         ? 'New cards planted.'
         : 'Nothing due.';
+    final nextDue = reviews == 0 && acquired == 0
+        ? _nextDueNote(_state.nextDueMs)
+        : null;
+    final noteText =
+        nextDue ??
+        (!_state.canRestart ? 'Nothing due right now, come back later.' : null);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1464,7 +1485,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ),
             _summaryRow('accuracy', acc, tokens),
           ],
-          if (!_state.canRestart) ...[
+          if (noteText != null) ...[
             const SizedBox(height: 18),
             Container(
               width: double.infinity,
@@ -1477,7 +1498,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                'Nothing due right now, come back later.',
+                noteText,
                 style: TextStyle(color: tokens.noteInk, fontSize: 15),
               ),
             ),

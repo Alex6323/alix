@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The empty "Nothing due." session screen now shows one quiet line saying when
+  the next card is due (for example "Next due in 4 min." during an acquire
+  cooldown), so an empty sitting explains itself instead of only reading
+  "Nothing due." Adult web and mobile; the finished session payload
+  (`StateDto` / `ReviewState`) gains an additive `next_due_ms` instant.
 - `alix deck copy <deck> <workspace>` and
   `alix deck move <deck> <workspace>` transfer one initialized workspace member
   with its owned frozen assets and augmentation. Both reuse the same public
@@ -29,14 +34,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A private vulnerability-reporting policy and a tracked threat model covering
   local files, LAN pairing, AI providers, sharing, persistence, mobile, and
   release boundaries.
-- `alix profile`: define and launch a named alix instance per person (its own decks, port, and adult/kids frontend), reachable on your LAN with a stable token so phones can bookmark it. `alix profile add/list/remove`, `alix profile <name>` to launch, `alix profile default` to pick what bare `alix` launches, and `alix --launch-all` to boot every profile at once.
-- Multiple-choice cards you author directly: write the answer as a GitHub task list (`- [x]` correct, `- [ ]` distractors). It renders as a checklist in any Markdown previewer and drives the Recognize quiz from your own options, with no AI distractor pass needed. Task lists in notes and card fronts render as checkboxes too.
-- card text now renders inline Markdown: `**bold**`, `*italic*`/`_italic_`, and `` `code` ``.
-- LaTeX math in cards: `$...$` renders inline and a whole-line `$$...$$` renders as centered display math in adult web, kids web, and mobile. Formula clozes support `\blank{...}`, and RaTeX chemistry remains available through `\ce{...}`. The Rust core produces one self-contained SVG shared by every graphical client while decks, grading, fingerprints, and progress retain only the authored source.
-- Committed manual-QA examples for graphical math rendering and a self-contained workspace with a frozen Rust ownership trace.
-- the picker's focus drawer now shows a deck's preamble (the prose written under its `#` title), which was parsed but never surfaced before
-- `alix doctor` flags a dangling `requires:` (one naming a deck that does not exist), so a renamed or deleted prerequisite is reported instead of silently dropping the gating edge.
-- `alix doctor` warns when a card's `<!-- id: -->` marker is not the card's closing line (the position stamping mints at), so a hand-placed marker drifts back to the canonical shape instead of scattering through the deck.
+- `alix profile`: define and launch a named alix instance per person (its own
+  decks, port, and adult/kids frontend), reachable on your LAN with a stable
+  token so phones can bookmark it. `alix profile add/list/remove`, `alix
+  profile <name>` to launch, `alix profile default` to pick what bare `alix`
+  launches, and `alix --launch-all` to boot every profile at once.
+- Multiple-choice cards you author directly: write the answer as a GitHub task
+  list (`- [x]` correct, `- [ ]` distractors). It renders as a checklist in any
+  Markdown previewer and drives the Recognize quiz from your own options, with
+  no AI distractor pass needed. Task lists in notes and card fronts render as
+  checkboxes too.
+- card text now renders inline Markdown: `**bold**`, `*italic*`/`_italic_`, and
+  `` `code` ``.
+- LaTeX math in cards: `$...$` renders inline and a whole-line `$$...$$`
+  renders as centered display math in adult web, kids web, and mobile. Formula
+  clozes support `\blank{...}`, and RaTeX chemistry remains available through
+  `\ce{...}`. The Rust core produces one self-contained SVG shared by every
+  graphical client while decks, grading, fingerprints, and progress retain only
+  the authored source.
+- Committed manual-QA examples for graphical math rendering and a
+  self-contained workspace with a frozen Rust ownership trace.
+- the picker's focus drawer now shows a deck's preamble (the prose written
+  under its `#` title), which was parsed but never surfaced before
+- `alix doctor` flags a dangling `requires:` (one naming a deck that does not
+  exist), so a renamed or deleted prerequisite is reported instead of silently
+  dropping the gating edge.
+- `alix doctor` warns when a card's `<!-- id: -->` marker is not the card's
+  closing line (the position stamping mints at), so a hand-placed marker drifts
+  back to the canonical shape instead of scattering through the deck.
 
 ### Changed
 
@@ -155,16 +180,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the card's evidence, but alix no longer guesses a wider project root from
   `Cargo.toml`, `.git`, or other markers. A public URL source can supply current
   context when `WebFetch` is available.
-- Trace source excerpts now highlight exact, case-sensitive terms that the checkpoint author marked as inline code in its key points.
-- **Additive (web API):** card display projection now comes from the shared Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`, and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays in index lockstep with its existing text field. `CardDto` continues to expose text fallback for clients that ignore the new fields.
-- **Additive (web/mobile APIs):** trace walk state now carries inline-run projections for its description, checkpoint prompt, givens, key points, and note alongside the existing raw strings.
-- Mobile review now consumes the core's shared inline runs for bold, italic, code, and LaTeX math instead of rendering raw card strings separately.
-- Android release builds now size-optimize the embedded Rust core with fat LTO, one codegen unit, and stripped symbols. `make aab` produces the Android App Bundle for Google Play while `make apk` remains the GitHub-release and phone-smoke artifact.
-- Inline code (`` `like this` ``) now renders with a distinct, theme-aware color for readability.
-- **Breaking (pre-1.0):** inline `*`/`_`/`**` in existing card text now renders as emphasis; a deck that used them literally (e.g. `2*3*4`) will render/grade with the markers stripped. Escape with a backslash (`\*`) or wrap in inline code (`` `2*3*4` ``) to keep them literal. Run `alix doctor <deck>` to find affected cards.
-- **Breaking (web API):** `CardDto.front` and `CardDto.back` now contain inline-marker-stripped content, while the new `front_runs` and `back_runs` fields carry display formatting. Sentence-shaped `NoteUnit` values also gain `runs`.
-- the picker's focus drawer now opens for every deck, not only decks with a topology augmentation, and shows a per-card retrievability heatmap: a single whole-deck bar for a plain deck, split into named regions when the deck has a topology. Cards you have never reviewed render as a neutral cell rather than red, so a fresh deck reads as unlearned instead of failing
-- **Breaking (web API):** the drawer no longer shows a raw due count. `POST /api/deck-topology` is renamed `POST /api/deck-drawer`; its response `DeckTopologyDto` becomes `DeckDrawerDto` (gains `preamble` and a flat `heatmap`, drops `deck_due`), and `RegionInfoDto` drops its `due` field
+- Trace source excerpts now highlight exact, case-sensitive terms that the
+  checkpoint author marked as inline code in its key points.
+- **Additive (web API):** card display projection now comes from the shared
+  Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`,
+  and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays
+  in index lockstep with its existing text field. `CardDto` continues to expose
+  text fallback for clients that ignore the new fields.
+- **Additive (web/mobile APIs):** trace walk state now carries inline-run
+  projections for its description, checkpoint prompt, givens, key points, and
+  note alongside the existing raw strings.
+- Mobile review now consumes the core's shared inline runs for bold, italic,
+  code, and LaTeX math instead of rendering raw card strings separately.
+- Android release builds now size-optimize the embedded Rust core with fat LTO,
+  one codegen unit, and stripped symbols. `make aab` produces the Android App
+  Bundle for Google Play while `make apk` remains the GitHub-release and
+  phone-smoke artifact.
+- Inline code (`` `like this` ``) now renders with a distinct, theme-aware
+  color for readability.
+- **Breaking (pre-1.0):** inline `*`/`_`/`**` in existing card text now renders
+  as emphasis; a deck that used them literally (e.g. `2*3*4`) will render/grade
+  with the markers stripped. Escape with a backslash (`\*`) or wrap in inline
+  code (`` `2*3*4` ``) to keep them literal. Run `alix doctor <deck>` to find
+  affected cards.
+- **Breaking (web API):** `CardDto.front` and `CardDto.back` now contain
+  inline-marker-stripped content, while the new `front_runs` and `back_runs`
+  fields carry display formatting. Sentence-shaped `NoteUnit` values also gain
+  `runs`.
+- the picker's focus drawer now opens for every deck, not only decks with a
+  topology augmentation, and shows a per-card retrievability heatmap: a single
+  whole-deck bar for a plain deck, split into named regions when the deck has a
+  topology. Cards you have never reviewed render as a neutral cell rather than
+  red, so a fresh deck reads as unlearned instead of failing
+- **Breaking (web API):** the drawer no longer shows a raw due count. `POST
+  /api/deck-topology` is renamed `POST /api/deck-drawer`; its response
+  `DeckTopologyDto` becomes `DeckDrawerDto` (gains `preamble` and a flat
+  `heatmap`, drops `deck_due`), and `RegionInfoDto` drops its `due` field
 
 ### Fixed
 
@@ -205,14 +256,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   opened it without an unnecessary session-state refresh.
 - Visible adult-client scrollbars now use slim, theme-aware tracks and thumbs
   instead of the browser's bright native chrome.
-- Short fact-card source excerpts now keep the answer region's centered vertical alignment; excerpts still top-align when they overflow.
-- Fact-card citations and trace walks now share the same editor-style, path-labelled source excerpt instead of using two visually inconsistent renderers.
-- Trace walks now render authored inline Markdown in their description, checkpoint prompt, givens, key points, and note on adult web and mobile instead of showing raw markers such as backticks.
-- Multiple-choice options now receive a fresh shuffle seed for each study session, so a card's correct answer does not return to the same memorized position every time the app is reopened; repeated state polls still keep the current question stable.
-- `alix doctor` now reports malformed recognized LaTeX with its deck, card line, source snippet, and renderer error. CLI, desktop-server, and paired-mobile generation reject malformed math before placement without damaging an existing deck; generated text that does not parse as a deck keeps the previous lenient saved-draft behavior.
-- Authored checkbox answers and distractors now retain their inline formatting source for display while duplicate detection and typed grading continue to use delimiter-free content.
-- A formula that is the only inline run on its logical line now renders larger across adult web, kids web, and mobile, while math embedded in prose keeps its previous text-sized scale.
-- Editing a card's content now invalidates its cached AI augmentations (distractors, note, questions, key points, and the reshaped answer). Previously a cached output generated from the old content was served until you cleared or regenerated it.
+- Short fact-card source excerpts now keep the answer region's centered
+  vertical alignment; excerpts still top-align when they overflow.
+- Fact-card citations and trace walks now share the same editor-style,
+  path-labelled source excerpt instead of using two visually inconsistent
+  renderers.
+- Trace walks now render authored inline Markdown in their description,
+  checkpoint prompt, givens, key points, and note on adult web and mobile
+  instead of showing raw markers such as backticks.
+- Multiple-choice options now receive a fresh shuffle seed for each study
+  session, so a card's correct answer does not return to the same memorized
+  position every time the app is reopened; repeated state polls still keep the
+  current question stable.
+- `alix doctor` now reports malformed recognized LaTeX with its deck, card
+  line, source snippet, and renderer error. CLI, desktop-server, and
+  paired-mobile generation reject malformed math before placement without
+  damaging an existing deck; generated text that does not parse as a deck keeps
+  the previous lenient saved-draft behavior.
+- Authored checkbox answers and distractors now retain their inline formatting
+  source for display while duplicate detection and typed grading continue to
+  use delimiter-free content.
+- A formula that is the only inline run on its logical line now renders larger
+  across adult web, kids web, and mobile, while math embedded in prose keeps
+  its previous text-sized scale.
+- Editing a card's content now invalidates its cached AI augmentations
+  (distractors, note, questions, key points, and the reshaped answer).
+  Previously a cached output generated from the old content was served until
+  you cleared or regenerated it.
 
 ## [0.6.0] - 2026-07-20
 

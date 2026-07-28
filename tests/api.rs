@@ -1611,6 +1611,10 @@ fn recognize_is_unavailable_and_empty_on_an_unaugmented_deck() {
     assert!(body["card"].is_null(), "no card scheduled: {body}");
     assert_eq!("done", body["phase"], "empty recognize session: {body}");
     assert_eq!(0, body["initial"], "nothing entered the roster: {body}");
+    assert!(
+        body["next_due_ms"].is_null(),
+        "nothing is scheduled, so the done payload carries no next-due instant: {body}"
+    );
 }
 
 #[test]
@@ -1741,6 +1745,34 @@ fn post_api_acquire_acknowledges_a_never_seen_card_without_grading_it() {
         "the introduced card is counted: {body}"
     );
     assert_eq!(1, body["remaining"], "body: {body}");
+}
+
+#[test]
+fn acquiring_every_card_leaves_a_done_session_reporting_the_next_due_instant() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+    // Acquire both fixture cards: each records into an acquire cooldown, so the
+    // sitting finishes with nothing due now but a future next-due instant.
+    post_json(&base, "/api/acquire", "{}");
+    let resp = post_json(&base, "/api/acquire", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        "done", body["phase"],
+        "both cards acquired, none due now: {body}"
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let next_due = body["next_due_ms"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("the done payload must carry next_due_ms: {body}"));
+    assert!(
+        next_due > now,
+        "next due is a future instant (both cards still cooling): {body}"
+    );
 }
 
 #[test]

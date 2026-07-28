@@ -155,6 +155,44 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
   await expect(answer).toHaveText("Cheetah");
 });
 
+// The empty "Nothing due." summary (nothing reviewed or introduced) shows one
+// quiet line saying when the next scheduled card comes due. The server-side
+// production of `next_due_ms` on the done payload is covered by tests/api.rs;
+// here the payload is mocked (as the tutor tests mock /api/ask) so the exact
+// reviews==0/acquired==0 screen renders regardless of fixture scheduling, and
+// the real embedded review.html JS is exercised against a fresh build.
+test("an empty session says when the next card is due", async ({ page }) => {
+  const done = {
+    kind: "review",
+    phase: "done",
+    card: null,
+    choices: null,
+    choice_runs: null,
+    keypoints: null,
+    keypoint_runs: null,
+    acquire: false,
+    mode: "flip",
+    depth: "recall",
+    input: "type",
+    remaining: 0,
+    initial: 0,
+    reviews: 0,
+    passed: 0,
+    failed: 0,
+    acquired: 0,
+    exam_due: [],
+    can_restart: false,
+    promotable: false,
+    next_due_ms: Date.now() + 5 * 60 * 1000,
+    label: "solo.md",
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: done }));
+  await openApp(page);
+
+  await expect(page.getByRole("heading", { name: "Nothing due.", exact: true })).toBeVisible();
+  await expect(page.locator(".summary .note")).toHaveText(/^Next due in \d+ min\.$/);
+});
+
 test("the tutor leave prompt keeps Enter for composing and Escape stays", async ({ page }) => {
   await openWildCram(page, "Recall");
   await answerCurrentWildCard(page);

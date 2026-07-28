@@ -1376,12 +1376,12 @@ fn wire__crate__api__review__seed_choice_distractors_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_deck_path = <String>::sse_decode(&mut deserializer);
-            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api__root_dir = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
                     let output_ok =
-                        crate::api::review::seed_choice_distractors(api_deck_path, api_root_dir)?;
+                        crate::api::review::seed_choice_distractors(api_deck_path, api__root_dir)?;
                     Ok(output_ok)
                 })(),
             )
@@ -1574,6 +1574,7 @@ const _: fn() = || {
         let _: u32 = ReviewState.acquired;
         let _: bool = ReviewState.can_restart;
         let _: bool = ReviewState.promotable;
+        let _: Option<u64> = ReviewState.next_due_ms;
     }
     {
         let TypedResult = None::<crate::api::review::TypedResult>.unwrap();
@@ -2343,6 +2344,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_acquired = <u32>::sse_decode(deserializer);
         let mut var_canRestart = <bool>::sse_decode(deserializer);
         let mut var_promotable = <bool>::sse_decode(deserializer);
+        let mut var_nextDueMs = <Option<u64>>::sse_decode(deserializer);
         return crate::api::review::ReviewState {
             card: var_card,
             mode: var_mode,
@@ -2362,6 +2364,7 @@ impl SseDecode for crate::api::review::ReviewState {
             acquired: var_acquired,
             can_restart: var_canRestart,
             promotable: var_promotable,
+            next_due_ms: var_nextDueMs,
         };
     }
 }
@@ -3070,6 +3073,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.acquired.into_into_dart().into_dart(),
             self.0.can_restart.into_into_dart().into_dart(),
             self.0.promotable.into_into_dart().into_dart(),
+            self.0.next_due_ms.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3886,6 +3890,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <u32>::sse_encode(self.acquired, serializer);
         <bool>::sse_encode(self.can_restart, serializer);
         <bool>::sse_encode(self.promotable, serializer);
+        <Option<u64>>::sse_encode(self.next_due_ms, serializer);
     }
 }
 

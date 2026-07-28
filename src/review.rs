@@ -175,6 +175,7 @@ pub struct ReviewState {
     pub acquired: u32,
     pub can_restart: bool,
     pub promotable: bool,
+    pub next_due_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -240,6 +241,7 @@ pub fn state(
             .map(|keypoint| projector.project(keypoint))
             .collect()
     });
+    let finished = session.is_finished();
     ReviewState {
         card: card_view,
         mode,
@@ -250,7 +252,7 @@ pub fn state(
         keypoints,
         keypoint_runs,
         input: card.and_then(|c| c.input).unwrap_or_default(),
-        finished: session.is_finished(),
+        finished,
         remaining: session.remaining() as u32,
         initial: session.initial_size as u32,
         reviews: session.stats.reviews as u32,
@@ -259,6 +261,7 @@ pub fn state(
         acquired: session.stats.acquired as u32,
         can_restart: session.has_due_now(store, now),
         promotable: session.current_is_virtual(store),
+        next_due_ms: finished.then(|| session.next_due_at(store)).flatten(),
     }
 }
 
@@ -864,6 +867,61 @@ mod tests {
         let s = state(&session, &fresh, &augment, Some(NOW));
         assert_eq!(s.acquired, 2, "the summary must know new cards were met");
         assert_eq!((s.reviews, s.passed, s.failed), (0, 0, 0));
+    }
+
+    #[test]
+    fn an_empty_finished_session_reports_the_soonest_next_due() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## q1\na1\n## q2\na2\n");
+        let sooner = cards[0].id().unwrap();
+        let later = cards[1].id().unwrap();
+        // Both cards met and still cooling: `sooner` comes due before `later`.
+        store.get_or_insert(&sooner, NOW);
+        store.get_or_insert(&later, NOW + 10_000);
+        let session = session_at(cards, &store, Depth::Recall, NOW);
+        assert!(
+            session.is_finished(),
+            "every card is still inside its acquire cooldown"
+        );
+        let s = state(&session, &store, &augment, Some(NOW));
+        let cooldown = crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        assert_eq!(
+            s.next_due_ms,
+            Some(NOW + cooldown),
+            "the soonest due instant (the sooner card), not the latest"
+        );
+    }
+
+    #[test]
+    fn an_empty_finished_session_with_nothing_scheduled_has_no_next_due() {
+        let (store, augment, _dir) = fixtures();
+        let cards = parse("## q1\na1\n");
+        // No card has stored state and new intake is off, so the roster is
+        // empty and there is nothing to be due.
+        let session = Session::new(
+            cards,
+            &store,
+            Box::new(Fsrs::default()),
+            SessionOptions {
+                max_new: 0,
+                ..Default::default()
+            },
+            NOW,
+        );
+        assert!(session.is_finished());
+        let s = state(&session, &store, &augment, Some(NOW));
+        assert_eq!(s.next_due_ms, None);
+    }
+
+    #[test]
+    fn an_active_session_carries_no_next_due() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(FOUR);
+        seen(&mut store, &cards);
+        let session = session_at(cards, &store, Depth::Recall, NOW);
+        assert!(!session.is_finished());
+        let s = state(&session, &store, &augment, Some(NOW));
+        assert_eq!(s.next_due_ms, None, "only the finished payload carries it");
     }
 
     #[test]

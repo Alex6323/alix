@@ -388,6 +388,7 @@ class ReviewState {
   final int acquired;
   final bool canRestart;
   final bool promotable;
+  final BigInt? nextDueMs;
 
   const ReviewState({
     this.card,
@@ -408,6 +409,7 @@ class ReviewState {
     required this.acquired,
     required this.canRestart,
     required this.promotable,
+    this.nextDueMs,
   });
 
   @override
@@ -429,7 +431,8 @@ class ReviewState {
       failed.hashCode ^
       acquired.hashCode ^
       canRestart.hashCode ^
-      promotable.hashCode;
+      promotable.hashCode ^
+      nextDueMs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -453,7 +456,8 @@ class ReviewState {
           failed == other.failed &&
           acquired == other.acquired &&
           canRestart == other.canRestart &&
-          promotable == other.promotable;
+          promotable == other.promotable &&
+          nextDueMs == other.nextDueMs;
 }
 
 class TutorCard {
