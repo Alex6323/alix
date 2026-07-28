@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -99,6 +99,11 @@ fmt-check:
 # width are never touched, so hand-made breaks don't churn. Stdlib python3.
 fmt-roadmap:
 	python3 scripts/fmt-roadmap.py $(ARGS)
+
+# Wrap over-long CHANGELOG.md lines at the ~80-column house width. Wrap-only:
+# lines already within width pass through byte-identical.
+fmt-changelog:
+	python3 scripts/fmt-changelog.py $(ARGS)
 
 # Roadmap stats, read-only: items by state (done/partial/open) and the open
 # items split by priority. The deterministic half of a roadmap audit; whether

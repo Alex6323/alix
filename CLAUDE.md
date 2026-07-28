@@ -115,6 +115,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make toolchain-check` | Enforce exact production toolchains, full-SHA Action references, and named drift-only exceptions. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
+| `make fmt-changelog` | Wrap `CHANGELOG.md` at the ~80-column house width (wrap-only, idempotent). |
 | `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
