@@ -675,7 +675,7 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
                 rewrites.push(AtRewrite {
                     at,
                     fingerprint,
-                    origin: citation.origin.clone(),
+                    asset: citation.asset.clone(),
                     line: citation.line,
                 });
             }
@@ -1070,9 +1070,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         w(dir.path(), "base.md", "## a\n1\n");
         let dangling = dir.path().join("dangling.md");
-        w(dir.path(), "dangling.md", "---\nrequires: ghost\n---\n## q\na\n");
+        w(
+            dir.path(),
+            "dangling.md",
+            "---\nrequires: ghost\n---\n## q\na\n",
+        );
         let resolvable = dir.path().join("resolvable.md");
-        w(dir.path(), "resolvable.md", "---\nrequires: base\n---\n## q\na\n");
+        w(
+            dir.path(),
+            "resolvable.md",
+            "---\nrequires: base\n---\n## q\na\n",
+        );
 
         let mut report = Report::default();
         deck_findings(&dangling, true, &mut report);
@@ -1431,14 +1439,14 @@ mod tests {
             truncated: false,
         };
         let fingerprint =
-            alix::source::format_excerpt_fingerprint(alix::source::excerpt_fingerprint(&expected));
+            alix::source::format_locator_fingerprint(alix::source::excerpt_fingerprint(&expected));
         let deck_path = dir.path().join("deck.md");
         w(
             dir.path(),
             "deck.md",
             &format!(
                 "---\nid: \"deck-deck1\"\nsource: .\n---\n\
-                 ## q\nanswer\n<!-- at: code.rs:2-3 @ {fingerprint} -->\n\
+                 ## q\nanswer\n<!-- at: code.rs:2-3 fingerprint: {fingerprint} -->\n\
                  <!-- id: card-card1 -->\n"
             ),
         );
@@ -1458,7 +1466,9 @@ mod tests {
 
         repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
         let after = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(after.contains(&format!("at: code.rs:3-4 @ {fingerprint}")));
+        assert!(after.contains(&format!(
+            "<!-- at: code.rs:3-4 fingerprint: {fingerprint} -->"
+        )));
         assert!(after.contains("<!-- id: card-card1 -->"));
         assert_eq!(
             Some("card-card1".to_string()),

@@ -30,9 +30,12 @@ pub struct CardImage {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceCitation {
+    /// The `at:` field: the real source path and lines, never an asset name.
     pub locator: String,
     pub fingerprint: Option<u64>,
-    pub origin: Option<String>,
+    /// The `asset:` field: the frozen `sha256-<hex>.<ext>` object name,
+    /// present only on a frozen citation.
+    pub asset: Option<String>,
     pub line: usize,
 }
 
@@ -296,7 +299,7 @@ mod tests {
         a.citations.push(SourceCitation {
             locator: "card.rs:1-9".to_string(),
             fingerprint: Some(42),
-            origin: None,
+            asset: None,
             line: 4,
         });
         a.givens = vec!["state — the parser position".to_string()];

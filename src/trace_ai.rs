@@ -611,15 +611,15 @@ mod tests {
         let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let deck_id = deck.deck_token.as_deref().unwrap();
-        let first = crate::assets::object_name(b"beta\ngamma\n", "rs");
-        let second = crate::assets::object_name(b"one\n", "rs");
+        let first = crate::assets::object_name(b"alpha\nbeta\ngamma\n", "rs");
+        let second = crate::assets::object_name(b"one\ntwo\n", "rs");
 
         assert_eq!(2, report.freeze.unwrap().evidence);
         assert!(root.join(format!("ws/assets/{deck_id}/{first}")).is_file());
         assert!(root.join(format!("ws/assets/{deck_id}/{second}")).is_file());
         assert!(!root.join("ws/assets/a.rs").exists());
         assert_eq!(
-            "beta\ngamma\n",
+            "alpha\nbeta\ngamma\n",
             std::fs::read_to_string(root.join(format!("ws/assets/{deck_id}/{first}"))).unwrap()
         );
 
@@ -630,22 +630,21 @@ mod tests {
         );
         assert!(text.contains("origin: "), "{text}");
         assert!(
-            text.contains(&format!("<!-- at: {first} @ xxh64:"))
-                && text.contains(" from a.rs:2-3 -->\n"),
+            text.contains("<!-- at: a.rs:2-3 fingerprint: xxh64-")
+                && text.contains(&format!(" asset: {first} -->\n")),
             "{text}"
         );
         assert!(
-            text.contains(&format!("<!-- at: {second} @ xxh64:"))
-                && text.contains(" from b.rs:1 -->\n"),
+            text.contains("<!-- at: b.rs:1 fingerprint: xxh64-")
+                && text.contains(&format!(" asset: {second} -->\n")),
             "{text}"
         );
-        assert!(!text.contains("> from"), "{text}");
 
         let frozen = Deck::load(&deck_path).unwrap();
         let trace = Trace::from_deck(&frozen).unwrap();
         let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
         assert_eq!(
-            vec![(1, "beta".to_string()), (2, "gamma".to_string())],
+            vec![(2, "beta".to_string()), (3, "gamma".to_string())],
             ex.lines
         );
     }
@@ -660,7 +659,7 @@ mod tests {
         let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
         let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
         assert_eq!(
-            vec![(1, "beta".to_string()), (2, "gamma".to_string())],
+            vec![(2, "beta".to_string()), (3, "gamma".to_string())],
             ex.lines
         );
     }
@@ -689,11 +688,10 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains(&format!("<!-- at: {name}:2 @ xxh64:"))
-                && text.contains(" from notes.md:2 -->\n"),
+            text.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
+                && text.contains(&format!(" asset: {name} -->\n")),
             "{text}"
         );
-        assert!(!text.contains("> from"), "{text}");
 
         let frozen = Deck::load(&deck_path).unwrap();
         let trace = Trace::from_deck(&frozen).unwrap();

@@ -1256,21 +1256,23 @@ fn poll_ask_error_resets_session() {
 fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
     let _lock = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+    std::fs::create_dir(dir.path().join("decks")).unwrap();
     std::fs::write(dir.path().join("29.rs"), "fn real() {}\n").unwrap();
-    let deck_path = dir.path().join("d.md");
+    let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nalix-id: \"frozendeck1\"\nsource: 29.rs\n---\n## q\na\n\
-         <!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n",
+        "---\nid: \"deck-frozendeck1\"\nsource: 29.rs\n---\n## q\na\n\
+         <!-- at: 29.rs:1 -->\n",
     )
     .unwrap();
-    crate::source::stamp_citations(&deck_path).unwrap();
+    crate::assets::freeze_member(&deck_path).unwrap();
     // Stamped as in production: an unstamped card has no token and is never
     // servable.
     crate::stamp::stamp_deck(&deck_path).unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();
     let card = deck.cards[0].clone();
-    assert!(card.citations[0].origin.is_some(), "the card is frozen");
+    assert!(card.citations[0].asset.is_some(), "the card is frozen");
 
     let store = Store::open(dir.path().join("p.json")).unwrap();
     let session = Session::new(
@@ -1281,12 +1283,15 @@ fn a_frozen_card_without_origin_context_warns_and_still_uses_the_tutor() {
         now_ms(),
     );
     let mut decks = HashMap::new();
-    decks.insert("frozendeck1".to_string(), deck_path);
+    decks.insert("deck-frozendeck1".to_string(), deck_path);
     let mut origin_roots = HashMap::new();
     // Configured (`source_access` opted in), but unresolved on disk.
-    origin_roots.insert("frozendeck1".to_string(), dir.path().join("gone-origin"));
+    origin_roots.insert(
+        "deck-frozendeck1".to_string(),
+        dir.path().join("gone-origin"),
+    );
     let mut source_bases = HashMap::new();
-    source_bases.insert("frozendeck1".to_string(), SourceBase::for_deck(&deck));
+    source_bases.insert("deck-frozendeck1".to_string(), SourceBase::for_deck(&deck));
     let mut r = Reviewing::new(SessionBuild {
         session,
         label: "d.md".to_string(),

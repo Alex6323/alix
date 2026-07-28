@@ -7,9 +7,7 @@ use crate::{
     deck::{Deck, is_url},
     depth::Depth,
     scheduler::{Fsrs, Grade, Scheduler},
-    source::{
-        Excerpt, SourceBase, parse_at_origin, parse_line_range, parse_locator, relabel_for_display,
-    },
+    source::{Excerpt, SourceBase, parse_line_range, parse_locator, relabel_for_display},
     store::Store,
 };
 
@@ -57,7 +55,7 @@ pub struct Checkpoint {
     pub note: Option<String>,
     pub locator: Option<String>,
     pub fingerprint: Option<u64>,
-    pub at_origin: Option<String>,
+    pub asset: Option<String>,
     pub card_id: String,
     pub line: usize,
 }
@@ -105,7 +103,7 @@ impl Trace {
                     note: c.note.clone(),
                     locator: citation.map(|citation| citation.locator.clone()),
                     fingerprint: citation.and_then(|citation| citation.fingerprint),
-                    at_origin: citation.and_then(|citation| citation.origin.clone()),
+                    asset: citation.and_then(|citation| citation.asset.clone()),
                     card_id: c.id()?,
                     line: c.line,
                 })
@@ -142,18 +140,15 @@ impl Trace {
         self.source_base.checked_excerpt(&SourceCitation {
             locator: locator.to_string(),
             fingerprint: checkpoint.fingerprint,
-            origin: checkpoint.at_origin.clone(),
+            asset: checkpoint.asset.clone(),
             line: checkpoint.line,
         })
     }
 
     pub fn frozen_block(&self, checkpoint: &Checkpoint) -> Option<String> {
-        checkpoint.at_origin.as_deref()?;
+        checkpoint.asset.as_deref()?;
         let excerpt = self.excerpt(checkpoint).ok()?;
-        Some(render_frozen_block(
-            excerpt,
-            checkpoint.at_origin.as_deref(),
-        ))
+        Some(render_frozen_block(excerpt, checkpoint.locator.as_deref()?))
     }
 
     pub fn lint_locators(&self) -> Vec<LocatorIssue> {
@@ -167,7 +162,7 @@ impl Trace {
                 });
                 continue;
             };
-            if url_source {
+            if url_source || cp.asset.is_some() {
                 continue;
             }
             let (file, spec) = parse_locator(locator);
@@ -341,8 +336,8 @@ pub struct Summary {
     pub weak: Vec<usize>,
 }
 
-fn render_frozen_block(excerpt: Excerpt, at_origin: Option<&str>) -> String {
-    let (excerpt, label) = relabel_for_display(excerpt, at_origin);
+fn render_frozen_block(excerpt: Excerpt, at: &str) -> String {
+    let (excerpt, label) = relabel_for_display(excerpt, at);
     let mut s = String::new();
     if let Some(label) = label {
         s.push_str(&label);
@@ -371,24 +366,24 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
     let mut out = Vec::new();
     for card in &deck.cards {
         for citation in &card.citations {
-            let Some(at_origin) = citation.origin.as_deref() else {
+            if citation.asset.is_none() {
+                continue;
+            }
+            let (Some(file), _) = parse_locator(&citation.locator) else {
                 continue;
             };
-            let Some((file, _)) = parse_at_origin(Some(at_origin)) else {
-                continue;
-            };
-            let Ok(frozen) = source_base.excerpt(&citation.locator) else {
+            let Ok(frozen) = source_base.citation_excerpt(citation) else {
                 continue;
             };
             match std::fs::read_to_string(origin_root.join(&file)) {
                 Err(_) => out.push(Drift {
                     line: card.line,
-                    at: at_origin.to_string(),
+                    at: citation.locator.clone(),
                     gone: true,
                 }),
                 Ok(live) if !excerpt_occurs_in(&frozen, &live) => out.push(Drift {
                     line: card.line,
-                    at: at_origin.to_string(),
+                    at: citation.locator.clone(),
                     gone: false,
                 }),
                 Ok(_) => {}
@@ -419,9 +414,9 @@ fn excerpt_occurs_in(frozen: &Excerpt, live: &str) -> bool {
 }
 
 pub fn frozen_excerpt_block(citation: &SourceCitation, source_base: &SourceBase) -> Option<String> {
-    citation.origin.as_deref()?;
+    citation.asset.as_deref()?;
     let excerpt = source_base.checked_excerpt(citation).ok()?;
-    Some(render_frozen_block(excerpt, citation.origin.as_deref()))
+    Some(render_frozen_block(excerpt, &citation.locator))
 }
 
 #[cfg(test)]
@@ -594,19 +589,32 @@ mod tests {
     #[test]
     fn tutor_grounding_drops_a_changed_frozen_excerpt() {
         let dir = tempfile::tempdir().unwrap();
-        let assets = dir.path().join("assets/deck1");
+        std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+        let assets = dir.path().join("assets/deck-deck1");
         std::fs::create_dir_all(&assets).unwrap();
+        std::fs::create_dir_all(dir.path().join("decks")).unwrap();
         let name = crate::assets::object_name(b"fn expected() {}\n", "rs");
         write(&assets, &name, "fn expected() {}\n");
+        let fingerprint = crate::source::format_locator_fingerprint(
+            crate::source::excerpt_fingerprint(&Excerpt {
+                path: PathBuf::from("src/lib.rs"),
+                lines: vec![(1, "fn expected() {}".to_string())],
+                truncated: false,
+            }),
+        );
         let deck_path = write(
-            dir.path(),
+            &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nsource: assets/deck1/{name}\n---\n\
-                 ## q\na\n<!-- at: {name}:1 from src/lib.rs:1 -->\n"
+                "---\nid: \"deck-deck1\"\nsource: assets/deck-deck1/{name}\n---\n\
+                 ## q\na\n<!-- at: src/lib.rs:1 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );
-        crate::source::stamp_citations(&deck_path).unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        assert!(
+            frozen_excerpt_block(&deck.cards[0].citations[0], &SourceBase::for_deck(&deck))
+                .is_some()
+        );
         write(&assets, &name, "fn changed() {}\n");
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);

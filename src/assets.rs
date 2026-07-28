@@ -246,12 +246,20 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
                     locator: citation.locator.clone(),
                 }
             })?;
-            let locator = match &mut inputs[input_index] {
-                SourceInput::File { name, .. } => locator_for_full_file(name, &excerpt),
+            // The frozen object is always a whole-file copy, so the `at:`
+            // lines and the asset's lines coincide (ADR 0026).
+            let asset = match &mut inputs[input_index] {
+                SourceInput::File { name, .. } => name.clone(),
                 SourceInput::Directory { citations, .. } => {
                     *citations += 1;
-                    let bytes = canonical_excerpt_bytes(&excerpt);
-                    let extension = normalized_extension(&excerpt.path, true);
+                    let path = excerpt
+                        .path
+                        .canonicalize()
+                        .unwrap_or_else(|_| excerpt.path.clone());
+                    let bytes = read_bytes(&path)?;
+                    std::str::from_utf8(&bytes)
+                        .map_err(|_| AssetError::NonTextSource(path.clone()))?;
+                    let extension = normalized_extension(&path, true);
                     let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
                     let name = file_name(&object)?;
                     if evidence_seen.insert(name.clone()) {
@@ -261,9 +269,9 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
                 }
             };
             citations.push(AtRewrite {
-                at: locator,
+                at: excerpt_provenance(&excerpt, &inputs[input_index]),
                 fingerprint: Some(crate::source::excerpt_fingerprint(&excerpt)),
-                origin: Some(excerpt_provenance(&excerpt, &inputs[input_index])),
+                asset: Some(asset),
                 line: citation.line,
             });
         }
@@ -430,27 +438,6 @@ fn source_owner(inputs: &[SourceInput], excerpt: &Excerpt) -> Option<usize> {
         SourceInput::File { path: source, .. } => path == *source,
         SourceInput::Directory { path: source, .. } => path.starts_with(source),
     })
-}
-
-fn canonical_excerpt_bytes(excerpt: &Excerpt) -> Vec<u8> {
-    let mut text = excerpt
-        .lines
-        .iter()
-        .map(|(_, line)| line.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    text.push('\n');
-    text.into_bytes()
-}
-
-fn locator_for_full_file(name: &str, excerpt: &Excerpt) -> String {
-    let first = excerpt.lines.first().map(|line| line.0).unwrap_or(1);
-    let last = excerpt.lines.last().map(|line| line.0).unwrap_or(first);
-    if first == last {
-        format!("{name}:{first}")
-    } else {
-        format!("{name}:{first}-{last}")
-    }
 }
 
 fn excerpt_provenance(excerpt: &Excerpt, input: &SourceInput) -> String {
@@ -763,15 +750,54 @@ mod tests {
         assert!(frozen.contains(&format!("](assets/deck-deck1/{image_name})")));
         assert_eq!(
             [0, 1, 2, 255],
-            std::fs::read(directory.path().join(format!("assets/deck-deck1/{image_name}")))
-                .unwrap()
-                .as_slice()
+            std::fs::read(
+                directory
+                    .path()
+                    .join(format!("assets/deck-deck1/{image_name}"))
+            )
+            .unwrap()
+            .as_slice()
         );
-        assert!(frozen.contains("from notes.md:2"));
+        let evidence_name = object_name(b"one \r\ntwo\r\nthree\r\n", "md");
+        assert!(
+            frozen.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
+                && frozen.contains(&format!(" asset: {evidence_name} -->")),
+            "{frozen}"
+        );
     }
 
     #[test]
-    fn freezing_a_directory_stores_only_canonical_cited_excerpts() {
+    fn a_frozen_file_source_citation_reads_asset_bytes_after_the_live_file_mutates() {
+        let directory = workspace();
+        let source = directory.path().join("notes.md");
+        std::fs::write(&source, "one\ntwo\nthree\n").unwrap();
+        let path = directory.path().join("decks/facts.md");
+        std::fs::write(
+            &path,
+            format!(
+                "---\nid: \"deck-deck5\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:2 -->\n",
+                crate::parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        freeze_member(&path).unwrap();
+        std::fs::write(&source, "MUTATED\nLIVE\nFILE\n").unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        let citation = &deck.cards[0].citations[0];
+        assert_eq!("notes.md:2", citation.locator);
+        assert!(citation.asset.is_some());
+        let CitationIntegrity::Current(excerpt) = SourceBase::for_deck(&deck)
+            .inspect_citation(citation)
+            .unwrap()
+        else {
+            panic!("the frozen citation must stay Current against the asset");
+        };
+        assert_eq!(vec![(2, "two".to_string())], excerpt.lines);
+    }
+
+    #[test]
+    fn freezing_a_directory_stores_whole_copies_of_cited_files_only() {
         let directory = workspace();
         let source = directory.path().join("source");
         std::fs::create_dir(&source).unwrap();
@@ -799,10 +825,52 @@ mod tests {
             report
         );
         assert_eq!(1, evidence.len());
-        assert_eq!(b"b\nc\n", std::fs::read(&evidence[0]).unwrap().as_slice());
+        assert_eq!(
+            b"a  \nb\nc\n",
+            std::fs::read(&evidence[0]).unwrap().as_slice()
+        );
         let frozen = std::fs::read_to_string(&path).unwrap();
         assert!(!frozen.contains("uncited.rs"));
-        assert!(frozen.contains("from lib.rs:2-3"));
+        assert!(!frozen.contains("secret"));
+        let evidence_name = object_name(b"a  \nb\nc\n", "rs");
+        assert!(
+            frozen.contains("<!-- at: lib.rs:2-3 fingerprint: xxh64-")
+                && frozen.contains(&format!(" asset: {evidence_name} -->")),
+            "{frozen}"
+        );
+    }
+
+    #[test]
+    fn a_frozen_directory_source_citation_reads_asset_bytes_after_the_live_file_mutates() {
+        let directory = workspace();
+        let source = directory.path().join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("lib.rs"), "a\nb\nc\n").unwrap();
+        let path = directory.path().join("decks/trace.md");
+        std::fs::write(
+            &path,
+            format!(
+                "---\nid: \"deck-deck6\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                crate::parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        freeze_member(&path).unwrap();
+        std::fs::write(source.join("lib.rs"), "REWRITTEN\n").unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        let citation = &deck.cards[0].citations[0];
+        assert_eq!("lib.rs:2-3", citation.locator);
+        let CitationIntegrity::Current(excerpt) = SourceBase::for_deck(&deck)
+            .inspect_citation(citation)
+            .unwrap()
+        else {
+            panic!("the frozen citation must stay Current against the asset");
+        };
+        assert_eq!(
+            vec![(2, "b".to_string()), (3, "c".to_string())],
+            excerpt.lines
+        );
     }
 
     #[test]

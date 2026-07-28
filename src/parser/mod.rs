@@ -93,6 +93,10 @@ pub enum ParseError {
     EmptyFront(usize),
     #[error("line {0}: card front without an answer")]
     FrontWithoutAnswer(usize),
+    #[error(
+        "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; run the deck conversion tool if this deck predates named locator fields"
+    )]
+    InvalidLocator { line: usize, message: String },
     #[error("line {0}: `\\blank[` is reserved for a future per-hole pin; write `\\blank{{...}}`")]
     ClozeBracketReserved(usize),
     #[error("line {0}: unclosed cloze hole (missing the closing `}}`)")]
@@ -582,7 +586,10 @@ fn apply_directive(
     match key {
         "id" => {
             // Markers hold base ids only; a sub-id suffix (`-N`, `-r`) never appears here.
-            if !matches!(token::parse_prefixed_card_id(&value), Some((_, None, false))) {
+            if !matches!(
+                token::parse_prefixed_card_id(&value),
+                Some((_, None, false))
+            ) {
                 return Err(ParseError::InvalidCardId { line, value });
             }
             directives.token = Some(value);
@@ -603,14 +610,25 @@ fn apply_directive(
             None => lints.push(bad_value(line, key, value)),
         },
         "at" => {
-            let (locator, fingerprint, origin, valid) = split_at(&value);
-            if !valid {
-                lints.push(bad_value(line, key, value));
-            }
+            let bad = |message: String| ParseError::InvalidLocator { line, message };
+            // `directive` consumed the `at:` key; the tokenizer wants the
+            // whole `at: ...` comment body back.
+            let fields = crate::source::parse_locator_fields(&format!("at: {value}"))
+                .map_err(|error| bad(format!("{error:#}")))?;
+            let fingerprint = fields
+                .fingerprint
+                .map(|raw| {
+                    crate::source::parse_locator_fingerprint(&raw).ok_or_else(|| {
+                        bad(format!(
+                            "fingerprint `{raw}` is not `xxh64-` plus 16 hex digits"
+                        ))
+                    })
+                })
+                .transpose()?;
             directives.citations.push(crate::card::SourceCitation {
-                locator,
+                locator: fields.at,
                 fingerprint,
-                origin,
+                asset: fields.asset,
                 line,
             });
         }
@@ -624,34 +642,6 @@ fn apply_directive(
         }),
     }
     Ok(())
-}
-
-fn split_at(value: &str) -> (String, Option<u64>, Option<String>, bool) {
-    let (at, origin) = match value.split_once(" from ") {
-        Some((at, origin)) => (at, Some(trim_ws(origin).to_string())),
-        None => (value, None),
-    };
-    let (locator, fingerprint, valid) = match at.rsplit_once(" @ ") {
-        Some((locator, fingerprint)) => {
-            let fingerprint = trim_ws(fingerprint);
-            let hex = fingerprint.strip_prefix("xxh64:");
-            let valid = hex.is_some_and(|hex| {
-                hex.len() == 16
-                    && hex.chars().all(|character| {
-                        character.is_ascii_digit() || ('a'..='f').contains(&character)
-                    })
-            });
-            (
-                trim_ws(locator).to_string(),
-                valid
-                    .then(|| hex.and_then(|hex| u64::from_str_radix(hex, 16).ok()))
-                    .flatten(),
-                valid,
-            )
-        }
-        None => (trim_ws(at).to_string(), None, true),
-    };
-    (locator, fingerprint, origin, valid)
 }
 
 // ── Card building and cloze ──
@@ -1587,24 +1577,25 @@ mod tests {
     }
 
     #[test]
-    fn at_is_repeatable_and_keeps_each_fingerprint_origin_pair() {
+    fn at_is_repeatable_and_keeps_each_fingerprint_asset_pair() {
         let deck = parse(
             "## q\n---\na\n\
-             <!-- at: 29.rs @ xxh64:0123456789abcdef from src/caching.rs:46-66 -->\n\
+             <!-- at: src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef \
+             asset: sha256-abc123.rs -->\n\
              <!-- at: src/store.rs:10-14 -->\n",
         );
         assert_eq!(
             vec![
                 crate::card::SourceCitation {
-                    locator: "29.rs".to_string(),
+                    locator: "src/caching.rs:46-66".to_string(),
                     fingerprint: Some(0x0123456789abcdef),
-                    origin: Some("src/caching.rs:46-66".to_string()),
+                    asset: Some("sha256-abc123.rs".to_string()),
                     line: 4,
                 },
                 crate::card::SourceCitation {
                     locator: "src/store.rs:10-14".to_string(),
                     fingerprint: None,
-                    origin: None,
+                    asset: None,
                     line: 5,
                 },
             ],
@@ -1614,15 +1605,59 @@ mod tests {
         let deck = parse("## q\n---\na\n<!-- at: src/from_x.rs:1-3 -->\n");
         assert_eq!("src/from_x.rs:1-3", deck.cards[0].citations[0].locator);
         assert_eq!(None, deck.cards[0].citations[0].fingerprint);
-        assert_eq!(None, deck.cards[0].citations[0].origin);
+        assert_eq!(None, deck.cards[0].citations[0].asset);
     }
 
     #[test]
-    fn an_invalid_at_fingerprint_is_linted_and_not_trusted() {
-        let deck = parse("## q\n---\na\n<!-- at: src/lib.rs:1-3 @ xxh64:ABC -->\n");
-        assert_eq!("src/lib.rs:1-3", deck.cards[0].citations[0].locator);
-        assert_eq!(None, deck.cards[0].citations[0].fingerprint);
-        assert_eq!(vec![bad(4, "at", "src/lib.rs:1-3 @ xxh64:ABC")], deck.lints);
+    fn an_old_grammar_at_locator_is_a_hard_error_naming_the_conversion_tool() {
+        let e = err("## q\n---\na\n\
+             <!-- at: 29.rs @ xxh64:0123456789abcdef from src/caching.rs:46-66 -->\n");
+        assert!(
+            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+            "{e:?}"
+        );
+        assert!(e.to_string().contains("conversion tool"), "{e}");
+
+        let e = err("## q\n---\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n");
+        assert!(
+            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+            "{e:?}"
+        );
+    }
+
+    #[test]
+    fn an_old_colon_form_at_fingerprint_is_a_hard_error() {
+        let e =
+            err("## q\n---\na\n<!-- at: src/lib.rs:1-3 fingerprint: xxh64:0123456789abcdef -->\n");
+        assert!(
+            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+            "{e:?}"
+        );
+        assert!(e.to_string().contains("conversion tool"), "{e}");
+    }
+
+    #[test]
+    fn a_malformed_at_fingerprint_is_a_hard_error_not_a_lint() {
+        let e = err("## q\n---\na\n<!-- at: src/lib.rs:1-3 fingerprint: xxh64-ABC -->\n");
+        assert!(
+            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+            "{e:?}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_or_duplicate_at_field_is_a_hard_error() {
+        let e = err("## q\n---\na\n<!-- at: a.rs:1 flavor: cherry -->\n");
+        assert!(
+            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+            "{e:?}"
+        );
+
+        let e = err("## q\n---\na\n<!-- at: a.rs:1 at: b.rs:2 -->\n");
+        assert!(
+            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+            "{e:?}"
+        );
     }
 
     #[test]
@@ -1920,7 +1955,7 @@ the answer
 <!-- reveal: flip -->
 <!-- input: type -->
 <!-- direction: reverse -->
-<!-- at: 29.rs from src/caching.rs:46-66 -->
+<!-- at: src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->
 <!-- origin: /crate -->
 <!-- given: state - the parser position -->
 <!-- given: partial - the card -->
@@ -1952,9 +1987,9 @@ the answer
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 citations: vec![crate::card::SourceCitation {
-                    locator: "29.rs".into(),
-                    fingerprint: None,
-                    origin: Some("src/caching.rs:46-66".into()),
+                    locator: "src/caching.rs:46-66".into(),
+                    fingerprint: Some(0x0123456789abcdef),
+                    asset: Some("sha256-abc123.rs".into()),
                     line: 33,
                 }],
                 origin: Some("/crate".into()),
@@ -1978,16 +2013,19 @@ the answer
         assert!(card.images_back.is_empty());
         assert_eq!(
             vec![crate::card::SourceCitation {
-                locator: "29.rs".into(),
-                fingerprint: None,
-                origin: Some("src/caching.rs:46-66".into()),
+                locator: "src/caching.rs:46-66".into(),
+                fingerprint: Some(0x0123456789abcdef),
+                asset: Some("sha256-abc123.rs".into()),
                 line: 33,
             }],
             card.citations
         );
         assert_eq!(Some("/crate".to_string()), card.origin);
         assert_eq!(2, card.givens.len());
-        assert_eq!(Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f"), card.token.as_deref());
+        assert_eq!(
+            Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f"),
+            card.token.as_deref()
+        );
     }
 
     // ── Inline Markdown images ──

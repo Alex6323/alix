@@ -336,17 +336,12 @@ fn live_proposal_text(deck: &Deck, source: &str, origin: &str) -> Result<String>
             continue;
         }
         for citation in &card.citations {
-            let locator = citation.origin.clone().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{}:{} has frozen evidence without a live `from` locator",
-                    deck.path.display(),
-                    citation.line
-                )
-            })?;
+            // `at:` already holds the live source coordinates; the proposal
+            // drops the frozen fingerprint and asset.
             ats.push(AtRewrite {
-                at: locator,
+                at: citation.locator.clone(),
                 fingerprint: None,
-                origin: None,
+                asset: None,
                 line: citation.line,
             });
         }

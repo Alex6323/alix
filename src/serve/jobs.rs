@@ -247,7 +247,7 @@ fn remote_card(c: &RemoteCard) -> Card {
         card.citations.push(crate::card::SourceCitation {
             locator: locator.clone(),
             fingerprint: None,
-            origin: None,
+            asset: None,
             line: 0,
         });
     }

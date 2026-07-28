@@ -833,12 +833,18 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
                 dto.note_runs = c.note.as_deref().map(|note| projector.project(note));
                 match trace.excerpt(c) {
                     Ok(ex) => {
-                        // Relabel a content-addressed excerpt to its authored source
-                        // so the gutter shows authored line numbers.
-                        let (ex, label) = relabel_for_display(ex, c.at_origin.as_deref());
-                        if let Some(label) = label {
-                            dto.locator = Some(label);
-                        }
+                        // Repoint a frozen excerpt's asset path at the real
+                        // `at:` source path for display.
+                        let ex =
+                            if let Some(at) = c.locator.as_deref().filter(|_| c.asset.is_some()) {
+                                let (ex, label) = relabel_for_display(ex, at);
+                                if let Some(label) = label {
+                                    dto.locator = Some(label);
+                                }
+                                ex
+                            } else {
+                                ex
+                            };
                         dto.excerpt = Some(excerpt_dto(&ex));
                     }
                     Err(e) => dto.excerpt_error = Some(format!("{e:#}")),
@@ -984,13 +990,18 @@ pub(super) fn review_state(
                 if let Some(base) = r.source_bases.get(&*c.deck_id) {
                     match base.checked_excerpt(citation) {
                         Ok(ex) => {
-                            // Relabel a content-addressed excerpt to its authored
-                            // source and line numbers, so the citation reads
-                            // `store.rs:36-66`, not the asset's own numbering.
-                            let (ex, label) = relabel_for_display(ex, citation.origin.as_deref());
-                            if let Some(label) = label {
-                                resolved.locator = label;
-                            }
+                            // Repoint a frozen excerpt's asset path at the real
+                            // `at:` source path, so the citation reads
+                            // `store.rs:36-66`, not the asset object's path.
+                            let ex = if citation.asset.is_some() {
+                                let (ex, label) = relabel_for_display(ex, &citation.locator);
+                                if let Some(label) = label {
+                                    resolved.locator = label;
+                                }
+                                ex
+                            } else {
+                                ex
+                            };
                             resolved.excerpt = Some(excerpt_dto(&ex));
                         }
                         Err(e) => resolved.error = Some(format!("{e:#}")),

@@ -373,7 +373,11 @@ pub fn resolve_dep_by_id(
     None
 }
 
-fn resolve_require(req: &str, decks_dir: Option<&Path>, requiring_dir: Option<&Path>) -> Option<PathBuf> {
+fn resolve_require(
+    req: &str,
+    decks_dir: Option<&Path>,
+    requiring_dir: Option<&Path>,
+) -> Option<PathBuf> {
     match classify_require(req) {
         RequiresMode::DeckId => resolve_dep_by_id(req, decks_dir, requiring_dir),
         // A pasted card id is never a prerequisite; it resolves to nothing.
@@ -569,7 +573,7 @@ fn replace_after_header(text: &str, fronts: &[usize], cards: &str) -> String {
 pub struct AtRewrite {
     pub at: String,
     pub fingerprint: Option<u64>,
-    pub origin: Option<String>,
+    pub asset: Option<String>,
     pub line: usize,
 }
 
@@ -599,16 +603,17 @@ fn at_indent(line: &str) -> Option<&str> {
 }
 
 fn format_at_rewrite(indent: &str, rewrite: &AtRewrite) -> String {
-    let mut value = rewrite.at.clone();
-    if let Some(fingerprint) = rewrite.fingerprint {
-        value.push_str(" @ ");
-        value.push_str(&crate::source::format_excerpt_fingerprint(fingerprint));
-    }
-    if let Some(origin) = &rewrite.origin {
-        value.push_str(" from ");
-        value.push_str(origin);
-    }
-    format!("{indent}<!-- at: {value} -->")
+    let fields = crate::source::LocatorFields {
+        at: rewrite.at.clone(),
+        fingerprint: rewrite
+            .fingerprint
+            .map(crate::source::format_locator_fingerprint),
+        asset: rewrite.asset.clone(),
+    };
+    format!(
+        "{indent}<!-- {} -->",
+        crate::source::format_locator_fields(&fields)
+    )
 }
 
 fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
@@ -1927,9 +1932,9 @@ mod tests {
         let parsed = parser::parse("t.md", text).unwrap();
         let image = parser::image_references(text).remove(0);
         let ats = [AtRewrite {
-            at: "sha256-source.rs:2".into(),
+            at: "src/lib.rs:2".into(),
             fingerprint: Some(7),
-            origin: Some("src/lib.rs:2".into()),
+            asset: Some("sha256-source.rs".into()),
             line: 12,
         }];
 
@@ -1950,7 +1955,7 @@ mod tests {
         assert!(out.contains("title: kept\n"));
         assert!(out.contains("![diagram](<assets/deck/sha256-image.png>)"));
         assert!(out.contains(
-            "<!-- at: sha256-source.rs:2 @ xxh64:0000000000000007 from src/lib.rs:2 -->"
+            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
         ));
         assert!(!out.contains("../README.md"));
         assert!(!out.contains("old image.png"));
