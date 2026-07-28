@@ -39,7 +39,7 @@ pub struct SourceCitation {
 #[derive(Clone, Debug)]
 pub struct Card {
     pub subject: Arc<str>,
-    /// The owning deck's stable alix-id; empty when the deck has none
+    /// The owning deck's stable id; empty when the deck has none
     /// (uninitialized deck, or a card built outside deck context).
     pub deck_id: Arc<str>,
     pub front: String,

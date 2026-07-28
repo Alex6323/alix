@@ -815,7 +815,7 @@ impl AugmentCache {
         }
 
         let remap_id = |id: &str| -> Option<String> {
-            match crate::token::parse_card_id(id) {
+            match crate::token::parse_prefixed_card_id(id) {
                 Some((t, Some(n), false)) if t == token => moves
                     .get(&n)
                     .map(|to| crate::token::card_id(token, Some(*to), false)),
@@ -1100,7 +1100,7 @@ impl AugmentCache {
     ) -> bool {
         let cards_before = self.cards.len();
         self.cards.retain(|id, _| {
-            !crate::token::parse_card_id(id)
+            !crate::token::parse_prefixed_card_id(id)
                 .is_some_and(|(token, _, _)| card_tokens.contains(token))
         });
         let topos_before = self.topologies.len();
@@ -1942,7 +1942,7 @@ mod tests {
     fn a_stale_target_drops_out_of_coverage_and_into_the_gap_list() {
         let deck = crate::parser::parse_str(
             "d.md",
-            "## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n---\na\n",
+            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n---\na\n",
         )
         .unwrap();
         let card = &deck[0];

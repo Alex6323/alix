@@ -272,12 +272,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("good.md"),
-            "---\nalix-id: \"good\"\n---\n## f\nb\n",
+            "---\nid: \"deck-good\"\n---\n## f\nb\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("bad.md"),
-            "---\nalix-id: \"bad\"\n---\n## front with no answer\n",
+            "---\nid: \"deck-bad\"\n---\n## front with no answer\n",
         )
         .unwrap();
         let finding = check_decks(dir.path());
@@ -291,12 +291,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("good.md"),
-            "---\nalix-id: \"good\"\n---\n## valid $x^2$\n$5 and $10 with unmatched $x\n",
+            "---\nid: \"deck-good\"\n---\n## valid $x^2$\n$5 and $10 with unmatched $x\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("bad.md"),
-            "---\nalix-id: \"bad\"\n---\n## q\n$\\frac{1$\n> $\\sqrt{$\n",
+            "---\nid: \"deck-bad\"\n---\n## q\n$\\frac{1$\n> $\\sqrt{$\n",
         )
         .unwrap();
 
@@ -334,7 +334,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(workspace::DECKS)).unwrap();
         std::fs::write(
             dir.path().join("decks/member.md"),
-            "---\nalix-id: \"member\"\n---\n## q\nanswer\n",
+            "---\nid: \"deck-member\"\n---\n## q\nanswer\n",
         )
         .unwrap();
 

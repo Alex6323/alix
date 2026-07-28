@@ -314,6 +314,74 @@ pub fn resolve_dep(
     candidates.into_iter().find(|p| p.is_file())
 }
 
+/// ADR 0026: a pure function of the text, never of which files exist. Id-mode
+/// is stricter than the id grammar (canonical 26 only), so natural `deck-*`
+/// filenames (`deck-basics`) stay referenceable by filename.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequiresMode {
+    DeckId,
+    WrongTypeCardId,
+    Filename,
+}
+
+pub fn classify_require(value: &str) -> RequiresMode {
+    if value
+        .strip_prefix("deck-")
+        .is_some_and(crate::token::is_canonical)
+    {
+        RequiresMode::DeckId
+    } else if value
+        .strip_prefix("card-")
+        .is_some_and(crate::token::is_canonical)
+    {
+        RequiresMode::WrongTypeCardId
+    } else {
+        RequiresMode::Filename
+    }
+}
+
+/// Rename-proof resolution: the deck whose frontmatter `id:` matches, wherever
+/// its file lives in the searched directories.
+pub fn resolve_dep_by_id(
+    deck_id: &str,
+    decks_dir: Option<&Path>,
+    requiring_dir: Option<&Path>,
+) -> Option<PathBuf> {
+    let mut seen = HashSet::new();
+    for dir in [requiring_dir, decks_dir].into_iter().flatten() {
+        if !seen.insert(dir.to_path_buf()) {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        let mut paths: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("md"))
+            .collect();
+        paths.sort();
+        for path in paths {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if parser::deck_identity(&text).ok().flatten().as_deref() == Some(deck_id) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn resolve_require(req: &str, decks_dir: Option<&Path>, requiring_dir: Option<&Path>) -> Option<PathBuf> {
+    match classify_require(req) {
+        RequiresMode::DeckId => resolve_dep_by_id(req, decks_dir, requiring_dir),
+        // A pasted card id is never a prerequisite; it resolves to nothing.
+        RequiresMode::WrongTypeCardId => None,
+        RequiresMode::Filename => resolve_dep(req, decks_dir, requiring_dir),
+    }
+}
+
 pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
     fn prereqs_finished(
         deck: &Deck,
@@ -322,7 +390,7 @@ pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
         visited: &mut HashSet<PathBuf>,
     ) -> bool {
         for req in &deck.requires {
-            let Some(path) = resolve_dep(req, decks_dir, deck.path.parent()) else {
+            let Some(path) = resolve_require(req, decks_dir, deck.path.parent()) else {
                 continue; // missing prerequisite: don't lock on it
             };
             let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
@@ -351,7 +419,7 @@ pub fn nongating_prerequisites(deck: &Deck) -> Vec<String> {
     let dir = deck.path.parent();
     let mut out = Vec::new();
     for req in &deck.requires {
-        let sourceless = resolve_dep(req, dir, dir)
+        let sourceless = resolve_require(req, dir, dir)
             .and_then(|path| Deck::load(&path).ok())
             .is_some_and(|prereq| !prereq.has_exam());
         if sourceless {
@@ -384,7 +452,7 @@ pub fn dependents(target: &Path) -> Vec<String> {
             continue;
         };
         let requires_target = deck.requires.iter().any(|req| {
-            resolve_dep(req, Some(member_dir), path.parent())
+            resolve_require(req, Some(member_dir), path.parent())
                 .is_some_and(|dep| canon(&dep) == target)
         });
         if requires_target {
@@ -864,7 +932,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
+            "## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -886,7 +954,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nalix-id: \"d1\"\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
+            "---\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -904,7 +972,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
+            "---\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -920,7 +988,7 @@ mod tests {
     #[test]
     fn a_sourceless_deck_finishes_once_every_card_graduates() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## a <!-- id: q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## a <!-- id: card-q1 -->\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
 
@@ -931,7 +999,7 @@ mod tests {
     #[test]
     fn a_deck_still_learning_a_card_is_only_started() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## a <!-- id: q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## a <!-- id: card-q1 -->\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         learning(&mut store, &deck.cards[0].id().unwrap());
@@ -972,7 +1040,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nalix-id: \"d1\"\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
+            "---\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -985,7 +1053,7 @@ mod tests {
     #[test]
     fn sourceless_deck_finishes_on_drill_alone() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## a <!-- id: q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## a <!-- id: card-q1 -->\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         retire(&mut store, &deck.cards[0].id().unwrap());
@@ -998,7 +1066,7 @@ mod tests {
         let basics = write_deck(
             dir.path(),
             "basics.md",
-            "---\nalix-id: \"basics1\"\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
+            "---\nid: \"deck-basics1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1057,21 +1125,21 @@ mod tests {
     #[test]
     fn append_cards_appends_with_separation_and_parses() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## one <!-- id: q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## one <!-- id: card-q1 -->\n1\n");
         append_cards(
             &path,
-            "## two <!-- id: q2 --> <!-- reveal: line -->\nkey point\n",
+            "## two <!-- id: card-q2 --> <!-- reveal: line -->\nkey point\n",
         )
         .unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
-            "## one <!-- id: q1 -->\n1\n\n## two <!-- id: q2 --> <!-- reveal: line -->\nkey point\n",
+            "## one <!-- id: card-q1 -->\n1\n\n## two <!-- id: card-q2 --> <!-- reveal: line -->\nkey point\n",
             text
         );
         let cards = parser::parse_str("d.md", &text).unwrap();
         assert_eq!(2, cards.len());
-        assert_eq!(Some("q1"), cards[0].token.as_deref());
+        assert_eq!(Some("card-q1"), cards[0].token.as_deref());
     }
 
     #[test]
@@ -1146,12 +1214,12 @@ mod tests {
         write_deck(
             dir.path(),
             "a.md",
-            "---\nalix-id: \"a1\"\nsource: https://x\n---\n## a\n1\n",
+            "---\nid: \"deck-a1\"\nsource: https://x\n---\n## a\n1\n",
         );
         write_deck(
             dir.path(),
             "b.md",
-            "---\nrequires: a\n---\n## b <!-- id: q1 -->\n2\n",
+            "---\nrequires: a\n---\n## b <!-- id: card-q1 -->\n2\n",
         );
         let cpath = write_deck(
             dir.path(),
@@ -1178,6 +1246,121 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         let (store, _s) = empty_store();
         assert!(!is_locked(&deck, Some(dir.path()), &store));
+    }
+
+    const CANONICAL_DECK_ID: &str = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+
+    #[test]
+    fn classify_require_is_a_pure_three_way_split_of_the_text() {
+        assert_eq!(RequiresMode::DeckId, classify_require(CANONICAL_DECK_ID));
+        assert_eq!(
+            RequiresMode::WrongTypeCardId,
+            classify_require("card-9w2c7x4k1m8q3z5t0v6b2n4d8f")
+        );
+        // Natural `deck-*` names fail the canonical-26 test and stay filenames.
+        assert_eq!(RequiresMode::Filename, classify_require("deck-basics"));
+        assert_eq!(RequiresMode::Filename, classify_require("card-tricks"));
+        assert_eq!(RequiresMode::Filename, classify_require("basics"));
+        // A `./` escape is always a filename, even when named like an id.
+        assert_eq!(
+            RequiresMode::Filename,
+            classify_require(&format!("./{CANONICAL_DECK_ID}"))
+        );
+        // Truncated (25) and non-canonical charset (`l`) both stay filenames.
+        assert_eq!(
+            RequiresMode::Filename,
+            classify_require("deck-9w2c7x4k1m8q3z5t0v6b2n4d8")
+        );
+        assert_eq!(
+            RequiresMode::Filename,
+            classify_require("deck-lw2c7x4k1m8q3z5t0v6b2n4d8f")
+        );
+    }
+
+    #[test]
+    fn an_id_mode_prerequisite_gates_and_survives_a_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let basics_path = write_deck(
+            dir.path(),
+            "basics.md",
+            &format!(
+                "---\nid: \"{CANONICAL_DECK_ID}\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n"
+            ),
+        );
+        let adv = write_deck(
+            dir.path(),
+            "advanced.md",
+            &format!("---\nrequires: {CANONICAL_DECK_ID}\n---\n## x\ny\n"),
+        );
+        let advanced = Deck::load(&adv).unwrap();
+        let (mut store, _s) = empty_store();
+        let dd = Some(dir.path());
+
+        assert!(is_locked(&advanced, dd, &store));
+
+        let renamed = dir.path().join("fundamentals.md");
+        std::fs::rename(&basics_path, &renamed).unwrap();
+        assert!(
+            is_locked(&advanced, dd, &store),
+            "the id edge must survive the prerequisite's rename"
+        );
+
+        store.set_deck_mastered(CANONICAL_DECK_ID, 1);
+        assert!(!is_locked(&advanced, dd, &store));
+    }
+
+    #[test]
+    fn a_pasted_card_id_prerequisite_never_locks() {
+        let dir = tempfile::tempdir().unwrap();
+        let adv = write_deck(
+            dir.path(),
+            "advanced.md",
+            "---\nrequires: card-9w2c7x4k1m8q3z5t0v6b2n4d8f\n---\n## x\ny\n",
+        );
+        let advanced = Deck::load(&adv).unwrap();
+        let (store, _s) = empty_store();
+        assert!(!is_locked(&advanced, Some(dir.path()), &store));
+    }
+
+    #[test]
+    fn a_file_named_like_a_required_id_never_shadows_the_id() {
+        let dir = tempfile::tempdir().unwrap();
+        // A shadowing file that would lock if it resolved as the prerequisite.
+        write_deck(
+            dir.path(),
+            &format!("{CANONICAL_DECK_ID}.md"),
+            "---\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+        );
+        let adv = write_deck(
+            dir.path(),
+            "advanced.md",
+            &format!("---\nrequires: {CANONICAL_DECK_ID}\n---\n## x\ny\n"),
+        );
+        let advanced = Deck::load(&adv).unwrap();
+        let (store, _s) = empty_store();
+
+        // No deck carries the id, so the edge dangles and never locks; the
+        // like-named file is not consulted.
+        assert!(!is_locked(&advanced, Some(dir.path()), &store));
+    }
+
+    #[test]
+    fn a_dot_slash_require_reaches_the_file_named_like_an_id() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(
+            dir.path(),
+            &format!("{CANONICAL_DECK_ID}.md"),
+            "---\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+        );
+        let adv = write_deck(
+            dir.path(),
+            "advanced.md",
+            &format!("---\nrequires: ./{CANONICAL_DECK_ID}\n---\n## x\ny\n"),
+        );
+        let advanced = Deck::load(&adv).unwrap();
+        let (store, _s) = empty_store();
+
+        assert!(is_locked(&advanced, Some(dir.path()), &store));
     }
 
     #[test]
@@ -1269,7 +1452,7 @@ mod tests {
     fn append_note_rewrites_the_file_and_card_ids_survive() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(&path, "## front <!-- id: q1 -->\nanswer\n").unwrap();
+        std::fs::write(&path, "## front <!-- id: card-q1 -->\nanswer\n").unwrap();
 
         let before = Deck::load(&path).unwrap();
         append_note(&path, 1, &["explained".to_string()]).unwrap();
@@ -1397,7 +1580,7 @@ mod tests {
         let path = write_deck(
             &decks,
             "d.md",
-            "---\nalix-id: deck1\n\
+            "---\nid: deck-deck1\n\
              source: assets/deck1/sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.rs\n\
              origin: ../source\n---\n## f\nb\n",
         );
@@ -1570,7 +1753,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "## purported <!-- id: q1 --> <!-- direction: both -->\nangeblich\n",
+            "## purported <!-- id: card-q1 --> <!-- direction: both -->\nangeblich\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1580,8 +1763,8 @@ mod tests {
         assert_eq!("angeblich", deck.cards[1].front);
         assert_eq!(vec!["purported"], deck.cards[1].back);
         assert_eq!(deck.cards[0].line, deck.cards[1].line);
-        assert_eq!(Some("q1".to_string()), deck.cards[0].id());
-        assert_eq!(Some("q1-r".to_string()), deck.cards[1].id());
+        assert_eq!(Some("card-q1".to_string()), deck.cards[0].id());
+        assert_eq!(Some("card-q1-r".to_string()), deck.cards[1].id());
         assert_ne!(deck.cards[0].id(), deck.cards[1].id());
     }
 

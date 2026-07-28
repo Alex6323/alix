@@ -955,7 +955,7 @@ impl Store {
             .cards
             .keys()
             .filter(|key| key.starts_with(&prefix))
-            .filter_map(|key| match crate::token::parse_card_id(key) {
+            .filter_map(|key| match crate::token::parse_prefixed_card_id(key) {
                 Some((_, Some(n), false)) => Some((n, key.clone())),
                 _ => None,
             })
@@ -1207,7 +1207,7 @@ impl Store {
         let pruned_tokens: HashSet<&str> = orphans
             .cards
             .iter()
-            .filter_map(|id| crate::token::parse_card_id(id).map(|(token, _, _)| token))
+            .filter_map(|id| crate::token::parse_prefixed_card_id(id).map(|(token, _, _)| token))
             .collect();
         for token in pruned_tokens {
             let prefix = format!("{token}-");
@@ -1230,7 +1230,8 @@ impl Store {
             .cards
             .keys()
             .filter(|id| {
-                crate::token::parse_card_id(id).is_some_and(|(token, _, _)| tokens.contains(token))
+                crate::token::parse_prefixed_card_id(id)
+                    .is_some_and(|(token, _, _)| tokens.contains(token))
             })
             .cloned()
             .collect();
@@ -1326,7 +1327,11 @@ pub fn mint_tutor_card(
             "front and back must be single lines".to_string(),
         ));
     }
-    let token = crate::token::mint().map_err(|e| MintError::Mint(e.to_string()))?;
+    let token = crate::token::format_card_id(
+        &crate::token::mint().map_err(|e| MintError::Mint(e.to_string()))?,
+        None,
+        false,
+    );
     let mut text = format!("## {front} <!-- id: {token} -->\n");
     for line in &back {
         text.push_str(line);
@@ -1465,9 +1470,12 @@ pub fn store_remediation_cards(
 
     let mut created_or_revived = 0;
     for block in &blocks {
-        // The token rides the `## ` line so the stored text re-parses to the same id forever.
-        let token =
-            crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?;
+        // The id rides the `## ` line so the stored text re-parses to the same id forever.
+        let token = crate::token::format_card_id(
+            &crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?,
+            None,
+            false,
+        );
         let block = stamp_block(block, &token);
         // A malformed block is a hard error, not a silently-dropped card.
         let cards = crate::parser::parse_str(deck_id, &block)?;
@@ -1730,12 +1738,12 @@ mod tests {
     fn the_cascade_rebuilds_entries_into_a_fresh_map() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let token = "tok";
+        let token = "card-tok";
         let a = hf(1, 10);
         let b = hf(2, 20);
         store.ensure_records_raw(token, &[a, b]);
-        store.get_or_insert("tok-0", 0).total_reviews = 1;
-        store.get_or_insert("tok-1", 0).total_reviews = 2;
+        store.get_or_insert("card-tok-0", 0).total_reviews = 1;
+        store.get_or_insert("card-tok-1", 0).total_reviews = 2;
 
         let z = hf(8, 80);
         let outcome = store.realign_card_holes(token, &[z, b]).unwrap();
@@ -1743,8 +1751,8 @@ mod tests {
         assert_eq!(vec![0], outcome.orphaned);
         assert_eq!(vec![0], outcome.fresh);
 
-        assert_eq!(2, store.get("tok-1").unwrap().total_reviews);
-        assert!(store.get("tok-0").is_none(), "the orphaned hole is deleted");
+        assert_eq!(2, store.get("card-tok-1").unwrap().total_reviews);
+        assert!(store.get("card-tok-0").is_none(), "the orphaned hole is deleted");
         assert_eq!(vec![z, b], store.records(token).unwrap().holes);
     }
 
@@ -1752,21 +1760,21 @@ mod tests {
     fn a_stray_high_index_hole_entry_is_pulled_by_the_cascade_not_left_to_squat() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let token = "tok";
+        let token = "card-tok";
         let a = hf(1, 10);
         let b = hf(2, 20);
         store.ensure_records_raw(token, &[a, b]);
-        store.get_or_insert("tok-0", 0).total_reviews = 1;
-        store.get_or_insert("tok-1", 0).total_reviews = 2;
-        store.get_or_insert("tok-5", 0).total_reviews = 9;
+        store.get_or_insert("card-tok-0", 0).total_reviews = 1;
+        store.get_or_insert("card-tok-1", 0).total_reviews = 2;
+        store.get_or_insert("card-tok-5", 0).total_reviews = 9;
 
         let outcome = store.realign_card_holes(token, &[b, a]).unwrap();
         assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
 
-        assert_eq!(2, store.get("tok-0").unwrap().total_reviews, "b -> hole 0");
-        assert_eq!(1, store.get("tok-1").unwrap().total_reviews, "a -> hole 1");
+        assert_eq!(2, store.get("card-tok-0").unwrap().total_reviews, "b -> hole 0");
+        assert_eq!(1, store.get("card-tok-1").unwrap().total_reviews, "a -> hole 1");
         assert!(
-            store.get("tok-5").is_none(),
+            store.get("card-tok-5").is_none(),
             "the stray is deleted, not left under a live key"
         );
     }
@@ -1775,7 +1783,7 @@ mod tests {
     fn a_stale_fingerprint_version_is_ignored_and_rewritten_never_mismatched() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let token = "tok";
+        let token = "card-tok";
         let a = hf(1, 10);
         let b = hf(2, 20);
         store.records.insert(
@@ -1785,11 +1793,11 @@ mod tests {
                 holes: vec![a],
             },
         );
-        store.get_or_insert("tok-0", 0).total_reviews = 7;
+        store.get_or_insert("card-tok-0", 0).total_reviews = 7;
 
         let outcome = store.realign_card_holes(token, &[a, b]);
         assert!(outcome.is_none());
-        assert_eq!(7, store.get("tok-0").unwrap().total_reviews);
+        assert_eq!(7, store.get("card-tok-0").unwrap().total_reviews);
         let rec = store.records(token).unwrap();
         assert_eq!(FP_VERSION, rec.version);
         assert_eq!(vec![a, b], rec.holes);
@@ -1802,13 +1810,13 @@ mod tests {
         store.get_or_insert("live", 0);
         store.get_or_insert("gone", 0);
         store.insert_virtual(VirtualCard {
-            id: "vq".to_string(),
+            id: "card-vq".to_string(),
             kind: VirtualKind::Remediation,
             deck: "d1".to_string(),
-            text: "## v <!-- id: vq -->\nb\n".to_string(),
+            text: "## v <!-- id: card-vq -->\nb\n".to_string(),
             created_ms: 0,
         });
-        store.get_or_insert("vq", 0);
+        store.get_or_insert("card-vq", 0);
         store.set_last_depth("d1", Depth::Recall);
         store.set_last_depth("d2", Depth::Recall);
 
@@ -1821,7 +1829,7 @@ mod tests {
 
         assert_eq!(2, store.prune_orphans(&orphans));
         assert!(store.get("live").is_some());
-        assert!(store.get("vq").is_some());
+        assert!(store.get("card-vq").is_some());
         assert_eq!(Some(Depth::Recall), store.last_depth("d1"));
         assert!(store.get("gone").is_none());
         assert_eq!(None, store.last_depth("d2"));
@@ -1833,21 +1841,21 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let a = hf(1, 10);
 
-        store.get_or_insert("gonetoken", 0).total_reviews = 3;
-        store.ensure_records_raw("gonetoken", &[a]);
-        store.get_or_insert("livetoken", 0).total_reviews = 7;
-        store.ensure_records_raw("livetoken", &[a]);
+        store.get_or_insert("card-gonetoken", 0).total_reviews = 3;
+        store.ensure_records_raw("card-gonetoken", &[a]);
+        store.get_or_insert("card-livetoken", 0).total_reviews = 7;
+        store.ensure_records_raw("card-livetoken", &[a]);
 
-        let known_cards: HashSet<String> = ["livetoken".to_string()].into_iter().collect();
+        let known_cards: HashSet<String> = ["card-livetoken".to_string()].into_iter().collect();
         let orphans = store.orphans(&known_cards, &HashSet::new());
-        assert_eq!(vec!["gonetoken".to_string()], orphans.cards);
+        assert_eq!(vec!["card-gonetoken".to_string()], orphans.cards);
 
         store.prune_orphans(&orphans);
 
-        assert!(store.get("gonetoken").is_none());
-        assert!(store.records("gonetoken").is_none());
-        assert!(store.get("livetoken").is_some());
-        assert!(store.records("livetoken").is_some());
+        assert!(store.get("card-gonetoken").is_none());
+        assert!(store.records("card-gonetoken").is_none());
+        assert!(store.get("card-livetoken").is_some());
+        assert!(store.records("card-livetoken").is_some());
     }
 
     #[test]
@@ -1856,32 +1864,32 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let a = hf(1, 10);
 
-        store.get_or_insert("doom", 0);
-        store.get_or_insert("doom-0", 0);
-        store.ensure_records_raw("doom", &[a]);
+        store.get_or_insert("card-doom", 0);
+        store.get_or_insert("card-doom-0", 0);
+        store.ensure_records_raw("card-doom", &[a]);
         store.set_deck_mastered("doomed", 1);
         store.insert_virtual(VirtualCard {
-            id: "vdoom".to_string(),
+            id: "card-vdoom".to_string(),
             kind: VirtualKind::Remediation,
             deck: "doomed".to_string(),
-            text: "## v <!-- id: vdoom -->\nx\n".to_string(),
+            text: "## v <!-- id: card-vdoom -->\nx\n".to_string(),
             created_ms: 0,
         });
-        store.get_or_insert("vdoom", 0);
+        store.get_or_insert("card-vdoom", 0);
         store.get_or_insert("keep", 0);
         store.ensure_records_raw("keep", &[a]);
         store.set_deck_mastered("keep", 1);
 
-        let tokens: HashSet<String> = ["doom".to_string()].into_iter().collect();
+        let tokens: HashSet<String> = ["card-doom".to_string()].into_iter().collect();
         let wiped = store.wipe_deck(&tokens, "doomed");
 
         assert_eq!(2, wiped, "the base and the hole schedule both count");
-        assert!(store.get("doom").is_none());
-        assert!(store.get("doom-0").is_none());
-        assert!(store.records("doom").is_none());
+        assert!(store.get("card-doom").is_none());
+        assert!(store.get("card-doom-0").is_none());
+        assert!(store.records("card-doom").is_none());
         assert!(!store.deck_mastered("doomed"));
-        assert!(store.get_virtual("vdoom").is_none());
-        assert!(store.get("vdoom").is_none());
+        assert!(store.get_virtual("card-vdoom").is_none());
+        assert!(store.get("card-vdoom").is_none());
         assert!(store.get("keep").is_some());
         assert!(store.records("keep").is_some());
         assert!(store.deck_mastered("keep"));
@@ -2104,10 +2112,10 @@ mod tests {
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
         store.set_deck_mastered("deck1", 2);
         store.insert_virtual(VirtualCard {
-            id: "virtual1".to_string(),
+            id: "card-virtual1".to_string(),
             kind: VirtualKind::Tutor,
             deck: "deck1".to_string(),
-            text: "## q <!-- id: virtual1 -->\na\n".to_string(),
+            text: "## q <!-- id: card-virtual1 -->\na\n".to_string(),
             created_ms: 1,
         });
         store.save().unwrap();
@@ -2118,7 +2126,7 @@ mod tests {
         let renamed = Store::open_deck(&path, "deck1", "new.md").unwrap();
         assert!(renamed.deck_mastered("deck1"));
         assert_eq!(
-            vec!["virtual1"],
+            vec!["card-virtual1"],
             renamed
                 .virtual_cards_for("deck1")
                 .into_iter()
@@ -2377,7 +2385,7 @@ mod tests {
         assert_eq!(0, store.clear());
     }
 
-    const BORROW_TEXT: &str = "## What does the borrow checker enforce? <!-- id: vb1 -->\nExactly one mutable borrow, or many shared ones\n";
+    const BORROW_TEXT: &str = "## What does the borrow checker enforce? <!-- id: card-vb1 -->\nExactly one mutable borrow, or many shared ones\n";
 
     fn virtual_card(deck_id: &str, text: &str) -> VirtualCard {
         let id = crate::parser::parse_str(deck_id, text).unwrap()[0]
@@ -2429,9 +2437,9 @@ mod tests {
     fn virtual_cards_for_matches_on_owning_deck_id() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.insert_virtual(virtual_card("rust", "## f <!-- id: v1 -->\nback one\n"));
-        store.insert_virtual(virtual_card("rust", "## f <!-- id: v2 -->\nback two\n"));
-        store.insert_virtual(virtual_card("other", "## f <!-- id: v3 -->\nback one\n"));
+        store.insert_virtual(virtual_card("rust", "## f <!-- id: card-v1 -->\nback one\n"));
+        store.insert_virtual(virtual_card("rust", "## f <!-- id: card-v2 -->\nback two\n"));
+        store.insert_virtual(virtual_card("other", "## f <!-- id: card-v3 -->\nback one\n"));
 
         let rust_cards = store.virtual_cards_for("rust");
         assert_eq!(2, rust_cards.len());
@@ -2467,7 +2475,7 @@ mod tests {
         let deck_path = write_deck(
             dir.path(),
             "rust.md",
-            "## existing <!-- id: ex1 -->\nanswer\n",
+            "## existing <!-- id: card-ex1 -->\nanswer\n",
         );
         let store_path = dir.path().join("deck1.json");
         let mut store = Store::open(&store_path).unwrap();
@@ -2501,7 +2509,7 @@ mod tests {
         let deck_path = write_deck(
             dir.path(),
             "rust.md",
-            "## one <!-- id: q1 -->\n1\n\n## two <!-- id: q2 -->\n2\n",
+            "## one <!-- id: card-q1 -->\n1\n\n## two <!-- id: card-q2 -->\n2\n",
         );
         let before =
             crate::parser::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap())
@@ -2544,12 +2552,12 @@ mod tests {
         let deck_path = write_deck(
             dir.path(),
             "rust.md",
-            "## existing <!-- id: ex1 -->\nanswer\n",
+            "## existing <!-- id: card-ex1 -->\nanswer\n",
         );
         let store_path = dir.path().join("deck1.json");
         let mut store = Store::open(&store_path).unwrap();
 
-        let text = "## Complete the quote <!-- id: vcz1 -->\nTo \\blank{be} or not to \\blank{be}\n> Hamlet\n";
+        let text = "## Complete the quote <!-- id: card-vcz1 -->\nTo \\blank{be} or not to \\blank{be}\n> Hamlet\n";
         let cards = crate::parser::parse_str("rust.md", text).unwrap();
         assert_eq!(2, cards.len());
         let id0 = cards[0].id().unwrap();
@@ -2596,7 +2604,7 @@ mod tests {
         let deck_path = write_deck(
             dir.path(),
             "rust.md",
-            "## existing <!-- id: ex1 -->\nanswer\n",
+            "## existing <!-- id: card-ex1 -->\nanswer\n",
         );
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
@@ -2641,7 +2649,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
-        let text = "## capital of france <!-- id: cap1 -->\nParis\n".to_string();
+        let text = "## capital of france <!-- id: card-cap1 -->\nParis\n".to_string();
         let id = crate::parser::parse_str("geo.md", &text).unwrap()[0]
             .id()
             .unwrap();
@@ -2774,7 +2782,7 @@ mod tests {
     fn two_cards() -> Vec<crate::card::Card> {
         crate::parser::parse_str(
             "t.md",
-            "## a <!-- id: q1 -->\n1\n\n## b <!-- id: q2 -->\n2\n",
+            "## a <!-- id: card-q1 -->\n1\n\n## b <!-- id: card-q2 -->\n2\n",
         )
         .unwrap()
     }
@@ -2926,7 +2934,7 @@ mod tests {
             .unwrap()
             .id
             .clone();
-        let (base, _, _) = crate::token::parse_card_id(&cloze_id).unwrap();
+        let (base, _, _) = crate::token::parse_prefixed_card_id(&cloze_id).unwrap();
         assert_eq!(
             2,
             store.records(base).unwrap().holes.len(),
@@ -3123,7 +3131,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        let plain = crate::parser::parse_str("d.md", "## Complete the quote <!-- id: p1 -->\nbe\n")
+        let plain = crate::parser::parse_str("d.md", "## Complete the quote <!-- id: card-p1 -->\nbe\n")
             .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
             plain.iter().map(|c| c.content_fingerprint).collect();
@@ -3147,7 +3155,7 @@ mod tests {
         ] {
             let dir = tempfile::tempdir().unwrap();
             let deck_path = dir.path().join("d.md");
-            std::fs::write(&deck_path, "## existing <!-- id: ex1 -->\nanswer\n").unwrap();
+            std::fs::write(&deck_path, "## existing <!-- id: card-ex1 -->\nanswer\n").unwrap();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
             let created = store_remediation(&mut store, "d.md", text, 1_000, None).unwrap();

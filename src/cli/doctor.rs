@@ -76,8 +76,13 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
     let deck = match alix::parser::parse(name, &text) {
         Ok(deck) => deck,
         Err(e) => {
-            let charset = matches!(e, alix::parser::ParseError::InvalidToken { .. });
-            if strict || charset {
+            let bad_id = matches!(
+                e,
+                alix::parser::ParseError::InvalidDeckId { .. }
+                    | alix::parser::ParseError::InvalidCardId { .. }
+                    | alix::parser::ParseError::ObsoleteAlixId(_)
+            );
+            if strict || bad_id {
                 report.error(format!("{}: {e}", path.display()));
             } else {
                 report.warn(format!("{}: {e}", path.display()));
@@ -123,9 +128,11 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
         }
     }
     for tok in &tokens {
-        if alix::token::is_valid(tok) && !alix::token::is_canonical(tok) {
+        if let Some((_, token, _, _)) = alix::token::parse_id(tok)
+            && !alix::token::is_canonical(token)
+        {
             report.warn(format!(
-                "{}: token `{tok}` is valid but not canonical (not 26 base32 chars)",
+                "{}: id `{tok}` is valid but its token is not canonical (not 26 base32 chars)",
                 path.display()
             ));
         }
@@ -134,7 +141,7 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
     if deck.deck_token.is_none() && deck.frontmatter_span.is_some() && deck.frontmatter.unspliceable
     {
         report.warn(format!(
-            "{}: cannot stamp: frontmatter is not a block mapping, so no `alix-id:` can be spliced in",
+            "{}: cannot stamp: frontmatter is not a block mapping, so no `id:` can be spliced in",
             path.display()
         ));
     }
@@ -292,14 +299,54 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             deck.subject
         ));
     }
+    let dir = deck.path.parent();
     for req in &deck.requires {
-        if alix::deck::resolve_dep(req, deck.path.parent(), deck.path.parent()).is_none() {
-            report.warn(format!(
-                "{}: requires `{req}` but no such deck exists here (dangling \
-                 prerequisite); `requires:` is authored by filename, so a renamed or \
-                 deleted prerequisite breaks the edge",
-                deck.subject
-            ));
+        match alix::deck::classify_require(req) {
+            alix::deck::RequiresMode::DeckId => {
+                if alix::deck::resolve_dep_by_id(req, dir, dir).is_none() {
+                    report.warn(format!(
+                        "{}: requires deck id `{req}` but no deck here carries it \
+                         (dangling prerequisite); the prerequisite may have been deleted \
+                         or live elsewhere",
+                        deck.subject
+                    ));
+                }
+                if let Some(shadow) = alix::deck::resolve_dep(req, dir, dir) {
+                    report.warn(format!(
+                        "{}: the file {} is named like the required deck id `{req}`; \
+                         the id wins, the file is not the prerequisite (write `./{req}` \
+                         to require the file itself)",
+                        deck.subject,
+                        shadow.display()
+                    ));
+                }
+            }
+            alix::deck::RequiresMode::WrongTypeCardId => {
+                report.error(format!(
+                    "{}: requires `{req}` which is a card id, likely pasted by mistake; \
+                     a card is never a prerequisite, name the deck's `deck-<token>` id or \
+                     its filename",
+                    deck.subject
+                ));
+            }
+            alix::deck::RequiresMode::Filename => {
+                if alix::deck::resolve_dep(req, dir, dir).is_none() {
+                    report.warn(format!(
+                        "{}: requires `{req}` but no such deck exists here (dangling \
+                         prerequisite); a filename edge breaks when the prerequisite is \
+                         renamed or deleted (a `deck-<token>` id edge survives renames)",
+                        deck.subject
+                    ));
+                    if req.starts_with("deck-") {
+                        report.note(format!(
+                            "{}: `requires: {req}` looks like a truncated or malformed \
+                             deck id (an id is `deck-` plus 26 base32 chars); it was read \
+                             as a filename",
+                            deck.subject
+                        ));
+                    }
+                }
+            }
         }
     }
 }
@@ -367,7 +414,7 @@ fn workspace_findings(dir: &Path) -> Report {
     let map = alix::dedup::scan_dir(dir);
     for (kept, excluded, token) in &map.excluded_decks {
         report.warn(format!(
-            "duplicate deck token `{token}`: {} is excluded (kept {}); delete the `alix-id:` line in the copy",
+            "duplicate deck token `{token}`: {} is excluded (kept {}); delete the `id:` line in the copy",
             excluded.display(),
             kept.display()
         ));
@@ -806,7 +853,7 @@ mod tests {
         w(
             dir.path(),
             "misplaced.md",
-            "---\nalix-id: misplaced\n---\n## q <!-- id: q1 -->\na\n",
+            "---\nid: deck-misplaced\n---\n## q <!-- id: card-q1 -->\na\n",
         );
 
         let report = workspace_findings(dir.path());
@@ -829,7 +876,7 @@ mod tests {
         let path = decks.join("facts.md");
         std::fs::write(
             &path,
-            "---\nalix-id: deck1\nsource: notes.md\n---\n## q <!-- id: card1 -->\na\n",
+            "---\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n",
         )
         .unwrap();
         let before = std::fs::read(&path).unwrap();
@@ -850,7 +897,7 @@ mod tests {
     fn doctor_rejects_a_frozen_asset_whose_bytes_do_not_match_its_name() {
         let dir = tempfile::tempdir().unwrap();
         let decks = dir.path().join(alix::workspace::DECKS);
-        let assets = dir.path().join("assets/deck1");
+        let assets = dir.path().join("assets/deck-deck1");
         std::fs::create_dir(&decks).unwrap();
         std::fs::create_dir_all(&assets).unwrap();
         w(dir.path(), alix::workspace::MANIFEST, "");
@@ -859,8 +906,8 @@ mod tests {
         std::fs::write(
             decks.join("facts.md"),
             format!(
-                "---\nalix-id: deck1\nsource: assets/deck1/{name}\n---\n\
-                 ## q <!-- id: card1 -->\na\n"
+                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                 ## q <!-- id: card-card1 -->\na\n"
             ),
         )
         .unwrap();
@@ -879,7 +926,7 @@ mod tests {
     fn doctor_rejects_an_image_owned_by_another_deck() {
         let dir = tempfile::tempdir().unwrap();
         let decks = dir.path().join(alix::workspace::DECKS);
-        let other_assets = dir.path().join("assets/deck2");
+        let other_assets = dir.path().join("assets/deck-deck2");
         std::fs::create_dir(&decks).unwrap();
         std::fs::create_dir_all(&other_assets).unwrap();
         w(dir.path(), alix::workspace::MANIFEST, "");
@@ -888,8 +935,8 @@ mod tests {
         std::fs::write(
             decks.join("facts.md"),
             format!(
-                "---\nalix-id: deck1\n---\n\
-                 ## q <!-- id: card1 -->\n![diagram](assets/deck2/{name})\na\n"
+                "---\nid: deck-deck1\n---\n\
+                 ## q <!-- id: card-card1 -->\n![diagram](assets/deck-deck2/{name})\na\n"
             ),
         )
         .unwrap();
@@ -985,7 +1032,7 @@ mod tests {
         w(
             dir.path(),
             "cached.md",
-            "---\nalix-id: doctormathdeck\n---\n## q <!-- id: doctormath1 -->\na\n",
+            "---\nid: deck-doctormathdeck\n---\n## q <!-- id: card-doctormath1 -->\na\n",
         );
         let parsed =
             alix::parser::parse("cached.md", &std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -1044,6 +1091,136 @@ mod tests {
         );
     }
 
+    const CANONICAL_ID: &str = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+
+    #[test]
+    fn doctor_warns_on_a_dangling_id_mode_requires_and_accepts_a_resolvable_one() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "base.md",
+            &format!("---\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"),
+        );
+        let resolvable = dir.path().join("resolvable.md");
+        w(
+            dir.path(),
+            "resolvable.md",
+            &format!("---\nrequires: {CANONICAL_ID}\n---\n## q\na\n"),
+        );
+        let dangling = dir.path().join("dangling.md");
+        w(
+            dir.path(),
+            "dangling.md",
+            "---\nrequires: deck-zzzzzzzzzzzzzzzzzzzzzzzzzz\n---\n## q\na\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&resolvable, true, &mut report);
+        deck_findings(&dangling, true, &mut report);
+
+        let dangling_warnings: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("dangling prerequisite"))
+            .collect();
+        assert_eq!(1, dangling_warnings.len(), "{:#?}", report.warnings);
+        assert!(
+            dangling_warnings[0].contains("deck-zzzzzzzzzzzzzzzzzzzzzzzzzz"),
+            "{}",
+            dangling_warnings[0]
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_a_pasted_card_id_in_requires_as_wrong_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        w(
+            dir.path(),
+            "d.md",
+            "---\nrequires: card-9w2c7x4k1m8q3z5t0v6b2n4d8f\n---\n## q\na\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, true, &mut report);
+
+        let errors = report.errors.join("\n");
+        assert!(errors.contains("card id"), "{errors}");
+        assert!(errors.contains("never a prerequisite"), "{errors}");
+    }
+
+    #[test]
+    fn doctor_hints_when_a_filename_mode_requires_looks_like_a_truncated_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        w(
+            dir.path(),
+            "d.md",
+            "---\nrequires: deck-9w2c7x4k1m8q3z5t0v6b2n4d8\n---\n## q\na\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, true, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("dangling prerequisite")),
+            "{:#?}",
+            report.warnings
+        );
+        assert!(
+            report
+                .notes
+                .iter()
+                .any(|note| note.contains("truncated or malformed")),
+            "{:#?}",
+            report.notes
+        );
+    }
+
+    #[test]
+    fn doctor_reports_a_file_shadowing_a_required_deck_id() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "base.md",
+            &format!("---\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"),
+        );
+        w(
+            dir.path(),
+            &format!("{CANONICAL_ID}.md"),
+            "## impostor\na\n",
+        );
+        let path = dir.path().join("d.md");
+        w(
+            dir.path(),
+            "d.md",
+            &format!("---\nrequires: {CANONICAL_ID}\n---\n## q\na\n"),
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, true, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("the id wins")),
+            "{:#?}",
+            report.warnings
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("dangling prerequisite")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
     #[test]
     fn doctor_flags_the_full_check_set() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1055,69 +1232,69 @@ mod tests {
         w(
             &decks,
             "bad-value.md",
-            "---\nreveal: bogus\n---\n## q <!-- id: bv1 -->\na\n",
+            "---\nreveal: bogus\n---\n## q <!-- id: card-bv1 -->\na\n",
         );
         w(
             &decks,
             "dup-deck.md",
-            "---\nalix-id: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
+            "---\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
         );
         w(
             &decks,
             "dup-deck copy.md",
-            "---\nalix-id: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
+            "---\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
         );
         w(
             &decks,
             "card-dup.md",
-            "---\nalix-id: cda\n---\n## q <!-- id: cshared -->\na\n",
+            "---\nid: deck-cda\n---\n## q <!-- id: card-cshared -->\na\n",
         );
         w(
             &decks,
             "card-dup copy.md",
-            "---\nalix-id: cdb\n---\n## q <!-- id: cshared -->\nb\n",
+            "---\nid: deck-cdb\n---\n## q <!-- id: card-cshared -->\nb\n",
         );
         w(
             &decks,
             "unspliceable.md",
-            "---\n{source: [a]}\n---\n## q <!-- id: uq1 -->\nb\n",
+            "---\n{source: [a]}\n---\n## q <!-- id: card-uq1 -->\nb\n",
         );
         w(
             &decks,
             "cloze.md",
-            "## Fill <!-- id: clz1 -->\n<!-- reveal: line -->\nthe \\blank{a} gap\n",
+            "## Fill <!-- id: card-clz1 -->\n<!-- reveal: line -->\nthe \\blank{a} gap\n",
         );
         w(
             &decks,
             "indented.md",
-            "## real <!-- id: ind1 -->\n  ## not a front\nanswer\n",
+            "## real <!-- id: card-ind1 -->\n  ## not a front\nanswer\n",
         );
         w(
             &decks,
             "imgcard.md",
-            "## pic <!-- id: img1 -->\nphoto\n![](missing.png)\n",
+            "## pic <!-- id: card-img1 -->\nphoto\n![](missing.png)\n",
         );
         w(
             &decks,
             "fresh.md",
-            "---\nalix-id: \"fresh\"\n---\n## q\na\n",
+            "---\nid: \"deck-fresh\"\n---\n## q\na\n",
         );
         w(
             &decks,
             "trace-bad.md",
-            "---\ntrace: a walk\nsource: trace-src.txt\n---\n## hop <!-- id: thop1 -->\nstep\n<!-- at: 5-6 -->\n",
+            "---\ntrace: a walk\nsource: trace-src.txt\n---\n## hop <!-- id: card-thop1 -->\nstep\n<!-- at: 5-6 -->\n",
         );
         w(dir, "trace-src.txt", "one\ntwo\n");
         w(
             &decks,
             "at-dangling.md",
-            "---\nsource: .\n---\n## cited <!-- id: atd1 -->\nb\n<!-- at: missing.rs:1-2 -->\n",
+            "---\nsource: .\n---\n## cited <!-- id: card-atd1 -->\nb\n<!-- at: missing.rs:1-2 -->\n",
         );
-        w(&decks, "sourceless.md", "## a <!-- id: sla1 -->\n1\n");
+        w(&decks, "sourceless.md", "## a <!-- id: card-sla1 -->\n1\n");
         w(
             &decks,
             "gated.md",
-            "---\nsource: https://example.test\nrequires: sourceless\n---\n## b <!-- id: gtd1 -->\n1\n",
+            "---\nsource: https://example.test\nrequires: sourceless\n---\n## b <!-- id: card-gtd1 -->\n1\n",
         );
 
         let mut store = alix::store::Store::open_deck(
@@ -1135,7 +1312,7 @@ mod tests {
         let warnings = report.warnings.join("\n");
 
         assert!(
-            errors.contains("fails the charset"),
+            errors.contains("must hold a base `card-<token>` id"),
             "invalid token: {errors}"
         );
         assert!(
@@ -1188,7 +1365,7 @@ mod tests {
         w(
             dir.path(),
             "deck.md",
-            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         );
         let user_root = dir.path();
         alix::state::open_store(&dir.path().join("deck.md"), user_root)
@@ -1222,7 +1399,7 @@ mod tests {
         w(
             dir.path(),
             "deck.md",
-            "---\nalix-id: deck1\n---\n## q <!-- id: card1 -->\na\n",
+            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         );
         w(dir.path(), "progress.json", r#"{"version":1,"cards":{}}"#);
         w(dir.path(), "augment.json", r#"{"version":1,"cards":{}}"#);
@@ -1260,9 +1437,9 @@ mod tests {
             dir.path(),
             "deck.md",
             &format!(
-                "---\nalix-id: \"deck1\"\nsource: .\n---\n\
+                "---\nid: \"deck-deck1\"\nsource: .\n---\n\
                  ## q\nanswer\n<!-- at: code.rs:2-3 @ {fingerprint} -->\n\
-                 <!-- id: card1 -->\n"
+                 <!-- id: card-card1 -->\n"
             ),
         );
 
@@ -1282,9 +1459,9 @@ mod tests {
         repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
         let after = std::fs::read_to_string(&deck_path).unwrap();
         assert!(after.contains(&format!("at: code.rs:3-4 @ {fingerprint}")));
-        assert!(after.contains("<!-- id: card1 -->"));
+        assert!(after.contains("<!-- id: card-card1 -->"));
         assert_eq!(
-            Some("card1".to_string()),
+            Some("card-card1".to_string()),
             Deck::load(&deck_path).unwrap().cards[0].id()
         );
     }

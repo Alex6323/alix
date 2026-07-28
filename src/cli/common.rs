@@ -230,7 +230,7 @@ mod tests {
     fn store_for_resolves_a_loose_deck_to_the_decks_dir_root_store() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("loose.md");
-        std::fs::write(&deck, "---\nalix-id: loose\n---\n## q <!-- id: q -->\na\n").unwrap();
+        std::fs::write(&deck, "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n").unwrap();
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -240,7 +240,7 @@ mod tests {
 
         assert_eq!(
             store.path(),
-            dir.path().join("progress/loose.json").as_path()
+            dir.path().join("progress/deck-loose.json").as_path()
         );
     }
 
@@ -248,7 +248,7 @@ mod tests {
     fn store_for_lets_a_cli_override_win_over_the_decks_dir_fallback() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("loose.md");
-        std::fs::write(&deck, "---\nalix-id: loose\n---\n## q <!-- id: q -->\na\n").unwrap();
+        std::fs::write(&deck, "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n").unwrap();
         let override_path = dir.path().join("custom");
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
@@ -264,7 +264,7 @@ mod tests {
 
         assert_eq!(
             store.path(),
-            dir.path().join("custom/progress/loose.json").as_path()
+            dir.path().join("custom/progress/deck-loose.json").as_path()
         );
     }
 
@@ -277,7 +277,7 @@ mod tests {
         let member = ws.join("decks/a.md");
         std::fs::write(
             &member,
-            "---\nalix-id: \"a\"\n---\n## q <!-- id: q -->\na\n",
+            "---\nid: \"deck-a\"\n---\n## q <!-- id: card-q -->\na\n",
         )
         .unwrap();
         let config = Config {
@@ -287,7 +287,7 @@ mod tests {
 
         let store = store_for(std::slice::from_ref(&member), None, &config).unwrap();
 
-        assert_eq!(store.path(), ws.join("progress/a.json").as_path());
+        assert_eq!(store.path(), ws.join("progress/deck-a.json").as_path());
     }
 
     #[test]

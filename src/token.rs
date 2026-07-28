@@ -44,24 +44,6 @@ pub fn card_id(token: &str, hole: Option<u32>, reversed: bool) -> String {
     }
 }
 
-pub fn parse_card_id(id: &str) -> Option<(&str, Option<u32>, bool)> {
-    match id.split_once('-') {
-        None => Some((id, None, false)),
-        Some((token, suffix)) => {
-            if token.is_empty() {
-                None
-            } else if suffix == "r" {
-                Some((token, None, true))
-            } else if is_canonical_decimal(suffix) {
-                let hole: u32 = suffix.parse().ok()?;
-                Some((token, Some(hole), false))
-            } else {
-                None
-            }
-        }
-    }
-}
-
 fn is_canonical_decimal(s: &str) -> bool {
     match s.as_bytes() {
         [b'0'] => true,
@@ -152,24 +134,30 @@ mod tests {
     }
 
     #[test]
-    fn parse_card_id_round_trips_and_rejects_junk() {
-        assert_eq!(parse_card_id("t0"), Some(("t0", None, false)));
-        assert_eq!(parse_card_id("t0-2"), Some(("t0", Some(2), false)));
-        assert_eq!(parse_card_id("t0-r"), Some(("t0", None, true)));
-
-        assert_eq!(parse_card_id("t0-x"), None);
-        assert_eq!(parse_card_id("t0-"), None);
-        assert_eq!(parse_card_id("-r"), None);
-        assert_eq!(parse_card_id("t0-1-2"), None);
-        assert_eq!(parse_card_id("t0-12"), Some(("t0", Some(12), false)));
+    fn parse_prefixed_card_id_rejects_junk_suffixes_and_bare_tokens() {
+        assert_eq!(parse_prefixed_card_id("t0"), None);
+        assert_eq!(parse_prefixed_card_id("card-t0-x"), None);
+        assert_eq!(parse_prefixed_card_id("card-t0-"), None);
+        assert_eq!(parse_prefixed_card_id("card--r"), None);
+        assert_eq!(parse_prefixed_card_id("card-t0-1-2"), None);
+        assert_eq!(
+            parse_prefixed_card_id("card-t0-12"),
+            Some(("card-t0", Some(12), false))
+        );
     }
 
     #[test]
     fn a_leading_zero_hole_suffix_is_rejected() {
-        assert_eq!(parse_card_id("t0-01"), None);
-        assert_eq!(parse_card_id("t0-00"), None);
-        assert_eq!(parse_card_id("t0-0"), Some(("t0", Some(0), false)));
-        assert_eq!(parse_card_id("t0-10"), Some(("t0", Some(10), false)));
+        assert_eq!(parse_prefixed_card_id("card-t0-01"), None);
+        assert_eq!(parse_prefixed_card_id("card-t0-00"), None);
+        assert_eq!(
+            parse_prefixed_card_id("card-t0-0"),
+            Some(("card-t0", Some(0), false))
+        );
+        assert_eq!(
+            parse_prefixed_card_id("card-t0-10"),
+            Some(("card-t0", Some(10), false))
+        );
     }
 
     #[test]

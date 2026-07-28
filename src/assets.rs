@@ -96,7 +96,10 @@ enum SourceInput {
 }
 
 pub fn deck_dir(workspace_root: &Path, deck_id: &str) -> Result<PathBuf, AssetError> {
-    if !crate::token::is_valid(deck_id) {
+    if !matches!(
+        crate::token::parse_id(deck_id),
+        Some((crate::token::Kind::Deck, ..))
+    ) {
         return Err(AssetError::InvalidDeckId(deck_id.to_string()));
     }
     Ok(crate::workspace::WorkspaceFiles::new(workspace_root).assets_for(deck_id))
@@ -681,8 +684,8 @@ mod tests {
     #[test]
     fn identical_objects_in_one_deck_reuse_the_same_path() {
         let directory = tempfile::tempdir().unwrap();
-        let first = write_object(directory.path(), "deck1", b"same", "txt").unwrap();
-        let second = write_object(directory.path(), "deck1", b"same", "txt").unwrap();
+        let first = write_object(directory.path(), "deck-deck1", b"same", "txt").unwrap();
+        let second = write_object(directory.path(), "deck-deck1", b"same", "txt").unwrap();
 
         assert_eq!(first, second);
         assert_eq!(b"same", std::fs::read(first).unwrap().as_slice());
@@ -691,8 +694,8 @@ mod tests {
     #[test]
     fn identical_objects_in_two_decks_have_distinct_owned_paths() {
         let directory = tempfile::tempdir().unwrap();
-        let first = write_object(directory.path(), "deck1", b"same", "txt").unwrap();
-        let second = write_object(directory.path(), "deck2", b"same", "txt").unwrap();
+        let first = write_object(directory.path(), "deck-deck1", b"same", "txt").unwrap();
+        let second = write_object(directory.path(), "deck-deck2", b"same", "txt").unwrap();
 
         assert_ne!(first, second);
         assert_eq!(first.file_name(), second.file_name());
@@ -701,10 +704,10 @@ mod tests {
     #[test]
     fn an_existing_corrupt_object_is_rejected_instead_of_reused() {
         let directory = tempfile::tempdir().unwrap();
-        let path = write_object(directory.path(), "deck1", b"original", "txt").unwrap();
+        let path = write_object(directory.path(), "deck-deck1", b"original", "txt").unwrap();
         std::fs::write(&path, "changed").unwrap();
 
-        let error = write_object(directory.path(), "deck1", b"original", "txt").unwrap_err();
+        let error = write_object(directory.path(), "deck-deck1", b"original", "txt").unwrap_err();
         assert!(matches!(error, AssetError::DigestMismatch { .. }));
     }
 
@@ -729,7 +732,7 @@ mod tests {
         std::fs::write(directory.path().join("diagram.PNG"), [0, 1, 2, 255]).unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nalix-id: \"deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\na\n<!-- at: notes.md:2 -->\n",
+            "---\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\na\n<!-- at: notes.md:2 -->\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -757,10 +760,10 @@ mod tests {
             std::fs::read(&evidence[0]).unwrap().as_slice()
         );
         let image_name = object_name(&[0, 1, 2, 255], "png");
-        assert!(frozen.contains(&format!("](assets/deck1/{image_name})")));
+        assert!(frozen.contains(&format!("](assets/deck-deck1/{image_name})")));
         assert_eq!(
             [0, 1, 2, 255],
-            std::fs::read(directory.path().join(format!("assets/deck1/{image_name}")))
+            std::fs::read(directory.path().join(format!("assets/deck-deck1/{image_name}")))
                 .unwrap()
                 .as_slice()
         );
@@ -778,7 +781,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nalix-id: \"deck2\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                "---\nid: \"deck-deck2\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -810,7 +813,7 @@ mod tests {
         std::fs::write(source.join("lib.rs"), "a\n").unwrap();
         let path = directory.path().join("decks/plain.md");
         let text = format!(
-            "---\nalix-id: \"deck3\"\nsource: {}\n---\n## q\na\n",
+            "---\nid: \"deck-deck3\"\nsource: {}\n---\n## q\na\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -819,7 +822,7 @@ mod tests {
 
         assert!(matches!(error, AssetError::UncitedDirectory(_)));
         assert_eq!(text, std::fs::read_to_string(&path).unwrap());
-        assert!(!directory.path().join("assets/deck3").exists());
+        assert!(!directory.path().join("assets/deck-deck3").exists());
     }
 
     #[test]
@@ -829,7 +832,7 @@ mod tests {
         std::fs::write(&source, "a\n").unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nalix-id: \"deck4\"\nsource: {}\n---\n## q\n![d](missing.png)\na\n",
+            "---\nid: \"deck-deck4\"\nsource: {}\n---\n## q\n![d](missing.png)\na\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -838,7 +841,7 @@ mod tests {
 
         assert!(matches!(error, AssetError::MissingImage(_)));
         assert_eq!(text, std::fs::read_to_string(&path).unwrap());
-        assert!(!directory.path().join("assets/deck4").exists());
+        assert!(!directory.path().join("assets/deck-deck4").exists());
     }
 
     #[test]

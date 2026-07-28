@@ -24,7 +24,7 @@ pub struct CardDupe {
 pub struct DuplicateMap {
     /// (kept deck, excluded deck, shared token) per excluded copy. Never
     /// auto-fixed: the tool can't know which copy is pristine, so removing the
-    /// copy's `alix-id:` line is manual.
+    /// copy's `id:` line is manual.
     pub excluded_decks: Vec<(PathBuf, PathBuf, String)>,
     /// Excludes cards from an already-excluded deck: a whole-file copy is one
     /// deck-level finding, not one per card.
@@ -92,7 +92,7 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
                 && let Some(rest) = line.trim().strip_prefix("id:")
             {
                 let v = rest.trim().trim_matches('"');
-                if crate::token::is_valid(v) {
+                if matches!(crate::token::parse_id(v), Some((crate::token::Kind::Deck, ..))) {
                     deck_token = Some(v.to_string());
                 }
             }
@@ -127,7 +127,9 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
             && let Some(rest) = inner.trim().strip_prefix("id:")
         {
             let v = rest.trim();
-            if crate::token::is_valid(v) && heading_line > 0 {
+            if matches!(crate::token::parse_prefixed_card_id(v), Some((_, None, false)))
+                && heading_line > 0
+            {
                 let entry = (v.to_string(), heading_line);
                 if !cards.contains(&entry) {
                     cards.push(entry);
@@ -307,7 +309,7 @@ mod tests {
         let path = dir.join(name);
         std::fs::write(
             &path,
-            format!("---\nalix-id: \"{token}\"\n---\n## q <!-- id: {card_token} -->\na\n"),
+            format!("---\nid: \"{token}\"\n---\n## q <!-- id: {card_token} -->\na\n"),
         )
         .unwrap();
         path
@@ -318,22 +320,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nalix-id: \"dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: shared1 -->\n\n## q2 <!-- id: samelinetok -->\nanswer\n",
+            "---\nid: \"deck-dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: card-shared1 -->\n\n## q2 <!-- id: card-samelinetok -->\nanswer\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nalix-id: \"dtok2\"\n---\n## q3\n<!-- id: shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: fencedtok -->\n<!-- id: alsofenced -->\n```\n<!-- id: realtok -->\n",
+            "---\nid: \"deck-dtok2\"\n---\n## q3\n<!-- id: card-shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: card-fencedtok -->\n<!-- id: card-alsofenced -->\n```\n<!-- id: card-realtok -->\n",
         )
         .unwrap();
         std::fs::write(dir.path().join("notes.md"), "just prose, no cards\n").unwrap();
-        std::fs::write(dir.path().join("c.md.bak"), "## x\n<!-- id: shared1 -->\n").unwrap();
+        std::fs::write(dir.path().join("c.md.bak"), "## x\n<!-- id: card-shared1 -->\n").unwrap();
 
         let full = scan_dir(dir.path());
         let fast = scan_dir_fast(dir.path());
         assert_eq!(full, fast);
         assert_eq!(1, fast.card_dupes.len());
-        assert_eq!("shared1", fast.card_dupes[0].token);
+        assert_eq!("card-shared1", fast.card_dupes[0].token);
     }
 
     #[test]
@@ -341,16 +343,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Plain lexicographic order would keep `deck (1).md` (space sorts before `.`);
         // the keep-rule must prevent that exact inversion.
-        let base = write(dir.path(), "deck.md", "dsame", "cbase");
-        let copy1 = write(dir.path(), "deck (1).md", "dsame", "ccopy1");
-        let copy2 = write(dir.path(), "deck copy.md", "dsame", "ccopy2");
+        let base = write(dir.path(), "deck.md", "deck-dsame", "card-cbase");
+        let copy1 = write(dir.path(), "deck (1).md", "deck-dsame", "card-ccopy1");
+        let copy2 = write(dir.path(), "deck copy.md", "deck-dsame", "card-ccopy2");
 
         let map = scan(&[copy1.clone(), copy2.clone(), base.clone()]);
 
         assert_eq!(
             vec![
-                (base.clone(), copy1, "dsame".to_string()),
-                (base, copy2, "dsame".to_string()),
+                (base.clone(), copy1, "deck-dsame".to_string()),
+                (base, copy2, "deck-dsame".to_string()),
             ],
             map.excluded_decks
         );
@@ -362,12 +364,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Non-alphabetical scan order pins that `zebra.md` wins by being scanned
         // first, not by sorting first.
-        let zebra = write(dir.path(), "zebra.md", "dsame", "czebra");
-        let apple = write(dir.path(), "apple.md", "dsame", "capple");
+        let zebra = write(dir.path(), "zebra.md", "deck-dsame", "card-czebra");
+        let apple = write(dir.path(), "apple.md", "deck-dsame", "card-capple");
 
         let map = scan(&[zebra.clone(), apple.clone()]);
         assert_eq!(
-            vec![(zebra, apple, "dsame".to_string())],
+            vec![(zebra, apple, "deck-dsame".to_string())],
             map.excluded_decks
         );
     }
@@ -378,13 +380,13 @@ mod tests {
         let a = dir.path().join("notes.md");
         std::fs::write(
             &a,
-            "---\nalix-id: \"dtoka\"\n---\n## q <!-- id: cshared -->\na\n",
+            "---\nid: \"deck-dtoka\"\n---\n## q <!-- id: card-cshared -->\na\n",
         )
         .unwrap();
         let b = dir.path().join("notes copy.md");
         std::fs::write(
             &b,
-            "---\nalix-id: \"dtokb\"\n---\n## q <!-- id: cshared -->\nb\n",
+            "---\nid: \"deck-dtokb\"\n---\n## q <!-- id: card-cshared -->\nb\n",
         )
         .unwrap();
 
@@ -395,7 +397,7 @@ mod tests {
         );
         assert_eq!(1, map.card_dupes.len());
         let dupe = &map.card_dupes[0];
-        assert_eq!("cshared", dupe.token);
+        assert_eq!("card-cshared", dupe.token);
         assert_eq!((a, 4), dupe.keeper);
         assert_eq!(vec![(b, 4)], dupe.losers);
     }
@@ -403,7 +405,7 @@ mod tests {
     #[test]
     fn scan_dir_enumerates_and_skips_unparseable_decks() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "one.md", "d1", "c1");
+        write(dir.path(), "one.md", "deck-d1", "card-c1");
         std::fs::write(dir.path().join("broken.md"), "## q with no answer\n").unwrap();
         let map = scan_dir(dir.path());
         assert!(map.excluded_decks.is_empty());
@@ -415,11 +417,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Neither copy's stem is a prefix of the other's, so the keep-rule has
         // nothing to prefer; scan order decides.
-        let paren = write(dir.path(), "deck (1).md", "dsame", "cparen");
-        let copy = write(dir.path(), "deck copy.md", "dsame", "ccopy");
+        let paren = write(dir.path(), "deck (1).md", "deck-dsame", "card-cparen");
+        let copy = write(dir.path(), "deck copy.md", "deck-dsame", "card-ccopy");
 
         let map = scan(&[paren.clone(), copy.clone()]);
-        assert_eq!(vec![(paren, copy, "dsame".to_string())], map.excluded_decks);
+        assert_eq!(vec![(paren, copy, "deck-dsame".to_string())], map.excluded_decks);
     }
 
     #[test]
@@ -427,12 +429,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // The keep-rule's prefix check is case-sensitive, so differing-case stems
         // count as unrelated names.
-        let upper = write(dir.path(), "Deck.md", "dsame", "cupper");
-        let lower = write(dir.path(), "deck.md", "dsame", "clower");
+        let upper = write(dir.path(), "Deck.md", "deck-dsame", "card-cupper");
+        let lower = write(dir.path(), "deck.md", "deck-dsame", "card-clower");
 
         let map = scan(&[upper.clone(), lower.clone()]);
         assert_eq!(
-            vec![(upper, lower, "dsame".to_string())],
+            vec![(upper, lower, "deck-dsame".to_string())],
             map.excluded_decks
         );
     }
@@ -440,10 +442,10 @@ mod tests {
     #[test]
     fn an_alphanumeric_continuation_is_not_a_decoration() {
         let dir = tempfile::tempdir().unwrap();
-        let ten = write(dir.path(), "deck10.md", "dsame", "cten");
-        let one = write(dir.path(), "deck1.md", "dsame", "cone");
+        let ten = write(dir.path(), "deck10.md", "deck-dsame", "card-cten");
+        let one = write(dir.path(), "deck1.md", "deck-dsame", "card-cone");
 
         let map = scan(&[ten.clone(), one.clone()]);
-        assert_eq!(vec![(ten, one, "dsame".to_string())], map.excluded_decks);
+        assert_eq!(vec![(ten, one, "deck-dsame".to_string())], map.excluded_decks);
     }
 }

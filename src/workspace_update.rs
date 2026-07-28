@@ -43,7 +43,8 @@ not write a replacement unless the current source supports a useful new card.
 - Never move, copy, invent, or reuse an existing ID.
 
 UPDATE RULES:
-- Preserve `alix-id`, title, trace, requires, links, and unrelated frontmatter.
+- Preserve the frontmatter `id`, title, trace, requires, links, and unrelated \
+frontmatter.
 - Preserve good supported cards rather than rewriting for style.
 - Remove cards the current source no longer supports.
 - Add only important new propositions that deepen understanding.
@@ -939,7 +940,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nalix-id: \"deck1\"\nsource: {}\n---\n## Old question <!-- id: oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
+                "---\nid: \"deck-deck1\"\nsource: {}\n---\n## Old question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -950,7 +951,7 @@ mod tests {
 
     fn proposal(source: &Path, body: &str) -> String {
         format!(
-            "---\nalix-id: \"deck1\"\nsource: {}\norigin: {}\n---\n{body}",
+            "---\nid: \"deck-deck1\"\nsource: {}\norigin: {}\n---\n{body}",
             parser::yaml_quote(&source.display().to_string()),
             parser::yaml_quote(&source.display().to_string())
         )
@@ -964,7 +965,7 @@ mod tests {
             workspace.path(),
             &proposal(
                 &source,
-                "## Rewritten question <!-- id: oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
+                "## Rewritten question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
             ),
         );
         let error = stage(
@@ -983,7 +984,7 @@ mod tests {
             current
                 .cards
                 .iter()
-                .any(|card| card.id().as_deref() == Some("oldcard"))
+                .any(|card| card.id().as_deref() == Some("card-oldcard"))
         );
     }
 
@@ -995,7 +996,7 @@ mod tests {
             workspace.path(),
             &proposal(
                 &source,
-                "## Old question <!-- id: oldcard -->\n- [x] Old answer\n- [ ] New distractor\n<!-- at: code.rs:1 -->\n",
+                "## Old question <!-- id: card-oldcard -->\n- [x] Old answer\n- [ ] New distractor\n<!-- at: code.rs:1 -->\n",
             ),
         );
         let error = stage(
@@ -1019,7 +1020,7 @@ mod tests {
             workspace.path(),
             &proposal(
                 &source,
-                "## Old question <!-- id: oldcard -->\nOld answer\n> Clearer note.\n<!-- at: code.rs:2 -->\n",
+                "## Old question <!-- id: card-oldcard -->\nOld answer\n> Clearer note.\n<!-- at: code.rs:2 -->\n",
             ),
         );
 
@@ -1039,7 +1040,7 @@ mod tests {
             staged
                 .cards
                 .iter()
-                .any(|card| card.id().as_deref() == Some("oldcard"))
+                .any(|card| card.id().as_deref() == Some("card-oldcard"))
         );
         assert_eq!(Some("Clearer note."), staged.cards[0].note.as_deref());
     }
@@ -1051,13 +1052,13 @@ mod tests {
         let original = Deck::load(&deck).unwrap();
         let mut augmentation = AugmentCache::open_for_deck(&original).unwrap();
         augmentation.set_note(
-            "oldcard",
+            "card-oldcard",
             "cached".to_string(),
             original.cards[0].content_fingerprint,
         );
         augmentation.save().unwrap();
         let mut progress = crate::state::open_store(&deck, workspace.path()).unwrap();
-        progress.get_or_insert("oldcard", 0);
+        progress.get_or_insert("card-oldcard", 0);
         progress.save().unwrap();
         let command = fake_reply(
             workspace.path(),
@@ -1085,23 +1086,23 @@ mod tests {
         );
         let proposal = Deck::load(staged.staging.join("decks/facts.md")).unwrap();
         let fresh = proposal.cards[0].id().unwrap();
-        assert_ne!("oldcard", fresh);
+        assert_ne!("card-oldcard", fresh);
         assert!(
             !AugmentCache::open_for_deck(&proposal)
                 .unwrap()
-                .contains("oldcard")
+                .contains("card-oldcard")
         );
         assert!(
             AugmentCache::open_for_deck(&original)
                 .unwrap()
-                .contains("oldcard")
+                .contains("card-oldcard")
         );
         assert!(
             Deck::load(&deck)
                 .unwrap()
                 .cards
                 .iter()
-                .any(|card| card.id().as_deref() == Some("oldcard"))
+                .any(|card| card.id().as_deref() == Some("card-oldcard"))
         );
 
         let applied = apply(workspace.path()).unwrap();
@@ -1112,18 +1113,18 @@ mod tests {
             current
                 .cards
                 .iter()
-                .all(|card| card.id().as_deref() != Some("oldcard"))
+                .all(|card| card.id().as_deref() != Some("card-oldcard"))
         );
         assert_eq!(Some(fresh), current.cards[0].id());
         assert!(
             !AugmentCache::open_for_deck(&current)
                 .unwrap()
-                .contains("oldcard")
+                .contains("card-oldcard")
         );
         assert!(
             crate::state::open_store(&deck, workspace.path())
                 .unwrap()
-                .get("oldcard")
+                .get("card-oldcard")
                 .is_some()
         );
         assert!(!staged.staging.exists());
@@ -1137,7 +1138,7 @@ mod tests {
             workspace.path(),
             &proposal(
                 &source,
-                "## Old question <!-- id: oldcard -->\nOld answer\n> reviewed\n<!-- at: code.rs:1 -->\n",
+                "## Old question <!-- id: card-oldcard -->\nOld answer\n> reviewed\n<!-- at: code.rs:1 -->\n",
             ),
         );
         stage(

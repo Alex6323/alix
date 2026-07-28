@@ -201,9 +201,10 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         return Ok(());
     }
 
-    let exact_id = args.card.as_deref().filter(|c| {
-        alix::token::parse_card_id(c).is_some_and(|(token, _, _)| alix::token::is_valid(token))
-    });
+    let exact_id = args
+        .card
+        .as_deref()
+        .filter(|c| alix::token::parse_prefixed_card_id(c).is_some());
     if let Some(id) = exact_id.filter(|_| args.target.is_none()) {
         let id = id.to_string();
         return reset_ids(
