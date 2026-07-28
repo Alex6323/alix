@@ -66,13 +66,19 @@ gap passes it resurfaces, interleaved behind the other cards you're seeing),
 so seeing a deck flows straight into drilling it. That gap is
 **`acquire_cooldown`** in the `[review]` config (default `"5m"`); it also
 sets the floor before *any* just-seen card (a miss, a wrong pick) may return,
-so nothing you moved off comes straight back. `"0"` disables both gaps. Each session
-introduces up to 10 new cards (`[review] max_new` in the config changes that;
-`--new N` on the launch overrides it per instance); start another session for
-more. This holds at every depth, Recognize included: a Recognize session admits
-at most `max_new` cards you have never met, while every already-met card still
-awaiting recognition enters uncapped. This is the first step of a card's life:
-*acquire*, then let its depth(s) schedule it.
+so nothing you moved off comes straight back. `"0"` disables both gaps. Each sitting serves up to `max_session` cards
+(default 10); its new-card share is `new_cards_percent` (default 30%, so three
+of ten) and the rest are due cards, with whichever pool runs short letting the
+other fill the cap (a fresh deck fills entirely with new, a deck with nothing
+new fills entirely with due). A larger backlog therefore slows introductions
+proportionally, so chain another sitting when a deadline is near. Both keys live
+in `[review]` (see [Configuration](16-configuration.md); a workspace can
+override them in its `alix.local.toml`), and `--session N` overrides
+`max_session` for one launch. This holds at every depth, Recognize included: a
+Recognize sitting splits the same cap between never-met cards and
+met-but-unrecognized ones, and the met sweep finishes across chained sittings.
+This is the first step of a card's life: *acquire*, then let its depth(s)
+schedule it.
 
 ## Session depths: Recognize, Recall, Reconstruct
 
@@ -153,8 +159,8 @@ Need to review everything now, schedule be damned, the night before an exam?
 per-launch tick-box in the picker's Learn ▾ menu (key `c` while the menu is
 open); plain **Learn** never crams. At Recognize, cram is the repeatable quiz:
 it serves every card you have met, including the already-recognized ones a
-normal Recognize session would skip (never-met intake stays paced by
-`max_new`).
+normal Recognize session would skip (the sitting stays bounded by
+`max_session`).
 
 Cram changes **which cards are queued, never how a due card is graded**: a
 card that was genuinely due grades exactly like a normal review: full

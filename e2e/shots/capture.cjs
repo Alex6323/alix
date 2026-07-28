@@ -239,7 +239,7 @@ function waitForServer(base, timeoutMs = 60_000) {
 }
 
 function startServer(dir, port, extraArgs = []) {
-  const args = [dir, "--port", String(port), "--new", "20", ...extraArgs];
+  const args = [dir, "--port", String(port), "--session", "20", ...extraArgs];
   log("starting: alix", args.join(" "));
   const child = spawn("alix", args, { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.on("data", (d) => process.stdout.write(`[alix:${port}] ${d}`));
@@ -372,7 +372,7 @@ async function shot(page, filename, ready) {
 // immediacy rule); (8) the topology heatmap reads Recall retrievability.
 async function establishHeroSchedules(page) {
   log("acquiring all hero-deck cards (phase 1/2)…");
-  let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", max_new: 20 });
+  let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20 });
   let guard = 0;
   while (s && s.kind === "review" && s.phase === "review" && guard++ < 20) {
     if (s.acquire) {
@@ -385,7 +385,7 @@ async function establishHeroSchedules(page) {
   await sleep(65_000);
 
   log("grading all hero-deck cards at Recall (phase 2/2)…");
-  s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", max_new: 20 });
+  s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20 });
   guard = 0;
   const gradedIds = [];
   let idx = 0;
@@ -448,7 +448,7 @@ function backdateRecallReviews() {
 async function shot1(page) {
   log("== shot 1: explain-mode keypoints ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
-  let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "reconstruct", max_new: 20 });
+  let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "reconstruct", session: 20 });
   let guard = 0;
   // Skip cards without a cached keypoints list (a couple of atomic answers
   // were deliberately skipped by `alix deck augment --target keypoints`).
@@ -496,7 +496,7 @@ async function shot2(page) {
   // may already be graded and not due again for days — without it, /api/select
   // can come back with nothing current to review (a disabled/absent primary
   // chip, per shot 2's own earlier failure).
-  let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", max_new: 20, cram: true });
+  let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20, cram: true });
   let guard = 0;
   while (s && s.kind === "review" && s.phase === "review" && s.acquire && guard++ < 15) {
     s = await api(DEMO_BASE, "POST", "/api/acquire", {});
@@ -546,7 +546,7 @@ async function shot3(page) {
   let s = await api(DEMO_BASE, "POST", "/api/select", {
     deck: HERO_DECK,
     depth: "recognize",
-    max_new: 20,
+    session: 20,
     cram: true,
   });
   let guard = 0;
@@ -765,7 +765,7 @@ async function shot8(page) {
     deck: HERO_DECK,
     topology: TOPOLOGY_NAME,
     depth: "recall",
-    max_new: 20,
+    session: 20,
   });
   if (!s || s.kind !== "review") {
     log("SKIP shot 8: topology-scoped select did not return a review session");

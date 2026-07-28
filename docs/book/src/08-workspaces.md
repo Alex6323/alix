@@ -138,14 +138,16 @@ the same directive system from chapter 3, just sourced from one more place.
 The `alix.toml` is shared: it travels with the workspace when you hand it to
 someone. Your **personal** review pacing doesn't belong there. Drop an
 `alix.local.toml` beside it to override the global `[review]` config (FSRS
-`retention`, `retire_after`, `acquire_cooldown`) for this workspace's decks
-only:
+`retention`, `retire_after`, `acquire_cooldown`, and the pacing keys
+`max_session` / `new_cards_percent`) for this workspace's decks only:
 
 ```toml
 # ~/decks/spanish/alix.local.toml
 [review]
 retention = 0.95         # see these cards more often
 retire_after = "never"   # never let them retire
+max_session = 20         # bigger sittings for this deck
+new_cards_percent = 40   # lean harder on introducing new cards
 deadline = "2026-09-01"  # a personal "ready by" date, the day itself inclusive
 deadline_ramp = "14d"    # how early the pre-deadline retention ramp starts
 ```

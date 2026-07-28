@@ -20,8 +20,9 @@ are all reached from the web picker rather than as their own commands (see
 [the web app](15-the-web-app.md)).
 
 The single-instance launcher's flags: `--lan` / `--port` / `--token`
-([the web app](15-the-web-app.md)), `--new N` / `--limit N` (session pacing,
-overriding the `[review]` config), and `--config <path>`. The session depth is
+([the web app](15-the-web-app.md)), `--session N` (cards per sitting, overriding
+the `[review] max_session` config; unrelated to the AI backend's own
+`--session-id`), and `--config <path>`. The session depth is
 picked in the picker's split Learn ▾ menu, an order or region in its focus
 drawer ([scheduling](05-scheduling.md)), and the card order is the deck's
 `order:` directive.

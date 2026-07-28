@@ -57,11 +57,11 @@ Reconstruct depths:
 
 ```toml
 [review]
-retention = 0.9         # FSRS target recall probability (0.70–0.99); higher = shorter intervals
-retire_after = "1y"     # a card rests once its Recall interval reaches this ("2w", "6m", "30d", or "never")
-acquire_cooldown = "5m" # settle gap before a new card's first quiz ("90s", "10m", "1h"; "0" = none)
-max_new = 10            # max never-seen cards a session introduces (default 10)
-limit = 40              # cap on total cards per session (default: no cap)
+retention = 0.9          # FSRS target recall probability (0.70–0.99); higher = shorter intervals
+retire_after = "1y"      # a card rests once its Recall interval reaches this ("2w", "6m", "30d", or "never")
+acquire_cooldown = "5m"  # settle gap before a new card's first quiz ("90s", "10m", "1h"; "0" = none)
+max_session = 10         # cards a single sitting serves (default 10)
+new_cards_percent = 30   # new-card share of max_session; the rest are due cards (default 30)
 ```
 
 `retention` is the recall probability FSRS schedules for. `retire_after` is when
@@ -70,10 +70,15 @@ a card retires (rests until `alix reset`); `"never"` keeps it in rotation foreve
 graded quiz, and the same floor keeps *any* just-seen card (a miss, a wrong
 pick) from returning immediately, so one knob paces both. A bare number is
 minutes; `"0"` disables the gap.
-A workspace can override any of these keys for its own decks in an
-`alix.local.toml`. See [Workspaces](08-workspaces.md). `max_new` and `limit`
-pace a session; the precedence is `--new`/`--limit` on the launch > these
-config keys > the built-ins (10 new, no cap).
+
+`max_session` is how many cards one sitting serves; `new_cards_percent` is the
+new-card slice of that cap (so at the defaults, three new and seven due out of
+ten). Whichever pool comes up short, the other fills the cap, so a fresh deck
+serves ten new and a deck with nothing new serves ten due; a big backlog just
+slows introductions proportionally. A workspace can override any of these keys
+for its own decks in an `alix.local.toml` (see [Workspaces](08-workspaces.md)).
+The precedence for the cap is `--session N` on the launch > `max_session` > the
+built-in 10; `new_cards_percent` has no launch flag.
 
 ### Ready by a deadline
 
