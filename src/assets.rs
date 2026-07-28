@@ -312,17 +312,16 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
     })
 }
 
+// A URL source grounds the exam and tutor but holds no freezable bytes;
+// `base_locals` keeps only local sources, layered exactly like citation
+// resolution (ADR 0026).
 fn declared_source_inputs(
     workspace_root: &Path,
     deck: &Deck,
 ) -> Result<Vec<SourceInput>, AssetError> {
     let mut inputs = Vec::new();
-    for source in &deck.sources {
-        // A URL source grounds the exam and tutor but holds no freezable
-        // bytes; citations must land in a local source below (ADR 0026).
-        if crate::deck::is_url(source) {
-            continue;
-        }
+    let layers = deck.source_layers();
+    for source in layers.base_locals() {
         if let Some(path) = crate::source::source_path(source, Some(workspace_root)) {
             let path = path
                 .canonicalize()
@@ -843,6 +842,56 @@ mod tests {
     }
 
     #[test]
+    fn freezing_a_citation_beyond_the_display_cap_keeps_every_line_and_the_authored_range() {
+        let directory = workspace();
+        let source = directory.path().join("notes.md");
+        let body: String = (1..=120).map(|line| format!("line {line}\n")).collect();
+        std::fs::write(&source, &body).unwrap();
+        let path = directory.path().join("decks/big.md");
+        std::fs::write(
+            &path,
+            format!(
+                "---\nid: \"deck-deck8\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:5-104 -->\n",
+                crate::parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+
+        freeze_member(&path).unwrap();
+
+        let cited: String = (5..=104).map(|line| format!("line {line}\n")).collect();
+        let evidence_name = object_name(cited.as_bytes(), "md");
+        assert_eq!(
+            cited.as_bytes(),
+            std::fs::read(
+                directory
+                    .path()
+                    .join(format!("assets/deck-deck8/{evidence_name}"))
+            )
+            .unwrap()
+            .as_slice()
+        );
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            frozen.contains("<!-- at: notes.md:5-104 fingerprint: xxh64-")
+                && frozen.contains(&format!(" asset: {evidence_name} -->")),
+            "the authored range must survive freezing verbatim: {frozen}"
+        );
+
+        std::fs::write(&source, "MUTATED\n").unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let CitationIntegrity::Current(excerpt) = SourceBase::for_deck(&deck)
+            .inspect_citation(&deck.cards[0].citations[0])
+            .unwrap()
+        else {
+            panic!("the frozen citation must verify over all 100 lines");
+        };
+        assert_eq!(100, excerpt.lines.len());
+        assert_eq!((5, "line 5".to_string()), excerpt.lines[0]);
+        assert_eq!((104, "line 104".to_string()), excerpt.lines[99]);
+    }
+
+    #[test]
     fn freezing_without_citations_writes_no_assets_and_keeps_the_source_live() {
         let directory = workspace();
         let source = directory.path().join("source");
@@ -871,6 +920,46 @@ mod tests {
             vec![source.display().to_string()],
             deck.sources,
             "the live source declaration stays untouched"
+        );
+    }
+
+    #[test]
+    fn a_member_with_no_own_source_initializes_and_freezes_from_the_workspace_source() {
+        let directory = workspace();
+        std::fs::write(directory.path().join("alix.toml"), "source = \"notes.md\"\n").unwrap();
+        std::fs::write(directory.path().join("notes.md"), "one\ntwo\nthree\n").unwrap();
+        let path = directory.path().join("decks/facts.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck-deck7\"\n---\n## q\na\n<!-- at: notes.md:2 -->\n<!-- id: card-card7 -->\n",
+        )
+        .unwrap();
+
+        let report = initialize(&path).unwrap();
+
+        assert_eq!(
+            Some(FreezeReport {
+                evidence: 1,
+                images: 0
+            }),
+            report.freeze
+        );
+        let excerpt_name = object_name(b"two\n", "md");
+        assert_eq!(
+            b"two\n",
+            std::fs::read(
+                directory
+                    .path()
+                    .join(format!("assets/deck-deck7/{excerpt_name}"))
+            )
+            .unwrap()
+            .as_slice()
+        );
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            frozen.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
+                && frozen.contains(&format!(" asset: {excerpt_name} -->")),
+            "{frozen}"
         );
     }
 

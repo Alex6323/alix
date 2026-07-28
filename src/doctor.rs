@@ -124,6 +124,22 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             uninitialized.extend(candidates);
         }
     }
+    let mut unconverted = Vec::new();
+    uninitialized.retain(|path| {
+        let obsolete = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| crate::parser::parse("deck.md", &text).err())
+            .is_some_and(|error| error.names_conversion_tool());
+        if obsolete {
+            unconverted.push(
+                path.strip_prefix(decks_dir)
+                    .unwrap_or(path)
+                    .display()
+                    .to_string(),
+            );
+        }
+        !obsolete
+    });
     let mut broken = Vec::new();
     let mut malformed_math = Vec::new();
     for path in &deck_files {
@@ -148,7 +164,8 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         dirs,
         decks_dir.display()
     );
-    if broken.is_empty() && malformed_math.is_empty() && uninitialized.is_empty() {
+    if broken.is_empty() && malformed_math.is_empty() && uninitialized.is_empty() && unconverted.is_empty()
+    {
         Finding::ok("decks", counts)
     } else {
         let named = broken
@@ -190,15 +207,33 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         } else {
             format!("; {} won't parse: {named}", broken.len())
         };
-        let remedy = if uninitialized.is_empty() {
-            "run `alix doctor <file>` for the exact deck diagnostics"
+        let unconverted_detail = if unconverted.is_empty() {
+            String::new()
         } else {
-            "run `alix deck init <file>` for each intended deck; leave ordinary Markdown unchanged"
+            let names = unconverted
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("; {} un-converted deck(s): {names}", unconverted.len())
+        };
+        let remedy = match (unconverted.is_empty(), uninitialized.is_empty()) {
+            (false, true) => "back up the un-converted decks and run the deck conversion tool",
+            (false, false) => {
+                "back up the un-converted decks and run the deck conversion tool; run \
+                 `alix deck init <file>` for each new intended deck"
+            }
+            (true, false) => {
+                "run `alix deck init <file>` for each intended deck; leave ordinary Markdown \
+                 unchanged"
+            }
+            (true, true) => "run `alix doctor <file>` for the exact deck diagnostics",
         };
         Finding::bad(
             "decks",
             Status::Warn,
-            format!("{counts}{parse_detail}{math_detail}{uninitialized_detail}"),
+            format!("{counts}{parse_detail}{math_detail}{uninitialized_detail}{unconverted_detail}"),
             remedy,
         )
     }
@@ -325,6 +360,33 @@ mod tests {
         assert!(finding.detail.contains("notes.md"));
         assert!(finding.remedy.as_deref().unwrap().contains("deck init"));
         assert_eq!(original, std::fs::read_to_string(path).unwrap());
+    }
+
+    #[test]
+    fn an_obsolete_shape_deck_is_named_un_converted_never_advised_to_init() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("old.md"),
+            "---\norigin: ../src\n---\n## q\na\n",
+        )
+        .unwrap();
+
+        let finding = check_decks(dir.path());
+
+        assert_eq!(Status::Warn, finding.status);
+        assert!(
+            finding.detail.contains("1 un-converted deck(s): old.md"),
+            "{}",
+            finding.detail
+        );
+        assert!(
+            !finding.detail.contains("ignored until initialized"),
+            "{}",
+            finding.detail
+        );
+        let remedy = finding.remedy.as_deref().unwrap();
+        assert!(remedy.contains("deck conversion tool"), "{remedy}");
+        assert!(!remedy.contains("deck init"), "{remedy}");
     }
 
     #[test]

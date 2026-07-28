@@ -70,6 +70,9 @@ pub struct DeckUpdateReport {
 pub struct UpdateReport {
     pub staging: PathBuf,
     pub decks: Vec<DeckUpdateReport>,
+    /// Source-backed members with no citations: nothing frozen to reconcile,
+    /// so they are left as they are.
+    pub live_only: Vec<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -153,10 +156,16 @@ fn stage_members(
 ) -> Result<UpdateReport> {
     let mut staged_decks = Vec::new();
     let mut reports = Vec::new();
+    let mut live_only = Vec::new();
 
     for path in &workspace.members {
         let deck = Deck::load_with_defaults(path, &workspace.settings)?;
         if deck.sources.is_empty() {
+            continue;
+        }
+        let cited = deck.cards.iter().any(|card| !card.citations.is_empty());
+        if !cited {
+            live_only.push(relative_member(path, root)?);
             continue;
         }
         if !deck.is_frozen() {
@@ -252,6 +261,7 @@ fn stage_members(
     Ok(UpdateReport {
         staging: staging.to_path_buf(),
         decks: reports,
+        live_only,
     })
 }
 
@@ -285,6 +295,7 @@ pub fn apply(workspace_root: &Path) -> Result<UpdateReport> {
     Ok(UpdateReport {
         staging,
         decks: reports,
+        live_only: Vec::new(),
     })
 }
 
@@ -1108,6 +1119,44 @@ mod tests {
                 .is_some()
         );
         assert!(!staged.staging.exists());
+    }
+
+    #[test]
+    fn a_citation_less_source_backed_member_is_reported_live_only_and_update_proceeds() {
+        let _lock = exec_lock();
+        let (workspace, source, _) = workspace("Old answer\n");
+        fs::write(
+            workspace.path().join("decks/plain.md"),
+            format!(
+                "---\nid: \"deck-deck9\"\nsource: {}\n---\n## p <!-- id: card-plain1 -->\na\n",
+                parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        let command = fake_reply(
+            workspace.path(),
+            &proposal(
+                &source,
+                "## Old question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
+            ),
+        );
+
+        let report = stage(
+            workspace.path(),
+            &GenerateDeckConfig::default(),
+            &ask_config(&command),
+        )
+        .unwrap();
+
+        assert_eq!(
+            vec![PathBuf::from("decks/facts.md")],
+            report
+                .decks
+                .iter()
+                .map(|deck| deck.path.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(vec![PathBuf::from("decks/plain.md")], report.live_only);
     }
 
     #[test]

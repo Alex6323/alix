@@ -52,8 +52,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   form: `at:` is always the real source path, and `asset:` (present only on a
   frozen citation) holds the cited excerpt exactly. Freezing no longer rewrites
   `source:` and stamps nothing; a frozen deck keeps its real source. The
-  `origin:` key (deck frontmatter, card directives, and the workspace manifest)
-  merged into the multi-valued `source:`; a workspace manifest may declare a
+  `origin:` key in deck frontmatter and the workspace manifest merged into the
+  multi-valued `source:`, and the card-level `origin:` directive was retired
+  with no replacement; a workspace manifest may declare a
   top-level `source` (the material the workspace is about), which the tutor and
   examiner receive as layered supporting context under the deck's own sources
   and which `has_exam` counts. A `source:` value is one expression (a URL, a
@@ -78,9 +79,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `make deps-check`, preventing an avoidable second compiled version from
   entering the graph unnoticed.
 - **Breaking (pre-1.0):** initializing a source-backed workspace member now
-  freezes explicit source files, bounded directory citations, and local card
-  images before success. Exact bytes live under
-  `assets/deck-<token>/sha256-<digest>.<ext>` and hold the cited excerpts;
+  freezes each cited source excerpt and every local card image before success.
+  A citation's frozen object holds exactly its excerpt under
+  `assets/deck-<token>/sha256-<digest>.<ext>` (uncited lines never enter an
+  asset), and a citation-less member initializes with no freezing at all;
   `source:` stays the deck's real material, and runtime source consumers fail
   closed on live, cross-deck, missing, or corrupted assets. A URL-valued
   `source:` grounds the exam and tutor but holds no freezable bytes; citations

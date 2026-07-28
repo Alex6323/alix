@@ -296,6 +296,21 @@ impl SourceLayers {
     pub fn is_empty(&self) -> bool {
         self.own.is_empty() && self.workspace.is_empty()
     }
+
+    /// The mechanical base layer (ADR 0026): the deck's own local-path
+    /// sources; the workspace layer participates only when the deck declares
+    /// no local one.
+    pub fn base_locals(&self) -> Vec<&String> {
+        let own: Vec<&String> = self.own.iter().filter(|source| !is_url(source)).collect();
+        if own.is_empty() {
+            self.workspace
+                .iter()
+                .filter(|source| !is_url(source))
+                .collect()
+        } else {
+            own
+        }
+    }
 }
 
 fn resolve_base_root(source: &str, content_root: &Path) -> PathBuf {

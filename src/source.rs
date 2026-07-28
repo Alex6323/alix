@@ -11,8 +11,9 @@ use crate::{
     deck::{Deck, is_url},
 };
 
-/// Truncated (with a marker) beyond this, so a huge locator never floods the
-/// screen.
+/// The display cap: [`Excerpt::capped_for_display`] truncates (with a marker)
+/// beyond this so a huge excerpt never floods the screen. Evidence reads,
+/// freezing, and fingerprints are never capped.
 const MAX_EXCERPT_LINES: usize = 60;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,6 +23,18 @@ pub struct Excerpt {
     /// span, so an excerpt never has gaps).
     pub lines: Vec<(usize, String)>,
     pub truncated: bool,
+}
+
+impl Excerpt {
+    /// The rendering copy only: the full excerpt stays the evidence that is
+    /// frozen and fingerprinted.
+    pub fn capped_for_display(mut self) -> Excerpt {
+        if self.lines.len() > MAX_EXCERPT_LINES {
+            self.lines.truncate(MAX_EXCERPT_LINES);
+            self.truncated = true;
+        }
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -142,15 +155,8 @@ pub struct SourceBase {
 
 impl SourceBase {
     pub fn for_deck(deck: &Deck) -> Self {
-        // The single mechanical base (ADR 0026): the deck's first local-path
-        // source, falling back to the workspace source when it declares none.
         let layers = deck.source_layers();
-        let locals: Vec<&String> = layers
-            .own
-            .iter()
-            .chain(&layers.workspace)
-            .filter(|source| !is_url(source))
-            .collect();
+        let locals = layers.base_locals();
         let first = locals.first().map(|source| source.as_str());
         // With several local sources a lines-only locator is ambiguous, so no
         // single source file is exposed.
@@ -229,23 +235,16 @@ impl SourceBase {
         let file_lines: Vec<&str> = text.lines().collect();
         let (range_start, range_end) = parse_line_range(&spec);
         let range_len = range_end.saturating_sub(range_start) + 1;
-        let fingerprint_len = range_len.min(MAX_EXCERPT_LINES);
-        if fingerprint_len == 0 || file_lines.len() < range_len {
+        if file_lines.len() < range_len {
             return Ok(CitationIntegrity::Changed);
         }
 
         let mut matches = Vec::new();
         for offset in 0..=file_lines.len() - range_len {
-            let window = &file_lines[offset..offset + fingerprint_len];
+            let window = &file_lines[offset..offset + range_len];
             if fingerprint_lines(window.iter().copied()) == expected {
                 matches.push((
-                    excerpt_from_lines(
-                        &path,
-                        &file_lines,
-                        offset + 1,
-                        fingerprint_len,
-                        range_len > MAX_EXCERPT_LINES,
-                    ),
+                    excerpt_from_lines(&path, &file_lines, offset + 1, range_len),
                     relocated_locator(file.as_deref(), offset + 1, range_len),
                 ));
             }
@@ -539,13 +538,7 @@ fn read_excerpt(path: &Path, spec: Option<&str>) -> Result<Excerpt> {
     let end = end.min(file_lines.len());
 
     let requested = end.saturating_sub(start) + 1;
-    let selected = excerpt_from_lines(
-        path,
-        &file_lines,
-        start,
-        requested.min(MAX_EXCERPT_LINES),
-        requested > MAX_EXCERPT_LINES,
-    );
+    let selected = excerpt_from_lines(path, &file_lines, start, requested);
 
     if selected.lines.is_empty() {
         bail!(
@@ -557,13 +550,7 @@ fn read_excerpt(path: &Path, spec: Option<&str>) -> Result<Excerpt> {
     Ok(selected)
 }
 
-fn excerpt_from_lines(
-    path: &Path,
-    file_lines: &[&str],
-    start: usize,
-    len: usize,
-    truncated: bool,
-) -> Excerpt {
+fn excerpt_from_lines(path: &Path, file_lines: &[&str], start: usize, len: usize) -> Excerpt {
     let lines = file_lines
         .iter()
         .enumerate()
@@ -574,7 +561,7 @@ fn excerpt_from_lines(
     Excerpt {
         path: path.to_path_buf(),
         lines,
-        truncated,
+        truncated: false,
     }
 }
 
@@ -775,6 +762,28 @@ mod tests {
                 .lines
         );
         assert!(base.excerpt("2").is_err());
+    }
+
+    #[test]
+    fn a_manifest_source_does_not_break_lines_only_locators_of_a_single_file_member() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("alix.toml"), "source = \"ws.md\"\n").unwrap();
+        std::fs::create_dir(directory.path().join("decks")).unwrap();
+        write(directory.path(), "ws.md", "w1\nw2\n");
+        write(directory.path(), "own.md", "o1\no2\no3\n");
+        let deck_path = write(
+            directory.path(),
+            "decks/facts.md",
+            "---\nid: deck-deck1\nsource: own.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: 2 -->\n",
+        );
+        let deck = Deck::load(&deck_path).unwrap();
+        let base = SourceBase::for_deck(&deck);
+        assert_eq!(
+            vec![(2, "o2".to_string())],
+            base.excerpt(&deck.cards[0].citations[0].locator)
+                .unwrap()
+                .lines
+        );
     }
 
     #[test]
@@ -985,13 +994,82 @@ mod tests {
     }
 
     #[test]
-    fn read_excerpt_whole_file_caps_long_sources() {
+    fn read_excerpt_reads_a_long_source_in_full_and_only_display_capping_truncates() {
         let directory = tempfile::tempdir().unwrap();
         let body: String = (1..=100).map(|line| format!("line {line}\n")).collect();
         let path = write(directory.path(), "big.txt", &body);
         let excerpt = read_excerpt(&path, None).unwrap();
-        assert_eq!(MAX_EXCERPT_LINES, excerpt.lines.len());
-        assert!(excerpt.truncated);
+        assert_eq!(100, excerpt.lines.len());
+        assert!(!excerpt.truncated);
+
+        let display = excerpt.clone().capped_for_display();
+        assert_eq!(MAX_EXCERPT_LINES, display.lines.len());
+        assert!(display.truncated);
+        assert_eq!(excerpt.lines[..MAX_EXCERPT_LINES], display.lines[..]);
+    }
+
+    #[test]
+    fn stamping_and_drift_detection_cover_lines_beyond_the_display_cap() {
+        let directory = tempfile::tempdir().unwrap();
+        let body: String = (1..=100).map(|line| format!("line {line}\n")).collect();
+        write(directory.path(), "big.rs", &body);
+        let deck_path = write(
+            directory.path(),
+            "deck.md",
+            "---\nid: \"deck-deck1\"\nsource: .\n---\n\
+             ## q\nanswer\n<!-- at: big.rs:1-100 -->\n<!-- id: card-card1 -->\n",
+        );
+        assert_eq!(1, stamp_citations(&deck_path).unwrap());
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(
+            text.contains("<!-- at: big.rs:1-100 fingerprint: xxh64-"),
+            "the authored range must be stamped verbatim: {text}"
+        );
+
+        let drifted: String = (1..=100)
+            .map(|line| {
+                if line == 90 {
+                    "DRIFTED\n".to_string()
+                } else {
+                    format!("line {line}\n")
+                }
+            })
+            .collect();
+        write(directory.path(), "big.rs", &drifted);
+        let deck = Deck::load(&deck_path).unwrap();
+        assert!(matches!(
+            SourceBase::for_deck(&deck)
+                .inspect_citation(&deck.cards[0].citations[0])
+                .unwrap(),
+            CitationIntegrity::Changed
+        ));
+    }
+
+    #[test]
+    fn a_moved_excerpt_longer_than_the_display_cap_relocates_with_its_full_range() {
+        let directory = tempfile::tempdir().unwrap();
+        let block: Vec<String> = (1..=100).map(|line| format!("line {line}")).collect();
+        let body = format!("inserted\n{}\n", block.join("\n"));
+        write(directory.path(), "code.rs", &body);
+        let source = SourceBase {
+            base_dir: directory.path().to_path_buf(),
+            source_file: None,
+            asset_dir: None,
+        };
+        let citation = SourceCitation {
+            locator: "code.rs:1-100".into(),
+            fingerprint: Some(fingerprint_lines(block.iter().map(String::as_str))),
+            asset: None,
+            line: 4,
+        };
+        let CitationIntegrity::Relocated { locator, excerpt } =
+            source.inspect_citation(&citation).unwrap()
+        else {
+            panic!("the full moved excerpt should relocate");
+        };
+        assert_eq!("code.rs:2-101", locator);
+        assert_eq!(100, excerpt.lines.len());
+        assert_eq!("line 100", excerpt.lines[99].1);
     }
 
     #[test]

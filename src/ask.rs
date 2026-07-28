@@ -203,9 +203,10 @@ fn question_context(
     let mut p = String::new();
     if first {
         p.push_str(preamble(audience));
-        let is_url = crate::deck::is_url;
-        let own: Vec<&String> = sources.own.iter().filter(|s| is_url(s)).collect();
-        let workspace: Vec<&String> = sources.workspace.iter().filter(|s| is_url(s)).collect();
+        // Both layers, told apart like the exam's source section (ADR 0026),
+        // local paths and URLs alike.
+        let own: Vec<&String> = sources.own.iter().collect();
+        let workspace: Vec<&String> = sources.workspace.iter().collect();
         let other: Vec<&String> = links
             .iter()
             .filter(|link| !own.contains(link) && !workspace.contains(link))
@@ -213,8 +214,8 @@ fn question_context(
         if !own.is_empty() || !workspace.is_empty() || !other.is_empty() {
             p.push_str(
                 "\nReference material for this deck; fetch links with WebFetch \
-                 when they can improve an answer; you only need to read each \
-                 once:\n",
+                 and read local paths with Read/Glob/Grep when they can improve \
+                 an answer; you only need to read each once:\n",
             );
             push_link_group(&mut p, "Deck sources (the primary grounding):", &own);
             push_link_group(&mut p, "Workspace source (supporting context):", &workspace);
@@ -622,6 +623,27 @@ mod tests {
         assert!(p.find("https://own.example").unwrap() < workspace, "{p}");
         assert!(p.find("https://docs.rs/tokio").unwrap() > other, "{p}");
         assert_eq!(1, p.matches("https://own.example").count(), "{p}");
+    }
+
+    #[test]
+    fn first_prompt_labels_both_layers_for_local_sources_too() {
+        let sources = crate::deck::SourceLayers {
+            own: vec!["notes/own.md".to_string()],
+            workspace: vec!["ws-material".to_string()],
+        };
+        let context = TutorContext {
+            links: &[],
+            sources: &sources,
+            root: None,
+            frozen: None,
+        };
+        let p = question_prompt(&card(), Audience::Adult, &context, "why?", true);
+        let own = p.find("Deck sources (the primary grounding):").unwrap();
+        let workspace = p.find("Workspace source (supporting context):").unwrap();
+        assert!(own < workspace, "{p}");
+        assert!(p.find("notes/own.md").unwrap() < workspace, "{p}");
+        assert!(p.find("ws-material").unwrap() > workspace, "{p}");
+        assert!(p.contains("read local paths with Read/Glob/Grep"), "{p}");
     }
 
     #[test]

@@ -102,7 +102,7 @@ pub enum ParseError {
     #[error("line {0}: card front without an answer")]
     FrontWithoutAnswer(usize),
     #[error(
-        "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; run the deck conversion tool if this deck predates named locator fields"
+        "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order; run the deck conversion tool if this deck predates named locator fields"
     )]
     InvalidLocator { line: usize, message: String },
     #[error("line {0}: `\\blank[` is reserved for a future per-hole pin; write `\\blank{{...}}`")]
@@ -111,6 +111,22 @@ pub enum ParseError {
     UnclosedHole(usize),
     #[error("line {0}: empty cloze hole")]
     EmptyHole(usize),
+}
+
+impl ParseError {
+    /// The shapes whose message names the deck conversion tool; `doctor`
+    /// escalates every one of them to an error (ADR 0026).
+    pub fn names_conversion_tool(&self) -> bool {
+        matches!(
+            self,
+            ParseError::InvalidDeckId { .. }
+                | ParseError::InvalidCardId { .. }
+                | ParseError::ObsoleteAlixId(_)
+                | ParseError::ObsoleteOrigin(_)
+                | ParseError::PlusJoinedSource(_)
+                | ParseError::InvalidLocator { .. }
+        )
+    }
 }
 
 pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
@@ -1627,6 +1643,23 @@ mod tests {
         assert!(
             matches!(e, ParseError::InvalidLocator { line: 4, .. }),
             "{e:?}"
+        );
+    }
+
+    #[test]
+    fn a_reordered_new_format_locator_error_carries_the_canonical_order_hint() {
+        let e = err(
+            "## q\n---\na\n\
+             <!-- at: notes.md asset: sha256-abc123.rs fingerprint: xxh64-0123456789abcdef -->\n",
+        );
+        assert!(
+            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+            "{e:?}"
+        );
+        let message = e.to_string();
+        assert!(
+            message.contains("fields are `at:`, `fingerprint:`, `asset:`, in that order"),
+            "{message}"
         );
     }
 

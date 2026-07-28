@@ -76,13 +76,7 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
     let deck = match alix::parser::parse(name, &text) {
         Ok(deck) => deck,
         Err(e) => {
-            let bad_id = matches!(
-                e,
-                alix::parser::ParseError::InvalidDeckId { .. }
-                    | alix::parser::ParseError::InvalidCardId { .. }
-                    | alix::parser::ParseError::ObsoleteAlixId(_)
-            );
-            if strict || bad_id {
+            if strict || e.names_conversion_tool() {
                 report.error(format!("{}: {e}", path.display()));
             } else {
                 report.warn(format!("{}: {e}", path.display()));
@@ -354,17 +348,26 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         ));
     }
     let dir = deck.path.parent();
+    let unparseable_prereq = |report: &mut Report, req: &str, path: &Path| {
+        if Deck::load(path).is_err() {
+            report.warn(format!(
+                "{}: requires `{req}` but that deck fails to parse; its errors name the fix",
+                deck.subject
+            ));
+        }
+    };
     for req in &deck.requires {
         match alix::deck::classify_require(req) {
             alix::deck::RequiresMode::DeckId => {
-                if alix::deck::resolve_dep_by_id(req, dir, dir).is_none() {
-                    report.warn(format!(
+                match alix::deck::resolve_dep_by_id(req, dir, dir) {
+                    None => report.warn(format!(
                         "{}: requires deck id `{req}` but no deck here carries it \
                          (dangling prerequisite); the prerequisite may have been deleted \
                          or live elsewhere; if you meant a file of that name, write the \
                          `.md` extension (`{req}.md`)",
                         deck.subject
-                    ));
+                    )),
+                    Some(path) => unparseable_prereq(report, req, &path),
                 }
                 if let Some(shadow) = alix::deck::resolve_dep(req, dir, dir) {
                     report.warn(format!(
@@ -385,21 +388,31 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                 ));
             }
             alix::deck::RequiresMode::Filename => {
-                if alix::deck::resolve_dep(req, dir, dir).is_none() {
-                    report.warn(format!(
-                        "{}: requires `{req}` but no such deck exists here (dangling \
-                         prerequisite); a filename edge breaks when the prerequisite is \
-                         renamed or deleted (a `deck-<token>` id edge survives renames)",
-                        deck.subject
-                    ));
-                    if req.starts_with("deck-") {
-                        report.note(format!(
-                            "{}: `requires: {req}` looks like a truncated or malformed \
-                             deck id (an id is `deck-` plus 26 base32 chars); it was read \
-                             as a filename",
+                match alix::deck::resolve_dep(req, dir, dir) {
+                    None => {
+                        report.warn(format!(
+                            "{}: requires `{req}` but no such deck exists here (dangling \
+                             prerequisite); a filename edge breaks when the prerequisite is \
+                             renamed or deleted (a `deck-<token>` id edge survives renames)",
                             deck.subject
                         ));
+                        if req.starts_with("deck-") {
+                            report.note(format!(
+                                "{}: `requires: {req}` looks like a truncated or malformed \
+                                 deck id (an id is `deck-` plus 26 base32 chars); it was read \
+                                 as a filename",
+                                deck.subject
+                            ));
+                        }
                     }
+                    Some(path) => unparseable_prereq(report, req, &path),
+                }
+                if alix::token::is_canonical(req) {
+                    report.note(format!(
+                        "{}: `requires: {req}` looks like an un-prefixed deck id; \
+                         write `deck-{req}`",
+                        deck.subject
+                    ));
                 }
             }
         }
@@ -1174,6 +1187,79 @@ mod tests {
     const CANONICAL_ID: &str = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
 
     #[test]
+    fn doctor_warns_when_a_requires_edge_resolves_to_an_unparseable_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "broken.md",
+            &format!(
+                "---\nid: \"{CANONICAL_ID}\"\n---\n## q\na\n\
+                 <!-- at: 29.rs @ xxh64:0123456789abcdef from src/x.rs:1-3 -->\n"
+            ),
+        );
+        let by_name = dir.path().join("by-name.md");
+        w(
+            dir.path(),
+            "by-name.md",
+            "---\nrequires: broken\n---\n## q\na\n",
+        );
+        let by_id = dir.path().join("by-id.md");
+        w(
+            dir.path(),
+            "by-id.md",
+            &format!("---\nrequires: {CANONICAL_ID}\n---\n## q\na\n"),
+        );
+
+        let mut report = Report::default();
+        deck_findings(&by_name, true, &mut report);
+        deck_findings(&by_id, true, &mut report);
+
+        let parse_warnings: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("fails to parse; its errors name the fix"))
+            .collect();
+        assert_eq!(2, parse_warnings.len(), "{:#?}", report.warnings);
+        assert!(parse_warnings[0].contains("`broken`"), "{parse_warnings:?}");
+        assert!(
+            parse_warnings[1].contains(&format!("`{CANONICAL_ID}`")),
+            "{parse_warnings:?}"
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("dangling prerequisite")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn doctor_hints_that_a_bare_canonical_token_in_requires_is_an_un_prefixed_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = CANONICAL_ID.strip_prefix("deck-").unwrap();
+        let path = dir.path().join("d.md");
+        w(
+            dir.path(),
+            "d.md",
+            &format!("---\nrequires: {token}\n---\n## q\na\n"),
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, true, &mut report);
+
+        assert!(
+            report.notes.iter().any(|note| {
+                note.contains("looks like an un-prefixed deck id")
+                    && note.contains(&format!("write `deck-{token}`"))
+            }),
+            "{:#?}",
+            report.notes
+        );
+    }
+
+    #[test]
     fn doctor_warns_on_a_dangling_id_mode_requires_and_accepts_a_resolvable_one() {
         let dir = tempfile::tempdir().unwrap();
         w(
@@ -1206,6 +1292,12 @@ mod tests {
         assert_eq!(1, dangling_warnings.len(), "{:#?}", report.warnings);
         assert!(
             dangling_warnings[0].contains("deck-zzzzzzzzzzzzzzzzzzzzzzzzzz"),
+            "{}",
+            dangling_warnings[0]
+        );
+        assert!(
+            dangling_warnings[0]
+                .contains("write the `.md` extension (`deck-zzzzzzzzzzzzzzzzzzzzzzzzzz.md`)"),
             "{}",
             dangling_warnings[0]
         );
@@ -1287,7 +1379,8 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("the id wins")),
+                .any(|warning| warning.contains("the id wins")
+                    && warning.contains(&format!("write `{CANONICAL_ID}.md` to require the file"))),
             "{:#?}",
             report.warnings
         );
@@ -1576,6 +1669,53 @@ mod tests {
                 .any(|warning| warning.contains("points into `assets/`")
                     && warning.contains("deck conversion tool")),
             "source into assets: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn doctor_errors_on_every_un_converted_deck_shape_without_init_advice() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join(alix::workspace::DECKS);
+        std::fs::create_dir(&decks).unwrap();
+        w(dir.path(), alix::workspace::MANIFEST, "");
+        w(
+            &decks,
+            "origin.md",
+            "---\norigin: ../src\n---\n## q\na\n",
+        );
+        w(
+            &decks,
+            "plus.md",
+            "---\nsource: \"a.md + b.md\"\n---\n## q\na\n",
+        );
+        w(
+            &decks,
+            "old-locator.md",
+            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n\
+             <!-- at: 29.rs @ xxh64:0123456789abcdef from src/x.rs:1-3 -->\n",
+        );
+
+        let report = workspace_findings(dir.path());
+
+        for name in ["origin.md", "plus.md", "old-locator.md"] {
+            assert!(
+                report
+                    .errors
+                    .iter()
+                    .any(|error| error.contains(name) && error.contains("deck conversion tool")),
+                "{name} must be an error naming the conversion tool: {:#?}",
+                report.errors
+            );
+        }
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .chain(&report.errors)
+                .chain(&report.notes)
+                .any(|finding| finding.contains("deck init")),
+            "an un-converted deck must not be advised to init: {:#?}",
             report.warnings
         );
     }

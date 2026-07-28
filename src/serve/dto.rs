@@ -845,7 +845,7 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
                             } else {
                                 ex
                             };
-                        dto.excerpt = Some(excerpt_dto(&ex));
+                        dto.excerpt = Some(excerpt_dto(&ex.capped_for_display()));
                     }
                     Err(e) => dto.excerpt_error = Some(format!("{e:#}")),
                 }
@@ -1002,7 +1002,7 @@ pub(super) fn review_state(
                             } else {
                                 ex
                             };
-                            resolved.excerpt = Some(excerpt_dto(&ex));
+                            resolved.excerpt = Some(excerpt_dto(&ex.capped_for_display()));
                         }
                         Err(e) => resolved.error = Some(format!("{e:#}")),
                     }

@@ -595,7 +595,7 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
                         if let Some(label) = label {
                             state.locator = Some(label);
                         }
-                        state.excerpt = Some(walk_excerpt(&ex));
+                        state.excerpt = Some(walk_excerpt(&ex.capped_for_display()));
                     }
                     Err(e) => state.excerpt_error = Some(format!("{e:#}")),
                 }

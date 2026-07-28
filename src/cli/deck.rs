@@ -70,6 +70,12 @@ fn print_workspace_update_report(action: &str, report: &alix::workspace_update::
             deck.added
         );
     }
+    for path in &report.live_only {
+        println!(
+            "  {}: no source citations, nothing frozen to reconcile; left as is",
+            path.display()
+        );
+    }
 }
 
 pub(crate) fn init_cmd(args: DeckInitArgs) -> Result<()> {
