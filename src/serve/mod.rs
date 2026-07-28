@@ -980,16 +980,13 @@ pub fn run_review(
                     Some(grade) => {
                         let now = now_ms();
                         r.session.grade(&mut *store, grade, now);
-                        // A reviewing session is always a single deck; its
-                        // token isn't carried on `Reviewing`, so it's read
-                        // back off the deck file.
                         if let Some(deck_id) = r
                             .files
                             .paths
-                            .values()
+                            .keys()
                             .next()
-                            .and_then(|path| crate::deck::Deck::load(path).ok())
-                            .and_then(|deck| deck.deck_token)
+                            .filter(|id| !id.is_empty())
+                            .cloned()
                         {
                             store::note_badges(&mut *store, &deck_id, r.session.cards(), now);
                         }
@@ -1159,16 +1156,13 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 }
-                // A reviewing session is always a single deck; its token
-                // isn't carried on `Reviewing`, so it's read back off the
-                // deck file.
                 let Some(deck_id) = r
                     .files
                     .paths
-                    .values()
+                    .keys()
                     .next()
-                    .and_then(|path| crate::deck::Deck::load(path).ok())
-                    .and_then(|deck| deck.deck_token)
+                    .filter(|id| !id.is_empty())
+                    .cloned()
                 else {
                     respond_status(request, 409);
                     continue;

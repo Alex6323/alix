@@ -258,6 +258,8 @@ mod tests {
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
         store.set_deck_mastered("deck1", 1);
+        store.set_exam_failed("deck1", 42);
+        store.set_last_depth("deck1", crate::depth::Depth::Recall);
         store.save().unwrap();
 
         let new_path = dir.path().join("new.md");
@@ -267,6 +269,16 @@ mod tests {
         assert!(
             aggregate.deck_mastered("deck1"),
             "deck-level state must survive a rename, found by the alix-id"
+        );
+        assert_eq!(
+            Some(42),
+            aggregate.exam_failed_at("deck1"),
+            "exam-failed state must survive a rename, found by the alix-id"
+        );
+        assert_eq!(
+            Some(crate::depth::Depth::Recall),
+            aggregate.last_depth("deck1"),
+            "last-depth state must survive a rename, found by the alix-id"
         );
 
         let known_deck_ids: HashSet<String> = std::iter::once("deck1".to_string()).collect();

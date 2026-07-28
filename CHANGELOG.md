@@ -35,6 +35,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - LaTeX math in cards: `$...$` renders inline and a whole-line `$$...$$` renders as centered display math in adult web, kids web, and mobile. Formula clozes support `\blank{...}`, and RaTeX chemistry remains available through `\ce{...}`. The Rust core produces one self-contained SVG shared by every graphical client while decks, grading, fingerprints, and progress retain only the authored source.
 - Committed manual-QA examples for graphical math rendering and a self-contained workspace with a frozen Rust ownership trace.
 - the picker's focus drawer now shows a deck's preamble (the prose written under its `#` title), which was parsed but never surfaced before
+- `alix doctor` flags a dangling `requires:` (one naming a deck that does not exist), so a renamed or deleted prerequisite is reported instead of silently dropping the gating edge.
 
 ### Changed
 

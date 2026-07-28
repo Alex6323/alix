@@ -265,15 +265,12 @@ pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> Ca
 struct DeckStoreFile {
     version: u32,
     deck_id: String,
-    // The current filename. Redundant with `deck_id` (the document is named
-    // `progress/<deck_id>.json`); kept for human inspection only, never a key.
+    // Display only, never a key.
     subject: String,
     revision: u64,
     cards: HashMap<String, CardState>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     records: HashMap<String, CardRecords>,
-    // One deck per document, so its deck-level progress is a single value, not
-    // a map keyed by the (renameable) filename.
     #[serde(default, skip_serializing_if = "DeckProgress::is_empty")]
     deck: DeckProgress,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -463,9 +460,6 @@ pub(crate) fn read_deck_data(
             actual: file.deck_id,
         });
     }
-    // The document is this deck's, addressed by its stable id; the filename is
-    // display only. Deck-level state and virtual-card association follow the id,
-    // so a rename needs no rebinding; the subject is refreshed for display.
     let subject = current_subject.unwrap_or(&file.subject).to_string();
     let mut virtual_cards = file.virtual_cards;
     for card in virtual_cards.values_mut() {
@@ -680,8 +674,6 @@ impl Store {
                         .insert(token.to_string(), deck_id.to_string());
                 }
             }
-            // Deck-level ownership is a trivial self-map: each document owns
-            // exactly its own deck's entry, keyed by that same stable id.
             owners
                 .decks
                 .insert(deck_id.to_string(), deck_id.to_string());
@@ -706,11 +698,8 @@ impl Store {
                 &deck_id,
                 "record",
             )?;
-            // Deck-level state is keyed by the stable id; each document owns
-            // exactly its own deck's entry, so no subject-collision is possible.
-            // The ownership self-map is registered unconditionally (even for
-            // an empty entry), so a later `insert_virtual` can still resolve
-            // this deck's ownership.
+            // Registered even for an empty entry, so a later `insert_virtual`
+            // can still resolve this deck's ownership.
             owners.decks.insert(deck_id.clone(), deck_id.clone());
             if !data.deck.is_empty() {
                 decks.insert(deck_id.clone(), data.deck);

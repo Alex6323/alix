@@ -447,11 +447,7 @@ pub fn select(
 
     let review = cfg.review.for_workspace(&workspace::content_root(deck));
 
-    let subject: Arc<str> = decks
-        .keys()
-        .next()
-        .map(|s| Arc::from(s.as_str()))
-        .unwrap_or_else(|| Arc::from(label.as_str()));
+    let subject: Arc<str> = Arc::from(label.as_str());
     let deck_id: Arc<str> = decks
         .values()
         .next()

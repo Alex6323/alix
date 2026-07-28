@@ -45,7 +45,9 @@ prerequisite with neither `source:` evidence nor a public URL `origin:` has no
 exam to pass, so it never gates: its edge is just a suggested order in the
 tree. (`alix doctor` warns when an exam-grounded deck requires one without exam
 grounding, since that edge can't gate an exam; add evidence or a URL origin to
-the prerequisite to make it real.) (A **trace** masters by passing its exam
+the prerequisite to make it real. It also flags a **dangling** `requires:`, one
+naming a deck that does not exist, so a renamed or deleted prerequisite is caught
+rather than silently dropping the edge.) (A **trace** masters by passing its exam
 (retracing the path from memory) so it gates and unlocks like any exam-grounded
 deck.)
 
