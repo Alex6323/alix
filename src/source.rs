@@ -138,19 +138,10 @@ pub struct SourceBase {
     base_dir: PathBuf,
     source_file: Option<PathBuf>,
     asset_dir: Option<PathBuf>,
-    boundary_error: Option<String>,
 }
 
 impl SourceBase {
     pub fn for_deck(deck: &Deck) -> Self {
-        Self::new(deck, true)
-    }
-
-    pub(crate) fn for_live_deck(deck: &Deck) -> Self {
-        Self::new(deck, false)
-    }
-
-    fn new(deck: &Deck, enforce_frozen: bool) -> Self {
         let first = deck.sources.first();
         let multi = first.is_some_and(|source| source.contains(" + "));
         let content_root = crate::workspace::content_root(&deck.path);
@@ -164,51 +155,37 @@ impl SourceBase {
             asset_dir: crate::workspace::root_for_deck(&deck.path)
                 .zip(deck.deck_token.as_deref())
                 .and_then(|(root, deck_id)| crate::assets::deck_dir(root, deck_id).ok()),
-            boundary_error: if enforce_frozen
-                && crate::workspace::root_for_deck(&deck.path).is_some()
-                && deck.deck_token.is_some()
-                && !deck.sources.is_empty()
-            {
-                if deck.is_frozen() {
-                    crate::assets::validate_member(deck)
-                        .err()
-                        .map(|error| format!("{error:#}"))
-                } else {
-                    Some(
-                        "initialized workspace members must use deck-owned frozen evidence"
-                            .to_string(),
-                    )
-                }
-            } else {
-                None
-            },
         }
     }
 
     pub fn excerpt(&self, locator: &str) -> Result<Excerpt> {
-        if let Some(error) = &self.boundary_error {
-            bail!("{error}");
-        }
         excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
     }
 
-    /// When the citation is asset-backed, bytes come from the frozen object;
-    /// the `at:` path never resolves against the live tree here.
+    /// When the citation is asset-backed, bytes come from the frozen object,
+    /// which holds exactly the excerpt, read in full; `at:` never indexes
+    /// into the asset, it only supplies the real-source path and the display
+    /// numbering (ADR 0026).
     pub(crate) fn citation_excerpt(&self, citation: &SourceCitation) -> Result<Excerpt> {
         let Some(asset) = citation.asset.as_deref() else {
             return self.excerpt(&citation.locator);
         };
-        if let Some(error) = &self.boundary_error {
-            bail!("{error}");
-        }
         if !crate::assets::is_object_name(asset) {
             bail!("frozen asset `{asset}` is not a content-addressed object name");
         }
         let asset_dir = self.asset_dir.as_deref().ok_or_else(|| {
             anyhow!("citation names frozen asset `{asset}`, but the deck owns no asset directory")
         })?;
+        let mut excerpt = read_excerpt(&asset_dir.join(asset), None)?;
         let (_, spec) = parse_locator(&citation.locator);
-        read_excerpt(&asset_dir.join(asset), spec.as_deref())
+        let start = spec
+            .as_deref()
+            .map(|spec| parse_line_range(spec).0)
+            .unwrap_or(1);
+        for (index, line) in excerpt.lines.iter_mut().enumerate() {
+            line.0 = start + index;
+        }
+        Ok(excerpt)
     }
 
     pub fn inspect_citation(&self, citation: &SourceCitation) -> Result<CitationIntegrity> {
@@ -520,9 +497,8 @@ fn find_under(root: &Path, name: &std::ffi::OsStr) -> Option<PathBuf> {
 }
 
 /// Repoints a frozen asset's excerpt at the real source path for display, so
-/// the learner sees real source, not the opaque asset path. The line numbers
-/// already match the `at:` coordinates (the frozen asset is a whole-file
-/// copy), so only the path and label change.
+/// the learner sees real source, not the opaque asset path. The reader
+/// already numbered the lines from `at:`, so only the path and label change.
 pub fn relabel_for_display(mut excerpt: Excerpt, at: &str) -> (Excerpt, Option<String>) {
     let (Some(file), _) = parse_locator(at) else {
         return (excerpt, None);
@@ -1054,7 +1030,6 @@ mod tests {
             base_dir: directory.path().to_path_buf(),
             source_file: None,
             asset_dir: None,
-            boundary_error: None,
         };
         let expected = Excerpt {
             path: PathBuf::from("code.rs"),
@@ -1088,7 +1063,6 @@ mod tests {
             base_dir: directory.path().to_path_buf(),
             source_file: None,
             asset_dir: None,
-            boundary_error: None,
         };
         let expected = Excerpt {
             path: PathBuf::from("code.rs"),
@@ -1115,7 +1089,6 @@ mod tests {
             base_dir: directory.path().to_path_buf(),
             source_file: None,
             asset_dir: None,
-            boundary_error: None,
         };
         let expected = Excerpt {
             path: PathBuf::from("code.rs"),
@@ -1136,7 +1109,7 @@ mod tests {
     }
 
     /// A base whose live tree is `directory` and whose frozen objects live in
-    /// `directory/objects`, holding one whole-file copy of `bytes`.
+    /// `directory/objects`, holding one excerpt-shaped object of `bytes`.
     fn frozen_base(directory: &Path, bytes: &str) -> (SourceBase, String) {
         let objects = directory.join("objects");
         std::fs::create_dir_all(&objects).unwrap();
@@ -1146,7 +1119,6 @@ mod tests {
             base_dir: directory.to_path_buf(),
             source_file: None,
             asset_dir: Some(objects),
-            boundary_error: None,
         };
         (base, name)
     }
@@ -1154,7 +1126,7 @@ mod tests {
     #[test]
     fn an_asset_backed_citation_reads_the_frozen_bytes_not_the_live_file() {
         let directory = tempfile::tempdir().unwrap();
-        let (base, asset) = frozen_base(directory.path(), "alpha\nbeta\ngamma\n");
+        let (base, asset) = frozen_base(directory.path(), "beta\ngamma\n");
         write(directory.path(), "code.rs", "MUTATED\nLIVE\nFILE\n");
         let expected = Excerpt {
             path: PathBuf::from("code.rs"),
@@ -1172,6 +1144,55 @@ mod tests {
         };
         assert_eq!(
             vec![(2, "beta".to_string()), (3, "gamma".to_string())],
+            excerpt.lines
+        );
+    }
+
+    #[test]
+    fn an_asset_backed_excerpt_is_numbered_from_the_at_start_line() {
+        let directory = tempfile::tempdir().unwrap();
+        let (base, asset) = frozen_base(directory.path(), "alpha\nbeta\ngamma\n");
+        let content = Excerpt {
+            path: PathBuf::from("x.rs"),
+            lines: vec![(46, "alpha".into()), (47, "beta".into()), (48, "gamma".into())],
+            truncated: false,
+        };
+        let citation = SourceCitation {
+            locator: "x.rs:46-48".into(),
+            fingerprint: Some(excerpt_fingerprint(&content)),
+            asset: Some(asset),
+            line: 4,
+        };
+        let CitationIntegrity::Current(excerpt) = base.inspect_citation(&citation).unwrap() else {
+            panic!("the frozen citation must verify against the asset bytes");
+        };
+        assert_eq!(
+            vec![
+                (46, "alpha".to_string()),
+                (47, "beta".to_string()),
+                (48, "gamma".to_string())
+            ],
+            excerpt.lines
+        );
+    }
+
+    #[test]
+    fn an_asset_backed_whole_file_at_keeps_one_based_numbering() {
+        let directory = tempfile::tempdir().unwrap();
+        let (base, asset) = frozen_base(directory.path(), "alpha\nbeta\n");
+        let citation = SourceCitation {
+            locator: "x.rs".into(),
+            fingerprint: None,
+            asset: Some(asset),
+            line: 4,
+        };
+        let CitationIntegrity::Unfingerprinted { excerpt, .. } =
+            base.inspect_citation(&citation).unwrap()
+        else {
+            panic!("an unfingerprinted asset-backed citation still reads the asset");
+        };
+        assert_eq!(
+            vec![(1, "alpha".to_string()), (2, "beta".to_string())],
             excerpt.lines
         );
     }
@@ -1224,7 +1245,6 @@ mod tests {
             base_dir: directory.path().to_path_buf(),
             source_file: None,
             asset_dir: None,
-            boundary_error: None,
         };
         let citation = SourceCitation {
             locator: "code.rs:1".into(),

@@ -709,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn staging_rejects_a_live_source_workspace_member_before_copying_it() {
+    fn staging_shares_a_live_source_workspace_member_as_a_single_file() {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path().join("workspace");
         let decks = workspace.join(crate::workspace::DECKS);
@@ -724,9 +724,9 @@ mod tests {
         .unwrap();
         let stage = dir.path().join("stage");
 
-        let error = stage_path(&deck, &stage).unwrap_err();
+        let (bundle, count) = stage_path(&deck, &stage).unwrap();
 
-        assert!(format!("{error:#}").contains("content-addressed"));
+        assert_eq!((deck.as_path(), 1), (bundle.as_path(), count));
         assert!(!stage.exists());
     }
 

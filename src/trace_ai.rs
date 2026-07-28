@@ -611,22 +611,22 @@ mod tests {
         let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let deck_id = deck.deck_token.as_deref().unwrap();
-        let first = crate::assets::object_name(b"alpha\nbeta\ngamma\n", "rs");
-        let second = crate::assets::object_name(b"one\ntwo\n", "rs");
+        let first = crate::assets::object_name(b"beta\ngamma\n", "rs");
+        let second = crate::assets::object_name(b"one\n", "rs");
 
         assert_eq!(2, report.freeze.unwrap().evidence);
         assert!(root.join(format!("ws/assets/{deck_id}/{first}")).is_file());
         assert!(root.join(format!("ws/assets/{deck_id}/{second}")).is_file());
         assert!(!root.join("ws/assets/a.rs").exists());
         assert_eq!(
-            "alpha\nbeta\ngamma\n",
+            "beta\ngamma\n",
             std::fs::read_to_string(root.join(format!("ws/assets/{deck_id}/{first}"))).unwrap()
         );
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(
-            text.contains(&format!("source: \"assets/{deck_id}/{first} + {second}\"")),
-            "{text}"
+            text.contains("source: ../src"),
+            "the live source declaration stays untouched: {text}"
         );
         assert!(text.contains("origin: "), "{text}");
         assert!(
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn immediate_freezing_preserves_the_complete_single_file_source() {
+    fn immediate_freezing_freezes_the_cited_excerpt_of_a_single_file_source() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(root, "notes.md", "L1\nL2\nL3\n");
@@ -679,17 +679,25 @@ mod tests {
         let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let deck_id = deck.deck_token.as_deref().unwrap();
-        let name = crate::assets::object_name(b"L1\nL2\nL3\n", "md");
+        let whole_name = crate::assets::object_name(b"L1\nL2\nL3\n", "md");
+        let excerpt_name = crate::assets::object_name(b"L2\n", "md");
         assert_eq!(1, report.freeze.unwrap().evidence);
-        assert!(root.join(format!("ws/assets/{deck_id}/{name}")).is_file());
+        assert!(
+            !root.join(format!("ws/assets/{deck_id}/{whole_name}")).exists(),
+            "no whole-file object is written"
+        );
+        assert!(
+            root.join(format!("ws/assets/{deck_id}/{excerpt_name}"))
+                .is_file()
+        );
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(
-            text.contains(&format!("source: \"assets/{deck_id}/{name}\"")),
-            "{text}"
+            text.contains("source: ../notes.md"),
+            "the live source declaration stays untouched: {text}"
         );
         assert!(
             text.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
-                && text.contains(&format!(" asset: {name} -->\n")),
+                && text.contains(&format!(" asset: {excerpt_name} -->\n")),
             "{text}"
         );
 
@@ -700,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn immediate_freezing_preserves_every_explicit_joined_file() {
+    fn immediate_freezing_freezes_excerpts_from_each_joined_file() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("src")).unwrap();
@@ -722,16 +730,25 @@ mod tests {
         assert!(
             root.join(format!(
                 "ws/assets/{deck_id}/{}",
-                crate::assets::object_name(b"alpha\nbeta\ngamma\n", "rs")
+                crate::assets::object_name(b"beta\ngamma\n", "rs")
             ))
             .is_file()
         );
         assert!(
             root.join(format!(
                 "ws/assets/{deck_id}/{}",
-                crate::assets::object_name(b"one\ntwo\n", "rs")
+                crate::assets::object_name(b"one\n", "rs")
             ))
             .is_file()
+        );
+        assert!(
+            !root
+                .join(format!(
+                    "ws/assets/{deck_id}/{}",
+                    crate::assets::object_name(b"alpha\nbeta\ngamma\n", "rs")
+                ))
+                .exists(),
+            "no whole-file object is written"
         );
     }
 

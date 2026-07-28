@@ -194,13 +194,20 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     let managed = workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some();
     let mut source_assets_valid = true;
     if managed && !deck.sources.is_empty() {
-        if !deck.is_frozen() {
+        let live = deck
+            .cards
+            .iter()
+            .flat_map(|card| &card.citations)
+            .filter(|citation| citation.asset.is_none())
+            .count();
+        if live > 0 {
             report.error(format!(
-                "{}: initialized workspace member uses live `source:` evidence; initialize or update it to freeze deck-owned assets",
+                "{}: {live} live `at:` citation(s) in an initialized workspace member; initialize or update it to freeze deck-owned excerpts",
                 deck.path.display()
             ));
             source_assets_valid = false;
-        } else if let Err(error) = alix::assets::validate_member(deck) {
+        }
+        if let Err(error) = alix::assets::validate_member(deck) {
             report.error(format!(
                 "{}: frozen source assets are invalid: {error:#}",
                 deck.path.display()

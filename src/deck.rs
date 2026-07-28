@@ -274,9 +274,9 @@ impl Deck {
     }
 
     pub fn is_frozen(&self) -> bool {
-        self.sources
-            .first()
-            .is_some_and(|source| source.starts_with(&format!("{}/", crate::assets::ROOT)))
+        self.cards
+            .iter()
+            .any(|card| card.citations.iter().any(|citation| citation.asset.is_some()))
     }
 }
 
@@ -706,7 +706,9 @@ pub(crate) fn rewrite_frozen_assets(
         let in_frontmatter = line_number > open && line_number < close;
         if in_frontmatter {
             if let Some(key) = top_level_yaml_key(line) {
-                skipping = matches!(key, "source" | "origin");
+                // With no replacement source, the deck's own `source:` stays
+                // untouched (ADR 0026: freezing never rewrites it).
+                skipping = key == "origin" || (source.is_some() && key == "source");
                 if skipping && !inserted {
                     push_frozen_frontmatter(&mut out, source, origin);
                     inserted = true;
@@ -1959,6 +1961,29 @@ mod tests {
         ));
         assert!(!out.contains("../README.md"));
         assert!(!out.contains("old image.png"));
+    }
+
+    #[test]
+    fn frozen_asset_rewrite_without_a_source_preserves_the_source_yaml() {
+        let text = "---\nsource: ../src\norigin: old\n---\n## q\na\n<!-- at: src/lib.rs:2 -->\n";
+        let parsed = parser::parse("t.md", text).unwrap();
+        let ats = [AtRewrite {
+            at: "src/lib.rs:2".into(),
+            fingerprint: Some(7),
+            asset: Some("sha256-source.rs".into()),
+            line: 7,
+        }];
+
+        let out =
+            rewrite_frozen_assets(text, parsed.frontmatter_span, None, Some("../src"), &ats, &[])
+                .unwrap();
+
+        assert!(out.contains("source: ../src\n"), "{out}");
+        assert!(out.contains("origin: \"../src\"\n"), "{out}");
+        assert_eq!(1, out.matches("origin:").count(), "{out}");
+        assert!(out.contains(
+            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
+        ));
     }
 
     #[test]

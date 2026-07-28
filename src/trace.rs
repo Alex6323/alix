@@ -606,7 +606,7 @@ mod tests {
             &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nid: \"deck-deck1\"\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nid: \"deck-deck1\"\nsource: src/lib.rs\n---\n\
                  ## q\na\n<!-- at: src/lib.rs:1 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );
@@ -619,6 +619,43 @@ mod tests {
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);
         assert!(frozen_excerpt_block(&deck.cards[0].citations[0], &base).is_none());
+    }
+
+    #[test]
+    fn a_frozen_block_numbers_the_excerpt_from_the_at_start_line() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+        let assets = dir.path().join("assets/deck-deck1");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::create_dir_all(dir.path().join("decks")).unwrap();
+        let name = crate::assets::object_name(b"alpha\nbeta\ngamma\n", "rs");
+        write(&assets, &name, "alpha\nbeta\ngamma\n");
+        let fingerprint = crate::source::format_locator_fingerprint(
+            crate::source::excerpt_fingerprint(&Excerpt {
+                path: PathBuf::from("src/lib.rs"),
+                lines: vec![
+                    (46, "alpha".to_string()),
+                    (47, "beta".to_string()),
+                    (48, "gamma".to_string()),
+                ],
+                truncated: false,
+            }),
+        );
+        let deck_path = write(
+            &dir.path().join("decks"),
+            "t.md",
+            &format!(
+                "---\nid: \"deck-deck1\"\nsource: src\n---\n\
+                 ## q\na\n<!-- at: src/lib.rs:46-48 fingerprint: {fingerprint} asset: {name} -->\n"
+            ),
+        );
+        let deck = Deck::load(&deck_path).unwrap();
+        let block = frozen_excerpt_block(&deck.cards[0].citations[0], &SourceBase::for_deck(&deck))
+            .unwrap();
+        assert!(block.contains("src/lib.rs:46-48"), "{block}");
+        assert!(block.contains("46\talpha"), "{block}");
+        assert!(block.contains("48\tgamma"), "{block}");
+        assert!(!block.contains("1\talpha"), "{block}");
     }
 
     #[test]

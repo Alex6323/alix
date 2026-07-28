@@ -28,12 +28,10 @@ pub enum AssetError {
     MissingDeckId(PathBuf),
     #[error("remote source `{0}` cannot be frozen")]
     RemoteSource(String),
-    #[error("{0} uses live source instead of deck-owned content-addressed assets")]
-    LiveSource(PathBuf),
     #[error("source `{0}` is missing or is not a regular file or directory")]
     MissingSource(PathBuf),
-    #[error("source directory `{0}` has no cited evidence to freeze")]
-    UncitedDirectory(PathBuf),
+    #[error("frozen asset `{0}` is missing")]
+    MissingAsset(PathBuf),
     #[error("source `{0}` is not UTF-8 text")]
     NonTextSource(PathBuf),
     #[error("citation `{locator}` is outside every declared source")]
@@ -91,8 +89,8 @@ pub struct InitializeReport {
 }
 
 enum SourceInput {
-    File { path: PathBuf, name: String },
-    Directory { path: PathBuf, citations: usize },
+    File { path: PathBuf },
+    Directory { path: PathBuf },
 }
 
 pub fn deck_dir(workspace_root: &Path, deck_id: &str) -> Result<PathBuf, AssetError> {
@@ -208,17 +206,6 @@ pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
 }
 
 fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeReport, AssetError> {
-    if deck.is_frozen() {
-        validate_member(deck)?;
-        return Ok(FreezeReport {
-            evidence: deck
-                .sources
-                .iter()
-                .flat_map(|source| crate::source::source_paths(source, Some(workspace_root)))
-                .count(),
-            images: 0,
-        });
-    }
     let text = read_text(&deck.path)?;
     let parsed = crate::parser::parse(&deck.subject, &text).map_err(|source| AssetError::Deck {
         path: deck.path.clone(),
@@ -231,43 +218,37 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
         .deck_token
         .as_deref()
         .ok_or_else(|| AssetError::MissingDeckId(deck.path.clone()))?;
+    if deck_dir(workspace_root, deck_id)?.is_dir() {
+        validate_owned_dir(workspace_root, deck_id)?;
+    }
     let source_expression = (!deck.sources.is_empty()).then(|| deck.sources.join(" + "));
-    let mut inputs = freeze_explicit_sources(workspace_root, deck_id, deck)?;
-    let source_base = SourceBase::for_live_deck(deck);
-    let mut evidence = ordered_file_evidence(&inputs);
-    let mut evidence_seen: HashSet<String> = evidence.iter().cloned().collect();
+    let inputs = declared_source_inputs(workspace_root, deck)?;
+    let source_base = SourceBase::for_deck(deck);
+    let mut evidence: Vec<String> = Vec::new();
+    let mut evidence_seen: HashSet<String> = HashSet::new();
     let mut citations = Vec::new();
 
     for card in &deck.cards {
         for citation in &card.citations {
+            if let Some(asset) = &citation.asset {
+                if evidence_seen.insert(asset.clone()) {
+                    evidence.push(asset.clone());
+                }
+                continue;
+            }
             let excerpt = citation_excerpt(&source_base, citation)?;
             let input_index = source_owner(&inputs, &excerpt).ok_or_else(|| {
                 AssetError::CitationOutsideSource {
                     locator: citation.locator.clone(),
                 }
             })?;
-            // The frozen object is always a whole-file copy, so the `at:`
-            // lines and the asset's lines coincide (ADR 0026).
-            let asset = match &mut inputs[input_index] {
-                SourceInput::File { name, .. } => name.clone(),
-                SourceInput::Directory { citations, .. } => {
-                    *citations += 1;
-                    let path = excerpt
-                        .path
-                        .canonicalize()
-                        .unwrap_or_else(|_| excerpt.path.clone());
-                    let bytes = read_bytes(&path)?;
-                    std::str::from_utf8(&bytes)
-                        .map_err(|_| AssetError::NonTextSource(path.clone()))?;
-                    let extension = normalized_extension(&path, true);
-                    let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
-                    let name = file_name(&object)?;
-                    if evidence_seen.insert(name.clone()) {
-                        evidence.push(name.clone());
-                    }
-                    name
-                }
-            };
+            let bytes = canonical_excerpt_bytes(&excerpt);
+            let extension = normalized_extension(&excerpt.path, true);
+            let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
+            let asset = file_name(&object)?;
+            if evidence_seen.insert(asset.clone()) {
+                evidence.push(asset.clone());
+            }
             citations.push(AtRewrite {
                 at: excerpt_provenance(&excerpt, &inputs[input_index]),
                 fingerprint: Some(crate::source::excerpt_fingerprint(&excerpt)),
@@ -275,18 +256,6 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
                 line: citation.line,
             });
         }
-    }
-    for input in &inputs {
-        if let SourceInput::Directory { path, citations } = input
-            && *citations == 0
-        {
-            return Err(AssetError::UncitedDirectory(path.clone()));
-        }
-    }
-    if source_expression.is_some() && evidence.is_empty() {
-        return Err(AssetError::UncitedDirectory(
-            crate::workspace::content_root(&deck.path),
-        ));
     }
 
     let mut image_rewrites = Vec::new();
@@ -314,12 +283,6 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
         image_rewrites.push((image.destination, format!("{ROOT}/{deck_id}/{name}")));
     }
 
-    let frozen_source = (!evidence.is_empty()).then(|| {
-        let mut parts = Vec::with_capacity(evidence.len());
-        parts.push(format!("{ROOT}/{deck_id}/{}", evidence[0]));
-        parts.extend(evidence.iter().skip(1).cloned());
-        parts.join(" + ")
-    });
     let origin = deck
         .settings
         .origin
@@ -328,7 +291,7 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
     let rewritten = crate::deck::rewrite_frozen_assets(
         &text,
         parsed.frontmatter_span,
-        frozen_source.as_deref(),
+        None,
         origin,
         &citations,
         &image_rewrites,
@@ -358,9 +321,8 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
     })
 }
 
-fn freeze_explicit_sources(
+fn declared_source_inputs(
     workspace_root: &Path,
-    deck_id: &str,
     deck: &Deck,
 ) -> Result<Vec<SourceInput>, AssetError> {
     let mut inputs = Vec::new();
@@ -375,31 +337,15 @@ fn freeze_explicit_sources(
             if path.is_file() {
                 let bytes = read_bytes(&path)?;
                 std::str::from_utf8(&bytes).map_err(|_| AssetError::NonTextSource(path.clone()))?;
-                let extension = normalized_extension(&path, true);
-                let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
-                inputs.push(SourceInput::File {
-                    path,
-                    name: file_name(&object)?,
-                });
+                inputs.push(SourceInput::File { path });
             } else if path.is_dir() {
-                inputs.push(SourceInput::Directory { path, citations: 0 });
+                inputs.push(SourceInput::Directory { path });
             } else {
                 return Err(AssetError::MissingSource(path));
             }
         }
     }
     Ok(inputs)
-}
-
-fn ordered_file_evidence(inputs: &[SourceInput]) -> Vec<String> {
-    let mut seen = HashSet::new();
-    inputs
-        .iter()
-        .filter_map(|input| match input {
-            SourceInput::File { name, .. } if seen.insert(name.clone()) => Some(name.clone()),
-            _ => None,
-        })
-        .collect()
 }
 
 fn citation_excerpt(
@@ -438,6 +384,17 @@ fn source_owner(inputs: &[SourceInput], excerpt: &Excerpt) -> Option<usize> {
         SourceInput::File { path: source, .. } => path == *source,
         SourceInput::Directory { path: source, .. } => path.starts_with(source),
     })
+}
+
+fn canonical_excerpt_bytes(excerpt: &Excerpt) -> Vec<u8> {
+    let mut text = excerpt
+        .lines
+        .iter()
+        .map(|(_, line)| line.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    text.push('\n');
+    text.into_bytes()
 }
 
 fn excerpt_provenance(excerpt: &Excerpt, input: &SourceInput) -> String {
@@ -505,28 +462,19 @@ pub fn validate_at_root(deck: &Deck, root: &Path) -> Result<(), AssetError> {
         .as_deref()
         .ok_or_else(|| AssetError::MissingDeckId(deck.path.clone()))?;
     let owned = deck_dir(root, deck_id)?;
-    if !deck.is_frozen() {
-        return Err(AssetError::LiveSource(deck.path.clone()));
-    }
-    for source in &deck.sources {
-        for path in crate::source::source_paths(source, Some(root)) {
-            let canonical = path.canonicalize().map_err(|source| AssetError::Io {
-                path: path.clone(),
-                source,
-            })?;
-            let canonical_owned = owned.canonicalize().map_err(|source| AssetError::Io {
-                path: owned.clone(),
-                source,
-            })?;
-            if !canonical.starts_with(&canonical_owned) {
-                return Err(AssetError::CitationOutsideSource {
-                    locator: path.display().to_string(),
-                });
+    for card in &deck.cards {
+        for citation in &card.citations {
+            if let Some(asset) = citation.asset.as_deref() {
+                let path = owned.join(asset);
+                if !path.is_file() {
+                    return Err(AssetError::MissingAsset(path));
+                }
             }
-            verify_object(&canonical)?;
         }
     }
-    validate_owned_dir(root, deck_id)?;
+    if owned.is_dir() {
+        validate_owned_dir(root, deck_id)?;
+    }
     Ok(())
 }
 
@@ -712,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn freezing_a_file_source_preserves_exact_bytes_and_ingests_images() {
+    fn freezing_a_file_source_freezes_the_cited_excerpt_and_ingests_images() {
         let directory = workspace();
         let source = directory.path().join("notes.md");
         std::fs::write(&source, "one \r\ntwo\r\nthree\r\n").unwrap();
@@ -736,16 +684,15 @@ mod tests {
             report
         );
         assert!(deck.is_frozen());
+        assert_eq!(
+            vec![source.display().to_string()],
+            deck.sources,
+            "the live source declaration stays untouched"
+        );
         assert!(frozen.contains(&format!(
             "origin: {}",
             crate::parser::yaml_quote(&source.display().to_string())
         )));
-        let evidence = crate::source::source_paths(&deck.sources[0], Some(directory.path()));
-        assert_eq!(1, evidence.len());
-        assert_eq!(
-            b"one \r\ntwo\r\nthree\r\n",
-            std::fs::read(&evidence[0]).unwrap().as_slice()
-        );
         let image_name = object_name(&[0, 1, 2, 255], "png");
         assert!(frozen.contains(&format!("](assets/deck-deck1/{image_name})")));
         assert_eq!(
@@ -758,11 +705,29 @@ mod tests {
             .unwrap()
             .as_slice()
         );
-        let evidence_name = object_name(b"one \r\ntwo\r\nthree\r\n", "md");
+        let whole_name = object_name(b"one \r\ntwo\r\nthree\r\n", "md");
+        assert!(
+            !directory
+                .path()
+                .join(format!("assets/deck-deck1/{whole_name}"))
+                .exists(),
+            "no whole-file object is written"
+        );
+        let excerpt_name = object_name(b"two\n", "md");
         assert!(
             frozen.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
-                && frozen.contains(&format!(" asset: {evidence_name} -->")),
+                && frozen.contains(&format!(" asset: {excerpt_name} -->")),
             "{frozen}"
+        );
+        assert_eq!(
+            b"two\n",
+            std::fs::read(
+                directory
+                    .path()
+                    .join(format!("assets/deck-deck1/{excerpt_name}"))
+            )
+            .unwrap()
+            .as_slice()
         );
     }
 
@@ -797,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    fn freezing_a_directory_stores_whole_copies_of_cited_files_only() {
+    fn freezing_a_directory_stores_only_the_cited_lines_of_cited_files() {
         let directory = workspace();
         let source = directory.path().join("source");
         std::fs::create_dir(&source).unwrap();
@@ -815,7 +780,6 @@ mod tests {
 
         let report = freeze_member(&path).unwrap();
         let deck = Deck::load(&path).unwrap();
-        let evidence = crate::source::source_paths(&deck.sources[0], Some(directory.path()));
 
         assert_eq!(
             FreezeReport {
@@ -824,19 +788,31 @@ mod tests {
             },
             report
         );
-        assert_eq!(1, evidence.len());
         assert_eq!(
-            b"a  \nb\nc\n",
-            std::fs::read(&evidence[0]).unwrap().as_slice()
+            vec![source.display().to_string()],
+            deck.sources,
+            "the live source declaration stays untouched"
         );
+        let evidence_name = object_name(b"b\nc\n", "rs");
+        let object = directory
+            .path()
+            .join(format!("assets/deck-deck2/{evidence_name}"));
+        assert_eq!(b"b\nc\n", std::fs::read(&object).unwrap().as_slice());
+        let frozen_asset = std::fs::read_to_string(&object).unwrap();
+        assert!(!frozen_asset.contains("a  "));
         let frozen = std::fs::read_to_string(&path).unwrap();
         assert!(!frozen.contains("uncited.rs"));
         assert!(!frozen.contains("secret"));
-        let evidence_name = object_name(b"a  \nb\nc\n", "rs");
         assert!(
             frozen.contains("<!-- at: lib.rs:2-3 fingerprint: xxh64-")
                 && frozen.contains(&format!(" asset: {evidence_name} -->")),
             "{frozen}"
+        );
+        assert_eq!(
+            1,
+            std::fs::read_dir(directory.path().join("assets/deck-deck2"))
+                .unwrap()
+                .count()
         );
     }
 
@@ -874,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_without_citations_is_rejected_without_partial_assets() {
+    fn freezing_without_citations_writes_no_assets_and_keeps_the_source_live() {
         let directory = workspace();
         let source = directory.path().join("source");
         std::fs::create_dir(&source).unwrap();
@@ -886,11 +862,23 @@ mod tests {
         );
         std::fs::write(&path, &text).unwrap();
 
-        let error = freeze_member(&path).unwrap_err();
+        let report = freeze_member(&path).unwrap();
 
-        assert!(matches!(error, AssetError::UncitedDirectory(_)));
-        assert_eq!(text, std::fs::read_to_string(&path).unwrap());
+        assert_eq!(
+            FreezeReport {
+                evidence: 0,
+                images: 0
+            },
+            report
+        );
         assert!(!directory.path().join("assets/deck-deck3").exists());
+        let deck = Deck::load(&path).unwrap();
+        assert!(!deck.is_frozen());
+        assert_eq!(
+            vec![source.display().to_string()],
+            deck.sources,
+            "the live source declaration stays untouched"
+        );
     }
 
     #[test]

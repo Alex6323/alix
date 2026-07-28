@@ -1170,15 +1170,17 @@ back a
         let summary = freeze_workspace(&dir).unwrap();
         assert_eq!((2, 2), (summary.decks, summary.files));
         assert!(summary.failed.is_empty(), "{:?}", summary.failed);
-        let whole_name = crate::assets::object_name(b"x\ny\nz\n", "rs");
-        assert!(dir.join(format!("assets/deck-trace/{whole_name}")).is_file());
-        assert!(dir.join(format!("assets/deck-facts/{whole_name}")).is_file());
+        let trace_name = crate::assets::object_name(b"x\ny\n", "rs");
+        let fact_name = crate::assets::object_name(b"z\n", "rs");
+        assert!(dir.join(format!("assets/deck-trace/{trace_name}")).is_file());
+        assert!(dir.join(format!("assets/deck-facts/{fact_name}")).is_file());
         assert!(!dir.join("assets/a.rs").exists());
         let fact = fs::read_to_string(dir.join("decks/02-d.md")).unwrap();
         assert!(
-            fact.contains(&format!("source: \"assets/deck-facts/{whole_name}\"")),
-            "{fact}"
+            fact.contains(&format!("source: {}", src.display())),
+            "the live source declaration stays untouched: {fact}"
         );
+        assert!(!fact.contains("source: \"assets/"), "{fact}");
         assert!(
             fact.contains("origin: \"https://example.org/current\""),
             "{fact}"
@@ -1186,7 +1188,7 @@ back a
         assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
         assert!(
             fact.contains("<!-- at: a.rs:3 fingerprint: xxh64-")
-                && fact.contains(&format!(" asset: {whole_name} -->")),
+                && fact.contains(&format!(" asset: {fact_name} -->")),
             "{fact}"
         );
 

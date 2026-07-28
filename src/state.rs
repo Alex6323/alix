@@ -246,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_open_finds_deck_level_state_by_alix_id_after_a_rename() {
+    fn aggregate_open_finds_deck_level_state_by_deck_id_after_a_rename() {
         // The prior bug: doctor/`reset --orphans` scan through
         // `open_aggregate_store`, which (unlike `open_store`) passes no
         // `current_subject` hint, so a subject-keyed rebind never fires

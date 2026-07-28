@@ -656,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn load_decks_keys_by_alix_id_so_same_basename_decks_survive_together() {
+    fn load_decks_keys_by_deck_id_so_same_basename_decks_survive_together() {
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("a");
         let b = dir.path().join("b");
