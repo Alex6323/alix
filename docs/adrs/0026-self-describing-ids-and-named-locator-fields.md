@@ -172,7 +172,9 @@ ruling, and the code already unioned them for examination.
   alone therefore never blocks initialization or freezing of the rest.
 - Mechanical resolution stays single-based and deterministic: citations,
   walks, and live-drift display resolve against the deck's first local-path
-  source, falling back to the workspace source when the deck declares none;
+  source, falling back to the workspace source when the deck declares no
+  LOCAL source (a URL-only own layer still takes the workspace local as its
+  base: a URL cannot anchor relative paths; clarified 2026-07-28);
   workspace update reconciles a member against the member's own local source
   first, workspace source as fallback. A relative path resolves against the
   workspace root when declared in the manifest and against the deck's content
