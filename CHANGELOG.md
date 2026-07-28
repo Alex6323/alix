@@ -229,6 +229,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Picker rows (decks and workspaces alike) no longer light their frame on mouse
+  hover; keyboard selection is the single frame highlight.
+- A multiple-choice card starts with its first option focused, so Enter or the
+  nav keys act immediately instead of needing a first keypress to focus.
 - A Recognize session now paces first contact like every other depth: at most
   `max_new` never-met cards enter per session, and an explicit `--new` is
   honored there (it was silently ignored). Already-met cards still awaiting
