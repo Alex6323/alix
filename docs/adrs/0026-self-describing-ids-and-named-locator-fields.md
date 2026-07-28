@@ -65,22 +65,34 @@ redundant.
 
 ### `requires:` (dual mode)
 
-`requires:` accepts a filename **or** a deck id. A value is id-mode **iff** it is
-`deck-` followed by a `[0-9a-z]+` token and nothing else; any value containing
-`/`, `.`, or a non-charset byte is filename-mode. Gating resolves an id-mode
-value to the deck whose id matches and checks completion by that id (rename-
-proof); a filename-mode value resolves as today via `resolve_dep`.
+`requires:` accepts a filename **or** a deck id. A value is id-mode **iff** it
+is `deck-` followed by exactly 26 characters of the canonical Crockford mint
+alphabet and nothing else; every other value is filename-mode. Classification
+is a pure function of the text, never of which files exist, so an edge means
+the same thing on every machine. The classifier is deliberately stricter than
+the id grammar itself: minted ids are always canonical, so id-mode authoring
+loses nothing (a scan of all real decks found only canonical tokens), while
+natural `deck-*.md` filenames (`deck-basics`) fail the 26-canonical test and
+remain referenceable by filename. Gating resolves an id-mode value to the deck
+whose id matches and checks completion by that id (rename-proof); a
+filename-mode value resolves as today via `resolve_dep`.
 
 Collisions are decided, not left implicit:
 
-- A `deck-<valid-token>` id-mode value wins over a same-named file. A deck file
-  literally named `deck-*.md` or `card-*.md` is reported by `doctor` as a
-  shadowing hazard; reference such a file explicitly with a `./`-prefixed path
-  (`requires: ./deck-basics`), which `resolve_dep` already treats as a raw path.
-- A `card-<valid-token>` value in `requires:` is a wrong-type error (a card is
-  never a prerequisite), distinct from "dangling".
-- `doctor`'s wrong-type and dangling checks fire only on values that parsed as
-  id-mode.
+- Only a file literally named `deck-<canonical-26-token>.md` can shadow an id.
+  The id wins; `doctor` reports the shadowing file; a `./`-prefixed path
+  (`requires: ./deck-<...>`) is the explicit filename escape (`resolve_dep`
+  already treats it as a raw path).
+- A `card-<canonical-26-token>` value in `requires:` is a wrong-type error (a
+  pasted card id; a card is never a prerequisite), distinct from "dangling".
+  A non-canonical value like `card-tricks` stays a filename.
+- A filename-mode value beginning `deck-` that resolves to no file gets a
+  `doctor` hint that it looks like a truncated or malformed id.
+- A deck whose own id was hand-typed short cannot be referenced by id (the
+  value classifies as filename-mode); filename reference still works and
+  `doctor` notes it.
+- `doctor`'s wrong-type and dangling-id checks fire only on values that
+  classified as id-mode.
 
 ### Locator fields (freeze-forever)
 
@@ -146,9 +158,10 @@ survive `alix`'s own id auto-minting, which fires precisely on "no deck id" and
 - Cost: a one-time migration that touches every deck file, frozen asset
   directory, in-repo fixture, and documentation surface (see Compatibility). The
   frozen-citation reader is rebuilt to read asset bytes.
-- Deliberately unsupported: referencing a `deck-*.md`/`card-*.md` file by bare
-  filename in `requires:` (use `./`); combining cloze and reversed suffixes;
-  unknown locator keys in this format version.
+- Deliberately unsupported: referencing a file literally named after a
+  canonical id (`deck-<26-token>.md`) by bare filename in `requires:` (use
+  `./`); requiring a deck by a hand-typed non-canonical id; combining cloze
+  and reversed suffixes; unknown locator keys in this format version.
 
 ## Alternatives considered
 
