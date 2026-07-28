@@ -138,6 +138,27 @@ A source citation is `<!-- at: <src>:<lines> fingerprint: xxh64-<hex> asset: sha
   the real-source provenance. Relocation scanning for an asset-backed citation
   never rewrites the frozen fingerprint.
 
+### One source concept: `origin:` merges into `source:` (ruled 2026-07-28)
+
+There is one key for "where this deck's material lives": `source:`,
+multi-valued, each value a URL or a local path. The separate `origin:` key
+(deck frontmatter and workspace manifest) is retired. The historical reason
+for two keys, freezing rewrote `source:` to the frozen snapshot while
+`origin:` kept the real pointer, was abolished by the source-never-assets
+ruling, and the code already unioned them for examination.
+
+- The workspace manifest may declare a default `source` that members inherit
+  when they declare none (replacing the manifest `origin`).
+- Derivations: examination and `has_exam` consider the effective sources
+  (deliberate behavior change: a local-path source now confers an exam where
+  a local `origin:` did not; verified understanding is the product's thesis).
+  URL-valued sources feed reference links; the first local-path source is the
+  base root for citation resolution, walks, and live-drift display; workspace
+  update reconciles against the local-path sources. Freezing stamps nothing:
+  a generated or frozen member already declares (or inherits) its source.
+- `origin:` in deck frontmatter or the manifest is a recognized-obsolete key:
+  a hard error naming the deck conversion tool, exactly like `alix-id:`.
+
 ### Loud break at the parser (no compatibility path)
 
 Production reads only the new grammar. There is no dual reader. Detection must
@@ -226,6 +247,10 @@ Surfaces the migration must cover (enumerated so none is silent):
   the tool rewrites it to the recorded origin (workspace or deck `origin:`
   metadata); with no recorded origin it lists the deck for manual repair, and
   `doctor` flags a `source:` inside `assets/` as un-converted.
+- `origin:` merge: the tool appends a deck's `origin:` value into its
+  `source:` list when distinct (creates the list when absent), drops it when
+  duplicate, deletes the `origin:` line, and converts a manifest `origin` to
+  the manifest default `source`.
 - Progress: reset (deleted). Old `progress/<bareid>.json` that survives is
   positively flagged by `doctor` as un-migrated.
 - In-repo committed decks, test fixtures, and frozen example traces: rewritten
