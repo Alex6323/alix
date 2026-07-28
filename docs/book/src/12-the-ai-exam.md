@@ -11,8 +11,8 @@ you to pass an exam *against that source* before it counts.
 
 ## Declaring a source: `source:`
 
-Name one or more sources in the deck's frontmatter, a URL or a local file path,
-repeatable:
+Name one or more sources in the deck's frontmatter, each a URL, a file, or a
+directory:
 
 ```
 ---
@@ -30,8 +30,8 @@ blog post, an SO answer) as `link:` so the exam ignores it.
 Once every card in an exam-grounded deck has **graduated** (reached FSRS's
 review phase, past the initial learning steps) the deck is **exam due** rather
 than finished: drilled, but not yet counted, so it doesn't unlock its
-dependents yet. A deck with neither `source:` evidence nor a public URL
-`origin:` simply becomes *finished* when all its cards graduate, unlocking its
+dependents yet. A deck with no `source:` at all (and no workspace source)
+simply becomes *finished* when all its cards graduate, unlocking its
 dependents directly.
 
 ## Sitting the exam

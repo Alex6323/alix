@@ -63,30 +63,30 @@ unlike `source:` (the exam's ground truth, covered next chapter), a `link:`
 never becomes exam material. And like every directive, they don't affect a
 card's identity.
 
-## Grounding a frozen card: `origin:`
+## Grounding a frozen card: `source:`
 
-A frozen workspace card is grounded in its deck-owned `assets/<alix-id>/`
+A frozen workspace card is grounded in its deck-owned `assets/deck-<token>/`
 evidence. The tutor receives the exact excerpt shown during review, so deleting
 or editing the live source cannot silently change its ground truth.
 
-`origin:` records where that evidence came from and can give the tutor broader
-current context. A URL origin is fetched when the selected backend can use
-`WebFetch`. A local origin is readable only when `[ask] source_access = true`.
-The tutor always receives the frozen excerpt first; current origin context can
-explain the surrounding material or detect drift, but never silently replaces
-the captured evidence.
+The deck's `source:` (and a workspace's `source`) records where that evidence
+came from and can give the tutor broader current context. A URL source is
+fetched when the selected backend can use `WebFetch`. A local source is readable
+only when `[ask] source_access = true`. The tutor always receives the frozen
+excerpt first; current source context can explain the surrounding material or
+detect drift, but never silently replaces the captured evidence.
 
 Local file grounding is opt-in with `[ask] source_access = true`. An explicit
-deck or workspace `origin` defines the readable root. Without one, alix does
-not grant the tutor filesystem access: `source` identifies the cited evidence,
-but it never implicitly authorizes the surrounding project. This keeps decks
-portable across profile-managed deck directories and makes every wider
+deck or workspace `source` defines the readable root. Without one, alix does
+not grant the tutor filesystem access: a `source:` identifies the cited
+evidence, but it never implicitly authorizes the surrounding project. This keeps
+decks portable across profile-managed deck directories and makes every wider
 live-source grant deliberate and reviewable.
 
-When no usable origin is available, the tutor still works from the frozen
+When no usable source is available, the tutor still works from the frozen
 excerpt and card context. The Ask status warns that it lacks the full current
 source, so the learner can distinguish an evidence-grounded explanation from a
-freshness check against the origin.
+freshness check against the live source.
 
 ## How it's sandboxed
 

@@ -31,13 +31,13 @@ source: .
 ## You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
 Only the stack data (pointer, length, capacity) is copied.
 So s1 and s2 point at the *same* heap allocation.
-<!-- at: src/ch04-01-what-is-ownership.md:290-297 @ xxh64:0123456789abcdef -->
+<!-- at: src/ch04-01-what-is-ownership.md:290-297 fingerprint: xxh64-0123456789abcdef -->
 > The heap contents themselves are never copied here.
 
 ## So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
 Both would call drop on that memory (a double free).
 Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
-<!-- at: src/ch04-01-what-is-ownership.md:322-343 @ xxh64:123456789abcdef0 -->
+<!-- at: src/ch04-01-what-is-ownership.md:322-343 fingerprint: xxh64-123456789abcdef0 -->
 > Using s1 after the move is a compile-time error.
 ```
 
@@ -47,11 +47,12 @@ Inline-code terms in a checkpoint's key points are also highlighted wherever
 they occur in its revealed source excerpt. Matching is exact and case-sensitive,
 so the author controls the emphasis by choosing which terms to put in backticks.
 
-The `<!-- at: -->` locator is a single contiguous range `file:start-end` (or just line
-numbers when `source:` is one file) — never comma-separated, since a stitched
-excerpt makes disjoint code look adjacent. Its `@ xxh64:...` value fingerprints
-the displayed lines. A live walk reveals the source only while that fingerprint
-matches, so a shifted numeric range cannot silently show unrelated lines. When a
+The `<!-- at: -->` locator's `at:` field is a single contiguous range
+`file:start-end` (or just line numbers when `source:` is one file), never
+comma-separated, since a stitched excerpt makes disjoint code look adjacent. Its
+`fingerprint: xxh64-...` field fingerprints the displayed lines. A live walk
+reveals the source only while that fingerprint matches, so a shifted numeric
+range cannot silently show unrelated lines. When a
 tight excerpt leans on a
 symbol defined off-screen, name it with a `<!-- given: -->` line (`<!-- given: state — the
 parser's position so far -->`, repeatable); these show as a list under the question,
@@ -163,21 +164,24 @@ member therefore freezes its evidence immediately. An explicitly named source
 file is copied in full. A source directory is reduced to the excerpts cited by
 its cards, so Alix does not export an entire repository.
 
-Every copied file lives below `assets/<alix-id>/` and is named
-`sha256-<digest>.<ext>`, where the digest covers its exact stored bytes. The
-deck's `source:` enumerates those files, and each `<!-- at: -->` points at the
-corresponding content-addressed name. The line also retains its normalized
-excerpt fingerprint and original locator:
+Every copied excerpt lives below `assets/deck-<token>/` and is named
+`sha256-<digest>.<ext>`, where the digest covers its exact stored bytes. Freezing
+leaves the deck's `source:` pointed at the real material (a path or a URL): it is
+never rewritten to point into `assets/`. Each `<!-- at: -->` keeps its real
+`at:` path and lines, keeps its excerpt `fingerprint:`, and gains an `asset:`
+field naming the content-addressed object:
 
 ```markdown
-<!-- at: sha256-<digest>.rs @ xxh64:0123456789abcdef from scheduler.rs:90-98 -->
+<!-- at: scheduler.rs:90-98 fingerprint: xxh64-0123456789abcdef asset: sha256-<digest>.rs -->
 ```
 
-Review, tutor grounding, and exams always use the frozen evidence. `origin:`
-and `from` retain provenance for drift reporting and a future deliberate source
-update. When available and permitted, the tutor and exam may also consult the
-current origin for surrounding context and staleness detection; it never
-replaces the frozen excerpt. A loose trace over a live source is left as-is.
+Review reveals the frozen excerpt (display evidence, numbered from the `at:`
+start line), and the `fingerprint:` verifies those stored bytes. The `at:` path
+and the deck's `source:` retain provenance for drift reporting and a future
+deliberate source update. When the live source is available and permitted, the
+tutor and exam may consult it for surrounding context and staleness detection;
+offline, they report the missing live source rather than silently degrading. A
+loose trace over a live source is left as-is.
 
 ## Checking the locators
 
@@ -190,7 +194,7 @@ rebase. After reviewing it, run
 `alix doctor <deck> --repair-source-locators` to stamp missing fingerprints and
 apply only unique exact rebases. Changed and ambiguous excerpts remain
 untouched. Frozen assets do not move, but doctor still verifies their
-captured text and separately reports live-origin drift.
+captured text and separately reports live-source drift.
 
 A trace deck degrades gracefully — even outside a walk it's a valid deck of
 `explain` cards. See `docs/examples/workspace-showcase/decks/ownership-move.md`

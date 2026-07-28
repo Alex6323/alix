@@ -168,8 +168,8 @@ per initialized deck:
 
 ```text
 <decks_dir>/
-├── augment/<alix-id>.json
-├── progress/<alix-id>.json
+├── augment/deck-<token>.json
+├── progress/deck-<token>.json
 └── recent.json
 ```
 
@@ -178,8 +178,8 @@ history, exam state, virtual cards, and the last writer. `augment/` is
 regenerable, shareable material: generated choices, notes, key points,
 variants, and topologies. It stays beside the deck so sharing the deck can
 carry its generated study material without carrying personal history. The
-stable `alix-id`, not the Markdown filename, selects both documents, so
-renaming a deck keeps their ownership stable.
+stable deck id (`deck-<token>`), not the Markdown filename, selects both
+documents, so renaming a deck keeps their ownership stable.
 
 Bare `alix` and `alix <dir>` use the same user-files root when `<dir>` is the
 configured `decks_dir`. A workspace, or any other folder served with `alix
@@ -246,11 +246,11 @@ deck (grades made after the collision are not kept).
 
 Run `alix doctor <folder>` before recovery. For a progress conflict, stop both
 writers and synchronization, back up the folder, compare the canonical
-`progress/<alix-id>.json` with its
-`<alix-id>.sync-conflict-….json` copies, and deliberately keep the complete
+`progress/deck-<token>.json` with its
+`deck-<token>.sync-conflict-….json` copies, and deliberately keep the complete
 history you trust at the canonical path. Do not combine schedules by hand.
 Augmentation conflicts are regenerable: keep one complete
-`augment/<alix-id>.json` or move all conflicting copies aside and regenerate
+`augment/deck-<token>.json` or move all conflicting copies aside and regenerate
 that deck's augmentation. Resume synchronization and rerun doctor only after
 the canonical files are settled.
 

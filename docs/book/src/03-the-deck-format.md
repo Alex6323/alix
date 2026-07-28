@@ -12,11 +12,13 @@ alix deck init ~/decks/my-deck.md
 ```
 
 The command adds stable deck and card IDs without rewriting the authored
-content. A valid `alix-id` in the opening frontmatter marks the file as an
-initialized Alix deck. The namespaced key is deliberate: an ordinary document's
-generic `id` metadata has no Alix meaning and never authorizes a write. This
-explicit boundary lets ordinary Markdown with `##` headings coexist in a decks
-folder without being listed or modified. Generated, imported, received, and
+content. A valid `id: deck-<token>` in the opening frontmatter marks the file as
+an initialized deck. The `deck-` prefix on the value is what carries the
+meaning: it is how alix tells its own decks apart, and the same prefixed string
+travels everywhere the id appears, in a frontmatter key, a card marker, a
+filename, a prerequisite reference, or an error message. Markdown without that
+prefixed id is never listed or modified, so ordinary documents with `##`
+headings can sit in a decks folder untouched. Generated, imported, received, and
 tutorial decks are initialized when they are created.
 
 ## Cards
@@ -165,7 +167,7 @@ title.
 
 ```
 ---
-alix-id: "9w2c7x4k1m8q3z5t0v6b2n4d8f"
+id: "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"
 reveal: line
 order: sequential
 ---
@@ -173,16 +175,11 @@ order: sequential
 # French vocabulary, chapter 4
 ```
 
-Apart from `alix-id`, frontmatter carries only what differs from the defaults,
+Apart from `id`, frontmatter carries only what differs from the defaults,
 and a command-line flag always overrides it. Anything else you write before the
 first card is just prose (context, a reading order, whatever you like), so a
 deck can also read as a normal document. The full set of frontmatter and
 per-card keys gets its own *Directives reference* chapter.
-
-Decks created before this pre-1.0 format change used `id` for the deck token.
-Rename that key to `alix-id` without changing its value. `alix deck init`
-refuses a file with a generic `id` instead of replacing a potentially meaningful
-identity or disconnecting existing review history.
 
 ## Escaping
 
@@ -198,8 +195,8 @@ line that must *start* with one literally is escaped with a leading backslash:
 ## Why editing a deck is safe
 
 Every initialized deck and card carries a stable identity. `alix deck init`
-writes the deck ID as `alix-id` in frontmatter and each card ID as an
-`<!-- id: ... -->` line. If you later add a card to that initialized deck,
+writes the deck ID as `id: deck-<token>` in frontmatter and each card ID as a
+`<!-- id: card-<token> -->` line. If you later add a card to that initialized deck,
 opening review or augmentation assigns the missing card ID. Those tokens, not
 the text, are what your review history hangs on. You don't type or manage them;
 alix adds and maintains them after you explicitly initialize the file.

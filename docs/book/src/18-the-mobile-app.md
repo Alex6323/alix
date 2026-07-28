@@ -38,7 +38,7 @@ you actually maintain, point it at a real folder on the phone:
    and writes plain files in a folder another app manages, which is exactly
    what this permission grants. Enable it, go back, choose again.
 4. Pick the folder. The app lists it immediately; each initialized deck's
-   progress is written as `progress/<alix-id>.json`, exactly like the desktop,
+   progress is written as `progress/deck-<token>.json`, exactly like the desktop,
    so it travels with the folder.
 
 **Use app storage** in the same sheet switches back; nothing is deleted
@@ -70,9 +70,9 @@ Two guards back the rule:
 - If another device wrote that deck's progress minutes ago, the review screen
   says so before you grade anything.
 - If the folder contains a sync conflict file (Syncthing's
-  `progress/<alix-id>.sync-conflict-….json`), the deck list warns loudly.
+  `progress/deck-<token>.sync-conflict-….json`), the deck list warns loudly.
   Stop both writers and sync, back up the folder, and deliberately keep the
-  complete document you trust at `progress/<alix-id>.json`. Do not combine
+  complete document you trust at `progress/deck-<token>.json`. Do not combine
   schedules by hand; there is no merge. `alix doctor <folder>` on the desktop
   lists every conflict and should be clean before you resume.
 

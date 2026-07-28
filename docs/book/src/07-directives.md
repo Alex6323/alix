@@ -11,18 +11,17 @@ taking precedence. Each links to the chapter that explains it in full.
 | `##` front | card | Starts a card at column 0; the lines below are the answer. [→ ch 3](03-the-deck-format.md) |
 | `>` line | card | A note, shown after you answer. [→ ch 3](03-the-deck-format.md) |
 | `<!-- -->` | anywhere | A comment with no recognized key: ignored. |
-| `alix-id` | deck | The namespaced frontmatter deck ID marks an initialized Alix deck and authorizes maintenance of missing card IDs. A generic frontmatter `id` has no Alix meaning. [→ ch 3](03-the-deck-format.md) |
-| `id` | card | The HTML-comment card ID anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. [→ ch 3](03-the-deck-format.md) |
+| `id` | deck | The frontmatter deck ID (`deck-<token>`) marks an initialized deck and authorizes maintenance of missing card IDs. Its `deck-` prefix is what tells alix's decks apart. [→ ch 3](03-the-deck-format.md) |
+| `id` | card | The HTML-comment card ID (`card-<token>`) anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. [→ ch 3](03-the-deck-format.md) |
 | `reveal` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default) or line. |
 | `order` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `link` | deck | [tutor reference](10-tutor.md) URL, tutor-only (repeatable). |
-| `source` | deck | [Exam ground truth](12-the-ai-exam.md) (URL/file, repeatable); also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. |
-| `origin` | deck · card | Explicit current source for [tutor](10-tutor.md) context, exam grounding, and frozen-source drift reporting (usually set in a workspace's `alix.toml`; a relative path resolves from that workspace or deck). Frozen evidence lives below `assets/<alix-id>/` and remains authoritative; a usable local path or URL adds context rather than replacing it. |
+| `source` | deck | [Exam ground truth](12-the-ai-exam.md): a YAML list of URLs, files, or directories (one entry is the norm), also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. A workspace `alix.toml` may declare a `source` too, as supporting context for its members. |
 | `trace` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
-| `at` | card | A repeatable fingerprinted locator into the `source` (`file:lines @ xxh64:...`): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
+| `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
 
 Media (images, and later audio/video) isn't a directive: write a standard

@@ -1,6 +1,10 @@
 # 0003: Minted card identity
 
 - Status: Accepted
+- Details evolved by
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): ids now carry
+  `deck-`/`card-` prefixes (sub-ids `card-<token>-<n>` and `card-<token>-r`) and
+  the frontmatter deck-id key is `id`; the minted-token model itself is unchanged.
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

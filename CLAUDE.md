@@ -299,9 +299,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   walk that path through the actual code. Do not force every card into choice
   format. The deck declares the live project root as `source:`, and every card
   carries a contiguous
-  `<!-- at: file:lines @ xxh64:... -->` locator after its answer and notes,
-  followed by its regularly stamped `<!-- id: ... -->`; `alix doctor` on the
-  shared workspace must resolve and fingerprint every locator. For decision
+  `<!-- at: file:lines fingerprint: xxh64-... -->` locator after its answer and
+  notes, followed by its regularly stamped `<!-- id: card-<token> -->`;
+  `alix doctor` on the shared workspace must resolve and fingerprint every locator. For decision
   cards, prefer authored task-list
   answers (exactly one `[x]`, plausible `[ ]` distractors) so they are useful at
   Recognize depth without an AI augmentation pass. Authored distractors must

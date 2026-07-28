@@ -80,7 +80,7 @@ named topologies. Each card has its own compact guidance input, feeding the
 same `--with` steer as the command line, with a kind-specific example as its
 placeholder so you can see what a steer is good for; a batch carries each
 ticked card's own guidance. It writes the same
-`augment/<deck-alix-id>.json` document review reads, so this only saves you the
+`augment/deck-<token>.json` document review reads, so this only saves you the
 trip to the terminal.
 
 Cached per-card augmentations are tied to the question and answer they were

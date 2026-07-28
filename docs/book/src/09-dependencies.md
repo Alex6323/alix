@@ -13,17 +13,24 @@ A deck names its prerequisites with a `requires:` list in its frontmatter
 ---
 requires:
   - rust-ownership
-  - rust-references
+  - deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
 ---
 
 ## What does the borrow checker prevent?
 Aliasing a value while it's mutably borrowed.
 ```
 
-A name resolves next to the requiring deck or in your decks directory, with or
-without the `.md`. Directives aren't card content, so adding or
-changing them never touches card progress. A missing prerequisite or a dependency
-cycle is treated as non-blocking. A broken edge never hides a deck.
+Each entry is a **filename** or a **deck id**. A filename (`rust-ownership`,
+with or without the `.md`) resolves next to the requiring deck or in your decks
+directory. A deck id (`deck-` followed by a 26-character token) resolves to the
+deck that carries that id wherever it lives, so the edge survives the
+prerequisite being renamed. An entry counts as an id only when it is exactly
+`deck-` plus a 26-character canonical token and nothing else; any other value,
+including a `deck-…` name written with the `.md` extension or a `./`-prefixed
+path, is read as a filename. Prefer the id form for a rename-proof edge, the
+filename form for readability. Directives aren't card content, so adding or
+changing them never touches card progress. A missing prerequisite or a
+dependency cycle is treated as non-blocking. A broken edge never hides a deck.
 
 ## Dependencies don't change what you review
 
@@ -41,15 +48,17 @@ gate is the **exam**, not drilling. You can review any deck at any time, in any
 order; what `requires:` controls is **exam order**: a deck with a `source:`
 can't sit its exam until each of its *sourced* prerequisites has passed its own
 exam, and passing a foundation's exam unlocks the exams that build on it. A
-prerequisite with neither `source:` evidence nor a public URL `origin:` has no
-exam to pass, so it never gates: its edge is just a suggested order in the
-tree. (`alix doctor` warns when an exam-grounded deck requires one without exam
-grounding, since that edge can't gate an exam; add evidence or a URL origin to
-the prerequisite to make it real. It also flags a **dangling** `requires:`, one
-naming a deck that does not exist, so a renamed or deleted prerequisite is caught
-rather than silently dropping the edge.) (A **trace** masters by passing its exam
-(retracing the path from memory) so it gates and unlocks like any exam-grounded
-deck.)
+prerequisite with no `source:` at all has no exam to pass, so it never gates:
+its edge is just a suggested order in the tree. (`alix doctor` warns when an
+exam-grounded deck requires one without exam grounding, since that edge can't
+gate an exam; add a `source:` to the prerequisite to make it real. It also flags
+a **dangling** `requires:`, one naming a deck that does not exist, so a renamed
+or deleted prerequisite is caught rather than silently dropping the edge, and
+distinguishes an id-mode value that points nowhere from a card id pasted by
+mistake or a file that merely shares a required id's name; see
+[the doctor reference](17-command-reference.md).) (A **trace** masters by passing
+its exam (retracing the path from memory) so it gates and unlocks like any
+exam-grounded deck.)
 
 In the picker a deck whose exam is locked shows a 🔒, but it stays **drillable**:
 only the exam waits on the prerequisites.

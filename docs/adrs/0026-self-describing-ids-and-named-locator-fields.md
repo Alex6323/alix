@@ -1,6 +1,6 @@
 # 0026: Self-describing ids and named locator fields
 
-- Status: Proposed
+- Status: Accepted
 - Recorded: 2026-07-28
 - Retrospective: No
 

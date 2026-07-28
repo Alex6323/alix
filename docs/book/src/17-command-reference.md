@@ -58,7 +58,7 @@ folder, or a [workspace](08-workspaces.md)**: a folder or workspace expands to
 its member decks, and each deck resolves to the user-files root the launcher
 would serve it with (`--store` > its workspace's store > a served folder or
 configured decks root > the global store). Inside that boundary, progress is
-loaded from `progress/<alix-id>.json`; folder-wide commands aggregate the
+loaded from `progress/deck-<token>.json`; folder-wide commands aggregate the
 relevant documents in memory without creating an authoritative combined file.
 
 - `alix stats <target>`: progress overview, completion state, and a
@@ -81,9 +81,10 @@ the deck file. There's no separate command for it.
 
 ## The AI features
 
-**`alix generate <source>`** is the one AI-authoring verb. `--origin <URL>`
-retains a public current source for later tutor and exam context after local
-evidence is frozen. What generate makes follows the source:
+**`alix generate <source>`** is the one AI-authoring verb. `--source-url <URL>`
+records a public source (added to the deck or workspace `source:`) for later
+tutor and exam context after local evidence is frozen. What generate makes
+follows the source:
 
 - a **web page URL or a local file** → one
   [facts deck](11-generating-decks.md) (`-o/--output`, `--cards`, `--review`,
@@ -121,7 +122,7 @@ The rest of the AI-and-deck surface:
   [workspace](08-workspaces.md): an `alix.toml` (`--title` names it) and an
   empty `decks/` plus `assets/`. Grow it with the `--workspace` flags above.
 - `alix workspace update <dir>`: reconcile frozen source-backed members with
-  their recorded local origins. The first run stages an exact sibling
+  their recorded local sources. The first run stages an exact sibling
   workspace for review; `--apply` publishes it without another model call and
   `--discard` removes it. Changed or obsolete learning propositions retire
   their old card IDs; replacements receive fresh IDs.
@@ -144,9 +145,9 @@ notes it.
   `wormhole` binary must be installed, `alix doctor` checks). A folder is
   staged first so your personal state stays home: `progress/`, the recent list,
   `alix.local.toml`, temporary files, and conflict or backup files never travel.
-  Matching `augment/<alix-id>.json` documents do travel, including when sharing
+  Matching `augment/deck-<token>.json` documents do travel, including when sharing
   one deck. A single frozen deck also carries its complete
-  `assets/<alix-id>/` directory. Tell the receiver the code wormhole prints. No wormhole around?
+  `assets/deck-<token>/` directory. Tell the receiver the code wormhole prints. No wormhole around?
   `--zip [--output <path>]` writes the same staged copy as a `.zip` to mail or
   hand over instead.
 - `alix receive <code-or-zip>`: fetch what someone shared, by wormhole code
@@ -164,16 +165,24 @@ notes it.
 - `alix doctor [dir-or-deck]`: environment health checks, a one-line remedy per
   problem: the config parses, the progress store is readable, the decks dir
   scans, and the backend CLI is on your PATH. Name a **deck file** to lint it
-  in depth (syntax, fingerprinted `at:` locators, and frozen cards that have
+  in depth (syntax, named-field `at:` locators, and frozen cards that have
   drifted from their live source). It withholds stale excerpts and reports
   a unique exact relocation, changed content, ambiguity, or a missing
-  fingerprint. Over a **folder or workspace** it also reports
-  identity problems across the decks as a set: duplicate deck or card tokens
-  (naming which copy keeps the earned progress), store keys matching no live
-  card or deck (orphans, clear them with `alix reset --orphans`), a
+  fingerprint. A deck still carrying pre-prefix ids, an old ` @ `/` from `
+  locator, or a retired `alix-id:`/`origin:` key is named as un-converted, with
+  the deck conversion tool as the remedy. Over a **folder or workspace** it also
+  reports identity problems across the decks as a set: duplicate deck or card
+  tokens (naming which copy keeps the earned progress), store keys matching no
+  live card or deck (orphans, clear them with `alix reset --orphans`), a
   non-canonical token, a frontmatter that can't be stamped, an id marker away
   from its card's closing line (the position stamping mints at), and cards
-  still awaiting a token. It also names deck-like Markdown ignored until explicitly
+  still awaiting a token. For `requires:` it separates a dangling filename edge
+  from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, a
+  file that only shares a required id's name (the id wins, so add the `.md`
+  extension to mean the file), and an un-prefixed token it suggests writing as
+  `deck-<token>`. It nudges a `source:` that lists more than a few entries
+  toward their common directory, and flags a `source:` pointing into `assets/`
+  as un-converted. It also names deck-like Markdown ignored until explicitly
   initialized, invalid or orphaned per-deck progress or augmentation documents,
   and synchronization conflict copies. Workspace checks also reject live source
   evidence, missing or cross-deck assets, local images outside the owning deck

@@ -1,6 +1,7 @@
 # 0021: Deck-owned frozen assets
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md)
 - Recorded: 2026-07-27
 - Retrospective: No
 - Supersedes:

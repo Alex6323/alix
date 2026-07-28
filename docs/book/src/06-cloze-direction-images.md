@@ -104,20 +104,21 @@ source: src/string.rs
 
 ## What does the `String` struct hold?
 A `Vec<u8>` (its bytes).
-<!-- at: src/string.rs:1-3 @ xxh64:0123456789abcdef -->
+<!-- at: src/string.rs:1-3 fingerprint: xxh64-0123456789abcdef -->
 ```
 
-The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses:
-`file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when `source:` is a single
-file. The `@ xxh64:...` value fingerprints the displayed source text; alix
-writes it when it creates a cited card or when you explicitly repair a
-hand-authored citation. A fact card may repeat the whole directive when its
-answer rests on several disjoint source ranges:
+The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses. Its
+fields are named and ordered: `at:` is the source path and line range (e.g.
+`src/string.rs:1-3`, or just `lines` when `source:` is a single file), and
+`fingerprint:` is an `xxh64-<hex>` digest of the displayed source text. alix
+writes the fingerprint when it creates a cited card or when you explicitly
+repair a hand-authored citation. A fact card may repeat the whole directive when
+its answer rests on several disjoint source ranges:
 
 ```markdown
-<!-- at: src/state.rs:64-74 @ xxh64:0123456789abcdef -->
-<!-- at: src/state.rs:114-118 @ xxh64:123456789abcdef0 -->
-<!-- at: src/state.rs:152-158 @ xxh64:23456789abcdef01 -->
+<!-- at: src/state.rs:64-74 fingerprint: xxh64-0123456789abcdef -->
+<!-- at: src/state.rs:114-118 fingerprint: xxh64-123456789abcdef0 -->
+<!-- at: src/state.rs:152-158 fingerprint: xxh64-23456789abcdef01 -->
 ```
 
 Each locator remains one contiguous range; separate directives never imply
@@ -143,7 +144,9 @@ fingerprint drift without writing. After reviewing the cited text,
 rebases a uniquely relocated exact excerpt; changed or ambiguous excerpts
 remain untouched for semantic review. Initializing a workspace member goes one
 further and **freezes** its source evidence and local images below
-`assets/<alix-id>/`, so the deck travels without the original source and the
-quotes never shift. `origin:` and each citation's `from` value preserve where
-the evidence came from for drift reporting without making runtime review depend
-on the live source.
+`assets/deck-<token>/`, so the deck travels without the original source and the
+quotes never shift. Freezing stores only the cited excerpt, never the whole
+file, and leaves the deck's `source:` pointed at the real material: each frozen
+citation keeps its real path in `at:` and gains an `asset:` field naming the
+content-addressed object, so a drift check can still compare against the live
+source when it is reachable.
