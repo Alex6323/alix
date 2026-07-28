@@ -147,7 +147,12 @@ A source citation is `<!-- at: <src>:<lines> fingerprint: xxh64-<hex> asset: sha
 ### One source concept: `origin:` merges into `source:` (ruled 2026-07-28)
 
 There is one key for "where this deck's material lives": `source:`,
-multi-valued, each value a URL or a local path. The separate `origin:` key
+multi-valued as a YAML list only, each entry a single expression: a URL, a
+file path, or a directory (ruled 2026-07-28). The `" + "` multi-expression
+string form is retired: its only producer was the deleted freeze machinery,
+and the list is the readable form. A source value containing ` + ` is a hard
+error hinting "one source per list entry". One entry is the norm; `doctor`
+nudges toward a common root above three. The separate `origin:` key
 (deck frontmatter and workspace manifest) is retired. The historical reason
 for two keys, freezing rewrote `source:` to the frozen snapshot while
 `origin:` kept the real pointer, was abolished by the source-never-assets
@@ -267,6 +272,9 @@ Surfaces the migration must cover (enumerated so none is silent):
   `source:` list when distinct (creates the list when absent), drops it when
   duplicate, deletes the `origin:` line, and converts a manifest `origin` to
   the manifest default `source`.
+- A `" + "`-joined source value: the tool splits it into list entries (the
+  known instances are the frozen assets lists, whose `source:` is replaced
+  wholesale by the recorded origin anyway).
 - Progress: reset (deleted). Old `progress/<bareid>.json` that survives is
   positively flagged by `doctor` as un-migrated.
 - In-repo committed decks, test fixtures, and frozen example traces: rewritten
