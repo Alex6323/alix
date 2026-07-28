@@ -79,10 +79,16 @@ filename-mode value resolves as today via `resolve_dep`.
 
 Collisions are decided, not left implicit:
 
-- Only a file literally named `deck-<canonical-26-token>.md` can shadow an id.
-  The id wins; `doctor` reports the shadowing file; a `./`-prefixed path
-  (`requires: ./deck-<...>`) is the explicit filename escape (`resolve_dep`
-  already treats it as a raw path).
+- Shadowing exists only for the EXTENSION-LESS spelling: `requires:
+  deck-<26tok>.md` contains a `.`, fails "canonical-26 and nothing else", and
+  is already filename-mode, so the extension is the natural filename escape.
+  A bare `requires: deck-<26tok>` is id-mode even when a file of that name
+  exists: classification never consults the filesystem (a created or deleted
+  file must not flip an edge's meaning), a value that is exactly an id is a
+  pasted id, and the id reading is the rename-stable one. `doctor` reports
+  the shadowing file and, on a dangling bare value, hints "did you mean the
+  file? write the `.md` extension". A `./`-prefixed path also stays a raw
+  filename reference.
 - A `card-<canonical-26-token>` value in `requires:` is a wrong-type error (a
   pasted card id; a card is never a prerequisite), distinct from "dangling".
   A non-canonical value like `card-tricks` stays a filename.
@@ -196,9 +202,10 @@ survive `alix`'s own id auto-minting, which fires precisely on "no deck id" and
   directory, in-repo fixture, and documentation surface (see Compatibility). The
   frozen-citation reader is rebuilt to read asset bytes.
 - Deliberately unsupported: referencing a file literally named after a
-  canonical id (`deck-<26-token>.md`) by bare filename in `requires:` (use
-  `./`); requiring a deck by a hand-typed non-canonical id; combining cloze
-  and reversed suffixes; unknown locator keys in this format version.
+  canonical id by the extension-less spelling in `requires:` (write the `.md`
+  extension, or a `./` path); requiring a deck by a hand-typed non-canonical
+  id; combining cloze and reversed suffixes; unknown locator keys in this
+  format version.
 
 ## Alternatives considered
 
