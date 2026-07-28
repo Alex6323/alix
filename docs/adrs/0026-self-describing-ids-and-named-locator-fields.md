@@ -114,13 +114,22 @@ A source citation is `<!-- at: <src>:<lines> fingerprint: xxh64-<hex> asset: sha
 - Field roles are inverted from the old grammar: the old `at:` held the frozen
   asset name and the old ` from ` tail held the real path. In the new grammar
   the real path is always `at:` and the frozen object moves to `asset:`.
-- Reader semantics: when `asset:` is present, excerpt bytes and fingerprint
-  verification target `assets/<deck-id>/<asset>` (the frozen bytes, which is the
-  point of freezing); `at:`'s path and lines are display provenance and the
-  coordinates for live relocation. At freeze time the asset is a whole-file copy
-  so `at:` lines and asset lines coincide. Relocation scanning for an
-  asset-backed citation is defined against the live `at:` path for display only
-  and never rewrites the frozen fingerprint.
+- What a frozen asset IS (decided 2026-07-28): the excerpt exactly, nothing
+  more. Freezing stores only what a citation requires; uncited lines never
+  enter the asset. The frozen excerpt is display evidence and the drift
+  baseline (what the card was authored against), NOT a substitute source for
+  the AI: the tutor and examiner ground against the live source (a local path
+  or a fetchable origin URL) and must tell the user when it is unavailable
+  rather than silently degrade. Exception, deliberate: a self-contained frozen
+  workspace whose `source:` lives inside `assets/` (the shipped example
+  traces) is its own source by construction. A single-file source is still
+  frozen whole: there the file is the declared source unit.
+- Reader semantics: when `asset:` is present, the asset's bytes are read in
+  full and fingerprint verification targets them (integrity of the evidence);
+  display numbers the excerpt from `at:`'s start line (presentation
+  arithmetic; asset-local numbers are never shown). `at:`'s path and lines are
+  the real-source provenance. Relocation scanning for an asset-backed citation
+  never rewrites the frozen fingerprint.
 
 ### Loud break at the parser (no compatibility path)
 
@@ -246,8 +255,11 @@ unintended bytes.
 - `doctor`: bare-token detection across ids, markers, `requires:`, locators, and
   state documents; the wrong-type `card-` in `requires:` case; the prefix-aware
   canonical-token check.
-- Frozen-citation reader: excerpt and fingerprint target the asset bytes;
-  regression-test the directory-source and whole-file cases.
+- Frozen-citation reader: excerpt and fingerprint target the asset bytes read
+  in full, displayed at `at:`-derived numbering; regression-test the
+  directory-source (excerpt object) and single-file-source (whole-file object)
+  cases, and that uncited lines of a cited directory-source file never enter
+  the asset.
 - Contract snapshots regenerate to the prefixed id and the inverted locator wire
   value; `docs/API.md` matches.
 - The disposable tool is tested on fixtures (including a frozen deck with assets
