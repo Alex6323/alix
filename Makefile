@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -105,6 +105,12 @@ fmt-roadmap:
 fmt-changelog:
 	python3 scripts/fmt-changelog.py $(ARGS)
 
+# Structural CHANGELOG guard: exactly one Unreleased heading first, no
+# duplicate release headings, and the heading count never decreases vs HEAD
+# (a decrease is a truncation, which nothing else gates).
+changelog-check:
+	@sh scripts/changelog-check.sh
+
 # Roadmap stats, read-only: items by state (done/partial/open) and the open
 # items split by priority. The deterministic half of a roadmap audit; whether
 # an "open" item is secretly already shipped still needs a reader (see
@@ -114,7 +120,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: pre-1-0-check deps-check lint test site-media-check docs-audit-manifest-check toolchain-check
+check: pre-1-0-check deps-check changelog-check lint test site-media-check docs-audit-manifest-check toolchain-check
 
 # The Rust CI bundle: nightly formatting, clippy + tests under `-Dwarnings`, the
 # lean core, and coverage with the warnings gate cleared (coverage instruments
