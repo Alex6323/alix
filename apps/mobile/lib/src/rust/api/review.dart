@@ -236,7 +236,7 @@ class ChoiceFeedback {
 class CrumbState {
   final List<String> regions;
   final int current;
-  final List<Float32List> cells;
+  final List<List<String>> cells;
 
   const CrumbState({
     required this.regions,

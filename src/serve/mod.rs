@@ -187,6 +187,21 @@ fn flush_mutation(store: &Store, dirty: &mut bool, save_error: &mut Option<Strin
     flush_store(store, dirty, save_error);
 }
 
+// After any handler that advanced the session without otherwise mutating the
+// store: a first presentation writes a stamp, and it persists with the same
+// per-mutation cadence as a grade. Steady-state polls stamp nothing and
+// write nothing.
+fn flush_presented(
+    r: &mut Reviewing,
+    store: &Store,
+    dirty: &mut bool,
+    save_error: &mut Option<String>,
+) {
+    if r.session.take_presented_stamped() {
+        flush_mutation(store, dirty, save_error);
+    }
+}
+
 pub fn run_review(
     store: Store,
     recent: RecentDecks,
@@ -415,7 +430,8 @@ pub fn run_review(
                     respond_json(request, &browse_payload(Some(b)))
                 } else {
                     if let Some(r) = reviewing.as_mut() {
-                        r.session.poll(store, now_ms());
+                        r.session.poll(&mut *store, now_ms());
+                        flush_presented(r, store, store_dirty, save_error);
                     }
                     respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()))
                 }
@@ -449,6 +465,9 @@ pub fn run_review(
                                     let _ = recent.save();
                                 }
                                 let mut r = Reviewing::new(b);
+                                // `assemble::select` already saved the store,
+                                // stamp included.
+                                let _ = r.session.take_presented_stamped();
                                 r.rotate_variant();
                                 *reviewing = Some(r);
                                 *walking = None;
@@ -993,6 +1012,7 @@ pub fn run_review(
                         {
                             store::note_badges(&mut *store, &deck_id, r.session.cards(), now);
                         }
+                        let _ = r.session.take_presented_stamped();
                         flush_mutation(store, store_dirty, save_error);
                         r.rotate_variant();
                         respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
@@ -1005,7 +1025,8 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                r.session.skip(store, now_ms());
+                r.session.skip(&mut *store, now_ms());
+                flush_presented(r, store, store_dirty, save_error);
                 r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
@@ -1015,6 +1036,7 @@ pub fn run_review(
                     continue;
                 };
                 r.session.acquire_current(&mut *store, now_ms());
+                let _ = r.session.take_presented_stamped();
                 flush_mutation(store, store_dirty, save_error);
                 r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
@@ -1052,7 +1074,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                let dropped = r.session.remove_current(store, now_ms());
+                let dropped = r.session.remove_current(&mut *store, now_ms());
                 if let Some(first) = dropped.first() {
                     let deck_id = first.deck_id.to_string();
                     let line = first.line;
@@ -1061,9 +1083,11 @@ pub fn run_review(
                             store.remove(&id);
                         }
                     }
+                    let _ = r.session.take_presented_stamped();
                     flush_mutation(store, store_dirty, save_error);
                     r.files.remove_block(&deck_id, line);
                 }
+                flush_presented(r, store, store_dirty, save_error);
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/promote") => {
@@ -1092,7 +1116,8 @@ pub fn run_review(
                     continue;
                 }
                 flush_mutation(store, store_dirty, save_error);
-                r.session.poll(store, now_ms());
+                r.session.poll(&mut *store, now_ms());
+                flush_presented(r, store, store_dirty, save_error);
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
             (Method::Post, "/api/restart") => {
@@ -1100,7 +1125,8 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                r.session.restart(store, now_ms());
+                r.session.restart(&mut *store, now_ms());
+                flush_presented(r, store, store_dirty, save_error);
                 r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }

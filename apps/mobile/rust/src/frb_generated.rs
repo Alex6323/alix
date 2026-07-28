@@ -26,16 +26,10 @@
 
 // Section: imports
 
-use flutter_rust_bridge::{
-    Handler, IntoIntoDart,
-    for_generated::{
-        Lifetimeable, Lockable,
-        byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt},
-        transform_result_dco,
-    },
-};
-
 use crate::api::review::*;
+use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
+use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+use flutter_rust_bridge::{Handler, IntoIntoDart};
 
 // Section: boilerplate
 
@@ -1739,7 +1733,7 @@ impl SseDecode for crate::api::review::CrumbState {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_regions = <Vec<String>>::sse_decode(deserializer);
         let mut var_current = <u32>::sse_decode(deserializer);
-        let mut var_cells = <Vec<Vec<f32>>>::sse_decode(deserializer);
+        let mut var_cells = <Vec<Vec<String>>>::sse_decode(deserializer);
         return crate::api::review::CrumbState {
             regions: var_regions,
             current: var_current,
@@ -1812,13 +1806,6 @@ impl SseDecode for crate::api::review::Depth {
             2 => crate::api::review::Depth::Reconstruct,
             _ => unreachable!("Invalid variant for Depth: {}", inner),
         };
-    }
-}
-
-impl SseDecode for f32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        deserializer.cursor.read_f32::<NativeEndian>().unwrap()
     }
 }
 
@@ -1965,6 +1952,18 @@ impl SseDecode for Vec<crate::api::review::InlineRun> {
     }
 }
 
+impl SseDecode for Vec<Vec<String>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<Vec<String>>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<Vec<crate::api::review::InlineRun>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1979,18 +1978,6 @@ impl SseDecode for Vec<Vec<crate::api::review::InlineRun>> {
     }
 }
 
-impl SseDecode for Vec<Vec<f32>> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = Vec::with_capacity(len_ as usize);
-        for idx_ in 0..len_ {
-            ans_.push(<Vec<f32>>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
 impl SseDecode for Vec<crate::api::review::NoteUnit> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1998,18 +1985,6 @@ impl SseDecode for Vec<crate::api::review::NoteUnit> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::review::NoteUnit>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
-impl SseDecode for Vec<f32> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = Vec::with_capacity(len_ as usize);
-        for idx_ in 0..len_ {
-            ans_.push(<f32>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -3380,7 +3355,7 @@ impl SseEncode for crate::api::review::CrumbState {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<String>>::sse_encode(self.regions, serializer);
         <u32>::sse_encode(self.current, serializer);
-        <Vec<Vec<f32>>>::sse_encode(self.cells, serializer);
+        <Vec<Vec<String>>>::sse_encode(self.cells, serializer);
     }
 }
 
@@ -3429,13 +3404,6 @@ impl SseEncode for crate::api::review::Depth {
             },
             serializer,
         );
-    }
-}
-
-impl SseEncode for f32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        serializer.cursor.write_f32::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -3563,6 +3531,16 @@ impl SseEncode for Vec<crate::api::review::InlineRun> {
     }
 }
 
+impl SseEncode for Vec<Vec<String>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <Vec<String>>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<Vec<crate::api::review::InlineRun>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3573,32 +3551,12 @@ impl SseEncode for Vec<Vec<crate::api::review::InlineRun>> {
     }
 }
 
-impl SseEncode for Vec<Vec<f32>> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <Vec<f32>>::sse_encode(item, serializer);
-        }
-    }
-}
-
 impl SseEncode for Vec<crate::api::review::NoteUnit> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::review::NoteUnit>::sse_encode(item, serializer);
-        }
-    }
-}
-
-impl SseEncode for Vec<f32> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <f32>::sse_encode(item, serializer);
         }
     }
 }
@@ -4044,17 +4002,13 @@ mod io {
 
     // Section: imports
 
-    use flutter_rust_bridge::{
-        Handler, IntoIntoDart,
-        for_generated::{
-            Lifetimeable, Lockable,
-            byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt},
-            transform_result_dco,
-        },
-    };
-
     use super::*;
     use crate::api::review::*;
+    use flutter_rust_bridge::for_generated::byteorder::{
+        NativeEndian, ReadBytesExt, WriteBytesExt,
+    };
+    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
 
@@ -4099,18 +4053,15 @@ mod web {
 
     // Section: imports
 
-    use flutter_rust_bridge::{
-        Handler, IntoIntoDart,
-        for_generated::{
-            Lifetimeable, Lockable,
-            byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt},
-            transform_result_dco, wasm_bindgen,
-            wasm_bindgen::prelude::*,
-        },
-    };
-
     use super::*;
     use crate::api::review::*;
+    use flutter_rust_bridge::for_generated::byteorder::{
+        NativeEndian, ReadBytesExt, WriteBytesExt,
+    };
+    use flutter_rust_bridge::for_generated::wasm_bindgen;
+    use flutter_rust_bridge::for_generated::wasm_bindgen::prelude::*;
+    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
 

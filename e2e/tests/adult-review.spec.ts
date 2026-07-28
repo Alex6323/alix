@@ -266,24 +266,50 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click(); // focuses the row → opens the drawer
 
-  // A sibling row's drawer may still be animating closed as wild's opens, so
-  // wait for a single stable drawer before asserting on it.
-  await expect(page.locator(".drawer")).toHaveCount(1);
-  const drawer = page.locator(".drawer");
+  // A sibling row's drawer may still be animating closed (or re-rendering
+  // from its in-flight fetch) as wild's opens, so scope every assertion to
+  // wild's own drawer instead of counting drawers globally.
+  const drawer = page.locator(".drawer").filter({ hasText: "2 cards" });
+  await expect(drawer).toHaveCount(1);
   await expect(drawer.locator(".drawer-preamble")).toHaveText(/wild animals/i);
   // The progress funnel, top-right: both wild cards counted lib-side, and an
   // earlier test met (acquired) both, so the "seen" component appears while
   // "learned"/"retired" stay hidden at zero.
   await expect(drawer.locator(".drawer-size")).toHaveText("2 cards · 2 seen");
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2); // one per stamped card
-  // An earlier test met (acquired, ungraded) both wild cards, so each cell reads
-  // as a dim "seen" cell rather than the never-met neutral one. Before the seen
-  // tier existed, an acquired-but-ungraded card rendered identical to untouched.
-  await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(2);
+  // Earlier tests acknowledged ("Seen") both wild cards, so each cell reads as
+  // the white acquired tier (above grey seen, below the learned bands).
+  await expect(drawer.locator(".crumb-cell.acquired")).toHaveCount(2);
+  await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(0);
   await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(0);
   await expect(page.locator(".drawer-due")).toHaveCount(0); // the old due count is gone
   await drawer.screenshot({ path: "/tmp/claude-1000/-home-me-dev-developer-alex6323-projects-flashcard2-claude-agent-2/ea6ad9c5-47cc-4ff1-9a0d-b19dd66cad08/scratchpad/drawer.png" });
 });
+
+test("a card merely shown in an earlier session reads as a grey seen cell", async ({ page }) => {
+  // The task-list test above selected `fronts` and rendered its only card
+  // without acknowledging or grading it: presented, nothing more. The drawer
+  // must show that as the grey seen tier, not as untouched.
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "fronts").click();
+
+  // Scoped to fronts' own drawer: a sibling drawer may linger mid-close.
+  const drawer = page.locator(".drawer").filter({ hasText: "1 seen" });
+  await expect(drawer).toHaveCount(1);
+  await expect(drawer.locator(".drawer-size")).toHaveText("1 card · 1 seen");
+  await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(1);
+  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(0);
+  await expect(drawer.locator(".crumb-cell.acquired")).toHaveCount(0);
+});
+
+// KNOWN GAP: the learned green/yellow/red heatmap bands are unreachable in
+// e2e: a learned cell needs a GRADUATED card (two spaced Goods across the
+// 10-minute learning hold), and the fixture contract (../README.md) bans both
+// sleeps and synthesised progress. The banding itself is pinned lib-side
+// (src/session.rs learned_tiers_band_current_retrievability_not_history) and
+// on the wire (src/serve/contract.rs, tests/api.rs); only the CSS-class hookup
+// for the three learned strings lacks browser coverage.
+test.fixme("a graduated deck shows green/yellow/red learned cells in the drawer", () => {});
 
 test("the ☰ menu opens without error", async ({ page }) => {
   await page.locator("#kebab").click();

@@ -19,7 +19,6 @@
 // needs no card id at all: a deck with no cached topology always crumbs
 // null.
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,12 +29,6 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
 import 'support/deck_fixture.dart';
-
-/// The web's cell color formula (assets/web/review.html), computed
-/// independently here so the assertions don't just echo the production
-/// code's literals back at it.
-Color _cellColor(double s) =>
-    HSLColor.fromAHSL(1, 120 * s, 0.62, (40 + 12 * s) / 100).toColor();
 
 void main() {
   setUpAll(() async => RustLib.init());
@@ -50,31 +43,32 @@ void main() {
     ));
   }
 
-  testWidgets('a topology crumb renders its region names and at least one strength cell',
+  testWidgets('a topology crumb renders its region names and banded tier cells',
       (tester) async {
     final crumb = CrumbState(
       regions: const ['Intro', 'Body'],
       current: 1,
-      cells: [
-        Float32List.fromList([0.0]),
-        Float32List.fromList([1.0]),
+      cells: const [
+        ['learned-weak'],
+        ['learned-strong'],
       ],
     );
     await pumpStrip(tester, crumb);
 
+    final tokens = alixDark().alix;
     expect(find.text('Intro'), findsOneWidget);
     expect(find.text('Body'), findsOneWidget, reason: 'the current region is present');
     expect(
       find.byWidgetPredicate(
-          (w) => w is Container && (w.decoration as BoxDecoration?)?.color == _cellColor(1.0)),
+          (w) => w is Container && (w.decoration as BoxDecoration?)?.color == tokens.good),
       findsOneWidget,
-      reason: 'the strong cell renders via the web hsl formula',
+      reason: 'a strong learned cell takes the pass green',
     );
     expect(
       find.byWidgetPredicate(
-          (w) => w is Container && (w.decoration as BoxDecoration?)?.color == _cellColor(0.0)),
+          (w) => w is Container && (w.decoration as BoxDecoration?)?.color == tokens.again),
       findsOneWidget,
-      reason: 'the weak cell renders via the web hsl formula',
+      reason: 'a weak learned cell takes the fail red',
     );
   });
 
@@ -82,9 +76,9 @@ void main() {
     final crumb = CrumbState(
       regions: const ['Intro', 'Body'],
       current: 1,
-      cells: [
-        Float32List.fromList([0.5]),
-        Float32List.fromList([0.5]),
+      cells: const [
+        ['learned-fading'],
+        ['learned-fading'],
       ],
     );
     await pumpStrip(tester, crumb);
@@ -103,7 +97,18 @@ void main() {
     final crumb = CrumbState(
       regions: List.generate(12, (i) => 'A very long region name number $i that keeps going on'),
       current: 6,
-      cells: List.generate(12, (_) => Float32List.fromList(List.generate(20, (j) => j / 19))),
+      cells: List.generate(
+        12,
+        (_) => const [
+          'untouched',
+          'seen',
+          'acquired',
+          'learned-strong',
+          'learned-fading',
+          'learned-weak',
+          'retired',
+        ],
+      ),
     );
     await pumpStrip(tester, crumb);
 

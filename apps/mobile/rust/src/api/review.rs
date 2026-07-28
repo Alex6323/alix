@@ -233,7 +233,9 @@ pub struct TutorCard {
 pub struct CrumbState {
     pub regions: Vec<String>,
     pub current: u32,
-    pub cells: Vec<Vec<f32>>,
+    // Wire names of the lib's `CardTier` (untouched/seen/acquired/
+    // learned-strong/learned-fading/learned-weak/retired).
+    pub cells: Vec<Vec<String>>,
 }
 
 pub struct ReviewSession {
@@ -329,8 +331,10 @@ impl ReviewSession {
     pub fn grade(&mut self, grade: Grade, now_ms: Option<u64>) -> Result<ReviewState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
         self.session.grade(&mut self.store, grade.into(), now);
+        // Poll before save: the advance may stamp the next card's first
+        // presentation, and the save must carry it.
+        self.session.poll(&mut self.store, now);
         self.store.save()?;
-        self.session.poll(&self.store, now);
         Ok(self.state(Some(now)))
     }
 
@@ -338,8 +342,8 @@ impl ReviewSession {
     pub fn acquire(&mut self, now_ms: Option<u64>) -> Result<ReviewState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
         self.session.acquire_current(&mut self.store, now);
+        self.session.poll(&mut self.store, now);
         self.store.save()?;
-        self.session.poll(&self.store, now);
         Ok(self.state(Some(now)))
     }
 
@@ -374,7 +378,17 @@ impl ReviewSession {
             cells: topo
                 .regions
                 .iter()
-                .map(|reg| alix::session::card_strengths(&reg.cards, &self.store, now))
+                .map(|reg| {
+                    alix::session::card_tiers(
+                        &reg.cards,
+                        &self.store,
+                        now,
+                        self.session.retire_after_days(),
+                    )
+                    .into_iter()
+                    .map(|tier| tier.wire_name().to_string())
+                    .collect()
+                })
                 .collect(),
         })
     }

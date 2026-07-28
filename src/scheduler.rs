@@ -216,7 +216,10 @@ impl Scheduler for Fsrs {
             // Established at the other depth: due now, skipping the acquire
             // warm-up (its own schedule is created lazily on the first grade).
             None if state.recall.is_some() || state.reconstruct.is_some() => 0,
-            None => state.acquired_ms.saturating_add(self.acquire_cooldown_ms),
+            None => state
+                .acquired_ms
+                .unwrap_or_default()
+                .saturating_add(self.acquire_cooldown_ms),
         }
     }
 

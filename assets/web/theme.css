@@ -102,6 +102,11 @@
   --faint: var(--dim);
   --accent-ink: var(--void);
   --brand-text: var(--bolt);
+
+  /* retired heatmap cells: deliberately purple, apart from every theme's
+     good/warn/again trio and accent; a mid value that reads on dark and
+     light grounds (themes may override). */
+  --retired: #9a7bd0;
 }
 @media (prefers-reduced-motion: reduce) {
   :root { --transition-fast: 0s; --transition-med: 0s; }

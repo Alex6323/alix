@@ -222,7 +222,7 @@
   .front-text pre { margin: 4px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.25); border-radius: 8px; font: 0.82rem/1.45 var(--mono); }
   /* The topological orientation breadcrumb: each region is its name over a thin
      per-card heatmap bar. Two channels, kept apart: name weight/opacity = where
-     you are; bar color (red→green) = how solid each card in the area is. Clips
+     you are; bar color = each card's lifecycle tier (see paintHeatCell). Clips
      rather than wraps to stay a thin strip. */
   .crumb { display: flex; align-items: flex-start; gap: 14px; flex-wrap: nowrap;
            overflow: hidden; max-width: 100%; }
@@ -236,14 +236,14 @@
   .crumb-strip { display: flex; justify-content: center; flex: none; padding: 14px 24px 2px; }
   .crumb-strip:empty { display: none; }
   /* The picker's focus drawer: opens under any selected deck. It shows the
-     deck's preamble (the prose under its H1, if any) and a per-card
-     retrievability heatmap — red (weak) → green (learned), neutral where a card
-     has no data yet. A deck with a topology augmentation splits that heatmap
-     into named regions you can pick to drill; a deck without one shows a single
-     whole-deck bar. The reveal is a single `height` transition on the clipping
-     wrapper: the drawer's content is laid out once and `overflow: hidden` just
-     moves the clip line, so opening and closing stay smooth, and it always
-     animates to height 0 *before* it's removed (never a snap). */
+     deck's preamble (the prose under its H1, if any) and a per-card tier
+     heatmap (see paintHeatCell for the five tiers). A deck with a topology
+     augmentation splits that heatmap into named regions you can pick to
+     drill; a deck without one shows a single whole-deck bar. The reveal is a
+     single `height` transition on the clipping wrapper: the drawer's content
+     is laid out once and `overflow: hidden` just moves the clip line, so
+     opening and closing stay smooth, and it always animates to height 0
+     *before* it's removed (never a snap). */
   .drawer-wrap { margin-left: 22px; overflow: hidden; flex: 0 0 auto; }
                  /* height animated via the Web Animations API; flex:0 0 auto stops the
                     flex column shrinking it to 0 (overflow:hidden ⇒ min-height:0) */
@@ -273,6 +273,11 @@
                      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .crumb-cell.empty { background: color-mix(in srgb, var(--dim) 26%, transparent); }
   .crumb-cell.seen { background: color-mix(in srgb, var(--dim) 60%, transparent); }
+  .crumb-cell.acquired { background: color-mix(in srgb, var(--ink) 85%, transparent); }
+  .crumb-cell.learned-strong { background: var(--good); }
+  .crumb-cell.learned-fading { background: var(--warn); }
+  .crumb-cell.learned-weak { background: var(--again); }
+  .crumb-cell.retired { background: var(--retired); }
   .drawer-flat { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
@@ -977,14 +982,12 @@ function remove()  { api("/api/remove", post({})).then(apply); }
 function promote() { api("/api/promote", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
 
-// One heatmap cell's fill: retrievability 0 (red) → 1 (green). Two negative
-// values below that band: -2 is a card seen in an acquire pass but not yet
-// graded (a dim "seen" cell, so acquire work isn't invisible), and -1 a card
-// never met (neutral), so a fresh deck reads as unlearned rather than failing.
-function paintHeatCell(cellEl, s) {
-  if (s <= -2) { cellEl.classList.add("seen"); return; }
-  if (s < 0) { cellEl.classList.add("empty"); return; }
-  cellEl.style.background = `hsl(${Math.round(120 * s)}, 62%, ${40 + 12 * s}%)`;
+// One heatmap cell's fill: the lib's per-card tier. untouched = neutral,
+// seen = dim grey (presented, never yet correct), acquired = white (correct
+// once, not graduated), learned-strong/-fading/-weak = green/yellow/red by
+// current retrievability, retired = purple.
+function paintHeatCell(cellEl, tier) {
+  cellEl.classList.add(tier === "untouched" ? "empty" : tier);
 }
 // A trace picked from the picker returns a WalkDto (kind "walk"); a fact deck
 // returns a review StateDto (kind "review"). `isWalk` is the single place the two
@@ -3188,8 +3191,8 @@ function renderCard() {
   // question region
   // Orientation breadcrumb — rendered into the #crumbStrip pinned just below the
   // header hairline, centered: each region is its name (bold = where you are) over a
-  // thin per-card heatmap bar — every card a cell, red (weak) → green (strong),
-  // so the line doubles as a progress map that greens up as a region is learned.
+  // thin per-card heatmap bar, every card a tier cell (see paintHeatCell), so the
+  // line doubles as a progress map that greens up as a region is learned.
   if (c.crumb && c.crumb.regions.length) {
     const cr = c.crumb;
     const bc = el("div", "crumb");

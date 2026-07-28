@@ -13,7 +13,7 @@ use crate::{
     inline::{DisplayProjector, InlineRun},
     render::NoteUnit,
     review::{self, CardView},
-    session::now_ms,
+    session::{CardTier, now_ms},
     source::{Excerpt, relabel_for_display},
     store::Store,
     trace::{Delta, Phase},
@@ -55,13 +55,13 @@ pub(super) struct ImageDto {
 pub(super) struct CrumbDto {
     pub(super) regions: Vec<String>,
     pub(super) current: usize,
-    pub(super) cells: Vec<Vec<f32>>,
+    pub(super) cells: Vec<Vec<CardTier>>,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub(super) struct DeckDrawerDto {
     pub(super) preamble: Option<String>,
-    pub(super) heatmap: Vec<f32>,
+    pub(super) heatmap: Vec<CardTier>,
     pub(super) topologies: Vec<TopologyInfoDto>,
     /// Total cards in the deck. Not derivable from `heatmap.len()`, which counts
     /// only stamped cards.
@@ -84,7 +84,7 @@ pub(super) struct TopologyInfoDto {
 #[derive(Debug, Serialize)]
 pub(super) struct RegionInfoDto {
     pub(super) name: String,
-    pub(super) cells: Vec<f32>,
+    pub(super) cells: Vec<CardTier>,
 }
 
 #[derive(Debug, Serialize)]
@@ -986,7 +986,14 @@ pub(super) fn review_state(
                 cells: topo
                     .regions
                     .iter()
-                    .map(|reg| crate::session::card_strengths(&reg.cards, store, now_ms()))
+                    .map(|reg| {
+                        crate::session::card_tiers(
+                            &reg.cards,
+                            store,
+                            now_ms(),
+                            session.retire_after_days(),
+                        )
+                    })
                     .collect(),
             });
         }
@@ -1069,10 +1076,11 @@ pub(super) fn deck_drawer_dto(
     let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
     let now = now_ms();
     // A flat per-card heatmap over the whole deck, in file order; a topology (if
-    // any) re-groups the same signal into named regions below. Retrievability is
-    // pinned to Recall: a deck-wide signal, not per-session.
+    // any) re-groups the same signal into named regions below. The learned
+    // bands are pinned to Recall retrievability: a deck-wide signal, not
+    // per-session.
     let ids: Vec<String> = deck.cards.iter().filter_map(|c| c.id()).collect();
-    let heatmap = crate::session::card_strengths(&ids, store, now);
+    let heatmap = crate::session::card_tiers(&ids, store, now, retire_after_days);
     let topologies = augment
         .topologies_for(&deck_tokens)
         .into_iter()
@@ -1084,7 +1092,7 @@ pub(super) fn deck_drawer_dto(
                 .iter()
                 .map(|r| RegionInfoDto {
                     name: r.name.clone(),
-                    cells: crate::session::card_strengths(&r.cards, store, now),
+                    cells: crate::session::card_tiers(&r.cards, store, now, retire_after_days),
                 })
                 .collect(),
         })

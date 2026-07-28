@@ -1545,13 +1545,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
 enum _ChipKind { base, primary, failed, partly, passed, quiet, verdict }
 
 /// The region breadcrumb strip: each region's name over a thin per-card
-/// heatmap bar (red = weak, green = strong; the web's `hsl(120*s, 62%,
-/// (40+12*s)%)`), the current region emphasized (full ink, bold) and the
-/// rest dimmed. A fixed-height, horizontally scrolling row, so a long path
-/// or many regions never grows the header (clip, never wrap). Public, not
-/// nested in [_ReviewScreenState], so a widget test can pump it directly
-/// against a hand-built [CrumbState] without driving a live
-/// topology-ordered session.
+/// tier bar (the lib's five heatmap tiers; learned cards banded
+/// green/yellow/red by current retrievability), the current region
+/// emphasized (full ink, bold) and the rest dimmed. A fixed-height,
+/// horizontally scrolling row, so a long path or many regions never grows
+/// the header (clip, never wrap). Public, not nested in
+/// [_ReviewScreenState], so a widget test can pump it directly against a
+/// hand-built [CrumbState] without driving a live topology-ordered
+/// session.
 class CrumbStrip extends StatelessWidget {
   const CrumbStrip({super.key, required this.crumb});
 
@@ -1561,7 +1562,9 @@ class CrumbStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ink = Theme.of(context).colorScheme.onSurface;
+    final theme = Theme.of(context);
+    final ink = theme.colorScheme.onSurface;
+    final tokens = theme.alix;
     return SizedBox(
       height: height,
       child: SingleChildScrollView(
@@ -1575,8 +1578,9 @@ class CrumbStrip extends StatelessWidget {
               _region(
                 name,
                 i == crumb.current,
-                i < crumb.cells.length ? crumb.cells[i] : const <double>[],
+                i < crumb.cells.length ? crumb.cells[i] : const <String>[],
                 ink,
+                tokens,
               ),
             ],
           ],
@@ -1585,7 +1589,13 @@ class CrumbStrip extends StatelessWidget {
     );
   }
 
-  Widget _region(String name, bool current, Iterable<double> cells, Color ink) {
+  Widget _region(
+    String name,
+    bool current,
+    Iterable<String> cells,
+    Color ink,
+    AlixTokens tokens,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1617,32 +1627,28 @@ class CrumbStrip extends StatelessWidget {
         const SizedBox(height: 3),
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [for (final s in cells) _cell(s, ink)],
+          children: [for (final tier in cells) _cell(tier, ink, tokens)],
         ),
       ],
     );
   }
 
-  /// One strength cell, mirroring the web's `paintHeatCell`: retrievability 0
-  /// (red) to 1 (green) via `hsl(120*s, 62%, (40+12*s)%)`, with two negative
-  /// values below that band. -2 is a card seen in an acquire pass but not yet
-  /// graded (a dim cell, so acquire work isn't invisible); -1 a card never
-  /// met (fainter, neutral).
-  Widget _cell(double s, Color ink) {
-    final Color fill;
-    if (s <= -2) {
-      fill = ink.withValues(alpha: 0.55);
-    } else if (s < 0) {
-      fill = ink.withValues(alpha: 0.22);
-    } else {
-      final clamped = s.clamp(0.0, 1.0);
-      fill = HSLColor.fromAHSL(
-        1,
-        120 * clamped,
-        0.62,
-        (40 + 12 * clamped) / 100,
-      ).toColor();
-    }
+  /// Retired's purple, mirroring the web's `--retired` (dark theme value).
+  static const Color _retired = Color(0xFFA48FD8);
+
+  /// One tier cell, mirroring the web's `paintHeatCell`: untouched faint,
+  /// seen dim grey, acquired near-ink white, learned banded by current
+  /// retrievability (good/warn/again), retired purple.
+  Widget _cell(String tier, Color ink, AlixTokens tokens) {
+    final Color fill = switch (tier) {
+      'seen' => ink.withValues(alpha: 0.55),
+      'acquired' => ink.withValues(alpha: 0.85),
+      'learned-strong' => tokens.good,
+      'learned-fading' => tokens.warn,
+      'learned-weak' => tokens.again,
+      'retired' => _retired,
+      _ => ink.withValues(alpha: 0.22),
+    };
     return Container(
       width: 5,
       height: 3,

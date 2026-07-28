@@ -46,7 +46,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let mut reviews = 0u32;
         let mut passes = 0u32;
         for card in &deck.cards {
-            if let Some(state) = card.id().and_then(|id| store.get(&id)) {
+            if let Some(state) = card.id().and_then(|id| store.progress(&id)) {
                 // Retired cards don't count as due, but still count toward
                 // the review totals below.
                 if !alix::session::is_retired(card, &store, review.retire_after_days) {
@@ -120,7 +120,7 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
         println!("{}", deck.display_name());
         for card in &deck.cards {
             let (recall_label, recon_label, recognized_mark, due) =
-                match card.id().and_then(|id| store.get(&id)) {
+                match card.id().and_then(|id| store.progress(&id)) {
                     Some(state) => {
                         // A retired card's due time is moot until `alix reset`.
                         let due =
@@ -259,7 +259,9 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         fn deck_id(deck: &Deck) -> &str {
             deck.deck_token.as_deref().unwrap_or_default()
         }
-        let mastered = decks_full.iter().any(|deck| store.deck_mastered(deck_id(deck)));
+        let mastered = decks_full
+            .iter()
+            .any(|deck| store.deck_mastered(deck_id(deck)));
         let virtual_ids: Vec<String> = decks_full
             .iter()
             .flat_map(|deck| store.virtual_cards_for(deck_id(deck)))

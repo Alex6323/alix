@@ -147,9 +147,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_depth(dynamic raw);
 
   @protected
-  double dco_decode_f_32(dynamic raw);
-
-  @protected
   ForeignWriter dco_decode_foreign_writer(dynamic raw);
 
   @protected
@@ -186,16 +183,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<InlineRun> dco_decode_list_inline_run(dynamic raw);
 
   @protected
+  List<List<String>> dco_decode_list_list_String(dynamic raw);
+
+  @protected
   List<List<InlineRun>> dco_decode_list_list_inline_run(dynamic raw);
 
   @protected
-  List<Float32List> dco_decode_list_list_prim_f_32_strict(dynamic raw);
-
-  @protected
   List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
-
-  @protected
-  Float32List dco_decode_list_prim_f_32_strict(dynamic raw);
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
@@ -435,9 +429,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_depth(SseDeserializer deserializer);
 
   @protected
-  double sse_decode_f_32(SseDeserializer deserializer);
-
-  @protected
   ForeignWriter sse_decode_foreign_writer(SseDeserializer deserializer);
 
   @protected
@@ -476,20 +467,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<InlineRun> sse_decode_list_inline_run(SseDeserializer deserializer);
 
   @protected
+  List<List<String>> sse_decode_list_list_String(SseDeserializer deserializer);
+
+  @protected
   List<List<InlineRun>> sse_decode_list_list_inline_run(
     SseDeserializer deserializer,
   );
 
   @protected
-  List<Float32List> sse_decode_list_list_prim_f_32_strict(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<NoteUnit> sse_decode_list_note_unit(SseDeserializer deserializer);
-
-  @protected
-  Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer);
 
   @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
@@ -780,9 +766,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_depth(Depth self, SseSerializer serializer);
 
   @protected
-  void sse_encode_f_32(double self, SseSerializer serializer);
-
-  @protected
   void sse_encode_foreign_writer(ForeignWriter self, SseSerializer serializer);
 
   @protected
@@ -831,25 +814,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_list_String(
+    List<List<String>> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_list_inline_run(
     List<List<InlineRun>> self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_list_list_prim_f_32_strict(
-    List<Float32List> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_note_unit(List<NoteUnit> self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_list_prim_f_32_strict(
-    Float32List self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_list_prim_u_32_strict(

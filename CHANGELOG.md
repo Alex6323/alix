@@ -72,6 +72,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- "Seen" now means the card was shown to you at least once, right or wrong: the
+  first time a card becomes the displayed card in any session, the store
+  records a one-time presentation stamp (`presented_ms`), so a card you met
+  and failed, or merely opened a session on, no longer looks untouched. The
+  drawer funnel's `s seen` count follows this meaning. `acquired_ms` is now
+  absent until a card is acknowledged or answered correctly at least once.
+- The drawer and breadcrumb heatmaps paint five tiers instead of a
+  retrievability gradient: neutral untouched, grey seen, white acquired, a
+  learned (graduated) card green/yellow/red banded by its current Recall
+  retrievability (strong `>= 0.9`, weak `< 0.7`, fading between), and purple
+  retired. On the wire, `DeckDrawerDto.heatmap`, its topology `cells`, and
+  `CrumbDto.cells` carry tier names (strings) instead of numbers.
 - A picker row no longer prints a right-aligned status counter for a new or
   started deck: "new" duplicated the NEW chip, and a started deck's `k/N`
   graduated counter was cryptic and redundant beside it. New and started rows now

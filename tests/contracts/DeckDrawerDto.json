@@ -1,14 +1,17 @@
 {
-  "graduated": 2,
+  "graduated": 4,
   "heatmap": [
-    0.5,
-    1.0,
-    -1.0,
-    -2.0
+    "untouched",
+    "seen",
+    "acquired",
+    "learned-strong",
+    "learned-fading",
+    "learned-weak",
+    "retired"
   ],
   "preamble": "A short intro under the H1.",
   "retired": 1,
-  "seen": 3,
+  "seen": 6,
   "topologies": [
     {
       "name": "north-south",
@@ -16,13 +19,13 @@
       "regions": [
         {
           "cells": [
-            0.5,
-            1.0
+            "seen",
+            "learned-fading"
           ],
           "name": "north"
         }
       ]
     }
   ],
-  "total": 4
+  "total": 7
 }

@@ -473,7 +473,7 @@ pub fn deck_status(
     let new_cards = deck
         .cards
         .iter()
-        .any(|card| card.id().and_then(|id| store.get(&id)).is_none());
+        .any(|card| card.id().and_then(|id| store.progress(&id)).is_none());
     DeckStatus {
         state,
         badge,

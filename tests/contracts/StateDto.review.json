@@ -53,10 +53,10 @@
     "crumb": {
       "cells": [
         [
-          0.5
+          "seen"
         ],
         [
-          1.0
+          "learned-strong"
         ]
       ],
       "current": 1,

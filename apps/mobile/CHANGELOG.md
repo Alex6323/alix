@@ -15,6 +15,11 @@ Release notes, so a release without its section fails loud.
 
 ### Changed
 
+- The review breadcrumb's per-card cells paint the shared five-tier lifecycle
+  (neutral untouched, grey seen, white acquired, green/yellow/red learned by
+  current retrievability, purple retired) instead of a red-to-green strength
+  gradient, and opening or reviewing a deck records each card's first
+  presentation like the desktop app does.
 - **Breaking:** synced progress and AI augmentation now use one versioned JSON
   document per initialized deck under `progress/` and `augment/`. This is a
   clean pre-1.0 format break with no runtime compatibility path. Two devices

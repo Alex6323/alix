@@ -173,8 +173,7 @@ fn open_deck_store(dir: &Path, deck: &str) -> Store {
 /// on the second, rather than jumping straight to `"done"`) — and enough to
 /// make `run_review`'s store resolution (`assemble::store_for`, via
 /// `cfg.instance_store`) do real work if a test picks it via `/api/select`.
-const FIXTURE_DECK: &str =
-    "---\nid: \"deck-sample\"\n---\n## 2 + 2 <!-- id: card-s1 -->\n4\n\n## 3 + 3 <!-- id: card-s2 -->\n6\n";
+const FIXTURE_DECK: &str = "---\nid: \"deck-sample\"\n---\n## 2 + 2 <!-- id: card-s1 -->\n4\n\n## 3 + 3 <!-- id: card-s2 -->\n6\n";
 
 /// Builds the `run_review` options over one fixture deck living in `dir`,
 /// mirroring (in miniature) what `src/cli/launch.rs` wires up for the real
@@ -1219,10 +1218,10 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
         body["topologies"].as_array().unwrap().is_empty(),
         "no augmentation was ever generated: body: {body}"
     );
-    // Both fixture cards are stamped but unreviewed (a fresh store), so each
-    // reads as the neutral no-data sentinel (-1.0): one heatmap cell per card.
+    // Both fixture cards are stamped but never shown (a fresh store), so each
+    // reads as the untouched tier: one heatmap cell per card.
     assert_eq!(
-        serde_json::json!([-1.0, -1.0]),
+        serde_json::json!(["untouched", "untouched"]),
         body["heatmap"],
         "body: {body}"
     );
@@ -1234,11 +1233,11 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
 }
 
 #[test]
-fn post_api_deck_drawer_marks_an_acquired_but_ungraded_card_as_seen() {
+fn post_api_deck_drawer_tiers_an_acquired_card_above_a_merely_presented_one() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
-    // Meet the first card in an acquire pass (a store entry, no grade); the
-    // other card stays untouched.
+    // Acknowledge the first card ("Seen"); the second card then becomes the
+    // displayed card, which stamps its presentation but acquires nothing.
     post_json(&base, "/api/acquire", "{}");
 
     let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"sample.md"}"#);
@@ -1248,18 +1247,44 @@ fn post_api_deck_drawer_marks_an_acquired_but_ungraded_card_as_seen() {
     let cells = body["heatmap"].as_array().unwrap();
     assert_eq!(2, cells.len(), "one cell per card: {body}");
     assert!(
-        cells.iter().any(|c| c == &serde_json::json!(-2.0)),
-        "the acquired card reads as seen (-2.0), not untouched: {body}"
+        cells.iter().any(|c| c == &serde_json::json!("acquired")),
+        "the acknowledged card reads as acquired: {body}"
     );
     assert!(
-        cells.iter().any(|c| c == &serde_json::json!(-1.0)),
-        "the untouched card stays the neutral sentinel (-1.0): {body}"
+        cells.iter().any(|c| c == &serde_json::json!("seen")),
+        "the shown-but-unacquired card reads as seen: {body}"
     );
-    // The nested progress funnel: one card met (seen), none learned or retired.
+    // The nested progress funnel counts both presented cards as seen.
     assert_eq!(2, body["total"], "body: {body}");
-    assert_eq!(1, body["seen"], "the acquired card is seen: {body}");
+    assert_eq!(2, body["seen"], "both cards were presented: {body}");
     assert_eq!(0, body["graduated"], "nothing graduated yet: {body}");
     assert_eq!(0, body["retired"], "nothing retired yet: {body}");
+}
+
+#[test]
+fn post_api_deck_drawer_counts_a_presented_card_as_seen_after_a_bare_select() {
+    let (base, _guard) = spawn_test_server();
+    // Selecting shows the first card and nothing else: no grade, no acquire.
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"sample.md"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        serde_json::json!(["seen", "untouched"]),
+        body["heatmap"],
+        "only the displayed card is seen: {body}"
+    );
+    assert_eq!(1, body["seen"], "body: {body}");
+    let seen = body["seen"].as_u64().unwrap();
+    let graduated = body["graduated"].as_u64().unwrap();
+    let retired = body["retired"].as_u64().unwrap();
+    let total = body["total"].as_u64().unwrap();
+    assert!(
+        retired <= graduated && graduated <= seen && seen <= total,
+        "the funnel still nests under the presented predicate: {body}"
+    );
 }
 
 #[test]
@@ -1297,7 +1322,10 @@ fn post_api_reset_clears_the_fixture_decks_progress() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("sample.md", body["deck"], "body: {body}");
-    assert_eq!(1, body["cards_cleared"], "body: {body}");
+    assert_eq!(
+        2, body["cards_cleared"],
+        "the graded card plus the next card's presentation stamp: {body}"
+    );
 }
 
 #[test]
@@ -1935,7 +1963,10 @@ fn an_administrative_mutation_still_writes_immediately() {
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!(1, body["cards_cleared"], "body: {body}");
+    assert_eq!(
+        2, body["cards_cleared"],
+        "the graded card plus the next card's presentation stamp: {body}"
+    );
     let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert_eq!(
         None,
@@ -1955,8 +1986,8 @@ fn resetting_mid_session_does_not_resurrect_the_cleared_grade() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(
-        1, body["cards_cleared"],
-        "reset must see the in-flight grade: {body}"
+        2, body["cards_cleared"],
+        "reset must see the in-flight grade and the presentation stamp: {body}"
     );
 
     let resp = post_json(&base, "/api/deselect", "{}");

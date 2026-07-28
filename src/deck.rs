@@ -219,7 +219,7 @@ impl Deck {
         } else if self
             .cards
             .iter()
-            .all(|c| c.id().and_then(|id| store.get(&id)).is_none())
+            .all(|c| c.id().and_then(|id| store.progress(&id)).is_none())
         {
             DeckState::NotStarted
         } else {

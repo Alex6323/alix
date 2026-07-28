@@ -328,7 +328,7 @@ as List<String>,
 
 class NoteUnit_Checklist extends NoteUnit {
   const NoteUnit_Checklist({required final  List<ChecklistItem> items}): _items = items,super._();
-
+  
 
  final  List<ChecklistItem> _items;
  List<ChecklistItem> get items {

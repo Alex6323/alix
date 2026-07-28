@@ -198,10 +198,12 @@ As you go, a thin **region breadcrumb** sits above each card (e.g.
 `Ingestion · Review Engine · Persistence · Frontends`, the one you're in
 emphasized) so you see *where you are* in the material, not just what's in front
 of you. The names are deliberately coarse: they orient without giving away any
-card's answer. Under each region is a **strength heatmap**: one small bar per
-card, red (weak) → green (learned), a dim grey cell for a card you have met but
-not yet graded, and neutral for a card you have not seen at all, so a region
-visibly greens up as you master it. The breadcrumb doubles as a progress map.
+card's answer. Under each region is a **card-tier heatmap**: one small cell
+per card. Neutral means untouched; grey means **seen** (the card was shown to
+you at least once, right or wrong); white means **acquired** (you got it right
+at least once); a **learned** (graduated) card is green, yellow, or red by how
+well you'd recall it right now; purple means retired. A region visibly greens
+up as you master it, and the breadcrumb doubles as a progress map.
 
 To **drill one weak region** on its own, tap its heatmap in the focus drawer to
 scope the launch to it.

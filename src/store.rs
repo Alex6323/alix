@@ -60,11 +60,17 @@ impl FsrsState {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CardState {
-    #[serde(default)]
-    pub acquired_ms: u64,
+    // None: presented but never acquired (an entry can exist from
+    // presentation alone).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acquired_ms: Option<u64>,
+    // First time the card was the displayed card in any session; correctness
+    // plays no part.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presented_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
     // Independent of `recall` on purpose: no cross-crediting between depths.
@@ -87,7 +93,8 @@ pub struct CardState {
 impl CardState {
     pub fn new(now_ms: u64) -> Self {
         Self {
-            acquired_ms: now_ms,
+            acquired_ms: Some(now_ms),
+            presented_ms: None,
             recall: None,
             reconstruct: None,
             recognized_ms: None,
@@ -96,6 +103,16 @@ impl CardState {
             streak: 0,
             history: Vec::new(),
         }
+    }
+
+    // Presentation alone sets none of these: any of them means the learner
+    // did something with the card beyond being shown it.
+    pub fn engaged(&self) -> bool {
+        self.acquired_ms.is_some()
+            || self.recognized_ms.is_some()
+            || self.recall.is_some()
+            || self.reconstruct.is_some()
+            || self.total_reviews > 0
     }
 
     // Recognize is never scheduled: always answers None.
@@ -889,6 +906,25 @@ impl Store {
 
     pub fn get(&self, card_id: &str) -> Option<&CardState> {
         self.cards.get(card_id)
+    }
+
+    // The entry's mere existence no longer implies engagement (presentation
+    // creates one too): queue/on-ramp classification reads this instead of
+    // `get`.
+    pub fn progress(&self, card_id: &str) -> Option<&CardState> {
+        self.cards.get(card_id).filter(|state| state.engaged())
+    }
+
+    // Once-only: the first call stamps and answers true; every later call is
+    // a no-op. The default entry acquires nothing.
+    pub fn note_presented(&mut self, card_id: &str, now_ms: u64) -> bool {
+        let state = self.cards.entry(card_id.to_string()).or_default();
+        if state.presented_ms.is_none() {
+            state.presented_ms = Some(now_ms);
+            true
+        } else {
+            false
+        }
     }
 
     // Reflects actual reviews, not merely opening the deck.
@@ -1752,7 +1788,10 @@ mod tests {
         assert_eq!(vec![0], outcome.fresh);
 
         assert_eq!(2, store.get("card-tok-1").unwrap().total_reviews);
-        assert!(store.get("card-tok-0").is_none(), "the orphaned hole is deleted");
+        assert!(
+            store.get("card-tok-0").is_none(),
+            "the orphaned hole is deleted"
+        );
         assert_eq!(vec![z, b], store.records(token).unwrap().holes);
     }
 
@@ -1771,8 +1810,16 @@ mod tests {
         let outcome = store.realign_card_holes(token, &[b, a]).unwrap();
         assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
 
-        assert_eq!(2, store.get("card-tok-0").unwrap().total_reviews, "b -> hole 0");
-        assert_eq!(1, store.get("card-tok-1").unwrap().total_reviews, "a -> hole 1");
+        assert_eq!(
+            2,
+            store.get("card-tok-0").unwrap().total_reviews,
+            "b -> hole 0"
+        );
+        assert_eq!(
+            1,
+            store.get("card-tok-1").unwrap().total_reviews,
+            "a -> hole 1"
+        );
         assert!(
             store.get("card-tok-5").is_none(),
             "the stray is deleted, not left under a live key"
@@ -2437,9 +2484,18 @@ mod tests {
     fn virtual_cards_for_matches_on_owning_deck_id() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.insert_virtual(virtual_card("rust", "## f <!-- id: card-v1 -->\nback one\n"));
-        store.insert_virtual(virtual_card("rust", "## f <!-- id: card-v2 -->\nback two\n"));
-        store.insert_virtual(virtual_card("other", "## f <!-- id: card-v3 -->\nback one\n"));
+        store.insert_virtual(virtual_card(
+            "rust",
+            "## f <!-- id: card-v1 -->\nback one\n",
+        ));
+        store.insert_virtual(virtual_card(
+            "rust",
+            "## f <!-- id: card-v2 -->\nback two\n",
+        ));
+        store.insert_virtual(virtual_card(
+            "other",
+            "## f <!-- id: card-v3 -->\nback one\n",
+        ));
 
         let rust_cards = store.virtual_cards_for("rust");
         assert_eq!(2, rust_cards.len());
@@ -3131,8 +3187,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        let plain = crate::parser::parse_str("d.md", "## Complete the quote <!-- id: card-p1 -->\nbe\n")
-            .unwrap();
+        let plain =
+            crate::parser::parse_str("d.md", "## Complete the quote <!-- id: card-p1 -->\nbe\n")
+                .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
             plain.iter().map(|c| c.content_fingerprint).collect();
 

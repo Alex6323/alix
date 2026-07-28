@@ -86,6 +86,7 @@ pub struct Session {
     choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
     options: SessionOptions,
+    presented_stamped: bool,
     pub initial_size: usize,
     pub stats: SessionStats,
 }
@@ -93,7 +94,7 @@ pub struct Session {
 impl Session {
     pub fn new(
         cards: Vec<Card>,
-        store: &Store,
+        store: &mut Store,
         scheduler: Box<dyn Scheduler>,
         options: SessionOptions,
         now_ms: u64,
@@ -112,6 +113,7 @@ impl Session {
             choice_seed: now_ms,
             scheduler,
             options,
+            presented_stamped: false,
             initial_size,
             stats: SessionStats::default(),
         };
@@ -119,7 +121,7 @@ impl Session {
         session
     }
 
-    pub fn restart(&mut self, store: &Store, now_ms: u64) -> bool {
+    pub fn restart(&mut self, store: &mut Store, now_ms: u64) -> bool {
         let roster: Vec<usize> =
             build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms).into();
         if roster.is_empty() {
@@ -145,13 +147,23 @@ impl Session {
         self.cards
             .iter()
             .filter_map(|c| c.id())
-            .filter_map(|id| store.get(&id))
+            .filter_map(|id| store.progress(&id))
             .map(|state| self.scheduler.due_at(state, self.options.depth))
             .min()
     }
 
     pub fn depth(&self) -> Depth {
         self.options.depth
+    }
+
+    pub fn retire_after_days(&self) -> Option<u32> {
+        self.options.retire_after_days
+    }
+
+    // True once since the last take: a presentation stamp was written and the
+    // store has unsaved state. The caller decides when to persist.
+    pub fn take_presented_stamped(&mut self) -> bool {
+        std::mem::take(&mut self.presented_stamped)
     }
 
     pub fn current(&self) -> Option<&Card> {
@@ -173,10 +185,10 @@ impl Session {
             .is_some_and(|id| store.is_virtual(&id))
     }
 
-    pub fn current_unseen(&self, store: &Store) -> bool {
+    pub fn current_fresh(&self, store: &Store) -> bool {
         self.current()
             .and_then(Card::id)
-            .is_some_and(|id| store.get(&id).is_none())
+            .is_some_and(|id| store.progress(&id).is_none())
     }
 
     pub fn cards(&self) -> &[Card] {
@@ -214,6 +226,11 @@ impl Session {
         let depth = self.options.depth;
 
         let state = store.get_or_insert(&id, now_ms);
+        // A presentation-created entry has no acquire fact: the first passing
+        // grade is what proves the card was ever gotten right.
+        if grade.passed() && state.acquired_ms.is_none() {
+            state.acquired_ms = Some(now_ms);
+        }
         if grade == Grade::Pass && state.recognized_ms.is_none() {
             state.recognized_ms = Some(now_ms);
         }
@@ -271,13 +288,16 @@ impl Session {
             self.advance(store, now_ms);
             return;
         };
-        store.get_or_insert(&id, now_ms);
+        let state = store.get_or_insert(&id, now_ms);
+        if state.acquired_ms.is_none() {
+            state.acquired_ms = Some(now_ms);
+        }
         self.stats.acquired += 1;
         self.floor(&id, now_ms);
         self.advance(store, now_ms);
     }
 
-    pub fn skip(&mut self, store: &Store, now_ms: u64) {
+    pub fn skip(&mut self, store: &mut Store, now_ms: u64) {
         let Some(index) = self.current_idx else {
             return;
         };
@@ -286,7 +306,7 @@ impl Session {
         self.advance(store, now_ms);
     }
 
-    pub fn remove_current(&mut self, store: &Store, now_ms: u64) -> Vec<Card> {
+    pub fn remove_current(&mut self, store: &mut Store, now_ms: u64) -> Vec<Card> {
         let Some(index) = self.current_idx else {
             return Vec::new();
         };
@@ -308,7 +328,7 @@ impl Session {
         removed
     }
 
-    pub fn poll(&mut self, store: &Store, now_ms: u64) -> bool {
+    pub fn poll(&mut self, store: &mut Store, now_ms: u64) -> bool {
         self.advance(store, now_ms);
         self.current_idx.is_some()
     }
@@ -323,9 +343,12 @@ impl Session {
         };
         let depth = self.options.depth;
         let due = if depth == Depth::Recognize {
-            self.options.cram || store.get(&id).is_none_or(|s| s.recognized_ms.is_none())
+            self.options.cram
+                || store
+                    .progress(&id)
+                    .is_none_or(|s| s.recognized_ms.is_none())
         } else {
-            match store.get(&id) {
+            match store.progress(&id) {
                 Some(state) => self.options.cram || self.scheduler.is_due(state, depth, now_ms),
                 None => true,
             }
@@ -348,7 +371,9 @@ impl Session {
         self.floors.insert(id.to_string(), now_ms);
     }
 
-    fn advance(&mut self, store: &Store, now_ms: u64) {
+    // The single site where a card becomes current, so also the single site
+    // that stamps its first presentation.
+    fn advance(&mut self, store: &mut Store, now_ms: u64) {
         let next = self
             .roster
             .iter()
@@ -358,6 +383,12 @@ impl Session {
             && next != self.current_idx
         {
             self.appearances[i] = self.appearances[i].saturating_add(1);
+        }
+        if let Some(i) = next
+            && let Some(id) = self.cards[i].id()
+            && store.note_presented(&id, now_ms)
+        {
+            self.presented_stamped = true;
         }
         self.current_idx = next;
         self.remaining_now = self
@@ -380,7 +411,7 @@ fn build_queue(
         let mut order: Vec<usize> = Vec::new();
         let mut fresh_left = options.max_new;
         for (i, card) in cards.iter().enumerate() {
-            match card.id().and_then(|id| store.get(&id)) {
+            match card.id().and_then(|id| store.progress(&id)) {
                 Some(_) if is_retired(card, store, options.retire_after_days) => {}
                 Some(state) => {
                     if options.cram || state.recognized_ms.is_none() {
@@ -419,7 +450,7 @@ fn build_queue(
     let mut fresh: Vec<usize> = Vec::new();
 
     for (i, card) in cards.iter().enumerate() {
-        match card.id().and_then(|id| store.get(&id)) {
+        match card.id().and_then(|id| store.progress(&id)) {
             Some(_) if is_retired(card, store, options.retire_after_days) => {}
             Some(state) => {
                 if options.cram || scheduler.is_due(state, depth, now_ms) {
@@ -576,26 +607,85 @@ pub fn has_graduated(card: &Card, store: &Store) -> bool {
         .is_some_and(|f| f.graduated())
 }
 
-pub fn card_strengths(card_ids: &[String], store: &Store, now_ms: u64) -> Vec<f32> {
+// Matches the scheduler's default request retention: at or above it a
+// learned card is right on schedule.
+pub const LEARNED_STRONG_MIN: f32 = 0.9;
+pub const LEARNED_WEAK_BELOW: f32 = 0.7;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardTier {
+    Untouched,
+    Seen,
+    Acquired,
+    LearnedStrong,
+    LearnedFading,
+    LearnedWeak,
+    Retired,
+}
+
+impl CardTier {
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            CardTier::Untouched => "untouched",
+            CardTier::Seen => "seen",
+            CardTier::Acquired => "acquired",
+            CardTier::LearnedStrong => "learned-strong",
+            CardTier::LearnedFading => "learned-fading",
+            CardTier::LearnedWeak => "learned-weak",
+            CardTier::Retired => "retired",
+        }
+    }
+}
+
+impl serde::Serialize for CardTier {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.wire_name())
+    }
+}
+
+pub fn card_tiers(
+    card_ids: &[String],
+    store: &Store,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> Vec<CardTier> {
     card_ids
         .iter()
-        .map(|id| retrievability(store, id, now_ms))
+        .map(|id| card_tier(store, id, now_ms, retire_after_days))
         .collect()
 }
 
-// Two negative values sit below the 0.0..=1.0 retrievability band: -1.0 is a
-// card never met (no store entry), -2.0 a card met in an acquire pass but not
-// yet graded at Recall. Clients paint the first neutral and the second a dim
-// "seen" cell, so acquire-phase work is not invisible.
-fn retrievability(store: &Store, card_id: &str, now_ms: u64) -> f32 {
+fn card_tier(
+    store: &Store,
+    card_id: &str,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> CardTier {
     let Some(state) = store.get(card_id) else {
-        return -1.0;
+        return CardTier::Untouched;
     };
-    let Some(f) = state.schedule(Depth::Recall).filter(|f| f.stability > 0.0) else {
-        return -2.0;
-    };
-    let elapsed_days = now_ms.saturating_sub(f.last_review_ms) as f64 / 86_400_000.0;
-    Parameters::forgetting_curve(elapsed_days, f.stability).clamp(0.0, 1.0) as f32
+    if is_retired_id(card_id, store, retire_after_days) {
+        return CardTier::Retired;
+    }
+    if let Some(f) = state
+        .schedule(Depth::Recall)
+        .filter(|f| f.graduated() && f.stability > 0.0)
+    {
+        let elapsed_days = now_ms.saturating_sub(f.last_review_ms) as f64 / 86_400_000.0;
+        let r = Parameters::forgetting_curve(elapsed_days, f.stability).clamp(0.0, 1.0) as f32;
+        return if r >= LEARNED_STRONG_MIN {
+            CardTier::LearnedStrong
+        } else if r < LEARNED_WEAK_BELOW {
+            CardTier::LearnedWeak
+        } else {
+            CardTier::LearnedFading
+        };
+    }
+    if state.acquired_ms.is_some() {
+        CardTier::Acquired
+    } else {
+        CardTier::Seen
+    }
 }
 
 pub fn is_reviewable(
@@ -617,9 +707,11 @@ pub fn is_reviewable(
         return true;
     };
     if depth == Depth::Recognize {
-        return store.get(&id).is_none_or(|s| s.recognized_ms.is_none());
+        return store
+            .progress(&id)
+            .is_none_or(|s| s.recognized_ms.is_none());
     }
-    match store.get(&id) {
+    match store.progress(&id) {
         Some(state) => scheduler.is_due(state, depth, now_ms),
         None => true,
     }
@@ -717,7 +809,7 @@ mod tests {
     fn serve_loop_invariants_hold_under_a_fuzzed_grade_sequence() {
         let (mut store, _dir) = empty_store();
         let n = 12;
-        let mut session = Session::new(cards(n), &store, sched(), SessionOptions::default(), 0);
+        let mut session = Session::new(cards(n), &mut store, sched(), SessionOptions::default(), 0);
 
         let mut rng: u64 = 0x2545_F491_4F6C_DD1D;
         let mut roll = |bound: u64| -> u64 {
@@ -732,7 +824,7 @@ mod tests {
         let mut drained = false;
 
         for _ in 0..2000 {
-            session.poll(&store, now);
+            session.poll(&mut store, now);
 
             let servable: Vec<usize> = session
                 .roster
@@ -766,7 +858,7 @@ mod tests {
             );
             assert!(!passed[idx], "a passed card must never be served again");
 
-            if session.current_unseen(&store) {
+            if session.current_fresh(&store) {
                 session.acquire_current(&mut store, now);
             } else {
                 let g = match roll(3) {
@@ -791,10 +883,10 @@ mod tests {
 
     #[test]
     fn new_cards_enter_up_to_max_new() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         let session = Session::new(
             cards(20),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 5,
@@ -810,8 +902,8 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
-        assert!(session.current_unseen(&store));
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1000);
+        assert!(session.current_fresh(&store));
 
         session.acquire_current(&mut store, 1000);
 
@@ -820,7 +912,11 @@ mod tests {
             state.recall.is_none(),
             "acquiring does not schedule under FSRS"
         );
-        assert_eq!(1000, state.acquired_ms, "acquire stamps the acquire time");
+        assert_eq!(
+            Some(1000),
+            state.acquired_ms,
+            "acquire stamps the acquire time"
+        );
         assert!(state.history.is_empty());
         assert_eq!(0, state.total_reviews);
         assert_eq!(1, session.stats.acquired);
@@ -831,7 +927,13 @@ mod tests {
     #[test]
     fn acquired_cards_are_not_due_until_the_relearn_cooldown() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
+        let mut session = Session::new(
+            cards(1),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1000,
+        );
         session.acquire_current(&mut store, 1000);
 
         assert!(!session.has_due_now(&store, 1000));
@@ -842,13 +944,19 @@ mod tests {
     #[test]
     fn an_acquired_card_returns_in_session_after_its_cooldown() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
+        let mut session = Session::new(
+            cards(1),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1000,
+        );
         let id = session.current().unwrap().id();
         session.acquire_current(&mut store, 1000);
         assert!(session.is_finished());
-        assert!(session.poll(&store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
+        assert!(session.poll(&mut store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
         assert_eq!(session.current().map(|c| c.id()), Some(id));
-        assert!(!session.current_unseen(&store));
+        assert!(!session.current_fresh(&store));
     }
 
     #[test]
@@ -859,7 +967,7 @@ mod tests {
             store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         let first = session.current().unwrap().id();
         session.grade(&mut store, Grade::Fail, now);
@@ -876,12 +984,12 @@ mod tests {
             store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         assert_eq!(first_id, session.current().unwrap().id());
         session.grade(&mut store, Grade::Fail, now);
         session.grade(&mut store, Grade::Pass, now + 1000);
-        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
         assert_eq!(first_id, session.current().unwrap().id());
     }
 
@@ -895,7 +1003,7 @@ mod tests {
             store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
 
         session.grade(&mut store, Grade::Fail, now);
@@ -912,14 +1020,14 @@ mod tests {
             .unwrap()
             .due_ms = now + 10_000;
 
-        session.poll(&store, now + 30_000);
+        session.poll(&mut store, now + 30_000);
         assert_eq!(
             Some(b_id.clone()),
             session.current().unwrap().id(),
             "the floor keeps A from immediately following itself"
         );
 
-        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
     }
 
@@ -930,7 +1038,7 @@ mod tests {
         let id = all[0].id().unwrap();
         store.get_or_insert(&id, 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Fail, now);
         assert!(
@@ -945,10 +1053,10 @@ mod tests {
             .unwrap()
             .due_ms = now + 1_000;
 
-        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
         assert!(session.is_finished(), "the floor delays the repeat");
 
-        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(Some(id), session.current().and_then(|c| c.id()));
     }
 
@@ -961,7 +1069,7 @@ mod tests {
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(
             all,
-            &store,
+            &mut store,
             Box::new(crate::scheduler::Fsrs::new(0.9, 1_000)),
             SessionOptions::default(),
             now,
@@ -973,7 +1081,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .due_ms = now + 500;
-        session.poll(&store, now + 1_000);
+        session.poll(&mut store, now + 1_000);
         assert_eq!(Some(id), session.current().and_then(|c| c.id()));
     }
 
@@ -987,7 +1095,7 @@ mod tests {
             store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
         assert_eq!(
             1,
@@ -995,8 +1103,8 @@ mod tests {
             "first showing counts as appearance 1"
         );
 
-        session.poll(&store, now + 1_000);
-        session.poll(&store, now + 2_000);
+        session.poll(&mut store, now + 1_000);
+        session.poll(&mut store, now + 2_000);
         assert_eq!(1, session.appearance(&a_id), "still the same appearance");
 
         session.grade(&mut store, Grade::Fail, now);
@@ -1014,7 +1122,7 @@ mod tests {
             .unwrap()
             .due_ms = now + DEFAULT_ACQUIRE_COOLDOWN_MS;
         session.grade(&mut store, Grade::Pass, now + 1_000);
-        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000);
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000);
         assert_eq!(
             Some(a_id.clone()),
             session.current().unwrap().id(),
@@ -1034,7 +1142,7 @@ mod tests {
         let id = all[0].id().unwrap();
         store.get_or_insert(&id, 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Fail, now);
         assert!(session.current().is_none());
@@ -1051,7 +1159,7 @@ mod tests {
         let all = cards(1);
         store.get_or_insert(&all[0].id().unwrap(), 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Fail, now);
         assert!(session.is_finished(), "nothing due now → finished");
         assert!(
@@ -1068,7 +1176,7 @@ mod tests {
             store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Fail, now);
         session.grade(&mut store, Grade::Pass, now);
         assert!(session.is_finished());
@@ -1079,7 +1187,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(
             cards(5),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 2,
@@ -1104,7 +1212,7 @@ mod tests {
         }
         let session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 10,
@@ -1129,7 +1237,7 @@ mod tests {
         store.get_or_insert(&all[1].id().unwrap(), 0);
 
         let now = 2 * 604_800_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!("front 0", session.current().unwrap().front);
         session.grade(&mut store, Grade::Pass, now);
         assert_eq!("front 1", session.current().unwrap().front);
@@ -1147,7 +1255,7 @@ mod tests {
         let now = 2 * 604_800_000;
         let mut session = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 order: Order::Sequential,
@@ -1171,7 +1279,7 @@ mod tests {
 
         let session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 0,
@@ -1183,7 +1291,7 @@ mod tests {
 
         let session = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 0,
@@ -1207,7 +1315,7 @@ mod tests {
             store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!(2, session.remaining());
 
         session.grade(&mut store, Grade::Fail, now);
@@ -1223,7 +1331,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1000);
 
         session.grade(&mut store, Grade::Pass, 1000);
         let state = store.get(&id).unwrap();
@@ -1234,40 +1342,60 @@ mod tests {
     #[test]
     fn skip_rotates_queue() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
+        let mut session = Session::new(
+            cards(2),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1000,
+        );
         let first = session.current().unwrap().front.clone();
-        session.skip(&store, 1000);
+        session.skip(&mut store, 1000);
         assert_ne!(first, session.current().unwrap().front);
         assert_eq!(2, session.remaining());
-        session.skip(&store, 1000);
+        session.skip(&mut store, 1000);
         assert_eq!(first, session.current().unwrap().front);
-        assert!(store.is_empty());
-        let _ = &mut store;
+        for card in session.cards() {
+            assert!(
+                store.progress(&card.id().unwrap()).is_none(),
+                "skipping engages nothing beyond the presentation stamp"
+            );
+        }
     }
 
     #[test]
     fn remove_current_drops_card_without_grading() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
-        let removed = session.remove_current(&store, 1000);
+        let mut session = Session::new(
+            cards(2),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1000,
+        );
+        let removed = session.remove_current(&mut store, 1000);
         assert_eq!(1, removed.len());
         assert_eq!(1, session.remaining());
         assert_ne!(removed[0].front, session.current().unwrap().front);
-        assert!(store.is_empty());
-        let _ = &mut store;
+        for card in session.cards() {
+            assert!(
+                store.progress(&card.id().unwrap()).is_none(),
+                "removal engages nothing beyond the presentation stamp"
+            );
+        }
     }
 
     #[test]
     fn remove_current_also_drops_cloze_siblings() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         let mut all = vec![card("deck.md", 1), card("deck.md", 1), card("deck.md", 2)];
         all[0].back = vec!["hole a".into()];
         all[0].hole = Some(0);
         all[1].back = vec!["hole b".into()];
         all[1].hole = Some(1);
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 0);
         assert_eq!(3, session.remaining());
-        let removed = session.remove_current(&store, 0);
+        let removed = session.remove_current(&mut store, 0);
         assert_eq!(2, removed.len());
         assert_eq!(1, session.remaining());
         assert_eq!(2, session.current().unwrap().line);
@@ -1275,7 +1403,7 @@ mod tests {
 
     #[test]
     fn sibling_grouping_follows_deck_id_not_the_filename() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         // Same deck_id, different filenames: still grouped as siblings.
         let mut a = card("a.md", 1);
         a.deck_id = Arc::from("shared-deck");
@@ -1285,9 +1413,15 @@ mod tests {
         b.deck_id = Arc::from("shared-deck");
         b.back = vec!["hole b".into()];
         b.hole = Some(1);
-        let mut session = Session::new(vec![a, b], &store, sched(), SessionOptions::default(), 0);
+        let mut session = Session::new(
+            vec![a, b],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            0,
+        );
         assert_eq!(2, session.remaining());
-        let removed = session.remove_current(&store, 0);
+        let removed = session.remove_current(&mut store, 0);
         assert_eq!(
             2,
             removed.len(),
@@ -1297,16 +1431,22 @@ mod tests {
 
     #[test]
     fn sibling_grouping_does_not_merge_across_deck_ids_sharing_a_filename() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         // Same filename, different deck_id: must not be treated as siblings.
         let mut a = card("deck.md", 1);
         a.deck_id = Arc::from("deck-one");
         let mut b = card("deck.md", 1);
         b.deck_id = Arc::from("deck-two");
         b.token = Some(Arc::from("tok1b"));
-        let mut session = Session::new(vec![a, b], &store, sched(), SessionOptions::default(), 0);
+        let mut session = Session::new(
+            vec![a, b],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            0,
+        );
         assert_eq!(2, session.remaining());
-        let removed = session.remove_current(&store, 0);
+        let removed = session.remove_current(&mut store, 0);
         assert_eq!(
             1,
             removed.len(),
@@ -1316,7 +1456,7 @@ mod tests {
 
     #[test]
     fn cloze_siblings_are_separated() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         let mut all = Vec::new();
         for (line, name) in [(1, "A"), (2, "B")] {
             for hole in 1..=2 {
@@ -1327,12 +1467,12 @@ mod tests {
                 all.push(c);
             }
         }
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 0);
 
         let mut fronts = Vec::new();
         for _ in 0..session.remaining() {
             fronts.push(session.current().unwrap().front.clone());
-            session.skip(&store, 0);
+            session.skip(&mut store, 0);
         }
         assert_eq!(4, fronts.len());
         for pair in fronts.windows(2) {
@@ -1346,7 +1486,7 @@ mod tests {
 
     #[test]
     fn lone_sibling_group_still_fully_queued() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         let mut all = Vec::new();
         for hole in 1..=3 {
             let mut c = card("deck.md", 1);
@@ -1354,7 +1494,7 @@ mod tests {
             c.hole = Some(hole as u32 - 1);
             all.push(c);
         }
-        let session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
+        let session = Session::new(all, &mut store, sched(), SessionOptions::default(), 0);
         assert_eq!(3, session.initial_size);
     }
 
@@ -1363,7 +1503,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(
             cards(4),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 2,
@@ -1377,7 +1517,7 @@ mod tests {
         assert!(session.is_finished());
         assert_eq!(2, session.stats.reviews);
 
-        assert!(session.restart(&store, 1002));
+        assert!(session.restart(&mut store, 1002));
         assert_eq!(2, session.initial_size);
         assert_eq!(0, session.stats.reviews);
         assert!(!session.is_finished());
@@ -1386,11 +1526,17 @@ mod tests {
     #[test]
     fn restart_with_nothing_due_returns_false_and_keeps_stats() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
+        let mut session = Session::new(
+            cards(1),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1000,
+        );
         session.grade(&mut store, Grade::Pass, 1000);
         assert!(session.is_finished());
 
-        assert!(!session.restart(&store, 1001));
+        assert!(!session.restart(&mut store, 1001));
         assert!(session.is_finished());
         assert_eq!(1, session.stats.reviews);
     }
@@ -1398,11 +1544,17 @@ mod tests {
     #[test]
     fn has_due_now_tracks_what_restart_would_find() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
+        let mut session = Session::new(
+            cards(1),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1000,
+        );
         assert!(session.has_due_now(&store, 1000));
         session.grade(&mut store, Grade::Pass, 1000);
         assert!(!session.has_due_now(&store, 1001));
-        assert!(!session.restart(&store, 1001));
+        assert!(!session.restart(&mut store, 1001));
         assert!(session.has_due_now(&store, 1000 + 3_600_000));
     }
 
@@ -1410,7 +1562,7 @@ mod tests {
     fn next_due_at_reports_earliest_due_time() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1000);
         assert_eq!(None, session.next_due_at(&store));
         session.grade(&mut store, Grade::Pass, 1000);
         let due = session
@@ -1463,7 +1615,7 @@ mod tests {
         let c = card("deck.md", 0);
         let s = store.get_or_insert(&c.id().unwrap(), now);
         s.streak = 1;
-        s.acquired_ms = now;
+        s.acquired_ms = Some(now);
         let one = std::slice::from_ref(&c);
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         assert!(!has_reviewable(
@@ -1502,7 +1654,7 @@ mod tests {
 
         let session = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 10,
@@ -1527,7 +1679,7 @@ mod tests {
 
         let mut session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 cram: true,
@@ -1554,7 +1706,7 @@ mod tests {
 
         let mut session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 cram: true,
@@ -1586,7 +1738,7 @@ mod tests {
 
         let mut session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 cram: true,
@@ -1618,7 +1770,7 @@ mod tests {
 
         let mut session = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 cram: true,
@@ -1650,7 +1802,7 @@ mod tests {
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
         let mut session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 topology: Some(topo),
@@ -1675,7 +1827,7 @@ mod tests {
         let topo = topology_order(&[&all[1], &all[0]]);
         let session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 0,
@@ -1698,7 +1850,7 @@ mod tests {
         let topo = topology_order(&[&all[1]]);
         let mut session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 topology: Some(topo),
@@ -1721,7 +1873,7 @@ mod tests {
         let topo = topology_order(&[&all[0]]);
         let session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 topology: Some(topo),
@@ -1761,7 +1913,7 @@ mod tests {
         let topo = topology_order(&[&sib_a, &sib_b, &other]);
         let mut session = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 topology: Some(topo),
@@ -1785,7 +1937,7 @@ mod tests {
         let topo = topology_order(&[&all[3], &all[1], &all[0], &all[2]]);
         let session = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 10,
@@ -1799,50 +1951,193 @@ mod tests {
         assert_eq!("front 1", session.current().unwrap().front);
     }
 
+    const CAP: Option<u32> = Some(DEFAULT_RETIRE_AFTER_DAYS);
+
     #[test]
-    fn card_strength_is_full_right_after_review_and_decays() {
+    fn a_first_presentation_stamps_once_and_later_presentations_never_rewrite() {
         let (mut store, _dir) = empty_store();
-        let id = 42;
-        store.get_or_insert(&id.to_string(), 0).recall = Some(FsrsState {
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1_000);
+
+        assert_eq!(Some(1_000), store.get(&id).unwrap().presented_ms);
+        assert!(session.take_presented_stamped(), "the first showing wrote");
+        assert!(!session.take_presented_stamped(), "the latch is one-shot");
+
+        session.poll(&mut store, 2_000);
+        assert!(!session.take_presented_stamped(), "same showing, no write");
+
+        session.acquire_current(&mut store, 3_000);
+        session.poll(&mut store, 3_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        assert_eq!(Some(id.clone()), session.current().and_then(|c| c.id()));
+        assert!(
+            !session.take_presented_stamped(),
+            "a second presentation is a no-op"
+        );
+        assert_eq!(
+            Some(1_000),
+            store.get(&id).unwrap().presented_ms,
+            "the first-presented instant never moves"
+        );
+    }
+
+    #[test]
+    fn a_presented_then_failed_card_is_seen_with_no_acquire_fact() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let mut session = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            1_000,
+        );
+        session.grade(&mut store, Grade::Fail, 1_000);
+
+        let state = store.get(&id).expect("the failed attempt left an entry");
+        assert_eq!(
+            None, state.acquired_ms,
+            "never gotten right, never acquired"
+        );
+        assert_eq!(Some(1_000), state.presented_ms);
+        assert_eq!(
+            vec![CardTier::Seen],
+            card_tiers(&[id], &store, 1_000, CAP),
+            "presented plus failed reads as seen, not acquired"
+        );
+    }
+
+    #[test]
+    fn presentation_alone_leaves_the_card_fresh_for_the_next_session() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let session = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1_000,
+        );
+        assert!(session.current_fresh(&store), "still the acquire on-ramp");
+        assert_eq!(None, session.next_due_at(&store));
+        drop(session);
+        assert!(store.get(&id).is_some(), "the presentation left its stamp");
+
+        let capped = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_new: 0,
+                ..Default::default()
+            },
+            2_000,
+        );
+        assert_eq!(
+            0, capped.initial_size,
+            "a presented-only card still counts against max_new, never as due"
+        );
+    }
+
+    #[test]
+    fn card_tiers_maps_untouched_seen_acquired_and_retired() {
+        let (mut store, _dir) = empty_store();
+        let seen = "seen".to_string();
+        store.note_presented(&seen, 1_000);
+        let acquired = "acquired".to_string();
+        store.get_or_insert(&acquired, 1_000);
+        let retired = "retired".to_string();
+        store.get_or_insert(&retired, 1_000).recall = Some(retired_fsrs());
+        let ids = ["untouched".to_string(), seen, acquired, retired];
+        assert_eq!(
+            vec![
+                CardTier::Untouched,
+                CardTier::Seen,
+                CardTier::Acquired,
+                CardTier::Retired,
+            ],
+            card_tiers(&ids, &store, 1_000, CAP)
+        );
+        assert!(card_tiers(&[], &store, 0, CAP).is_empty());
+    }
+
+    #[test]
+    fn learned_tiers_band_current_retrievability_not_history() {
+        let (mut store, _dir) = empty_store();
+        let id = "learned".to_string();
+        store.get_or_insert(&id, 0).recall = Some(FsrsState {
             stability: 10.0,
             state: 2,
             ..Default::default()
         });
-        let ten_days_ms = 10 * 86_400_000;
-        let fresh = card_strengths(&[id.to_string()], &store, 0);
-        let later = card_strengths(&[id.to_string()], &store, ten_days_ms);
-        assert!(fresh[0] > 0.99, "R≈1 right after review, got {}", fresh[0]);
+        let day = 86_400_000u64;
+        let r_at =
+            |days: u64| Parameters::forgetting_curve(days as f64, 10.0).clamp(0.0, 1.0) as f32;
+
+        assert!(r_at(0) >= LEARNED_STRONG_MIN);
+        assert_eq!(
+            vec![CardTier::LearnedStrong],
+            card_tiers(std::slice::from_ref(&id), &store, 0, CAP)
+        );
+
+        let mid = r_at(30);
         assert!(
-            later[0] < fresh[0] && later[0] > 0.0,
-            "R should decay with elapsed time, got {} then {}",
-            fresh[0],
-            later[0]
+            (LEARNED_WEAK_BELOW..LEARNED_STRONG_MIN).contains(&mid),
+            "r(30d) = {mid}"
+        );
+        assert_eq!(
+            vec![CardTier::LearnedFading],
+            card_tiers(std::slice::from_ref(&id), &store, 30 * day, CAP),
+            "the same card decays into the middle band"
+        );
+
+        let low = r_at(100);
+        assert!(low < LEARNED_WEAK_BELOW, "r(100d) = {low}");
+        assert_eq!(
+            vec![CardTier::LearnedWeak],
+            card_tiers(std::slice::from_ref(&id), &store, 100 * day, CAP)
+        );
+
+        store.get_or_insert(&id, 0).recall = Some(FsrsState {
+            stability: 10.0,
+            state: 1,
+            ..Default::default()
+        });
+        assert_eq!(
+            vec![CardTier::Acquired],
+            card_tiers(std::slice::from_ref(&id), &store, 0, CAP),
+            "a not-yet-graduated schedule is acquired, never banded"
         );
     }
 
     #[test]
-    fn card_with_no_fsrs_has_no_retrievability_signal() {
-        let (store, _dir) = empty_store();
-        assert_eq!(vec![-1.0], card_strengths(&[7.to_string()], &store, 0));
-        assert!(card_strengths(&[], &store, 0).is_empty());
-    }
-
-    #[test]
-    fn a_seen_but_ungraded_card_is_distinct_from_an_untouched_one() {
+    fn every_engaged_card_was_presented_first() {
         let (mut store, _dir) = empty_store();
-        let seen = 7.to_string();
-        store.get_or_insert(&seen, 1_000);
-        let untouched = 8.to_string();
-        assert_eq!(
-            vec![-2.0],
-            card_strengths(&[seen], &store, 0),
-            "a card met in an acquire pass but not graded is seen, not untouched"
-        );
-        assert_eq!(
-            vec![-1.0],
-            card_strengths(&[untouched], &store, 0),
-            "a card with no store entry is still untouched"
-        );
+        let all = cards(3);
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1_000);
+        session.acquire_current(&mut store, 1_000);
+        session.acquire_current(&mut store, 1_000);
+        session.acquire_current(&mut store, 1_000);
+        let now = 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS;
+        session.poll(&mut store, now);
+        session.grade(&mut store, Grade::Fail, now);
+        session.grade(&mut store, Grade::Pass, now);
+
+        let ids: Vec<String> = session.cards().iter().filter_map(|c| c.id()).collect();
+        for id in &ids {
+            let state = store.get(id).expect("every card was served");
+            assert!(state.engaged());
+            assert!(
+                state.presented_ms.is_some(),
+                "grading or acquiring happens to the current card, so the \
+                 presentation stamp always lands first ({id})"
+            );
+        }
     }
 
     #[test]
@@ -1850,7 +2145,13 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
-        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
+        let session = Session::new(
+            vec![synth],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
         assert_eq!(1, session.initial_size);
         assert_eq!("virtual front", session.current().unwrap().front);
         assert!(session.current_is_virtual(&store));
@@ -1862,8 +2163,13 @@ mod tests {
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let id = synth.id().unwrap();
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
-        let mut session =
-            Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(
+            vec![synth],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
 
         session.grade(&mut store, Grade::Pass, now);
 
@@ -1878,8 +2184,14 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
-        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
-        assert!(!session.current_unseen(&store));
+        let session = Session::new(
+            vec![synth],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
+        assert!(!session.current_fresh(&store));
     }
 
     #[test]
@@ -1893,7 +2205,7 @@ mod tests {
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(
             vec![synth, deck_card],
-            &store,
+            &mut store,
             sched(),
             SessionOptions::default(),
             now,
@@ -1902,7 +2214,7 @@ mod tests {
         assert_eq!(synth_id, session.current().unwrap().id());
         session.grade(&mut store, Grade::Fail, now);
         session.grade(&mut store, Grade::Pass, now + 1000);
-        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
         assert_eq!(synth_id, session.current().unwrap().id());
     }
 
@@ -1937,7 +2249,7 @@ mod tests {
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 1000);
         let session = Session::new(
             vec![synth],
-            &store,
+            &mut store,
             sched(),
             SessionOptions::default(),
             1000,
@@ -1959,12 +2271,24 @@ mod tests {
         };
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
-        let mut session = Session::new(vec![synth.clone()], &store, sched(), options.clone(), now);
+        let mut session = Session::new(
+            vec![synth.clone()],
+            &mut store,
+            sched(),
+            options.clone(),
+            now,
+        );
         session.grade(&mut store, Grade::Pass, now);
         assert!(!is_retired_id(&id, &store, options.retire_after_days));
 
         let now = 86_460_000;
-        let mut session = Session::new(vec![synth.clone()], &store, sched(), options.clone(), now);
+        let mut session = Session::new(
+            vec![synth.clone()],
+            &mut store,
+            sched(),
+            options.clone(),
+            now,
+        );
         session.grade(&mut store, Grade::Pass, now);
 
         assert!(is_retired_id(&id, &store, options.retire_after_days));
@@ -1973,7 +2297,7 @@ mod tests {
         assert_eq!(2, state.total_reviews);
         assert!(store.is_virtual(&id));
 
-        let session = Session::new(vec![synth], &store, sched(), options.clone(), now);
+        let session = Session::new(vec![synth], &mut store, sched(), options.clone(), now);
         assert!(session.is_finished());
         assert_eq!(
             0,
@@ -2019,7 +2343,13 @@ mod tests {
         store.get_or_insert(&id, 0).recall = Some(retired_fsrs());
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
-        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
+        let session = Session::new(
+            vec![synth],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
         assert!(session.is_finished());
 
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
@@ -2037,8 +2367,13 @@ mod tests {
         let id = synth.id().unwrap();
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
-        let mut session =
-            Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
+        let mut session = Session::new(
+            vec![synth],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
         session.grade(&mut store, Grade::Pass, now);
 
         assert!(!is_retired_id(&id, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
@@ -2056,7 +2391,7 @@ mod tests {
         });
         let mut s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Reconstruct,
@@ -2089,7 +2424,7 @@ mod tests {
         });
         let s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Reconstruct,
@@ -2107,7 +2442,7 @@ mod tests {
         let (a, b) = (all[0].id().unwrap(), all[1].id().unwrap());
         let mut s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2128,7 +2463,7 @@ mod tests {
             s.remaining(),
             "the wrong pick re-queues, but the floor holds it back"
         );
-        s.poll(&store, 2_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        s.poll(&mut store, 2_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(
             1,
             s.remaining(),
@@ -2143,7 +2478,7 @@ mod tests {
         let (a, b, c) = (all[0].id(), all[1].id(), all[2].id());
         let mut s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2163,7 +2498,7 @@ mod tests {
             "A and B are both still floored — C is the only unfloored card left"
         );
 
-        s.poll(&store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS + 500);
+        s.poll(&mut store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS + 500);
         assert_eq!(
             a,
             s.current().unwrap().id(),
@@ -2178,7 +2513,7 @@ mod tests {
         let id = all[0].id().unwrap();
         let mut s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2193,10 +2528,10 @@ mod tests {
             "the only card floors instead of resurfacing instantly"
         );
 
-        s.poll(&store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
+        s.poll(&mut store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
         assert!(s.is_finished(), "the floor hasn't passed yet");
 
-        s.poll(&store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        s.poll(&mut store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(
             Some(id),
             s.current().and_then(|c| c.id()),
@@ -2211,7 +2546,7 @@ mod tests {
         store.get_or_insert(&all[0].id().unwrap(), 0).recognized_ms = Some(5);
         let s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2224,10 +2559,10 @@ mod tests {
 
     #[test]
     fn recognize_caps_never_met_intake_at_max_new() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         let s = Session::new(
             cards(22),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 10,
@@ -2248,7 +2583,7 @@ mod tests {
         }
         let s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 3,
@@ -2270,7 +2605,7 @@ mod tests {
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
         let mut s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2295,7 +2630,7 @@ mod tests {
         }
         let mut s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2312,12 +2647,12 @@ mod tests {
 
     #[test]
     fn recognize_topology_reorders_but_never_chooses_which_fresh_cards_enter() {
-        let (store, _dir) = empty_store();
+        let (mut store, _dir) = empty_store();
         let all = cards(3);
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
         let s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 max_new: 2,
@@ -2345,7 +2680,7 @@ mod tests {
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
         let mut s = Session::new(
             all,
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 limit: Some(2),
@@ -2372,7 +2707,7 @@ mod tests {
         }
     }
 
-    fn reconstruct_session(all: Vec<Card>, store: &Store, cram: bool, now: u64) -> Session {
+    fn reconstruct_session(all: Vec<Card>, store: &mut Store, cram: bool, now: u64) -> Session {
         Session::new(
             all,
             store,
@@ -2394,7 +2729,7 @@ mod tests {
         store.get_or_insert(&id, 0).recall = Some(mature_fsrs(500));
         let now = 40 * 86_400_000;
 
-        let mut s = reconstruct_session(all, &store, false, now);
+        let mut s = reconstruct_session(all, &mut store, false, now);
         s.grade(&mut store, Grade::Pass, now);
 
         let st = store.get(&id).unwrap();
@@ -2417,7 +2752,7 @@ mod tests {
         let now = 1_000_000;
         store.get_or_insert(&id, 0).recall = Some(mature_fsrs(2_000_000));
 
-        let mut s = reconstruct_session(all, &store, false, now);
+        let mut s = reconstruct_session(all, &mut store, false, now);
         s.grade(&mut store, Grade::Pass, now);
 
         let st = store.get(&id).unwrap();
@@ -2442,7 +2777,7 @@ mod tests {
         let now = 1_000_000;
         store.get_or_insert(&id, 0).reconstruct = Some(mature_fsrs(500));
 
-        let mut s = reconstruct_session(all, &store, false, now);
+        let mut s = reconstruct_session(all, &mut store, false, now);
         s.grade(&mut store, Grade::Pass, now);
 
         let st = store.get(&id).unwrap();
@@ -2460,7 +2795,7 @@ mod tests {
             store.get_or_insert(&c.id().unwrap(), 0).recall = Some(mature_fsrs(500));
         }
 
-        let mut s = reconstruct_session(all.clone(), &store, false, now);
+        let mut s = reconstruct_session(all.clone(), &mut store, false, now);
         s.grade(&mut store, Grade::Partial, now);
         s.grade(&mut store, Grade::Fail, now);
 
@@ -2486,7 +2821,7 @@ mod tests {
         state.recall = Some(mature_fsrs(500));
         state.reconstruct = Some(mature_fsrs(500));
 
-        let mut s = reconstruct_session(all, &store, true, now);
+        let mut s = reconstruct_session(all, &mut store, true, now);
         s.grade(&mut store, Grade::Pass, now);
 
         let st = store.get(&id).unwrap();
@@ -2514,7 +2849,7 @@ mod tests {
         state.recall = Some(mature_fsrs(future));
         state.reconstruct = Some(mature_fsrs(future));
 
-        let mut s = reconstruct_session(all, &store, true, now);
+        let mut s = reconstruct_session(all, &mut store, true, now);
         s.grade(&mut store, Grade::Pass, now);
 
         let st = store.get(&id).unwrap();
@@ -2541,7 +2876,7 @@ mod tests {
 
         let normal = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2553,7 +2888,7 @@ mod tests {
 
         let cram = Session::new(
             all.clone(),
-            &store,
+            &mut store,
             sched(),
             SessionOptions {
                 depth: Depth::Recognize,
@@ -2573,7 +2908,7 @@ mod tests {
 
         let mut recall = Session::new(
             vec![all[0].clone()],
-            &store,
+            &mut store,
             sched(),
             SessionOptions::default(),
             now,
@@ -2585,7 +2920,7 @@ mod tests {
             "a recall pass marks recognized"
         );
 
-        let mut reconstruct = reconstruct_session(vec![all[1].clone()], &store, false, now);
+        let mut reconstruct = reconstruct_session(vec![all[1].clone()], &mut store, false, now);
         reconstruct.grade(&mut store, Grade::Pass, now);
         assert_eq!(
             Some(now),
@@ -2595,7 +2930,7 @@ mod tests {
 
         let mut partial = Session::new(
             vec![all[2].clone()],
-            &store,
+            &mut store,
             sched(),
             SessionOptions::default(),
             now,

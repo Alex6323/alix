@@ -11,7 +11,7 @@ use crate::{
     picker,
     render::NoteUnit,
     scheduler::{Fsrs, Grade},
-    session::Session,
+    session::{CardTier, Session},
     source::SourceBase,
     trace::Delta,
 };
@@ -870,7 +870,7 @@ fn finished_review_uses_the_done_phase_not_a_finished_flag() {
     assert_eq!(dto.kind, "review");
 }
 
-fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) -> Reviewing {
+fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth) -> Reviewing {
     let session = Session::new(
         cards,
         store,
@@ -912,7 +912,7 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&cards[0].id().unwrap(), 0);
-    let r = reviewing_at(deck, cards, &store, Depth::Reconstruct);
+    let r = reviewing_at(deck, cards, &mut store, Depth::Reconstruct);
 
     let dto = review_state(Some(&r), &store, None);
     assert_eq!(
@@ -934,7 +934,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&cards[0].id().unwrap(), 0);
-    let mut r = reviewing_at(deck, cards.clone(), &store, Depth::Reconstruct);
+    let mut r = reviewing_at(deck, cards.clone(), &mut store, Depth::Reconstruct);
 
     let fallback = review_state(Some(&r), &store, None);
     assert_eq!(fallback.mode, "explain");
@@ -964,7 +964,7 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
-    let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
+    let mut r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
         vec!["dog".to_string(), "fish".to_string(), "bird".to_string()],
@@ -993,7 +993,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
     let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
-    let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
+    let mut r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
         vec![
@@ -1030,7 +1030,7 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&cards[0].id().unwrap(), 0);
-    let r = reviewing_at(deck, cards, &store, Depth::Recognize);
+    let r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
 
     let dto = review_state(Some(&r), &store, None);
     assert!(
@@ -1050,7 +1050,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
-    let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
+    let mut r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
         vec![
@@ -1078,7 +1078,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
             "the only card floors instead of resurfacing instantly"
         );
         now += crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
-        r.session.poll(&store, now);
+        r.session.poll(&mut store, now);
         assert_eq!(
             Some(id.clone()),
             r.session.current().and_then(|c| c.id()),
@@ -1107,7 +1107,7 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     let state = store.get_or_insert(&cards[0].id().unwrap(), 0);
     state.recognized_ms = Some(500);
-    let r = reviewing_at(deck, cards, &store, Depth::Recall);
+    let r = reviewing_at(deck, cards, &mut store, Depth::Recall);
 
     let dto = review_state(Some(&r), &store, None);
     assert!(!dto.acquire, "a recognized card isn't acquired cold");
@@ -1135,7 +1135,7 @@ fn input_name_matches_clap_value_names() {
 fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
     let deck = dir.join("d.md");
     std::fs::write(&deck, "## front <!-- id: card-q1 -->\nback\n").unwrap();
-    let store = Store::open(dir.join("p.json")).unwrap();
+    let mut store = Store::open(dir.join("p.json")).unwrap();
     let mut card = Card::plain(
         Arc::from("d.md"),
         "front".to_string(),
@@ -1149,7 +1149,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
     card.deck_id = Arc::from("one-card-deck");
     let session = Session::new(
         vec![card.clone()],
-        &store,
+        &mut store,
         Box::new(Fsrs::default()),
         crate::session::SessionOptions::default(),
         now_ms(),
@@ -1274,10 +1274,10 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let card = deck.cards[0].clone();
     assert!(card.citations[0].asset.is_some(), "the card is frozen");
 
-    let store = Store::open(dir.path().join("p.json")).unwrap();
+    let mut store = Store::open(dir.path().join("p.json")).unwrap();
     let session = Session::new(
         vec![card.clone()],
-        &store,
+        &mut store,
         Box::new(Fsrs::default()),
         crate::session::SessionOptions::default(),
         now_ms(),
@@ -1382,7 +1382,7 @@ fn exam_due_reports_the_decks_name_not_its_routing_id() {
         ..Default::default()
     });
 
-    let r = reviewing_at(deck_path, vec![card], &store, Depth::Recall);
+    let r = reviewing_at(deck_path, vec![card], &mut store, Depth::Recall);
     let dto = review_state(Some(&r), &store, None);
     assert_eq!("done", dto.phase, "expected a finished session: {dto:?}");
     assert_eq!(vec!["d.md".to_string()], dto.exam_due);
@@ -1699,9 +1699,8 @@ fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
 
     let dto = deck_drawer_dto(&augment, &store, &deck, None);
     assert_eq!(Some("A short intro."), dto.preamble.as_deref());
-    // One cell per stamped card; a never-reviewed card reads as the neutral
-    // negative value (-1.0), not 0.0.
-    assert_eq!(vec![-1.0, -1.0], dto.heatmap);
+    // One cell per stamped card; a never-presented card is the untouched tier.
+    assert_eq!(vec![CardTier::Untouched, CardTier::Untouched], dto.heatmap);
     assert!(dto.topologies.is_empty());
 }
 

@@ -116,9 +116,9 @@ so is every client.
 4. `POST /api/grade` is **authoritative**: `{grade: "failed"|"partly"|"passed"}`
    *(closed)*, or `{covered, total}` for the explain-keypoints rubric. It
    applies the grade, saves progress, and returns the next `StateDto`.
-   Other transitions: `/api/skip`, `/api/acquire` (acknowledge a never-seen
-   card), `/api/remove` (mark for deck-file removal), `/api/promote`
-   (virtual→deck file), `/api/restart`.
+   Other transitions: `/api/skip`, `/api/acquire` (acknowledge a new card the
+   learner has no recorded attempt on), `/api/remove` (mark for deck-file
+   removal), `/api/promote` (virtual→deck file), `/api/restart`.
 5. `GET /api/state` re-checks server-side due-ness (a missed card can cool back
    in) — poll it on the summary screen. Session end is `phase:"done"` on the
    same `StateDto`; there is no separate finished flag.
@@ -524,11 +524,11 @@ The review-session payload; returned by every review action.
 | `choice_runs` | [[InlineRun]]? | Display projection for `choices`, in exact index lockstep. Null when `choices` is null. |
 | `keypoints` | [string]? | Explain-check rubric lines. |
 | `keypoint_runs` | [[InlineRun]]? | Display projection for `keypoints`, in exact index lockstep. Null when `keypoints` is null. |
-| `acquire` | bool | Never-seen card: show, then `/api/acquire` — no grading. |
+| `acquire` | bool | New card (no attempt or acknowledgment recorded, even if presented before): show, then `/api/acquire`, no grading. |
 | `mode` | string | The check being rendered: `flip` \| `typing` \| `typeline` \| `choice` \| `line` \| `explain` (open set). |
 | `depth` | string | `recognize` \| `recall` \| `reconstruct` *(closed)*. |
 | `input` | string | `type` \| `draw`. |
-| `remaining` / `initial` / `reviews` / `passed` / `failed` / `acquired` | number | Session counters; `acquired` counts never-seen cards introduced this sitting (a first pass is acquire-only, so `reviews` alone reads 0). |
+| `remaining` / `initial` / `reviews` / `passed` / `failed` / `acquired` | number | Session counters; `acquired` counts new cards introduced this sitting (a first pass is acquire-only, so `reviews` alone reads 0). |
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything due/new right now. |
 | `promotable` | bool | Current card is a virtual (remediation) card. |
@@ -610,8 +610,9 @@ projection and `runs` preserves inline formatting for display.
 
 ### CrumbDto
 
-`regions: [string]`, `current: number`, `cells: [[number]]` (0..=1 strengths,
-per region per card) *(presentational)*.
+`regions: [string]`, `current: number`, `cells: [[string]]` (one card tier per
+region per card; the same seven-value tier vocabulary as
+`DeckDrawerDto.heatmap`) *(presentational)*.
 
 ### BrowseDto
 
@@ -671,19 +672,27 @@ never a group.
 ### DeckDrawerDto
 
 `preamble: string | null` (the prose under the deck's `#` H1, if any),
-`heatmap: [number]` (per-card Recall retrievability in file order, `0` weak to
-`1` learned; `-1` marks a card never met, rendered neutral, and `-2` a card seen
-in an acquire pass but not yet graded, rendered a dim "seen" cell),
-`topologies: [{name, principle, regions: [{name, cells: [number]}]}]` (present
-only when the deck has a topology augmentation; `cells` use the same scale as
-`heatmap`), and a nested progress funnel `total`, `seen`, `graduated`, `retired`
-(all `number`). `total` is the deck's card count (not derivable from `heatmap`,
-which lists only stamped cards); the rest count cards at or past a stage and nest
-`retired <= graduated <= seen <= total`: `seen` has any progress, `graduated`
-reached FSRS review (shown to the user as "learned"), `retired` is past the
-retire cap. The drawer prints them middle-dot separated (`N cards · s seen · k
-learned · r retired`), hiding every component that is zero, so a fresh deck reads
-as a plain "N cards". Powers the picker's focus drawer.
+`heatmap: [string]` (one tier per card in file order, from the seven-value
+vocabulary `"untouched"` | `"seen"` | `"acquired"` | `"learned-strong"` |
+`"learned-fading"` | `"learned-weak"` | `"retired"`). The tiers: `untouched`
+was never presented; `seen` was presented at least once but never yet answered
+correctly (correctness of attempts is irrelevant to being seen); `acquired`
+was correct at least once but has not graduated; the three `learned-*` values
+are a graduated card banded by its CURRENT Recall retrievability (strong:
+`>= 0.9`, matching the scheduler's default request retention; weak: `< 0.7`;
+fading between; the thresholds live lib-side, clients only map the strings to
+colors); `retired` is past the retire cap.
+`topologies: [{name, principle, regions: [{name, cells: [string]}]}]` (present
+only when the deck has a topology augmentation; `cells` use the same tier
+vocabulary as `heatmap`), and a nested progress funnel `total`, `seen`,
+`graduated`, `retired` (all `number`). `total` is the deck's card count (not
+derivable from `heatmap`, which lists only stamped cards); the rest count cards
+at or past a stage and nest `retired <= graduated <= seen <= total`: `seen` was
+presented at least once, `graduated` reached FSRS review (shown to the user as
+"learned"), `retired` is past the retire cap. The drawer prints them middle-dot
+separated (`N cards · s seen · k learned · r retired`), hiding every component
+that is zero, so a fresh deck reads as a plain "N cards". Powers the picker's
+focus drawer.
 
 ### CheckFeedbackDto
 

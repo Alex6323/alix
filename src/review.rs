@@ -203,7 +203,7 @@ pub fn state(
     let base_mode = card
         .map(|c| depth::check_for(c.reveal.unwrap_or_default(), depth, c))
         .unwrap_or_default();
-    let acquire = session.current_unseen(store);
+    let acquire = session.current_fresh(store);
     let choices = current_question(session, store, augment).map(|q| q.options);
     // Falls back to Flip when no pick can be built (no distractors): claiming
     // a choice with nothing to choose would strand the card.
@@ -282,7 +282,7 @@ pub fn current_question(
         let ai = augment.distractors(&id, card.content_fingerprint)?;
         return choice::build(card, seed, ai);
     }
-    if store.get(&id).is_none() {
+    if store.progress(&id).is_none() {
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
         }
@@ -365,7 +365,7 @@ mod tests {
         (store, augment, dir)
     }
 
-    fn session_at(cards: Vec<Card>, store: &Store, depth: Depth, now: u64) -> Session {
+    fn session_at(cards: Vec<Card>, store: &mut Store, depth: Depth, now: u64) -> Session {
         Session::new(
             cards,
             store,
@@ -380,7 +380,10 @@ mod tests {
 
     fn seen(store: &mut Store, cards: &[Card]) {
         for card in cards {
-            store.get_or_insert(&card.id().unwrap(), T0);
+            store
+                .get_or_insert(&card.id().unwrap(), T0)
+                .acquired_ms
+                .get_or_insert(T0);
         }
     }
 
@@ -413,7 +416,7 @@ mod tests {
             (many, Depth::Recognize, Mode::Choice),
         ];
         for (cards, depth, want) in cases {
-            let session = session_at(cards, &store, depth, NOW);
+            let session = session_at(cards, &mut store, depth, NOW);
             assert!(session.current().is_some(), "{depth:?} serves the card");
             assert_eq!(
                 state(&session, &store, &augment, Some(NOW)).mode,
@@ -427,17 +430,32 @@ mod tests {
     fn acquire_flags_a_first_encounter_only() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q\na\n");
-        let fresh = session_at(cards.clone(), &store, Depth::Recall, NOW);
+        let fresh = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
         assert!(
             state(&fresh, &store, &augment, Some(NOW)).acquire,
             "never-seen card"
         );
 
         seen(&mut store, &cards);
-        let again = session_at(cards, &store, Depth::Recall, NOW);
+        let again = session_at(cards, &mut store, Depth::Recall, NOW);
         assert!(
             !state(&again, &store, &augment, Some(NOW)).acquire,
             "seen card"
+        );
+    }
+
+    #[test]
+    fn a_presented_but_unacknowledged_card_keeps_its_acquire_on_ramp() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## q\na\n");
+        let first = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
+        assert!(state(&first, &store, &augment, Some(NOW)).acquire);
+        drop(first);
+
+        let again = session_at(cards, &mut store, Depth::Recall, NOW + 1);
+        assert!(
+            state(&again, &store, &augment, Some(NOW + 1)).acquire,
+            "the presentation stamp alone must not consume the on-ramp"
         );
     }
 
@@ -454,7 +472,7 @@ mod tests {
             alt: None,
         }];
         seen(&mut store, &cards);
-        let session = session_at(cards, &store, Depth::Recall, NOW);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
         let card = state(&session, &store, &augment, Some(NOW))
             .card
             .expect("a card");
@@ -624,18 +642,18 @@ mod tests {
         seen(&mut store, &cards);
         arm(&mut augment, &cards);
 
-        let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
+        let recall = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
         assert_eq!(state(&recall, &store, &augment, Some(NOW)).choices, None);
 
-        let recognize = session_at(cards.clone(), &store, Depth::Recognize, NOW);
+        let recognize = session_at(cards.clone(), &mut store, Depth::Recognize, NOW);
         let options = state(&recognize, &store, &augment, Some(NOW))
             .choices
             .expect("cached distractors arm the Recognize pick");
         assert_eq!(options.len(), crate::choice::NUM_OPTIONS);
 
-        let fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
+        let mut fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
         let empty_augment = AugmentCache::open(_dir.path().join("empty.json"));
-        let acquire = session_at(cards.clone(), &fresh_store, Depth::Recall, NOW);
+        let acquire = session_at(cards.clone(), &mut fresh_store, Depth::Recall, NOW);
         let bare = state(&acquire, &fresh_store, &empty_augment, Some(NOW));
         assert!(bare.acquire);
         assert_eq!(bare.choices, None, "no distractors, no acquire pick");
@@ -649,7 +667,7 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## lone q\nlone a\n");
         seen(&mut store, &cards);
-        let recognize = session_at(cards, &store, Depth::Recognize, NOW);
+        let recognize = session_at(cards, &mut store, Depth::Recognize, NOW);
         let s = state(&recognize, &store, &augment, Some(NOW));
         assert_eq!(s.choices, None, "no siblings, no pick");
         assert_eq!(s.mode, Mode::Flip, "a choiceless Recognize card is a flip");
@@ -661,7 +679,7 @@ mod tests {
         let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
         seen(&mut store, &cards);
         arm(&mut augment, &cards);
-        let session = session_at(cards, &store, Depth::Recognize, NOW);
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
         let question = current_question(&session, &store, &augment).expect("an authored pick");
         assert_eq!(3, question.options.len());
         assert_eq!("Paris", question.options[question.correct]);
@@ -679,7 +697,7 @@ mod tests {
         let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
         seen(&mut store, &cards);
         let first = current_question(
-            &session_at(cards.clone(), &store, Depth::Recognize, NOW),
+            &session_at(cards.clone(), &mut store, Depth::Recognize, NOW),
             &store,
             &augment,
         )
@@ -688,7 +706,7 @@ mod tests {
 
         let later_session_varies = (1..12).any(|offset| {
             current_question(
-                &session_at(cards.clone(), &store, Depth::Recognize, NOW + offset),
+                &session_at(cards.clone(), &mut store, Depth::Recognize, NOW + offset),
                 &store,
                 &augment,
             )
@@ -704,13 +722,13 @@ mod tests {
 
     #[test]
     fn authored_distractors_drive_the_never_seen_acquire_attempt() {
-        let (store, mut augment, _dir) = fixtures();
+        let (mut store, mut augment, _dir) = fixtures();
         let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
         // AI distractors exist in the cache but must be ignored for an authored card.
         arm(&mut augment, &cards);
         // Never seen (no `seen(...)`) and depth is Recall, not Recognize: this is the
         // first-meeting acquire attempt, which must still use the authored options.
-        let session = session_at(cards, &store, Depth::Recall, NOW);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
         let question =
             current_question(&session, &store, &augment).expect("acquire MC from authored options");
         assert_eq!(
@@ -727,7 +745,7 @@ mod tests {
         let cards = parse(FOUR);
         seen(&mut store, &cards);
         arm(&mut augment, &cards);
-        let session = session_at(cards, &store, Depth::Recognize, NOW);
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
 
         let question = current_question(&session, &store, &augment).expect("a pick");
         let served = state(&session, &store, &augment, Some(NOW));
@@ -756,14 +774,14 @@ mod tests {
         let (mut store, _augment, _dir) = fixtures();
         let line = parse("## q <!-- reveal: line -->\none\ntwo\n");
         seen(&mut store, &line);
-        let typeline = session_at(line, &store, Depth::Reconstruct, NOW);
+        let typeline = session_at(line, &mut store, Depth::Reconstruct, NOW);
         let swapped = vec!["two".to_string(), "one".to_string()];
         let ordered = check_typed(&typeline, &swapped).expect("feedback");
         assert!(!ordered.passed, "typeline is position-sensitive");
 
         let multi = parse("## q\none\ntwo\n");
         seen(&mut store, &multi);
-        let unordered_session = session_at(multi, &store, Depth::Reconstruct, NOW);
+        let unordered_session = session_at(multi, &mut store, Depth::Reconstruct, NOW);
         let unordered = check_typed(&unordered_session, &swapped).expect("feedback");
         assert!(unordered.passed, "any order matches the same lines");
         assert_eq!(unordered.results.len(), 2);
@@ -774,7 +792,7 @@ mod tests {
         let (mut store, _augment, _dir) = fixtures();
         let cards = parse("## capital\n**Paris**\n");
         seen(&mut store, &cards);
-        let session = session_at(cards, &store, Depth::Reconstruct, NOW);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
         let feedback = check_typed(&session, &["Paris".to_string()]).expect("feedback");
         assert!(feedback.passed);
         assert_eq!("Paris", feedback.results[0].expected);
@@ -785,7 +803,7 @@ mod tests {
         let (mut store, _augment, _dir) = fixtures();
         let cards = parse("## square\n$x^2$\n");
         seen(&mut store, &cards);
-        let session = session_at(cards, &store, Depth::Reconstruct, NOW);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
         let feedback = check_typed(&session, &["x^2".to_string()]).expect("feedback");
         assert!(feedback.passed);
         assert_eq!("x^2", feedback.results[0].expected);
@@ -797,7 +815,7 @@ mod tests {
         let cards = parse("## capital\n\\blank{**Paris**}\n");
         assert_eq!(["**Paris**"], cards[0].back.as_slice());
         seen(&mut store, &cards);
-        let session = session_at(cards, &store, Depth::Reconstruct, NOW);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
         let feedback = check_typed(&session, &["Paris".to_string()]).expect("feedback");
         assert!(feedback.passed);
         assert_eq!("Paris", feedback.results[0].expected);
@@ -810,7 +828,7 @@ mod tests {
         seen(&mut store, &cards);
 
         cards[0].display_back = Some(vec!["a reshaped answer".into()]);
-        let session = session_at(cards.clone(), &store, Depth::Reconstruct, NOW);
+        let session = session_at(cards.clone(), &mut store, Depth::Reconstruct, NOW);
         let fallback = state(&session, &store, &augment, Some(NOW));
         assert_eq!(fallback.mode, Mode::Explain);
         assert_eq!(
@@ -828,11 +846,11 @@ mod tests {
         assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
         assert_eq!(cached.keypoint_runs.as_ref().map(Vec::len), Some(1));
 
-        let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
+        let recall = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
         assert_eq!(state(&recall, &store, &augment, Some(NOW)).keypoints, None);
 
-        let fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
-        let acquire = session_at(cards, &fresh, Depth::Reconstruct, NOW);
+        let mut fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
+        let acquire = session_at(cards, &mut fresh, Depth::Reconstruct, NOW);
         let acquired = state(&acquire, &fresh, &augment, Some(NOW));
         assert!(acquired.acquire);
         assert_eq!(acquired.keypoints, None);
@@ -843,7 +861,7 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse(FOUR);
         seen(&mut store, &cards);
-        let mut session = session_at(cards, &store, Depth::Recall, NOW);
+        let mut session = session_at(cards, &mut store, Depth::Recall, NOW);
         let start = state(&session, &store, &augment, Some(NOW));
         assert_eq!(start.initial, 4);
         assert_eq!((start.reviews, start.passed, start.failed), (0, 0, 0));
@@ -861,7 +879,7 @@ mod tests {
         let (_store, augment, _dir) = fixtures();
         let cards = parse(FOUR);
         let mut fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
-        let mut session = session_at(cards, &fresh, Depth::Recall, NOW);
+        let mut session = session_at(cards, &mut fresh, Depth::Recall, NOW);
         session.acquire_current(&mut fresh, NOW);
         session.acquire_current(&mut fresh, NOW);
         let s = state(&session, &fresh, &augment, Some(NOW));
@@ -878,7 +896,7 @@ mod tests {
         // Both cards met and still cooling: `sooner` comes due before `later`.
         store.get_or_insert(&sooner, NOW);
         store.get_or_insert(&later, NOW + 10_000);
-        let session = session_at(cards, &store, Depth::Recall, NOW);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert!(
             session.is_finished(),
             "every card is still inside its acquire cooldown"
@@ -894,13 +912,13 @@ mod tests {
 
     #[test]
     fn an_empty_finished_session_with_nothing_scheduled_has_no_next_due() {
-        let (store, augment, _dir) = fixtures();
+        let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q1\na1\n");
         // No card has stored state and new intake is off, so the roster is
         // empty and there is nothing to be due.
         let session = Session::new(
             cards,
-            &store,
+            &mut store,
             Box::new(Fsrs::default()),
             SessionOptions {
                 max_new: 0,
@@ -918,7 +936,7 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse(FOUR);
         seen(&mut store, &cards);
-        let session = session_at(cards, &store, Depth::Recall, NOW);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert!(!session.is_finished());
         let s = state(&session, &store, &augment, Some(NOW));
         assert_eq!(s.next_due_ms, None, "only the finished payload carries it");
@@ -938,12 +956,12 @@ mod tests {
             created_ms: T0,
         });
         store.get_or_insert(&synth.id().unwrap(), T0);
-        let session = session_at(vec![synth], &store, Depth::Recall, NOW);
+        let session = session_at(vec![synth], &mut store, Depth::Recall, NOW);
         assert!(state(&session, &store, &augment, Some(NOW)).promotable);
 
         let regular = parse("## q\na\n");
         seen(&mut store, &regular);
-        let plain = session_at(regular, &store, Depth::Recall, NOW);
+        let plain = session_at(regular, &mut store, Depth::Recall, NOW);
         assert!(!state(&plain, &store, &augment, Some(NOW)).promotable);
     }
 
@@ -952,7 +970,7 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q\na\n");
         seen(&mut store, &cards);
-        let mut session = session_at(cards, &store, Depth::Recall, NOW);
+        let mut session = session_at(cards, &mut store, Depth::Recall, NOW);
         session.grade(&mut store, Grade::Pass, NOW);
         assert!(session.is_finished());
 
@@ -968,7 +986,7 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q <!-- input: draw -->\na\n");
         seen(&mut store, &cards);
-        let session = session_at(cards, &store, Depth::Recall, NOW);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
             state(&session, &store, &augment, Some(NOW)).input,
             Input::Draw
@@ -977,8 +995,8 @@ mod tests {
 
     #[test]
     fn a_finished_session_reports_no_card_and_no_choices() {
-        let (store, augment, _dir) = fixtures();
-        let session = session_at(Vec::new(), &store, Depth::Recall, NOW);
+        let (mut store, augment, _dir) = fixtures();
+        let session = session_at(Vec::new(), &mut store, Depth::Recall, NOW);
         let state = state(&session, &store, &augment, Some(NOW));
         assert!(state.finished);
         assert!(state.card.is_none());

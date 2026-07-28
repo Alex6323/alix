@@ -6,6 +6,7 @@ use crate::{
     inline::InlineRun,
     math::MathView,
     render::{ChecklistItem, NoteUnit},
+    session::CardTier,
 };
 
 fn pin<T: serde::Serialize>(anchor: &str, dto: &T, expected: serde_json::Value) {
@@ -150,7 +151,7 @@ fn statedto_review_phase_wire_shape() {
             crumb: Some(CrumbDto {
                 regions: vec!["intro".to_string(), "body".to_string()],
                 current: 1,
-                cells: vec![vec![0.5], vec![1.0]],
+                cells: vec![vec![CardTier::Seen], vec![CardTier::LearnedStrong]],
             }),
         }),
         choices: Some(vec!["owner".to_string(), "borrower".to_string()]),
@@ -244,7 +245,7 @@ fn statedto_review_phase_wire_shape() {
                 "crumb": {
                     "regions": ["intro", "body"],
                     "current": 1,
-                    "cells": [[0.5], [1.0]]
+                    "cells": [["seen"], ["learned-strong"]]
                 }
             },
             "choices": ["owner", "borrower"],
@@ -976,18 +977,26 @@ fn decklistdto_wire_shape() {
 fn deckdrawerdto_wire_shape() {
     let dto = DeckDrawerDto {
         preamble: Some("A short intro under the H1.".to_string()),
-        heatmap: vec![0.5, 1.0, -1.0, -2.0],
+        heatmap: vec![
+            CardTier::Untouched,
+            CardTier::Seen,
+            CardTier::Acquired,
+            CardTier::LearnedStrong,
+            CardTier::LearnedFading,
+            CardTier::LearnedWeak,
+            CardTier::Retired,
+        ],
         topologies: vec![TopologyInfoDto {
             name: "north-south".to_string(),
             principle: "north to south".to_string(),
             regions: vec![RegionInfoDto {
                 name: "north".to_string(),
-                cells: vec![0.5, 1.0],
+                cells: vec![CardTier::Seen, CardTier::LearnedFading],
             }],
         }],
-        total: 4,
-        seen: 3,
-        graduated: 2,
+        total: 7,
+        seen: 6,
+        graduated: 4,
         retired: 1,
     };
     pin(
@@ -995,15 +1004,23 @@ fn deckdrawerdto_wire_shape() {
         &dto,
         json!({
             "preamble": "A short intro under the H1.",
-            "heatmap": [0.5, 1.0, -1.0, -2.0],
+            "heatmap": [
+                "untouched",
+                "seen",
+                "acquired",
+                "learned-strong",
+                "learned-fading",
+                "learned-weak",
+                "retired"
+            ],
             "topologies": [{
                 "name": "north-south",
                 "principle": "north to south",
-                "regions": [{"name": "north", "cells": [0.5, 1.0]}]
+                "regions": [{"name": "north", "cells": ["seen", "learned-fading"]}]
             }],
-            "total": 4,
-            "seen": 3,
-            "graduated": 2,
+            "total": 7,
+            "seen": 6,
+            "graduated": 4,
             "retired": 1
         }),
     );
