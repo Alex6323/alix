@@ -190,8 +190,41 @@ fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
     }
 }
 
+/// A pre-conversion frozen deck pointed `source:` at its own asset objects; the
+/// prefixed-id format keeps `source:` at the deck's real origin, so a value
+/// inside `assets/` is un-converted (a bare-fragment source an examiner would
+/// confidently fill gaps around).
+fn source_points_into_assets(source: &str) -> bool {
+    if alix::deck::is_url(source) {
+        return false;
+    }
+    let root = format!("{}/", alix::assets::ROOT);
+    source.split(" + ").any(|part| {
+        let part = part.trim();
+        part.starts_with(&root) || part.contains(&format!("/{root}"))
+    })
+}
+
+/// The internal `deck_id` field of a state document, for spotting a bare token
+/// that survived only inside the JSON (the filename catches the rest).
+fn document_deck_id_field(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value.get("deck_id")?.as_str().map(str::to_string)
+}
+
 fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     let managed = workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some();
+    for source in &deck.sources {
+        if source_points_into_assets(source) {
+            report.warn(format!(
+                "{}: `source:` points into `assets/` (`{source}`); a frozen deck keeps its \
+                 real origin, not its asset objects; back it up and run the deck conversion \
+                 tool to rewrite it",
+                deck.path.display()
+            ));
+        }
+    }
     let mut source_assets_valid = true;
     if managed && !deck.sources.is_empty() {
         let live = deck
@@ -516,6 +549,19 @@ fn workspace_findings(dir: &Path) -> Report {
                 report.warn(format!("unrecognized {kind} document {}", path.display()));
                 continue;
             };
+            if alix::token::is_valid(deck_id)
+                || document_deck_id_field(&path)
+                    .as_deref()
+                    .is_some_and(alix::token::is_valid)
+            {
+                report.warn(format!(
+                    "{kind} document {} is un-converted: its id `{deck_id}` is a bare token \
+                     with no `deck-` prefix; back it up and run the deck conversion tool to \
+                     rewrite it to the prefixed-id format",
+                    path.display()
+                ));
+                continue;
+            }
             let document_error = match kind {
                 "progress" => alix::store::Store::open_deck(&path, deck_id, "")
                     .err()
@@ -883,7 +929,7 @@ mod tests {
         let path = decks.join("facts.md");
         std::fs::write(
             &path,
-            "---\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: notes.md:1 -->\n",
         )
         .unwrap();
         let before = std::fs::read(&path).unwrap();
@@ -894,7 +940,9 @@ mod tests {
             report
                 .errors
                 .join("\n")
-                .contains("uses live `source:` evidence")
+                .contains("live `at:` citation"),
+            "{:#?}",
+            report.errors
         );
         assert_eq!(before, std::fs::read(&path).unwrap());
         assert!(!dir.path().join(alix::assets::ROOT).exists());
@@ -1387,17 +1435,17 @@ mod tests {
             .unwrap()
             .save()
             .unwrap();
-        let orphan_path = dir.path().join("augment/orphan.json");
-        alix::augment::AugmentCache::open_deck(&orphan_path, "orphan")
+        let orphan_path = dir.path().join("augment/deck-orphan.json");
+        alix::augment::AugmentCache::open_deck(&orphan_path, "deck-orphan")
             .unwrap()
             .save()
             .unwrap();
         let conflict = dir
             .path()
-            .join("progress/deck1.sync-conflict-20260725-phone.json");
+            .join("progress/deck-deck1.sync-conflict-20260725-phone.json");
         w(
             dir.path(),
-            "progress/deck1.sync-conflict-20260725-phone.json",
+            "progress/deck-deck1.sync-conflict-20260725-phone.json",
             "{}",
         );
 
@@ -1429,6 +1477,91 @@ mod tests {
         assert!(
             warnings.contains("augment.json"),
             "aggregate augment warning: {warnings}"
+        );
+    }
+
+    #[test]
+    fn doctor_flags_an_unconverted_bare_token_state_document() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "");
+        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        w(
+            &dir.path().join("progress"),
+            "mathdeck.json",
+            r#"{"version":1,"deck_id":"mathdeck","subject":"math.md","revision":1,"cards":{},"records":{},"virtual_cards":{},"writer":null}"#,
+        );
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report.warnings.iter().any(|warning| warning.contains("un-converted")
+                && warning.contains("deck conversion tool")),
+            "un-converted state document: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn doctor_flags_a_source_pointing_into_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join(alix::workspace::DECKS);
+        std::fs::create_dir(&decks).unwrap();
+        w(dir.path(), alix::workspace::MANIFEST, "");
+        let assets = dir.path().join("assets/deck-deck1");
+        std::fs::create_dir_all(&assets).unwrap();
+        let name = alix::assets::object_name(b"excerpt\n", "md");
+        std::fs::write(assets.join(&name), "excerpt\n").unwrap();
+        w(
+            &decks,
+            "facts.md",
+            &format!(
+                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                 ## q <!-- id: card-card1 -->\na\n"
+            ),
+        );
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report.warnings.iter().any(|warning| warning.contains("points into `assets/`")
+                && warning.contains("deck conversion tool")),
+            "source into assets: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn doctor_clean_new_format_workspace_has_no_conversion_warnings() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join(alix::workspace::DECKS);
+        std::fs::create_dir(&decks).unwrap();
+        w(dir.path(), alix::workspace::MANIFEST, "");
+        w(
+            &decks,
+            "facts.md",
+            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+        );
+        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        w(
+            &dir.path().join("progress"),
+            "deck-deck1.json",
+            r#"{"version":1,"deck_id":"deck-deck1","subject":"facts.md","revision":1,"cards":{},"records":{},"virtual_cards":{},"writer":null}"#,
+        );
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            !report.warnings.iter().any(|warning| warning.contains("un-converted")),
+            "clean workspace flagged un-converted: {:#?}",
+            report.warnings
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("points into `assets/`")),
+            "clean workspace flagged a source into assets: {:#?}",
+            report.warnings
         );
     }
 
