@@ -806,7 +806,7 @@ fn decklistdto_wire_shape() {
                 name: "rustws/intro.md".to_string(),
                 selectable: true,
                 label: "Intro".to_string(),
-                meta: Some("3/10".to_string()),
+                meta: None,
                 state: "started",
                 locked: false,
                 reviewable: true,
@@ -902,7 +902,7 @@ fn decklistdto_wire_shape() {
                     "name": "rustws/intro.md",
                     "selectable": true,
                     "label": "Intro",
-                    "meta": "3/10",
+                    "meta": null,
                     "state": "started",
                     "locked": false,
                     "reviewable": true,
@@ -986,6 +986,9 @@ fn deckdrawerdto_wire_shape() {
             }],
         }],
         total: 4,
+        seen: 3,
+        graduated: 2,
+        retired: 1,
     };
     pin(
         "DeckDrawerDto",
@@ -998,7 +1001,10 @@ fn deckdrawerdto_wire_shape() {
                 "principle": "north to south",
                 "regions": [{"name": "north", "cells": [0.5, 1.0]}]
             }],
-            "total": 4
+            "total": 4,
+            "seen": 3,
+            "graduated": 2,
+            "retired": 1
         }),
     );
 }

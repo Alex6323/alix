@@ -2847,13 +2847,18 @@ async function renderSelect(preloaded) {
       const wrap = el("div", "drawer-wrap");
       const box = el("div", "drawer");
 
-      // The deck's size, pinned top-right (size-only: informative, not shocking
-      // like a due backlog). `total` is a lib-computed count, not heatmap.length,
-      // which omits unstamped cards.
+      // A size-first progress funnel pinned top-right (informative, not shocking
+      // like a due backlog). The counts nest lib-side (retired ⊆ learned ⊆ seen ⊆
+      // total); each component after the total is hidden while zero, so a fresh
+      // deck reads as a plain "N cards".
       const total = data.total || 0;
       if (total > 0) {
+        const parts = [total === 1 ? "1 card" : total + " cards"];
+        if (data.seen) parts.push(data.seen + " seen");
+        if (data.graduated) parts.push(data.graduated + " learned");
+        if (data.retired) parts.push(data.retired + " retired");
         const top = el("div", "drawer-top");
-        top.appendChild(el("span", "drawer-size", total === 1 ? "1 card" : total + " cards"));
+        top.appendChild(el("span", "drawer-size", parts.join(" · ")));
         box.appendChild(top);
       }
 
@@ -2956,7 +2961,7 @@ async function renderSelect(preloaded) {
       const cached = topoCache[name];
       if (cached) { renderDrawer(row, cached); return; }
       api("/api/deck-drawer", post({ deck: name })).then(d => {
-        const data = d || { preamble: null, heatmap: [], topologies: [], total: 0 };
+        const data = d || { preamble: null, heatmap: [], topologies: [], total: 0, seen: 0, graduated: 0, retired: 0 };
         topoCache[name] = data;
         if (focusedEl === row) renderDrawer(row, data);
       });

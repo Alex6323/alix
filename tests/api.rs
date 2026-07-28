@@ -1255,6 +1255,11 @@ fn post_api_deck_drawer_marks_an_acquired_but_ungraded_card_as_seen() {
         cells.iter().any(|c| c == &serde_json::json!(-1.0)),
         "the untouched card stays the neutral sentinel (-1.0): {body}"
     );
+    // The nested progress funnel: one card met (seen), none learned or retired.
+    assert_eq!(2, body["total"], "body: {body}");
+    assert_eq!(1, body["seen"], "the acquired card is seen: {body}");
+    assert_eq!(0, body["graduated"], "nothing graduated yet: {body}");
+    assert_eq!(0, body["retired"], "nothing retired yet: {body}");
 }
 
 #[test]

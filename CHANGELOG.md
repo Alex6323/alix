@@ -8,11 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- The picker's focus drawer shows the deck's size as an "N cards" readout pinned
-  to its top-right (the slot the old "X due" count once held, now size-only so it
-  informs without backlog shock). The `/api/deck-drawer` payload gains an
-  additive `total` card count, since the per-card `heatmap` lists only stamped
-  cards and cannot be counted for the total.
+- The picker's focus drawer shows a nested progress funnel pinned to its
+  top-right: `N cards` always, then `s seen`, `k learned`, and `r retired`
+  appended as each count becomes non-zero, so a fresh deck reads as a plain "N
+  cards" and a worked deck fills in. The `/api/deck-drawer` payload gains the
+  additive `total`, `seen`, `graduated` (labelled "learned" in the drawer), and
+  `retired` counts, which nest `retired <= graduated <= seen <= total`; the
+  per-card `heatmap` lists only stamped cards and cannot stand in for them.
 - The empty "Nothing due." session screen now shows one quiet line saying when
   the next card is due (for example "Next due in 4 min." during an acquire
   cooldown), so an empty sitting explains itself instead of only reading
@@ -70,10 +72,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- A not-started deck's picker row no longer prints "new" in its right-aligned
-  status slot: that duplicated the NEW chip beside the title, which is now the
-  single new-signal. The slot stays empty until the deck is started, when it
-  resumes showing the `k/N` progress counter.
+- A picker row no longer prints a right-aligned status counter for a new or
+  started deck: "new" duplicated the NEW chip, and a started deck's `k/N`
+  graduated counter was cryptic and redundant beside it. New and started rows now
+  show the title and state chip only, so the chip is the row's single state
+  signal; finished, mastered, and exam-due rows keep their status word. The
+  graduated count moved to the focus drawer's progress funnel (as "learned").
 - **Breaking (pre-1.0):** deck ids are now self-describing and prefixed. A deck
   declares `id: "deck-<token>"` (the `id:` frontmatter key replaces `alix-id:`),
   and every card marker is `<!-- id: card-<token> -->` (`card-<token>-N` for a

@@ -1697,7 +1697,7 @@ fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
     let store = Store::open(dir.path().join("progress/deck1.json")).unwrap();
     let augment = AugmentCache::open_for_workspace(dir.path()).unwrap();
 
-    let dto = deck_drawer_dto(&augment, &store, &deck);
+    let dto = deck_drawer_dto(&augment, &store, &deck, None);
     assert_eq!(Some("A short intro."), dto.preamble.as_deref());
     // One cell per stamped card; a never-reviewed card reads as the neutral
     // negative value (-1.0), not 0.0.

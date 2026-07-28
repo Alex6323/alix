@@ -628,7 +628,7 @@ per region per card) *(presentational)*.
 | `name` | string | The stable resolution key for this row (also used by `/api/reset`, `/api/browse`, and import's/generate's `dest`). **Only deck rows are selectable:** a group row (`is_workspace`, or a folder) is a container — `/api/select` rejects it with 400. Drill into `members` and select one of those. |
 | `selectable` | bool | **structural**: this row's `name` is the kind of thing `/api/select` accepts (a deck; false for workspace/folder rows). `reviewable*` is state, not structure. |
 | `label` | string | Display title. |
-| `meta` | string? | Badge text like `3/20`, `done ✓` *(presentational — parse nothing from it)*. |
+| `meta` | string? | Badge text for a completion state (`done ✓`, `exam due`, `mastered 🎉 · …`) or a group's `N decks`; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` for decks; `workspace` \| `folder` for groups (open set). |
 | `locked` | bool | A `% requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
@@ -676,9 +676,14 @@ never a group.
 in an acquire pass but not yet graded, rendered a dim "seen" cell),
 `topologies: [{name, principle, regions: [{name, cells: [number]}]}]` (present
 only when the deck has a topology augmentation; `cells` use the same scale as
-`heatmap`), `total: number` (the deck's total card count, shown as the drawer's
-"N cards" readout; not derivable from `heatmap`, which lists only stamped
-cards). Powers the picker's focus drawer.
+`heatmap`), and a nested progress funnel `total`, `seen`, `graduated`, `retired`
+(all `number`). `total` is the deck's card count (not derivable from `heatmap`,
+which lists only stamped cards); the rest count cards at or past a stage and nest
+`retired <= graduated <= seen <= total`: `seen` has any progress, `graduated`
+reached FSRS review (shown to the user as "learned"), `retired` is past the
+retire cap. The drawer prints them middle-dot separated (`N cards · s seen · k
+learned · r retired`), hiding every component that is zero, so a fresh deck reads
+as a plain "N cards". Powers the picker's focus drawer.
 
 ### CheckFeedbackDto
 

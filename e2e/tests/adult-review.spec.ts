@@ -271,9 +271,10 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   await expect(page.locator(".drawer")).toHaveCount(1);
   const drawer = page.locator(".drawer");
   await expect(drawer.locator(".drawer-preamble")).toHaveText(/wild animals/i);
-  // The static deck size, top-right: both wild cards, counted lib-side (not from
-  // the heatmap, which would omit any unstamped card).
-  await expect(drawer.locator(".drawer-size")).toHaveText("2 cards");
+  // The progress funnel, top-right: both wild cards counted lib-side, and an
+  // earlier test met (acquired) both, so the "seen" component appears while
+  // "learned"/"retired" stay hidden at zero.
+  await expect(drawer.locator(".drawer-size")).toHaveText("2 cards · 2 seen");
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2); // one per stamped card
   // An earlier test met (acquired, ungraded) both wild cards, so each cell reads
   // as a dim "seen" cell rather than the never-met neutral one. Before the seen

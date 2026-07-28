@@ -1,4 +1,5 @@
 {
+  "graduated": 2,
   "heatmap": [
     0.5,
     1.0,
@@ -6,6 +7,8 @@
     -2.0
   ],
   "preamble": "A short intro under the H1.",
+  "retired": 1,
+  "seen": 3,
   "topologies": [
     {
       "name": "north-south",

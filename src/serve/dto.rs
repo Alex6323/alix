@@ -66,6 +66,12 @@ pub(super) struct DeckDrawerDto {
     /// Total cards in the deck. Not derivable from `heatmap.len()`, which counts
     /// only stamped cards.
     pub(super) total: usize,
+    /// A nested funnel over `total`: `retired <= graduated <= seen <= total`.
+    /// `seen` is any card with a store entry, `graduated` reaches FSRS review
+    /// (surfaced to the user as "learned"), `retired` is past the retire cap.
+    pub(super) seen: usize,
+    pub(super) graduated: usize,
+    pub(super) retired: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -1054,7 +1060,12 @@ pub(super) fn state_name(s: DeckState) -> &'static str {
     }
 }
 
-pub(super) fn deck_drawer_dto(augment: &AugmentCache, store: &Store, deck: &Deck) -> DeckDrawerDto {
+pub(super) fn deck_drawer_dto(
+    augment: &AugmentCache,
+    store: &Store,
+    deck: &Deck,
+    retire_after_days: Option<u32>,
+) -> DeckDrawerDto {
     let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
     let now = now_ms();
     // A flat per-card heatmap over the whole deck, in file order; a topology (if
@@ -1078,11 +1089,29 @@ pub(super) fn deck_drawer_dto(augment: &AugmentCache, store: &Store, deck: &Deck
                 .collect(),
         })
         .collect();
+    let seen = deck
+        .cards
+        .iter()
+        .filter(|c| c.id().and_then(|id| store.get(&id)).is_some())
+        .count();
+    let graduated = deck
+        .cards
+        .iter()
+        .filter(|c| crate::session::has_graduated(c, store))
+        .count();
+    let retired = deck
+        .cards
+        .iter()
+        .filter(|c| crate::session::is_retired(c, store, retire_after_days))
+        .count();
     DeckDrawerDto {
         preamble: deck.preamble.clone(),
         heatmap,
         topologies,
         total: deck.cards.len(),
+        seen,
+        graduated,
+        retired,
     }
 }
 
@@ -1141,13 +1170,77 @@ mod tests {
         let store = Store::open(dir.path().join("deck1.json")).unwrap();
         let augment = AugmentCache::open(dir.path().join("deck1-generated.json"));
 
-        let dto = deck_drawer_dto(&augment, &store, &deck);
+        let dto = deck_drawer_dto(&augment, &store, &deck, None);
 
         assert_eq!(2, dto.total, "both cards count toward the deck size");
         assert_eq!(
             1,
             dto.heatmap.len(),
             "only the stamped card lands in the heatmap"
+        );
+        assert_eq!(
+            (0, 0, 0),
+            (dto.seen, dto.graduated, dto.retired),
+            "a fresh deck's funnel is all zeros (each hidden client-side)"
+        );
+    }
+
+    #[test]
+    fn deck_drawer_funnel_counts_nest_total_seen_graduated_retired() {
+        use crate::scheduler::{Fsrs, Grade, Scheduler};
+
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "---\nid: \"deck-rust\"\n---\n\
+             ## a <!-- id: card-a -->\n1\n\
+             ## b <!-- id: card-b -->\n2\n\
+             ## c <!-- id: card-c -->\n3\n\
+             ## d <!-- id: card-d -->\n4\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let augment = AugmentCache::open(dir.path().join("deck1-generated.json"));
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
+        let now = 1_000_000;
+        let sched = Fsrs::default();
+
+        // a: untouched (no store entry) → unseen.
+        // b: a bare store entry → seen only.
+        store.get_or_insert(&deck.cards[1].id().unwrap(), now);
+        // c: two real Recall Goods → graduated (state 2) at a sub-cap interval.
+        let c = store.get_or_insert(&deck.cards[2].id().unwrap(), now);
+        sched.apply(c, Depth::Recall, Grade::Pass, now, false);
+        sched.apply(c, Depth::Recall, Grade::Pass, now, false);
+        assert!(
+            c.schedule(Depth::Recall).is_some_and(|f| f.graduated()),
+            "two Goods must graduate the card"
+        );
+        // d: a matured Review state past the retire cap → retired (and graduated).
+        store
+            .get_or_insert(&deck.cards[3].id().unwrap(), now)
+            .recall = Some(crate::store::FsrsState {
+            state: 2,
+            stability: 400.0,
+            scheduled_days: 400,
+            due_ms: now + 400 * 86_400_000,
+            ..Default::default()
+        });
+
+        let dto = deck_drawer_dto(&augment, &store, &deck, Some(365));
+
+        assert_eq!(4, dto.total);
+        assert_eq!(3, dto.seen, "b, c, d have store entries");
+        assert_eq!(2, dto.graduated, "c and d reached FSRS review");
+        assert_eq!(1, dto.retired, "only d is past the 365-day cap");
+        assert!(
+            dto.total >= dto.seen && dto.seen >= dto.graduated && dto.graduated >= dto.retired,
+            "the funnel must nest: {} >= {} >= {} >= {}",
+            dto.total,
+            dto.seen,
+            dto.graduated,
+            dto.retired
         );
     }
 }

@@ -513,7 +513,10 @@ pub fn run_review(
                                         continue;
                                     }
                                 };
-                                deck_drawer_dto(&augment, &s, &deck)
+                                let root = workspace::content_root(&sel.deck);
+                                let retire_after_days =
+                                    review_cfg.for_workspace(&root).retire_after_days;
+                                deck_drawer_dto(&augment, &s, &deck, retire_after_days)
                             }
                             _ => DeckDrawerDto::default(),
                         }

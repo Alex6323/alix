@@ -69,7 +69,7 @@
           "last_depth": "recall",
           "locked": false,
           "mastered": false,
-          "meta": "3/10",
+          "meta": null,
           "name": "rustws/intro.md",
           "new_cards": false,
           "reviewable": true,

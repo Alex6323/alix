@@ -396,13 +396,6 @@ pub fn deck_status(
         .iter()
         .filter(|card| session::is_retired(card, store, review.retire_after_days))
         .count();
-    // "Finished" means graduated (reaching FSRS review), not retired (a
-    // rarer, much-later resting point).
-    let graduated = deck
-        .cards
-        .iter()
-        .filter(|card| session::has_graduated(card, store))
-        .count();
     // "mastered" is reserved for passing the exam; a deck without exam
     // grounding that's merely fully drilled stays "done".
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
@@ -422,8 +415,7 @@ pub fn deck_status(
         }
         DeckState::Finished => "done ✓".to_string(),
         DeckState::ExamDue => "exam due".to_string(),
-        DeckState::NotStarted => String::new(),
-        DeckState::Started => format!("{graduated}/{total}"),
+        DeckState::NotStarted | DeckState::Started => String::new(),
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
     let locked = enforce_locks && actually_locked;
@@ -1394,45 +1386,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn deck_status_total_ignores_virtual_cards() {
-        let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rust.md");
-        std::fs::write(
-            &deck_path,
-            "---\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n## q2 <!-- id: card-q2 -->\na2\n## q3 <!-- id: card-q3 -->\na3\n",
-        )
-        .unwrap();
-        let deck = Deck::load(&deck_path).unwrap();
-
-        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
-        let now = session::now_ms();
-        store
-            .get_or_insert(&deck.cards[0].id().unwrap(), now)
-            .recall = Some(graduated_not_due(now));
-
-        let before = deck_status(
-            &deck,
-            &store,
-            &no_augment(),
-            None,
-            false,
-            ReviewConfig::default(),
-        );
-        assert_eq!("1/3", before.badge);
-
-        insert_due_virtual_card(&mut store, deck.deck_token.as_deref().unwrap());
-        let after = deck_status(
-            &deck,
-            &store,
-            &no_augment(),
-            None,
-            false,
-            ReviewConfig::default(),
-        );
-        assert_eq!(before.badge, after.badge);
-    }
-
     fn mature(now: u64, stability: f64) -> crate::store::FsrsState {
         crate::store::FsrsState {
             state: 2,
@@ -1559,7 +1512,10 @@ mod tests {
             ReviewConfig::default(),
         );
         assert!(status.new_cards);
-        assert_eq!("1/2", status.badge);
+        assert_eq!(
+            "", status.badge,
+            "a started deck's row no longer carries a k/N counter"
+        );
         assert_eq!(None, status.badge_depth);
         assert!(!status.badge_dotted);
     }
