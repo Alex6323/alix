@@ -204,7 +204,7 @@ fn strip_attrs(s: &str) -> String {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};

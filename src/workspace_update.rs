@@ -919,6 +919,7 @@ fn copy_tree_if_present(from: &Path, to: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use crate::testutil::{ask_config, exec_lock, fake_reply};
 
     fn workspace(source_text: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
@@ -941,6 +942,7 @@ mod tests {
         (directory, source, deck)
     }
 
+    #[cfg(unix)]
     fn proposal(source: &Path, body: &str) -> String {
         format!(
             "---\nid: \"deck-deck1\"\nsource: {}\n---\n{body}",
@@ -948,6 +950,7 @@ mod tests {
         )
     }
 
+    #[cfg(unix)]
     #[test]
     fn changed_learning_content_cannot_keep_the_old_card_id() {
         let _lock = exec_lock();
@@ -979,6 +982,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn changed_authored_distractors_cannot_keep_the_old_card_id() {
         let _lock = exec_lock();
@@ -1003,6 +1007,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn note_and_locator_maintenance_can_retain_a_card_id() {
         let _lock = exec_lock();
@@ -1036,6 +1041,7 @@ mod tests {
         assert_eq!(Some("Clearer note."), staged.cards[0].note.as_deref());
     }
 
+    #[cfg(unix)]
     #[test]
     fn obsolete_cards_retire_their_ids_and_replacements_get_fresh_ids() {
         let _lock = exec_lock();
@@ -1121,6 +1127,7 @@ mod tests {
         assert!(!staged.staging.exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_citation_less_source_backed_member_is_reported_live_only_and_update_proceeds() {
         let _lock = exec_lock();
@@ -1159,6 +1166,7 @@ mod tests {
         assert_eq!(vec![PathBuf::from("decks/plain.md")], report.live_only);
     }
 
+    #[cfg(unix)]
     #[test]
     fn apply_rejects_a_workspace_changed_after_staging() {
         let _lock = exec_lock();

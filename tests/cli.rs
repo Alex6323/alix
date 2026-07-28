@@ -6,6 +6,10 @@
 //! A recurring property here is that a damaged progress document fails *safely*:
 //! the command errors and the document on disk is left exactly as it was, never
 //! silently overwritten with an empty store.
+//!
+//! Unix-only: the fake AI backend is a `/bin/sh` script. The Windows CI job
+//! runs the lib persistence suites instead.
+#![cfg(unix)]
 
 use std::{
     path::{Path, PathBuf},

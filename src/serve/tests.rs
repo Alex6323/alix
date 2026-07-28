@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::*;
 use crate::{
     answer::{Input, Mode, mode_name},
-    ask::{self, Reply},
+    ask::Reply,
     card::{Card, CardImage},
     choice,
     config::{AskConfig, ReviewConfig},
@@ -12,9 +12,10 @@ use crate::{
     render::NoteUnit,
     scheduler::{Fsrs, Grade},
     session::{CardTier, Session},
-    source::SourceBase,
     trace::Delta,
 };
+#[cfg(unix)]
+use crate::{ask, source::SourceBase};
 
 fn write_initialized(path: &Path, text: &str) {
     let id = path
@@ -1252,6 +1253,7 @@ fn poll_ask_error_resets_session() {
     assert!(r.ask.transcript.is_empty());
 }
 
+#[cfg(unix)]
 #[test]
 fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let _lock = crate::testutil::exec_lock();
@@ -1636,6 +1638,7 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn generate_batch_runs_every_target_even_after_one_fails() {
     let _g = crate::testutil::exec_lock();

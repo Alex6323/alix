@@ -404,7 +404,7 @@ fn parse_grade(raw: &str) -> Result<(Delta, String)> {
     Ok((delta, feedback))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::path::Path;
 

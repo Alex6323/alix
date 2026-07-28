@@ -848,7 +848,7 @@ fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
         .with_context(|| format!("the model did not return valid JSON:\n{json}"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::path::{Path, PathBuf};
 

@@ -544,7 +544,7 @@ fn map_run_failure(command: &str, detail: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::sync::Arc;
 

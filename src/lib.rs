@@ -78,6 +78,7 @@ pub mod workspace;
 pub mod workspace_update;
 
 // Only the AI-facing modules use these fake-CLI helpers, and they're all
-// gated behind `full`.
-#[cfg(all(test, feature = "full"))]
+// gated behind `full`. The fakes are /bin/sh scripts, so the module is
+// unix-only; Windows CI runs the persistence suites without it.
+#[cfg(all(test, feature = "full", unix))]
 mod testutil;

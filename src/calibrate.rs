@@ -218,7 +218,7 @@ pub fn run(exam_cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<Vec<ProbeResult
     Ok(results)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::testutil::{ask_config, exec_lock, fake_cli};

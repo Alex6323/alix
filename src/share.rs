@@ -983,6 +983,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_send_job_reports_the_code_then_done() {
         let _lock = crate::testutil::exec_lock();
@@ -1001,6 +1002,7 @@ mod tests {
         assert!(matches!(got.last(), Some(ShareEvent::Done)), "{got:?}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_failing_send_job_reports_an_error() {
         let _lock = crate::testutil::exec_lock();
@@ -1016,6 +1018,7 @@ mod tests {
         assert!(matches!(last, Some(ShareEvent::Error(_))), "{last:?}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn cancelling_a_running_job_reports_an_error_event_promptly() {
         let _lock = crate::testutil::exec_lock();

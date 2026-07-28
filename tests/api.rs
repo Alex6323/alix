@@ -12,6 +12,10 @@
 //! stops the server and joins its thread on drop — so tests can run
 //! concurrently (the default `cargo test` behavior) without leaking servers
 //! into each other.
+//!
+//! Unix-only: the fake AI backend is a `/bin/sh` script. The Windows CI job
+//! runs the lib persistence suites instead.
+#![cfg(unix)]
 
 use std::{
     collections::HashMap,

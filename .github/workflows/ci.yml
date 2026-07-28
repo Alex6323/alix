@@ -44,7 +44,33 @@ jobs:
           toolchain: 1.97.1
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # `make check` includes pre-1-0-check, whose script runs ripgrep; the
+      # runner image does not ship it.
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: make check
+
+  # The persistence and path-sensitive suites on the other two supported
+  # desktop platforms. Cross-compiling a Windows binary does not test Windows
+  # filesystem semantics (rename-over-existing, the dir-fsync no-op), so these
+  # must actually run there. Windows runs the lib suites only: the fake AI
+  # backend used by the integration tests is a /bin/sh script (see
+  # src/testutil.rs), so those are unix-gated. macOS runs everything.
+  persistence-os:
+    name: tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, args: "" }
+          - { os: windows-latest, args: --lib }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - run: cargo test ${{ matrix.args }}
 
   # The served web clients contain inline JavaScript that Cargo never parses.
   # Keep this a separate, fast blocking job so syntax failures do not wait for
