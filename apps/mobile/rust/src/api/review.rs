@@ -241,7 +241,7 @@ pub struct ReviewSession {
     augment: alix::augment::AugmentCache,
     topology_name: Option<String>,
     deck_path: PathBuf,
-    // The stable alix-id: deck-level store state (mastery, virtual-card
+    // The stable deck id: deck-level store state (mastery, virtual-card
     // association) is keyed by this, captured off the loaded Deck rather
     // than re-derived from deck_path by hand.
     deck_token: String,
@@ -588,8 +588,10 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
                 state.note_runs = c.note.as_deref().map(|note| projector.project(note));
                 match trace.excerpt(c) {
                     Ok(ex) => {
-                        let (ex, label) =
-                            alix::source::relabel_for_display(ex, c.at_origin.as_deref());
+                        let (ex, label) = alix::source::relabel_for_display(
+                            ex,
+                            c.locator.as_deref().unwrap_or_default(),
+                        );
                         if let Some(label) = label {
                             state.locator = Some(label);
                         }
@@ -621,7 +623,7 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
 pub struct WalkSession {
     walk: alix::trace::Walk,
     store: alix::store::Store,
-    // The stable alix-id: deck-level store state (mastery, exam cooldown) is
+    // The stable deck id: deck-level store state (mastery, exam cooldown) is
     // keyed by this, captured off the loaded Deck rather than re-derived.
     deck_token: String,
     #[expect(dead_code)] // no walk-side remediation flow yet to dedup against
@@ -784,7 +786,7 @@ mod tests {
         let root = dir.path();
         write_deck(
             &root.join("math.md"),
-            "## What does $E = mc^2$ describe? <!-- id: math -->\n\
+            "## What does $E = mc^2$ describe? <!-- id: card-math -->\n\
              - [x] **$E = mc^2$**\n\
              - [ ] $F = ma$\n\
              > Energy and mass use $E = mc^2$.\n\
@@ -889,7 +891,7 @@ mod tests {
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"W\"\n");
         let deck_path = ws.join("decks/m.md");
-        write_deck(&deck_path, "## q <!-- id: q1 -->\na\n");
+        write_deck(&deck_path, "## q <!-- id: card-q1 -->\na\n");
         let deadline = alix::time::local_date(T0) + chrono::Days::new(3);
         write(
             &ws.join("alix.local.toml"),
@@ -938,10 +940,10 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "## q1 <!-- id: q1 -->\na1\n\n\
-             ## q2 <!-- id: q2 -->\na2\n\n\
-             ## q3 <!-- id: q3 -->\na3\n\n\
-             ## q4 <!-- id: q4 -->\na4\n",
+            "## q1 <!-- id: card-q1 -->\na1\n\n\
+             ## q2 <!-- id: card-q2 -->\na2\n\n\
+             ## q3 <!-- id: card-q3 -->\na3\n\n\
+             ## q4 <!-- id: card-q4 -->\na4\n",
         );
         alix::stamp::stamp_deck(&root.join("d.md")).unwrap();
         let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
@@ -985,7 +987,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "## why <!-- id: q1 -->\nfirst fact\nsecond fact\n",
+            "## why <!-- id: card-q1 -->\nfirst fact\nsecond fact\n",
         );
         let s = opened_after_acquire(&root.join("d.md"), root, Some(Depth::Reconstruct));
         let state = s.state(Some(LATER));
@@ -1140,7 +1142,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "---\nalix-id: \"d1\"\nlink: https://x\n---\n## q <!-- id: q1 -->\na\n",
+            "---\nid: \"deck-d1\"\nlink: https://x\n---\n## q <!-- id: card-q1 -->\na\n",
         );
         let authored = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let authored_line = authored.cards[0].line;
@@ -1161,7 +1163,7 @@ mod tests {
     fn apply_card_note_writes_note_lines_and_preserves_the_card_id() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.md"), "## q <!-- id: q1 -->\na\n");
+        write(&root.join("d.md"), "## q <!-- id: card-q1 -->\na\n");
 
         let before = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let id_before = before.cards[0].id().expect("the fixture stamps its own id");
@@ -1205,7 +1207,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "---\nalix-id: \"d1\"\n---\n## q <!-- id: q1 -->\na\n",
+            "---\nid: \"deck-d1\"\n---\n## q <!-- id: card-q1 -->\na\n",
         );
         let before_bytes = std::fs::read(root.join("d.md")).unwrap();
 
@@ -1386,7 +1388,7 @@ mod tests {
         let deck = root.join("d.md");
         write(
             &deck,
-            "---\nalix-id: \"d1\"\n---\n## q1 <!-- id: q1 -->\na1\n\n## q2 <!-- id: q2 -->\na2\n",
+            "---\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
         );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
         let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");
@@ -1394,7 +1396,7 @@ mod tests {
 
         cache_two_region_topology(
             root,
-            "d1",
+            "deck-d1",
             vec![id1.clone(), id2.clone()],
             vec![("Intro", vec![id1.clone()]), ("Body", vec![id2.clone()])],
         );
@@ -1420,7 +1422,7 @@ mod tests {
         let deck = root.join("d.md");
         write(
             &deck,
-            "---\nalix-id: \"d1\"\n---\n## q1 <!-- id: q1 -->\na1\n\n## q2 <!-- id: q2 -->\na2\n",
+            "---\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
         );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
         let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");
@@ -1428,7 +1430,7 @@ mod tests {
 
         cache_two_region_topology(
             root,
-            "d1",
+            "deck-d1",
             vec![id2.clone(), id1.clone()],
             vec![("Intro", vec![id1.clone()])],
         );
