@@ -106,8 +106,10 @@ A source citation is `<!-- at: <src>:<lines> fingerprint: xxh64-<hex> asset: sha
 
 - The value is tokenized by single-space splits into strictly alternating
   known-key / value pairs. Keys are `at`, `fingerprint`, `asset` (lowercase,
-  each at most once). Canonical order is `at` then `fingerprint` then `asset`;
-  `doctor` rewrites to that order. No field value may contain a space. Any
+  each at most once). Field order is MANDATORY: `at` then `fingerprint` then
+  `asset`; any other order is a hard error (settled 2026-07-28: the strict
+  tokenizer is the frozen grammar; `doctor` and the stamper always emit the
+  canonical order). No field value may contain a space. Any
   leftover or unpairable token, any unknown key, any duplicate key makes the
   whole locator a bad-value error and the citation untrusted: there is no
   partial extraction. (Extensibility means the grammar may grow in a later
@@ -262,6 +264,13 @@ Surfaces the migration must cover (enumerated so none is silent):
   object to `asset:`, real path+lines from the old `from` tail to `at:`; live:
   `at:` keeps the path, no `asset:`); for a `from`-less old asset locator, emit
   `at:` with the asset's own coordinates and a `doctor` note for manual review.
+- Frozen objects are REGENERATED, not renamed (corrected 2026-07-28 after the
+  final review proved rename-only conversion leaves every old whole-file
+  object reading as corrupt evidence): the tool slices the cited lines out of
+  the old object using the old locator's asset-local range, writes a new
+  excerpt-exact object (sha256 of the new bytes), recomputes the fingerprint
+  through the lib, points `asset:` at the new object, and deletes objects no
+  citation references after the rewrite.
 - Frozen assets: rename `assets/<token>/` to `assets/deck-<token>/`, re-verify
   each object digest after the move, and rewrite the embedded `source:` and
   `](assets/<token>/...)` links in the deck body. Assets are evidence, not
