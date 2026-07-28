@@ -154,7 +154,11 @@ for two keys, freezing rewrote `source:` to the frozen snapshot while
 ruling, and the code already unioned them for examination.
 
 - The workspace manifest may declare a default `source` that members inherit
-  when they declare none (replacing the manifest `origin`).
+  when they declare none (replacing the manifest `origin`). Precedence is
+  replace, not extend: a member's own `source:` list ignores the default
+  entirely, so a deck file alone states what it examines against. A relative
+  path resolves against the workspace root when declared in the manifest and
+  against the deck's content root when declared in frontmatter.
 - Derivations: examination and `has_exam` consider the effective sources
   (deliberate behavior change: a local-path source now confers an exam where
   a local `origin:` did not; verified understanding is the product's thesis).
