@@ -113,6 +113,16 @@ body {
   color: #c69a76; font-weight: 700; font-size: 12px; letter-spacing: 0.08em;
 }
 
+/* Save-failure banner: stateful like the adult one (the server keeps
+   reporting `save_error` until a save succeeds), warm-toned for kids. */
+#save-alert {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+  max-width: min(92vw, 520px); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; padding: 7px 14px; border-radius: 14px;
+  border: 2px solid #e0705f; background: var(--card); color: #c9503f;
+  font-weight: 700; font-size: 15px; z-index: 40;
+}
+
 /* ── Action bar (collapses to nothing when a screen has no actions) ─────── */
 .actionbar { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; }
 .actionbar:not(:empty) { padding: 14px 28px; }
@@ -834,11 +844,27 @@ function mascotEl(extra) {
   return m;
 }
 
+// Mirrors the adult client: `save_error` is stateful, so the banner shows
+// exactly as long as the server keeps reporting it. Raw error on the tooltip.
+function syncSaveAlert() {
+  let a = document.getElementById("save-alert");
+  const msg = state && state.save_error;
+  if (!msg) { if (a) a.remove(); return; }
+  if (!a) {
+    a = document.createElement("div");
+    a.id = "save-alert";
+    document.body.appendChild(a);
+  }
+  a.title = msg;
+  a.textContent = "Uh oh, your progress isn't saving. Ask a grown-up to help!";
+}
+
 // ── render() dispatches on `screen`; Tasks 5-7 flesh out their branches ───
 function render() {
   applyTheme();
   stage.innerHTML = "";
   actionbar.innerHTML = "";
+  syncSaveAlert();
   if (screen === "home") renderHome();
   else if (screen === "box") renderBox();
   else if (screen === "review") renderReview();

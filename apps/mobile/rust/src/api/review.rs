@@ -116,6 +116,7 @@ pub struct _ReviewState {
     // regen carries them across).
     pub due_left: u32,
     pub new_left: u32,
+    pub save_error: Option<String>,
 }
 
 #[flutter_rust_bridge::frb(mirror(ChoiceFeedback))]
@@ -257,6 +258,10 @@ pub struct ReviewSession {
     // a fresh mint carries a random token, so only content can catch a dupe.
     deck_fingerprints: HashSet<u64>,
     has_exam: bool,
+    // The last failed per-grade save, kept until one succeeds (the serve
+    // loop's banner semantics): review continues in memory, never dies on a
+    // full disk mid-sitting.
+    save_error: Option<String>,
 }
 
 impl ReviewSession {
@@ -314,12 +319,22 @@ impl ReviewSession {
             deck_token,
             deck_fingerprints,
             has_exam,
+            save_error: None,
         })
     }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn state(&self, now_ms: Option<u64>) -> ReviewState {
-        alix::review::state(&self.session, &self.store, &self.augment, now_ms)
+        let mut state = alix::review::state(&self.session, &self.store, &self.augment, now_ms);
+        state.save_error = self.save_error.clone();
+        state
+    }
+
+    fn save_store(&mut self) {
+        match self.store.save() {
+            Ok(()) => self.save_error = None,
+            Err(e) => self.save_error = Some(format!("{e:#}")),
+        }
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -339,7 +354,7 @@ impl ReviewSession {
         // Poll before save: the advance may stamp the next card's first
         // presentation, and the save must carry it.
         self.session.poll(&mut self.store, now);
-        self.store.save()?;
+        self.save_store();
         Ok(self.state(Some(now)))
     }
 
@@ -348,7 +363,7 @@ impl ReviewSession {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
         self.session.acquire_current(&mut self.store, now);
         self.session.poll(&mut self.store, now);
-        self.store.save()?;
+        self.save_store();
         Ok(self.state(Some(now)))
     }
 
@@ -529,6 +544,7 @@ pub struct WalkState {
     pub note: Option<String>,
     pub note_runs: Option<Vec<InlineRun>>,
     pub summary: Option<WalkSummary>,
+    pub save_error: Option<String>,
 }
 
 fn walk_excerpt(excerpt: &alix::source::Excerpt) -> WalkExcerpt {
@@ -571,6 +587,7 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
         note: None,
         note_runs: None,
         summary: None,
+        save_error: None,
     };
 
     match phase {
@@ -649,6 +666,8 @@ pub struct WalkSession {
     #[expect(dead_code)] // no walk-side remediation flow yet to dedup against
     deck_fingerprints: HashSet<u64>,
     has_exam: bool,
+    // See ReviewSession::save_error: same non-fatal per-grade semantics.
+    save_error: Option<String>,
 }
 
 impl WalkSession {
@@ -700,12 +719,15 @@ impl WalkSession {
             deck_token,
             deck_fingerprints,
             has_exam,
+            save_error: None,
         })
     }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn state(&self) -> WalkState {
-        walk_state(&self.walk)
+        let mut state = walk_state(&self.walk);
+        state.save_error = self.save_error.clone();
+        state
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -717,7 +739,10 @@ impl WalkSession {
     pub fn grade(&mut self, delta: WalkDelta, now_ms: Option<u64>) -> Result<WalkState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
         self.walk.grade(&mut self.store, delta.into(), now);
-        self.store.save()?;
+        match self.store.save() {
+            Ok(()) => self.save_error = None,
+            Err(e) => self.save_error = Some(format!("{e:#}")),
+        }
         Ok(self.state())
     }
 
@@ -849,6 +874,37 @@ mod tests {
             .collect();
         assert!(note_runs.iter().any(|run| run.text == "E = mc^2"));
         assert!(note_runs.iter().any(|run| run.text == "c^2"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_per_grade_save_reports_save_error_and_review_continues() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_deck(
+            &root.join("d.md"),
+            "## one? <!-- id: card-one -->\n1\n\n## two? <!-- id: card-two -->\n2\n",
+        );
+        let mut s = opened_after_acquire(&root.join("d.md"), root, Some(Depth::Recall));
+        let progress = root.join("progress");
+
+        std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let state = s.grade(Grade::Pass, Some(LATER)).expect("grade stays Ok");
+        std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let error = state.save_error.expect("the failed save is reported");
+        assert!(!error.is_empty());
+
+        let state = s.grade(Grade::Pass, Some(LATER + 1)).unwrap();
+        assert_eq!(None, state.save_error, "a clean save clears the report");
+        let store = reopened_store(root, "d.md");
+        for id in ["card-one", "card-two"] {
+            assert!(
+                store.get(id).is_some_and(|c| c.recall.is_some()),
+                "the recovered save carries both grades, including the one whose own save failed"
+            );
+        }
     }
 
     #[test]

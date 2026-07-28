@@ -279,6 +279,8 @@ class _WalkScreenState extends State<WalkScreen> {
         body: SafeArea(
           child: Column(
             children: [
+              if (_state.saveError case final saveError?)
+                _saveBanner(context, saveError),
               if (!done) _descriptionEyebrow(tokens),
               Expanded(
                 child: done
@@ -312,6 +314,30 @@ class _WalkScreenState extends State<WalkScreen> {
   /// header (not restated inline within the prompt/reveal body) so the
   /// learner keeps the "what am I walking" context without it competing
   /// with the checkpoint content.
+  /// Same semantics as the review screen's banner: stays up until a save
+  /// succeeds; the walk continues in memory meanwhile.
+  Widget _saveBanner(BuildContext context, String saveError) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Tooltip(
+        message: saveError,
+        child: Text(
+          "Progress isn't being saved. Grades stay on screen and save with "
+          'the next successful one.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onErrorContainer,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _descriptionEyebrow(AlixTokens tokens) {
     if (_state.description.isEmpty) return const SizedBox.shrink();
     return Padding(

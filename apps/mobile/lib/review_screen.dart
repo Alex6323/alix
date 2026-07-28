@@ -380,6 +380,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
               _crumbStrip(context),
               if (_foreign case final foreign?)
                 _foreignBanner(context, foreign),
+              if (_state.saveError case final saveError?)
+                _saveBanner(context, saveError),
               Expanded(
                 child: card == null
                     ? _done(context)
@@ -1379,6 +1381,31 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   // ── banners & done ───────────────────────────────────────────────────────
+
+  /// Stateful like the web banner: the core keeps reporting `saveError`
+  /// until a save succeeds, so this stays up exactly that long. Review
+  /// continues in memory; the next clean save carries every grade.
+  Widget _saveBanner(BuildContext context, String saveError) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Tooltip(
+        message: saveError,
+        child: Text(
+          "Progress isn't being saved. Grades stay on screen and save with "
+          'the next successful one.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onErrorContainer,
+          ),
+        ),
+      ),
+    );
+  }
 
   /// The roaming-discipline warning: this store was just written elsewhere,
   /// so reviewing here would fork it.

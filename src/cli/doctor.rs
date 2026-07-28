@@ -1679,11 +1679,7 @@ mod tests {
         let decks = dir.path().join(alix::workspace::DECKS);
         std::fs::create_dir(&decks).unwrap();
         w(dir.path(), alix::workspace::MANIFEST, "");
-        w(
-            &decks,
-            "origin.md",
-            "---\norigin: ../src\n---\n## q\na\n",
-        );
+        w(&decks, "origin.md", "---\norigin: ../src\n---\n## q\na\n");
         w(
             &decks,
             "plus.md",

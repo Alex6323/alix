@@ -74,8 +74,7 @@ impl DeckFiles {
     pub(super) fn remove_block(&mut self, deck_id: &str, line: usize) {
         let lines = self.removed.entry(deck_id.to_string()).or_default();
         lines.insert(line);
-        if let (Some(path), Some(original)) =
-            (self.paths.get(deck_id), self.snapshots.get(deck_id))
+        if let (Some(path), Some(original)) = (self.paths.get(deck_id), self.snapshots.get(deck_id))
         {
             let lines: Vec<usize> = lines.iter().copied().collect();
             if let Err(e) = deck::rewrite_without_cards(path, original, &lines) {

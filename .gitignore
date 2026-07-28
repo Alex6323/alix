@@ -45,3 +45,6 @@ __pycache__/
 # from fresh decks to exercise the never-seen/acquire path.
 /e2e/fixtures/decks/**/progress/
 /e2e/fixtures/decks/**/recent.json
+
+# llvm-cov run residue
+*.profraw

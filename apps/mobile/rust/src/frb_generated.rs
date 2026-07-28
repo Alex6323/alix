@@ -1569,6 +1569,9 @@ const _: fn() = || {
         let _: bool = ReviewState.can_restart;
         let _: bool = ReviewState.promotable;
         let _: Option<u64> = ReviewState.next_due_ms;
+        let _: u32 = ReviewState.due_left;
+        let _: u32 = ReviewState.new_left;
+        let _: Option<String> = ReviewState.save_error;
     }
     {
         let TypedResult = None::<crate::api::review::TypedResult>.unwrap();
@@ -2320,6 +2323,9 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_canRestart = <bool>::sse_decode(deserializer);
         let mut var_promotable = <bool>::sse_decode(deserializer);
         let mut var_nextDueMs = <Option<u64>>::sse_decode(deserializer);
+        let mut var_dueLeft = <u32>::sse_decode(deserializer);
+        let mut var_newLeft = <u32>::sse_decode(deserializer);
+        let mut var_saveError = <Option<String>>::sse_decode(deserializer);
         return crate::api::review::ReviewState {
             card: var_card,
             mode: var_mode,
@@ -2340,8 +2346,9 @@ impl SseDecode for crate::api::review::ReviewState {
             can_restart: var_canRestart,
             promotable: var_promotable,
             next_due_ms: var_nextDueMs,
-            due_left: 0,
-            new_left: 0,
+            due_left: var_dueLeft,
+            new_left: var_newLeft,
+            save_error: var_saveError,
         };
     }
 }
@@ -2488,6 +2495,7 @@ impl SseDecode for crate::api::review::WalkState {
         let mut var_noteRuns =
             <Option<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_summary = <Option<crate::api::review::WalkSummary>>::sse_decode(deserializer);
+        let mut var_saveError = <Option<String>>::sse_decode(deserializer);
         return crate::api::review::WalkState {
             phase: var_phase,
             description: var_description,
@@ -2508,6 +2516,7 @@ impl SseDecode for crate::api::review::WalkState {
             note: var_note,
             note_runs: var_noteRuns,
             summary: var_summary,
+            save_error: var_saveError,
         };
     }
 }
@@ -3051,6 +3060,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.can_restart.into_into_dart().into_dart(),
             self.0.promotable.into_into_dart().into_dart(),
             self.0.next_due_ms.into_into_dart().into_dart(),
+            self.0.due_left.into_into_dart().into_dart(),
+            self.0.new_left.into_into_dart().into_dart(),
+            self.0.save_error.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3213,6 +3225,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::review::WalkState {
             self.note.into_into_dart().into_dart(),
             self.note_runs.into_into_dart().into_dart(),
             self.summary.into_into_dart().into_dart(),
+            self.save_error.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3851,6 +3864,9 @@ impl SseEncode for crate::api::review::ReviewState {
         <bool>::sse_encode(self.can_restart, serializer);
         <bool>::sse_encode(self.promotable, serializer);
         <Option<u64>>::sse_encode(self.next_due_ms, serializer);
+        <u32>::sse_encode(self.due_left, serializer);
+        <u32>::sse_encode(self.new_left, serializer);
+        <Option<String>>::sse_encode(self.save_error, serializer);
     }
 }
 
@@ -3983,6 +3999,7 @@ impl SseEncode for crate::api::review::WalkState {
         <Option<String>>::sse_encode(self.note, serializer);
         <Option<Vec<crate::api::review::InlineRun>>>::sse_encode(self.note_runs, serializer);
         <Option<crate::api::review::WalkSummary>>::sse_encode(self.summary, serializer);
+        <Option<String>>::sse_encode(self.save_error, serializer);
     }
 }
 

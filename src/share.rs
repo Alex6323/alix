@@ -737,7 +737,11 @@ mod tests {
         std::fs::create_dir(&sender).unwrap();
         std::fs::create_dir_all(sender.join("assets/deck-deck1")).unwrap();
         let source_name = crate::assets::object_name(b"evidence\n", "txt");
-        std::fs::write(sender.join("assets/deck-deck1").join(&source_name), "evidence\n").unwrap();
+        std::fs::write(
+            sender.join("assets/deck-deck1").join(&source_name),
+            "evidence\n",
+        )
+        .unwrap();
         let deck_path = sender.join("math.md");
         std::fs::write(
             &deck_path,
@@ -765,7 +769,12 @@ mod tests {
         assert!(is_deck_bundle(&bundle));
         assert!(bundle.join("math.md").is_file());
         assert!(bundle.join("augment/deck-deck1.json").is_file());
-        assert!(bundle.join("assets/deck-deck1").join(&source_name).is_file());
+        assert!(
+            bundle
+                .join("assets/deck-deck1")
+                .join(&source_name)
+                .is_file()
+        );
         assert!(!bundle.join("progress").exists());
 
         let receiver = dir.path().join("receiver");
@@ -776,12 +785,20 @@ mod tests {
         let received_deck = receiver.join("math.md");
         let received_progress = crate::state::open_store(&received_deck, &receiver).unwrap();
         assert!(received_progress.get("card-card1").is_none());
-        assert!(receiver.join("assets/deck-deck1").join(&source_name).is_file());
+        assert!(
+            receiver
+                .join("assets/deck-deck1")
+                .join(&source_name)
+                .is_file()
+        );
         let received_augmentation = crate::augment::AugmentCache::open_for_deck(
             &crate::deck::Deck::load(&received_deck).unwrap(),
         )
         .unwrap();
-        assert_eq!(Some("shared note"), received_augmentation.note("card-card1", 7));
+        assert_eq!(
+            Some("shared note"),
+            received_augmentation.note("card-card1", 7)
+        );
 
         let mut changed_augmentation = crate::augment::AugmentCache::open_for_deck(
             &crate::deck::Deck::load(&received_deck).unwrap(),
@@ -805,7 +822,10 @@ mod tests {
             &crate::deck::Deck::load(&received_deck).unwrap(),
         )
         .unwrap();
-        assert_eq!(Some("shared note"), received_augmentation.note("card-card1", 7));
+        assert_eq!(
+            Some("shared note"),
+            received_augmentation.note("card-card1", 7)
+        );
     }
 
     #[test]

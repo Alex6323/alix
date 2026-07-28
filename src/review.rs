@@ -181,6 +181,11 @@ pub struct ReviewState {
     // still find.
     pub due_left: u32,
     pub new_left: u32,
+    /// A failed progress save, kept until one succeeds; review continues in
+    /// memory (non-fatal, mirroring the serve loop's banner semantics). The
+    /// builder leaves it `None`; a stateful caller stamps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub save_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -276,6 +281,7 @@ pub fn state(
         next_due_ms: finished.then(|| session.next_due_at(store)).flatten(),
         due_left: due_left as u32,
         new_left: new_left as u32,
+        save_error: None,
     }
 }
 

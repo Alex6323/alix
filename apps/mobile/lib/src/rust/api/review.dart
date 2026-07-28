@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `walk_excerpt`, `walk_state`
+// These functions are ignored because they are not marked as `pub`: `save_store`, `walk_excerpt`, `walk_state`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 Grade keypointGrade({required int covered, required int total}) => RustLib
@@ -389,6 +389,9 @@ class ReviewState {
   final bool canRestart;
   final bool promotable;
   final BigInt? nextDueMs;
+  final int dueLeft;
+  final int newLeft;
+  final String? saveError;
 
   const ReviewState({
     this.card,
@@ -410,6 +413,9 @@ class ReviewState {
     required this.canRestart,
     required this.promotable,
     this.nextDueMs,
+    required this.dueLeft,
+    required this.newLeft,
+    this.saveError,
   });
 
   @override
@@ -432,7 +438,10 @@ class ReviewState {
       acquired.hashCode ^
       canRestart.hashCode ^
       promotable.hashCode ^
-      nextDueMs.hashCode;
+      nextDueMs.hashCode ^
+      dueLeft.hashCode ^
+      newLeft.hashCode ^
+      saveError.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -457,7 +466,10 @@ class ReviewState {
           acquired == other.acquired &&
           canRestart == other.canRestart &&
           promotable == other.promotable &&
-          nextDueMs == other.nextDueMs;
+          nextDueMs == other.nextDueMs &&
+          dueLeft == other.dueLeft &&
+          newLeft == other.newLeft &&
+          saveError == other.saveError;
 }
 
 class TutorCard {
@@ -585,6 +597,7 @@ class WalkState {
   final String? note;
   final List<InlineRun>? noteRuns;
   final WalkSummary? summary;
+  final String? saveError;
 
   const WalkState({
     required this.phase,
@@ -606,6 +619,7 @@ class WalkState {
     this.note,
     this.noteRuns,
     this.summary,
+    this.saveError,
   });
 
   @override
@@ -628,7 +642,8 @@ class WalkState {
       pointRuns.hashCode ^
       note.hashCode ^
       noteRuns.hashCode ^
-      summary.hashCode;
+      summary.hashCode ^
+      saveError.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -653,7 +668,8 @@ class WalkState {
           pointRuns == other.pointRuns &&
           note == other.note &&
           noteRuns == other.noteRuns &&
-          summary == other.summary;
+          summary == other.summary &&
+          saveError == other.saveError;
 }
 
 class WalkSummary {

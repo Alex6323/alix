@@ -281,8 +281,7 @@ mod tests {
             "last-depth state must survive a rename, found by the deck id"
         );
 
-        let known_deck_ids: HashSet<String> =
-            std::iter::once("deck-deck1".to_string()).collect();
+        let known_deck_ids: HashSet<String> = std::iter::once("deck-deck1".to_string()).collect();
         let orphans = aggregate.orphans(&HashSet::new(), &known_deck_ids);
         assert!(
             orphans.decks.is_empty(),

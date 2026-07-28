@@ -1648,10 +1648,8 @@ mod tests {
 
     #[test]
     fn a_reordered_new_format_locator_error_carries_the_canonical_order_hint() {
-        let e = err(
-            "## q\n---\na\n\
-             <!-- at: notes.md asset: sha256-abc123.rs fingerprint: xxh64-0123456789abcdef -->\n",
-        );
+        let e = err("## q\n---\na\n\
+             <!-- at: notes.md asset: sha256-abc123.rs fingerprint: xxh64-0123456789abcdef -->\n");
         assert!(
             matches!(e, ParseError::InvalidLocator { line: 4, .. }),
             "{e:?}"

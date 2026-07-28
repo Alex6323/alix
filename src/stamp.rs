@@ -204,7 +204,9 @@ pub fn replace_card_token(path: &Path, old_token: &str) -> Result<String, StampE
 }
 
 fn mint_deck_id() -> Result<String, StampError> {
-    Ok(token::format_deck_id(&token::mint().map_err(StampError::Mint)?))
+    Ok(token::format_deck_id(
+        &token::mint().map_err(StampError::Mint)?,
+    ))
 }
 
 fn mint_card_id() -> Result<String, StampError> {

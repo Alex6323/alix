@@ -1844,8 +1844,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 19)
-      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
+    if (arr.length != 22)
+      throw Exception('unexpected arr length: expect 22 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
@@ -1866,6 +1866,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       canRestart: dco_decode_bool(arr[16]),
       promotable: dco_decode_bool(arr[17]),
       nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[18]),
+      dueLeft: dco_decode_u_32(arr[19]),
+      newLeft: dco_decode_u_32(arr[20]),
+      saveError: dco_decode_opt_String(arr[21]),
     );
   }
 
@@ -1968,8 +1971,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalkState dco_decode_walk_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 19)
-      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
+    if (arr.length != 20)
+      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
     return WalkState(
       phase: dco_decode_walk_phase(arr[0]),
       description: dco_decode_String(arr[1]),
@@ -1990,6 +1993,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       note: dco_decode_opt_String(arr[16]),
       noteRuns: dco_decode_opt_list_inline_run(arr[17]),
       summary: dco_decode_opt_box_autoadd_walk_summary(arr[18]),
+      saveError: dco_decode_opt_String(arr[19]),
     );
   }
 
@@ -2802,6 +2806,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_canRestart = sse_decode_bool(deserializer);
     var var_promotable = sse_decode_bool(deserializer);
     var var_nextDueMs = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_dueLeft = sse_decode_u_32(deserializer);
+    var var_newLeft = sse_decode_u_32(deserializer);
+    var var_saveError = sse_decode_opt_String(deserializer);
     return ReviewState(
       card: var_card,
       mode: var_mode,
@@ -2822,6 +2829,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       canRestart: var_canRestart,
       promotable: var_promotable,
       nextDueMs: var_nextDueMs,
+      dueLeft: var_dueLeft,
+      newLeft: var_newLeft,
+      saveError: var_saveError,
     );
   }
 
@@ -2941,6 +2951,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_note = sse_decode_opt_String(deserializer);
     var var_noteRuns = sse_decode_opt_list_inline_run(deserializer);
     var var_summary = sse_decode_opt_box_autoadd_walk_summary(deserializer);
+    var var_saveError = sse_decode_opt_String(deserializer);
     return WalkState(
       phase: var_phase,
       description: var_description,
@@ -2961,6 +2972,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       note: var_note,
       noteRuns: var_noteRuns,
       summary: var_summary,
+      saveError: var_saveError,
     );
   }
 
@@ -3745,6 +3757,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.canRestart, serializer);
     sse_encode_bool(self.promotable, serializer);
     sse_encode_opt_box_autoadd_u_64(self.nextDueMs, serializer);
+    sse_encode_u_32(self.dueLeft, serializer);
+    sse_encode_u_32(self.newLeft, serializer);
+    sse_encode_opt_String(self.saveError, serializer);
   }
 
   @protected
@@ -3843,6 +3858,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.note, serializer);
     sse_encode_opt_list_inline_run(self.noteRuns, serializer);
     sse_encode_opt_box_autoadd_walk_summary(self.summary, serializer);
+    sse_encode_opt_String(self.saveError, serializer);
   }
 
   @protected

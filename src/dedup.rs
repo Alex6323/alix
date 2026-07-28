@@ -92,7 +92,10 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
                 && let Some(rest) = line.trim().strip_prefix("id:")
             {
                 let v = rest.trim().trim_matches('"');
-                if matches!(crate::token::parse_id(v), Some((crate::token::Kind::Deck, ..))) {
+                if matches!(
+                    crate::token::parse_id(v),
+                    Some((crate::token::Kind::Deck, ..))
+                ) {
                     deck_token = Some(v.to_string());
                 }
             }
@@ -127,8 +130,10 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
             && let Some(rest) = inner.trim().strip_prefix("id:")
         {
             let v = rest.trim();
-            if matches!(crate::token::parse_prefixed_card_id(v), Some((_, None, false)))
-                && heading_line > 0
+            if matches!(
+                crate::token::parse_prefixed_card_id(v),
+                Some((_, None, false))
+            ) && heading_line > 0
             {
                 let entry = (v.to_string(), heading_line);
                 if !cards.contains(&entry) {
@@ -329,7 +334,11 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.path().join("notes.md"), "just prose, no cards\n").unwrap();
-        std::fs::write(dir.path().join("c.md.bak"), "## x\n<!-- id: card-shared1 -->\n").unwrap();
+        std::fs::write(
+            dir.path().join("c.md.bak"),
+            "## x\n<!-- id: card-shared1 -->\n",
+        )
+        .unwrap();
 
         let full = scan_dir(dir.path());
         let fast = scan_dir_fast(dir.path());
@@ -421,7 +430,10 @@ mod tests {
         let copy = write(dir.path(), "deck copy.md", "deck-dsame", "card-ccopy");
 
         let map = scan(&[paren.clone(), copy.clone()]);
-        assert_eq!(vec![(paren, copy, "deck-dsame".to_string())], map.excluded_decks);
+        assert_eq!(
+            vec![(paren, copy, "deck-dsame".to_string())],
+            map.excluded_decks
+        );
     }
 
     #[test]
@@ -446,6 +458,9 @@ mod tests {
         let one = write(dir.path(), "deck1.md", "deck-dsame", "card-cone");
 
         let map = scan(&[ten.clone(), one.clone()]);
-        assert_eq!(vec![(ten, one, "deck-dsame".to_string())], map.excluded_decks);
+        assert_eq!(
+            vec![(ten, one, "deck-dsame".to_string())],
+            map.excluded_decks
+        );
     }
 }

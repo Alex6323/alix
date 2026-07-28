@@ -345,7 +345,9 @@ mod tests {
     fn write_deck(dir: &Path, name: &str, deck_token: &str, card_token: &str) {
         std::fs::write(
             dir.join(name),
-            format!("---\nid: \"deck-{deck_token}\"\n---\n## q <!-- id: card-{card_token} -->\nans\n"),
+            format!(
+                "---\nid: \"deck-{deck_token}\"\n---\n## q <!-- id: card-{card_token} -->\nans\n"
+            ),
         )
         .unwrap();
     }
@@ -530,8 +532,12 @@ mod tests {
         assert!(!dir.path().join("augment/deck-da1.json").exists());
         assert!(dir.path().join("progress/deck-db1.json").exists());
         assert!(dir.path().join("augment/deck-db1.json").exists());
-        let untouched =
-            Store::open_deck(dir.path().join("progress/deck-db1.json"), "deck-db1", "b.md").unwrap();
+        let untouched = Store::open_deck(
+            dir.path().join("progress/deck-db1.json"),
+            "deck-db1",
+            "b.md",
+        )
+        .unwrap();
         assert!(untouched.get("card-c2").is_some());
         let untouched_augmentation =
             AugmentCache::open_deck(dir.path().join("augment/deck-db1.json"), "deck-db1").unwrap();

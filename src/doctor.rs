@@ -164,7 +164,10 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         dirs,
         decks_dir.display()
     );
-    if broken.is_empty() && malformed_math.is_empty() && uninitialized.is_empty() && unconverted.is_empty()
+    if broken.is_empty()
+        && malformed_math.is_empty()
+        && uninitialized.is_empty()
+        && unconverted.is_empty()
     {
         Finding::ok("decks", counts)
     } else {
@@ -233,7 +236,9 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         Finding::bad(
             "decks",
             Status::Warn,
-            format!("{counts}{parse_detail}{math_detail}{uninitialized_detail}{unconverted_detail}"),
+            format!(
+                "{counts}{parse_detail}{math_detail}{uninitialized_detail}{unconverted_detail}"
+            ),
             remedy,
         )
     }

@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The kids client and the mobile app now show the persistent "progress isn't
+  saving" banner the adult web client already had. On mobile a failed
+  per-grade save no longer aborts the grade behind the scenes: the review or
+  walk continues in memory, the banner names the failure, and the next
+  successful save carries every earlier grade (the finished-review payload
+  gains an additive `save_error`).
+
 - The picker's focus drawer shows a nested progress funnel pinned to its
   top-right: `N cards` always, then `s seen`, `k learned`, and `r retired`
   appended as each count becomes non-zero, so a fresh deck reads as a plain "N
@@ -261,6 +268,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The server no longer dies when the consumer of its stdout goes away (for
+  example `alix ~/decks | head`, or a supervisor closing the pipe after the
+  URL line): the startup announcement lines now tolerate a closed stream
+  instead of panicking mid-serve.
 - Picker rows (decks and workspaces alike) no longer light their frame on mouse
   hover; keyboard selection is the single frame highlight.
 - A multiple-choice card starts with its first option focused, so Enter or the

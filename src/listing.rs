@@ -683,7 +683,10 @@ mod tests {
         );
         std::fs::create_dir_all(root.join("a-ws/decks")).unwrap();
         write(&root.join("a-ws/alix.toml"), "title = \"My Workspace\"\n");
-        write(&root.join("a-ws/decks/m.md"), "## q <!-- id: card-qm -->\na\n");
+        write(
+            &root.join("a-ws/decks/m.md"),
+            "## q <!-- id: card-qm -->\na\n",
+        );
         std::fs::create_dir(root.join("c-plain")).unwrap();
         write(&root.join("c-plain/d.md"), "## q <!-- id: card-qd -->\na\n");
         std::fs::create_dir(root.join(".hidden")).unwrap();
@@ -743,7 +746,10 @@ mod tests {
         write(&root.join("loose.md"), "## q <!-- id: card-qloose -->\na\n");
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/decks/m.md"), "## q <!-- id: card-qm -->\na\n");
+        write(
+            &root.join("ws/decks/m.md"),
+            "## q <!-- id: card-qm -->\na\n",
+        );
 
         settle(
             &workspace::store_path(&root.join("ws")),
@@ -767,7 +773,10 @@ mod tests {
         write(&root.join("loose.md"), "## q <!-- id: card-qloose -->\na\n");
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/decks/m.md"), "## q <!-- id: card-qm -->\na\n");
+        write(
+            &root.join("ws/decks/m.md"),
+            "## q <!-- id: card-qm -->\na\n",
+        );
 
         std::fs::create_dir(root.join("progress")).unwrap();
         std::fs::create_dir(root.join("augment")).unwrap();
@@ -955,7 +964,10 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("decks/base.md"), "## q <!-- id: card-qbase -->\na\n");
+        write(
+            &ws.join("decks/base.md"),
+            "## q <!-- id: card-qbase -->\na\n",
+        );
         write(
             &ws.join("decks/mid.md"),
             "---\nrequires: base\n---\n## q <!-- id: card-qmid -->\na\n",
@@ -964,7 +976,10 @@ mod tests {
             &ws.join("decks/tip.md"),
             "---\nrequires: mid\n---\n## q <!-- id: card-qtip -->\na\n",
         );
-        write(&ws.join("decks/other.md"), "## q <!-- id: card-qother -->\na\n");
+        write(
+            &ws.join("decks/other.md"),
+            "## q <!-- id: card-qother -->\na\n",
+        );
 
         let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
         let shape: Vec<(&str, usize, &str)> = rows
@@ -1069,7 +1084,10 @@ mod tests {
         write(&root.join("ws/alix.toml"), "");
         std::fs::create_dir_all(root.join("ws/assets")).unwrap();
         write(&root.join("ws/assets/icon.svg"), "<svg/>");
-        write(&root.join("ws/decks/m.md"), "## q <!-- id: card-qm -->\na\n");
+        write(
+            &root.join("ws/decks/m.md"),
+            "## q <!-- id: card-qm -->\na\n",
+        );
         write(&root.join("loose.md"), "## q <!-- id: card-qloose -->\na\n");
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
@@ -1283,8 +1301,14 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
-        write(&ws.join("decks/done.md"), "## q <!-- id: card-qdone -->\na\n");
-        write(&ws.join("decks/fresh.md"), "## q2 <!-- id: card-qfresh -->\nb\n");
+        write(
+            &ws.join("decks/done.md"),
+            "## q <!-- id: card-qdone -->\na\n",
+        );
+        write(
+            &ws.join("decks/fresh.md"),
+            "## q2 <!-- id: card-qfresh -->\nb\n",
+        );
         let date = crate::time::local_date(T0) + chrono::Days::new(5);
         write(
             &ws.join("alix.local.toml"),

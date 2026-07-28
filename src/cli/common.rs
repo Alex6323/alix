@@ -230,7 +230,11 @@ mod tests {
     fn store_for_resolves_a_loose_deck_to_the_decks_dir_root_store() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("loose.md");
-        std::fs::write(&deck, "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n").unwrap();
+        std::fs::write(
+            &deck,
+            "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n",
+        )
+        .unwrap();
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -248,7 +252,11 @@ mod tests {
     fn store_for_lets_a_cli_override_win_over_the_decks_dir_fallback() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("loose.md");
-        std::fs::write(&deck, "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n").unwrap();
+        std::fs::write(
+            &deck,
+            "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n",
+        )
+        .unwrap();
         let override_path = dir.path().join("custom");
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),

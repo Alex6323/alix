@@ -926,7 +926,11 @@ mod tests {
     #[test]
     fn a_member_with_no_own_source_initializes_and_freezes_from_the_workspace_source() {
         let directory = workspace();
-        std::fs::write(directory.path().join("alix.toml"), "source = \"notes.md\"\n").unwrap();
+        std::fs::write(
+            directory.path().join("alix.toml"),
+            "source = \"notes.md\"\n",
+        )
+        .unwrap();
         std::fs::write(directory.path().join("notes.md"), "one\ntwo\nthree\n").unwrap();
         let path = directory.path().join("decks/facts.md");
         std::fs::write(
