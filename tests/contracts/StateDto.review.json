@@ -157,6 +157,7 @@
     "borrower"
   ],
   "depth": "recall",
+  "due_left": 0,
   "exam_due": [
     "rust.md"
   ],
@@ -176,6 +177,7 @@
   "kind": "review",
   "label": "rust.md",
   "mode": "flip",
+  "new_left": 0,
   "passed": 1,
   "phase": "review",
   "promotable": true,

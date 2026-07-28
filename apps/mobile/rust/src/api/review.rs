@@ -111,6 +111,11 @@ pub struct _ReviewState {
     pub can_restart: bool,
     pub promotable: bool,
     pub next_due_ms: Option<u64>,
+    // Done-only backlog counts; the mobile summary does not surface them yet, so
+    // the bridge defaults them and leaves the wire unchanged (a later frb
+    // regen carries them across).
+    pub due_left: u32,
+    pub new_left: u32,
 }
 
 #[flutter_rust_bridge::frb(mirror(ChoiceFeedback))]
@@ -283,8 +288,8 @@ impl ReviewSession {
             ask: alix::config::AskConfig::default(),
             trace_auto_grade: false,
             pacing: alix::assemble::Pacing {
-                max_new: 10,
-                limit: None,
+                max_session: 10,
+                new_cards_percent: 30,
             },
             instance_store: None,
         };
@@ -673,8 +678,8 @@ impl WalkSession {
             ask: alix::config::AskConfig::default(),
             trace_auto_grade: false,
             pacing: alix::assemble::Pacing {
-                max_new: 10,
-                limit: None,
+                max_session: 10,
+                new_cards_percent: 30,
             },
             instance_store: None,
         };

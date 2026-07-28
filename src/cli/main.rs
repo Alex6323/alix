@@ -56,15 +56,11 @@ struct LaunchArgs {
     #[arg(long)]
     token: Option<String>,
 
-    /// Max new (never-seen) cards a session introduces (default: the
-    /// `[review] max_new` config key, else 10).
+    /// Cards a single sitting serves (default: the `[review] max_session`
+    /// config key, else 10). Its new-card share is `[review]
+    /// new_cards_percent`.
     #[arg(long)]
-    new: Option<usize>,
-
-    /// Max cards per session (default: the `[review] limit` config key,
-    /// else no cap).
-    #[arg(long)]
-    limit: Option<usize>,
+    session: Option<usize>,
 
     /// Path of the config file (default: platform config dir).
     #[arg(long)]

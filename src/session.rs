@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
 };
 
@@ -43,10 +43,20 @@ impl Order {
     }
 }
 
+/// Cards served in a single sitting, before the two pools are backfilled into
+/// each other.
+pub const DEFAULT_MAX_SESSION: usize = 10;
+
+/// New-card share of `max_session`, as a percentage; the rest go to due cards.
+pub const DEFAULT_NEW_CARDS_PERCENT: u8 = 30;
+
 #[derive(Clone, Debug)]
 pub struct SessionOptions {
-    pub max_new: usize,
-    pub limit: Option<usize>,
+    /// The number of queue entries a single sitting serves.
+    pub max_session: usize,
+    /// The new-card share of `max_session` (0-100); the remainder is the due
+    /// share. Either pool backfills the other when it runs short.
+    pub new_cards_percent: u8,
     pub cram: bool,
     pub order: Order,
     pub topology: Option<TopologyOrder>,
@@ -57,8 +67,8 @@ pub struct SessionOptions {
 impl Default for SessionOptions {
     fn default() -> Self {
         Self {
-            max_new: 10,
-            limit: None,
+            max_session: DEFAULT_MAX_SESSION,
+            new_cards_percent: DEFAULT_NEW_CARDS_PERCENT,
             cram: false,
             order: Order::Scheduled,
             topology: None,
@@ -82,6 +92,10 @@ pub struct Session {
     current_idx: Option<usize>,
     remaining_now: usize,
     floors: HashMap<String, u64>,
+    // Cards completed this sitting (passed, crammed, recognized, or removed),
+    // so the done-summary backlog counts don't re-count what was just drilled.
+    // Accumulates across chained restarts within one session.
+    served: HashSet<String>,
     appearances: Vec<u32>,
     choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
@@ -99,7 +113,9 @@ impl Session {
         options: SessionOptions,
         now_ms: u64,
     ) -> Self {
-        let roster: Vec<usize> = build_queue(&cards, store, &*scheduler, &options, now_ms).into();
+        let floors = HashMap::new();
+        let roster: Vec<usize> =
+            build_queue(&cards, store, &*scheduler, &options, &floors, now_ms).into();
         let initial_size = roster.len();
         let appearances = vec![0; cards.len()];
 
@@ -108,7 +124,8 @@ impl Session {
             roster,
             current_idx: None,
             remaining_now: 0,
-            floors: HashMap::new(),
+            floors,
+            served: HashSet::new(),
             appearances,
             choice_seed: now_ms,
             scheduler,
@@ -122,22 +139,75 @@ impl Session {
     }
 
     pub fn restart(&mut self, store: &mut Store, now_ms: u64) -> bool {
-        let roster: Vec<usize> =
-            build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms).into();
+        // Floors survive: a chained sitting keeps the intra-sitting spacing, and
+        // selection below skips a card still cooling instead of re-facing it.
+        // `served` survives too, so the backlog count keeps shrinking across the
+        // chain rather than reading the same figure every restart.
+        let roster: Vec<usize> = build_queue(
+            &self.cards,
+            store,
+            &*self.scheduler,
+            &self.options,
+            &self.floors,
+            now_ms,
+        )
+        .into();
         if roster.is_empty() {
             return false;
         }
         self.initial_size = roster.len();
         self.roster = roster;
         self.stats = SessionStats::default();
-        self.floors.clear();
         self.choice_seed = now_ms;
         self.advance(store, now_ms);
         true
     }
 
     pub fn has_due_now(&self, store: &Store, now_ms: u64) -> bool {
-        !build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms).is_empty()
+        !build_queue(
+            &self.cards,
+            store,
+            &*self.scheduler,
+            &self.options,
+            &self.floors,
+            now_ms,
+        )
+        .is_empty()
+    }
+
+    /// The uncapped backlog split `(due_left, new_left)` at `now_ms`: how many
+    /// due (or, for Recognize, met-but-unrecognized) and never-met cards remain
+    /// beyond what this sitting already drilled. Feeds the done-summary so a
+    /// heavy day knows to chain another sitting.
+    pub fn remaining_split(&self, store: &Store, now_ms: u64) -> (usize, usize) {
+        let depth = self.options.depth;
+        let mut due_left = 0;
+        let mut new_left = 0;
+        for card in &self.cards {
+            let Some(id) = card.id() else {
+                continue;
+            };
+            if is_retired(card, store, self.options.retire_after_days) {
+                continue;
+            }
+            if self.served.contains(&id) {
+                continue;
+            }
+            match store.progress(&id) {
+                Some(state) => {
+                    let eligible = if depth == Depth::Recognize {
+                        self.options.cram || state.recognized_ms.is_none()
+                    } else {
+                        self.options.cram || self.scheduler.is_due(state, depth, now_ms)
+                    };
+                    if eligible {
+                        due_left += 1;
+                    }
+                }
+                None => new_left += 1,
+            }
+        }
+        (due_left, new_left)
     }
 
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {
@@ -240,6 +310,7 @@ impl Session {
             if grade == Grade::Pass {
                 self.roster
                     .retain(|&i| self.cards[i].id().as_deref() != Some(id.as_str()));
+                self.served.insert(id.clone());
             }
             self.floor(&id, now_ms);
             self.advance(store, now_ms);
@@ -247,7 +318,12 @@ impl Session {
         }
 
         let was_due = self.scheduler.is_due(state, depth, now_ms);
-        if self.options.cram && grade.passed() && !was_due {
+        // A cram pass on a card not yet due only re-anchors an existing
+        // schedule. With no schedule at all (a just-acquired card), re-anchor is
+        // a no-op that leaves the card pinned to acquired+cooldown, so it wins
+        // every rebuild and blocks the rest; apply a genuine first learning
+        // event instead.
+        if self.options.cram && grade.passed() && !was_due && state.schedule(depth).is_some() {
             self.scheduler.reanchor(state, depth, now_ms);
         } else {
             self.scheduler.apply(state, depth, grade, now_ms, false);
@@ -275,6 +351,7 @@ impl Session {
         }
         if passed || self.options.cram {
             self.roster.retain(|&i| i != index);
+            self.served.insert(id.clone());
         }
         self.floor(&id, now_ms);
         self.advance(store, now_ms);
@@ -324,6 +401,11 @@ impl Session {
             }
         }
         self.roster = kept;
+        for card in &removed {
+            if let Some(id) = card.id() {
+                self.served.insert(id);
+            }
+        }
         self.advance(store, now_ms);
         removed
     }
@@ -356,12 +438,12 @@ impl Session {
         if !due {
             return false;
         }
-        match self.floors.get(&id) {
-            Some(&transition_ms) => {
-                now_ms >= transition_ms.saturating_add(self.scheduler.acquire_cooldown_ms())
-            }
-            None => true,
-        }
+        floor_passed(
+            &self.floors,
+            &id,
+            self.scheduler.acquire_cooldown_ms(),
+            now_ms,
+        )
     }
 
     fn floor(&mut self, id: &str, now_ms: u64) {
@@ -400,34 +482,111 @@ impl Session {
     }
 }
 
+// A card selected past a floor is off it once one cooldown has elapsed; a card
+// with no floor is free to serve.
+fn floor_passed(floors: &HashMap<String, u64>, id: &str, cooldown_ms: u64, now_ms: u64) -> bool {
+    match floors.get(id) {
+        Some(&transition_ms) => now_ms >= transition_ms.saturating_add(cooldown_ms),
+        None => true,
+    }
+}
+
+// Round-robin the given cards by sibling group so every group's first entry
+// precedes any group's second: a capped take then spans distinct facts instead
+// of being eaten by one many-hole cloze. Group order follows first appearance.
+fn round_robin_siblings(order: Vec<usize>, cards: &[Card]) -> Vec<usize> {
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut index: HashMap<(&str, usize), usize> = HashMap::new();
+    for i in order {
+        let slot = *index.entry(sibling_group(&cards[i])).or_insert_with(|| {
+            groups.push(Vec::new());
+            groups.len() - 1
+        });
+        groups[slot].push(i);
+    }
+    let rounds = groups.iter().map(Vec::len).max().unwrap_or(0);
+    let mut out = Vec::new();
+    for round in 0..rounds {
+        for group in &groups {
+            if let Some(&i) = group.get(round) {
+                out.push(i);
+            }
+        }
+    }
+    out
+}
+
+// Split `max_session` between the two selection-ordered pools. The new share is
+// `ceil(cap * pct / 100)`, floored at one whenever new cards exist; the due
+// share is the rest. Whichever pool falls short lets the other fill to the cap
+// (symmetric backfill), so a fresh deck fills with new and a no-new deck fills
+// with due. Returns `(take_due, take_new)`.
+fn split_slots(due_len: usize, new_len: usize, cap: usize, percent: u8) -> (usize, usize) {
+    let new_slots = if new_len == 0 {
+        0
+    } else {
+        // Floor at one (min-1 rule) but never above the cap; `.max(1).min(cap)`
+        // rather than `clamp`, which would panic for a zero cap.
+        (cap * usize::from(percent)).div_ceil(100).max(1).min(cap)
+    };
+    let due_slots = cap.saturating_sub(new_slots);
+    let mut take_due = due_slots.min(due_len);
+    let mut take_new = new_slots.min(new_len);
+    let mut leftover = cap.saturating_sub(take_due + take_new);
+    let add_due = leftover.min(due_len - take_due);
+    take_due += add_due;
+    leftover -= add_due;
+    take_new += leftover.min(new_len - take_new);
+    (take_due, take_new)
+}
+
 fn build_queue(
     cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
     options: &SessionOptions,
+    floors: &HashMap<String, u64>,
     now_ms: u64,
 ) -> VecDeque<usize> {
-    if options.depth == Depth::Recognize {
-        let mut order: Vec<usize> = Vec::new();
-        let mut fresh_left = options.max_new;
-        for (i, card) in cards.iter().enumerate() {
-            match card.id().and_then(|id| store.progress(&id)) {
-                Some(_) if is_retired(card, store, options.retire_after_days) => {}
-                Some(state) => {
-                    if options.cram || state.recognized_ms.is_none() {
-                        order.push(i);
-                    }
-                }
-                None => {
-                    if fresh_left > 0 {
-                        fresh_left -= 1;
-                        order.push(i);
-                    }
+    let depth = options.depth;
+    let cooldown = scheduler.acquire_cooldown_ms();
+
+    // Partition into the due pool and the never-met pool, dropping retired cards
+    // and any still cooling behind a floor so their slots pass to the next
+    // servable cards rather than seeding an unservable sitting.
+    let mut due: Vec<usize> = Vec::new();
+    let mut new_pool: Vec<usize> = Vec::new();
+    for (i, card) in cards.iter().enumerate() {
+        let Some(id) = card.id() else {
+            continue;
+        };
+        if is_retired(card, store, options.retire_after_days)
+            || !floor_passed(floors, &id, cooldown, now_ms)
+        {
+            continue;
+        }
+        match store.progress(&id) {
+            Some(state) => {
+                let eligible = if depth == Depth::Recognize {
+                    options.cram || state.recognized_ms.is_none()
+                } else {
+                    options.cram || scheduler.is_due(state, depth, now_ms)
+                };
+                if eligible {
+                    due.push(i);
                 }
             }
+            None => new_pool.push(i),
         }
+    }
+
+    // Select oldest-due first, so a deep card that is overdue makes the capped
+    // set instead of losing its slot to a shallower card the presentation sort
+    // would otherwise float above it. Recognize's met pool has no due_at, so it
+    // sweeps in review order when one exists, else deck order.
+    if depth == Depth::Recognize {
         if let Some(topo) = &options.topology {
-            order.sort_by_key(|&i| {
+            due.sort_by_key(|&i| {
                 cards[i]
                     .id()
                     .as_deref()
@@ -435,68 +594,59 @@ fn build_queue(
                     .unwrap_or(usize::MAX)
             });
         }
-        if let Some(limit) = options.limit {
-            order.truncate(limit);
-        }
-        return if options.topology.is_some() {
-            order.into()
-        } else {
-            separate_siblings(order, cards)
-        };
+    } else {
+        due.sort_by_key(|&i| {
+            cards[i]
+                .id()
+                .and_then(|id| store.get(&id))
+                .map_or(u64::MAX, |s| scheduler.due_at(s, depth))
+        });
     }
 
-    let depth = options.depth;
-    let mut due: Vec<usize> = Vec::new();
-    let mut fresh: Vec<usize> = Vec::new();
-
-    for (i, card) in cards.iter().enumerate() {
-        match card.id().and_then(|id| store.progress(&id)) {
-            Some(_) if is_retired(card, store, options.retire_after_days) => {}
-            Some(state) => {
-                if options.cram || scheduler.is_due(state, depth, now_ms) {
-                    due.push(i);
-                }
-            }
-            None => fresh.push(i),
+    // The new pool is selected in review order when one exists, else deck order
+    // round-robined across sibling groups for breadth. The due pool keeps its
+    // due-time order: due siblings are legitimately due.
+    let new_pool = match &options.topology {
+        Some(topo) => {
+            let mut v = new_pool;
+            v.sort_by_key(|&i| {
+                cards[i]
+                    .id()
+                    .as_deref()
+                    .and_then(|id| topo.rank_of(id))
+                    .unwrap_or(usize::MAX)
+            });
+            v
         }
-    }
+        None => round_robin_siblings(new_pool, cards),
+    };
 
-    due.sort_by_key(|&i| {
-        cards[i]
-            .id()
-            .and_then(|id| store.get(&id))
-            .map_or(u64::MAX, |s| scheduler.due_at(s, depth))
-    });
+    let (take_due, take_new) = split_slots(
+        due.len(),
+        new_pool.len(),
+        options.max_session,
+        options.new_cards_percent,
+    );
+    let mut chosen: Vec<usize> = due[..take_due].to_vec();
+    chosen.extend_from_slice(&new_pool[..take_new]);
 
-    let mut fresh: Vec<usize> = fresh.into_iter().take(options.max_new).collect();
-
+    // Presentation: order only the already-capped slice. A review order sorts it
+    // by rank (siblings ride along in walk order); otherwise due cards lead new,
+    // sequential decks fall back to deck order, and siblings are spaced apart.
     if let Some(topo) = &options.topology {
-        let rank = |&i: &usize| {
+        chosen.sort_by_key(|&i| {
             cards[i]
                 .id()
                 .as_deref()
                 .and_then(|id| topo.rank_of(id))
                 .unwrap_or(usize::MAX)
-        };
-        due.sort_by_key(rank);
-        fresh.sort_by_key(rank);
+        });
+        return chosen.into();
     }
-
-    let mut order: Vec<usize> = due;
-    order.extend(fresh);
-
     if options.order == Order::Sequential {
-        order.sort_unstable();
+        chosen.sort_unstable();
     }
-    if let Some(limit) = options.limit {
-        order.truncate(limit);
-    }
-
-    if options.topology.is_some() {
-        order.into()
-    } else {
-        separate_siblings(order, cards)
-    }
+    separate_siblings(chosen, cards)
 }
 
 fn sibling_group(card: &Card) -> (&str, usize) {
@@ -882,19 +1032,118 @@ mod tests {
     }
 
     #[test]
-    fn new_cards_enter_up_to_max_new() {
+    fn a_fresh_deck_fills_the_cap_with_new_cards() {
         let (mut store, _dir) = empty_store();
+        // No due cards, so symmetric backfill lets new fill the whole cap.
         let session = Session::new(
             cards(20),
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 5,
+                max_session: 5,
                 ..Default::default()
             },
             1000,
         );
         assert_eq!(5, session.initial_size);
+    }
+
+    #[test]
+    fn the_percent_mix_splits_a_full_cap_between_deep_pools() {
+        let (mut store, _dir) = empty_store();
+        // 8 due (met, overdue) + 8 never-met; cap 10, 30% new → 3 new + 7 due.
+        let all = cards(16);
+        for c in &all[..8] {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let now = 2 * 604_800_000;
+        let session = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 10,
+                new_cards_percent: 30,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(10, session.initial_size);
+        let new_ids: Vec<String> = all[8..].iter().filter_map(|c| c.id()).collect();
+        let picked_new = session
+            .roster
+            .iter()
+            .filter(|&&i| new_ids.contains(&all[i].id().unwrap()))
+            .count();
+        assert_eq!(3, picked_new, "30% of 10 is 3 new");
+        assert_eq!(7, session.roster.len() - picked_new, "the rest are due");
+    }
+
+    #[test]
+    fn remaining_split_reports_the_backlog_after_a_sitting_is_drilled() {
+        let (mut store, _dir) = empty_store();
+        // 8 due + 8 never-met, cap 10 (7 due + 3 new). Drill the whole sitting,
+        // then the split reports what a chained sitting would still find.
+        let all = cards(16);
+        for c in &all[..8] {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let now = 2 * 604_800_000;
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+        while session.current().is_some() {
+            if session.current_fresh(&store) {
+                session.acquire_current(&mut store, now);
+            } else {
+                session.grade(&mut store, Grade::Pass, now);
+            }
+        }
+        let (due_left, new_left) = session.remaining_split(&store, now);
+        // 7 due passed (scheduled out, served); 1 due untouched. 3 never-met
+        // were acquired (now have progress); 5 never-met remain.
+        assert_eq!((1, 5), (due_left, new_left));
+    }
+
+    #[test]
+    fn a_non_empty_new_pool_always_wins_at_least_one_slot() {
+        let (mut store, _dir) = empty_store();
+        // 20 due + 5 never-met, cap 10: ceil(10*10/100)=1, so at least 1 new.
+        let all = cards(25);
+        for c in &all[..20] {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let now = 2 * 604_800_000;
+        let session = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 10,
+                new_cards_percent: 10,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(10, session.initial_size);
+        // The last five cards are the never-met pool; at least one entered.
+        let new_ids: Vec<String> = all[20..].iter().filter_map(|c| c.id()).collect();
+        let roster_new = session
+            .roster
+            .iter()
+            .filter(|&&i| new_ids.contains(&all[i].id().unwrap()))
+            .count();
+        assert!(roster_new >= 1, "min-1 new even at a low percent");
+    }
+
+    #[test]
+    fn a_no_new_deck_fills_the_cap_with_due_cards() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(20);
+        for c in &all {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let now = 2 * 604_800_000;
+        let session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+        assert_eq!(10, session.initial_size, "no new pool: due fills the cap");
     }
 
     #[test]
@@ -1183,14 +1432,14 @@ mod tests {
     }
 
     #[test]
-    fn max_new_is_capped_per_session() {
+    fn the_cap_fixes_the_new_set_at_start() {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(
             cards(5),
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 2,
+                max_session: 2,
                 ..Default::default()
             },
             1000,
@@ -1204,7 +1453,7 @@ mod tests {
     }
 
     #[test]
-    fn due_cards_take_priority_over_new_under_limit() {
+    fn due_cards_take_the_whole_cap_when_the_new_share_is_zero() {
         let (mut store, _dir) = empty_store();
         let all = cards(10);
         for c in &all[7..] {
@@ -1215,8 +1464,8 @@ mod tests {
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 10,
-                limit: Some(3),
+                max_session: 3,
+                new_cards_percent: 0,
                 cram: false,
                 order: Order::Scheduled,
                 topology: None,
@@ -1225,8 +1474,48 @@ mod tests {
             },
             DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000,
         );
-        assert_eq!(3, session.initial_size);
+        assert_eq!(3, session.initial_size, "the 3 due cards, no new");
         assert_eq!("front 7", session.current().unwrap().front);
+    }
+
+    #[test]
+    fn a_deep_overdue_card_makes_the_capped_set() {
+        let (mut store, _dir) = empty_store();
+        // 12 due cards; card 11 is the most overdue (oldest due_at). Under a cap
+        // of 5, selection is by due_at, so the deepest-index overdue card is in
+        // the first sitting rather than starved by a shallower one.
+        let all = cards(12);
+        let now = 10 * 604_800_000;
+        for (offset, c) in all.iter().enumerate() {
+            // Earlier last_review = older due_at; card 11 the oldest.
+            let ts = (11 - offset) as u64;
+            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(FsrsState {
+                stability: 1.0,
+                difficulty: 5.0,
+                state: 2,
+                scheduled_days: 1,
+                last_review_ms: ts,
+                due_ms: ts,
+                ..Default::default()
+            });
+        }
+        let session = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 5,
+                new_cards_percent: 0,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(5, session.initial_size);
+        assert_eq!(
+            "front 11",
+            session.current().unwrap().front,
+            "the oldest-due card leads the capped sitting"
+        );
     }
 
     #[test]
@@ -1277,14 +1566,13 @@ mod tests {
         let now = 5_000_000;
         store.get_or_insert(&all[0].id().unwrap(), now);
 
+        // An acquired card is a due-pool card, so no-new intake is irrelevant;
+        // it is simply not due one ms into its cooldown.
         let session = Session::new(
             all.clone(),
             &mut store,
             sched(),
-            SessionOptions {
-                max_new: 0,
-                ..Default::default()
-            },
+            SessionOptions::default(),
             now + 1,
         );
         assert!(session.is_finished());
@@ -1294,13 +1582,8 @@ mod tests {
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 0,
-                limit: None,
                 cram: true,
-                order: Order::Scheduled,
-                topology: None,
-                retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                depth: crate::depth::Depth::default(),
+                ..Default::default()
             },
             now + 1,
         );
@@ -1506,7 +1789,7 @@ mod tests {
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 2,
+                max_session: 2,
                 ..Default::default()
             },
             1000,
@@ -1657,13 +1940,8 @@ mod tests {
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 10,
-                limit: None,
                 cram: true,
-                order: Order::Scheduled,
-                topology: None,
-                retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                depth: crate::depth::Depth::default(),
+                ..Default::default()
             },
             1000,
         );
@@ -1787,6 +2065,172 @@ mod tests {
         assert_eq!(1, store.get(&id_a).unwrap().history.len());
     }
 
+    #[test]
+    fn chained_cram_serves_disjoint_batches_off_a_first_learning_event() {
+        let (mut store, _dir) = empty_store();
+        // Three acquired-but-unscheduled cards. A cram pass on a not-yet-due
+        // card with no schedule must be a genuine first learning event, so its
+        // due moves out and a chained sitting reaches the next card instead of
+        // looping the same one.
+        let all = cards(3);
+        for c in &all {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let t1 = 1;
+        let mut s = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 1,
+                cram: true,
+                ..Default::default()
+            },
+            t1,
+        );
+        let first = s.current().unwrap().id().unwrap();
+        s.grade(&mut store, Grade::Pass, t1);
+        assert!(
+            store.get(&first).unwrap().recall.is_some(),
+            "a first cram pass applies a real schedule, not a no-op re-anchor"
+        );
+        assert!(s.is_finished(), "cap 1 serves one card per sitting");
+
+        // Restart past the first card's floor: its due has moved out, so it no
+        // longer leads, and a fresh card takes the slot.
+        assert!(s.restart(&mut store, t1 + DEFAULT_ACQUIRE_COOLDOWN_MS));
+        let second = s.current().unwrap().id().unwrap();
+        assert_ne!(first, second, "the chained batch is disjoint");
+    }
+
+    #[test]
+    fn a_chained_sitting_skips_a_cooling_card_for_the_next_servable() {
+        let (mut store, _dir) = empty_store();
+        // Card 0 is the oldest-due; cards 1 and 2 follow. Grade card 0 (it
+        // floors), pin its due back to the front so, absent the floor, it would
+        // lead again, then chain within the cooldown: the surviving floor holds
+        // it back and the next servable card takes the sitting (never empty
+        // while a servable card remains).
+        let all = cards(3);
+        let a = all[0].id().unwrap();
+        store.get_or_insert(&a, 0).recall = Some(mature_fsrs(5));
+        for c in &all[1..] {
+            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(mature_fsrs(1_000));
+        }
+        let t1 = 2_000_000;
+        let mut s = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 1,
+                new_cards_percent: 0,
+                cram: true,
+                ..Default::default()
+            },
+            t1,
+        );
+        assert_eq!(
+            Some(a.clone()),
+            s.current().unwrap().id(),
+            "oldest-due leads"
+        );
+        s.grade(&mut store, Grade::Pass, t1);
+        store.get_or_insert(&a, t1).recall.as_mut().unwrap().due_ms = 5;
+        assert!(s.is_finished(), "cap 1: the sitting ends after the grade");
+
+        let t2 = t1 + 1_000;
+        assert!(
+            s.restart(&mut store, t2),
+            "servable cards remain, so the sitting is not empty"
+        );
+        assert_ne!(
+            a,
+            s.current().unwrap().id().unwrap(),
+            "the cooling card is skipped for the next servable one"
+        );
+    }
+
+    #[test]
+    fn the_new_pool_round_robins_sibling_groups_into_the_cap() {
+        let (mut store, _dir) = empty_store();
+        // Two six-hole clozes plus four singles: without round-robin the first
+        // ten slots would be eaten by the two cloze groups; the round-robin
+        // spreads the cap across many distinct facts.
+        let mut all = Vec::new();
+        for line in [1usize, 2] {
+            for hole in 0..6u32 {
+                let mut c = card("deck.md", line);
+                c.token = Some(Arc::from(format!("clz{line}").as_str()));
+                c.hole = Some(hole);
+                c.back = vec![format!("h{line}-{hole}")];
+                all.push(c);
+            }
+        }
+        for line in [3usize, 4, 5, 6] {
+            all.push(card("deck.md", line));
+        }
+        let session = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 10,
+                ..Default::default()
+            },
+            1_000,
+        );
+        assert_eq!(10, session.initial_size);
+        let groups: std::collections::HashSet<(String, usize)> = session
+            .roster
+            .iter()
+            .map(|&i| (session.cards[i].deck_id.to_string(), session.cards[i].line))
+            .collect();
+        assert!(
+            groups.len() > 2,
+            "the capped sitting spans more than the two cloze groups: {} groups",
+            groups.len()
+        );
+    }
+
+    #[test]
+    fn cram_remaining_split_subtracts_what_the_sitting_already_drilled() {
+        let (mut store, _dir) = empty_store();
+        // Five acquired cards, all eligible under cram; cap 2. After drilling the
+        // sitting, the backlog counts the three not yet served, not all five.
+        let all = cards(5);
+        for c in &all {
+            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(mature_fsrs(10));
+        }
+        let now = 2_000_000;
+        let mut s = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 2,
+                new_cards_percent: 0,
+                cram: true,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(
+            (5, 0),
+            s.remaining_split(&store, now),
+            "all five ahead at start"
+        );
+        s.grade(&mut store, Grade::Pass, now);
+        s.grade(&mut store, Grade::Pass, now);
+        assert!(s.is_finished());
+        let (due_left, new_left) = s.remaining_split(&store, now);
+        assert_eq!(
+            (3, 0),
+            (due_left, new_left),
+            "the two crammed cards drop out of the eligible count"
+        );
+    }
+
     fn topology_order(walk: &[&Card]) -> TopologyOrder {
         let ids: Vec<String> = walk.iter().filter_map(|c| c.id()).collect();
         TopologyOrder::from_walk(&ids)
@@ -1825,12 +2269,13 @@ mod tests {
         store.get_or_insert(&all[0].id().unwrap(), 0);
         store.get_or_insert(&all[1].id().unwrap(), now);
         let topo = topology_order(&[&all[1], &all[0]]);
+        // Both cards are acquired, so the never-met pool is empty; only card 0
+        // is due, and the walk cannot re-admit the not-due card 1.
         let session = Session::new(
             all.clone(),
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 0,
                 topology: Some(topo),
                 ..Default::default()
             },
@@ -1929,26 +2374,50 @@ mod tests {
     }
 
     #[test]
-    fn topology_keeps_due_ahead_of_new_under_a_limit() {
+    fn a_deep_rank_overdue_card_is_not_starved_by_the_walk_sort() {
         let (mut store, _dir) = empty_store();
+        // Four due cards; card 3 is the most overdue but sits last in the walk.
+        // Selecting by due_at (not rank) then presenting by rank keeps the deep
+        // overdue card in the capped sitting; the old topo-sort-then-truncate
+        // would drop it for two shallow-rank cards.
         let all = cards(4);
-        store.get_or_insert(&all[0].id().unwrap(), 0);
-        store.get_or_insert(&all[1].id().unwrap(), 0);
-        let topo = topology_order(&[&all[3], &all[1], &all[0], &all[2]]);
+        let now = 10 * 604_800_000;
+        for (i, c) in all.iter().enumerate() {
+            let ts = i as u64; // card 3 has the smallest (oldest) due_at
+            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(FsrsState {
+                stability: 1.0,
+                difficulty: 5.0,
+                state: 2,
+                scheduled_days: 1,
+                last_review_ms: 3 - ts,
+                due_ms: 3 - ts,
+                ..Default::default()
+            });
+        }
+        // Walk order 0,1,2,3 → card 3 is the deepest rank.
+        let topo = topology_order(&[&all[0], &all[1], &all[2], &all[3]]);
         let session = Session::new(
             all.clone(),
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 10,
-                limit: Some(2),
+                max_session: 2,
+                new_cards_percent: 0,
                 topology: Some(topo),
                 ..Default::default()
             },
-            1_000_000,
+            now,
         );
         assert_eq!(2, session.initial_size);
-        assert_eq!("front 1", session.current().unwrap().front);
+        let served: Vec<String> = session
+            .roster
+            .iter()
+            .map(|&i| all[i].id().unwrap())
+            .collect();
+        assert!(
+            served.contains(&all[3].id().unwrap()),
+            "the deep-rank overdue card made the capped sitting"
+        );
     }
 
     const CAP: Option<u32> = Some(DEFAULT_RETIRE_AFTER_DAYS);
@@ -2033,14 +2502,14 @@ mod tests {
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 0,
+                max_session: 0,
                 ..Default::default()
             },
             2_000,
         );
         assert_eq!(
             0, capped.initial_size,
-            "a presented-only card still counts against max_new, never as due"
+            "a presented-only card is never-met, and a zero cap admits nothing"
         );
     }
 
@@ -2558,14 +3027,15 @@ mod tests {
     }
 
     #[test]
-    fn recognize_caps_never_met_intake_at_max_new() {
+    fn recognize_caps_never_met_intake_at_the_session_cap() {
         let (mut store, _dir) = empty_store();
+        // All 22 are never-met, so with no met pool they fill the whole cap.
         let s = Session::new(
             cards(22),
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 10,
+                max_session: 10,
                 depth: Depth::Recognize,
                 ..Default::default()
             },
@@ -2575,24 +3045,38 @@ mod tests {
     }
 
     #[test]
-    fn recognize_met_but_unrecognized_cards_enter_uncapped() {
+    fn recognize_caps_the_total_splitting_met_and_never_met() {
         let (mut store, _dir) = empty_store();
+        // 15 met-but-unrecognized (the due analog) + 5 never-met. Cap 10 at 30%
+        // new: 7 met + 3 never-met, and the met sweep finishes across sittings.
         let all = cards(20);
         for c in &all[..15] {
             store.get_or_insert(&c.id().unwrap(), 0);
         }
+        let now = 1_000;
         let s = Session::new(
-            all,
+            all.clone(),
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 3,
+                max_session: 10,
+                new_cards_percent: 30,
                 depth: Depth::Recognize,
                 ..Default::default()
             },
-            1_000,
+            now,
         );
-        assert_eq!(18, s.initial_size, "15 met plus 3 of the 5 never-met");
+        assert_eq!(10, s.initial_size, "the total is capped, not uncapped");
+        let never_met: Vec<String> = all[15..].iter().filter_map(|c| c.id()).collect();
+        let picked_new = s
+            .roster
+            .iter()
+            .filter(|&&i| never_met.contains(&all[i].id().unwrap()))
+            .count();
+        assert_eq!(3, picked_new, "3 of the 5 never-met, the rest are met");
+        // Before any pick is drilled, the whole eligible backlog is still ahead.
+        let (due_left, new_left) = s.remaining_split(&store, now);
+        assert_eq!((15, 5), (due_left, new_left));
     }
 
     #[test]
@@ -2646,7 +3130,7 @@ mod tests {
     }
 
     #[test]
-    fn recognize_topology_reorders_but_never_chooses_which_fresh_cards_enter() {
+    fn recognize_topology_chooses_the_capped_new_cards_in_walk_order() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
@@ -2655,19 +3139,17 @@ mod tests {
             &mut store,
             sched(),
             SessionOptions {
-                max_new: 2,
+                max_session: 2,
                 depth: Depth::Recognize,
                 topology: Some(topo),
                 ..Default::default()
             },
             1_000,
         );
-        assert_eq!(2, s.initial_size, "the cap picks in deck order");
-        assert_eq!(
-            "front 1",
-            s.current().unwrap().front,
-            "the walk reorders the picked pair"
-        );
+        assert_eq!(2, s.initial_size);
+        // A review order selects the never-met cards in rank order: cards 2 and
+        // 1 (the walk's first two), not deck-order 0 and 1.
+        assert_eq!("front 2", s.current().unwrap().front);
     }
 
     #[test]
@@ -2683,7 +3165,8 @@ mod tests {
             &mut store,
             sched(),
             SessionOptions {
-                limit: Some(2),
+                max_session: 2,
+                new_cards_percent: 0,
                 depth: Depth::Recognize,
                 topology: Some(topo),
                 ..Default::default()

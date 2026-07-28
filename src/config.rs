@@ -371,8 +371,8 @@ pub struct ReviewConfig {
     pub retention: f64,
     pub retire_after_days: Option<u32>,
     pub acquire_cooldown_ms: u64,
-    pub max_new: Option<usize>,
-    pub limit: Option<usize>,
+    pub max_session: Option<usize>,
+    pub new_cards_percent: Option<u8>,
     pub deadline: Option<chrono::NaiveDate>,
     pub deadline_ramp_days: u32,
 }
@@ -383,8 +383,8 @@ impl Default for ReviewConfig {
             retention: 0.9,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
             acquire_cooldown_ms: crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
-            max_new: None,
-            limit: None,
+            max_session: None,
+            new_cards_percent: None,
             deadline: None,
             deadline_ramp_days: 14,
         }
@@ -416,11 +416,11 @@ impl ReviewConfig {
         {
             review.acquire_cooldown_ms = ms;
         }
-        if let Some(n) = raw.review.max_new {
-            review.max_new = Some(n);
+        if let Some(n) = raw.review.max_session {
+            review.max_session = Some(n);
         }
-        if let Some(n) = raw.review.limit {
-            review.limit = Some(n);
+        if let Some(n) = raw.review.new_cards_percent {
+            review.new_cards_percent = Some(n.min(100));
         }
         // Deadline/ramp apply only inside a real workspace: a bare folder has no
         // chip or lint to explain a ramping retention.
@@ -489,8 +489,8 @@ struct RawReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
     acquire_cooldown: Option<String>,
-    max_new: Option<usize>,
-    limit: Option<usize>,
+    max_session: Option<usize>,
+    new_cards_percent: Option<u8>,
 }
 
 #[derive(Deserialize, Default)]
@@ -499,8 +499,8 @@ struct RawLocalReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
     acquire_cooldown: Option<String>,
-    max_new: Option<usize>,
-    limit: Option<usize>,
+    max_session: Option<usize>,
+    new_cards_percent: Option<u8>,
     deadline: Option<String>,
     deadline_ramp: Option<String>,
 }
@@ -636,7 +636,7 @@ struct RawReview {
 
 impl Config {
     pub fn from_toml(text: &str) -> Result<Self> {
-        let raw: RawConfig = toml::from_str(text).context("invalid config file")?;
+        let raw: RawConfig = toml::from_str(text).map_err(pacing_key_error)?;
         let mut keys = Bindings::default();
 
         let assign = |target: &mut Vec<KeyPattern>,
@@ -832,8 +832,8 @@ impl Config {
             review.acquire_cooldown_ms =
                 parse_acquire_cooldown(&cooldown).context("in [review] acquire_cooldown")?;
         }
-        review.max_new = raw.review.max_new;
-        review.limit = raw.review.limit;
+        review.max_session = raw.review.max_session;
+        review.new_cards_percent = raw.review.new_cards_percent.map(|n| n.min(100));
 
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
@@ -946,6 +946,24 @@ fn parse_ramp_days(s: &str) -> Result<u32> {
     }
 }
 
+// The pacing rework retired `max_new` and `limit`; both config paths now name
+// the replacement so a stale key is a fix, not a mystery.
+const PACING_KEY_FIX: &str =
+    "delete it; pacing is now `max_session` / `new_cards_percent` (or `--session` per launch)";
+
+fn mentions_retired_pacing_key(message: &str) -> bool {
+    message.contains("`max_new`") || message.contains("`limit`")
+}
+
+fn pacing_key_error(err: toml::de::Error) -> anyhow::Error {
+    let message = err.to_string();
+    if mentions_retired_pacing_key(&message) {
+        anyhow::anyhow!("invalid config file: {message}\n{PACING_KEY_FIX}")
+    } else {
+        anyhow::Error::new(err).context("invalid config file")
+    }
+}
+
 pub fn local_review_lint(dir: &Path) -> Vec<String> {
     let path = crate::state::UserFiles::new(dir).local_manifest();
     let text = match std::fs::read_to_string(&path) {
@@ -954,7 +972,19 @@ pub fn local_review_lint(dir: &Path) -> Vec<String> {
     };
     let raw: RawLocalConfig = match toml::from_str(&text) {
         Ok(r) => r,
-        Err(_) => return Vec::new(),
+        // A parse failure silently dropped the whole overlay (deadline included)
+        // and said nothing. Surface it, naming the file and the retired-key fix.
+        Err(e) => {
+            let message = e.to_string();
+            let fix = if mentions_retired_pacing_key(&message) {
+                format!(" {PACING_KEY_FIX}")
+            } else {
+                String::new()
+            };
+            return vec![format!(
+                "{LOCAL_MANIFEST} could not be parsed: {message}{fix}"
+            )];
+        }
     };
 
     let mut complaints = Vec::new();
@@ -1124,8 +1154,8 @@ pub fn default_config_toml() -> &'static str {
 # retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
 # retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
 # acquire_cooldown = "5m"       # settle gap before a new card's first quiz, and the same-card retry floor ("90s", "10m"; "0" = none)
-# max_new = 10                  # max never-seen cards a session introduces (--new overrides per instance)
-# limit = 40                    # session size cap (--limit overrides; unset = no cap)
+# max_session = 10              # cards a single sitting serves (--session overrides per instance)
+# new_cards_percent = 30        # new-card share of max_session; the rest are due cards (each pool backfills the other)
 "#
 }
 
@@ -1236,12 +1266,28 @@ mod tests {
 
     #[test]
     fn review_pacing_keys_parse_and_default_to_unset() {
-        let config = Config::from_toml("[review]\nmax_new = 5\nlimit = 40\n").unwrap();
-        assert_eq!(Some(5), config.review.max_new);
-        assert_eq!(Some(40), config.review.limit);
+        let config =
+            Config::from_toml("[review]\nmax_session = 5\nnew_cards_percent = 40\n").unwrap();
+        assert_eq!(Some(5), config.review.max_session);
+        assert_eq!(Some(40), config.review.new_cards_percent);
         let bare = Config::from_toml("").unwrap();
-        assert_eq!(None, bare.review.max_new);
-        assert_eq!(None, bare.review.limit);
+        assert_eq!(None, bare.review.max_session);
+        assert_eq!(None, bare.review.new_cards_percent);
+    }
+
+    #[test]
+    fn new_cards_percent_clamps_to_a_hundred() {
+        let config = Config::from_toml("[review]\nnew_cards_percent = 250\n").unwrap();
+        assert_eq!(Some(100), config.review.new_cards_percent);
+    }
+
+    #[test]
+    fn a_retired_pacing_key_errors_with_the_replacement_hint() {
+        let err = Config::from_toml("[review]\nmax_new = 5\n").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("max_session"), "names the replacement: {msg}");
+        let err = Config::from_toml("[review]\nlimit = 40\n").unwrap_err();
+        assert!(format!("{err:#}").contains("max_session"));
     }
 
     #[test]
@@ -1535,15 +1581,15 @@ mod tests {
         assert_eq!(Config::default(), config);
     }
 
-    // Excludes decks_dir/max_new/limit: their template values are effective
-    // defaults, not the struct's actual `None`.
+    // Excludes decks_dir/max_session/new_cards_percent: their template values
+    // are effective defaults, not the struct's actual `None`.
     fn is_setting_line(s: &str) -> bool {
         let Some((key, _)) = s.split_once('=') else {
             return false;
         };
         let key = key.trim();
         !key.is_empty()
-            && !matches!(key, "decks_dir" | "max_new" | "limit")
+            && !matches!(key, "decks_dir" | "max_session" | "new_cards_percent")
             && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
     }
 
@@ -1749,6 +1795,46 @@ mod tests {
         assert!(local_review_lint(dir.path()).is_empty());
         let empty = tempfile::tempdir().unwrap();
         assert!(local_review_lint(empty.path()).is_empty());
+    }
+
+    #[test]
+    fn local_review_lint_surfaces_a_retired_pacing_key_instead_of_dropping_the_overlay() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(LOCAL_MANIFEST),
+            "[review]\nlimit = 40\ndeadline = \"2026-09-01\"\n",
+        )
+        .unwrap();
+        let complaints = local_review_lint(dir.path());
+        assert_eq!(
+            1,
+            complaints.len(),
+            "the parse failure is a complaint, not silence"
+        );
+        assert!(
+            complaints[0].contains(LOCAL_MANIFEST),
+            "names the file: {}",
+            complaints[0]
+        );
+        assert!(
+            complaints[0].contains("max_session"),
+            "names the replacement: {}",
+            complaints[0]
+        );
+    }
+
+    #[test]
+    fn for_workspace_stays_lenient_on_a_retired_pacing_key() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(LOCAL_MANIFEST),
+            "[review]\nlimit = 40\nretention = 0.8\n",
+        )
+        .unwrap();
+        // Review time must not blow up on a stale key; the doctor lint is where
+        // the user hears about it.
+        let resolved = ReviewConfig::default().for_workspace(dir.path());
+        assert_eq!(ReviewConfig::default().retention, resolved.retention);
     }
 }
 

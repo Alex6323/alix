@@ -98,14 +98,15 @@ so is every client.
    (`is_workspace`, or a folder) is a container, not a session (see
    `DeckItemDto.name`). `DeckItemDto.selectable` says this on the wire
    directly, so a client no longer has to infer it from `is_workspace`.
-2. `POST /api/select {deck, topology?, region?, depth?, cram?, max_new?,
-   limit?}` builds a session. **The response is either a `StateDto` or a
+2. `POST /api/select {deck, topology?, region?, depth?, cram?, session?}`
+   builds a session. **The response is either a `StateDto` or a
    `WalkDto` — branch on `kind` (`"review"` | `"walk"`) before anything
    else.** A trace deck walks; a fact deck reviews. `depth` is
    `"recognize" | "recall" | "reconstruct"` *(closed)*; omitted → the deck's
    remembered last depth. `cram` (default false) also queues cards that
-   aren't due — a due card still grades as a normal review. `max_new` /
-   `limit` override the instance's session pacing for this launch.
+   aren't due (a due card still grades as a normal review). `session`
+   overrides `max_session` (the cards one sitting serves) for this launch; its
+   new-card share stays the instance's `new_cards_percent`.
 3. Render from `StateDto` (`phase:"review"`, `card`, `mode`, `depth`, counts).
    For typed checks call `POST /api/check {lines}`; whether the lines pair
    by position (`typeline`) or match in any order is derived server-side
@@ -365,7 +366,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, max_new?, limit?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
+| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, session?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
 | POST | `/api/deck-drawer` | `{deck}` | `DeckDrawerDto` | never errors; empty DTO on any failure |
 | POST | `/api/reset` | `{deck}` | `ResetDto` | 400 bad body / unknown deck / load failure |
@@ -530,9 +531,10 @@ The review-session payload; returned by every review action.
 | `input` | string | `type` \| `draw`. |
 | `remaining` / `initial` / `reviews` / `passed` / `failed` / `acquired` | number | Session counters; `acquired` counts new cards introduced this sitting (a first pass is acquire-only, so `reviews` alone reads 0). |
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
-| `can_restart` | bool | Anything due/new right now. |
+| `can_restart` | bool | Anything servable right now (would a restart build a non-empty sitting). |
 | `promotable` | bool | Current card is a virtual (remediation) card. |
 | `next_due_ms` | number? | Present only at `done`: the soonest epoch-millis instant a scheduled card next comes due, so an empty sitting can say when to return. Absent on a live session and when nothing is scheduled. Clients format it terse and approximate (e.g. "next due in 4 min"), never ticking. |
+| `due_left` / `new_left` | number | Backlog beyond this sitting, computed only at `done` (0 on a live session): how many due (or, at Recognize, met-but-unrecognized) and never-met cards a chained sitting would still find, minus what this sitting drilled. Lets the summary say "N still due" or "Start N new" and chain the drain. |
 | `label` | string | Session header label *(presentational)*. |
 | `save_error` | string? | Absent while saving works. Set (human-readable reason) once session progress can no longer be persisted, e.g. another writer replaced this deck's progress document; it stays set until a save succeeds, so clients should show it persistently and advise reopening the deck. |
 

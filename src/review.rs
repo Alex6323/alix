@@ -176,6 +176,11 @@ pub struct ReviewState {
     pub can_restart: bool,
     pub promotable: bool,
     pub next_due_ms: Option<u64>,
+    // The uncapped backlog beyond this sitting, populated only at done: how many
+    // due (or met-but-unrecognized) and never-met cards a chained sitting would
+    // still find.
+    pub due_left: u32,
+    pub new_left: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -242,6 +247,13 @@ pub fn state(
             .collect()
     });
     let finished = session.is_finished();
+    // Only the done screen reads the backlog split, and it re-scans every card,
+    // so keep it off the live path.
+    let (due_left, new_left) = if finished {
+        session.remaining_split(store, now)
+    } else {
+        (0, 0)
+    };
     ReviewState {
         card: card_view,
         mode,
@@ -262,6 +274,8 @@ pub fn state(
         can_restart: session.has_due_now(store, now),
         promotable: session.current_is_virtual(store),
         next_due_ms: finished.then(|| session.next_due_at(store)).flatten(),
+        due_left: due_left as u32,
+        new_left: new_left as u32,
     }
 }
 
@@ -921,7 +935,8 @@ mod tests {
             &mut store,
             Box::new(Fsrs::default()),
             SessionOptions {
-                max_new: 0,
+                new_cards_percent: 0,
+                max_session: 0,
                 ..Default::default()
             },
             NOW,

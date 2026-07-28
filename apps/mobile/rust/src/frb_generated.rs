@@ -2340,6 +2340,8 @@ impl SseDecode for crate::api::review::ReviewState {
             can_restart: var_canRestart,
             promotable: var_promotable,
             next_due_ms: var_nextDueMs,
+            due_left: 0,
+            new_left: 0,
         };
     }
 }

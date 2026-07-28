@@ -72,6 +72,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Session pacing is now two `[review]` keys: `max_session` (cards a single
+  sitting serves, default 10) and `new_cards_percent` (the new-card share of
+  that cap, default 30). The old `max_new` / `limit` keys and the `--new` /
+  `--limit` launch flags are gone; `--session N` overrides `max_session` for one
+  launch. Each sitting first selects its capped set (new and due each get a
+  share, whichever pool is short lets the other backfill to the cap) and only
+  then orders that slice for serving, so a deep overdue card no longer starves
+  behind shallow ones. Per-card cooldown floors now survive a restart, so a
+  chained sitting skips a card that is still cooling. The `/api/select` body
+  drops `max_new` / `limit` for a single `session?` field, and the done-phase
+  `StateDto` / `ReviewState` gain additive `due_left` / `new_left` backlog
+  counts (the summary now says "N still due" or "Start N new"). Testers: delete
+  any commented `max_new` / `limit` lines from your config and `alix.local.toml`
+  (a stale key is now a loud error naming the replacement, and `alix doctor`
+  flags it in a local manifest).
 - "Seen" now means the card was shown to you at least once, right or wrong: the
   first time a card becomes the displayed card in any session, the store
   records a one-time presentation stamp (`presented_ms`), so a card you met
@@ -86,7 +101,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `CrumbDto.cells` carry tier names (strings) instead of numbers.
 - A picker row no longer prints a right-aligned status counter for a new or
   started deck: "new" duplicated the NEW chip, and a started deck's `k/N`
-  graduated counter was cryptic and redundant beside it. New and started rows now
+  graduated counter was cryptic and redundant beside it. New and started rows
+  now
   show the title and state chip only, so the chip is the row's single state
   signal; finished, mastered, and exam-due rows keep their status word. The
   graduated count moved to the focus drawer's progress funnel (as "learned").

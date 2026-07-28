@@ -216,8 +216,13 @@ impl Scheduler for Fsrs {
             // Established at the other depth: due now, skipping the acquire
             // warm-up (its own schedule is created lazily on the first grade).
             None if state.recall.is_some() || state.reconstruct.is_some() => 0,
+            // Anchor the warm-up on the acquire fact, or on the first
+            // presentation for a card that was shown but never acquired (a
+            // failed fresh pick), so it still waits out the cooldown rather than
+            // anchoring at epoch and serving immediately.
             None => state
                 .acquired_ms
+                .or(state.presented_ms)
                 .unwrap_or_default()
                 .saturating_add(self.acquire_cooldown_ms),
         }
@@ -303,6 +308,24 @@ mod tests {
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 1000, false);
         assert!(s.recall.is_some());
         assert!(sched.due_at(&s, Depth::Recall) != 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
+    }
+
+    #[test]
+    fn due_at_anchors_the_warm_up_on_first_presentation_when_never_acquired() {
+        // A fresh card shown then failed (a wrong Recognize pick) has a store
+        // entry with a presentation stamp but no acquire fact. The warm-up must
+        // anchor on that stamp, not epoch, so it still waits out the cooldown.
+        let sched = Fsrs::default();
+        let s = CardState {
+            presented_ms: Some(1_000),
+            ..Default::default()
+        };
+        assert_eq!(
+            1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS,
+            sched.due_at(&s, Depth::Recall)
+        );
+        assert!(!sched.is_due(&s, Depth::Recall, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1));
+        assert!(sched.is_due(&s, Depth::Recall, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
     }
 
     #[test]

@@ -65,8 +65,8 @@ fn store_for_with_default(
 
 #[derive(Clone, Copy)]
 pub struct Pacing {
-    pub max_new: usize,
-    pub limit: Option<usize>,
+    pub max_session: usize,
+    pub new_cards_percent: u8,
 }
 
 pub struct AssembleConfig {
@@ -83,8 +83,8 @@ pub struct SelectOptions {
     pub region: Option<String>,
     pub depth: Option<Depth>,
     pub cram: bool,
-    pub max_new: Option<usize>,
-    pub limit: Option<usize>,
+    /// A per-launch override of `max_session` for this sitting.
+    pub session: Option<usize>,
     pub now_ms: Option<u64>,
 }
 
@@ -495,8 +495,8 @@ pub fn select(
         .or_else(|| store.last_depth(deck_id.as_ref()))
         .unwrap_or_else(|| default_depth(&cards, &augment));
     let options = SessionOptions {
-        max_new: opts.max_new.unwrap_or(cfg.pacing.max_new),
-        limit: opts.limit.or(cfg.pacing.limit),
+        max_session: opts.session.unwrap_or(cfg.pacing.max_session),
+        new_cards_percent: cfg.pacing.new_cards_percent,
         cram: opts.cram,
         order,
         topology: topology_order,
@@ -794,15 +794,15 @@ it reads line two\n\
             ask: AskConfig::default(),
             trace_auto_grade: false,
             pacing: Pacing {
-                max_new: 10,
-                limit: None,
+                max_session: 10,
+                new_cards_percent: 30,
             },
             instance_store: None,
         }
     }
 
     #[test]
-    fn an_explicit_max_new_is_honored_when_the_depth_defaults_to_recognize() {
+    fn an_explicit_session_cap_is_honored_when_the_depth_defaults_to_recognize() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         write_initialized(
@@ -819,7 +819,7 @@ it reads line two\n\
             &mut store,
             &test_config(),
             &SelectOptions {
-                max_new: Some(2),
+                session: Some(2),
                 ..Default::default()
             },
         )

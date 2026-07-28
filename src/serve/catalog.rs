@@ -499,9 +499,7 @@ pub(super) fn read_selection(
         #[serde(default)]
         cram: bool,
         #[serde(default)]
-        max_new: Option<usize>,
-        #[serde(default)]
-        limit: Option<usize>,
+        session: Option<usize>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
     if body.deck.is_empty() {
@@ -515,8 +513,7 @@ pub(super) fn read_selection(
             region: body.region,
             depth: body.depth,
             cram: body.cram,
-            max_new: body.max_new,
-            limit: body.limit,
+            session: body.session,
             // The web serves on the wall clock; only embedders inject time.
             now_ms: None,
         },

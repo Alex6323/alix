@@ -261,8 +261,7 @@ pub(crate) fn launch_profile(name: &str) -> Result<()> {
         port: None,
         lan: true,
         token: None,
-        new: None,
-        limit: None,
+        session: None,
         config: Some(path),
         launch_all: false,
     })

@@ -49,6 +49,8 @@ fn statedto_select_phase_wire_shape() {
         can_restart: false,
         promotable: false,
         next_due_ms: None,
+        due_left: 0,
+        new_left: 0,
         label: "select decks".to_string(),
         save_error: None,
     };
@@ -76,6 +78,8 @@ fn statedto_select_phase_wire_shape() {
             "exam_due": [],
             "can_restart": false,
             "promotable": false,
+            "due_left": 0,
+            "new_left": 0,
             "label": "select decks"
         }),
     );
@@ -175,6 +179,8 @@ fn statedto_review_phase_wire_shape() {
         can_restart: true,
         promotable: true,
         next_due_ms: None,
+        due_left: 0,
+        new_left: 0,
         label: "rust.md".to_string(),
         save_error: Some(
             "progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
@@ -265,6 +271,8 @@ fn statedto_review_phase_wire_shape() {
             "exam_due": ["rust.md"],
             "can_restart": true,
             "promotable": true,
+            "due_left": 0,
+            "new_left": 0,
             "label": "rust.md",
             "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4"
         }),
@@ -292,9 +300,11 @@ fn statedto_done_phase_carries_the_next_due_instant() {
         failed: 0,
         acquired: 0,
         exam_due: Vec::new(),
-        can_restart: false,
+        can_restart: true,
         promotable: false,
         next_due_ms: Some(1_700_000_100_000),
+        due_left: 12,
+        new_left: 3,
         label: "rust.md".to_string(),
         save_error: None,
     };
@@ -320,9 +330,11 @@ fn statedto_done_phase_carries_the_next_due_instant() {
             "failed": 0,
             "acquired": 0,
             "exam_due": [],
-            "can_restart": false,
+            "can_restart": true,
             "promotable": false,
             "next_due_ms": 1_700_000_100_000_u64,
+            "due_left": 12,
+            "new_left": 3,
             "label": "rust.md"
         }),
     );

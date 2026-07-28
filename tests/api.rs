@@ -209,8 +209,8 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
             ask: config.ask,
             trace_auto_grade: false,
             pacing: Pacing {
-                max_new: 10,
-                limit: None,
+                max_session: 10,
+                new_cards_percent: 30,
             },
             instance_store: None,
         },
@@ -256,15 +256,15 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
     let base = format!("http://127.0.0.1:{port}");
     let opts = review_options(&base, token.map(str::to_string));
     // `/api/select` now runs the real classifier/assembler (`assemble::select`)
-    // instead of a hand-rolled stub — give it the same pacing default the old
-    // stub's `session_options` used (`max_new: 10`), and pin the instance store
-    // to this fixture's own state root.
+    // instead of a hand-rolled stub; give it the default pacing (max_session
+    // 10, new_cards_percent 30), and pin the instance store to this fixture's
+    // own state root.
     let opts = ReviewOptions {
         cfg: AssembleConfig {
             trace_auto_grade: false,
             pacing: Pacing {
-                max_new: 10,
-                limit: None,
+                max_session: 10,
+                new_cards_percent: 30,
             },
             instance_store: Some(store_path),
             ..opts.cfg
@@ -422,8 +422,8 @@ fn spawn_full_server_fixture(
         cfg: AssembleConfig {
             trace_auto_grade: auto_grade,
             pacing: Pacing {
-                max_new: 10,
-                limit: None,
+                max_session: 10,
+                new_cards_percent: 30,
             },
             instance_store: Some(store_path),
             ..opts.cfg
@@ -1852,9 +1852,12 @@ fn post_api_restart_rebuilds_the_queue_and_resets_session_stats() {
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!(2, body["remaining"], "body: {body}");
+    // The just-passed "2 + 2" is still cooling behind its floor (floors survive
+    // restart), so the rebuilt sitting drops it and serves the untouched card;
+    // the stats reset all the same.
+    assert_eq!(1, body["remaining"], "body: {body}");
     assert_eq!(0, body["passed"], "body: {body}");
-    assert_eq!("2 + 2", body["card"]["front"], "body: {body}");
+    assert_eq!("3 + 3", body["card"]["front"], "body: {body}");
 }
 
 #[test]
@@ -2740,8 +2743,8 @@ fn spawn_kids_server() -> (String, Guard) {
         cfg: AssembleConfig {
             trace_auto_grade: false,
             pacing: Pacing {
-                max_new: 10,
-                limit: None,
+                max_session: 10,
+                new_cards_percent: 30,
             },
             instance_store: Some(store_path),
             ..opts.cfg

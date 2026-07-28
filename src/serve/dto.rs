@@ -112,6 +112,8 @@ pub(super) struct StateDto {
     pub(super) promotable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) next_due_ms: Option<u64>,
+    pub(super) due_left: u32,
+    pub(super) new_left: u32,
     pub(super) label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) save_error: Option<String>,
@@ -933,6 +935,8 @@ pub(super) fn review_state(
             can_restart: false,
             promotable: false,
             next_due_ms: None,
+            due_left: 0,
+            new_left: 0,
             label: "select decks".to_string(),
             save_error: save_error.map(str::to_string),
         };
@@ -1053,6 +1057,8 @@ pub(super) fn review_state(
         can_restart: s.can_restart,
         promotable: s.promotable,
         next_due_ms: s.next_due_ms,
+        due_left: s.due_left,
+        new_left: s.new_left,
         label: r.label.clone(),
         save_error: save_error.map(str::to_string),
     }

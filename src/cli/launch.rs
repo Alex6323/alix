@@ -78,8 +78,14 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     // mid-write.
     ctrlc::set_handler(move || stopper.unblock()).context("cannot install the shutdown handler")?;
     let pacing = assemble::Pacing {
-        max_new: args.new.or(config.review.max_new).unwrap_or(10),
-        limit: args.limit.or(config.review.limit),
+        max_session: args
+            .session
+            .or(config.review.max_session)
+            .unwrap_or(alix::session::DEFAULT_MAX_SESSION),
+        new_cards_percent: config
+            .review
+            .new_cards_percent
+            .unwrap_or(alix::session::DEFAULT_NEW_CARDS_PERCENT),
     };
 
     let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;

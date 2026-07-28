@@ -418,8 +418,8 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
          # retention = 0.9              # FSRS target recall probability (0.70–0.99)\n\
          # retire_after = \"1y\"          # a card rests at this interval (\"never\" disables)\n\
          # acquire_cooldown = \"5m\"      # settle gap before a new card's first quiz (\"90s\", \"0\" = none)\n\
-         # max_new = 10                 # max never-seen cards a session introduces\n\
-         # limit = 40                   # cap on total cards per session\n\
+         # max_session = 10             # cards a single sitting serves\n\
+         # new_cards_percent = 30       # new-card share of max_session (the rest are due cards)\n\
          # deadline = \"2026-09-01\"     # make me ready by this date (picker readout + drilling ramp)\n\
          # deadline_ramp = \"14d\"       # how early the pre-deadline retention ramp starts (\"2w\"; \"0\" = cap only)\n";
     std::fs::write(
