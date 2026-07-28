@@ -19,6 +19,9 @@ Release notes, so a release without its section fails loud.
   Settings (their sheet opens over it) instead of returning to the deck list;
   Decks folder and Generate deck still take you back to the list so you see the
   result.
+- The region breadcrumb's per-card heatmap now paints a card met but not yet
+  graded as a dim "seen" cell, and a card never met as a fainter neutral cell,
+  matching the desktop; both previously clamped to the weakest red.
 
 ## [0.2.0] - 2026-07-21
 

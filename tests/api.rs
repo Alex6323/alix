@@ -1234,6 +1234,30 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
 }
 
 #[test]
+fn post_api_deck_drawer_marks_an_acquired_but_ungraded_card_as_seen() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+    // Meet the first card in an acquire pass (a store entry, no grade); the
+    // other card stays untouched.
+    post_json(&base, "/api/acquire", "{}");
+
+    let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"sample.md"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let cells = body["heatmap"].as_array().unwrap();
+    assert_eq!(2, cells.len(), "one cell per card: {body}");
+    assert!(
+        cells.iter().any(|c| c == &serde_json::json!(-2.0)),
+        "the acquired card reads as seen (-2.0), not untouched: {body}"
+    );
+    assert!(
+        cells.iter().any(|c| c == &serde_json::json!(-1.0)),
+        "the untouched card stays the neutral sentinel (-1.0): {body}"
+    );
+}
+
+#[test]
 fn post_api_deck_drawer_with_an_unknown_deck_still_returns_the_empty_default_dto() {
     // `/api/deck-drawer` never errors (docs/API.md): an unresolvable name still
     // gets 200 with the empty default, not a 400.
@@ -1712,6 +1736,10 @@ fn post_api_acquire_acknowledges_a_never_seen_card_without_grading_it() {
     assert_eq!("3 + 3", body["card"]["front"], "body: {body}");
     assert_eq!(0, body["passed"], "body: {body}");
     assert_eq!(0, body["failed"], "body: {body}");
+    assert_eq!(
+        1, body["acquired"],
+        "the introduced card is counted: {body}"
+    );
     assert_eq!(1, body["remaining"], "body: {body}");
 }
 

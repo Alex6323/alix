@@ -234,6 +234,11 @@ test("focusing a deck opens the drawer with its preamble and heatmap, no due cou
   const drawer = page.locator(".drawer");
   await expect(drawer.locator(".drawer-preamble")).toHaveText(/wild animals/i);
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2); // one per stamped card
+  // An earlier test met (acquired, ungraded) both wild cards, so each cell reads
+  // as a dim "seen" cell rather than the never-met neutral one. Before the seen
+  // tier existed, an acquired-but-ungraded card rendered identical to untouched.
+  await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(2);
+  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(0);
   await expect(page.locator(".drawer-due")).toHaveCount(0); // the old due count is gone
   await drawer.screenshot({ path: "/tmp/claude-1000/-home-me-dev-developer-alex6323-projects-flashcard2-claude-agent-2/ea6ad9c5-47cc-4ff1-9a0d-b19dd66cad08/scratchpad/drawer.png" });
 });

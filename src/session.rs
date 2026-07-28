@@ -562,16 +562,17 @@ pub fn card_strengths(card_ids: &[String], store: &Store, now_ms: u64) -> Vec<f3
         .collect()
 }
 
-// -1.0 marks a card with no retrievability signal yet (never reviewed at
-// Recall); clients render it as a neutral cell, distinct from a decayed card
-// near 0.0.
+// Two negative values sit below the 0.0..=1.0 retrievability band: -1.0 is a
+// card never met (no store entry), -2.0 a card met in an acquire pass but not
+// yet graded at Recall. Clients paint the first neutral and the second a dim
+// "seen" cell, so acquire-phase work is not invisible.
 fn retrievability(store: &Store, card_id: &str, now_ms: u64) -> f32 {
-    let Some(f) = store.get(card_id).and_then(|s| s.schedule(Depth::Recall)) else {
+    let Some(state) = store.get(card_id) else {
         return -1.0;
     };
-    if f.stability <= 0.0 {
-        return -1.0;
-    }
+    let Some(f) = state.schedule(Depth::Recall).filter(|f| f.stability > 0.0) else {
+        return -2.0;
+    };
     let elapsed_days = now_ms.saturating_sub(f.last_review_ms) as f64 / 86_400_000.0;
     Parameters::forgetting_curve(elapsed_days, f.stability).clamp(0.0, 1.0) as f32
 }
@@ -1803,6 +1804,24 @@ mod tests {
         let (store, _dir) = empty_store();
         assert_eq!(vec![-1.0], card_strengths(&[7.to_string()], &store, 0));
         assert!(card_strengths(&[], &store, 0).is_empty());
+    }
+
+    #[test]
+    fn a_seen_but_ungraded_card_is_distinct_from_an_untouched_one() {
+        let (mut store, _dir) = empty_store();
+        let seen = 7.to_string();
+        store.get_or_insert(&seen, 1_000);
+        let untouched = 8.to_string();
+        assert_eq!(
+            vec![-2.0],
+            card_strengths(&[seen], &store, 0),
+            "a card met in an acquire pass but not graded is seen, not untouched"
+        );
+        assert_eq!(
+            vec![-1.0],
+            card_strengths(&[untouched], &store, 0),
+            "a card with no store entry is still untouched"
+        );
     }
 
     #[test]

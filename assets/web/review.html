@@ -268,6 +268,7 @@
   .drawer-preamble { font-size: 0.8rem; color: var(--dim); line-height: 1.45; max-width: 640px;
                      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .crumb-cell.empty { background: color-mix(in srgb, var(--dim) 26%, transparent); }
+  .crumb-cell.seen { background: color-mix(in srgb, var(--dim) 60%, transparent); }
   .drawer-flat { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
@@ -975,10 +976,12 @@ function remove()  { api("/api/remove", post({})).then(apply); }
 function promote() { api("/api/promote", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
 
-// One heatmap cell's fill: retrievability 0 (red) → 1 (green). A negative value
-// means "no data yet" (never reviewed) and renders as a neutral cell,
-// so a fresh deck reads as unlearned rather than failing.
+// One heatmap cell's fill: retrievability 0 (red) → 1 (green). Two negative
+// values below that band: -2 is a card seen in an acquire pass but not yet
+// graded (a dim "seen" cell, so acquire work isn't invisible), and -1 a card
+// never met (neutral), so a fresh deck reads as unlearned rather than failing.
 function paintHeatCell(cellEl, s) {
+  if (s <= -2) { cellEl.classList.add("seen"); return; }
   if (s < 0) { cellEl.classList.add("empty"); return; }
   cellEl.style.background = `hsl(${Math.round(120 * s)}, 62%, ${40 + 12 * s}%)`;
 }

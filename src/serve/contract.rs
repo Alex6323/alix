@@ -917,7 +917,7 @@ fn decklistdto_wire_shape() {
 fn deckdrawerdto_wire_shape() {
     let dto = DeckDrawerDto {
         preamble: Some("A short intro under the H1.".to_string()),
-        heatmap: vec![0.5, 1.0, -1.0],
+        heatmap: vec![0.5, 1.0, -1.0, -2.0],
         topologies: vec![TopologyInfoDto {
             name: "north-south".to_string(),
             principle: "north to south".to_string(),
@@ -932,7 +932,7 @@ fn deckdrawerdto_wire_shape() {
         &dto,
         json!({
             "preamble": "A short intro under the H1.",
-            "heatmap": [0.5, 1.0, -1.0],
+            "heatmap": [0.5, 1.0, -1.0, -2.0],
             "topologies": [{
                 "name": "north-south",
                 "principle": "north to south",

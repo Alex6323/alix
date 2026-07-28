@@ -168,6 +168,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The picker's focus-drawer heatmap no longer renders a card met in an acquire
+  pass (seen, not yet graded) the same as a card never touched. Such cards now
+  show a dim "seen" cell instead of the neutral no-data cell, so first-pass work
+  is visible. The `DeckDrawerDto` heatmap gains a `-2` value for it (the mobile
+  crumb heatmap matches).
 - A malformed virtual card in a progress document no longer vanishes silently
   (it was decoded best-effort and dropped on failure); the whole document now
   fails to load loudly instead, so a corrupt or out-of-shape card is surfaced

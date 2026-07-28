@@ -23,8 +23,9 @@ review, a [trace](13-trace-decks.md) opens a walk) one deck per session. **Brows
 on **`b`** opens a read-only, in-page read-through instead: step the cards with
 Prev/Next, Esc to leave. Focusing any deck opens an inline **focus drawer**
 beneath it: it shows the deck's preamble (the prose under its title, if any) and
-a per-card **strength heatmap**, red (weak) → green (learned), neutral where a
-card has no data yet. When the deck has a [review order](05-scheduling.md) that
+a per-card **strength heatmap**, red (weak) → green (learned), a dim grey cell
+for a card you have met but not yet graded, and neutral where a card has no data
+yet. When the deck has a [review order](05-scheduling.md) that
 heatmap splits into named regions you can pick to drill (click one or step
 through with **← / →**); otherwise it is a single whole-deck bar. On a workspace row instead,
 ← / → enter and leave it. After a session, "Choose other decks" (on the summary)

@@ -1596,27 +1596,38 @@ class CrumbStrip extends StatelessWidget {
         const SizedBox(height: 3),
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [for (final s in cells) _cell(s)],
+          children: [for (final s in cells) _cell(s, ink)],
         ),
       ],
     );
   }
 
-  /// One strength cell: the web's `hsl(120*s, 62%, (40+12*s)%)`, `s` clamped
-  /// to 0..1 in case a stale cache ever hands back a stray float.
-  Widget _cell(double s) {
-    final clamped = s.clamp(0.0, 1.0);
+  /// One strength cell, mirroring the web's `paintHeatCell`: retrievability 0
+  /// (red) to 1 (green) via `hsl(120*s, 62%, (40+12*s)%)`, with two negative
+  /// values below that band. -2 is a card seen in an acquire pass but not yet
+  /// graded (a dim cell, so acquire work isn't invisible); -1 a card never
+  /// met (fainter, neutral).
+  Widget _cell(double s, Color ink) {
+    final Color fill;
+    if (s <= -2) {
+      fill = ink.withValues(alpha: 0.55);
+    } else if (s < 0) {
+      fill = ink.withValues(alpha: 0.22);
+    } else {
+      final clamped = s.clamp(0.0, 1.0);
+      fill = HSLColor.fromAHSL(
+        1,
+        120 * clamped,
+        0.62,
+        (40 + 12 * clamped) / 100,
+      ).toColor();
+    }
     return Container(
       width: 5,
       height: 3,
       margin: const EdgeInsets.only(right: 1),
       decoration: BoxDecoration(
-        color: HSLColor.fromAHSL(
-          1,
-          120 * clamped,
-          0.62,
-          (40 + 12 * clamped) / 100,
-        ).toColor(),
+        color: fill,
         borderRadius: BorderRadius.circular(1),
       ),
     );

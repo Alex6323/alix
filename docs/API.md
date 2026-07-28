@@ -671,7 +671,8 @@ never a group.
 
 `preamble: string | null` (the prose under the deck's `#` H1, if any),
 `heatmap: [number]` (per-card Recall retrievability in file order, `0` weak to
-`1` learned; a negative value marks a card with no data yet, rendered neutral),
+`1` learned; `-1` marks a card never met, rendered neutral, and `-2` a card seen
+in an acquire pass but not yet graded, rendered a dim "seen" cell),
 `topologies: [{name, principle, regions: [{name, cells: [number]}]}]` (present
 only when the deck has a topology augmentation; `cells` use the same scale as
 `heatmap`). Powers the picker's focus drawer.
