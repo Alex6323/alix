@@ -122,8 +122,11 @@ A source citation is `<!-- at: <src>:<lines> fingerprint: xxh64-<hex> asset: sha
   or a fetchable origin URL) and must tell the user when it is unavailable
   rather than silently degrade. Exception, deliberate: a self-contained frozen
   workspace whose `source:` lives inside `assets/` (the shipped example
-  traces) is its own source by construction. A single-file source is still
-  frozen whole: there the file is the declared source unit.
+  traces) is its own source by construction. A citation's `asset:` object is
+  ALWAYS excerpt-shaped, for every source kind: one uniform reader rule, no
+  object-shape heuristic. The whole-file snapshot of a single-file source
+  survives separately as the `source:` object (the file is the declared source
+  unit); it is not what `asset:` names.
 - Reader semantics: when `asset:` is present, the asset's bytes are read in
   full and fingerprint verification targets them (integrity of the evidence);
   display numbers the excerpt from `at:`'s start line (presentation
