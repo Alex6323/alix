@@ -164,6 +164,10 @@ ruling, and the code already unioned them for examination.
   BOTH the deck's own sources and the workspace source, told which is which,
   with the deck source as the primary grounding and the workspace source as
   supporting context (ruled 2026-07-28).
+- Freezing excerpts only from local sources: a URL entry in `source:`
+  contributes no freezable inputs (it is exam/tutor grounding, not local
+  bytes), and a citation must land in a local source to freeze. A URL source
+  alone therefore never blocks initialization or freezing of the rest.
 - Mechanical resolution stays single-based and deterministic: citations,
   walks, and live-drift display resolve against the deck's first local-path
   source, falling back to the workspace source when the deck declares none;
