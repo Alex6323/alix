@@ -676,7 +676,9 @@ never a group.
 in an acquire pass but not yet graded, rendered a dim "seen" cell),
 `topologies: [{name, principle, regions: [{name, cells: [number]}]}]` (present
 only when the deck has a topology augmentation; `cells` use the same scale as
-`heatmap`). Powers the picker's focus drawer.
+`heatmap`), `total: number` (the deck's total card count, shown as the drawer's
+"N cards" readout; not derivable from `heatmap`, which lists only stamped
+cards). Powers the picker's focus drawer.
 
 ### CheckFeedbackDto
 

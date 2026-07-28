@@ -422,7 +422,7 @@ pub fn deck_status(
         }
         DeckState::Finished => "done ✓".to_string(),
         DeckState::ExamDue => "exam due".to_string(),
-        DeckState::NotStarted => "new".to_string(),
+        DeckState::NotStarted => String::new(),
         DeckState::Started => format!("{graduated}/{total}"),
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
@@ -1503,6 +1503,34 @@ mod tests {
         );
         assert_eq!(Some(Depth::Recall), status.badge_depth);
         assert!(status.badge_dotted);
+    }
+
+    #[test]
+    fn a_not_started_deck_has_an_empty_badge() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "## q1 <!-- id: card-q1 -->\na1\n## q2 <!-- id: card-q2 -->\na2\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let store = Store::open(dir.path().join("deck1.json")).unwrap();
+
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
+        assert_eq!(DeckState::NotStarted, status.state);
+        assert_eq!(
+            "", status.badge,
+            "the NEW chip is the single new-signal; the badge slot stays empty"
+        );
+        assert!(status.new_cards);
     }
 
     #[test]

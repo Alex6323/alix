@@ -252,6 +252,10 @@
             border-radius: 9px; background: rgba(255,255,255,0.025); }
   .drawer-head { display: flex; align-items: center; gap: 8px; }
   .drawer-label { font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); }
+  /* The deck's static size, top-right of the drawer (the slot the old "X due"
+     readout used to hold, now size-only so it informs without backlog shock). */
+  .drawer-top { display: flex; align-items: center; justify-content: flex-end; }
+  .drawer-size { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .drawer-topo { font-family: var(--sans); font-size: 0.82rem; color: var(--ink);
                  background: var(--menu-bg); border: 1px solid var(--line); border-radius: 7px;
                  padding: 3px 7px; cursor: pointer; }
@@ -2845,6 +2849,16 @@ async function renderSelect(preloaded) {
       const wrap = el("div", "drawer-wrap");
       const box = el("div", "drawer");
 
+      // The deck's size, pinned top-right (size-only: informative, not shocking
+      // like a due backlog). `total` is a lib-computed count, not heatmap.length,
+      // which omits unstamped cards.
+      const total = data.total || 0;
+      if (total > 0) {
+        const top = el("div", "drawer-top");
+        top.appendChild(el("span", "drawer-size", total === 1 ? "1 card" : total + " cards"));
+        box.appendChild(top);
+      }
+
       if (preamble) box.appendChild(el("div", "drawer-preamble", preamble));
 
       const regions = el("div", "drawer-regions");
@@ -2944,7 +2958,7 @@ async function renderSelect(preloaded) {
       const cached = topoCache[name];
       if (cached) { renderDrawer(row, cached); return; }
       api("/api/deck-drawer", post({ deck: name })).then(d => {
-        const data = d || { preamble: null, heatmap: [], topologies: [] };
+        const data = d || { preamble: null, heatmap: [], topologies: [], total: 0 };
         topoCache[name] = data;
         if (focusedEl === row) renderDrawer(row, data);
       });

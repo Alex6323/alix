@@ -845,7 +845,7 @@ fn decklistdto_wire_shape() {
             name: "vocab.md".to_string(),
             selectable: true,
             label: "Vocab".to_string(),
-            meta: Some("new".to_string()),
+            meta: None,
             state: "new",
             locked: false,
             reviewable: true,
@@ -941,7 +941,7 @@ fn decklistdto_wire_shape() {
                 "name": "vocab.md",
                 "selectable": true,
                 "label": "Vocab",
-                "meta": "new",
+                "meta": null,
                 "state": "new",
                 "locked": false,
                 "reviewable": true,
@@ -985,6 +985,7 @@ fn deckdrawerdto_wire_shape() {
                 cells: vec![0.5, 1.0],
             }],
         }],
+        total: 4,
     };
     pin(
         "DeckDrawerDto",
@@ -996,7 +997,8 @@ fn deckdrawerdto_wire_shape() {
                 "name": "north-south",
                 "principle": "north to south",
                 "regions": [{"name": "north", "cells": [0.5, 1.0]}]
-            }]
+            }],
+            "total": 4
         }),
     );
 }

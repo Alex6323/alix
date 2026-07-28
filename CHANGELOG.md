@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The picker's focus drawer shows the deck's size as an "N cards" readout pinned
+  to its top-right (the slot the old "X due" count once held, now size-only so it
+  informs without backlog shock). The `/api/deck-drawer` payload gains an
+  additive `total` card count, since the per-card `heatmap` lists only stamped
+  cards and cannot be counted for the total.
 - The empty "Nothing due." session screen now shows one quiet line saying when
   the next card is due (for example "Next due in 4 min." during an acquire
   cooldown), so an empty sitting explains itself instead of only reading
@@ -65,6 +70,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A not-started deck's picker row no longer prints "new" in its right-aligned
+  status slot: that duplicated the NEW chip beside the title, which is now the
+  single new-signal. The slot stays empty until the deck is started, when it
+  resumes showing the `k/N` progress counter.
 - **Breaking (pre-1.0):** deck ids are now self-describing and prefixed. A deck
   declares `id: "deck-<token>"` (the `id:` frontmatter key replaces `alix-id:`),
   and every card marker is `<!-- id: card-<token> -->` (`card-<token>-N` for a

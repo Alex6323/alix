@@ -63,6 +63,9 @@ pub(super) struct DeckDrawerDto {
     pub(super) preamble: Option<String>,
     pub(super) heatmap: Vec<f32>,
     pub(super) topologies: Vec<TopologyInfoDto>,
+    /// Total cards in the deck. Not derivable from `heatmap.len()`, which counts
+    /// only stamped cards.
+    pub(super) total: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -1079,6 +1082,7 @@ pub(super) fn deck_drawer_dto(augment: &AugmentCache, store: &Store, deck: &Deck
         preamble: deck.preamble.clone(),
         heatmap,
         topologies,
+        total: deck.cards.len(),
     }
 }
 
@@ -1117,5 +1121,33 @@ pub(super) fn input_name(input: Input) -> &'static str {
     match input {
         Input::Type => "type",
         Input::Draw => "draw",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deck_drawer_total_counts_unstamped_cards_the_heatmap_omits() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "---\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n## q2\na2\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let store = Store::open(dir.path().join("deck1.json")).unwrap();
+        let augment = AugmentCache::open(dir.path().join("deck1-generated.json"));
+
+        let dto = deck_drawer_dto(&augment, &store, &deck);
+
+        assert_eq!(2, dto.total, "both cards count toward the deck size");
+        assert_eq!(
+            1,
+            dto.heatmap.len(),
+            "only the stamped card lands in the heatmap"
+        );
     }
 }
