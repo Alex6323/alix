@@ -452,10 +452,16 @@ pub fn materialize(
             }
             Kind::Deck => decks += 1,
         }
-        body.push_str(&format!(
-            "source: {}\n",
-            yaml_quote(&rewrite_scope(&item.source, root.as_deref()))
-        ));
+        match rewrite_scope(&item.source, root.as_deref()).as_slice() {
+            [] => {}
+            [only] => body.push_str(&format!("source: {}\n", yaml_quote(only))),
+            many => {
+                body.push_str("source:\n");
+                for entry in many {
+                    body.push_str(&format!("  - {}\n", yaml_quote(entry)));
+                }
+            }
+        }
         let deps: Vec<&&String> = item
             .requires
             .iter()
@@ -713,31 +719,46 @@ fn slug(title: &str) -> String {
     }
 }
 
-/// Anchors overlap-aware via [`source::resolve_under_base`]: a plain
-/// `root.join(scope)` can double an already-rooted scope into a dead path.
-fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
+/// The plan's `@source:` line may join several files with ` + ` (first full,
+/// rest relative to its directory); the deck format takes one source per list
+/// entry (ADR 0026), so the scope splits into resolved entries here. Anchors
+/// overlap-aware via [`source::resolve_under_base`]: a plain `root.join(scope)`
+/// can double an already-rooted scope into a dead path.
+fn rewrite_scope(scope: &str, root: Option<&Path>) -> Vec<String> {
     let scope = scope.trim();
-    let Some(root) = root else {
-        return scope.to_string();
-    };
-    if is_url(scope) {
-        return scope.to_string();
+    if is_url(scope) || root.is_none() {
+        return scope
+            .split(" + ")
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .map(str::to_string)
+            .collect();
     }
-    let (first, rest) = match scope.split_once(" + ") {
-        Some((a, b)) => (a.trim(), Some(b.trim())),
-        None => (scope, None),
-    };
-    let anchored = if first == "." {
-        root.to_path_buf()
-    } else if Path::new(first).is_absolute() {
-        PathBuf::from(first)
-    } else {
-        source::resolve_under_base(root, first)
-    };
-    match rest {
-        Some(rest) => format!("{} + {}", anchored.display(), rest),
-        None => anchored.display().to_string(),
+    let root = root.unwrap_or_else(|| Path::new("."));
+    let mut out = Vec::new();
+    let mut anchor: Option<PathBuf> = None;
+    for part in scope
+        .split(" + ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
+        let resolved = if part == "." {
+            root.to_path_buf()
+        } else if Path::new(part).is_absolute() {
+            PathBuf::from(part)
+        } else {
+            anchor
+                .as_ref()
+                .map(|anchor| anchor.join(part))
+                .filter(|candidate| candidate.exists())
+                .unwrap_or_else(|| source::resolve_under_base(root, part))
+        };
+        if anchor.is_none() {
+            anchor = resolved.parent().map(Path::to_path_buf);
+        }
+        out.push(resolved.display().to_string());
     }
+    out
 }
 
 fn toml_escape(s: &str) -> String {
@@ -1232,17 +1253,26 @@ back a
         let source = root.join("crates/mycrate");
 
         assert_eq!(
-            lib,
+            vec![lib.clone()],
             rewrite_scope("crates/mycrate/src/lib.rs", Some(&source))
         );
-        assert_eq!(lib, rewrite_scope("src/lib.rs", Some(&source)));
         assert_eq!(
-            source.display().to_string(),
+            vec![lib.clone()],
+            rewrite_scope("src/lib.rs", Some(&source))
+        );
+        assert_eq!(
+            vec![source.display().to_string()],
             rewrite_scope(".", Some(&source))
         );
-        assert_eq!(lib, rewrite_scope(&lib, Some(&source)));
+        assert_eq!(vec![lib.clone()], rewrite_scope(&lib, Some(&source)));
+        // A " + "-joined plan scope splits into one list entry per source,
+        // later parts anchored to the first entry's directory.
+        fs::write(crate_src.join("other.rs"), "x\n").unwrap();
         assert_eq!(
-            format!("{lib} + other.rs"),
+            vec![
+                lib.clone(),
+                crate_src.join("other.rs").display().to_string()
+            ],
             rewrite_scope("crates/mycrate/src/lib.rs + other.rs", Some(&source))
         );
 

@@ -107,7 +107,13 @@ fn load_frontmatter(
                 }
             },
             "alix-id" => return Err(ParseError::ObsoleteAlixId(line)),
-            "source" => frontmatter.source = string_list(key, value, line, lints),
+            "source" => {
+                let entries = string_list(key, value, line, lints);
+                if entries.iter().any(|entry| entry.contains(" + ")) {
+                    return Err(ParseError::PlusJoinedSource(line));
+                }
+                frontmatter.source = entries;
+            }
             "requires" => frontmatter.requires = string_list(key, value, line, lints),
             "link" => frontmatter.link = string_list(key, value, line, lints),
             "trace" => match value {

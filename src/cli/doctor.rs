@@ -199,10 +199,8 @@ fn source_points_into_assets(source: &str) -> bool {
         return false;
     }
     let root = format!("{}/", alix::assets::ROOT);
-    source.split(" + ").any(|part| {
-        let part = part.trim();
-        part.starts_with(&root) || part.contains(&format!("/{root}"))
-    })
+    let source = source.trim();
+    source.starts_with(&root) || source.contains(&format!("/{root}"))
 }
 
 /// The internal `deck_id` field of a state document, for spotting a bare token

@@ -391,19 +391,13 @@ fn ensure_requirements_resolve(deck: &Deck, destination_decks: &Path) -> Result<
 }
 
 fn materialized_source(source: &str, source_root: &Path) -> String {
-    source
-        .split(" + ")
-        .map(str::trim)
-        .map(|part| {
-            if deck::is_url(part) || Path::new(part).is_absolute() {
-                part.to_string()
-            } else {
-                let path = source_root.join(part);
-                path.canonicalize().unwrap_or(path).display().to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" + ")
+    let source = source.trim();
+    if deck::is_url(source) || Path::new(source).is_absolute() {
+        source.to_string()
+    } else {
+        let path = source_root.join(source);
+        path.canonicalize().unwrap_or(path).display().to_string()
+    }
 }
 
 fn resolved_user_root(workspace_root: &Path) -> PathBuf {

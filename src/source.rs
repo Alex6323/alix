@@ -145,17 +145,18 @@ impl SourceBase {
         // The single mechanical base (ADR 0026): the deck's first local-path
         // source, falling back to the workspace source when it declares none.
         let layers = deck.source_layers();
-        let first = layers
+        let locals: Vec<&String> = layers
             .own
             .iter()
             .chain(&layers.workspace)
-            .find(|source| !is_url(source));
-        let multi = first.is_some_and(|source| source.contains(" + "));
+            .filter(|source| !is_url(source))
+            .collect();
+        let first = locals.first().map(|source| source.as_str());
+        // With several local sources a lines-only locator is ambiguous, so no
+        // single source file is exposed.
+        let multi = locals.len() > 1;
         let content_root = crate::workspace::content_root(&deck.path);
-        let (base_dir, source_file) = resolve_source(
-            Some(&content_root),
-            first.map(|source| first_source(source)),
-        );
+        let (base_dir, source_file) = resolve_source(Some(&content_root), first);
         Self {
             base_dir,
             source_file: if multi { None } else { source_file },
@@ -289,37 +290,20 @@ impl SourceBase {
     }
 }
 
-/// A value may join several paths with " + " (first a full path, rest
-/// relative to its directory, e.g. `<crate>/README.md + src/lib.rs`).
-pub(crate) fn source_paths(value: &str, base: Option<&Path>) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut anchor: Option<PathBuf> = None;
-    for part in value
-        .split(" + ")
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-    {
-        let path = Path::new(part);
-        let resolved = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            anchor
-                .as_ref()
-                .map(|anchor| anchor.join(path))
-                .filter(|candidate| candidate.exists())
-                .or_else(|| base.map(|directory| directory.join(path)))
-                .unwrap_or_else(|| path.to_path_buf())
-        };
-        if anchor.is_none() {
-            anchor = resolved.parent().map(Path::to_path_buf);
-        }
-        out.push(resolved);
+/// A source value is one expression: a URL, a file, or a directory (ADR 0026;
+/// the " + " join is a parse error).
+pub(crate) fn source_path(value: &str, base: Option<&Path>) -> Option<PathBuf> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
     }
-    out
-}
-
-fn first_source(value: &str) -> &str {
-    value.split(" + ").next().unwrap_or(value).trim()
+    let path = Path::new(value);
+    Some(if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.map(|directory| directory.join(path))
+            .unwrap_or_else(|| path.to_path_buf())
+    })
 }
 
 /// A locator is a single span, never comma-separated, so a stitched,
@@ -769,7 +753,7 @@ mod tests {
             directory.path(),
             "facts.md",
             &format!(
-                "---\nsource: {} + src/lib.rs\n---\n\
+                "---\nsource:\n  - {}\n  - src/lib.rs\n---\n\
                  ## q1\na1\n<!-- at: README.md:1-2 -->\n\
                  ## q2\na2\n<!-- at: src/lib.rs:3-4 -->\n",
                 readme.display()
@@ -1294,23 +1278,18 @@ mod tests {
     }
 
     #[test]
-    fn source_paths_splits_plus_and_anchors_relative_parts() {
+    fn source_path_resolves_one_expression_absolute_or_against_the_base() {
         let directory = tempfile::tempdir().unwrap();
         let project = directory.path().join("project");
         std::fs::create_dir_all(project.join("src")).unwrap();
-        std::fs::write(project.join("README.md"), "r").unwrap();
         std::fs::write(project.join("src/lib.rs"), "l").unwrap();
 
-        let value = format!("{}/README.md + src/lib.rs", project.display());
         assert_eq!(
-            vec![project.join("README.md"), project.join("src/lib.rs")],
-            source_paths(&value, Some(directory.path()))
+            Some(project.join("src/lib.rs")),
+            source_path("project/src/lib.rs", Some(directory.path()))
         );
-
         let one = project.join("src/lib.rs");
-        assert_eq!(
-            vec![one.clone()],
-            source_paths(&one.to_string_lossy(), None)
-        );
+        assert_eq!(Some(one.clone()), source_path(&one.to_string_lossy(), None));
+        assert_eq!(None, source_path("   ", None));
     }
 }

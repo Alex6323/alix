@@ -323,7 +323,7 @@ fn declared_source_inputs(
         if crate::deck::is_url(source) {
             continue;
         }
-        for path in crate::source::source_paths(source, Some(workspace_root)) {
+        if let Some(path) = crate::source::source_path(source, Some(workspace_root)) {
             let path = path
                 .canonicalize()
                 .map_err(|_| AssetError::MissingSource(path.clone()))?;

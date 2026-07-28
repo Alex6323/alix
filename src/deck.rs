@@ -299,12 +299,11 @@ impl SourceLayers {
 }
 
 fn resolve_base_root(source: &str, content_root: &Path) -> PathBuf {
-    let first = source.split(" + ").next().unwrap_or(source).trim();
-    let first = Path::new(first);
-    let path = if first.is_absolute() {
-        first.to_path_buf()
+    let source = Path::new(source.trim());
+    let path = if source.is_absolute() {
+        source.to_path_buf()
     } else {
-        content_root.join(first)
+        content_root.join(source)
     };
     let path = path.canonicalize().unwrap_or(path);
     if path.is_file() {

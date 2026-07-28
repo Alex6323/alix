@@ -55,7 +55,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   merged into the multi-valued `source:`; a workspace manifest may declare a
   top-level `source` (the material the workspace is about), which the tutor and
   examiner receive as layered supporting context under the deck's own sources
-  and which `has_exam` counts. Old-format decks fail to load
+  and which `has_exam` counts. A `source:` value is one expression (a URL, a
+  file, or a directory); the `" + "`-joined form is retired and now fails to
+  parse with a one-source-per-list-entry hint. Old-format decks fail to load
   loudly and the deck conversion tool rewrites them; there is no runtime reader
   for the old shape. `alix doctor` flags an un-converted bare-token state
   document or a `source:` that points into `assets/`.

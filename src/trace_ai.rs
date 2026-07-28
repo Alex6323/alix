@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn immediate_freezing_freezes_excerpts_from_each_joined_file() {
+    fn immediate_freezing_freezes_excerpts_from_each_listed_file() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("src")).unwrap();
@@ -721,7 +721,7 @@ mod tests {
         let deck_path = write(
             &root.join("ws/decks"),
             "d.md",
-            "---\nsource: ../src/a.rs + b.rs\n---\n\
+            "---\nsource:\n  - ../src/a.rs\n  - ../src/b.rs\n---\n\
              ## q1\np\n<!-- at: a.rs:2-3 -->\n\
              ## q2\np\n<!-- at: b.rs:1 -->\n",
         );

@@ -91,6 +91,10 @@ pub enum ParseError {
         "line {0}: `origin:` is no longer read (it merged into the multi-valued `source:`); run the deck conversion tool to rewrite this deck"
     )]
     ObsoleteOrigin(usize),
+    #[error(
+        "line {0}: a `source:` value holds a \" + \"-joined expression; write one source per list entry, or run the deck conversion tool to split it"
+    )]
+    PlusJoinedSource(usize),
     #[error("line {line}: control character {found} outside the whitespace set")]
     ControlChar { line: usize, found: String },
     #[error("line {0}: card front is empty")]
@@ -1709,6 +1713,16 @@ mod tests {
         // The key itself is obsolete: the value's type never softens it.
         let e = err("---\norigin: 5\n---\n## q\na\n");
         assert_eq!(ParseError::ObsoleteOrigin(2), e);
+    }
+
+    #[test]
+    fn a_plus_joined_source_value_is_a_hard_error_hinting_one_per_entry() {
+        let e = err("---\nsource: a.md + b.md\n---\n## q\na\n");
+        assert_eq!(ParseError::PlusJoinedSource(2), e);
+        assert!(e.to_string().contains("one source per list entry"), "{e}");
+
+        let e = err("---\nsource:\n  - ok.md\n  - a.md + b.md\n---\n## q\na\n");
+        assert_eq!(ParseError::PlusJoinedSource(2), e);
     }
 
     #[test]

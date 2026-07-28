@@ -410,28 +410,19 @@ fn reconcile_pointer(deck: &Deck) -> Result<String> {
 }
 
 fn live_source_expression(source: &str, root: &Path) -> Result<String> {
-    let paths = crate::source::source_paths(source, Some(root));
-    if paths.is_empty() {
-        bail!("source `{source}` resolves to no local file or directory");
-    }
-    paths
-        .into_iter()
-        .map(|path| {
-            path.canonicalize()
-                .with_context(|| format!("cannot read live source {}", path.display()))
-                .and_then(|path| path_string(&path))
-        })
-        .collect::<Result<Vec<_>>>()
-        .map(|paths| paths.join(" + "))
+    let path = crate::source::source_path(source, Some(root)).ok_or_else(|| {
+        anyhow::anyhow!("source `{source}` resolves to no local file or directory")
+    })?;
+    let path = path
+        .canonicalize()
+        .with_context(|| format!("cannot read live source {}", path.display()))?;
+    path_string(&path)
 }
 
 fn source_working_directory(source: &str) -> Result<PathBuf> {
-    let first = crate::source::source_paths(source, None)
-        .into_iter()
-        .next()
-        .ok_or_else(|| {
-            anyhow::anyhow!("source `{source}` resolves to no local file or directory")
-        })?;
+    let first = crate::source::source_path(source, None).ok_or_else(|| {
+        anyhow::anyhow!("source `{source}` resolves to no local file or directory")
+    })?;
     let path = first
         .canonicalize()
         .with_context(|| format!("cannot read live source {}", first.display()))?;

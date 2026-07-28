@@ -135,8 +135,9 @@ impl Workspace {
     }
 }
 
-/// The one loud manifest check: `origin` (top-level or under `[defaults]`) is a
-/// recognized-obsolete key, not an ignorable unknown one.
+/// The loud manifest checks: `origin` (top-level or under `[defaults]`) is a
+/// recognized-obsolete key, not an ignorable unknown one, and a `source` entry
+/// is a single expression, never a " + " join.
 fn ensure_manifest_reads(path: &Path) -> io::Result<()> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Ok(());
@@ -155,6 +156,19 @@ fn ensure_manifest_reads(path: &Path) -> io::Result<()> {
             format!(
                 "`origin` in {} is no longer read (a workspace declares its material with a \
                  top-level `source`); run the deck conversion tool to rewrite it",
+                path.display()
+            ),
+        ));
+    }
+    if manifest_source(path.parent().unwrap_or(Path::new(".")))
+        .iter()
+        .any(|entry| entry.contains(" + "))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "a `source` entry in {} holds a \" + \"-joined expression; write one source \
+                 per list entry, or run the deck conversion tool to split it",
                 path.display()
             ),
         ));
@@ -519,6 +533,17 @@ mod tests {
 
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
         assert!(Workspace::load(dir.path()).unwrap().source.is_empty());
+    }
+
+    #[test]
+    fn a_plus_joined_manifest_source_entry_fails_the_workspace_load() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join(MANIFEST), "source = \"a.md + b.md\"\n");
+        let error = Workspace::load(dir.path()).unwrap_err();
+        assert!(
+            error.to_string().contains("one source per list entry"),
+            "{error}"
+        );
     }
 
     #[test]

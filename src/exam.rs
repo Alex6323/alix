@@ -666,23 +666,24 @@ fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> 
             urls.push(src.clone());
             continue;
         }
-        for path in crate::source::source_paths(src, base) {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("cannot read `source:` {}", path.display()))?;
-            let label = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string());
-            let (truncated_text, was_truncated) = truncate(&text);
-            if was_truncated {
-                eprintln!(
-                    "note: `{}` is larger than {} KB and was truncated for the exam prompt",
-                    label,
-                    MAX_SOURCE_BYTES / 1_000
-                );
-            }
-            files.push((label, truncated_text));
+        let Some(path) = crate::source::source_path(src, base) else {
+            continue;
+        };
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("cannot read `source:` {}", path.display()))?;
+        let label = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let (truncated_text, was_truncated) = truncate(&text);
+        if was_truncated {
+            eprintln!(
+                "note: `{}` is larger than {} KB and was truncated for the exam prompt",
+                label,
+                MAX_SOURCE_BYTES / 1_000
+            );
         }
+        files.push((label, truncated_text));
     }
     Ok(LayerSection { urls, files })
 }
