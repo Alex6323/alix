@@ -153,19 +153,24 @@ for two keys, freezing rewrote `source:` to the frozen snapshot while
 `origin:` kept the real pointer, was abolished by the source-never-assets
 ruling, and the code already unioned them for examination.
 
-- The workspace manifest may declare a default `source` that members inherit
-  when they declare none (replacing the manifest `origin`). Precedence is
-  replace, not extend: a member's own `source:` list ignores the default
-  entirely, so a deck file alone states what it examines against. A relative
-  path resolves against the workspace root when declared in the manifest and
-  against the deck's content root when declared in frontmatter.
-- Derivations: examination and `has_exam` consider the effective sources
+- The workspace manifest may declare a `source` too (replacing the manifest
+  `origin`): the material the workspace as a whole is about. It is context,
+  not a mere default, and is never ignored: the tutor and examiner receive
+  BOTH the deck's own sources and the workspace source, told which is which,
+  with the deck source as the primary grounding and the workspace source as
+  supporting context (ruled 2026-07-28).
+- Mechanical resolution stays single-based and deterministic: citations,
+  walks, and live-drift display resolve against the deck's first local-path
+  source, falling back to the workspace source when the deck declares none;
+  workspace update reconciles a member against the member's own local source
+  first, workspace source as fallback. A relative path resolves against the
+  workspace root when declared in the manifest and against the deck's content
+  root when declared in frontmatter.
+- Examination and `has_exam` consider deck and workspace sources together
   (deliberate behavior change: a local-path source now confers an exam where
   a local `origin:` did not; verified understanding is the product's thesis).
-  URL-valued sources feed reference links; the first local-path source is the
-  base root for citation resolution, walks, and live-drift display; workspace
-  update reconciles against the local-path sources. Freezing stamps nothing:
-  a generated or frozen member already declares (or inherits) its source.
+  URL-valued sources from both feed reference links. Freezing stamps nothing:
+  a generated or frozen member already declares or inherits its source.
 - `origin:` in deck frontmatter or the manifest is a recognized-obsolete key:
   a hard error naming the deck conversion tool, exactly like `alix-id:`.
 
