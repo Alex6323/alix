@@ -114,6 +114,16 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     serve::run_review(store, recent, decks_dir, server, opts)
 }
 
+// Lenient on purpose: std's `println!` panics on EPIPE, and a long-running
+// server must not die because the consumer of its stdout went away
+// (`alix | head`, a pipe closed after reading the URL line).
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
 fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> serve::PairInfo {
     let root = abbreviate_home(root);
     let port = addr.port();
@@ -131,28 +141,28 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> se
     match (lan, token) {
         (true, Some(t)) => match lan_ip {
             Some(ip) => {
-                println!("Serving {root} at http://{ip}:{port}");
-                println!("On another device, open in a browser (or scan):");
-                println!("  {}", pair.url);
+                say!("Serving {root} at http://{ip}:{port}");
+                say!("On another device, open in a browser (or scan):");
+                say!("  {}", pair.url);
                 print_qr(&pair.url);
-                println!("Or pair the app with:  host {ip}  port {port}  token {t}");
+                say!("Or pair the app with:  host {ip}  port {port}  token {t}");
             }
             None => {
-                println!("Serving {root} on all interfaces, port {port}.");
-                println!("On another device, open in a browser:");
-                println!("  http://<this-machine's-IP>:{port}/?token={t}");
-                println!("Or pair the app with:  host <this-machine's-IP>  port {port}  token {t}");
+                say!("Serving {root} on all interfaces, port {port}.");
+                say!("On another device, open in a browser:");
+                say!("  http://<this-machine's-IP>:{port}/?token={t}");
+                say!("Or pair the app with:  host <this-machine's-IP>  port {port}  token {t}");
             }
         },
         (true, None) => {
-            println!("Serving {root} on all interfaces, port {port}.");
-            println!("warning: no authentication — anyone on your network can reach this.");
+            say!("Serving {root} on all interfaces, port {port}.");
+            say!("warning: no authentication — anyone on your network can reach this.");
         }
         (false, _) => {
-            println!("Serving {root} at http://127.0.0.1:{port} — open it in your browser.")
+            say!("Serving {root} at http://127.0.0.1:{port} — open it in your browser.")
         }
     }
-    println!("Press Ctrl-C to stop.");
+    say!("Press Ctrl-C to stop.");
     pair
 }
 
@@ -183,7 +193,8 @@ pub(crate) fn local_lan_ip() -> Option<std::net::IpAddr> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn print_qr(text: &str) {
     if let Some(q) = alix::qr::terminal_blocks(text) {
-        print!("{q}");
+        use std::io::Write;
+        let _ = write!(std::io::stdout(), "{q}");
     }
 }
 

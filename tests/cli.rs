@@ -116,7 +116,16 @@ fn profile_add_list_and_remove_are_hermetic() {
         &[],
     );
     assert!(added.status.success(), "stderr: {}", stderr(&added));
-    assert!(home.path().join("alix/profiles/x.toml").exists());
+    // `directories` resolves the config dir per platform: XDG_CONFIG_HOME
+    // (redirected to the temp home) on Linux, Library/... under HOME on macOS.
+    // Hermeticity holds on both; only the asserted path differs.
+    #[cfg(target_os = "macos")]
+    let profile = home
+        .path()
+        .join("Library/Application Support/alix/profiles/x.toml");
+    #[cfg(not(target_os = "macos"))]
+    let profile = home.path().join("alix/profiles/x.toml");
+    assert!(profile.exists());
 
     let listed = alix_env(&["profile", "list"], home.path(), &[]);
     assert!(listed.status.success(), "stderr: {}", stderr(&listed));
@@ -2855,8 +2864,12 @@ fn workspace_init_on_an_existing_workspace_errors() {
 #[test]
 fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     let dir = TempDir::new().unwrap();
-    let workspace = dir.path().join("workspace");
-    let source = dir.path().join("source");
+    // Staging canonicalizes the workspace root; on macOS the raw tempdir path
+    // traverses /var -> /private/var, so the embedded `source:` must be the
+    // canonical form or the preserved-source comparison spuriously differs.
+    let root = dir.path().canonicalize().unwrap();
+    let workspace = root.join("workspace");
+    let source = root.join("source");
     std::fs::create_dir_all(workspace.join("decks")).unwrap();
     std::fs::create_dir(&source).unwrap();
     std::fs::write(workspace.join("alix.toml"), "").unwrap();
