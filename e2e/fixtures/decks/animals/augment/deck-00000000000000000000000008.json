@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "deck_id": "00000000000000000000000008",
+  "deck_id": "deck-00000000000000000000000008",
   "revision": 1,
   "cards": {
-    "wild1": {
+    "card-wild1": {
       "distractors": [
         "African elephant",
         "Ostrich",
@@ -11,7 +11,7 @@
       ],
       "distractors_fp": 7025184473304531062
     },
-    "wild2": {
+    "card-wild2": {
       "distractors": [
         "Pronghorn antelope",
         "Lion",

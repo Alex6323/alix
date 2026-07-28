@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "deck_id": "00000000000000000000000007",
+  "deck_id": "deck-00000000000000000000000007",
   "revision": 1,
   "cards": {
-    "mathexplain": {
+    "card-mathexplain": {
       "keypoints": [
         "The discriminant is $b^2 - 4ac$",
         "The denominator is $2a$"

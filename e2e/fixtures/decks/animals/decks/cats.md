@@ -1,7 +1,8 @@
 ---
-alix-id: "00000000000000000000000005"
+id: "deck-00000000000000000000000005"
 ---
 
-## Name two big cats <!-- id: cats1 -->
+## Name two big cats
 Lion
 Tiger
+<!-- id: card-cats1 -->
