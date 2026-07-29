@@ -159,6 +159,34 @@ impl Drop for Guard {
     }
 }
 
+/// Deterministic store breakage: the store writes tmp files next to its
+/// per-deck documents, so every directory under the state root loses write
+/// permission (children first, since a read-only parent blocks recursion).
+fn break_state_dir(root: &Path) {
+    let entries: Vec<_> = std::fs::read_dir(root)
+        .map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    for path in entries {
+        if path.is_dir() {
+            break_state_dir(&path);
+        }
+    }
+    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o555)).unwrap();
+}
+
+/// Undoes [`break_state_dir`] (parent first, so children become reachable).
+fn repair_state_dir(root: &Path) {
+    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let entries: Vec<_> = std::fs::read_dir(root)
+        .map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    for path in entries {
+        if path.is_dir() {
+            repair_state_dir(&path);
+        }
+    }
+}
+
 fn state_root(dir: &Path) -> PathBuf {
     dir.join("state")
 }
@@ -1084,33 +1112,6 @@ fn a_failed_flush_refuses_deselect_until_the_store_saves_again() {
     assert_eq!(200, resp.status);
 
     let state_dir = state_root(guard.dir());
-    // The store writes tmp files next to its per-deck documents, so every
-    // directory under the state root must lose write permission.
-    fn set_dir_mode(root: &Path, mode: u32) {
-        std::fs::set_permissions(root, std::fs::Permissions::from_mode(mode)).unwrap();
-        let entries: Vec<_> = std::fs::read_dir(root)
-            .map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).collect())
-            .unwrap_or_default();
-        for path in entries {
-            if path.is_dir() {
-                set_dir_mode(&path, mode);
-            }
-        }
-    }
-    fn break_state_dir(root: &Path) {
-        fn walk(root: &Path) {
-            let entries: Vec<_> = std::fs::read_dir(root)
-                .map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).collect())
-                .unwrap_or_default();
-            for path in entries {
-                if path.is_dir() {
-                    walk(&path);
-                }
-            }
-            std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o555)).unwrap();
-        }
-        walk(root);
-    }
     break_state_dir(&state_dir);
 
     // The acquire itself replies 200 with `save_error` set (existing
@@ -1131,7 +1132,7 @@ fn a_failed_flush_refuses_deselect_until_the_store_saves_again() {
     assert_eq!("review", body["phase"], "the session must survive: {body}");
 
     // Repair the filesystem; repeating the request retries the flush.
-    set_dir_mode(&state_dir, 0o755);
+    repair_state_dir(&state_dir);
     let resp = post_json(&base, "/api/deselect", "{}");
     assert_eq!(200, resp.status);
     let resp = http(&base, "GET", "/api/state", &[], &[]);
@@ -2655,6 +2656,57 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
     let grades = body["grades"].as_array().unwrap();
     assert_eq!(1, grades.len(), "body: {body}");
     assert_eq!("PASS", grades[0]["verdict"], "body: {body}");
+}
+
+/// A passed exam's mastery write rides the owner's save accounting: a
+/// transient save failure surfaces as `save_error`, and the mastery is
+/// retried by the next transition flush instead of being dropped silently
+/// with the store replacement.
+#[test]
+fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(
+        scripts.path(),
+        r#"{"verdict":"pass","feedback":"nice work retracing it","missed":[]}"#,
+    );
+    let (base, guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
+    let state_dir = state_root(guard.dir());
+    break_state_dir(&state_dir);
+
+    post_json(
+        &base,
+        "/api/exam/grade",
+        r#"{"text":"it forwards the value hop by hop, first then second"}"#,
+    );
+    let body = poll_until(&base, "/api/exam", |b| b["phase"] != "grading");
+    assert_eq!(true, body["passed"], "body: {body}");
+
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(
+        body["save_error"].as_str().is_some(),
+        "the failed mastery save must surface: {body}"
+    );
+
+    repair_state_dir(&state_dir);
+    let resp = post_json(&base, "/api/exam/close", "{}");
+    assert_eq!(200, resp.status);
+
+    let resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let mastered = body["recent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["name"] == "trace.md")
+        .map(|d| d["mastered"].clone());
+    assert_eq!(
+        Some(serde_json::Value::Bool(true)),
+        mastered,
+        "the mastery must survive the repaired flush: {body}"
+    );
 }
 
 // ── Walk (a two-hop trace deck) ───────────────────────────────────────────

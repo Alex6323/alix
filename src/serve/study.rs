@@ -705,17 +705,26 @@ impl StudyState {
                 let _ = reply.send(self.exam_start(path, decks_root, ask_cfg));
             }
             StudyCommand::ExamPoll(reply) => {
-                let dto = self.examining.as_mut().map(|ex| {
-                    let root = workspace::content_root(&ex.deck_path);
-                    let retire_after_days = self
-                        .config
-                        .review_cfg
-                        .for_workspace(&root)
-                        .retire_after_days;
-                    ex.sitting
-                        .poll(&mut self.store, now_ms(), retire_after_days);
-                    exam_dto(ex)
-                });
+                let dto = match self.examining.as_mut() {
+                    None => None,
+                    Some(ex) => {
+                        let root = workspace::content_root(&ex.deck_path);
+                        let retire_after_days = self
+                            .config
+                            .review_cfg
+                            .for_workspace(&root)
+                            .retire_after_days;
+                        let poll = ex.sitting.poll(&mut self.store, now_ms(), retire_after_days);
+                        if poll.store_mutated {
+                            flush_mutation(
+                                &self.store,
+                                &mut self.store_dirty,
+                                &mut self.save_error,
+                            );
+                        }
+                        Some(exam_dto(ex))
+                    }
+                };
                 let _ = reply.send(dto);
             }
             StudyCommand::ExamAnswer { text, goto, reply } => {

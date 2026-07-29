@@ -268,6 +268,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A passed or failed exam's progress write no longer saves silently outside
+  the save-error accounting: a transient failure now shows the "progress
+  isn't saving" state and the result is retried by the next flush instead of
+  being lost when the session closes.
 - A progress save that keeps failing no longer lets a deck switch silently
   discard the unsaved session: select, browse, deselect, reset, exam start
   and close, walk leave, and augment open and close now answer 500 and keep

@@ -587,20 +587,27 @@ impl Sitting {
         }
     }
 
-    pub fn poll(&mut self, store: &mut Store, now_ms: u64, retire_after_days: Option<u32>) -> bool {
+    pub fn poll(
+        &mut self,
+        store: &mut Store,
+        now_ms: u64,
+        retire_after_days: Option<u32>,
+    ) -> ExamPollOutcome {
         let was_pending = self.pending.is_some();
         let effect = self.advance(now_ms);
         let advanced = was_pending && self.pending.is_none();
+        let mut store_mutated = false;
         match effect {
             Some(Effect::Passed) => {
                 store.set_deck_mastered(&self.deck_token, now_ms);
-                let _ = store.save();
+                store_mutated = true;
             }
             Some(Effect::TraceFailed) => {
                 store.set_exam_failed(&self.deck_token, now_ms);
-                let _ = store.save();
+                store_mutated = true;
             }
             Some(Effect::RemediationCards(cards)) => {
+                store_mutated = true;
                 match crate::store::store_remediation_cards(
                     store,
                     &self.deck_token,
@@ -618,8 +625,19 @@ impl Sitting {
             }
             None => {}
         }
-        advanced
+        ExamPollOutcome {
+            advanced,
+            store_mutated,
+        }
     }
+}
+
+/// What one poll did: whether the pending grading settled, and whether the
+/// store was mutated. The caller owns persistence, so a failed save lands in
+/// its `save_error` accounting instead of vanishing here.
+pub struct ExamPollOutcome {
+    pub advanced: bool,
+    pub store_mutated: bool,
 }
 
 enum Reply {
@@ -1581,7 +1599,10 @@ mod tests {
 
     fn drain(s: &mut Sitting, store: &mut Store) {
         for _ in 0..500 {
-            if s.poll(store, 0, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)) {
+            if s
+                .poll(store, 0, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS))
+                .advanced
+            {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
