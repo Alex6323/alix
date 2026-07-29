@@ -8,6 +8,13 @@ use anyhow::{Context, Result, anyhow};
 use crate::{ask, config::AskConfig, deck::Deck, workspace::Workspace};
 
 pub fn generate(dir: &Path, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<PathBuf> {
+    let svg = render(dir, guidance, ask_cfg)?;
+    install_svg(dir, &svg)
+}
+
+/// The costed model call only: no filesystem mutation happens here, so a
+/// worker thread may run it and the owning caller installs the result.
+pub fn render(dir: &Path, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<String> {
     let ws = Workspace::load(dir).context("loading the workspace to ground its icon")?;
     let topics = member_topics(&ws);
     let prompt = build_prompt(
@@ -17,7 +24,10 @@ pub fn generate(dir: &Path, guidance: Option<&str>, ask_cfg: &AskConfig) -> Resu
         guidance,
     );
     let run_cfg = icon_run_config(ask_cfg);
-    let svg = draw(&run_cfg, &prompt).or_else(|_| draw(&run_cfg, &prompt))?;
+    draw(&run_cfg, &prompt).or_else(|_| draw(&run_cfg, &prompt))
+}
+
+pub fn install_svg(dir: &Path, svg: &str) -> Result<PathBuf> {
     let out = dir.join("assets").join("icon.svg");
     clear_existing_icons(dir);
     write_atomic(&out, svg.as_bytes())?;

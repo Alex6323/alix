@@ -569,8 +569,12 @@ pub enum Outcome {
     Keypoints(HashMap<String, Vec<String>>),
     Topology(Topology),
     Format(HashMap<String, Format>),
-    // nothing to cache: the file on disk is the result
-    Icon(std::path::PathBuf),
+    // rendered only: the polling owner installs the file, so no detached
+    // worker ever mutates the workspace
+    Icon {
+        dir: std::path::PathBuf,
+        svg: String,
+    },
 }
 
 pub fn spawn(
@@ -627,7 +631,10 @@ fn run_job(
             Outcome::Format(generate_format(&items, guidance, ask_cfg, conversation)?)
         }
         // icon draws are card-free and never ride the batch conversation
-        Job::Icon { dir } => Outcome::Icon(crate::icon::generate(&dir, guidance, ask_cfg)?),
+        Job::Icon { dir } => Outcome::Icon {
+            svg: crate::icon::render(&dir, guidance, ask_cfg)?,
+            dir,
+        },
     })
 }
 

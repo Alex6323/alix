@@ -1015,8 +1015,13 @@ impl Augmenting {
                     }
                 }
             }
-            // nothing to cache: the file on disk is the result
-            augment_ai::Outcome::Icon(_) => {}
+            // nothing to cache: the workspace file is the result, installed
+            // here so the write happens on the owner, never on the worker
+            augment_ai::Outcome::Icon { dir, svg } => {
+                if let Err(e) = crate::icon::install_svg(&dir, &svg) {
+                    self.error = Some(format!("could not install the workspace icon: {e:#}"));
+                }
+            }
         }
     }
 
