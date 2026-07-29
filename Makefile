@@ -122,6 +122,13 @@ roadmap:
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
 check: pre-1-0-check deps-check changelog-check lint test site-media-check docs-audit-manifest-check toolchain-check
 
+# Mutation-tests only this branch's diff against local main (no remotes, no
+# PRs here), with cargo-mutants' default cargo-test runner. Costed and slow:
+# run once, right before requesting review, never in the inner loop or CI.
+gate: check
+	git diff $$(git merge-base main HEAD) > target/review.diff
+	cargo mutants --in-diff target/review.diff
+
 # The Rust CI bundle: nightly formatting, clippy + tests under `-Dwarnings`, the
 # lean core, and coverage with the warnings gate cleared (coverage instruments
 # its own flags). GitHub also has separate blocking bridge, Flutter, JavaScript,
