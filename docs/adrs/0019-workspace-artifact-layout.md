@@ -7,7 +7,9 @@
   [ADR 0015](0015-frozen-source-snapshots.md), and
   [ADR 0017](0017-per-deck-state-documents.md)
 - Refined by:
-  [ADR 0022](0022-workspace-and-user-file-ownership.md)
+  [ADR 0022](0022-workspace-and-user-file-ownership.md) and
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md), which
+  replaces the identifier and source vocabulary without changing the layout.
 
 ## Context
 
@@ -60,7 +62,7 @@ Every path role has one anchor:
 - shared and local manifests, assets, augmentation, icons, and relative
   `store` overrides use the workspace root;
 - progress uses the selected user root, which defaults to the workspace;
-- relative `source`, `origin`, and image references authored in a workspace
+- relative `source` and image references authored in a workspace
   member also use the workspace root;
 - `requires` resolves among sibling members in `decks/`;
 - loose-deck references continue to use the loose deck's parent.
@@ -70,7 +72,7 @@ directory. Sharing preserves the same tree, includes matching augmentation,
 and excludes private progress and local configuration.
 
 Production code implements only this structure. Pre-1.0 workspace files are
-moved externally and keep their existing `alix-id` and card IDs.
+moved externally and keep their existing deck and card IDs.
 
 ## Consequences
 
@@ -78,7 +80,7 @@ moved externally and keep their existing `alix-id` and card IDs.
   directories even when they contain many decks.
 - Member discovery, state routing, source grounding, and asset lookup no longer
   infer unrelated boundaries from `deck.parent()`.
-- `source: assets`, workspace images, and relative origins remain concise after
+- Frozen assets, workspace images, and relative sources remain concise after
   deck files move one level deeper.
 - A root-level Markdown file in a workspace can safely be documentation but
   cannot be reviewed as a member until placed under `decks/`.
@@ -140,8 +142,8 @@ boundary from ADR 0018.
 
 - Workspace tests pin the strict member directory, plain-folder behavior,
   member-to-root recognition, and root-level Markdown exclusion.
-- Source and deck tests pin workspace-root anchoring for sources, origins,
-  images, snapshots, and manifest defaults.
+- Source and deck tests pin workspace-root anchoring for sources, images,
+  snapshots, and manifest defaults.
 - Listing, picker, doctor, dependency, state, sharing, generation, CLI, server,
   and mobile tests use the same layout.
 - Tracked examples, bundled samples, E2E fixtures, and maintainer workspaces

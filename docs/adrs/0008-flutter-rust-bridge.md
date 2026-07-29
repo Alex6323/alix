@@ -3,6 +3,10 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
+- Refined by:
+  [ADR 0028](0028-capability-gated-builds-and-embedded-wormhole.md), which
+  replaces the mobile-as-domain-only feature boundary while preserving the
+  Flutter Rust Bridge decision.
 
 ## Decision history
 
@@ -30,7 +34,8 @@ codegen, Dart runtime, Flutter, Gradle, and native target tooling must agree.
 ## Decision
 
 Flutter is the mobile UI toolkit. Flutter Rust Bridge is the binding layer
-between Dart and the embedded lean Rust core from ADR 0006.
+between Dart and the embedded Rust library. ADR 0028 defines the current
+mobile capability composition.
 
 Long-lived review and walk sessions remain opaque Rust objects. Dart receives
 generated or mirrored presentation-neutral types such as `ReviewState` and

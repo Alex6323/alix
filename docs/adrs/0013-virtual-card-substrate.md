@@ -6,6 +6,9 @@
 - Refined by: [ADR 0017](0017-per-deck-state-documents.md), which keeps each
   virtual card in its parent deck's progress document instead of an aggregate
   workspace file.
+- Details evolved by
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): deck IDs
+  now use the `deck-<token>` form everywhere.
 
 ## Decision history
 
@@ -36,7 +39,7 @@ into authored material.
 ## Decision
 
 Generated learning cards may live as virtual cards in their parent deck's
-`progress/<alix-id>.json` document.
+`progress/<deck-id>.json` document.
 A virtual card records minted identity, kind, parent deck, Markdown card text,
 and creation metadata. Its schedule is stored in the same card-state map and
 uses the same FSRS and session behavior as an authored card.

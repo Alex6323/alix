@@ -5,6 +5,11 @@
 - Retrospective: No
 - Refines: [ADR 0002](0002-markdown-native-decks.md)
 - Refined by: [ADR 0020](0020-source-excerpt-integrity.md)
+- Details evolved by
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): the deck
+  marker is now `id: deck-<token>`; the explicit initialization and local
+  write-authority boundary are unchanged. References below to `alix-id`
+  describe the originally accepted spelling.
 
 ## Context
 

@@ -3,7 +3,12 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
-- Refined by: [ADR 0018](0018-explicit-deck-initialization.md)
+- Refined by:
+  [ADR 0018](0018-explicit-deck-initialization.md), which makes deck
+  initialization explicit, and
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md), which
+  replaces the `alix-id` key with `id: deck-<token>` while preserving the
+  Markdown-native format.
 
 ## Decision history
 

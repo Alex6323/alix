@@ -4,6 +4,14 @@
 - Recorded: 2026-07-28
 - Retrospective: No
 
+## Decision history
+
+The initially accepted text treated retired keys and locator syntax as
+recognized production errors. That conflicted with the pre-existing pre-1.0
+rule that production contains only the current design and does not branch on
+retired vocabulary. Those old-name-aware clauses are corrected below. The ID,
+source, locator, and asset grammar decisions are unchanged.
+
 ## Context
 
 The deck-id rekey (ADR 0017 lineage) made deck-level state follow a deck's
@@ -184,32 +192,23 @@ ruling, and the code already unioned them for examination.
   a local `origin:` did not; verified understanding is the product's thesis).
   URL-valued sources from both feed reference links. Freezing stamps nothing:
   a generated or frozen member already declares or inherits its source.
-- `origin:` in deck frontmatter or the manifest is a recognized-obsolete key:
-  a hard error naming the deck conversion tool, exactly like `alix-id:`.
+- Retired source keys receive no production-specific recognition or guidance.
 
 ### Loud break at the parser (no compatibility path)
 
-Production reads only the new grammar. There is no dual reader. Detection must
-survive `alix`'s own id auto-minting, which fires precisely on "no deck id" and
-"unstamped card":
+Production reads only the new grammar. There is no dual reader and no
+old-name-aware error path:
 
-- `alix-id:` is a recognized-obsolete frontmatter key that returns a parse error
-  naming the migration tool. It is not an unknown-key lint (which would leave the
-  deck id `None` and let review-open mint a fresh `deck-<new>` beside the stale
-  `alix-id`, creating two identities and orphaning `assets/<old>/`).
 - A `<!-- id: ... -->` whose value lacks the `card-` prefix is a parse error, not
   "unstamped" (which would let the stamper append a second `card-<new>` marker).
 - A `requires:`/frontmatter/marker id with a wrong or empty prefix is a parse
   error.
-- An `at:` value containing old-grammar residue (` @ `, ` from `) or any
-  unpairable token is a bad-value error, so an old locator never parses as a
-  fingerprint-less citation that the next stamp would silently re-fingerprint.
-- Mint, splice, and stamp refuse to run while any old-format id shape is present
-  in the file, so review-open cannot half-migrate before `doctor` is run.
-- `doctor` positively detects a bare-token id, marker, `requires:` value,
-  locator, or state-document (filename or internal `deck_id`) and names it as
-  un-migrated. `#[serde(deny_unknown_fields)]` is not relied on: id and key
-  changes are string values, which serde does not validate.
+- An `at:` value that does not satisfy the current named-field grammar is a
+  bad-value error.
+- Mint, splice, and stamp operate only on documents that satisfy the current
+  grammar.
+- `doctor` may report generic invalid artifacts, but production and diagnostic
+  paths do not match on or name retired vocabulary.
 
 ## Consequences
 
@@ -257,7 +256,8 @@ survive `alix`'s own id auto-minting, which fires precisely on "no deck id" and
 
 Pre-1.0, no backwards compatibility. Production reads only the new format. A
 disposable tool outside the production repository backs up, converts, verifies,
-and deletes old artifacts; `doctor` detects an old artifact and names the tool.
+and deletes old artifacts. Production error paths do not identify retired
+formats by their old names.
 
 Surfaces the migration must cover (enumerated so none is silent):
 
@@ -298,10 +298,11 @@ Surfaces the migration must cover (enumerated so none is silent):
   documented flow is re-push migrated decks and accept a device progress reset;
   the embedded core fails loud on old-format decks like any other client.
 - Documentation and prompts: `docs/API.md` (id and `CitationDto.locator` wire
-  values), the contract snapshots (`serve/contract.rs`, `tests/contracts/`), the
-  book chapters teaching the old syntax, the README inline example, `CHANGELOG`,
-  and every AI prompt that embeds the grammar (`workspace_update.rs` at minimum)
-  and the project `CLAUDE.md` study-deck locator template.
+  values), the contract snapshots (`src/serve/contract.rs`,
+  `tests/contracts/`), the book chapters teaching the old syntax, the README
+  inline example, `CHANGELOG`, and every AI prompt that embeds the grammar
+  (`src/workspace_update.rs` at minimum) and the project `CLAUDE.md` study-deck
+  locator template.
 
 Affected records: this ADR supersedes or extends the card-identity record, ADR
 0015 (frozen source snapshots), ADR 0020 (source-excerpt integrity), and ADR
@@ -321,15 +322,14 @@ unintended bytes.
 
 ## Verification
 
-- Parser tests: a bare id/marker, an `alix-id:` key, an old ` @ `/` from `
-  locator, an unknown/duplicate locator key, and a space-containing path each
-  produce the specified hard error; a prefixed id and each sub-id form parse.
+- Parser tests: a bare id or marker, an invalid or duplicate locator field, and
+  a space-containing path each produce the specified hard error; a prefixed id
+  and each sub-id form parse.
 - `parse_card_id` strips the prefix before the suffix split; mutation-test the
   cloze hole-cascade and duplicate-id detection with prefixed keys.
-- Mint/splice/stamp refuse to run in the presence of any old-format shape.
-- `doctor`: bare-token detection across ids, markers, `requires:`, locators, and
-  state documents; the wrong-type `card-` in `requires:` case; the prefix-aware
-  canonical-token check.
+- Mint, splice, and stamp refuse to run when the current grammar is invalid.
+- `doctor`: generic invalid-artifact reporting, the wrong-type `card-` in
+  `requires:` case, and the prefix-aware canonical-token check.
 - Frozen-citation reader: excerpt and fingerprint target the asset bytes read
   in full, displayed at `at:`-derived numbering; regression-test that every
   source kind freezes excerpt objects, that uncited lines of a cited file

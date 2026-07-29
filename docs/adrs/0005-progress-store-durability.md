@@ -8,6 +8,9 @@
   document per deck the persistence and conflict boundary, and
   [ADR 0022](0022-workspace-and-user-file-ownership.md), which names progress
   as private user-owned state.
+- Details evolved by
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): deck IDs
+  now use the `deck-<token>` form everywhere.
 
 ## Decision history
 
@@ -109,7 +112,7 @@ design.
 ## Compatibility
 
 The version, owner ID, revision, serialized card and deck state, and writer
-marker in each `progress/<alix-id>.json` document are persisted surfaces.
+marker in each `progress/<deck-id>.json` document are persisted surfaces.
 Unsupported versions are rejected. A future post-1.0 breaking change requires
 an explicit compatibility and conversion policy before it ships.
 
