@@ -870,7 +870,7 @@ pub fn run_review(
                 let resolved = catalog
                     .resolve_path(body.deck.clone())
                     .flatten()
-                    .and_then(|path| catalog.decks_root().map(|root| (path, root)));
+                    .zip(catalog.decks_root());
                 let Some((path, decks_root)) = resolved else {
                     respond_status(request, 400);
                     continue;

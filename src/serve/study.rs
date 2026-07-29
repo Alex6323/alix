@@ -45,7 +45,7 @@ pub(super) struct StudyState {
 }
 
 pub(super) enum SessionSnapshot {
-    Review(StateDto),
+    Review(Box<StateDto>),
     Browse(BrowseDto),
 }
 
@@ -68,12 +68,12 @@ pub(super) enum CreateOutcome {
 }
 
 pub(super) enum ExamStartReply {
-    Dto(ExamDto),
+    Dto(Box<ExamDto>),
     Conflict,
 }
 
 pub(super) enum WalkGradeReply {
-    Dto(WalkDto),
+    Dto(Box<WalkDto>),
     NoWalk,
     NoDelta,
 }
@@ -490,7 +490,7 @@ impl StudyState {
                             &mut self.save_error,
                         );
                     }
-                    SessionSnapshot::Review(self.review_dto())
+                    SessionSnapshot::Review(Box::new(self.review_dto()))
                 };
                 let _ = reply.send(snapshot);
             }
@@ -756,7 +756,7 @@ impl StudyState {
                                     &mut self.save_error,
                                 );
                                 w.clear_grade();
-                                WalkGradeReply::Dto(walk_dto(w))
+                                WalkGradeReply::Dto(Box::new(walk_dto(w)))
                             }
                             None => WalkGradeReply::NoDelta,
                         }
@@ -1112,7 +1112,10 @@ impl StudyState {
                             ) {
                                 // One response shape per endpoint: the cooldown
                                 // is an ExamDto phase, not untagged.
-                                return ExamStartReply::Dto(cooldown_dto(&deck.subject, ms));
+                                return ExamStartReply::Dto(Box::new(cooldown_dto(
+                                    &deck.subject,
+                                    ms,
+                                )));
                             }
                             exam::Sitting::start_trace(
                                 t.description.clone(),
@@ -1140,7 +1143,7 @@ impl StudyState {
                 };
                 let dto = exam_dto(&ex);
                 self.examining = Some(ex);
-                ExamStartReply::Dto(dto)
+                ExamStartReply::Dto(Box::new(dto))
             }
             _ => ExamStartReply::Conflict,
         }
