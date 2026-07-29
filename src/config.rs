@@ -636,7 +636,7 @@ struct RawReview {
 
 impl Config {
     pub fn from_toml(text: &str) -> Result<Self> {
-        let raw: RawConfig = toml::from_str(text).map_err(pacing_key_error)?;
+        let raw: RawConfig = toml::from_str(text).context("invalid config file")?;
         let mut keys = Bindings::default();
 
         let assign = |target: &mut Vec<KeyPattern>,
@@ -946,24 +946,6 @@ fn parse_ramp_days(s: &str) -> Result<u32> {
     }
 }
 
-// The pacing rework retired `max_new` and `limit`; both config paths now name
-// the replacement so a stale key is a fix, not a mystery.
-const PACING_KEY_FIX: &str =
-    "delete it; pacing is now `max_session` / `new_cards_percent` (or `--session` per launch)";
-
-fn mentions_retired_pacing_key(message: &str) -> bool {
-    message.contains("`max_new`") || message.contains("`limit`")
-}
-
-fn pacing_key_error(err: toml::de::Error) -> anyhow::Error {
-    let message = err.to_string();
-    if mentions_retired_pacing_key(&message) {
-        anyhow::anyhow!("invalid config file: {message}\n{PACING_KEY_FIX}")
-    } else {
-        anyhow::Error::new(err).context("invalid config file")
-    }
-}
-
 pub fn local_review_lint(dir: &Path) -> Vec<String> {
     let path = crate::state::UserFiles::new(dir).local_manifest();
     let text = match std::fs::read_to_string(&path) {
@@ -973,17 +955,10 @@ pub fn local_review_lint(dir: &Path) -> Vec<String> {
     let raw: RawLocalConfig = match toml::from_str(&text) {
         Ok(r) => r,
         // A parse failure silently dropped the whole overlay (deadline included)
-        // and said nothing. Surface it, naming the file and the retired-key fix.
+        // and said nothing. Surface it; serde's unknown-field message already
+        // lists the valid keys.
         Err(e) => {
-            let message = e.to_string();
-            let fix = if mentions_retired_pacing_key(&message) {
-                format!(" {PACING_KEY_FIX}")
-            } else {
-                String::new()
-            };
-            return vec![format!(
-                "{LOCAL_MANIFEST} could not be parsed: {message}{fix}"
-            )];
+            return vec![format!("{LOCAL_MANIFEST} could not be parsed: {e}")];
         }
     };
 
@@ -1282,10 +1257,13 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_pacing_key_errors_with_the_replacement_hint() {
+    fn an_unknown_config_key_errors_and_the_message_lists_valid_keys() {
         let err = Config::from_toml("[review]\nmax_new = 5\n").unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("max_session"), "names the replacement: {msg}");
+        assert!(
+            msg.contains("max_session"),
+            "serde lists the valid keys: {msg}"
+        );
         let err = Config::from_toml("[review]\nlimit = 40\n").unwrap_err();
         assert!(format!("{err:#}").contains("max_session"));
     }
@@ -1798,7 +1776,7 @@ mod tests {
     }
 
     #[test]
-    fn local_review_lint_surfaces_a_retired_pacing_key_instead_of_dropping_the_overlay() {
+    fn local_review_lint_surfaces_a_manifest_parse_failure_instead_of_dropping_the_overlay() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join(LOCAL_MANIFEST),
@@ -1818,21 +1796,21 @@ mod tests {
         );
         assert!(
             complaints[0].contains("max_session"),
-            "names the replacement: {}",
+            "serde's unknown-field message lists the valid keys: {}",
             complaints[0]
         );
     }
 
     #[test]
-    fn for_workspace_stays_lenient_on_a_retired_pacing_key() {
+    fn for_workspace_stays_lenient_on_an_unparseable_manifest() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join(LOCAL_MANIFEST),
             "[review]\nlimit = 40\nretention = 0.8\n",
         )
         .unwrap();
-        // Review time must not blow up on a stale key; the doctor lint is where
-        // the user hears about it.
+        // Review time must not blow up on an unparseable manifest; the doctor
+        // lint is where the user hears about it.
         let resolved = ReviewConfig::default().for_workspace(dir.path());
         assert_eq!(ReviewConfig::default().retention, resolved.retention);
     }
