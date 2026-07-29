@@ -2,15 +2,15 @@ mod catalog;
 mod catalog_owner;
 mod dto;
 mod jobs;
+mod jobs_owner;
 mod respond;
 mod study;
 
 use std::{
     net::SocketAddr,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
-    time::Instant,
 };
 
 use anyhow::{Result, anyhow};
@@ -18,6 +18,7 @@ use catalog::*;
 use catalog_owner::*;
 use dto::*;
 use jobs::*;
+use jobs_owner::*;
 use respond::*;
 use study::*;
 use serde::Deserialize;
@@ -29,12 +30,10 @@ use crate::{
     config::{
         AiConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
     },
-    deck::Deck,
-    doctor, exam, generate, import,
+    doctor, import,
     recent::RecentDecks,
     share,
     store::Store,
-    trace::{self},
 };
 
 const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
@@ -131,26 +130,9 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 // so an idle kept-alive socket can't starve the rest.
 const WORKERS: usize = 16;
 
-// The job slots that still live behind this lock. The session and progress
-// documents live in the Study owner (`study.rs`), discovery and resolution
-// in the Catalog owner (`catalog_owner.rs`); the Jobs owner takes these
-// slots next, and then this struct is deleted.
-struct ServeState {
-    generating: Option<Generating>,
-    sharing: Option<Sharing>,
-    receiving: Option<Receiving>,
-    // Kept separate from the Study owner's session so a phone can never see
-    // or kill a browser session, and vice versa; nothing under
-    // `/api/remote/*` touches the progress store (the phone owns its
-    // state).
-    remote_ask: Option<RemoteAsk>,
-    remote_exam: Option<RemoteExamining>,
-    remote_generate: Option<RemoteGenerating>,
-}
-
-fn lock(state: &Mutex<ServeState>) -> std::sync::MutexGuard<'_, ServeState> {
-    state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
+// Set when any owner thread panics; workers then stop accepting (503 and
+// unblock) so a dead owner can never leave a permanently half-alive server.
+pub(super) static OWNER_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn run_review(
     store: Store,
@@ -208,7 +190,8 @@ pub fn run_review(
         recent,
     ));
 
-    let state = Mutex::new(ServeState {
+    let (jobs, jobs_thread) = jobs_owner::spawn(JobsState {
+        catalog: catalog.clone(),
         generating: None,
         sharing: None,
         receiving: None,
@@ -217,11 +200,17 @@ pub fn run_review(
         remote_generate: None,
     });
 
+    // Owner failure is application failure: a panicked owner sets this, the
+    // workers stop accepting (503 + unblock), and run_review re-raises the
+    // panic after joining. No restart, no permanent partial service.
+    let failed = &OWNER_FAILED;
+    failed.store(false, std::sync::atomic::Ordering::SeqCst);
+
     thread::scope(|scope| {
         for _ in 0..WORKERS {
             let study = study.clone();
             let catalog = catalog.clone();
-            let state = &state;
+            let jobs = jobs.clone();
             let server = &server;
             let keys = &keys;
             let picker_keys = &picker_keys;
@@ -244,6 +233,11 @@ pub fn run_review(
                         break;
                     }
                 };
+                if OWNER_FAILED.load(std::sync::atomic::Ordering::SeqCst) {
+                    server.unblock();
+                    respond_status(request, 503);
+                    continue;
+                }
                 let method = request.method().clone();
                 let path = request_path(&request);
                 if http_log {
@@ -606,15 +600,6 @@ pub fn run_review(
                     dest: Option<String>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let mut guard = lock(state);
-                let generating = &mut guard.generating;
-                if let Some(g) = generating.as_mut() {
-                    g.poll();
-                }
-                if generating.as_ref().is_some_and(|g| g.outcome.is_none()) {
-                    respond_status(request, 409);
-                    continue;
-                }
                 let Some(b) =
                     body.filter(|b| b.url.starts_with("http://") || b.url.starts_with("https://"))
                 else {
@@ -625,73 +610,32 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // Check for a name collision before spawning the (costed)
-                // model call, so a collision never throws away paid work.
-                let name = generate::deck_name(&b.url);
-                let stem = name.strip_suffix(".md").unwrap_or(&name);
-                let file = format!("{stem}.md");
-                if dest.join(&file).exists() {
-                    respond_json(
-                        request,
-                        &GenerateDto {
-                            phase: "error",
-                            deck: None,
-                            cards: None,
-                            elapsed: Some(0),
-                            error: Some(format!(
-                                "{file} already exists — rename it or generate into another destination"
-                            )),
-                        },
-                    );
-                    continue;
-                }
-                let mut cfg = generate_cfg.clone();
-                if let Some(g) = b
+                let guidance = b
                     .guidance
                     .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
+                    .filter(|s| !s.is_empty());
+                match jobs.generate_start(b.url, guidance, dest, generate_cfg.clone(), ask_cfg.clone())
                 {
-                    cfg.extra = Some(g);
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
                 }
-                let g = Generating {
-                    rx: generate::spawn(b.url.clone(), cfg, ask_cfg.clone()),
-                    url: b.url,
-                    dest,
-                    started: Instant::now(),
-                    outcome: None,
-                };
-                let dto = g.dto();
-                *generating = Some(g);
-                respond_json(request, &dto);
             }
-            (Method::Get, "/api/generate") => {
-                let mut guard = lock(state);
-                let Some(g) = guard.generating.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                g.poll();
-                respond_json(request, &g.dto());
-            }
-            (Method::Post, "/api/generate/close") => {
-                lock(state).generating = None;
-                respond_status(request, 200);
-            }
+            (Method::Get, "/api/generate") => match jobs.generate_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/generate/close") => match jobs.generate_close() {
+                Some(()) => respond_status(request, 200),
+                None => respond_status(request, 503),
+            },
             (Method::Post, "/api/share") => {
                 #[derive(Deserialize)]
                 struct Body {
                     deck: Option<String>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let mut guard = lock(state);
-                let sharing = &mut guard.sharing;
-                if let Some(s) = sharing.as_mut() {
-                    s.poll();
-                }
-                if sharing.as_ref().is_some_and(|s| s.outcome.is_none()) {
-                    respond_status(request, 409);
-                    continue;
-                }
                 let path = match body.and_then(|b| b.deck) {
                     None => catalog.decks_root(),
                     Some(name) => catalog.resolve_path(name).flatten(),
@@ -700,51 +644,21 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let started = tempfile::tempdir()
-                    .map_err(|e| anyhow!("{e}"))
-                    .and_then(|tmp| {
-                        let to_send = stage_for_share(&path, &tmp)?;
-                        let job = share::send_spawn(&to_send)?;
-                        Ok(Sharing {
-                            job,
-                            _stage: tmp,
-                            code: None,
-                            started: Instant::now(),
-                            outcome: None,
-                        })
-                    });
-                match started {
-                    Ok(s) => {
-                        let dto = s.dto();
-                        *sharing = Some(s);
-                        respond_json(request, &dto);
-                    }
-                    Err(e) => respond_json(
-                        request,
-                        &ShareDto {
-                            phase: "error",
-                            code: None,
-                            elapsed: Some(0),
-                            error: Some(format!("{e:#}")),
-                        },
-                    ),
+                match jobs.share_start(path) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Get, "/api/share") => {
-                let mut guard = lock(state);
-                let Some(s) = guard.sharing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                s.poll();
-                respond_json(request, &s.dto());
-            }
-            (Method::Post, "/api/share/close") => {
-                if let Some(s) = lock(state).sharing.take() {
-                    s.job.cancel();
-                }
-                respond_status(request, 200);
-            }
+            (Method::Get, "/api/share") => match jobs.share_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/share/close") => match jobs.share_close() {
+                Some(()) => respond_status(request, 200),
+                None => respond_status(request, 503),
+            },
             (Method::Get, "/api/share/zip") => {
                 let name = query_param(request.url(), "deck");
                 let path = match &name {
@@ -779,15 +693,6 @@ pub fn run_review(
                     dest: Option<String>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let mut guard = lock(state);
-                let receiving = &mut guard.receiving;
-                if let Some(r) = receiving.as_mut() {
-                    r.poll();
-                }
-                if receiving.as_ref().is_some_and(|r| r.outcome.is_none()) {
-                    respond_status(request, 409);
-                    continue;
-                }
                 let Some(b) = body else {
                     respond_status(request, 400);
                     continue;
@@ -796,55 +701,21 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let started = tempfile::tempdir()
-                    .map_err(|e| anyhow!("{e}"))
-                    .and_then(|tmp| {
-                        let job = share::receive_spawn(&b.code, tmp.path())?;
-                        Ok(Receiving {
-                            job,
-                            tmp,
-                            dest,
-                            started: Instant::now(),
-                            outcome: None,
-                        })
-                    });
-                match started {
-                    Ok(r) => {
-                        let dto = r.dto();
-                        *receiving = Some(r);
-                        respond_json(request, &dto);
-                    }
-                    Err(e) => respond_json(
-                        request,
-                        &ReceiveDto {
-                            phase: "error",
-                            landed: None,
-                            stripped: Vec::new(),
-                            elapsed: Some(0),
-                            error: Some(format!("{e:#}")),
-                        },
-                    ),
+                match jobs.receive_start(b.code, dest) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Get, "/api/receive") => {
-                let mut guard = lock(state);
-                let Some(r) = guard.receiving.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let was_settled = r.outcome.is_some();
-                r.poll();
-                if !was_settled && matches!(r.outcome, Some(Ok(_))) {
-                    catalog.invalidate_content();
-                }
-                respond_json(request, &r.dto());
-            }
-            (Method::Post, "/api/receive/close") => {
-                if let Some(r) = lock(state).receiving.take() {
-                    r.job.cancel();
-                }
-                respond_status(request, 200);
-            }
+            (Method::Get, "/api/receive") => match jobs.receive_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/receive/close") => match jobs.receive_close() {
+                Some(()) => respond_status(request, 200),
+                None => respond_status(request, 503),
+            },
             (Method::Post, "/api/receive/zip") => {
                 const MAX_ZIP: usize = 50 * 1024 * 1024;
                 if request.body_length().is_some_and(|l| l > MAX_ZIP) {
@@ -860,34 +731,10 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // `land_received`'s collision check is check-then-act: the
-                // job-slots lock serializes this landing against the receive
-                // poll's landing (the destination-owned landing command is
-                // the Jobs-slice replacement).
-                let _guard = lock(state);
-                let landed = tempfile::tempdir().ok().and_then(|tmp| {
-                    let zip_path = tmp.path().join("got.zip");
-                    std::fs::write(&zip_path, &bytes).ok()?;
-                    let scratch = tmp.path().join("out");
-                    std::fs::create_dir_all(&scratch).ok()?;
-                    share::unzip_to(&zip_path, &scratch).ok()?;
-                    share::land_received(&scratch, &dest).ok()
-                });
-                match landed {
-                    Some((landed, stripped)) => {
-                        catalog.invalidate_content();
-                        respond_json(
-                            request,
-                            &ReceiveDto {
-                                phase: "done",
-                                landed: Some(landed),
-                                stripped,
-                                elapsed: Some(0),
-                                error: None,
-                            },
-                        )
-                    }
-                    None => respond_status(request, 400),
+                match jobs.receive_zip(bytes, dest) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 400),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/deselect") => match study.deselect() {
@@ -1248,54 +1095,27 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let remote_ask = &mut guard.remote_ask;
-                if let Some(a) = remote_ask.as_mut() {
-                    a.poll();
-                }
-                if remote_ask.as_ref().is_some_and(RemoteAsk::thinking) {
-                    respond_status(request, 409);
-                    continue;
-                }
-                let Ok(RemoteAskReq {
-                    card,
-                    history,
-                    question,
-                }) = serde_json::from_slice::<RemoteAskReq>(&bytes)
-                else {
+                let Ok(req) = serde_json::from_slice::<RemoteAskReq>(&bytes) else {
                     respond_status(request, 400);
                     continue;
                 };
-                if question.trim().is_empty()
-                    || (card.front.trim().is_empty()
-                        && card.back.iter().all(|l| l.trim().is_empty()))
+                if req.question.trim().is_empty()
+                    || (req.card.front.trim().is_empty()
+                        && req.card.back.iter().all(|l| l.trim().is_empty()))
                 {
                     respond_status(request, 400);
                     continue;
                 }
-                let job = RemoteAsk::ask(ask_cfg, &card, history, &question);
-                let dto = job.dto();
-                *remote_ask = Some(job);
-                respond_json(request, &dto);
+                match jobs.remote_ask(req, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
+                }
             }
-            (Method::Get, "/api/remote/ask") => {
-                let mut guard = lock(state);
-                let dto = match guard.remote_ask.as_mut() {
-                    Some(a) => {
-                        a.poll();
-                        a.dto()
-                    }
-                    None => RemoteAskDto {
-                        thinking: false,
-                        answer: None,
-                        draft: None,
-                        note: None,
-                        error: None,
-                        elapsed: None,
-                    },
-                };
-                respond_json(request, &dto);
-            }
+            (Method::Get, "/api/remote/ask") => match jobs.remote_ask_poll() {
+                Some(dto) => respond_json(request, &dto),
+                None => respond_status(request, 503),
+            },
             (Method::Post, "/api/remote/ask/draft") => {
                 if audience == Audience::Kids {
                     respond_status(request, 403);
@@ -1305,58 +1125,38 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let remote_ask = &mut guard.remote_ask;
-                if let Some(a) = remote_ask.as_mut() {
-                    a.poll();
-                }
-                if remote_ask.as_ref().is_some_and(RemoteAsk::thinking) {
-                    respond_status(request, 409);
-                    continue;
-                }
-                let Ok(RemoteDraftReq { card, history }) =
-                    serde_json::from_slice::<RemoteDraftReq>(&bytes)
-                else {
+                let Ok(req) = serde_json::from_slice::<RemoteDraftReq>(&bytes) else {
                     respond_status(request, 400);
                     continue;
                 };
-                if history.is_empty() {
+                if req.history.is_empty() {
                     respond_status(request, 400);
                     continue;
                 }
-                let job = RemoteAsk::draft(ask_cfg, &card, history);
-                let dto = job.dto();
-                *remote_ask = Some(job);
-                respond_json(request, &dto);
+                match jobs.remote_draft(req, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
+                }
             }
             (Method::Post, "/api/remote/ask/note") => {
                 let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let remote_ask = &mut guard.remote_ask;
-                if let Some(a) = remote_ask.as_mut() {
-                    a.poll();
-                }
-                if remote_ask.as_ref().is_some_and(RemoteAsk::thinking) {
-                    respond_status(request, 409);
-                    continue;
-                }
-                let Ok(RemoteNoteReq { card, history }) =
-                    serde_json::from_slice::<RemoteNoteReq>(&bytes)
-                else {
+                let Ok(req) = serde_json::from_slice::<RemoteNoteReq>(&bytes) else {
                     respond_status(request, 400);
                     continue;
                 };
-                if history.is_empty() {
+                if req.history.is_empty() {
                     respond_status(request, 400);
                     continue;
                 }
-                let job = RemoteAsk::note(ask_cfg, &card, history);
-                let dto = job.dto();
-                *remote_ask = Some(job);
-                respond_json(request, &dto);
+                match jobs.remote_note(req, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
+                }
             }
             // The requires-lock and the trace re-sit cooldown are the
             // browser's own truth; both are deliberately skipped here.
@@ -1373,69 +1173,22 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let remote_exam = &mut guard.remote_exam;
-                if remote_exam.is_some() {
-                    respond_status(request, 409);
-                    continue;
-                }
                 let Some(path) = catalog.resolve_path(body.deck.clone()).flatten() else {
                     respond_status(request, 400);
                     continue;
                 };
-                let Ok(deck) = Deck::load(&path) else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if !deck.has_exam() {
-                    respond_status(request, 409);
-                    continue;
+                match jobs.remote_exam_start(path, exam_cfg.clone(), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
                 }
-                let strictness = deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
-                let sitting = if deck.is_trace() {
-                    match trace::Trace::from_deck(&deck) {
-                        Ok(t) => exam::Sitting::start_trace(
-                            t.description.clone(),
-                            t.compression_rubric(),
-                            deck.subject.clone(),
-                            deck.deck_token.clone().unwrap_or_default(),
-                            strictness,
-                            exam_cfg.clone(),
-                            ask_cfg.clone(),
-                        ),
-                        Err(_) => {
-                            respond_status(request, 409);
-                            continue;
-                        }
-                    }
-                } else {
-                    if exam::ensure_backend_can_examine(&deck, ask_cfg).is_err() {
-                        respond_status(request, 409);
-                        continue;
-                    }
-                    exam::Sitting::start(&deck, strictness, exam_cfg.clone(), ask_cfg.clone())
-                };
-                let ex = RemoteExamining {
-                    sitting,
-                    cards: None,
-                };
-                let dto = ex.dto();
-                *remote_exam = Some(ex);
-                respond_json(request, &dto);
             }
             // advance() only, never poll(): poll() writes the store, which
             // remote handlers must never touch.
-            (Method::Get, "/api/remote/exam") => {
-                let mut guard = lock(state);
-                let dto = match guard.remote_exam.as_mut() {
-                    Some(ex) => {
-                        ex.advance();
-                        ex.dto()
-                    }
-                    None => remote_exam_idle_dto(),
-                };
-                respond_json(request, &dto);
-            }
+            (Method::Get, "/api/remote/exam") => match jobs.remote_exam_poll() {
+                Some(dto) => respond_json(request, &dto),
+                None => respond_status(request, 503),
+            },
             (Method::Post, "/api/remote/exam/grade") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1449,46 +1202,24 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let Some(ex) = guard.remote_exam.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if !matches!(ex.sitting.phase(), exam::Phase::Answering) {
-                    respond_status(request, 409);
-                    continue;
+                match jobs.remote_exam_grade(body.answers) {
+                    None => respond_status(request, 503),
+                    Some(RemoteGradeReply::NoSitting) => respond_status(request, 409),
+                    Some(RemoteGradeReply::WrongPhaseOrCount) => respond_status(request, 400),
+                    Some(RemoteGradeReply::Dto(dto)) => respond_json(request, &dto),
                 }
-                let got = body.answers.len();
-                if !ex.sitting.set_answers(body.answers) {
-                    eprintln!(
-                        "remote exam grade: expected {} answers, got {got}",
-                        ex.sitting.total()
-                    );
-                    respond_status(request, 400);
-                    continue;
-                }
-                ex.sitting.submit();
-                respond_json(request, &ex.dto());
             }
             (Method::Post, "/api/remote/exam/remediate") => {
-                let mut guard = lock(state);
-                let Some(ex) = guard.remote_exam.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if !ex.sitting.can_remediate() {
-                    respond_status(request, 409);
-                    continue;
+                match jobs.remote_exam_remediate() {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                ex.sitting.remediate();
-                respond_json(request, &ex.dto());
             }
-            // Drop the slot; an in-flight thread just finds its receiver
-            // gone and its send fails harmlessly.
-            (Method::Post, "/api/remote/exam/close") => {
-                lock(state).remote_exam = None;
-                respond_status(request, 200);
-            }
+            (Method::Post, "/api/remote/exam/close") => match jobs.remote_exam_close() {
+                Some(()) => respond_status(request, 200),
+                None => respond_status(request, 503),
+            },
             // No dest, no destination-collision check: this returns the
             // deck text, it never places a file (both are the phone's job).
             (Method::Post, "/api/remote/generate") => {
@@ -1496,18 +1227,6 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let remote_generate = &mut guard.remote_generate;
-                if let Some(g) = remote_generate.as_mut() {
-                    g.poll();
-                }
-                if remote_generate
-                    .as_ref()
-                    .is_some_and(RemoteGenerating::thinking)
-                {
-                    respond_status(request, 409);
-                    continue;
-                }
                 #[derive(Deserialize)]
                 struct Body {
                     url: String,
@@ -1521,32 +1240,30 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
-                let mut cfg = generate_cfg.clone();
-                if let Some(g) = body
+                let guidance = body
                     .guidance
                     .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                {
-                    cfg.extra = Some(g);
+                    .filter(|s| !s.is_empty());
+                match jobs.remote_generate_start(
+                    body.url,
+                    guidance,
+                    generate_cfg.clone(),
+                    ask_cfg.clone(),
+                ) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
                 }
-                let job = RemoteGenerating::start(body.url, cfg, ask_cfg.clone());
-                let dto = job.dto();
-                *remote_generate = Some(job);
-                respond_json(request, &dto);
             }
-            (Method::Get, "/api/remote/generate") => {
-                let mut guard = lock(state);
-                let Some(g) = guard.remote_generate.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                g.poll();
-                respond_json(request, &g.dto());
-            }
-            (Method::Post, "/api/remote/generate/close") => {
-                lock(state).remote_generate = None;
-                respond_status(request, 200);
-            }
+            (Method::Get, "/api/remote/generate") => match jobs.remote_generate_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/remote/generate/close") => match jobs.remote_generate_close() {
+                Some(()) => respond_status(request, 200),
+                None => respond_status(request, 503),
+            },
             _ => respond_status(request, 404),
         }
             });
@@ -1559,6 +1276,13 @@ pub fn run_review(
     // a condition to absorb: propagate it to the caller's thread.
     drop(study);
     if let Err(panic) = study_thread.join() {
+        std::panic::resume_unwind(panic);
+    }
+    // Jobs before Catalog: the Jobs owner holds a Catalog handle for its
+    // landing invalidations, so the Catalog channel only closes once the
+    // Jobs thread is gone.
+    drop(jobs);
+    if let Err(panic) = jobs_thread.join() {
         std::panic::resume_unwind(panic);
     }
     drop(catalog);
