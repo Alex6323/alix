@@ -268,6 +268,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Two imports of the same deck name no longer race each other (or a
+  concurrent receive or generate landing) for the destination: every
+  destination write now runs on one owner, so exactly one same-name import
+  lands and the landed file is intact.
 - A passed or failed exam's progress write no longer saves silently outside
   the save-error accounting: a transient failure now shows the "progress
   isn't saving" state and the result is retried by the next flush instead of

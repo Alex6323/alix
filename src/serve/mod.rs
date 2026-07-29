@@ -567,28 +567,10 @@ pub fn run_review(
                     continue;
                 };
                 let place_name = normalize_md_extension(&b.name, &lower_name);
-                match crate::library::place_deck(&dir, &place_name, &text) {
-                    Ok(p) if p.parse_error.is_none() => {
-                        catalog.invalidate_content();
-                        let deck = p
-                            .path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        respond_json(
-                            request,
-                            &ImportDto {
-                                deck,
-                                cards: p.cards,
-                            },
-                        );
-                    }
-                    // Uploads are strict: don't keep an invalid deck around.
-                    Ok(p) => {
-                        std::fs::remove_file(&p.path).ok();
-                        respond_status(request, 400);
-                    }
-                    Err(_) => respond_status(request, 400),
+                match jobs.import_deck(dir, place_name, text) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 400),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/generate") => {

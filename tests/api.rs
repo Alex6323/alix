@@ -1140,6 +1140,62 @@ fn a_failed_flush_refuses_deselect_until_the_store_saves_again() {
     assert_eq!("select", body["phase"], "{body}");
 }
 
+/// Concurrent same-name imports race place_deck's collision check and its
+/// per-name temp file unless one owner serializes destination writes. Each
+/// round fires two distinct bodies at one fresh name from two threads:
+/// exactly one may land, and the landed file must be exactly the winner's
+/// text, never a crossover of the loser's bytes.
+#[test]
+fn concurrent_same_name_imports_land_exactly_one_intact_deck() {
+    let (base, guard) = spawn_test_server();
+    for round in 0..25 {
+        let name = format!("race-{round}.md");
+        let texts = [
+            format!("## alpha {round}\nfirst body\n"),
+            format!("## beta {round}\nsecond body\n"),
+        ];
+        let mut handles = Vec::new();
+        for text in texts.clone() {
+            let base = base.clone();
+            let name = name.clone();
+            handles.push(thread::spawn(move || {
+                let body = serde_json::json!({ "name": name, "text": text });
+                let resp = post_json(&base, "/api/import", &body.to_string());
+                (resp.status, text)
+            }));
+        }
+        let outcomes: Vec<(u16, String)> =
+            handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        let winners: Vec<&(u16, String)> =
+            outcomes.iter().filter(|(status, _)| *status == 200).collect();
+        assert_eq!(
+            1,
+            winners.len(),
+            "round {round}: exactly one import may land: {outcomes:?}"
+        );
+        // Landing stamps ids into the file, so assert on the body lines: the
+        // winner's text is present and no byte of the loser's ever is.
+        let landed = std::fs::read_to_string(guard.dir().join(&name)).unwrap();
+        let (_, winner_text) = winners[0];
+        let loser_text = outcomes
+            .iter()
+            .find(|(status, _)| *status != 200)
+            .map(|(_, text)| text.clone())
+            .unwrap();
+        let winner_line = winner_text.lines().last().unwrap();
+        let loser_line = loser_text.lines().last().unwrap();
+        assert!(
+            landed.contains(winner_line),
+            "round {round}: winner body missing: {landed:?}"
+        );
+        assert!(
+            !landed.contains(loser_line),
+            "round {round}: loser bytes crossed over: {landed:?}"
+        );
+    }
+}
+
 #[test]
 fn get_api_pair_returns_200_with_the_pairing_url() {
     let (base, _guard) = spawn_test_server();

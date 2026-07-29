@@ -72,6 +72,12 @@ pub(super) enum JobsCommand {
         dest: PathBuf,
         reply: Reply<Option<ReceiveDto>>,
     },
+    ImportDeck {
+        dir: PathBuf,
+        name: String,
+        text: String,
+        reply: Reply<Option<ImportDto>>,
+    },
     RemoteAsk {
         req: RemoteAskReq,
         ask_cfg: AskConfig,
@@ -167,6 +173,19 @@ impl JobsHandle {
     }
     pub(super) fn receive_zip(&self, bytes: Vec<u8>, dest: PathBuf) -> Option<Option<ReceiveDto>> {
         self.call(|reply| JobsCommand::ReceiveZip { bytes, dest, reply })
+    }
+    pub(super) fn import_deck(
+        &self,
+        dir: PathBuf,
+        name: String,
+        text: String,
+    ) -> Option<Option<ImportDto>> {
+        self.call(|reply| JobsCommand::ImportDeck {
+            dir,
+            name,
+            text,
+            reply,
+        })
     }
     pub(super) fn remote_ask(
         &self,
@@ -363,6 +382,37 @@ impl JobsState {
                         error: None,
                     }
                 });
+                let _ = reply.send(out);
+            }
+            // Every destination write runs on this thread, so place_deck's
+            // collision check and per-name temp file never race the receive
+            // and generate landings or another import.
+            JobsCommand::ImportDeck {
+                dir,
+                name,
+                text,
+                reply,
+            } => {
+                let out = match crate::library::place_deck(&dir, &name, &text) {
+                    Ok(p) if p.parse_error.is_none() => {
+                        self.catalog.invalidate_content();
+                        let deck = p
+                            .path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        Some(ImportDto {
+                            deck,
+                            cards: p.cards,
+                        })
+                    }
+                    // Uploads are strict: don't keep an invalid deck around.
+                    Ok(p) => {
+                        let _ = std::fs::remove_file(&p.path);
+                        None
+                    }
+                    Err(_) => None,
+                };
                 let _ = reply.send(out);
             }
             JobsCommand::RemoteAsk {
