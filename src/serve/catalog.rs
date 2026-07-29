@@ -1,5 +1,6 @@
-//! Every name-taking endpoint resolves through [`resolve_row`], so no
-//! client-supplied name is ever turned into a filesystem path except here.
+//! Every name-taking endpoint resolves through the Catalog owner's cached
+//! [`ResolutionMaps`], so no client-supplied name is ever turned into a
+//! filesystem path except here.
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -478,14 +479,10 @@ pub(super) struct Selection {
     pub(super) opts: SelectOptions,
 }
 
-/// `None` (→ 400) for any name not in the catalog: no filesystem path is
-/// ever built from request input.
-pub(super) fn read_selection(
-    request: &mut Request,
-    decks_dir: &Path,
-    recent: &RecentDecks,
-    cache: &mut DeckCache,
-) -> Option<Selection> {
+/// Parses a selection body without resolving its name: resolution is the
+/// Catalog owner's job, so no filesystem path is ever built from request
+/// input outside it.
+pub(super) fn parse_selection(request: &mut Request) -> Option<(String, SelectOptions)> {
     #[derive(Deserialize)]
     struct Body {
         deck: String,
@@ -504,10 +501,9 @@ pub(super) fn read_selection(
     if body.deck.is_empty() {
         return None;
     }
-    let deck = resolved_path(resolve_row(&body.deck, decks_dir, recent, cache))?;
-    Some(Selection {
-        deck,
-        opts: SelectOptions {
+    Some((
+        body.deck,
+        SelectOptions {
             topology: body.topology,
             region: body.region,
             depth: body.depth,
@@ -516,7 +512,7 @@ pub(super) fn read_selection(
             // The web serves on the wall clock; only embedders inject time.
             now_ms: None,
         },
-    })
+    ))
 }
 
 /// A name matching more than one container/member resolves to `Ambiguous`
@@ -536,30 +532,32 @@ pub(super) enum Resolved {
 
 /// Resolution treats an unreadable root as "no names known" (requests then
 /// 400 as before); only the listing endpoint surfaces the root error itself.
-fn resolve_catalog(
-    decks_dir: &Path,
-    recent: &RecentDecks,
-    cache: &mut DeckCache,
-) -> Vec<picker::DeckEntry> {
-    picker::catalog(decks_dir, recent, cache).unwrap_or_default()
+/// The complete name map derived from one discovery pass: row and member
+/// names to validated targets, plus directory rows by bare name for
+/// destination resolution. A name seen more than once resolves to
+/// `Ambiguous`, never silently picking one of several same-named entries.
+pub(super) struct ResolutionMaps {
+    pub(super) map: HashMap<String, Resolved>,
+    pub(super) dirs: HashMap<String, Vec<PathBuf>>,
 }
 
-/// A name seen more than once (bare row or qualified member) resolves to
-/// `Ambiguous`, never silently picking one of several same-named entries.
-pub(super) fn resolve_row(
-    name: &str,
+pub(super) fn resolution_maps(
     decks_dir: &Path,
     recent: &RecentDecks,
     cache: &mut DeckCache,
-) -> Resolved {
-    let mut known: HashMap<String, Resolved> = HashMap::new();
+) -> Result<ResolutionMaps, std::io::Error> {
+    let mut map: HashMap<String, Resolved> = HashMap::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for e in resolve_catalog(decks_dir, recent, cache) {
+    let mut dirs: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    for e in picker::catalog(decks_dir, recent, cache)? {
+        if e.path.is_dir() {
+            dirs.entry(e.name.clone()).or_default().push(e.path.clone());
+        }
         for m in &e.members {
             if seen.insert(m.name.clone()) {
-                known.insert(m.name.clone(), Resolved::One(m.path.clone()));
+                map.insert(m.name.clone(), Resolved::One(m.path.clone()));
             } else {
-                known.insert(m.name.clone(), Resolved::Ambiguous);
+                map.insert(m.name.clone(), Resolved::Ambiguous);
             }
         }
         let row = if e.members.is_empty() {
@@ -571,12 +569,29 @@ pub(super) fn resolve_row(
             }
         };
         if seen.insert(e.name.clone()) {
-            known.insert(e.name, row);
+            map.insert(e.name, row);
         } else {
-            known.insert(e.name, Resolved::Ambiguous);
+            map.insert(e.name, Resolved::Ambiguous);
         }
     }
-    known.get(name).cloned().unwrap_or(Resolved::Unknown)
+    Ok(ResolutionMaps { map, dirs })
+}
+
+/// Resolution treats an unreadable root as "no names known" (requests then
+/// 400 as before); only the listing endpoint surfaces the root error itself.
+/// Production resolution goes through the Catalog owner's cached maps; these
+/// one-shot wrappers serve the unit tests' fixtures.
+#[cfg(test)]
+pub(super) fn resolve_row(
+    name: &str,
+    decks_dir: &Path,
+    recent: &RecentDecks,
+    cache: &mut DeckCache,
+) -> Resolved {
+    resolution_maps(decks_dir, recent, cache)
+        .ok()
+        .and_then(|maps| maps.map.get(name).cloned())
+        .unwrap_or(Resolved::Unknown)
 }
 
 /// A workspace/folder row collapses to its directory; `/api/reset` instead
@@ -591,6 +606,7 @@ pub(super) fn resolved_path(resolved: Resolved) -> Option<PathBuf> {
 
 /// `None` for an unknown name or one duplicated across containers (the
 /// caller then rejects with 400); never a client-crafted path.
+#[cfg(test)]
 pub(super) fn resolve_dest(
     dest: Option<&str>,
     decks_dir: &Path,
@@ -600,14 +616,11 @@ pub(super) fn resolve_dest(
     let Some(name) = dest.filter(|d| !d.is_empty()) else {
         return Some(crate::workspace::member_dir(decks_dir));
     };
-    let mut matches = resolve_catalog(decks_dir, recent, cache)
-        .into_iter()
-        .filter(|e| e.name == name && e.path.is_dir());
-    let first = matches.next()?;
-    if matches.next().is_some() {
-        return None; // ambiguous: more than one dir row shares this name
+    let maps = resolution_maps(decks_dir, recent, cache).ok()?;
+    match maps.dirs.get(name)?.as_slice() {
+        [only] => Some(crate::workspace::member_dir(only)),
+        _ => None, // ambiguous: more than one dir row shares this name
     }
-    Some(crate::workspace::member_dir(&first.path))
 }
 
 /// The hex `XxHash64` of the path. Keeps `/img/` safe from traversal, since no

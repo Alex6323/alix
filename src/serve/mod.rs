@@ -1,13 +1,13 @@
 mod catalog;
+mod catalog_owner;
 mod dto;
 mod jobs;
 mod respond;
 mod study;
 
 use std::{
-    collections::HashMap,
     net::SocketAddr,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex},
     thread,
     time::Instant,
@@ -15,6 +15,7 @@ use std::{
 
 use anyhow::{Result, anyhow};
 use catalog::*;
+use catalog_owner::*;
 use dto::*;
 use jobs::*;
 use respond::*;
@@ -25,14 +26,12 @@ use tiny_http::{Method, Server};
 pub use crate::assemble::SelectOptions;
 use crate::{
     assemble::{self, CardsBuild, SessionBuild},
-    cache::DeckCache,
     config::{
         AiConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
     },
     deck::Deck,
     doctor, exam, generate, import,
     recent::RecentDecks,
-    session::now_ms,
     share,
     store::Store,
     trace::{self},
@@ -132,21 +131,18 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 // so an idle kept-alive socket can't starve the rest.
 const WORKERS: usize = 16;
 
-// The catalog-slice fields (root, cache, icons, recent) and the job slots
-// that still live behind this lock. The active session and every progress
-// document live in the Study owner (`study.rs`); the Catalog and Jobs
-// owners take these remaining fields next, and then this struct is deleted.
+// The job slots that still live behind this lock. The session and progress
+// documents live in the Study owner (`study.rs`), discovery and resolution
+// in the Catalog owner (`catalog_owner.rs`); the Jobs owner takes these
+// slots next, and then this struct is deleted.
 struct ServeState {
-    recent: RecentDecks,
-    decks_dir: PathBuf,
-    cache: DeckCache,
-    launcher_icons: HashMap<String, PathBuf>,
     generating: Option<Generating>,
     sharing: Option<Sharing>,
     receiving: Option<Receiving>,
     // Kept separate from the Study owner's session so a phone can never see
     // or kill a browser session, and vice versa; nothing under
-    // `/api/remote/*` touches the progress store (the phone owns its state).
+    // `/api/remote/*` touches the progress store (the phone owns its
+    // state).
     remote_ask: Option<RemoteAsk>,
     remote_exam: Option<RemoteExamining>,
     remote_generate: Option<RemoteGenerating>,
@@ -202,11 +198,17 @@ pub fn run_review(
         augmenting: None,
     });
 
-    let state = Mutex::new(ServeState {
-        recent,
+    let (catalog, catalog_thread) = catalog_owner::spawn(CatalogState::new(
+        CatalogConfig {
+            scoped,
+            config_path: config_path.clone(),
+            review_cfg,
+        },
         decks_dir,
-        cache: DeckCache::default(),
-        launcher_icons: HashMap::new(),
+        recent,
+    ));
+
+    let state = Mutex::new(ServeState {
         generating: None,
         sharing: None,
         receiving: None,
@@ -218,6 +220,7 @@ pub fn run_review(
     thread::scope(|scope| {
         for _ in 0..WORKERS {
             let study = study.clone();
+            let catalog = catalog.clone();
             let state = &state;
             let server = &server;
             let keys = &keys;
@@ -340,7 +343,10 @@ pub fn run_review(
                             respond_status(request, 503);
                             continue;
                         };
-                        let decks_root = lock(state).decks_dir.clone();
+                        let Some(decks_root) = catalog.decks_root() else {
+                            respond_status(request, 503);
+                            continue;
+                        };
                         let (cfg, _) = doctor::check_config(config_path.as_deref());
                         let rows = vec![
                             cfg,
@@ -373,27 +379,11 @@ pub fn run_review(
                     respond_status(request, 503);
                     continue;
                 };
-                let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    launcher_icons,
-                    ..
-                } = &mut *guard;
-                match decks_list_dto(
-                    scoped,
-                    config_path.as_deref(),
-                    decks_dir,
-                    recent,
-                    &projection,
-                    launcher_icons,
-                    review_cfg,
-                    cache,
-                ) {
-                    Ok(catalog) => respond_json(request, &catalog),
-                    Err(e) => {
-                        eprintln!("deck listing failed for {}: {e}", decks_dir.display());
+                match catalog.list(projection) {
+                    None => respond_status(request, 503),
+                    Some(Ok(dto)) => respond_json(request, &dto),
+                    Some(Err(e)) => {
+                        eprintln!("deck listing failed for {e}");
                         respond_status(request, 500);
                     }
                 }
@@ -404,10 +394,10 @@ pub fn run_review(
                     Some(ImageSource::Active(path)) => {
                         serve_image_path(request, path.as_deref())
                     }
-                    Some(ImageSource::NoActive) => {
-                        let guard = lock(state);
-                        serve_image(request, &guard.launcher_icons, name)
-                    }
+                    Some(ImageSource::NoActive) => match catalog.launcher_icon(name.to_string()) {
+                        Some(path) => serve_image_path(request, path.as_deref()),
+                        None => respond_status(request, 503),
+                    },
                     None => respond_status(request, 503),
                 }
             }
@@ -417,25 +407,19 @@ pub fn run_review(
                 None => respond_status(request, 503),
             },
             (Method::Post, "/api/select") => {
-                let sel = {
-                    let mut guard = lock(state);
-                    let ServeState {
-                        recent,
-                        decks_dir,
-                        cache,
-                        ..
-                    } = &mut *guard;
-                    read_selection(&mut request, decks_dir, recent, cache)
-                };
+                let sel = parse_selection(&mut request).and_then(|(name, opts)| {
+                    catalog
+                        .resolve_path(name)
+                        .flatten()
+                        .map(|deck| Selection { deck, opts })
+                });
                 match sel {
                     Some(sel) => match study.select(vec![sel.deck], sel.opts) {
                         None => respond_status(request, 503),
                         Some(None) => respond_status(request, 400),
                         Some(Some((dto, record))) => {
                             if let Some(paths) = record {
-                                let mut guard = lock(state);
-                                guard.recent.record(&paths, now_ms());
-                                let _ = guard.recent.save();
+                                catalog.record_recent(paths);
                             }
                             match dto {
                                 SelectedDto::Walk(dto) => respond_json(request, &dto),
@@ -447,25 +431,18 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/browse") => {
-                let sel = {
-                    let mut guard = lock(state);
-                    let ServeState {
-                        recent,
-                        decks_dir,
-                        cache,
-                        ..
-                    } = &mut *guard;
-                    read_selection(&mut request, decks_dir, recent, cache)
-                };
+                let sel = parse_selection(&mut request).and_then(|(name, opts)| {
+                    catalog
+                        .resolve_path(name)
+                        .flatten()
+                        .map(|deck| Selection { deck, opts })
+                });
                 match sel {
                     Some(sel) => match study.browse(vec![sel.deck]) {
                         None => respond_status(request, 503),
                         Some(None) => respond_status(request, 400),
                         Some(Some((dto, record))) => {
-                            let mut guard = lock(state);
-                            guard.recent.record(&record, now_ms());
-                            let _ = guard.recent.save();
-                            drop(guard);
+                            catalog.record_recent(record);
                             respond_json(request, &dto);
                         }
                     },
@@ -473,16 +450,12 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/deck-drawer") => {
-                let sel = {
-                    let mut guard = lock(state);
-                    let ServeState {
-                        recent,
-                        decks_dir,
-                        cache,
-                        ..
-                    } = &mut *guard;
-                    read_selection(&mut request, decks_dir, recent, cache)
-                };
+                let sel = parse_selection(&mut request).and_then(|(name, opts)| {
+                    catalog
+                        .resolve_path(name)
+                        .flatten()
+                        .map(|deck| Selection { deck, opts })
+                });
                 match sel {
                     Some(sel) => match study.deck_drawer(sel.deck) {
                         Some(dto) => respond_json(request, &dto),
@@ -501,15 +474,9 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let resolved = {
-                    let mut guard = lock(state);
-                    let ServeState {
-                        recent,
-                        decks_dir,
-                        cache,
-                        ..
-                    } = &mut *guard;
-                    resolve_row(&body.deck, decks_dir, recent, cache)
+                let Some(resolved) = catalog.resolve(body.deck.clone()) else {
+                    respond_status(request, 503);
+                    continue;
                 };
                 let paths = match resolved {
                     Resolved::One(p) => vec![p],
@@ -565,39 +532,13 @@ pub fn run_review(
                     respond_status(request, 503);
                     continue;
                 };
-                let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    launcher_icons,
-                    ..
-                } = &mut *guard;
-                let dir = match resolve_row(&body.name, decks_dir, recent, cache) {
-                    Resolved::Many { dir, .. } if crate::workspace::is_workspace(&dir) => dir,
-                    _ => {
-                        respond_status(request, 400);
-                        continue;
-                    }
-                };
-                if let Err(e) = crate::workspace::set_deadline(&dir, date) {
-                    eprintln!("workspace deadline write failed: {e:#}");
-                    respond_status(request, 500);
-                    continue;
-                }
-                match decks_list_dto(
-                    scoped,
-                    config_path.as_deref(),
-                    decks_dir,
-                    recent,
-                    &projection,
-                    launcher_icons,
-                    review_cfg,
-                    cache,
-                ) {
-                    Ok(catalog) => respond_json(request, &catalog),
-                    Err(e) => {
-                        eprintln!("deck listing failed for {}: {e}", decks_dir.display());
+                match catalog.set_deadline(body.name, date, projection) {
+                    None => respond_status(request, 503),
+                    Some(Ok(dto)) => respond_json(request, &dto),
+                    Some(Err(SetDeadlineError::BadTarget)) => respond_status(request, 400),
+                    Some(Err(SetDeadlineError::WriteFailed)) => respond_status(request, 500),
+                    Some(Err(SetDeadlineError::ListFailed(e))) => {
+                        eprintln!("deck listing failed for {e}");
                         respond_status(request, 500);
                     }
                 }
@@ -613,15 +554,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    ..
-                } = &mut *guard;
-                let Some(dir) = resolve_dest(b.dest.as_deref(), decks_dir, recent, cache)
-                else {
+                let Some(Some(dir)) = catalog.resolve_dest(b.dest.clone()) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -643,6 +576,7 @@ pub fn run_review(
                 let place_name = normalize_md_extension(&b.name, &lower_name);
                 match crate::library::place_deck(&dir, &place_name, &text) {
                     Ok(p) if p.parse_error.is_none() => {
+                        catalog.invalidate_content();
                         let deck = p
                             .path
                             .file_name()
@@ -673,13 +607,7 @@ pub fn run_review(
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    generating,
-                    ..
-                } = &mut *guard;
+                let generating = &mut guard.generating;
                 if let Some(g) = generating.as_mut() {
                     g.poll();
                 }
@@ -693,8 +621,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, cache)
-                else {
+                let Some(Some(dest)) = catalog.resolve_dest(b.dest.clone()) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -757,13 +684,7 @@ pub fn run_review(
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    sharing,
-                    ..
-                } = &mut *guard;
+                let sharing = &mut guard.sharing;
                 if let Some(s) = sharing.as_mut() {
                     s.poll();
                 }
@@ -772,8 +693,8 @@ pub fn run_review(
                     continue;
                 }
                 let path = match body.and_then(|b| b.deck) {
-                    None => Some(decks_dir.clone()),
-                    Some(name) => resolved_path(resolve_row(&name, decks_dir, recent, cache)),
+                    None => catalog.decks_root(),
+                    Some(name) => catalog.resolve_path(name).flatten(),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -826,16 +747,9 @@ pub fn run_review(
             }
             (Method::Get, "/api/share/zip") => {
                 let name = query_param(request.url(), "deck");
-                let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    ..
-                } = &mut *guard;
                 let path = match &name {
-                    None => Some(decks_dir.clone()),
-                    Some(n) => resolved_path(resolve_row(n, decks_dir, recent, cache)),
+                    None => catalog.decks_root(),
+                    Some(n) => catalog.resolve_path(n.clone()).flatten(),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -866,13 +780,7 @@ pub fn run_review(
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    receiving,
-                    ..
-                } = &mut *guard;
+                let receiving = &mut guard.receiving;
                 if let Some(r) = receiving.as_mut() {
                     r.poll();
                 }
@@ -884,8 +792,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, cache)
-                else {
+                let Some(Some(dest)) = catalog.resolve_dest(b.dest.clone()) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -925,7 +832,11 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
+                let was_settled = r.outcome.is_some();
                 r.poll();
+                if !was_settled && matches!(r.outcome, Some(Ok(_))) {
+                    catalog.invalidate_content();
+                }
                 respond_json(request, &r.dto());
             }
             (Method::Post, "/api/receive/close") => {
@@ -945,22 +856,15 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    ..
-                } = &mut *guard;
-                let Some(dest) = resolve_dest(dest_name.as_deref(), decks_dir, recent, cache)
-                else {
+                let Some(Some(dest)) = catalog.resolve_dest(dest_name) else {
                     respond_status(request, 400);
                     continue;
                 };
-                // `land_received`'s collision check is check-then-act: safe
-                // only because this handler holds the residual state lock for
-                // its whole body (the destination-owned landing command is
+                // `land_received`'s collision check is check-then-act: the
+                // job-slots lock serializes this landing against the receive
+                // poll's landing (the destination-owned landing command is
                 // the Jobs-slice replacement).
+                let _guard = lock(state);
                 let landed = tempfile::tempdir().ok().and_then(|tmp| {
                     let zip_path = tmp.path().join("got.zip");
                     std::fs::write(&zip_path, &bytes).ok()?;
@@ -970,16 +874,19 @@ pub fn run_review(
                     share::land_received(&scratch, &dest).ok()
                 });
                 match landed {
-                    Some((landed, stripped)) => respond_json(
-                        request,
-                        &ReceiveDto {
-                            phase: "done",
-                            landed: Some(landed),
-                            stripped,
-                            elapsed: Some(0),
-                            error: None,
-                        },
-                    ),
+                    Some((landed, stripped)) => {
+                        catalog.invalidate_content();
+                        respond_json(
+                            request,
+                            &ReceiveDto {
+                                phase: "done",
+                                landed: Some(landed),
+                                stripped,
+                                elapsed: Some(0),
+                                error: None,
+                            },
+                        )
+                    }
                     None => respond_status(request, 400),
                 }
             }
@@ -1117,17 +1024,10 @@ pub fn run_review(
                 };
                 // A bare name duplicated across containers must 400, not
                 // guess: this endpoint gates progression on the result.
-                let resolved = {
-                    let mut guard = lock(state);
-                    let ServeState {
-                        recent,
-                        decks_dir,
-                        cache,
-                        ..
-                    } = &mut *guard;
-                    resolved_path(resolve_row(&body.deck, decks_dir, recent, cache))
-                        .map(|path| (path, decks_dir.clone()))
-                };
+                let resolved = catalog
+                    .resolve_path(body.deck.clone())
+                    .flatten()
+                    .and_then(|path| catalog.decks_root().map(|root| (path, root)));
                 let Some((path, decks_root)) = resolved else {
                     respond_status(request, 400);
                     continue;
@@ -1192,20 +1092,15 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let resolved = {
-                    let mut guard = lock(state);
-                    let ServeState {
-                        recent,
-                        decks_dir,
-                        cache,
-                        ..
-                    } = &mut *guard;
-                    (
-                        resolve_row(&body.deck, decks_dir, recent, cache),
-                        decks_dir.clone(),
-                    )
+                let Some(resolved) = catalog.resolve(body.deck.clone()) else {
+                    respond_status(request, 503);
+                    continue;
                 };
-                let (files, workspace_dir) = match resolved.0 {
+                let Some(decks_root) = catalog.decks_root() else {
+                    respond_status(request, 503);
+                    continue;
+                };
+                let (files, workspace_dir) = match resolved {
                     Resolved::One(p) => (vec![p], None),
                     Resolved::Many { dir, files } => (files, Some(dir)),
                     _ => {
@@ -1213,7 +1108,7 @@ pub fn run_review(
                         continue;
                     }
                 };
-                match study.augment_open(body.deck, files, workspace_dir, resolved.1) {
+                match study.augment_open(body.deck, files, workspace_dir, decks_root) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
@@ -1479,20 +1374,12 @@ pub fn run_review(
                     continue;
                 };
                 let mut guard = lock(state);
-                let ServeState {
-                    recent,
-                    decks_dir,
-                    cache,
-                    remote_exam,
-                    ..
-                } = &mut *guard;
+                let remote_exam = &mut guard.remote_exam;
                 if remote_exam.is_some() {
                     respond_status(request, 409);
                     continue;
                 }
-                let Some(path) =
-                    resolved_path(resolve_row(&body.deck, decks_dir, recent, cache))
-                else {
+                let Some(path) = catalog.resolve_path(body.deck.clone()).flatten() else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -1674,33 +1561,11 @@ pub fn run_review(
     if let Err(panic) = study_thread.join() {
         std::panic::resume_unwind(panic);
     }
-    Ok(())
-}
-
-#[expect(clippy::too_many_arguments)] // the listing entry point takes each piece of served state
-fn decks_list_dto(
-    scoped: bool,
-    config_path: Option<&Path>,
-    decks_dir: &mut PathBuf,
-    recent: &RecentDecks,
-    store: &Store,
-    launcher_icons: &mut HashMap<String, PathBuf>,
-    review_cfg: crate::config::ReviewConfig,
-    cache: &mut DeckCache,
-) -> Result<DeckListDto, std::io::Error> {
-    let dir = effective_decks_dir(scoped, config_path, decks_dir);
-    if dir != *decks_dir {
-        *decks_dir = dir;
+    drop(catalog);
+    if let Err(panic) = catalog_thread.join() {
+        std::panic::resume_unwind(panic);
     }
-    deck_catalog(
-        decks_dir,
-        recent,
-        store,
-        true,
-        launcher_icons,
-        review_cfg,
-        cache,
-    )
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,7 +1,6 @@
 use std::{
-    collections::HashMap,
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use serde::{Deserialize, Serialize};
@@ -229,10 +228,6 @@ pub(super) fn respond_download(
         Ok(disposition_header) => request.respond(response.with_header(disposition_header)),
         Err(_) => request.respond(response),
     };
-}
-
-pub(super) fn serve_image(request: Request, images: &HashMap<String, PathBuf>, key: &str) {
-    serve_image_path(request, images.get(key).map(PathBuf::as_path));
 }
 
 pub(super) fn serve_image_path(request: Request, path: Option<&Path>) {
