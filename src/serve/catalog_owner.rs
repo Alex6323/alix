@@ -15,11 +15,7 @@ use std::{
 
 use super::{catalog::*, dto::DeckListDto};
 use crate::{
-    cache::DeckCache,
-    config::ReviewConfig,
-    recent::RecentDecks,
-    session::now_ms,
-    store::Store,
+    cache::DeckCache, config::ReviewConfig, recent::RecentDecks, session::now_ms, store::Store,
     workspace,
 };
 
@@ -40,11 +36,7 @@ pub(super) struct CatalogState {
 }
 
 impl CatalogState {
-    pub(super) fn new(
-        config: CatalogConfig,
-        decks_dir: PathBuf,
-        recent: RecentDecks,
-    ) -> Self {
+    pub(super) fn new(config: CatalogConfig, decks_dir: PathBuf, recent: RecentDecks) -> Self {
         CatalogState {
             config,
             decks_dir,
@@ -78,9 +70,7 @@ fn stat(path: &Path) -> Option<(SystemTime, u64)> {
 fn root_meta(decks_dir: &Path, recent: &RecentDecks) -> RootMeta {
     let mut out: RootMeta = vec![(decks_dir.to_path_buf(), stat(decks_dir))];
     if let Ok(entries) = std::fs::read_dir(decks_dir) {
-        let mut children: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .collect();
+        let mut children: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
         children.sort();
         for child in children {
             out.push((child.clone(), stat(&child)));
@@ -344,11 +334,7 @@ mod tests {
     use super::*;
 
     fn write_deck(path: &Path, stem: &str) {
-        std::fs::write(
-            path,
-            format!("---\nid: \"deck-{stem}\"\n---\n## f\nb\n"),
-        )
-        .unwrap();
+        std::fs::write(path, format!("---\nid: \"deck-{stem}\"\n---\n## f\nb\n")).unwrap();
     }
 
     fn state_over(dir: &Path) -> CatalogState {

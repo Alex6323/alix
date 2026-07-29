@@ -6,12 +6,7 @@ mod jobs_owner;
 mod respond;
 mod study;
 
-use std::{
-    net::SocketAddr,
-    path::PathBuf,
-    sync::Arc,
-    thread,
-};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, thread};
 
 use anyhow::{Result, anyhow};
 use catalog::*;
@@ -20,8 +15,8 @@ use dto::*;
 use jobs::*;
 use jobs_owner::*;
 use respond::*;
-use study::*;
 use serde::Deserialize;
+use study::*;
 use tiny_http::{Method, Server};
 
 pub use crate::assemble::SelectOptions;
@@ -132,7 +127,8 @@ const WORKERS: usize = 16;
 
 // Set when any owner thread panics; workers then stop accepting (503 and
 // unblock) so a dead owner can never leave a permanently half-alive server.
-pub(super) static OWNER_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(super) static OWNER_FAILED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 pub fn run_review(
     store: Store,

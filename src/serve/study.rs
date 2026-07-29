@@ -16,8 +16,7 @@ use crate::{
     augment::AugmentCache,
     config::{Audience, ExamConfig, ReviewConfig},
     deck::{self, Deck},
-    exam,
-    review,
+    exam, review,
     session::now_ms,
     store::{self, Store},
     trace::{self, Walk},
@@ -373,7 +372,10 @@ impl StudyHandle {
     pub(super) fn walk_predict(&self, text: String) -> Option<Option<WalkDto>> {
         self.call(|reply| StudyCommand::WalkPredict { text, reply })
     }
-    pub(super) fn walk_grade(&self, self_delta: Option<crate::trace::Delta>) -> Option<WalkGradeReply> {
+    pub(super) fn walk_grade(
+        &self,
+        self_delta: Option<crate::trace::Delta>,
+    ) -> Option<WalkGradeReply> {
         self.call(|reply| StudyCommand::WalkGrade { self_delta, reply })
     }
     pub(super) fn walk_restart(&self) -> Option<Option<WalkDto>> {
@@ -466,7 +468,11 @@ fn flush_presented(
 
 impl StudyState {
     fn review_dto(&self) -> StateDto {
-        review_state(self.reviewing.as_ref(), &self.store, self.save_error.as_deref())
+        review_state(
+            self.reviewing.as_ref(),
+            &self.store,
+            self.save_error.as_deref(),
+        )
     }
 
     fn handle(&mut self, cmd: StudyCommand) {
@@ -477,7 +483,12 @@ impl StudyState {
                 } else {
                     if let Some(r) = self.reviewing.as_mut() {
                         r.session.poll(&mut self.store, now_ms());
-                        flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
+                        flush_presented(
+                            r,
+                            &self.store,
+                            &mut self.store_dirty,
+                            &mut self.save_error,
+                        );
                     }
                     SessionSnapshot::Review(self.review_dto())
                 };
@@ -513,7 +524,12 @@ impl StudyState {
                     None => None,
                     Some(r) => {
                         r.session.skip(&mut self.store, now_ms());
-                        flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
+                        flush_presented(
+                            r,
+                            &self.store,
+                            &mut self.store_dirty,
+                            &mut self.save_error,
+                        );
                         r.rotate_variant();
                         Some(())
                     }
@@ -540,7 +556,12 @@ impl StudyState {
                     None => None,
                     Some(r) => {
                         r.session.restart(&mut self.store, now_ms());
-                        flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
+                        flush_presented(
+                            r,
+                            &self.store,
+                            &mut self.store_dirty,
+                            &mut self.save_error,
+                        );
                         r.rotate_variant();
                         Some(())
                     }
@@ -662,9 +683,13 @@ impl StudyState {
             StudyCommand::ExamPoll(reply) => {
                 let dto = self.examining.as_mut().map(|ex| {
                     let root = workspace::content_root(&ex.deck_path);
-                    let retire_after_days =
-                        self.config.review_cfg.for_workspace(&root).retire_after_days;
-                    ex.sitting.poll(&mut self.store, now_ms(), retire_after_days);
+                    let retire_after_days = self
+                        .config
+                        .review_cfg
+                        .for_workspace(&root)
+                        .retire_after_days;
+                    ex.sitting
+                        .poll(&mut self.store, now_ms(), retire_after_days);
                     exam_dto(ex)
                 });
                 let _ = reply.send(dto);
@@ -826,7 +851,11 @@ impl StudyState {
             .collect();
         let workspace_root = workspace_dir
             .clone()
-            .or_else(|| files.first().map(|path| crate::workspace::content_root(path)))
+            .or_else(|| {
+                files
+                    .first()
+                    .map(|path| crate::workspace::content_root(path))
+            })
             .unwrap_or(decks_root);
         let cache = AugmentCache::open_for_decks(&workspace_root, &decks).ok()?;
         let aug = Augmenting::open(name, cards, deck_tokens, cache, workspace_dir);
@@ -911,7 +940,11 @@ impl StudyState {
                     return DeckDrawerDto::default();
                 };
                 let root = workspace::content_root(&path);
-                let retire_after_days = self.config.review_cfg.for_workspace(&root).retire_after_days;
+                let retire_after_days = self
+                    .config
+                    .review_cfg
+                    .for_workspace(&root)
+                    .retire_after_days;
                 deck_drawer_dto(&augment, &s, &deck, retire_after_days)
             }
             _ => DeckDrawerDto::default(),
@@ -920,7 +953,11 @@ impl StudyState {
 
     fn reset(&mut self, name: String, paths: Vec<PathBuf>) -> Option<ResetDto> {
         flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
-        let decks: Vec<Deck> = paths.iter().map(Deck::load).collect::<Result<_, _>>().ok()?;
+        let decks: Vec<Deck> = paths
+            .iter()
+            .map(Deck::load)
+            .collect::<Result<_, _>>()
+            .ok()?;
         let cleared = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
             .and_then(|mut s| crate::library::reset_decks(&mut s, decks.iter()))
             .ok()?;
@@ -1049,9 +1086,10 @@ impl StudyState {
         ask_cfg: crate::config::AskConfig,
     ) -> ExamStartReply {
         flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
-        if let Ok(s) =
-            assemble::store_for(std::slice::from_ref(&path), self.config.cfg.instance_store.as_deref())
-        {
+        if let Ok(s) = assemble::store_for(
+            std::slice::from_ref(&path),
+            self.config.cfg.instance_store.as_deref(),
+        ) {
             self.store = s;
         }
         match Deck::load(&path) {

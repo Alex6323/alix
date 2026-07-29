@@ -6,12 +6,7 @@
 //! global lock. On shutdown the owner cancels the wormhole subprocess jobs
 //! before it exits.
 
-use std::{
-    path::PathBuf,
-    sync::mpsc,
-    thread,
-    time::Instant,
-};
+use std::{path::PathBuf, sync::mpsc, thread, time::Instant};
 
 use anyhow::anyhow;
 
@@ -19,8 +14,7 @@ use super::{catalog_owner::CatalogHandle, dto::*, jobs::*};
 use crate::{
     config::{AskConfig, ExamConfig, GenerateDeckConfig},
     deck::Deck,
-    exam, generate, share,
-    trace,
+    exam, generate, share, trace,
 };
 
 pub(super) struct JobsState {
@@ -179,21 +173,33 @@ impl JobsHandle {
         req: RemoteAskReq,
         ask_cfg: AskConfig,
     ) -> Option<Started<RemoteAskDto>> {
-        self.call(|reply| JobsCommand::RemoteAsk { req, ask_cfg, reply })
+        self.call(|reply| JobsCommand::RemoteAsk {
+            req,
+            ask_cfg,
+            reply,
+        })
     }
     pub(super) fn remote_draft(
         &self,
         req: RemoteDraftReq,
         ask_cfg: AskConfig,
     ) -> Option<Started<RemoteAskDto>> {
-        self.call(|reply| JobsCommand::RemoteDraft { req, ask_cfg, reply })
+        self.call(|reply| JobsCommand::RemoteDraft {
+            req,
+            ask_cfg,
+            reply,
+        })
     }
     pub(super) fn remote_note(
         &self,
         req: RemoteNoteReq,
         ask_cfg: AskConfig,
     ) -> Option<Started<RemoteAskDto>> {
-        self.call(|reply| JobsCommand::RemoteNote { req, ask_cfg, reply })
+        self.call(|reply| JobsCommand::RemoteNote {
+            req,
+            ask_cfg,
+            reply,
+        })
     }
     pub(super) fn remote_ask_poll(&self) -> Option<RemoteAskDto> {
         self.call(JobsCommand::RemoteAskPoll)
@@ -359,7 +365,11 @@ impl JobsState {
                 });
                 let _ = reply.send(out);
             }
-            JobsCommand::RemoteAsk { req, ask_cfg, reply } => {
+            JobsCommand::RemoteAsk {
+                req,
+                ask_cfg,
+                reply,
+            } => {
                 let out = self.remote_slot_free().then(|| {
                     let job = RemoteAsk::ask(&ask_cfg, &req.card, req.history, &req.question);
                     let dto = job.dto();
@@ -371,7 +381,11 @@ impl JobsState {
                     None => Started::Conflict,
                 });
             }
-            JobsCommand::RemoteDraft { req, ask_cfg, reply } => {
+            JobsCommand::RemoteDraft {
+                req,
+                ask_cfg,
+                reply,
+            } => {
                 let out = self.remote_slot_free().then(|| {
                     let job = RemoteAsk::draft(&ask_cfg, &req.card, req.history);
                     let dto = job.dto();
@@ -383,7 +397,11 @@ impl JobsState {
                     None => Started::Conflict,
                 });
             }
-            JobsCommand::RemoteNote { req, ask_cfg, reply } => {
+            JobsCommand::RemoteNote {
+                req,
+                ask_cfg,
+                reply,
+            } => {
                 let out = self.remote_slot_free().then(|| {
                     let job = RemoteAsk::note(&ask_cfg, &req.card, req.history);
                     let dto = job.dto();
@@ -535,7 +553,11 @@ impl JobsState {
                 self.catalog.invalidate_content();
             }
         }
-        if self.generating.as_ref().is_some_and(|g| g.outcome.is_none()) {
+        if self
+            .generating
+            .as_ref()
+            .is_some_and(|g| g.outcome.is_none())
+        {
             return Started::Conflict;
         }
         // Check for a name collision before spawning the (costed) model
