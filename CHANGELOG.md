@@ -268,6 +268,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A tutor exchange that finishes after the card has already advanced is now
+  discarded: the late answer no longer appears under the next card's
+  transcript, and a late note or draft is no longer applied (previously the
+  note was written to the earlier card's file even though the screen had
+  moved on).
 - Two imports of the same deck name no longer race each other (or a
   concurrent receive or generate landing) for the destination: every
   destination write now runs on one owner, so exactly one same-name import

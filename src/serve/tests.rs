@@ -1212,6 +1212,7 @@ fn poll_ask_records_answer_in_transcript() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
     let (tx, rx) = std::sync::mpsc::channel();
+    r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
         purpose: Purpose::Question("why is s1 invalid?".to_string()),
@@ -1255,6 +1256,7 @@ fn poll_ask_condense_appends_note_to_deck() {
     let (mut r, card, deck) = one_card_reviewing(dir.path());
     r.ask.transcript.push(("q".to_string(), "a".to_string()));
     let (tx, rx) = std::sync::mpsc::channel();
+    r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
         purpose: Purpose::Condense,
@@ -1275,6 +1277,7 @@ fn poll_ask_error_resets_session() {
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
     r.ask.cli.started = true;
     let (tx, rx) = std::sync::mpsc::channel();
+    r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
         purpose: Purpose::Question("q".to_string()),
@@ -1377,6 +1380,7 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
     r.ask.transcript.push(("q".to_string(), "a".to_string()));
     let (tx, rx) = std::sync::mpsc::channel();
+    r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
         purpose: Purpose::DraftCard,
@@ -1550,6 +1554,7 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
 
     let card = w.checkpoint_card().expect("a checkpoint card");
     let (tx, rx) = std::sync::mpsc::channel();
+    w.ask.subject = w.walk.checkpoint().map(|c| c.card_id.clone());
     w.ask.pending = Some(Pending {
         rx,
         purpose: Purpose::Condense,

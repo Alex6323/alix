@@ -94,6 +94,11 @@ impl Ask {
             self.transcript.clear();
             self.draft = None;
             self.context_warning = None;
+            // Advancing makes an in-flight completion ineligible (ADR 0027):
+            // dropping the receiver discards the late answer, and a pending
+            // note or draft is never applied to either card. The worker's
+            // send fails harmlessly.
+            self.pending = None;
             self.subject = subject;
         }
     }

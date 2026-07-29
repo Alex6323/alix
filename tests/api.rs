@@ -2714,6 +2714,116 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
     assert_eq!("PASS", grades[0]["verdict"], "body: {body}");
 }
 
+/// ADR 0027: advancing the card makes an older tutor completion ineligible.
+/// The fake backend parks on a FIFO; the card advances while it thinks; the
+/// released answer must be dropped, never shown under the new card.
+#[test]
+fn a_tutor_answer_arriving_after_a_card_advance_is_dropped() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let started = scripts.path().join("started");
+    let fifo = scripts.path().join("release.fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs")
+            .success()
+    );
+    let fake = scripts.path().join("parked-tutor");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\n: > {started}\nread _ < {fifo}\necho \"a late answer\"\n",
+            started = started.display(),
+            fifo = fifo.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/ask", r#"{"question":"why?"}"#);
+    assert_eq!(200, resp.status);
+    let probe_started = Instant::now();
+    while !started.exists() {
+        assert!(
+            probe_started.elapsed() < Duration::from_secs(5),
+            "the tutor never spawned the fake backend"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    let resp = post_json(&base, "/api/skip", "{}");
+    assert_eq!(200, resp.status);
+    std::fs::write(&fifo, "go\n").unwrap();
+
+    let body = poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    assert_eq!(
+        0,
+        body["transcript"].as_array().unwrap().len(),
+        "the late answer must not enter the new card's transcript: {body}"
+    );
+}
+
+/// The note variant of the same staleness: a condense completing after the
+/// card advanced must not write into the deck file.
+#[test]
+fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let started = scripts.path().join("started");
+    let fifo = scripts.path().join("release.fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs")
+            .success()
+    );
+    // First call answers immediately (builds the transcript); the second
+    // (the condense) parks on the FIFO.
+    let count = scripts.path().join("calls");
+    let fake = scripts.path().join("parked-note");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\necho x >> {count}\nif [ \"$(wc -l < {count})\" -gt 1 ]; then : > {started}; read _ < {fifo}; echo 'NOTE: a very late note'; else echo 'an answer'; fi\n",
+            count = count.display(),
+            started = started.display(),
+            fifo = fifo.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server(Some(&fake));
+    select_fixture(&base);
+
+    post_json(&base, "/api/ask", r#"{"question":"why?"}"#);
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    let resp = post_json(&base, "/api/ask/note", "{}");
+    assert_eq!(200, resp.status);
+    let probe_started = Instant::now();
+    while !started.exists() {
+        assert!(
+            probe_started.elapsed() < Duration::from_secs(5),
+            "the condense never reached the fake backend"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    post_json(&base, "/api/skip", "{}");
+    std::fs::write(&fifo, "go\n").unwrap();
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+
+    let deck = std::fs::read_to_string(guard.dir().join("sample.md")).unwrap();
+    assert!(
+        !deck.contains("a very late note"),
+        "the stale note must not land in the deck file: {deck}"
+    );
+}
+
 /// A passed exam's mastery write rides the owner's save accounting: a
 /// transient save failure surfaces as `save_error`, and the mastery is
 /// retried by the next transition flush instead of being dropped silently
