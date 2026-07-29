@@ -1,6 +1,7 @@
 # 0006: Lean Rust core
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0028](0028-capability-gated-builds-and-embedded-wormhole.md)
 - Recorded: 2026-07-24
 - Retrospective: Yes
 
