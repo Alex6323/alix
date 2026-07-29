@@ -414,16 +414,12 @@ impl StudyHandle {
     }
 }
 
-pub(super) fn spawn(state: StudyState) -> (StudyHandle, thread::JoinHandle<()>) {
+pub(super) fn spawn(
+    failure: super::OwnerFailure,
+    state: StudyState,
+) -> (StudyHandle, thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
-    let handle = thread::spawn(move || {
-        if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run(state, rx);
-        })) {
-            super::OWNER_FAILED.store(true, std::sync::atomic::Ordering::SeqCst);
-            std::panic::resume_unwind(panic);
-        }
-    });
+    let handle = super::supervised(failure, move || run(state, rx));
     (StudyHandle { tx }, handle)
 }
 

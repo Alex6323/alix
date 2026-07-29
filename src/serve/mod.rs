@@ -125,10 +125,49 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 // so an idle kept-alive socket can't starve the rest.
 const WORKERS: usize = 16;
 
-// Set when any owner thread panics; workers then stop accepting (503 and
-// unblock) so a dead owner can never leave a permanently half-alive server.
-pub(super) static OWNER_FAILED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+// Owner failure is application failure: a panicked owner trips this, which
+// unblocks the server immediately (an idle server must drain too, not wait
+// for a next request) and marks every worker to answer 503 while draining.
+// Per run, never global: parallel in-process test servers stay independent.
+#[derive(Clone)]
+pub(super) struct OwnerFailure {
+    failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    server: Arc<Server>,
+}
+
+impl OwnerFailure {
+    pub(super) fn new(server: Arc<Server>) -> Self {
+        OwnerFailure {
+            failed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            server,
+        }
+    }
+
+    pub(super) fn trip(&self) {
+        self.failed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.server.unblock();
+    }
+
+    pub(super) fn tripped(&self) -> bool {
+        self.failed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// Runs an owner loop under panic supervision: a panic trips the failure
+/// (draining the server) and is re-raised so the join in `run_review`
+/// propagates it to the caller.
+pub(super) fn supervised(
+    failure: OwnerFailure,
+    body: impl FnOnce() + Send + 'static,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+            failure.trip();
+            std::panic::resume_unwind(panic);
+        }
+    })
+}
 
 pub fn run_review(
     store: Store,
@@ -159,7 +198,9 @@ pub fn run_review(
     let ask_info = AskInfoDto::from(&ask_cfg);
     let http_log = std::env::var_os("ALIX_HTTP_LOG").is_some();
 
-    let (study, study_thread) = study::spawn(StudyState {
+    let failure = OwnerFailure::new(Arc::clone(&server));
+
+    let (study, study_thread) = study::spawn(failure.clone(), StudyState {
         config: StudyConfig {
             cfg,
             exam_cfg: exam_cfg.clone(),
@@ -176,7 +217,7 @@ pub fn run_review(
         augmenting: None,
     });
 
-    let (catalog, catalog_thread) = catalog_owner::spawn(CatalogState::new(
+    let (catalog, catalog_thread) = catalog_owner::spawn(failure.clone(), CatalogState::new(
         CatalogConfig {
             scoped,
             config_path: config_path.clone(),
@@ -186,7 +227,7 @@ pub fn run_review(
         recent,
     ));
 
-    let (jobs, jobs_thread) = jobs_owner::spawn(JobsState {
+    let (jobs, jobs_thread) = jobs_owner::spawn(failure.clone(), JobsState {
         catalog: catalog.clone(),
         generating: None,
         sharing: None,
@@ -196,17 +237,13 @@ pub fn run_review(
         remote_generate: None,
     });
 
-    // Owner failure is application failure: a panicked owner sets this, the
-    // workers stop accepting (503 + unblock), and run_review re-raises the
-    // panic after joining. No restart, no permanent partial service.
-    let failed = &OWNER_FAILED;
-    failed.store(false, std::sync::atomic::Ordering::SeqCst);
 
     thread::scope(|scope| {
         for _ in 0..WORKERS {
             let study = study.clone();
             let catalog = catalog.clone();
             let jobs = jobs.clone();
+            let failure = failure.clone();
             let server = &server;
             let keys = &keys;
             let picker_keys = &picker_keys;
@@ -229,7 +266,7 @@ pub fn run_review(
                         break;
                     }
                 };
-                if OWNER_FAILED.load(std::sync::atomic::Ordering::SeqCst) {
+                if failure.tripped() {
                     server.unblock();
                     respond_status(request, 503);
                     continue;

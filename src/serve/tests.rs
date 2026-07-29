@@ -27,6 +27,29 @@ use crate::{
 #[cfg(unix)]
 use crate::{ask, source::SourceBase};
 
+/// A panicked owner must drain an idle server by itself: the trip unblocks
+/// tiny_http directly instead of waiting for a next request to notice the
+/// flag. Bounded receives keep a regression a failure, never a hang.
+#[test]
+fn a_panicked_owner_trips_the_failure_and_unblocks_an_idle_server() {
+    let server = Arc::new(crate::serve::bind("127.0.0.1:0".parse().unwrap()).unwrap());
+    let failure = OwnerFailure::new(Arc::clone(&server));
+
+    let owner = supervised(failure.clone(), || panic!("injected owner failure"));
+    assert!(owner.join().is_err(), "the panic must propagate to join");
+    assert!(failure.tripped());
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let recv_server = Arc::clone(&server);
+    std::thread::spawn(move || {
+        let _ = tx.send(recv_server.recv().is_err());
+    });
+    let unblocked = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("recv must return, not block: the trip queued an unblock");
+    assert!(unblocked, "the drained recv reports Err, not a request");
+}
+
 fn write_initialized(path: &Path, text: &str) {
     let id = path
         .file_stem()

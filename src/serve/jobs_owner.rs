@@ -271,26 +271,23 @@ impl JobsHandle {
     }
 }
 
-pub(super) fn spawn(state: JobsState) -> (JobsHandle, thread::JoinHandle<()>) {
+pub(super) fn spawn(
+    failure: super::OwnerFailure,
+    state: JobsState,
+) -> (JobsHandle, thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
-    let handle = thread::spawn(move || {
-        if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut state = state;
-            for cmd in rx {
-                state.handle(cmd);
-            }
-            // Handles are gone: cancel the wormhole subprocesses so no child
-            // outlives the server; AI job threads find their receivers
-            // dropped.
-            if let Some(s) = state.sharing.take() {
-                s.job.cancel();
-            }
-            if let Some(r) = state.receiving.take() {
-                r.job.cancel();
-            }
-        })) {
-            super::OWNER_FAILED.store(true, std::sync::atomic::Ordering::SeqCst);
-            std::panic::resume_unwind(panic);
+    let handle = super::supervised(failure, move || {
+        let mut state = state;
+        for cmd in rx {
+            state.handle(cmd);
+        }
+        // Handles are gone: cancel the wormhole subprocesses so no child
+        // outlives the server; AI job threads find their receivers dropped.
+        if let Some(s) = state.sharing.take() {
+            s.job.cancel();
+        }
+        if let Some(r) = state.receiving.take() {
+            r.job.cancel();
         }
     });
     (JobsHandle { tx }, handle)

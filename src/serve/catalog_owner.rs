@@ -177,17 +177,15 @@ impl CatalogHandle {
     }
 }
 
-pub(super) fn spawn(state: CatalogState) -> (CatalogHandle, thread::JoinHandle<()>) {
+pub(super) fn spawn(
+    failure: super::OwnerFailure,
+    state: CatalogState,
+) -> (CatalogHandle, thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
-    let handle = thread::spawn(move || {
-        if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut state = state;
-            for cmd in rx {
-                state.handle(cmd);
-            }
-        })) {
-            super::OWNER_FAILED.store(true, std::sync::atomic::Ordering::SeqCst);
-            std::panic::resume_unwind(panic);
+    let handle = super::supervised(failure, move || {
+        let mut state = state;
+        for cmd in rx {
+            state.handle(cmd);
         }
     });
     (CatalogHandle { tx }, handle)
