@@ -268,6 +268,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A progress save that keeps failing no longer lets a deck switch silently
+  discard the unsaved session: select, browse, deselect, reset, exam start
+  and close, walk leave, and augment open and close now answer 500 and keep
+  the current session active while the store cannot be flushed. Repairing
+  the disk and repeating the same request retries the flush; there is no
+  force-discard path.
 - `GET /api/doctor` no longer holds the application state lock while it
   probes the backend and wormhole binaries for their versions: the lock is
   held only to snapshot the store path and decks root, so a slow or hung

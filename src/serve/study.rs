@@ -67,9 +67,14 @@ pub(super) enum CreateOutcome {
     MintFailed,
 }
 
-pub(super) enum ExamStartReply {
-    Dto(Box<ExamDto>),
-    Conflict,
+/// A command that replaces the active progress document: refused whenever
+/// the dirty store's flush fails, so an unsaved mutation is never dropped
+/// (ADR 0027: no force-discard path); repeating the request retries the
+/// flush against the untouched state.
+pub(super) enum Transition<T> {
+    Done(T),
+    Rejected,
+    FlushFailed,
 }
 
 pub(super) enum WalkGradeReply {
@@ -97,11 +102,11 @@ pub(super) enum StudyCommand {
     Select {
         paths: Vec<PathBuf>,
         opts: SelectOptions,
-        reply: Reply<Option<(SelectedDto, Option<Vec<PathBuf>>)>>,
+        reply: Reply<Transition<(SelectedDto, Option<Vec<PathBuf>>)>>,
     },
     Browse {
         paths: Vec<PathBuf>,
-        reply: Reply<Option<(BrowseDto, Vec<PathBuf>)>>,
+        reply: Reply<Transition<(BrowseDto, Vec<PathBuf>)>>,
     },
     DeckDrawer {
         path: PathBuf,
@@ -110,9 +115,9 @@ pub(super) enum StudyCommand {
     Reset {
         name: String,
         paths: Vec<PathBuf>,
-        reply: Reply<Option<ResetDto>>,
+        reply: Reply<Transition<ResetDto>>,
     },
-    Deselect(Reply<StateDto>),
+    Deselect(Reply<Transition<StateDto>>),
     Grade {
         grade: crate::scheduler::Grade,
         reply: Reply<Option<StateDto>>,
@@ -139,7 +144,7 @@ pub(super) enum StudyCommand {
         path: PathBuf,
         decks_root: PathBuf,
         ask_cfg: crate::config::AskConfig,
-        reply: Reply<ExamStartReply>,
+        reply: Reply<Transition<Box<ExamDto>>>,
     },
     ExamPoll(Reply<Option<ExamDto>>),
     ExamAnswer {
@@ -152,7 +157,7 @@ pub(super) enum StudyCommand {
         reply: Reply<Option<ExamDto>>,
     },
     ExamRemediate(Reply<Option<ExamDto>>),
-    ExamClose(Reply<StateDto>),
+    ExamClose(Reply<Transition<StateDto>>),
     WalkPoll(Reply<Option<WalkDto>>),
     WalkPredict {
         text: String,
@@ -169,7 +174,7 @@ pub(super) enum StudyCommand {
         reply: Reply<Option<AskDto>>,
     },
     WalkAskPoll(Reply<Option<AskDto>>),
-    WalkLeave(Reply<StateDto>),
+    WalkLeave(Reply<Transition<StateDto>>),
     TutorStart {
         action: Option<AskAction>,
         ask_cfg: crate::config::AskConfig,
@@ -180,7 +185,7 @@ pub(super) enum StudyCommand {
         files: Vec<PathBuf>,
         workspace_dir: Option<PathBuf>,
         decks_root: PathBuf,
-        reply: Reply<Option<AugmentDto>>,
+        reply: Reply<Transition<AugmentDto>>,
     },
     AugmentGenerate {
         targets: Option<Vec<(String, Option<String>)>>,
@@ -198,7 +203,7 @@ pub(super) enum StudyCommand {
         topology: Option<String>,
         reply: Reply<Option<AugmentDto>>,
     },
-    AugmentClose(Reply<StateDto>),
+    AugmentClose(Reply<Transition<StateDto>>),
     ImagePath {
         key: String,
         reply: Reply<ImageSource>,
@@ -226,19 +231,22 @@ impl StudyHandle {
         &self,
         paths: Vec<PathBuf>,
         opts: SelectOptions,
-    ) -> Option<Option<(SelectedDto, Option<Vec<PathBuf>>)>> {
+    ) -> Option<Transition<(SelectedDto, Option<Vec<PathBuf>>)>> {
         self.call(|reply| StudyCommand::Select { paths, opts, reply })
     }
-    pub(super) fn browse(&self, paths: Vec<PathBuf>) -> Option<Option<(BrowseDto, Vec<PathBuf>)>> {
+    pub(super) fn browse(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> Option<Transition<(BrowseDto, Vec<PathBuf>)>> {
         self.call(|reply| StudyCommand::Browse { paths, reply })
     }
     pub(super) fn deck_drawer(&self, path: PathBuf) -> Option<DeckDrawerDto> {
         self.call(|reply| StudyCommand::DeckDrawer { path, reply })
     }
-    pub(super) fn reset(&self, name: String, paths: Vec<PathBuf>) -> Option<Option<ResetDto>> {
+    pub(super) fn reset(&self, name: String, paths: Vec<PathBuf>) -> Option<Transition<ResetDto>> {
         self.call(|reply| StudyCommand::Reset { name, paths, reply })
     }
-    pub(super) fn deselect(&self) -> Option<StateDto> {
+    pub(super) fn deselect(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::Deselect)
     }
     pub(super) fn grade(&self, grade: crate::scheduler::Grade) -> Option<Option<StateDto>> {
@@ -282,7 +290,7 @@ impl StudyHandle {
         files: Vec<PathBuf>,
         workspace_dir: Option<PathBuf>,
         decks_root: PathBuf,
-    ) -> Option<Option<AugmentDto>> {
+    ) -> Option<Transition<AugmentDto>> {
         self.call(|reply| StudyCommand::AugmentOpen {
             name,
             files,
@@ -326,7 +334,7 @@ impl StudyHandle {
             reply,
         })
     }
-    pub(super) fn augment_close(&self) -> Option<StateDto> {
+    pub(super) fn augment_close(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::AugmentClose)
     }
     pub(super) fn store_path(&self) -> Option<PathBuf> {
@@ -343,7 +351,7 @@ impl StudyHandle {
         path: PathBuf,
         decks_root: PathBuf,
         ask_cfg: crate::config::AskConfig,
-    ) -> Option<ExamStartReply> {
+    ) -> Option<Transition<Box<ExamDto>>> {
         self.call(|reply| StudyCommand::ExamStart {
             path,
             decks_root,
@@ -363,7 +371,7 @@ impl StudyHandle {
     pub(super) fn exam_remediate(&self) -> Option<Option<ExamDto>> {
         self.call(StudyCommand::ExamRemediate)
     }
-    pub(super) fn exam_close(&self) -> Option<StateDto> {
+    pub(super) fn exam_close(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::ExamClose)
     }
     pub(super) fn walk_poll(&self) -> Option<Option<WalkDto>> {
@@ -395,7 +403,7 @@ impl StudyHandle {
     pub(super) fn walk_ask_poll(&self) -> Option<Option<AskDto>> {
         self.call(StudyCommand::WalkAskPoll)
     }
-    pub(super) fn walk_leave(&self) -> Option<StateDto> {
+    pub(super) fn walk_leave(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::WalkLeave)
     }
     pub(super) fn image_path(&self, key: String) -> Option<ImageSource> {
@@ -425,24 +433,26 @@ fn run(mut s: StudyState, rx: mpsc::Receiver<StudyCommand>) {
     }
     // Handles are gone (workers drained): one last flush covers any mutation
     // whose own save failed transiently.
-    flush_store(&s.store, &mut s.store_dirty, &mut s.save_error);
+    let _ = flush_store(&s.store, &mut s.store_dirty, &mut s.save_error);
 }
 
 // Must run before every store replacement and before any command opens a
 // store fresh from disk for a mutating operation (reset): a deferred dirty
 // store that is replaced or shadowed unflushed silently loses the session.
-pub(super) fn flush_store(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
+pub(super) fn flush_store(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) -> bool {
     if !*dirty {
-        return;
+        return true;
     }
     match store.save() {
         Ok(()) => {
             *dirty = false;
             *save_error = None;
+            true
         }
         Err(e) => {
             eprintln!("warning: could not save progress: {e}");
             *save_error = Some(e.to_string());
+            false
         }
     }
 }
@@ -452,7 +462,7 @@ pub(super) fn flush_store(store: &Store, dirty: &mut bool, save_error: &mut Opti
 // for the state DTO; the transition-time flushes stay as backstops.
 pub(super) fn flush_mutation(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
     *dirty = true;
-    flush_store(store, dirty, save_error);
+    let _ = flush_store(store, dirty, save_error);
 }
 
 fn flush_presented(
@@ -507,14 +517,21 @@ impl StudyState {
                 let _ = reply.send(self.reset(name, paths));
             }
             StudyCommand::Deselect(reply) => {
-                self.reviewing = None;
-                self.walking = None;
-                self.browsing = None;
-                flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
-                if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
-                    self.store = s;
-                }
-                let _ = reply.send(self.review_dto());
+                let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
+                {
+                    Transition::FlushFailed
+                } else {
+                    self.reviewing = None;
+                    self.walking = None;
+                    self.browsing = None;
+                    if let Ok(s) =
+                        assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
+                    {
+                        self.store = s;
+                    }
+                    Transition::Done(self.review_dto())
+                };
+                let _ = reply.send(out);
             }
             StudyCommand::Grade { grade, reply } => {
                 let _ = reply.send(self.grade(grade));
@@ -655,12 +672,19 @@ impl StudyState {
                 let _ = reply.send(dto);
             }
             StudyCommand::AugmentClose(reply) => {
-                self.augmenting = None;
-                flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
-                if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
-                    self.store = s;
-                }
-                let _ = reply.send(self.review_dto());
+                let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
+                {
+                    Transition::FlushFailed
+                } else {
+                    self.augmenting = None;
+                    if let Ok(s) =
+                        assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
+                    {
+                        self.store = s;
+                    }
+                    Transition::Done(self.review_dto())
+                };
+                let _ = reply.send(out);
             }
             StudyCommand::AskPoll(reply) => {
                 let dto = self.reviewing.as_mut().map(|r| {
@@ -720,12 +744,19 @@ impl StudyState {
                 let _ = reply.send(dto);
             }
             StudyCommand::ExamClose(reply) => {
-                self.examining = None;
-                flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
-                if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
-                    self.store = s;
-                }
-                let _ = reply.send(self.review_dto());
+                let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
+                {
+                    Transition::FlushFailed
+                } else {
+                    self.examining = None;
+                    if let Ok(s) =
+                        assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
+                    {
+                        self.store = s;
+                    }
+                    Transition::Done(self.review_dto())
+                };
+                let _ = reply.send(out);
             }
             StudyCommand::WalkPoll(reply) => {
                 let dto = self.walking.as_mut().map(|w| {
@@ -801,12 +832,19 @@ impl StudyState {
                 let _ = reply.send(dto);
             }
             StudyCommand::WalkLeave(reply) => {
-                self.walking = None;
-                flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
-                if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
-                    self.store = s;
-                }
-                let _ = reply.send(self.review_dto());
+                let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
+                {
+                    Transition::FlushFailed
+                } else {
+                    self.walking = None;
+                    if let Ok(s) =
+                        assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
+                    {
+                        self.store = s;
+                    }
+                    Transition::Done(self.review_dto())
+                };
+                let _ = reply.send(out);
             }
             StudyCommand::ImagePath { key, reply } => {
                 let out = if let Some(r) = &self.reviewing {
@@ -833,14 +871,18 @@ impl StudyState {
         files: Vec<PathBuf>,
         workspace_dir: Option<PathBuf>,
         decks_root: PathBuf,
-    ) -> Option<AugmentDto> {
-        flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
+    ) -> Transition<AugmentDto> {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return Transition::FlushFailed;
+        }
         if let Ok(s) = assemble::store_for(&files, self.config.cfg.instance_store.as_deref()) {
             self.store = s;
         }
         // Stamp before loading: unstamped ids collapse the cache to key 0,
         // orphaning the spend at the first real stamp.
-        let cards = assemble::stamp_and_load_cards(&files).ok()?;
+        let Ok(cards) = assemble::stamp_and_load_cards(&files) else {
+            return Transition::Rejected;
+        };
         let decks: Vec<_> = files
             .iter()
             .filter_map(|path| crate::deck::Deck::load(path).ok())
@@ -857,24 +899,28 @@ impl StudyState {
                     .map(|path| crate::workspace::content_root(path))
             })
             .unwrap_or(decks_root);
-        let cache = AugmentCache::open_for_decks(&workspace_root, &decks).ok()?;
+        let Ok(cache) = AugmentCache::open_for_decks(&workspace_root, &decks) else {
+            return Transition::Rejected;
+        };
         let aug = Augmenting::open(name, cards, deck_tokens, cache, workspace_dir);
         let dto = aug.dto();
         self.augmenting = Some(aug);
-        Some(dto)
+        Transition::Done(dto)
     }
 
     fn select(
         &mut self,
         paths: Vec<PathBuf>,
         opts: SelectOptions,
-    ) -> Option<(SelectedDto, Option<Vec<PathBuf>>)> {
-        flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
+    ) -> Transition<(SelectedDto, Option<Vec<PathBuf>>)> {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return Transition::FlushFailed;
+        }
         if let Err(e) = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
             .map(|s| self.store = s)
         {
             eprintln!("warning: could not open the progress store: {e}");
-            return None;
+            return Transition::Rejected;
         }
         let recorded_paths = paths.clone();
         match assemble::select(paths, &mut self.store, &self.config.cfg, &opts) {
@@ -884,7 +930,7 @@ impl StudyState {
                 self.walking = Some(w);
                 self.reviewing = None;
                 self.examining = None;
-                Some((SelectedDto::Walk(dto), None))
+                Transition::Done((SelectedDto::Walk(dto), None))
             }
             Ok(assemble::Selected::Review(b)) => {
                 let record = (!b.session.is_finished()).then_some(recorded_paths);
@@ -894,22 +940,24 @@ impl StudyState {
                 r.rotate_variant();
                 self.reviewing = Some(r);
                 self.walking = None;
-                Some((SelectedDto::Review(self.review_dto()), record))
+                Transition::Done((SelectedDto::Review(self.review_dto()), record))
             }
             Err(e) => {
                 eprintln!("warning: could not load the selected decks: {e}");
-                None
+                Transition::Rejected
             }
         }
     }
 
-    fn browse(&mut self, paths: Vec<PathBuf>) -> Option<(BrowseDto, Vec<PathBuf>)> {
-        flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
+    fn browse(&mut self, paths: Vec<PathBuf>) -> Transition<(BrowseDto, Vec<PathBuf>)> {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return Transition::FlushFailed;
+        }
         if let Err(e) = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
             .map(|s| self.store = s)
         {
             eprintln!("warning: could not open the progress store: {e}");
-            return None;
+            return Transition::Rejected;
         }
         let recorded_paths = paths.clone();
         match assemble::browse(paths, self.config.cfg.instance_store.as_deref()) {
@@ -918,11 +966,11 @@ impl StudyState {
                 self.reviewing = None;
                 self.walking = None;
                 self.examining = None;
-                Some((browse_payload(self.browsing.as_ref()), recorded_paths))
+                Transition::Done((browse_payload(self.browsing.as_ref()), recorded_paths))
             }
             Err(e) => {
                 eprintln!("warning: could not load the selected decks: {e}");
-                None
+                Transition::Rejected
             }
         }
     }
@@ -951,20 +999,26 @@ impl StudyState {
         }
     }
 
-    fn reset(&mut self, name: String, paths: Vec<PathBuf>) -> Option<ResetDto> {
-        flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
-        let decks: Vec<Deck> = paths
+    fn reset(&mut self, name: String, paths: Vec<PathBuf>) -> Transition<ResetDto> {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return Transition::FlushFailed;
+        }
+        let Ok(decks) = paths
             .iter()
             .map(Deck::load)
-            .collect::<Result<_, _>>()
-            .ok()?;
-        let cleared = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
+            .collect::<Result<Vec<Deck>, _>>()
+        else {
+            return Transition::Rejected;
+        };
+        let Ok(cleared) = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
             .and_then(|mut s| crate::library::reset_decks(&mut s, decks.iter()))
-            .ok()?;
+        else {
+            return Transition::Rejected;
+        };
         if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
             self.store = s;
         }
-        Some(ResetDto {
+        Transition::Done(ResetDto {
             deck: name,
             cards_cleared: cleared,
         })
@@ -1084,8 +1138,10 @@ impl StudyState {
         path: PathBuf,
         decks_root: PathBuf,
         ask_cfg: crate::config::AskConfig,
-    ) -> ExamStartReply {
-        flush_store(&self.store, &mut self.store_dirty, &mut self.save_error);
+    ) -> Transition<Box<ExamDto>> {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return Transition::FlushFailed;
+        }
         if let Ok(s) = assemble::store_for(
             std::slice::from_ref(&path),
             self.config.cfg.instance_store.as_deref(),
@@ -1112,7 +1168,7 @@ impl StudyState {
                             ) {
                                 // One response shape per endpoint: the cooldown
                                 // is an ExamDto phase, not untagged.
-                                return ExamStartReply::Dto(Box::new(cooldown_dto(
+                                return Transition::Done(Box::new(cooldown_dto(
                                     &deck.subject,
                                     ms,
                                 )));
@@ -1127,13 +1183,13 @@ impl StudyState {
                                 ask_cfg,
                             )
                         }
-                        Err(_) => return ExamStartReply::Conflict,
+                        Err(_) => return Transition::Rejected,
                     }
                 } else {
                     // Check backend capability before starting, so a gap is a
                     // clean refusal, not a mid-exam poll error.
                     if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
-                        return ExamStartReply::Conflict;
+                        return Transition::Rejected;
                     }
                     exam::Sitting::start(&deck, strictness, self.config.exam_cfg.clone(), ask_cfg)
                 };
@@ -1143,9 +1199,9 @@ impl StudyState {
                 };
                 let dto = exam_dto(&ex);
                 self.examining = Some(ex);
-                ExamStartReply::Dto(Box::new(dto))
+                Transition::Done(Box::new(dto))
             }
-            _ => ExamStartReply::Conflict,
+            _ => Transition::Rejected,
         }
     }
 }

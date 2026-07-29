@@ -1073,6 +1073,72 @@ fn a_parked_doctor_binary_probe_does_not_block_state_requests() {
     assert_eq!(200, doctor.status);
 }
 
+/// ADR 0027: a dirty store whose flush fails must refuse replacement and
+/// keep the session active, so repeating the same request retries the flush
+/// once the filesystem is repaired. The store save is broken deterministically
+/// by dropping write permission on the state root.
+#[test]
+fn a_failed_flush_refuses_deselect_until_the_store_saves_again() {
+    let (base, guard) = spawn_test_server();
+    let resp = select_fixture(&base);
+    assert_eq!(200, resp.status);
+
+    let state_dir = state_root(guard.dir());
+    // The store writes tmp files next to its per-deck documents, so every
+    // directory under the state root must lose write permission.
+    fn set_dir_mode(root: &Path, mode: u32) {
+        std::fs::set_permissions(root, std::fs::Permissions::from_mode(mode)).unwrap();
+        let entries: Vec<_> = std::fs::read_dir(root)
+            .map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).collect())
+            .unwrap_or_default();
+        for path in entries {
+            if path.is_dir() {
+                set_dir_mode(&path, mode);
+            }
+        }
+    }
+    fn break_state_dir(root: &Path) {
+        fn walk(root: &Path) {
+            let entries: Vec<_> = std::fs::read_dir(root)
+                .map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).collect())
+                .unwrap_or_default();
+            for path in entries {
+                if path.is_dir() {
+                    walk(&path);
+                }
+            }
+            std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o555)).unwrap();
+        }
+        walk(root);
+    }
+    break_state_dir(&state_dir);
+
+    // The acquire itself replies 200 with `save_error` set (existing
+    // contract); the store is now dirty with an unsaved mutation.
+    let resp = post_json(&base, "/api/acquire", "{}");
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(
+        body["save_error"].as_str().is_some(),
+        "the broken state root must surface save_error: {body}"
+    );
+
+    // Replacement is refused while the dirty flush cannot land.
+    let resp = post_json(&base, "/api/deselect", "{}");
+    assert_eq!(500, resp.status);
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["phase"], "the session must survive: {body}");
+
+    // Repair the filesystem; repeating the request retries the flush.
+    set_dir_mode(&state_dir, 0o755);
+    let resp = post_json(&base, "/api/deselect", "{}");
+    assert_eq!(200, resp.status);
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("select", body["phase"], "{body}");
+}
+
 #[test]
 fn get_api_pair_returns_200_with_the_pairing_url() {
     let (base, _guard) = spawn_test_server();

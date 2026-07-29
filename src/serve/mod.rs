@@ -406,8 +406,9 @@ pub fn run_review(
                 match sel {
                     Some(sel) => match study.select(vec![sel.deck], sel.opts) {
                         None => respond_status(request, 503),
-                        Some(None) => respond_status(request, 400),
-                        Some(Some((dto, record))) => {
+                        Some(Transition::Rejected) => respond_status(request, 400),
+                        Some(Transition::FlushFailed) => respond_status(request, 500),
+                        Some(Transition::Done((dto, record))) => {
                             if let Some(paths) = record {
                                 catalog.record_recent(paths);
                             }
@@ -430,8 +431,9 @@ pub fn run_review(
                 match sel {
                     Some(sel) => match study.browse(vec![sel.deck]) {
                         None => respond_status(request, 503),
-                        Some(None) => respond_status(request, 400),
-                        Some(Some((dto, record))) => {
+                        Some(Transition::Rejected) => respond_status(request, 400),
+                        Some(Transition::FlushFailed) => respond_status(request, 500),
+                        Some(Transition::Done((dto, record))) => {
                             catalog.record_recent(record);
                             respond_json(request, &dto);
                         }
@@ -478,8 +480,9 @@ pub fn run_review(
                 };
                 match study.reset(body.deck, paths) {
                     None => respond_status(request, 503),
-                    Some(Some(dto)) => respond_json(request, &dto),
-                    Some(None) => respond_status(request, 400),
+                    Some(Transition::Done(dto)) => respond_json(request, &dto),
+                    Some(Transition::Rejected) => respond_status(request, 400),
+                    Some(Transition::FlushFailed) => respond_status(request, 500),
                 }
             }
             (Method::Post, "/api/workspace/deadline") => {
@@ -734,8 +737,11 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/deselect") => match study.deselect() {
-                Some(dto) => respond_json(request, &dto),
                 None => respond_status(request, 503),
+                Some(Transition::Done(dto)) => respond_json(request, &dto),
+                Some(Transition::Rejected) | Some(Transition::FlushFailed) => {
+                    respond_status(request, 500)
+                }
             },
             (Method::Post, "/api/grade") => match read_grade(&mut request) {
                 Some(grade) => match study.grade(grade) {
@@ -877,8 +883,9 @@ pub fn run_review(
                 };
                 match study.exam_start(path, decks_root, ask_cfg.clone()) {
                     None => respond_status(request, 503),
-                    Some(ExamStartReply::Dto(dto)) => respond_json(request, &dto),
-                    Some(ExamStartReply::Conflict) => respond_status(request, 409),
+                    Some(Transition::Done(dto)) => respond_json(request, &dto),
+                    Some(Transition::Rejected) => respond_status(request, 409),
+                    Some(Transition::FlushFailed) => respond_status(request, 500),
                 }
             }
             (Method::Get, "/api/exam") => match study.exam_poll() {
@@ -922,8 +929,11 @@ pub fn run_review(
                 Some(Some(dto)) => respond_json(request, &dto),
             },
             (Method::Post, "/api/exam/close") => match study.exam_close() {
-                Some(dto) => respond_json(request, &dto),
                 None => respond_status(request, 503),
+                Some(Transition::Done(dto)) => respond_json(request, &dto),
+                Some(Transition::Rejected) | Some(Transition::FlushFailed) => {
+                    respond_status(request, 500)
+                }
             },
             (Method::Post, "/api/augment/open") => {
                 #[derive(Deserialize)]
@@ -953,8 +963,9 @@ pub fn run_review(
                 };
                 match study.augment_open(body.deck, files, workspace_dir, decks_root) {
                     None => respond_status(request, 503),
-                    Some(None) => respond_status(request, 409),
-                    Some(Some(dto)) => respond_json(request, &dto),
+                    Some(Transition::Rejected) => respond_status(request, 409),
+                    Some(Transition::FlushFailed) => respond_status(request, 500),
+                    Some(Transition::Done(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/augment/generate") => {
@@ -1015,8 +1026,11 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/augment/close") => match study.augment_close() {
-                Some(dto) => respond_json(request, &dto),
                 None => respond_status(request, 503),
+                Some(Transition::Done(dto)) => respond_json(request, &dto),
+                Some(Transition::Rejected) | Some(Transition::FlushFailed) => {
+                    respond_status(request, 500)
+                }
             },
             (Method::Get, "/api/walk") => match study.walk_poll() {
                 None => respond_status(request, 503),
@@ -1083,8 +1097,11 @@ pub fn run_review(
                 Some(Some(dto)) => respond_json(request, &dto),
             },
             (Method::Post, "/api/walk/leave") => match study.walk_leave() {
-                Some(dto) => respond_json(request, &dto),
                 None => respond_status(request, 503),
+                Some(Transition::Done(dto)) => respond_json(request, &dto),
+                Some(Transition::Rejected) | Some(Transition::FlushFailed) => {
+                    respond_status(request, 500)
+                }
             },
             (Method::Post, "/api/remote/ask") => {
                 let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
