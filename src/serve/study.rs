@@ -489,7 +489,11 @@ fn run(mut s: StudyState, rx: mpsc::Receiver<StudyCommand>) {
 // Must run before every store replacement and before any command opens a
 // store fresh from disk for a mutating operation (reset): a deferred dirty
 // store that is replaced or shadowed unflushed silently loses the session.
-pub(super) fn flush_store(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) -> bool {
+pub(super) fn flush_store(
+    store: &Store,
+    dirty: &mut bool,
+    save_error: &mut Option<String>,
+) -> bool {
     if !*dirty {
         return true;
     }
@@ -812,7 +816,9 @@ impl StudyState {
                             .review_cfg
                             .for_workspace(&root)
                             .retire_after_days;
-                        let poll = ex.sitting.poll(&mut self.store, now_ms(), retire_after_days);
+                        let poll = ex
+                            .sitting
+                            .poll(&mut self.store, now_ms(), retire_after_days);
                         if poll.store_mutated {
                             flush_mutation(
                                 &self.store,
@@ -1281,10 +1287,7 @@ impl StudyState {
                             ) {
                                 // One response shape per endpoint: the cooldown
                                 // is an ExamDto phase, not untagged.
-                                return Transition::Done(Box::new(cooldown_dto(
-                                    &deck.subject,
-                                    ms,
-                                )));
+                                return Transition::Done(Box::new(cooldown_dto(&deck.subject, ms)));
                             }
                             exam::Sitting::start_trace(
                                 t.description.clone(),

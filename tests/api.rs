@@ -638,7 +638,6 @@ fn post_json(base: &str, path: &str, json: &str) -> HttpResp {
     )
 }
 
-
 /// Posts a card-relative mutation with the current `study_revision` echoed,
 /// the way both web clients do. Tests that probe missing or stale echoes use
 /// raw [`http`] instead.
@@ -1184,11 +1183,12 @@ fn concurrent_same_name_imports_land_exactly_one_intact_deck() {
                 (resp.status, text)
             }));
         }
-        let outcomes: Vec<(u16, String)> =
-            handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let outcomes: Vec<(u16, String)> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
-        let winners: Vec<&(u16, String)> =
-            outcomes.iter().filter(|(status, _)| *status == 200).collect();
+        let winners: Vec<&(u16, String)> = outcomes
+            .iter()
+            .filter(|(status, _)| *status == 200)
+            .collect();
         assert_eq!(
             1,
             winners.len(),

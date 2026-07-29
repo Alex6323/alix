@@ -144,8 +144,7 @@ impl OwnerFailure {
     }
 
     pub(super) fn trip(&self) {
-        self.failed
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.failed.store(true, std::sync::atomic::Ordering::SeqCst);
         self.server.unblock();
     }
 
@@ -206,44 +205,52 @@ pub fn run_review(
 
     let failure = OwnerFailure::new(Arc::clone(&server));
 
-    let (study, study_thread) = study::spawn(failure.clone(), StudyState {
-        config: StudyConfig {
-            cfg,
-            exam_cfg: exam_cfg.clone(),
-            review_cfg,
-            audience,
+    let (study, study_thread) = study::spawn(
+        failure.clone(),
+        StudyState {
+            config: StudyConfig {
+                cfg,
+                exam_cfg: exam_cfg.clone(),
+                review_cfg,
+                audience,
+            },
+            store,
+            store_dirty: false,
+            save_error: None,
+            reviewing: None,
+            revision: 0,
+            browsing: None,
+            examining: None,
+            walking: None,
+            augmenting: None,
         },
-        store,
-        store_dirty: false,
-        save_error: None,
-        reviewing: None,
-        revision: 0,
-        browsing: None,
-        examining: None,
-        walking: None,
-        augmenting: None,
-    });
+    );
 
-    let (catalog, catalog_thread) = catalog_owner::spawn(failure.clone(), CatalogState::new(
-        CatalogConfig {
-            scoped,
-            config_path: config_path.clone(),
-            review_cfg,
+    let (catalog, catalog_thread) = catalog_owner::spawn(
+        failure.clone(),
+        CatalogState::new(
+            CatalogConfig {
+                scoped,
+                config_path: config_path.clone(),
+                review_cfg,
+            },
+            decks_dir,
+            recent,
+        ),
+    );
+
+    let (jobs, jobs_thread) = jobs_owner::spawn(
+        failure.clone(),
+        JobsState {
+            catalog: catalog.clone(),
+            generating: None,
+            sharing: None,
+            receiving: None,
+            remote_ask: None,
+            remote_exam: None,
+            remote_generate: None,
         },
-        decks_dir,
-        recent,
-    ));
-
-    let (jobs, jobs_thread) = jobs_owner::spawn(failure.clone(), JobsState {
-        catalog: catalog.clone(),
-        generating: None,
-        sharing: None,
-        receiving: None,
-        remote_ask: None,
-        remote_exam: None,
-        remote_generate: None,
-    });
-
+    );
 
     thread::scope(|scope| {
         for _ in 0..WORKERS {

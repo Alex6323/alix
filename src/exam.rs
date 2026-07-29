@@ -1599,8 +1599,7 @@ mod tests {
 
     fn drain(s: &mut Sitting, store: &mut Store) {
         for _ in 0..500 {
-            if s
-                .poll(store, 0, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS))
+            if s.poll(store, 0, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS))
                 .advanced
             {
                 return;
