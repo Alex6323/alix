@@ -1014,6 +1014,65 @@ fn get_api_doctor_returns_200_with_doctor_rows() {
     assert!(rows.iter().any(|r| r["name"] == "config"), "body: {body}");
 }
 
+/// The doctor's binary probes spawn subprocesses; a parked probe must not
+/// hold the application state hostage. The fake backend signals a marker
+/// file, then parks on a FIFO until the test releases it: while parked, an
+/// independent `/api/state` request must answer. Condition-gated end to end;
+/// the only waits are bounded condition polls and a bounded receive.
+#[test]
+fn a_parked_doctor_binary_probe_does_not_block_state_requests() {
+    let fake_dir = TempDir::new().unwrap();
+    let started = fake_dir.path().join("started");
+    let fifo = fake_dir.path().join("release.fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs")
+            .success()
+    );
+    let script = fake_dir.path().join("parked-backend");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\n: > {started}\nread _ < {fifo}\n",
+            started = started.display(),
+            fifo = fifo.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let (base, _guard) = spawn_full_server(Some(&script));
+
+    let doctor_base = base.clone();
+    let doctor = thread::spawn(move || http(&doctor_base, "GET", "/api/doctor", &[], &[]));
+
+    let probe_started = Instant::now();
+    while !started.exists() {
+        assert!(
+            probe_started.elapsed() < Duration::from_secs(5),
+            "the doctor probe never spawned the fake backend"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let state_base = base.clone();
+    thread::spawn(move || {
+        let _ = tx.send(http(&state_base, "GET", "/api/state", &[], &[]));
+    });
+    let state = rx.recv_timeout(Duration::from_secs(5));
+    // Release the parked probe before asserting, so a regression fails this
+    // test instead of wedging the suite on a never-finishing doctor.
+    std::fs::write(&fifo, "go\n").unwrap();
+
+    let state = state.expect("/api/state must answer while the doctor probe is parked");
+    assert_eq!(200, state.status);
+    let doctor = doctor.join().unwrap();
+    assert_eq!(200, doctor.status);
+}
+
 #[test]
 fn get_api_pair_returns_200_with_the_pairing_url() {
     let (base, _guard) = spawn_test_server();

@@ -268,6 +268,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `GET /api/doctor` no longer holds the application state lock while it
+  probes the backend and wormhole binaries for their versions: the lock is
+  held only to snapshot the store path and decks root, so a slow or hung
+  version probe cannot freeze every other request (grades, pickers, state
+  polls) for its duration.
 - An unreadable decks folder (deleted, renamed, or pointing at a plain file)
   no longer masquerades as an empty catalog: `GET /api/decks` now answers 500
   and logs the cause instead of returning "no decks". The adult picker shows a

@@ -354,6 +354,38 @@ pub fn run_review(
                         respond_json(request, &ask_info);
                         continue;
                     }
+                    // Guard held for the snapshot only: the version-probe
+                    // subprocesses run lock-free, so a parked probe cannot
+                    // stall stateful requests.
+                    (Method::Get, "/api/doctor") => {
+                        let (store_path, decks_root) = {
+                            let guard = state.lock().unwrap_or_else(|e| e.into_inner());
+                            (guard.store.path().to_path_buf(), guard.decks_dir.clone())
+                        };
+                        let (cfg, _) = doctor::check_config(config_path.as_deref());
+                        let rows = vec![
+                            cfg,
+                            doctor::check_store(Some(store_path)),
+                            doctor::check_decks(&decks_root),
+                            doctor::check_binary(
+                                "backend",
+                                &ask_cfg.command,
+                                "the AI features (tutor, exam, generate)",
+                                "install it and log in — or switch `[ask] backend` in the config",
+                            ),
+                            doctor::check_binary(
+                                "share",
+                                "wormhole",
+                                "sharing (`alix share`/`receive`)",
+                                "install magic-wormhole (e.g. `pipx install magic-wormhole`, or your package manager)",
+                            ),
+                        ]
+                        .into_iter()
+                        .map(DoctorRowDto::from)
+                        .collect();
+                        respond_json(request, &DoctorDto { rows });
+                        continue;
+                    }
                     _ => {}
                 }
                 let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -378,30 +410,6 @@ pub fn run_review(
                     remote_generate,
                 } = &mut *guard;
         match (&method, path.as_str()) {
-            (Method::Get, "/api/doctor") => {
-                let (cfg, _) = doctor::check_config(config_path.as_deref());
-                let rows = vec![
-                    cfg,
-                    doctor::check_store(Some(store.path().to_path_buf())),
-                    doctor::check_decks(decks_dir),
-                    doctor::check_binary(
-                        "backend",
-                        &ask_cfg.command,
-                        "the AI features (tutor, exam, generate)",
-                        "install it and log in — or switch `[ask] backend` in the config",
-                    ),
-                    doctor::check_binary(
-                        "share",
-                        "wormhole",
-                        "sharing (`alix share`/`receive`)",
-                        "install magic-wormhole (e.g. `pipx install magic-wormhole`, or your package manager)",
-                    ),
-                ]
-                .into_iter()
-                .map(DoctorRowDto::from)
-                .collect();
-                respond_json(request, &DoctorDto { rows })
-            }
             (Method::Get, "/api/decks") => {
                 match decks_list_dto(
                     scoped,
