@@ -15,11 +15,12 @@ use crate::{
     workspace::{self, Workspace},
 };
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct DeckCache {
     entries: HashMap<PathBuf, Entry>,
 }
 
+#[derive(Clone)]
 struct Entry {
     mtime: SystemTime,
     size: u64,

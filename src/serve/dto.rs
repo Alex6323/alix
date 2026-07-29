@@ -131,14 +131,14 @@ pub(super) struct BrowseDto {
 
 /// A deck inside a workspace stays out of `recent`: reachable only via its
 /// workspace.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct DeckListDto {
     pub(super) workspaces: Vec<DeckItemDto>,
     pub(super) recent: Vec<DeckItemDto>,
     pub(super) folders: Vec<DeckItemDto>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct DeckItemDto {
     pub(super) name: String,
     /// STRUCTURAL: whether `name` is a selectable deck row vs a
@@ -173,7 +173,7 @@ pub(super) struct DeckItemDto {
     pub(super) deadline: Option<DeadlineDto>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct DeadlineDto {
     pub(super) date: String, // ISO YYYY-MM-DD
     pub(super) days_left: i64,
@@ -181,7 +181,7 @@ pub(super) struct DeadlineDto {
     pub(super) total: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct MemberDto {
     pub(super) name: String,
     pub(super) selectable: bool,

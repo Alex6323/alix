@@ -569,15 +569,18 @@ pub fn run_review(
                     respond_status(request, 503);
                     continue;
                 };
-                match catalog.set_deadline(body.name, date, projection) {
+                match catalog.set_deadline(body.name, date) {
                     None => respond_status(request, 503),
-                    Some(Ok(dto)) => respond_json(request, &dto),
                     Some(Err(SetDeadlineError::BadTarget)) => respond_status(request, 400),
                     Some(Err(SetDeadlineError::WriteFailed)) => respond_status(request, 500),
-                    Some(Err(SetDeadlineError::ListFailed(e))) => {
-                        eprintln!("deck listing failed for {e}");
-                        respond_status(request, 500);
-                    }
+                    Some(Ok(())) => match catalog.list(projection) {
+                        None => respond_status(request, 503),
+                        Some(Ok(dto)) => respond_json(request, &dto),
+                        Some(Err(e)) => {
+                            eprintln!("deck listing failed for {e}");
+                            respond_status(request, 500);
+                        }
+                    },
                 }
             }
             (Method::Post, "/api/import") => {

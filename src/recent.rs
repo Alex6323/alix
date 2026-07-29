@@ -10,7 +10,7 @@ pub struct RecentEntry {
     pub last_used_ms: u64,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RecentDecks {
     path: PathBuf,
     entries: Vec<RecentEntry>,
