@@ -317,6 +317,34 @@ enum StoreBacking {
     },
 }
 
+// A snapshot clone for immutable read projections (catalog row status): the
+// atomics and the document mutex make the derive impossible, so this copies
+// their current values.
+impl Clone for StoreBacking {
+    fn clone(&self) -> Self {
+        match self {
+            StoreBacking::Deck {
+                deck_id,
+                subject,
+                revision,
+            } => StoreBacking::Deck {
+                deck_id: deck_id.clone(),
+                subject: subject.clone(),
+                revision: AtomicU64::new(revision.load(Ordering::Relaxed)),
+            },
+            StoreBacking::Aggregate { documents, owners } => StoreBacking::Aggregate {
+                documents: Mutex::new(
+                    documents
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .clone(),
+                ),
+                owners: owners.clone(),
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 struct StoreDocument {
     path: PathBuf,
@@ -326,7 +354,7 @@ struct StoreDocument {
     original: StoreDocumentData,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct StoreOwners {
     cards: HashMap<String, String>,
     records: HashMap<String, String>,
@@ -334,6 +362,7 @@ struct StoreOwners {
     virtual_cards: HashMap<String, String>,
 }
 
+#[derive(Clone)]
 pub struct Store {
     path: PathBuf,
     cards: HashMap<String, CardState>,

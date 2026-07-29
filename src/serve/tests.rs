@@ -4,6 +4,7 @@ use super::*;
 use crate::{
     answer::{Input, Mode, mode_name},
     ask::Reply,
+    augment::AugmentCache,
     card::{Card, CardImage},
     choice,
     config::{AskConfig, ReviewConfig},
@@ -12,7 +13,7 @@ use crate::{
     render::NoteUnit,
     scheduler::{Fsrs, Grade},
     session::{CardTier, Session},
-    trace::Delta,
+    trace::{Delta, Walk},
 };
 #[cfg(unix)]
 use crate::{ask, source::SourceBase};

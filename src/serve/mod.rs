@@ -2,6 +2,7 @@ mod catalog;
 mod dto;
 mod jobs;
 mod respond;
+mod study;
 
 use std::{
     collections::HashMap,
@@ -17,26 +18,24 @@ use catalog::*;
 use dto::*;
 use jobs::*;
 use respond::*;
+use study::*;
 use serde::Deserialize;
 use tiny_http::{Method, Server};
 
 pub use crate::assemble::SelectOptions;
 use crate::{
     assemble::{self, CardsBuild, SessionBuild},
-    augment::AugmentCache,
     cache::DeckCache,
     config::{
         AiConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
     },
-    deck::{self, Deck},
+    deck::Deck,
     doctor, exam, generate, import,
     recent::RecentDecks,
-    review,
     session::now_ms,
     share,
-    store::{self, Store},
-    trace::{self, Walk},
-    workspace,
+    store::Store,
+    trace::{self},
 };
 
 const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
@@ -133,73 +132,28 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 // so an idle kept-alive socket can't starve the rest.
 const WORKERS: usize = 16;
 
-// One lock guards the whole struct: workers receive connections in parallel,
-// but each handler runs while holding the lock, so handlers never interleave.
+// The catalog-slice fields (root, cache, icons, recent) and the job slots
+// that still live behind this lock. The active session and every progress
+// document live in the Study owner (`study.rs`); the Catalog and Jobs
+// owners take these remaining fields next, and then this struct is deleted.
 struct ServeState {
-    store: Store,
-    store_dirty: bool,
-    save_error: Option<String>,
     recent: RecentDecks,
     decks_dir: PathBuf,
     cache: DeckCache,
-    reviewing: Option<Reviewing>,
-    browsing: Option<Browsing>,
-    examining: Option<Examining>,
-    augmenting: Option<Augmenting>,
+    launcher_icons: HashMap<String, PathBuf>,
     generating: Option<Generating>,
     sharing: Option<Sharing>,
     receiving: Option<Receiving>,
-    walking: Option<Walking>,
-    launcher_icons: HashMap<String, PathBuf>,
-    // Kept separate from `reviewing`/`examining` so a phone can never see or
-    // kill a browser session, and vice versa; nothing under `/api/remote/*`
-    // touches `store` (the phone owns its own state).
+    // Kept separate from the Study owner's session so a phone can never see
+    // or kill a browser session, and vice versa; nothing under
+    // `/api/remote/*` touches the progress store (the phone owns its state).
     remote_ask: Option<RemoteAsk>,
     remote_exam: Option<RemoteExamining>,
     remote_generate: Option<RemoteGenerating>,
 }
 
-// Must run before every `*store =` replacement and before any handler opens
-// a store fresh from disk for a mutating operation (reset): a deferred dirty
-// store that is replaced or shadowed unflushed silently loses the session.
-fn flush_store(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
-    if !*dirty {
-        return;
-    }
-    match store.save() {
-        Ok(()) => {
-            *dirty = false;
-            *save_error = None;
-        }
-        Err(e) => {
-            eprintln!("warning: could not save progress: {e}");
-            *save_error = Some(e.to_string());
-        }
-    }
-}
-
-// Runs on every store mutation: the grade (or exam flag, badge, removal) is
-// on disk before its response returns, so killing the server or closing the
-// browser mid-session loses nothing already answered. A failed save lands in
-// `save_error` for the state DTO; the transition-time flushes stay as backstops.
-fn flush_mutation(store: &Store, dirty: &mut bool, save_error: &mut Option<String>) {
-    *dirty = true;
-    flush_store(store, dirty, save_error);
-}
-
-// After any handler that advanced the session without otherwise mutating the
-// store: a first presentation writes a stamp, and it persists with the same
-// per-mutation cadence as a grade. Steady-state polls stamp nothing and
-// write nothing.
-fn flush_presented(
-    r: &mut Reviewing,
-    store: &Store,
-    dirty: &mut bool,
-    save_error: &mut Option<String>,
-) {
-    if r.session.take_presented_stamped() {
-        flush_mutation(store, dirty, save_error);
-    }
+fn lock(state: &Mutex<ServeState>) -> std::sync::MutexGuard<'_, ServeState> {
+    state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 pub fn run_review(
@@ -231,22 +185,31 @@ pub fn run_review(
     let ask_info = AskInfoDto::from(&ask_cfg);
     let http_log = std::env::var_os("ALIX_HTTP_LOG").is_some();
 
-    let state = Mutex::new(ServeState {
+    let (study, study_thread) = study::spawn(StudyState {
+        config: StudyConfig {
+            cfg,
+            exam_cfg: exam_cfg.clone(),
+            review_cfg,
+            audience,
+        },
         store,
         store_dirty: false,
         save_error: None,
-        recent,
-        decks_dir,
-        cache: DeckCache::default(),
         reviewing: None,
         browsing: None,
         examining: None,
+        walking: None,
         augmenting: None,
+    });
+
+    let state = Mutex::new(ServeState {
+        recent,
+        decks_dir,
+        cache: DeckCache::default(),
+        launcher_icons: HashMap::new(),
         generating: None,
         sharing: None,
         receiving: None,
-        walking: None,
-        launcher_icons: HashMap::new(),
         remote_ask: None,
         remote_exam: None,
         remote_generate: None,
@@ -254,7 +217,21 @@ pub fn run_review(
 
     thread::scope(|scope| {
         for _ in 0..WORKERS {
-            scope.spawn(|| loop {
+            let study = study.clone();
+            let state = &state;
+            let server = &server;
+            let keys = &keys;
+            let picker_keys = &picker_keys;
+            let browse_keys = &browse_keys;
+            let ask_info = &ask_info;
+            let ask_cfg = &ask_cfg;
+            let ai_cfg = &ai_cfg;
+            let generate_cfg = &generate_cfg;
+            let exam_cfg = &exam_cfg;
+            let pair = &pair;
+            let auth = &auth;
+            let config_path = &config_path;
+            scope.spawn(move || loop {
                 let mut request = match server.recv() {
                     Ok(r) => r,
                     // tiny_http's `unblock` wakes only one waiter, so relay it
@@ -278,9 +255,9 @@ pub fn run_review(
                     respond_status(request, 401);
                     continue;
                 }
-                // Stateless routes are served before the state lock is taken, so a
-                // slow locked handler cannot stall the page shell, its assets, or
-                // the config-derived key endpoints.
+                // Stateless routes are served first, so a slow stateful
+                // handler cannot stall the page shell, its assets, or the
+                // config-derived key endpoints.
                 match (&method, path.as_str()) {
                     (Method::Get, "/") => {
                         respond_html(request, app_page(audience));
@@ -314,7 +291,7 @@ pub fn run_review(
                         continue;
                     }
                     (Method::Get, "/api/keys") => {
-                        respond_json(request, &keys);
+                        respond_json(request, keys);
                         continue;
                     }
                     (Method::Get, "/api/version") => {
@@ -343,25 +320,27 @@ pub fn run_review(
                         continue;
                     }
                     (Method::Get, "/api/browse-keys") => {
-                        respond_json(request, &browse_keys);
+                        respond_json(request, browse_keys);
                         continue;
                     }
                     (Method::Get, "/api/picker-keys") => {
-                        respond_json(request, &picker_keys);
+                        respond_json(request, picker_keys);
                         continue;
                     }
                     (Method::Get, "/api/ask-info") => {
-                        respond_json(request, &ask_info);
+                        respond_json(request, ask_info);
                         continue;
                     }
-                    // Guard held for the snapshot only: the version-probe
-                    // subprocesses run lock-free, so a parked probe cannot
-                    // stall stateful requests.
+                    // The store path comes from the owner and the decks root
+                    // from a brief residual lock; the version-probe
+                    // subprocesses run without holding either, so a parked
+                    // probe cannot stall stateful requests.
                     (Method::Get, "/api/doctor") => {
-                        let (store_path, decks_root) = {
-                            let guard = state.lock().unwrap_or_else(|e| e.into_inner());
-                            (guard.store.path().to_path_buf(), guard.decks_dir.clone())
+                        let Some(store_path) = study.store_path() else {
+                            respond_status(request, 503);
+                            continue;
                         };
+                        let decks_root = lock(state).decks_dir.clone();
                         let (cfg, _) = doctor::check_config(config_path.as_deref());
                         let rows = vec![
                             cfg,
@@ -388,38 +367,29 @@ pub fn run_review(
                     }
                     _ => {}
                 }
-                let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
+                match (&method, path.as_str()) {
+            (Method::Get, "/api/decks") => {
+                let Some(projection) = study.projection() else {
+                    respond_status(request, 503);
+                    continue;
+                };
+                let mut guard = lock(state);
                 let ServeState {
-                    store,
-                    store_dirty,
-                    save_error,
                     recent,
                     decks_dir,
                     cache,
-                    reviewing,
-                    browsing,
-                    examining,
-                    augmenting,
-                    generating,
-                    sharing,
-                    receiving,
-                    walking,
                     launcher_icons,
-                    remote_ask,
-                    remote_exam,
-                    remote_generate,
+                    ..
                 } = &mut *guard;
-        match (&method, path.as_str()) {
-            (Method::Get, "/api/decks") => {
                 match decks_list_dto(
                     scoped,
                     config_path.as_deref(),
-                    &mut *decks_dir,
+                    decks_dir,
                     recent,
-                    store,
-                    &mut *launcher_icons,
+                    &projection,
+                    launcher_icons,
                     review_cfg,
-                    &mut *cache,
+                    cache,
                 ) {
                     Ok(catalog) => respond_json(request, &catalog),
                     Err(e) => {
@@ -430,135 +400,98 @@ pub fn run_review(
             }
             (Method::Get, key) if key.starts_with("/img/") => {
                 let name = &key["/img/".len()..];
-                if let Some(r) = &reviewing {
-                    serve_image(request, &r.images, name)
-                } else if let Some(b) = &browsing {
-                    serve_image(request, &b.images, name)
-                } else {
-                    serve_image(request, launcher_icons, name)
-                }
-            }
-            (Method::Get, "/api/state") => {
-                if let Some(b) = &browsing {
-                    respond_json(request, &browse_payload(Some(b)))
-                } else {
-                    if let Some(r) = reviewing.as_mut() {
-                        r.session.poll(&mut *store, now_ms());
-                        flush_presented(r, store, store_dirty, save_error);
+                match study.image_path(name.to_string()) {
+                    Some(ImageSource::Active(path)) => {
+                        serve_image_path(request, path.as_deref())
                     }
-                    respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()))
+                    Some(ImageSource::NoActive) => {
+                        let guard = lock(state);
+                        serve_image(request, &guard.launcher_icons, name)
+                    }
+                    None => respond_status(request, 503),
                 }
             }
+            (Method::Get, "/api/state") => match study.state() {
+                Some(SessionSnapshot::Browse(dto)) => respond_json(request, &dto),
+                Some(SessionSnapshot::Review(dto)) => respond_json(request, &dto),
+                None => respond_status(request, 503),
+            },
             (Method::Post, "/api/select") => {
-                match read_selection(&mut request, decks_dir, recent, &mut *cache) {
-                    Some(sel) => {
-                        let opts = sel.opts;
-                        let paths = vec![sel.deck];
-                        flush_store(store, store_dirty, save_error);
-                        if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
-                            .map(|s| *store = s)
-                        {
-                            eprintln!("warning: could not open the progress store: {e}");
-                            respond_status(request, 400);
-                            continue;
-                        }
-                        let recorded_paths = paths.clone();
-                        match assemble::select(paths, &mut *store, &cfg, &opts) {
-                            Ok(assemble::Selected::Walk(wb)) => {
-                                let w = Walking::new(wb.walk, wb.grade);
-                                let dto = walk_dto(&w);
-                                *walking = Some(w);
-                                *reviewing = None;
-                                *examining = None;
-                                respond_json(request, &dto);
+                let sel = {
+                    let mut guard = lock(state);
+                    let ServeState {
+                        recent,
+                        decks_dir,
+                        cache,
+                        ..
+                    } = &mut *guard;
+                    read_selection(&mut request, decks_dir, recent, cache)
+                };
+                match sel {
+                    Some(sel) => match study.select(vec![sel.deck], sel.opts) {
+                        None => respond_status(request, 503),
+                        Some(None) => respond_status(request, 400),
+                        Some(Some((dto, record))) => {
+                            if let Some(paths) = record {
+                                let mut guard = lock(state);
+                                guard.recent.record(&paths, now_ms());
+                                let _ = guard.recent.save();
                             }
-                            Ok(assemble::Selected::Review(b)) => {
-                                if !b.session.is_finished() {
-                                    recent.record(&recorded_paths, now_ms());
-                                    let _ = recent.save();
-                                }
-                                let mut r = Reviewing::new(b);
-                                // `assemble::select` already saved the store,
-                                // stamp included.
-                                let _ = r.session.take_presented_stamped();
-                                r.rotate_variant();
-                                *reviewing = Some(r);
-                                *walking = None;
-                                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-                            }
-                            Err(e) => {
-                                eprintln!("warning: could not load the selected decks: {e}");
-                                respond_status(request, 400);
+                            match dto {
+                                SelectedDto::Walk(dto) => respond_json(request, &dto),
+                                SelectedDto::Review(dto) => respond_json(request, &dto),
                             }
                         }
-                    }
+                    },
                     None => respond_status(request, 400),
                 }
             }
             (Method::Post, "/api/browse") => {
-                match read_selection(&mut request, decks_dir, recent, &mut *cache) {
-                    Some(sel) => {
-                        let paths = vec![sel.deck];
-                        flush_store(store, store_dirty, save_error);
-                        if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
-                            .map(|s| *store = s)
-                        {
-                            eprintln!("warning: could not open the progress store: {e}");
-                            respond_status(request, 400);
-                            continue;
+                let sel = {
+                    let mut guard = lock(state);
+                    let ServeState {
+                        recent,
+                        decks_dir,
+                        cache,
+                        ..
+                    } = &mut *guard;
+                    read_selection(&mut request, decks_dir, recent, cache)
+                };
+                match sel {
+                    Some(sel) => match study.browse(vec![sel.deck]) {
+                        None => respond_status(request, 503),
+                        Some(None) => respond_status(request, 400),
+                        Some(Some((dto, record))) => {
+                            let mut guard = lock(state);
+                            guard.recent.record(&record, now_ms());
+                            let _ = guard.recent.save();
+                            drop(guard);
+                            respond_json(request, &dto);
                         }
-                        let recorded_paths = paths.clone();
-                        match assemble::browse(paths, cfg.instance_store.as_deref()) {
-                            Ok(b) => {
-                                recent.record(&recorded_paths, now_ms());
-                                let _ = recent.save();
-                                *browsing = Some(Browsing::new(b));
-                                *reviewing = None;
-                                *walking = None;
-                                *examining = None;
-                                respond_json(request, &browse_payload(browsing.as_ref()));
-                            }
-                            Err(e) => {
-                                eprintln!("warning: could not load the selected decks: {e}");
-                                respond_status(request, 400);
-                            }
-                        }
-                    }
+                    },
                     None => respond_status(request, 400),
                 }
             }
             (Method::Post, "/api/deck-drawer") => {
-                let dto = match read_selection(&mut request, decks_dir, recent, &mut *cache) {
-                    Some(sel) => {
-                        match (
-                            Deck::load(&sel.deck),
-                            assemble::store_for(
-                                std::slice::from_ref(&sel.deck),
-                                cfg.instance_store.as_deref(),
-                            ),
-                        ) {
-                            (Ok(deck), Ok(s)) => {
-                                let augment = match AugmentCache::open_for_deck(&deck) {
-                                    Ok(augment) => augment,
-                                    Err(_) => {
-                                        respond_json(request, &DeckDrawerDto::default());
-                                        continue;
-                                    }
-                                };
-                                let root = workspace::content_root(&sel.deck);
-                                let retire_after_days =
-                                    review_cfg.for_workspace(&root).retire_after_days;
-                                deck_drawer_dto(&augment, &s, &deck, retire_after_days)
-                            }
-                            _ => DeckDrawerDto::default(),
-                        }
-                    }
-                    None => DeckDrawerDto::default(),
+                let sel = {
+                    let mut guard = lock(state);
+                    let ServeState {
+                        recent,
+                        decks_dir,
+                        cache,
+                        ..
+                    } = &mut *guard;
+                    read_selection(&mut request, decks_dir, recent, cache)
                 };
-                respond_json(request, &dto);
+                match sel {
+                    Some(sel) => match study.deck_drawer(sel.deck) {
+                        Some(dto) => respond_json(request, &dto),
+                        None => respond_status(request, 503),
+                    },
+                    None => respond_json(request, &DeckDrawerDto::default()),
+                }
             }
             (Method::Post, "/api/reset") => {
-                flush_store(store, store_dirty, save_error);
                 #[derive(Deserialize)]
                 struct Body {
                     deck: String,
@@ -568,7 +501,17 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let paths = match resolve_row(&body.deck, decks_dir, recent, &mut *cache) {
+                let resolved = {
+                    let mut guard = lock(state);
+                    let ServeState {
+                        recent,
+                        decks_dir,
+                        cache,
+                        ..
+                    } = &mut *guard;
+                    resolve_row(&body.deck, decks_dir, recent, cache)
+                };
+                let paths = match resolved {
                     Resolved::One(p) => vec![p],
                     Resolved::Many { files, .. } => files,
                     Resolved::Ambiguous | Resolved::Unknown => {
@@ -576,30 +519,10 @@ pub fn run_review(
                         continue;
                     }
                 };
-                let name = body.deck;
-                let decks: Vec<Deck> = match paths.iter().map(Deck::load).collect() {
-                    Ok(d) => d,
-                    Err(_) => {
-                        respond_status(request, 400);
-                        continue;
-                    }
-                };
-                let cleared = assemble::store_for(&paths, cfg.instance_store.as_deref())
-                    .and_then(|mut s| crate::library::reset_decks(&mut s, decks.iter()));
-                match cleared {
-                    Ok(n) => {
-                        if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                            *store = s;
-                        }
-                        respond_json(
-                            request,
-                            &ResetDto {
-                                deck: name,
-                                cards_cleared: n,
-                            },
-                        );
-                    }
-                    Err(_) => respond_status(request, 400),
+                match study.reset(body.deck, paths) {
+                    None => respond_status(request, 503),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                    Some(None) => respond_status(request, 400),
                 }
             }
             (Method::Post, "/api/workspace/deadline") => {
@@ -638,7 +561,19 @@ pub fn run_review(
                         }
                     },
                 };
-                let dir = match resolve_row(&body.name, decks_dir, recent, &mut *cache) {
+                let Some(projection) = study.projection() else {
+                    respond_status(request, 503);
+                    continue;
+                };
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    launcher_icons,
+                    ..
+                } = &mut *guard;
+                let dir = match resolve_row(&body.name, decks_dir, recent, cache) {
                     Resolved::Many { dir, .. } if crate::workspace::is_workspace(&dir) => dir,
                     _ => {
                         respond_status(request, 400);
@@ -653,12 +588,12 @@ pub fn run_review(
                 match decks_list_dto(
                     scoped,
                     config_path.as_deref(),
-                    &mut *decks_dir,
+                    decks_dir,
                     recent,
-                    store,
-                    &mut *launcher_icons,
+                    &projection,
+                    launcher_icons,
                     review_cfg,
-                    &mut *cache,
+                    cache,
                 ) {
                     Ok(catalog) => respond_json(request, &catalog),
                     Err(e) => {
@@ -678,7 +613,14 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dir) = resolve_dest(b.dest.as_deref(), decks_dir, recent, &mut *cache)
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    ..
+                } = &mut *guard;
+                let Some(dir) = resolve_dest(b.dest.as_deref(), decks_dir, recent, cache)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -729,6 +671,15 @@ pub fn run_review(
                     guidance: Option<String>,
                     dest: Option<String>,
                 }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    generating,
+                    ..
+                } = &mut *guard;
                 if let Some(g) = generating.as_mut() {
                     g.poll();
                 }
@@ -736,14 +687,13 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let Some(b) =
                     body.filter(|b| b.url.starts_with("http://") || b.url.starts_with("https://"))
                 else {
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, &mut *cache)
+                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, cache)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -788,7 +738,8 @@ pub fn run_review(
                 respond_json(request, &dto);
             }
             (Method::Get, "/api/generate") => {
-                let Some(g) = generating.as_mut() else {
+                let mut guard = lock(state);
+                let Some(g) = guard.generating.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
@@ -796,7 +747,7 @@ pub fn run_review(
                 respond_json(request, &g.dto());
             }
             (Method::Post, "/api/generate/close") => {
-                *generating = None;
+                lock(state).generating = None;
                 respond_status(request, 200);
             }
             (Method::Post, "/api/share") => {
@@ -804,6 +755,15 @@ pub fn run_review(
                 struct Body {
                     deck: Option<String>,
                 }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    sharing,
+                    ..
+                } = &mut *guard;
                 if let Some(s) = sharing.as_mut() {
                     s.poll();
                 }
@@ -811,10 +771,9 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let path = match body.and_then(|b| b.deck) {
                     None => Some(decks_dir.clone()),
-                    Some(name) => resolved_path(resolve_row(&name, decks_dir, recent, &mut *cache)),
+                    Some(name) => resolved_path(resolve_row(&name, decks_dir, recent, cache)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -851,7 +810,8 @@ pub fn run_review(
                 }
             }
             (Method::Get, "/api/share") => {
-                let Some(s) = sharing.as_mut() else {
+                let mut guard = lock(state);
+                let Some(s) = guard.sharing.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
@@ -859,16 +819,23 @@ pub fn run_review(
                 respond_json(request, &s.dto());
             }
             (Method::Post, "/api/share/close") => {
-                if let Some(s) = sharing.take() {
+                if let Some(s) = lock(state).sharing.take() {
                     s.job.cancel();
                 }
                 respond_status(request, 200);
             }
             (Method::Get, "/api/share/zip") => {
                 let name = query_param(request.url(), "deck");
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    ..
+                } = &mut *guard;
                 let path = match &name {
                     None => Some(decks_dir.clone()),
-                    Some(n) => resolved_path(resolve_row(n, decks_dir, recent, &mut *cache)),
+                    Some(n) => resolved_path(resolve_row(n, decks_dir, recent, cache)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -897,6 +864,15 @@ pub fn run_review(
                     code: String,
                     dest: Option<String>,
                 }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    receiving,
+                    ..
+                } = &mut *guard;
                 if let Some(r) = receiving.as_mut() {
                     r.poll();
                 }
@@ -904,12 +880,11 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let Some(b) = body else {
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, &mut *cache)
+                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, cache)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -945,7 +920,8 @@ pub fn run_review(
                 }
             }
             (Method::Get, "/api/receive") => {
-                let Some(r) = receiving.as_mut() else {
+                let mut guard = lock(state);
+                let Some(r) = guard.receiving.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
@@ -953,7 +929,7 @@ pub fn run_review(
                 respond_json(request, &r.dto());
             }
             (Method::Post, "/api/receive/close") => {
-                if let Some(r) = receiving.take() {
+                if let Some(r) = lock(state).receiving.take() {
                     r.job.cancel();
                 }
                 respond_status(request, 200);
@@ -964,21 +940,27 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
-                let Some(dest) = resolve_dest(
-                    query_param(request.url(), "dest").as_deref(),
-                    decks_dir,
-                    recent,
-                    &mut *cache,
-                ) else {
-                    respond_status(request, 400);
-                    continue;
-                };
+                let dest_name = query_param(request.url(), "dest");
                 let Some(bytes) = read_capped(request.as_reader(), MAX_ZIP) else {
                     respond_status(request, 400);
                     continue;
                 };
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    ..
+                } = &mut *guard;
+                let Some(dest) = resolve_dest(dest_name.as_deref(), decks_dir, recent, cache)
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
                 // `land_received`'s collision check is check-then-act: safe
-                // only because handlers are serialized behind the state lock.
+                // only because this handler holds the residual state lock for
+                // its whole body (the destination-owned landing command is
+                // the Jobs-slice replacement).
                 let landed = tempfile::tempdir().ok().and_then(|tmp| {
                     let zip_path = tmp.path().join("got.zip");
                     std::fs::write(&zip_path, &bytes).ok()?;
@@ -1001,256 +983,128 @@ pub fn run_review(
                     None => respond_status(request, 400),
                 }
             }
-            (Method::Post, "/api/deselect") => {
-                *reviewing = None;
-                *walking = None;
-                *browsing = None;
-                flush_store(store, store_dirty, save_error);
-                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    *store = s;
-                }
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-            }
-            (Method::Post, "/api/grade") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                match read_grade(&mut request) {
-                    Some(grade) => {
-                        let now = now_ms();
-                        r.session.grade(&mut *store, grade, now);
-                        if let Some(deck_id) = r
-                            .files
-                            .paths
-                            .keys()
-                            .next()
-                            .filter(|id| !id.is_empty())
-                            .cloned()
-                        {
-                            store::note_badges(&mut *store, &deck_id, r.session.cards(), now);
-                        }
-                        let _ = r.session.take_presented_stamped();
-                        flush_mutation(store, store_dirty, save_error);
-                        r.rotate_variant();
-                        respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-                    }
-                    None => respond_status(request, 400),
-                }
-            }
-            (Method::Post, "/api/skip") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                r.session.skip(&mut *store, now_ms());
-                flush_presented(r, store, store_dirty, save_error);
-                r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-            }
-            (Method::Post, "/api/acquire") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                r.session.acquire_current(&mut *store, now_ms());
-                let _ = r.session.take_presented_stamped();
-                flush_mutation(store, store_dirty, save_error);
-                r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-            }
+            (Method::Post, "/api/deselect") => match study.deselect() {
+                Some(dto) => respond_json(request, &dto),
+                None => respond_status(request, 503),
+            },
+            (Method::Post, "/api/grade") => match read_grade(&mut request) {
+                Some(grade) => match study.grade(grade) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                },
+                None => respond_status(request, 400),
+            },
+            (Method::Post, "/api/skip") => match study.skip() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/acquire") => match study.acquire() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
             (Method::Post, "/api/check") => {
-                let Some(r) = reviewing.as_ref() else {
-                    respond_status(request, 409);
-                    continue;
-                };
                 #[derive(Deserialize)]
                 struct Body {
                     lines: Vec<String>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let result = body.and_then(|body| review::check_typed(&r.session, &body.lines));
-                match result {
-                    Some(f) => respond_json(request, &f),
-                    None => respond_status(request, 400),
-                }
-            }
-            (Method::Post, "/api/choose") => {
-                let Some(r) = reviewing.as_ref() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let picked = read_index(&mut request)
-                    .and_then(|chosen| review::choose(&r.session, store, &r.augment, chosen));
-                match picked {
-                    Some(f) => respond_json(request, &f),
-                    None => respond_status(request, 400),
-                }
-            }
-            (Method::Post, "/api/remove") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let dropped = r.session.remove_current(&mut *store, now_ms());
-                if let Some(first) = dropped.first() {
-                    let deck_id = first.deck_id.to_string();
-                    let line = first.line;
-                    for card in &dropped {
-                        if let Some(id) = card.id() {
-                            store.remove(&id);
-                        }
-                    }
-                    let _ = r.session.take_presented_stamped();
-                    flush_mutation(store, store_dirty, save_error);
-                    r.files.remove_block(&deck_id, line);
-                }
-                flush_presented(r, store, store_dirty, save_error);
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-            }
-            (Method::Post, "/api/promote") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if !r.session.current_is_virtual(store) {
-                    respond_status(request, 400);
-                    continue;
-                }
-                let Some(id) = r.session.current_id() else {
+                let Some(body) = body else {
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(deck_id) = r.session.current().map(|c| c.deck_id.to_string()) else {
-                    respond_status(request, 400);
-                    continue;
-                };
-                let Some(path) = r.files.paths.get(&deck_id).cloned() else {
-                    respond_status(request, 400);
-                    continue;
-                };
-                if store::promote_virtual(&mut *store, &id, &path).is_err() {
-                    respond_status(request, 400);
-                    continue;
+                match study.check(body.lines) {
+                    None => respond_status(request, 503),
+                    Some(Feedback::NoSession) => respond_status(request, 409),
+                    Some(Feedback::Bad) => respond_status(request, 400),
+                    Some(Feedback::Ok(f)) => respond_json(request, &f),
                 }
-                flush_mutation(store, store_dirty, save_error);
-                r.session.poll(&mut *store, now_ms());
-                flush_presented(r, store, store_dirty, save_error);
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
-            (Method::Post, "/api/restart") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                r.session.restart(&mut *store, now_ms());
-                flush_presented(r, store, store_dirty, save_error);
-                r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-            }
+            (Method::Post, "/api/choose") => match read_index(&mut request) {
+                None => respond_status(request, 400),
+                Some(chosen) => match study.choose(chosen) {
+                    None => respond_status(request, 503),
+                    Some(Feedback::NoSession) => respond_status(request, 409),
+                    Some(Feedback::Bad) => respond_status(request, 400),
+                    Some(Feedback::Ok(f)) => respond_json(request, &f),
+                },
+            },
+            (Method::Post, "/api/remove") => match study.remove() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/promote") => match study.promote() {
+                None => respond_status(request, 503),
+                Some(Feedback::NoSession) => respond_status(request, 409),
+                Some(Feedback::Bad) => respond_status(request, 400),
+                Some(Feedback::Ok(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/restart") => match study.restart() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
             (Method::Post, "/api/ask") => {
                 #[derive(Deserialize)]
                 struct Body {
                     question: String,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let question = body.map(|b| b.question).filter(|q| !q.trim().is_empty());
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if let Some(q) = question {
-                    r.start_ask(&ask_cfg, audience, AskAction::Question(q));
+                let action = body
+                    .map(|b| b.question)
+                    .filter(|q| !q.trim().is_empty())
+                    .map(AskAction::Question);
+                match study.ask_start(action, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                respond_json(request, &r.ask_dto(None, None));
             }
             (Method::Post, "/api/ask/note") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                r.start_ask(&ask_cfg, audience, AskAction::Condense);
-                respond_json(request, &r.ask_dto(None, None));
+                match study.ask_start(Some(AskAction::Condense), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
             }
             (Method::Post, "/api/ask/card/draft") => {
                 if audience == Audience::Kids {
                     respond_status(request, 403);
                     continue;
                 }
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                r.start_ask(&ask_cfg, audience, AskAction::DraftCard);
-                respond_json(request, &r.ask_dto(None, None));
+                match study.ask_start(Some(AskAction::DraftCard), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
             }
             (Method::Post, "/api/ask/card/create") => {
                 if audience == Audience::Kids {
                     respond_status(request, 403);
                     continue;
                 }
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
                 let Some(req) =
                     serde_json::from_reader::<_, CreateCardReq>(request.as_reader()).ok()
                 else {
                     respond_status(request, 400);
                     continue;
                 };
-                if r.session.current().is_none() {
-                    respond_status(request, 409);
-                    continue;
-                }
-                let Some(deck_id) = r
-                    .files
-                    .paths
-                    .keys()
-                    .next()
-                    .filter(|id| !id.is_empty())
-                    .cloned()
-                else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                // Dedup by content fingerprint, not id: a mint carries a
-                // fresh random token, so identical content still collides.
-                let deck_fingerprints: std::collections::HashSet<u64> = r
-                    .session
-                    .cards()
-                    .iter()
-                    .map(|c| c.content_fingerprint)
-                    .collect();
-                let now = now_ms();
-                match store::mint_tutor_card(
-                    &mut *store,
-                    &deck_id,
-                    &req.front,
-                    &req.back,
-                    now,
-                    &deck_fingerprints,
-                ) {
-                    Ok(id) => {
-                        flush_mutation(store, store_dirty, save_error);
-                        respond_json(request, &CreateCardResp { id });
-                    }
-                    Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
-                        respond_status(request, 422);
-                    }
-                    Err(store::MintError::Mint(_)) => {
-                        respond_status(request, 500);
-                    }
+                match study.ask_create(req) {
+                    None => respond_status(request, 503),
+                    Some(CreateOutcome::NoSession) => respond_status(request, 409),
+                    Some(CreateOutcome::Invalid) => respond_status(request, 422),
+                    Some(CreateOutcome::MintFailed) => respond_status(request, 500),
+                    Some(CreateOutcome::Ok(resp)) => respond_json(request, &resp),
                 }
             }
-            (Method::Get, "/api/ask") => {
-                let Some(r) = reviewing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let (status, error) = r.poll_ask();
-                respond_json(request, &r.ask_dto(status, error));
-            }
+            (Method::Get, "/api/ask") => match study.ask_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
             (Method::Post, "/api/exam/start") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1263,89 +1117,32 @@ pub fn run_review(
                 };
                 // A bare name duplicated across containers must 400, not
                 // guess: this endpoint gates progression on the result.
-                let Some(path) =
-                    resolved_path(resolve_row(&body.deck, decks_dir, recent, &mut *cache))
-                else {
+                let resolved = {
+                    let mut guard = lock(state);
+                    let ServeState {
+                        recent,
+                        decks_dir,
+                        cache,
+                        ..
+                    } = &mut *guard;
+                    resolved_path(resolve_row(&body.deck, decks_dir, recent, cache))
+                        .map(|path| (path, decks_dir.clone()))
+                };
+                let Some((path, decks_root)) = resolved else {
                     respond_status(request, 400);
                     continue;
                 };
-                flush_store(store, store_dirty, save_error);
-                if let Ok(s) =
-                    assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
-                {
-                    *store = s;
-                }
-                match Deck::load(&path) {
-                    Ok(deck)
-                        if deck.has_exam()
-                            && !deck::is_locked(&deck, Some(decks_dir.as_path()), store) =>
-                    {
-                        let strictness =
-                            deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
-                        let sitting = if deck.is_trace() {
-                            match trace::Trace::from_deck(&deck) {
-                                Ok(t) => {
-                                    if let Some(ms) = exam::cooldown_remaining_ms(
-                                        store,
-                                        deck.deck_token.as_deref().unwrap_or_default(),
-                                        exam_cfg.retry_cooldown_secs,
-                                        now_ms(),
-                                    ) {
-                                        // One response shape per endpoint: the
-                                        // cooldown is an ExamDto phase, not untagged.
-                                        respond_json(request, &cooldown_dto(&deck.subject, ms));
-                                        continue;
-                                    }
-                                    exam::Sitting::start_trace(
-                                        t.description.clone(),
-                                        t.compression_rubric(),
-                                        deck.subject.clone(),
-                                        deck.deck_token.clone().unwrap_or_default(),
-                                        strictness,
-                                        exam_cfg.clone(),
-                                        ask_cfg.clone(),
-                                    )
-                                }
-                                Err(_) => {
-                                    respond_status(request, 409);
-                                    continue;
-                                }
-                            }
-                        } else {
-                            // Check backend capability before starting, so a
-                            // gap is a clean refusal, not a mid-exam poll error.
-                            if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
-                                respond_status(request, 409);
-                                continue;
-                            }
-                            exam::Sitting::start(
-                                &deck,
-                                strictness,
-                                exam_cfg.clone(),
-                                ask_cfg.clone(),
-                            )
-                        };
-                        let ex = Examining {
-                            sitting,
-                            deck_path: path,
-                        };
-                        let dto = exam_dto(&ex);
-                        *examining = Some(ex);
-                        respond_json(request, &dto);
-                    }
-                    _ => respond_status(request, 409),
+                match study.exam_start(path, decks_root, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(ExamStartReply::Dto(dto)) => respond_json(request, &dto),
+                    Some(ExamStartReply::Conflict) => respond_status(request, 409),
                 }
             }
-            (Method::Get, "/api/exam") => {
-                let Some(ex) = examining.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let root = workspace::content_root(&ex.deck_path);
-                let retire_after_days = review_cfg.for_workspace(&root).retire_after_days;
-                ex.sitting.poll(&mut *store, now_ms(), retire_after_days);
-                respond_json(request, &exam_dto(ex));
-            }
+            (Method::Get, "/api/exam") => match study.exam_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
             (Method::Post, "/api/exam/answer") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1353,17 +1150,15 @@ pub fn run_review(
                     goto: Option<usize>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let Some(ex) = examining.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
+                let (text, goto) = match body {
+                    Some(b) => (b.text, b.goto),
+                    None => (String::new(), None),
                 };
-                if let Some(b) = body {
-                    ex.sitting.set_answer(b.text);
-                    if let Some(i) = b.goto {
-                        ex.sitting.goto(i);
-                    }
+                match study.exam_answer(text, goto) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                respond_json(request, &exam_dto(ex));
             }
             (Method::Post, "/api/exam/grade") => {
                 #[derive(Deserialize)]
@@ -1371,32 +1166,22 @@ pub fn run_review(
                     text: String,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let Some(ex) = examining.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if let Some(b) = body {
-                    ex.sitting.set_answer(b.text);
+                let text = body.map(|b| b.text).unwrap_or_default();
+                match study.exam_grade(text) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                ex.sitting.submit();
-                respond_json(request, &exam_dto(ex));
             }
-            (Method::Post, "/api/exam/remediate") => {
-                let Some(ex) = examining.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                ex.sitting.remediate();
-                respond_json(request, &exam_dto(ex));
-            }
-            (Method::Post, "/api/exam/close") => {
-                *examining = None;
-                flush_store(store, store_dirty, save_error);
-                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    *store = s;
-                }
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-            }
+            (Method::Post, "/api/exam/remediate") => match study.exam_remediate() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/exam/close") => match study.exam_close() {
+                Some(dto) => respond_json(request, &dto),
+                None => respond_status(request, 503),
+            },
             (Method::Post, "/api/augment/open") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1407,8 +1192,20 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let (files, workspace_dir) = match resolve_row(&body.deck, decks_dir, recent, &mut *cache)
-                {
+                let resolved = {
+                    let mut guard = lock(state);
+                    let ServeState {
+                        recent,
+                        decks_dir,
+                        cache,
+                        ..
+                    } = &mut *guard;
+                    (
+                        resolve_row(&body.deck, decks_dir, recent, cache),
+                        decks_dir.clone(),
+                    )
+                };
+                let (files, workspace_dir) = match resolved.0 {
                     Resolved::One(p) => (vec![p], None),
                     Resolved::Many { dir, files } => (files, Some(dir)),
                     _ => {
@@ -1416,41 +1213,10 @@ pub fn run_review(
                         continue;
                     }
                 };
-                let name = body.deck;
-                flush_store(store, store_dirty, save_error);
-                if let Ok(s) = assemble::store_for(&files, cfg.instance_store.as_deref()) {
-                    *store = s;
-                }
-                // Stamp before loading: unstamped ids collapse the cache to
-                // key 0, orphaning the spend at the first real stamp.
-                match assemble::stamp_and_load_cards(&files) {
-                    Ok(cards) => {
-                        let decks: Vec<_> = files
-                            .iter()
-                            .filter_map(|path| crate::deck::Deck::load(path).ok())
-                            .collect();
-                        let deck_tokens: Vec<String> =
-                            decks.iter().filter_map(|deck| deck.deck_token.clone()).collect();
-                        let workspace_root = workspace_dir
-                            .clone()
-                            .or_else(|| files.first().map(|path| crate::workspace::content_root(path)))
-                            .unwrap_or_else(|| decks_dir.clone());
-                        let Ok(cache) = AugmentCache::open_for_decks(&workspace_root, &decks) else {
-                            respond_status(request, 409);
-                            continue;
-                        };
-                        let aug = Augmenting::open(
-                            name,
-                            cards,
-                            deck_tokens,
-                            cache,
-                            workspace_dir,
-                        );
-                        let dto = aug.dto();
-                        *augmenting = Some(aug);
-                        respond_json(request, &dto);
-                    }
-                    Err(_) => respond_status(request, 409),
+                match study.augment_open(body.deck, files, workspace_dir, resolved.1) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/augment/generate") => {
@@ -1464,13 +1230,8 @@ pub fn run_review(
                     targets: Vec<TargetBody>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let Some(aug) = augmenting.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if let Some(b) = body {
-                    let targets = b
-                        .targets
+                let targets = body.map(|b| {
+                    b.targets
                         .into_iter()
                         .map(|t| {
                             let guidance = t
@@ -1479,18 +1240,20 @@ pub fn run_review(
                                 .filter(|s| !s.is_empty());
                             (t.target, guidance)
                         })
-                        .collect();
-                    aug.generate_batch(targets, &ai_cfg, &ask_cfg);
+                        .collect()
+                });
+                match study.augment_generate(targets, ai_cfg.clone(), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                respond_json(request, &aug.dto());
             }
             (Method::Get, "/api/augment") => {
-                let Some(aug) = augmenting.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                aug.poll(&ai_cfg, &ask_cfg);
-                respond_json(request, &aug.dto());
+                match study.augment_poll(ai_cfg.clone(), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
             }
             (Method::Post, "/api/augment/remove") => {
                 #[derive(Deserialize)]
@@ -1499,74 +1262,63 @@ pub fn run_review(
                     topology: Option<String>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let Some(aug) = augmenting.as_mut() else {
-                    respond_status(request, 409);
+                let Some(b) = body else {
+                    match study.augment_poll(ai_cfg.clone(), ask_cfg.clone()) {
+                        None => respond_status(request, 503),
+                        Some(None) => respond_status(request, 409),
+                        Some(Some(dto)) => respond_json(request, &dto),
+                    }
                     continue;
                 };
-                if let Some(b) = body {
-                    aug.remove(&b.target, b.topology.as_deref());
+                match study.augment_remove(b.target, b.topology) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                respond_json(request, &aug.dto());
             }
-            (Method::Post, "/api/augment/close") => {
-                *augmenting = None;
-                flush_store(store, store_dirty, save_error);
-                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    *store = s;
-                }
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
-            }
-            (Method::Get, "/api/walk") => {
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                w.poll();
-                respond_json(request, &walk_dto(w));
-            }
+            (Method::Post, "/api/augment/close") => match study.augment_close() {
+                Some(dto) => respond_json(request, &dto),
+                None => respond_status(request, 503),
+            },
+            (Method::Get, "/api/walk") => match study.walk_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
             (Method::Post, "/api/walk/predict") => {
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
                 #[derive(Deserialize)]
                 struct Body {
                     text: String,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                if let Some(b) = body {
-                    w.walk.predict(b.text);
-                    w.start_grade();
+                let Some(b) = body else {
+                    match study.walk_poll() {
+                        None => respond_status(request, 503),
+                        Some(None) => respond_status(request, 409),
+                        Some(Some(dto)) => respond_json(request, &dto),
+                    }
+                    continue;
+                };
+                match study.walk_predict(b.text) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                respond_json(request, &walk_dto(w));
             }
             (Method::Post, "/api/walk/grade") => {
                 let self_delta = read_delta(&mut request);
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let delta = w.grade_result.as_ref().map(|(d, _)| *d).or(self_delta);
-                match delta {
-                    Some(delta) => {
-                        w.walk.grade(&mut *store, delta, now_ms());
-                        flush_mutation(store, store_dirty, save_error);
-                        w.clear_grade();
-                        respond_json(request, &walk_dto(w));
-                    }
-                    None => respond_status(request, 400),
+                match study.walk_grade(self_delta) {
+                    None => respond_status(request, 503),
+                    Some(WalkGradeReply::NoWalk) => respond_status(request, 409),
+                    Some(WalkGradeReply::NoDelta) => respond_status(request, 400),
+                    Some(WalkGradeReply::Dto(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Post, "/api/walk/restart") => {
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let fresh = Walk::new(w.walk.trace().clone());
-                let grade = w.grade.take();
-                *w = Walking::new(fresh, grade);
-                respond_json(request, &walk_dto(w));
-            }
+            (Method::Post, "/api/walk/restart") => match study.walk_restart() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
             (Method::Post, "/api/walk/ask") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1574,40 +1326,35 @@ pub fn run_review(
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let question = body.map(|b| b.question).filter(|q| !q.trim().is_empty());
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if let Some(q) = question {
-                    w.start_ask(&ask_cfg, audience, Some(q));
+                match study.walk_ask(WalkAskAction::Question(question), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                respond_json(request, &w.ask_dto(None, None));
             }
             (Method::Post, "/api/walk/ask/note") => {
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                w.start_ask(&ask_cfg, audience, None);
-                respond_json(request, &w.ask_dto(None, None));
-            }
-            (Method::Get, "/api/walk/ask") => {
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                let (status, error) = w.poll_ask();
-                respond_json(request, &w.ask_dto(status, error));
-            }
-            (Method::Post, "/api/walk/leave") => {
-                *walking = None;
-                flush_store(store, store_dirty, save_error);
-                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    *store = s;
+                match study.walk_ask(WalkAskAction::Note, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), store, save_error.as_deref()));
             }
+            (Method::Get, "/api/walk/ask") => match study.walk_ask_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/walk/leave") => match study.walk_leave() {
+                Some(dto) => respond_json(request, &dto),
+                None => respond_status(request, 503),
+            },
             (Method::Post, "/api/remote/ask") => {
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let mut guard = lock(state);
+                let remote_ask = &mut guard.remote_ask;
                 if let Some(a) = remote_ask.as_mut() {
                     a.poll();
                 }
@@ -1615,10 +1362,6 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 }
-                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
-                    respond_status(request, 400);
-                    continue;
-                };
                 let Ok(RemoteAskReq {
                     card,
                     history,
@@ -1635,13 +1378,14 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
-                let job = RemoteAsk::ask(&ask_cfg, &card, history, &question);
+                let job = RemoteAsk::ask(ask_cfg, &card, history, &question);
                 let dto = job.dto();
                 *remote_ask = Some(job);
                 respond_json(request, &dto);
             }
             (Method::Get, "/api/remote/ask") => {
-                let dto = match remote_ask.as_mut() {
+                let mut guard = lock(state);
+                let dto = match guard.remote_ask.as_mut() {
                     Some(a) => {
                         a.poll();
                         a.dto()
@@ -1662,6 +1406,12 @@ pub fn run_review(
                     respond_status(request, 403);
                     continue;
                 }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let mut guard = lock(state);
+                let remote_ask = &mut guard.remote_ask;
                 if let Some(a) = remote_ask.as_mut() {
                     a.poll();
                 }
@@ -1669,10 +1419,6 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 }
-                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
-                    respond_status(request, 400);
-                    continue;
-                };
                 let Ok(RemoteDraftReq { card, history }) =
                     serde_json::from_slice::<RemoteDraftReq>(&bytes)
                 else {
@@ -1683,12 +1429,18 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
-                let job = RemoteAsk::draft(&ask_cfg, &card, history);
+                let job = RemoteAsk::draft(ask_cfg, &card, history);
                 let dto = job.dto();
                 *remote_ask = Some(job);
                 respond_json(request, &dto);
             }
             (Method::Post, "/api/remote/ask/note") => {
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let mut guard = lock(state);
+                let remote_ask = &mut guard.remote_ask;
                 if let Some(a) = remote_ask.as_mut() {
                     a.poll();
                 }
@@ -1696,10 +1448,6 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 }
-                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
-                    respond_status(request, 400);
-                    continue;
-                };
                 let Ok(RemoteNoteReq { card, history }) =
                     serde_json::from_slice::<RemoteNoteReq>(&bytes)
                 else {
@@ -1710,7 +1458,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
-                let job = RemoteAsk::note(&ask_cfg, &card, history);
+                let job = RemoteAsk::note(ask_cfg, &card, history);
                 let dto = job.dto();
                 *remote_ask = Some(job);
                 respond_json(request, &dto);
@@ -1718,24 +1466,32 @@ pub fn run_review(
             // The requires-lock and the trace re-sit cooldown are the
             // browser's own truth; both are deliberately skipped here.
             (Method::Post, "/api/remote/exam/start") => {
-                if remote_exam.is_some() {
-                    respond_status(request, 409);
-                    continue;
-                }
-                #[derive(Deserialize)]
-                struct Body {
-                    deck: String,
-                }
                 let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
                     respond_status(request, 400);
                     continue;
                 };
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                }
                 let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
                     respond_status(request, 400);
                     continue;
                 };
+                let mut guard = lock(state);
+                let ServeState {
+                    recent,
+                    decks_dir,
+                    cache,
+                    remote_exam,
+                    ..
+                } = &mut *guard;
+                if remote_exam.is_some() {
+                    respond_status(request, 409);
+                    continue;
+                }
                 let Some(path) =
-                    resolved_path(resolve_row(&body.deck, decks_dir, recent, &mut *cache))
+                    resolved_path(resolve_row(&body.deck, decks_dir, recent, cache))
                 else {
                     respond_status(request, 400);
                     continue;
@@ -1766,7 +1522,7 @@ pub fn run_review(
                         }
                     }
                 } else {
-                    if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
+                    if exam::ensure_backend_can_examine(&deck, ask_cfg).is_err() {
                         respond_status(request, 409);
                         continue;
                     }
@@ -1783,7 +1539,8 @@ pub fn run_review(
             // advance() only, never poll(): poll() writes the store, which
             // remote handlers must never touch.
             (Method::Get, "/api/remote/exam") => {
-                let dto = match remote_exam.as_mut() {
+                let mut guard = lock(state);
+                let dto = match guard.remote_exam.as_mut() {
                     Some(ex) => {
                         ex.advance();
                         ex.dto()
@@ -1805,7 +1562,8 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(ex) = remote_exam.as_mut() else {
+                let mut guard = lock(state);
+                let Some(ex) = guard.remote_exam.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
@@ -1826,7 +1584,8 @@ pub fn run_review(
                 respond_json(request, &ex.dto());
             }
             (Method::Post, "/api/remote/exam/remediate") => {
-                let Some(ex) = remote_exam.as_mut() else {
+                let mut guard = lock(state);
+                let Some(ex) = guard.remote_exam.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
@@ -1840,12 +1599,18 @@ pub fn run_review(
             // Drop the slot; an in-flight thread just finds its receiver
             // gone and its send fails harmlessly.
             (Method::Post, "/api/remote/exam/close") => {
-                *remote_exam = None;
+                lock(state).remote_exam = None;
                 respond_status(request, 200);
             }
             // No dest, no destination-collision check: this returns the
             // deck text, it never places a file (both are the phone's job).
             (Method::Post, "/api/remote/generate") => {
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let mut guard = lock(state);
+                let remote_generate = &mut guard.remote_generate;
                 if let Some(g) = remote_generate.as_mut() {
                     g.poll();
                 }
@@ -1861,10 +1626,6 @@ pub fn run_review(
                     url: String,
                     guidance: Option<String>,
                 }
-                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
-                    respond_status(request, 400);
-                    continue;
-                };
                 let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
                     respond_status(request, 400);
                     continue;
@@ -1887,7 +1648,8 @@ pub fn run_review(
                 respond_json(request, &dto);
             }
             (Method::Get, "/api/remote/generate") => {
-                let Some(g) = remote_generate.as_mut() else {
+                let mut guard = lock(state);
+                let Some(g) = guard.remote_generate.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
@@ -1895,27 +1657,23 @@ pub fn run_review(
                 respond_json(request, &g.dto());
             }
             (Method::Post, "/api/remote/generate/close") => {
-                *remote_generate = None;
+                lock(state).remote_generate = None;
                 respond_status(request, 200);
             }
             _ => respond_status(request, 404),
         }
-                }
-                );
+            });
         }
     });
 
-    // Workers have drained (unblock relay), so the lock is free: one last
-    // flush covers any mutation whose own save failed transiently.
-    let ServeState {
-        store,
-        mut store_dirty,
-        mut save_error,
-        ..
-    } = state
-        .into_inner()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    flush_store(&store, &mut store_dirty, &mut save_error);
+    // Workers have drained (the unblock relay), so no more commands can
+    // arrive; dropping the last handle lets the owner run its final flush
+    // and exit. A panic on the owner thread is the application failing, not
+    // a condition to absorb: propagate it to the caller's thread.
+    drop(study);
+    if let Err(panic) = study_thread.join() {
+        std::panic::resume_unwind(panic);
+    }
     Ok(())
 }
 

@@ -232,7 +232,11 @@ pub(super) fn respond_download(
 }
 
 pub(super) fn serve_image(request: Request, images: &HashMap<String, PathBuf>, key: &str) {
-    match images.get(key) {
+    serve_image_path(request, images.get(key).map(PathBuf::as_path));
+}
+
+pub(super) fn serve_image_path(request: Request, path: Option<&Path>) {
+    match path {
         Some(path) => match std::fs::read(path) {
             Ok(bytes) => respond_bytes(request, bytes, content_type(path)),
             Err(_) => respond_status(request, 404),
