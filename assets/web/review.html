@@ -971,16 +971,27 @@ const menu = document.getElementById("menu");
 // empty (not JSON), so `.json()` throws and the rejection propagates to
 // every `.catch` below. If an error DTO ever grows a body, that stops firing.
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
-function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
+function post(body) {
+  const headers = { "Content-Type": "application/json" };
+  // Card-relative mutations echo the state's revision; the server 409s a
+  // stale echo so a retried request can never grade the next card.
+  if (Number.isSafeInteger(state?.study_revision)) {
+    headers["X-Alix-Study-Revision"] = String(state.study_revision);
+  }
+  return { method: "POST", headers, body: JSON.stringify(body) };
+}
 // On load the page may be seeded in browse mode (a `alix browse --serve` launch):
 // the state then carries the browse phase + cards, so open the overlay directly.
 function load() { return api("/api/state").then(s => { if (s.phase === "browse") { browsing = { cards: s.cards, label: s.label, i: 0 }; state = s; render(); } else apply(s); }); }
-function grade(g)  { api("/api/grade", post({ grade: g })).then(apply); }
-function skip()    { api("/api/skip", post({})).then(apply); }
-function acquire() { api("/api/acquire", post({})).then(apply); }
-function remove()  { api("/api/remove", post({})).then(apply); }
-function promote() { api("/api/promote", post({})).then(apply); }
-function restart() { api("/api/restart", post({})).then(apply); }
+// A rejected mutation (a stale revision after a lost reply, or a transport
+// failure) refetches the state, so the next click carries a fresh echo
+// instead of silently doing nothing forever.
+function grade(g)  { api("/api/grade", post({ grade: g })).then(apply).catch(() => load()); }
+function skip()    { api("/api/skip", post({})).then(apply).catch(() => load()); }
+function acquire() { api("/api/acquire", post({})).then(apply).catch(() => load()); }
+function remove()  { api("/api/remove", post({})).then(apply).catch(() => load()); }
+function promote() { api("/api/promote", post({})).then(apply).catch(() => load()); }
+function restart() { api("/api/restart", post({})).then(apply).catch(() => load()); }
 
 // One heatmap cell's fill: the lib's per-card tier. untouched = neutral,
 // seen = dim grey (presented, never yet correct), acquired = white (correct
@@ -1128,14 +1139,14 @@ function modeLabel() {
 // override when correct, a plain "Continue" (grades failed) when wrong — so a
 // miss shows the right answer before the card moves on, same as any other check.
 function choose(i) {
-  api("/api/choose", post({ index: i })).then(f => {
+  api("/api/choose", post({ index: i })).catch(() => { load(); return Promise.reject(); }).then(f => {
     feedback = f;
     render();
   });
 }
 function submitCheck() {
   const lines = Array.from(document.querySelectorAll("#ansRegion input.field")).map(i => i.value);
-  api("/api/check", post({ lines })).then(f => { feedback = f; render(); });
+  api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(f => { feedback = f; render(); }).catch(() => load());
 }
 // TypeLine: one line at a time; the server derives the position-paired check
 // from the card's own mode. Resubmits every line checked so far (the
@@ -1387,7 +1398,7 @@ function sendAsk(text) {
   const ta = document.querySelector(".ask-input");
   if (ta) ta.value = ""; // the textarea persists across syncAsk; clear the sent question
   const ep = walkData ? "/api/walk/ask" : "/api/ask";
-  api(ep, post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+  api(ep, post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); }).catch(() => load());
 }
 // Save-note and Make-this-a-card both distill a completed exchange into
 // something durable, so both need at least one tutor answer and no in-flight
@@ -1397,7 +1408,7 @@ function saveAskNote() {
   if (!canDistill()) return;
   askNeedsStateRefresh = true;
   const ep = walkData ? "/api/walk/ask/note" : "/api/ask/note";
-  api(ep, post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+  api(ep, post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); }).catch(() => load());
 }
 // Distill the conversation so far into one draft card, surfaced on askData.draft
 // once the poll picks up the tutor's reply. Adult-only (no walk equivalent).
@@ -3717,7 +3728,7 @@ function keypointVerdict() {
 // Submit: the server derives failed/partly/passed from how many points were
 // covered (the one keypoint_grade rule, in the lib). Unanswered = not covered.
 function submitKeypoints() {
-  api("/api/grade", post({ covered: keypointsYes(), total: state.keypoints.length })).then(apply);
+  api("/api/grade", post({ covered: keypointsYes(), total: state.keypoints.length })).then(apply).catch(() => load());
 }
 function explainReveal() {
   const ta = document.querySelector(".explain-input");

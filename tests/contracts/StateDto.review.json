@@ -183,5 +183,6 @@
   "promotable": true,
   "remaining": 3,
   "reviews": 2,
-  "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4"
+  "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4",
+  "study_revision": 7
 }

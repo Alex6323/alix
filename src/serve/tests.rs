@@ -885,7 +885,7 @@ fn measure_math_state_and_browse_payloads() {
 fn review_state_select_phase_has_no_card() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("p.json")).unwrap();
-    let dto = review_state(None, &store, None);
+    let dto = review_state(None, &store, None, 0);
     assert_eq!(dto.phase, "select");
     assert_eq!(dto.kind, "review");
     assert!(dto.card.is_none());
@@ -902,7 +902,7 @@ fn finished_review_uses_the_done_phase_not_a_finished_flag() {
     let mut store = Store::open(dir.path().join("graded.json")).unwrap();
     r.session.grade(&mut store, Grade::Pass, now_ms());
     assert!(r.session.is_finished());
-    let dto = review_state(Some(&r), &store, None);
+    let dto = review_state(Some(&r), &store, None, 0);
     assert_eq!(dto.phase, "done");
     assert_eq!(dto.kind, "review");
 }
@@ -951,7 +951,7 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
     store.get_or_insert(&cards[0].id().unwrap(), 0);
     let r = reviewing_at(deck, cards, &mut store, Depth::Reconstruct);
 
-    let dto = review_state(Some(&r), &store, None);
+    let dto = review_state(Some(&r), &store, None, 0);
     assert_eq!(
         "reconstruct", dto.depth,
         "the DTO reports the session's depth"
@@ -973,7 +973,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     store.get_or_insert(&cards[0].id().unwrap(), 0);
     let mut r = reviewing_at(deck, cards.clone(), &mut store, Depth::Reconstruct);
 
-    let fallback = review_state(Some(&r), &store, None);
+    let fallback = review_state(Some(&r), &store, None, 0);
     assert_eq!(fallback.mode, "explain");
     assert_eq!(
         fallback.keypoints,
@@ -985,7 +985,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
         vec!["one claim".to_string()],
         cards[0].content_fingerprint,
     );
-    let cached = review_state(Some(&r), &store, None);
+    let cached = review_state(Some(&r), &store, None, 0);
     assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
 }
 
@@ -1008,7 +1008,7 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
         fingerprint,
     );
 
-    let dto = review_state(Some(&r), &store, None);
+    let dto = review_state(Some(&r), &store, None, 0);
     let opts = dto
         .choices
         .expect("a Recognize cloze card offers gap-filler options");
@@ -1041,7 +1041,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
         fingerprint,
     );
 
-    let dto = review_state(Some(&r), &store, None);
+    let dto = review_state(Some(&r), &store, None, 0);
     let opts = dto
         .choices
         .expect("cached whole-sequence distractors offer options");
@@ -1069,7 +1069,7 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
     store.get_or_insert(&cards[0].id().unwrap(), 0);
     let r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
 
-    let dto = review_state(Some(&r), &store, None);
+    let dto = review_state(Some(&r), &store, None, 0);
     assert!(
         dto.choices.is_none(),
         "no cached distractors and no offline pool → the fallback signal"
@@ -1098,10 +1098,10 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
         fingerprint,
     );
 
-    let first = review_state(Some(&r), &store, None)
+    let first = review_state(Some(&r), &store, None, 0)
         .choices
         .expect("a valid MC from the 3 cached AI distractors");
-    let second = review_state(Some(&r), &store, None)
+    let second = review_state(Some(&r), &store, None, 0)
         .choices
         .expect("still the same appearance");
     assert_eq!(first, second, "an idle poll must not reshuffle mid-answer");
@@ -1121,7 +1121,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
             r.session.current().and_then(|c| c.id()),
             "past the floor, the card returns"
         );
-        let later = review_state(Some(&r), &store, None)
+        let later = review_state(Some(&r), &store, None, 0)
             .choices
             .expect("the next appearance still offers the MC");
         if later != first {
@@ -1146,7 +1146,7 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     state.recognized_ms = Some(500);
     let r = reviewing_at(deck, cards, &mut store, Depth::Recall);
 
-    let dto = review_state(Some(&r), &store, None);
+    let dto = review_state(Some(&r), &store, None, 0);
     assert!(!dto.acquire, "a recognized card isn't acquired cold");
     assert!(
         dto.choices.is_none(),
@@ -1425,7 +1425,7 @@ fn exam_due_reports_the_decks_name_not_its_routing_id() {
     });
 
     let r = reviewing_at(deck_path, vec![card], &mut store, Depth::Recall);
-    let dto = review_state(Some(&r), &store, None);
+    let dto = review_state(Some(&r), &store, None, 0);
     assert_eq!("done", dto.phase, "expected a finished session: {dto:?}");
     assert_eq!(vec!["d.md".to_string()], dto.exam_due);
 }

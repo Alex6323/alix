@@ -79,6 +79,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Breaking: every card-relative review POST (`/api/grade`, `/api/skip`,
+  `/api/acquire`, `/api/check`, `/api/choose`, `/api/remove`,
+  `/api/promote`, `/api/restart`, and the four tutor POSTs) must echo the
+  `StateDto.study_revision` in an `X-Alix-Study-Revision` header. Missing
+  or malformed is 400; stale is 409 and mutates nothing, so retrying a
+  grade whose reply was lost cannot grade the next card. Both web clients
+  echo it and refetch the state on a 409.
+
 - Session pacing is now two `[review]` keys: `max_session` (cards a single
   sitting serves, default 10) and `new_cards_percent` (the new-card share of
   that cap, default 30). The old `max_new` / `limit` keys and the `--new` /

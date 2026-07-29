@@ -29,6 +29,7 @@ fn pin<T: serde::Serialize>(anchor: &str, dto: &T, expected: serde_json::Value) 
 fn statedto_select_phase_wire_shape() {
     let dto = StateDto {
         kind: "review",
+        study_revision: 7,
         phase: "select",
         card: None,
         choices: None,
@@ -72,6 +73,7 @@ fn statedto_select_phase_wire_shape() {
             "remaining": 0,
             "initial": 0,
             "reviews": 0,
+            "study_revision": 7,
             "passed": 0,
             "failed": 0,
             "acquired": 0,
@@ -89,6 +91,7 @@ fn statedto_select_phase_wire_shape() {
 fn statedto_review_phase_wire_shape() {
     let dto = StateDto {
         kind: "review",
+        study_revision: 7,
         phase: "review",
         card: Some(CardDto {
             front: "What is ownership?".to_string(),
@@ -265,6 +268,7 @@ fn statedto_review_phase_wire_shape() {
             "remaining": 3,
             "initial": 5,
             "reviews": 2,
+            "study_revision": 7,
             "passed": 1,
             "failed": 1,
             "acquired": 4,
@@ -283,6 +287,7 @@ fn statedto_review_phase_wire_shape() {
 fn statedto_done_phase_carries_the_next_due_instant() {
     let dto = StateDto {
         kind: "review",
+        study_revision: 7,
         phase: "done",
         card: None,
         choices: None,
@@ -326,6 +331,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
             "remaining": 0,
             "initial": 0,
             "reviews": 0,
+            "study_revision": 7,
             "passed": 0,
             "failed": 0,
             "acquired": 0,

@@ -108,6 +108,16 @@ so is every client.
    overrides `max_session` (the cards one sitting serves) for this launch; its
    new-card share stays the instance's `new_cards_percent`.
 3. Render from `StateDto` (`phase:"review"`, `card`, `mode`, `depth`, counts).
+   Every `StateDto` carries `study_revision`, the monotonic identity of the
+   current review transition. **Echo it in the `X-Alix-Study-Revision`
+   header on every card-relative POST** (`/api/grade`, `/api/skip`,
+   `/api/acquire`, `/api/check`, `/api/choose`, `/api/remove`,
+   `/api/promote`, `/api/restart`, `/api/ask`, `/api/ask/note`,
+   `/api/ask/card/draft`, `/api/ask/card/create`). A missing or malformed
+   header is a 400. A stale revision is a 409 and mutates nothing, so
+   retrying a request whose reply was lost can never grade the next card;
+   on a 409, refetch `GET /api/state` and continue from its fresh
+   `study_revision`.
    For typed checks call `POST /api/check {lines}`; whether the lines pair
    by position (`typeline`) or match in any order is derived server-side
    from the card's mode, never sent by the client. For a multiple-choice

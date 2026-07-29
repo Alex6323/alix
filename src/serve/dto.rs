@@ -90,6 +90,9 @@ pub(super) struct RegionInfoDto {
 #[derive(Debug, Serialize)]
 pub(super) struct StateDto {
     pub(super) kind: &'static str,
+    /// Monotonic identity of the current review transition. Card-relative
+    /// mutations echo it in `X-Alix-Study-Revision`; a stale echo is a 409.
+    pub(super) study_revision: u64,
     /// No separate `finished` flag: a finished session is just the `done` phase.
     pub(super) phase: &'static str,
     pub(super) card: Option<CardDto>,
@@ -911,10 +914,12 @@ pub(super) fn review_state(
     reviewing: Option<&Reviewing>,
     store: &Store,
     save_error: Option<&str>,
+    study_revision: u64,
 ) -> StateDto {
     let Some(r) = reviewing else {
         return StateDto {
             kind: "review",
+            study_revision,
             phase: "select",
             card: None,
             choices: None,
@@ -1037,6 +1042,7 @@ pub(super) fn review_state(
     });
     StateDto {
         kind: "review",
+        study_revision,
         phase: if s.finished { "done" } else { "review" },
         card: card_with_citation,
         choices: s.choices,

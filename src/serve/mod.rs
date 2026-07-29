@@ -169,6 +169,12 @@ pub(super) fn supervised(
     })
 }
 
+/// The revision a card-relative mutation echoes back. Missing or malformed
+/// is the client's error (400); staleness is decided by the Study owner.
+fn echoed_revision(request: &tiny_http::Request) -> Option<u64> {
+    header_value(request, "X-Alix-Study-Revision")?.parse().ok()
+}
+
 pub fn run_review(
     store: Store,
     recent: RecentDecks,
@@ -211,6 +217,7 @@ pub fn run_review(
         store_dirty: false,
         save_error: None,
         reviewing: None,
+        revision: 0,
         browsing: None,
         examining: None,
         walking: None,
@@ -762,24 +769,42 @@ pub fn run_review(
                     respond_status(request, 500)
                 }
             },
-            (Method::Post, "/api/grade") => match read_grade(&mut request) {
-                Some(grade) => match study.grade(grade) {
+            (Method::Post, "/api/grade") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match read_grade(&mut request) {
+                    Some(grade) => match study.grade(grade, expected) {
+                        None => respond_status(request, 503),
+                        Some(None) => respond_status(request, 409),
+                        Some(Some(dto)) => respond_json(request, &dto),
+                    },
+                    None => respond_status(request, 400),
+                }
+            }
+            (Method::Post, "/api/skip") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.skip(expected) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
-                },
-                None => respond_status(request, 400),
-            },
-            (Method::Post, "/api/skip") => match study.skip() {
-                None => respond_status(request, 503),
-                Some(None) => respond_status(request, 409),
-                Some(Some(dto)) => respond_json(request, &dto),
-            },
-            (Method::Post, "/api/acquire") => match study.acquire() {
-                None => respond_status(request, 503),
-                Some(None) => respond_status(request, 409),
-                Some(Some(dto)) => respond_json(request, &dto),
-            },
+                }
+            }
+            (Method::Post, "/api/acquire") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.acquire(expected) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
             (Method::Post, "/api/check") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -790,39 +815,71 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match study.check(body.lines) {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.check(body.lines, expected) {
                     None => respond_status(request, 503),
                     Some(Feedback::NoSession) => respond_status(request, 409),
                     Some(Feedback::Bad) => respond_status(request, 400),
                     Some(Feedback::Ok(f)) => respond_json(request, &f),
                 }
             }
-            (Method::Post, "/api/choose") => match read_index(&mut request) {
-                None => respond_status(request, 400),
-                Some(chosen) => match study.choose(chosen) {
+            (Method::Post, "/api/choose") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match read_index(&mut request) {
+                    None => respond_status(request, 400),
+                    Some(chosen) => match study.choose(chosen, expected) {
+                        None => respond_status(request, 503),
+                        Some(Feedback::NoSession) => respond_status(request, 409),
+                        Some(Feedback::Bad) => respond_status(request, 400),
+                        Some(Feedback::Ok(f)) => respond_json(request, &f),
+                    },
+                }
+            }
+            (Method::Post, "/api/remove") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.remove(expected) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Post, "/api/promote") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.promote(expected) {
                     None => respond_status(request, 503),
                     Some(Feedback::NoSession) => respond_status(request, 409),
                     Some(Feedback::Bad) => respond_status(request, 400),
-                    Some(Feedback::Ok(f)) => respond_json(request, &f),
-                },
-            },
-            (Method::Post, "/api/remove") => match study.remove() {
-                None => respond_status(request, 503),
-                Some(None) => respond_status(request, 409),
-                Some(Some(dto)) => respond_json(request, &dto),
-            },
-            (Method::Post, "/api/promote") => match study.promote() {
-                None => respond_status(request, 503),
-                Some(Feedback::NoSession) => respond_status(request, 409),
-                Some(Feedback::Bad) => respond_status(request, 400),
-                Some(Feedback::Ok(dto)) => respond_json(request, &dto),
-            },
-            (Method::Post, "/api/restart") => match study.restart() {
-                None => respond_status(request, 503),
-                Some(None) => respond_status(request, 409),
-                Some(Some(dto)) => respond_json(request, &dto),
-            },
+                    Some(Feedback::Ok(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Post, "/api/restart") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.restart(expected) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
             (Method::Post, "/api/ask") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
                 #[derive(Deserialize)]
                 struct Body {
                     question: String,
@@ -832,14 +889,18 @@ pub fn run_review(
                     .map(|b| b.question)
                     .filter(|q| !q.trim().is_empty())
                     .map(AskAction::Question);
-                match study.ask_start(action, ask_cfg.clone()) {
+                match study.ask_start(action, ask_cfg.clone(), expected) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/ask/note") => {
-                match study.ask_start(Some(AskAction::Condense), ask_cfg.clone()) {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.ask_start(Some(AskAction::Condense), ask_cfg.clone(), expected) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
@@ -850,7 +911,11 @@ pub fn run_review(
                     respond_status(request, 403);
                     continue;
                 }
-                match study.ask_start(Some(AskAction::DraftCard), ask_cfg.clone()) {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.ask_start(Some(AskAction::DraftCard), ask_cfg.clone(), expected) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
@@ -867,7 +932,11 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match study.ask_create(req) {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.ask_create(req, expected) {
                     None => respond_status(request, 503),
                     Some(CreateOutcome::NoSession) => respond_status(request, 409),
                     Some(CreateOutcome::Invalid) => respond_status(request, 422),

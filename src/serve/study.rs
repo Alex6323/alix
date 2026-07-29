@@ -36,6 +36,10 @@ pub(super) struct StudyState {
     pub(super) store_dirty: bool,
     pub(super) save_error: Option<String>,
     pub(super) reviewing: Option<Reviewing>,
+    // Monotonic identity of the review transition: bumped whenever the
+    // current card can change, checked against every card-relative
+    // mutation's echoed header before the mutation applies.
+    pub(super) revision: u64,
     pub(super) browsing: Option<Browsing>,
     pub(super) examining: Option<Examining>,
     pub(super) walking: Option<Walking>,
@@ -120,24 +124,43 @@ pub(super) enum StudyCommand {
     Deselect(Reply<Transition<StateDto>>),
     Grade {
         grade: crate::scheduler::Grade,
+        expected: u64,
         reply: Reply<Option<StateDto>>,
     },
-    Skip(Reply<Option<StateDto>>),
-    Acquire(Reply<Option<StateDto>>),
-    Restart(Reply<Option<StateDto>>),
+    Skip {
+        expected: u64,
+        reply: Reply<Option<StateDto>>,
+    },
+    Acquire {
+        expected: u64,
+        reply: Reply<Option<StateDto>>,
+    },
+    Restart {
+        expected: u64,
+        reply: Reply<Option<StateDto>>,
+    },
     Check {
         lines: Vec<String>,
+        expected: u64,
         reply: Reply<Feedback<review::CheckFeedback>>,
     },
     Choose {
         index: usize,
+        expected: u64,
         reply: Reply<Feedback<review::ChoiceFeedback>>,
     },
-    Remove(Reply<Option<StateDto>>),
-    Promote(Reply<Feedback<StateDto>>),
+    Remove {
+        expected: u64,
+        reply: Reply<Option<StateDto>>,
+    },
+    Promote {
+        expected: u64,
+        reply: Reply<Feedback<StateDto>>,
+    },
     AskPoll(Reply<Option<AskDto>>),
     AskCreate {
         req: CreateCardReq,
+        expected: u64,
         reply: Reply<CreateOutcome>,
     },
     ExamStart {
@@ -178,6 +201,7 @@ pub(super) enum StudyCommand {
     TutorStart {
         action: Option<AskAction>,
         ask_cfg: crate::config::AskConfig,
+        expected: u64,
         reply: Reply<Option<AskDto>>,
     },
     AugmentOpen {
@@ -249,38 +273,64 @@ impl StudyHandle {
     pub(super) fn deselect(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::Deselect)
     }
-    pub(super) fn grade(&self, grade: crate::scheduler::Grade) -> Option<Option<StateDto>> {
-        self.call(|reply| StudyCommand::Grade { grade, reply })
+    pub(super) fn grade(
+        &self,
+        grade: crate::scheduler::Grade,
+        expected: u64,
+    ) -> Option<Option<StateDto>> {
+        self.call(|reply| StudyCommand::Grade {
+            grade,
+            expected,
+            reply,
+        })
     }
-    pub(super) fn skip(&self) -> Option<Option<StateDto>> {
-        self.call(StudyCommand::Skip)
+    pub(super) fn skip(&self, expected: u64) -> Option<Option<StateDto>> {
+        self.call(|reply| StudyCommand::Skip { expected, reply })
     }
-    pub(super) fn acquire(&self) -> Option<Option<StateDto>> {
-        self.call(StudyCommand::Acquire)
+    pub(super) fn acquire(&self, expected: u64) -> Option<Option<StateDto>> {
+        self.call(|reply| StudyCommand::Acquire { expected, reply })
     }
-    pub(super) fn restart(&self) -> Option<Option<StateDto>> {
-        self.call(StudyCommand::Restart)
+    pub(super) fn restart(&self, expected: u64) -> Option<Option<StateDto>> {
+        self.call(|reply| StudyCommand::Restart { expected, reply })
     }
-    pub(super) fn check(&self, lines: Vec<String>) -> Option<Feedback<review::CheckFeedback>> {
-        self.call(|reply| StudyCommand::Check { lines, reply })
+    pub(super) fn check(
+        &self,
+        lines: Vec<String>,
+        expected: u64,
+    ) -> Option<Feedback<review::CheckFeedback>> {
+        self.call(|reply| StudyCommand::Check {
+            lines,
+            expected,
+            reply,
+        })
     }
-    pub(super) fn choose(&self, index: usize) -> Option<Feedback<review::ChoiceFeedback>> {
-        self.call(|reply| StudyCommand::Choose { index, reply })
+    pub(super) fn choose(
+        &self,
+        index: usize,
+        expected: u64,
+    ) -> Option<Feedback<review::ChoiceFeedback>> {
+        self.call(|reply| StudyCommand::Choose {
+            index,
+            expected,
+            reply,
+        })
     }
-    pub(super) fn remove(&self) -> Option<Option<StateDto>> {
-        self.call(StudyCommand::Remove)
+    pub(super) fn remove(&self, expected: u64) -> Option<Option<StateDto>> {
+        self.call(|reply| StudyCommand::Remove { expected, reply })
     }
-    pub(super) fn promote(&self) -> Option<Feedback<StateDto>> {
-        self.call(StudyCommand::Promote)
+    pub(super) fn promote(&self, expected: u64) -> Option<Feedback<StateDto>> {
+        self.call(|reply| StudyCommand::Promote { expected, reply })
     }
     pub(super) fn ask_start(
         &self,
         action: Option<AskAction>,
         ask_cfg: crate::config::AskConfig,
+        expected: u64,
     ) -> Option<Option<AskDto>> {
         self.call(|reply| StudyCommand::TutorStart {
             action,
             ask_cfg,
+            expected,
             reply,
         })
     }
@@ -343,8 +393,12 @@ impl StudyHandle {
     pub(super) fn ask_poll(&self) -> Option<Option<AskDto>> {
         self.call(StudyCommand::AskPoll)
     }
-    pub(super) fn ask_create(&self, req: CreateCardReq) -> Option<CreateOutcome> {
-        self.call(|reply| StudyCommand::AskCreate { req, reply })
+    pub(super) fn ask_create(&self, req: CreateCardReq, expected: u64) -> Option<CreateOutcome> {
+        self.call(|reply| StudyCommand::AskCreate {
+            req,
+            expected,
+            reply,
+        })
     }
     pub(super) fn exam_start(
         &self,
@@ -478,6 +532,7 @@ impl StudyState {
             self.reviewing.as_ref(),
             &self.store,
             self.save_error.as_deref(),
+            self.revision,
         )
     }
 
@@ -525,15 +580,26 @@ impl StudyState {
                     {
                         self.store = s;
                     }
+                    self.revision += 1;
                     Transition::Done(self.review_dto())
                 };
                 let _ = reply.send(out);
             }
-            StudyCommand::Grade { grade, reply } => {
-                let _ = reply.send(self.grade(grade));
+            StudyCommand::Grade {
+                grade,
+                expected,
+                reply,
+            } => {
+                let out = if self.revision != expected {
+                    None
+                } else {
+                    self.grade(grade)
+                };
+                let _ = reply.send(out);
             }
-            StudyCommand::Skip(reply) => {
+            StudyCommand::Skip { expected, reply } => {
                 let dto = match self.reviewing.as_mut() {
+                    _ if self.revision != expected => None,
                     None => None,
                     Some(r) => {
                         r.session.skip(&mut self.store, now_ms());
@@ -544,28 +610,32 @@ impl StudyState {
                             &mut self.save_error,
                         );
                         r.rotate_variant();
+                        self.revision += 1;
                         Some(())
                     }
                 }
                 .map(|()| self.review_dto());
                 let _ = reply.send(dto);
             }
-            StudyCommand::Acquire(reply) => {
+            StudyCommand::Acquire { expected, reply } => {
                 let dto = match self.reviewing.as_mut() {
+                    _ if self.revision != expected => None,
                     None => None,
                     Some(r) => {
                         r.session.acquire_current(&mut self.store, now_ms());
                         let _ = r.session.take_presented_stamped();
                         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
                         r.rotate_variant();
+                        self.revision += 1;
                         Some(())
                     }
                 }
                 .map(|()| self.review_dto());
                 let _ = reply.send(dto);
             }
-            StudyCommand::Restart(reply) => {
+            StudyCommand::Restart { expected, reply } => {
                 let dto = match self.reviewing.as_mut() {
+                    _ if self.revision != expected => None,
                     None => None,
                     Some(r) => {
                         r.session.restart(&mut self.store, now_ms());
@@ -576,14 +646,20 @@ impl StudyState {
                             &mut self.save_error,
                         );
                         r.rotate_variant();
+                        self.revision += 1;
                         Some(())
                     }
                 }
                 .map(|()| self.review_dto());
                 let _ = reply.send(dto);
             }
-            StudyCommand::Check { lines, reply } => {
+            StudyCommand::Check {
+                lines,
+                expected,
+                reply,
+            } => {
                 let out = match self.reviewing.as_ref() {
+                    _ if self.revision != expected => Feedback::NoSession,
                     None => Feedback::NoSession,
                     Some(r) => match review::check_typed(&r.session, &lines) {
                         Some(f) => Feedback::Ok(f),
@@ -592,8 +668,13 @@ impl StudyState {
                 };
                 let _ = reply.send(out);
             }
-            StudyCommand::Choose { index, reply } => {
+            StudyCommand::Choose {
+                index,
+                expected,
+                reply,
+            } => {
                 let out = match self.reviewing.as_ref() {
+                    _ if self.revision != expected => Feedback::NoSession,
                     None => Feedback::NoSession,
                     Some(r) => match review::choose(&r.session, &self.store, &r.augment, index) {
                         Some(f) => Feedback::Ok(f),
@@ -602,19 +683,31 @@ impl StudyState {
                 };
                 let _ = reply.send(out);
             }
-            StudyCommand::Remove(reply) => {
-                let _ = reply.send(self.remove());
+            StudyCommand::Remove { expected, reply } => {
+                let out = if self.revision != expected {
+                    None
+                } else {
+                    self.remove()
+                };
+                let _ = reply.send(out);
             }
-            StudyCommand::Promote(reply) => {
-                let _ = reply.send(self.promote());
+            StudyCommand::Promote { expected, reply } => {
+                let out = if self.revision != expected {
+                    Feedback::NoSession
+                } else {
+                    self.promote()
+                };
+                let _ = reply.send(out);
             }
             StudyCommand::TutorStart {
                 action,
                 ask_cfg,
+                expected,
                 reply,
             } => {
                 let audience = self.config.audience;
-                let dto = self.reviewing.as_mut().map(|r| {
+                let stale = self.revision != expected;
+                let dto = self.reviewing.as_mut().filter(|_| !stale).map(|r| {
                     if let Some(action) = action {
                         r.start_ask(&ask_cfg, audience, action);
                     }
@@ -689,8 +782,17 @@ impl StudyState {
                 });
                 let _ = reply.send(dto);
             }
-            StudyCommand::AskCreate { req, reply } => {
-                let _ = reply.send(self.ask_create(req));
+            StudyCommand::AskCreate {
+                req,
+                expected,
+                reply,
+            } => {
+                let out = if self.revision != expected {
+                    CreateOutcome::NoSession
+                } else {
+                    self.ask_create(req)
+                };
+                let _ = reply.send(out);
             }
             StudyCommand::ExamStart {
                 path,
@@ -935,6 +1037,7 @@ impl StudyState {
                 self.walking = Some(w);
                 self.reviewing = None;
                 self.examining = None;
+                self.revision += 1;
                 Transition::Done((SelectedDto::Walk(dto), None))
             }
             Ok(assemble::Selected::Review(b)) => {
@@ -945,6 +1048,7 @@ impl StudyState {
                 r.rotate_variant();
                 self.reviewing = Some(r);
                 self.walking = None;
+                self.revision += 1;
                 Transition::Done((SelectedDto::Review(self.review_dto()), record))
             }
             Err(e) => {
@@ -971,6 +1075,7 @@ impl StudyState {
                 self.reviewing = None;
                 self.walking = None;
                 self.examining = None;
+                self.revision += 1;
                 Transition::Done((browse_payload(self.browsing.as_ref()), recorded_paths))
             }
             Err(e) => {
@@ -1046,6 +1151,7 @@ impl StudyState {
         let _ = r.session.take_presented_stamped();
         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
         r.rotate_variant();
+        self.revision += 1;
         Some(self.review_dto())
     }
 
@@ -1065,6 +1171,7 @@ impl StudyState {
             r.files.remove_block(&deck_id, line);
         }
         flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
+        self.revision += 1;
         Some(self.review_dto())
     }
 
@@ -1090,6 +1197,7 @@ impl StudyState {
         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
         r.session.poll(&mut self.store, now_ms());
         flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
+        self.revision += 1;
         Feedback::Ok(self.review_dto())
     }
 

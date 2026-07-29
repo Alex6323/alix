@@ -624,7 +624,21 @@ async function api(path, opts) {
   }
   return res.json();
 }
-function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
+function post(body) {
+  const headers = { "Content-Type": "application/json" };
+  // Card-relative mutations echo the state's revision; the server 409s a
+  // stale echo so a retried request can never grade the next card.
+  if (Number.isSafeInteger(state?.study_revision)) {
+    headers["X-Alix-Study-Revision"] = String(state.study_revision);
+  }
+  return { method: "POST", headers, body: JSON.stringify(body) };
+}
+// A rejected review action (a stale revision after a lost reply, or a
+// transport hiccup) re-pulls the state calmly instead of the full oops
+// screen: the next tap then carries a fresh echo.
+function resyncState() {
+  api("/api/state").then(applyState).catch((e) => showOops(e));
+}
 
 // ── Make silent failure loud ──────────────────────────────────────────────
 // A rejected promise nobody caught is exactly the shape of a button that does
@@ -1352,16 +1366,16 @@ function reveal() {
 // A pick is evidence only (ChooseFeedbackDto, discloses the correct index); the
 // grade is separate, via the rate bar / /api/grade. Same card stays on screen.
 function choose(i) {
-  api("/api/choose", post({ index: i })).then((f) => { chosen = f; render(); });
+  api("/api/choose", post({ index: i })).then((f) => { chosen = f; render(); }).catch(resyncState);
 }
 // The rate bar. Try again → failed, Almost → partly, Got it → passed. /api/grade
 // is authoritative: it records and returns the next card (or the done state).
 function grade(g) {
-  api("/api/grade", post({ grade: g })).then(applyState);
+  api("/api/grade", post({ grade: g })).then(applyState).catch(resyncState);
 }
 // Acknowledge a never-seen card (no rating).
 function acquireNext() {
-  api("/api/acquire", post({})).then(applyState);
+  api("/api/acquire", post({})).then(applyState).catch(resyncState);
 }
 // Leave the session for Home: deselect on the server, then re-scan the boxes.
 function homeFromReview() {
@@ -1397,7 +1411,7 @@ function sendAskMsg() {
   const q = askInput.value.trim();
   if (!q || askData.thinking) return;
   askInput.value = "";
-  api("/api/ask", post({ question: q })).then((d) => { askData = d; if (askOpen) syncAsk(); startAskPoll(); });
+  api("/api/ask", post({ question: q })).then((d) => { askData = d; if (askOpen) syncAsk(); startAskPoll(); }).catch(resyncState);
 }
 function startAskPoll() {
   stopAskPoll();
@@ -1483,7 +1497,7 @@ function renderDone() {
 // Restart the just-finished box: /api/restart returns the next StateDto,
 // routed through the same applyState choke point as every other review action.
 function restartBox() {
-  api("/api/restart", post({})).then(applyState);
+  api("/api/restart", post({})).then(applyState).catch(resyncState);
 }
 
 // ── Stage fade hints (hidden scrollbar → soft "▾ more") ───────────────────

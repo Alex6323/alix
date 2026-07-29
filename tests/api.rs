@@ -638,6 +638,26 @@ fn post_json(base: &str, path: &str, json: &str) -> HttpResp {
     )
 }
 
+
+/// Posts a card-relative mutation with the current `study_revision` echoed,
+/// the way both web clients do. Tests that probe missing or stale echoes use
+/// raw [`http`] instead.
+fn post_gated(base: &str, path: &str, json: &str) -> HttpResp {
+    let state = http(base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap_or_default();
+    let revision = body["study_revision"].as_u64().unwrap_or(0).to_string();
+    http(
+        base,
+        "POST",
+        path,
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision),
+        ],
+        json.as_bytes(),
+    )
+}
+
 /// Selects [`FIXTURE_DECK`] (by its fixed file name, `sample.md`) and returns
 /// the resulting `StateDto` response — the common first step of every
 /// review-loop test below.
@@ -911,7 +931,7 @@ fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store(
     let resp = post_json(&base, "/api/select", &select_req);
     assert_eq!(200, resp.status, "select {member:?} failed");
 
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     assert_eq!(200, resp.status);
 
     assert!(
@@ -969,7 +989,7 @@ fn post_api_grade_passed_returns_the_next_state_dto() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
 
     assert_eq!(200, resp.status);
     assert_eq!(
@@ -990,7 +1010,7 @@ fn a_grade_is_on_disk_before_its_response_returns() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
 
     assert_eq!(200, resp.status);
     let document = state_root(guard.dir.path()).join("progress/deck-sample.json");
@@ -1006,7 +1026,7 @@ fn a_concurrent_writer_surfaces_save_error_in_the_review_state() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
 
-    let clean = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let clean = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     let body: serde_json::Value = serde_json::from_slice(&clean.body).unwrap();
     assert!(body.get("save_error").is_none(), "clean session: {body}");
 
@@ -1015,7 +1035,7 @@ fn a_concurrent_writer_surfaces_save_error_in_the_review_state() {
     other.get_or_insert("card-elsewhere", 1);
     other.save().unwrap();
 
-    let conflicted = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let conflicted = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     let body: serde_json::Value = serde_json::from_slice(&conflicted.body).unwrap();
     assert!(
         body["save_error"]
@@ -1116,7 +1136,7 @@ fn a_failed_flush_refuses_deselect_until_the_store_saves_again() {
 
     // The acquire itself replies 200 with `save_error` set (existing
     // contract); the store is now dirty with an unsaved mutation.
-    let resp = post_json(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/acquire", "{}");
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert!(
@@ -1271,7 +1291,7 @@ fn post_api_grade_with_a_malformed_body_yields_400() {
 
     // Neither the `{grade}` nor the `{covered, total}` shape `/api/grade`
     // documents (`docs/API.md` §5) — valid JSON, but not a body it accepts.
-    let resp = post_json(&base, "/api/grade", r#"{"nonsense":true}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"nonsense":true}"#);
 
     assert_eq!(400, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
@@ -1281,7 +1301,7 @@ fn post_api_grade_with_a_malformed_body_yields_400() {
 fn post_api_grade_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
 
     assert_eq!(409, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
@@ -1424,7 +1444,7 @@ fn post_api_deck_drawer_tiers_an_acquired_card_above_a_merely_presented_one() {
     select_fixture(&base);
     // Acknowledge the first card ("Seen"); the second card then becomes the
     // displayed card, which stamps its presentation but acquires nothing.
-    post_json(&base, "/api/acquire", "{}");
+    post_gated(&base, "/api/acquire", "{}");
 
     let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"sample.md"}"#);
 
@@ -1501,7 +1521,7 @@ fn post_api_reset_clears_the_fixture_decks_progress() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
     // Grade the first card so it has stored progress to clear.
-    post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
 
     let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.md"}"#);
 
@@ -1603,7 +1623,7 @@ fn post_api_check_reports_a_correct_typed_answer_without_recording_a_grade() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/check", r#"{"lines":["4"]}"#);
+    let resp = post_gated(&base, "/api/check", r#"{"lines":["4"]}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1626,7 +1646,7 @@ fn post_api_check_with_a_wrong_answer_reports_failure() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/check", r#"{"lines":["5"]}"#);
+    let resp = post_gated(&base, "/api/check", r#"{"lines":["5"]}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1656,7 +1676,7 @@ fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
     assert_eq!("typeline", body["mode"], "body: {body}");
 
     // The right lines in the wrong order must fail a TypeLine check.
-    let resp = post_json(&base, "/api/check", r#"{"lines":["two","one"]}"#);
+    let resp = post_gated(&base, "/api/check", r#"{"lines":["two","one"]}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1668,7 +1688,7 @@ fn post_api_check_with_a_malformed_body_yields_400() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/check", r#"{"nonsense":true}"#);
+    let resp = post_gated(&base, "/api/check", r#"{"nonsense":true}"#);
 
     assert_eq!(400, resp.status);
 }
@@ -1677,7 +1697,7 @@ fn post_api_check_with_a_malformed_body_yields_400() {
 fn post_api_check_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/check", r#"{"lines":["4"]}"#);
+    let resp = post_gated(&base, "/api/check", r#"{"lines":["4"]}"#);
 
     assert_eq!(409, resp.status);
 }
@@ -1708,7 +1728,7 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
         .position(|c| c.as_str() == Some(expected))
         .unwrap_or_else(|| panic!("the correct answer {expected:?} is among {choices:?}"));
 
-    let resp = post_json(
+    let resp = post_gated(
         &base,
         "/api/choose",
         &format!(r#"{{"index":{correct_index}}}"#),
@@ -1737,7 +1757,7 @@ fn choices_keep_their_order_across_state_pulls_while_the_card_is_on_screen() {
     let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     let before = first["choices"].clone();
 
-    post_json(&base, "/api/choose", r#"{"index":0}"#);
+    post_gated(&base, "/api/choose", r#"{"index":0}"#);
     let resp = http(&base, "GET", "/api/state", &[], &[]);
     let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
 
@@ -1770,14 +1790,14 @@ fn choices_keep_their_order_across_a_full_tutor_round_trip() {
     let before = first["choices"].clone();
     assert!(before.is_array(), "body: {first}");
 
-    post_json(&base, "/api/choose", r#"{"index":0}"#);
-    post_json(
+    post_gated(&base, "/api/choose", r#"{"index":0}"#);
+    post_gated(
         &base,
         "/api/ask",
         r#"{"question":"why is that the answer?"}"#,
     );
     poll_until(&base, "/api/ask", |b| b["thinking"] == false);
-    post_json(&base, "/api/ask/note", "{}");
+    post_gated(&base, "/api/ask/note", "{}");
     poll_until(&base, "/api/ask", |b| b["thinking"] == false);
 
     let resp = http(&base, "GET", "/api/state", &[], &[]);
@@ -1880,7 +1900,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
             "expected a choice question (seed_store={seed_store}): {first}"
         );
 
-        post_json(&base, "/api/choose", r#"{"index":0}"#);
+        post_gated(&base, "/api/choose", r#"{"index":0}"#);
         let resp = http(&base, "GET", "/api/state", &[], &[]);
         let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
         assert_eq!(
@@ -1899,7 +1919,7 @@ fn post_api_choose_with_a_malformed_body_yields_400() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/choose", r#"{"nonsense":true}"#);
+    let resp = post_gated(&base, "/api/choose", r#"{"nonsense":true}"#);
 
     assert_eq!(400, resp.status);
 }
@@ -1908,7 +1928,7 @@ fn post_api_choose_with_a_malformed_body_yields_400() {
 fn post_api_choose_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/choose", r#"{"index":0}"#);
+    let resp = post_gated(&base, "/api/choose", r#"{"index":0}"#);
 
     assert_eq!(409, resp.status);
 }
@@ -1920,7 +1940,7 @@ fn post_api_skip_defers_the_current_card_without_grading_it() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/skip", "{}");
+    let resp = post_gated(&base, "/api/skip", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1934,7 +1954,7 @@ fn post_api_skip_defers_the_current_card_without_grading_it() {
 fn post_api_skip_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/skip", "{}");
+    let resp = post_gated(&base, "/api/skip", "{}");
 
     assert_eq!(409, resp.status);
 }
@@ -1949,7 +1969,7 @@ fn post_api_acquire_acknowledges_a_never_seen_card_without_grading_it() {
         "a brand-new store has never seen this card: {select_body}"
     );
 
-    let resp = post_json(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/acquire", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1972,8 +1992,8 @@ fn acquiring_every_card_leaves_a_done_session_reporting_the_next_due_instant() {
     select_fixture(&base);
     // Acquire both fixture cards: each records into an acquire cooldown, so the
     // sitting finishes with nothing due now but a future next-due instant.
-    post_json(&base, "/api/acquire", "{}");
-    let resp = post_json(&base, "/api/acquire", "{}");
+    post_gated(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/acquire", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1998,7 +2018,7 @@ fn acquiring_every_card_leaves_a_done_session_reporting_the_next_due_instant() {
 fn post_api_acquire_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/acquire", "{}");
 
     assert_eq!(409, resp.status);
 }
@@ -2008,7 +2028,7 @@ fn post_api_promote_the_current_card_when_it_is_not_virtual_yields_400() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/promote", "{}");
+    let resp = post_gated(&base, "/api/promote", "{}");
 
     assert_eq!(400, resp.status);
 }
@@ -2017,7 +2037,7 @@ fn post_api_promote_the_current_card_when_it_is_not_virtual_yields_400() {
 fn post_api_promote_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/promote", "{}");
+    let resp = post_gated(&base, "/api/promote", "{}");
 
     assert_eq!(409, resp.status);
 }
@@ -2029,12 +2049,12 @@ fn post_api_restart_rebuilds_the_queue_and_resets_session_stats() {
     // FSRS interval a "passed" grade schedules — cram serves every non-retired
     // card, due or not (`session::build_queue`).
     post_json(&base, "/api/select", r#"{"deck":"sample.md","cram":true}"#);
-    let grade_resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let grade_resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     let grade_body: serde_json::Value = serde_json::from_slice(&grade_resp.body).unwrap();
     assert_eq!(1, grade_body["passed"], "body: {grade_body}");
     assert_eq!("3 + 3", grade_body["card"]["front"], "body: {grade_body}");
 
-    let resp = post_json(&base, "/api/restart", "{}");
+    let resp = post_gated(&base, "/api/restart", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -2050,7 +2070,7 @@ fn post_api_restart_rebuilds_the_queue_and_resets_session_stats() {
 fn post_api_restart_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_json(&base, "/api/restart", "{}");
+    let resp = post_gated(&base, "/api/restart", "{}");
 
     assert_eq!(409, resp.status);
 }
@@ -2076,7 +2096,7 @@ fn a_grade_persists_immediately_and_survives_deselect() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     assert_eq!(200, resp.status);
 
     let on_disk = open_deck_store(guard.dir(), "sample.md");
@@ -2098,9 +2118,9 @@ fn a_grade_persists_immediately_and_survives_deselect() {
 fn ending_a_session_flushes_every_session_mutation_kind() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     assert_eq!(200, resp.status);
-    let resp = post_json(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/acquire", "{}");
     assert_eq!(200, resp.status);
 
     let resp = post_json(&base, "/api/deselect", "{}");
@@ -2128,7 +2148,7 @@ fn selecting_the_next_deck_flushes_the_previous_session() {
         .unwrap();
     });
     select_fixture(&base);
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     assert_eq!(200, resp.status);
 
     let resp = post_json(&base, "/api/select", r#"{"deck":"other.md"}"#);
@@ -2145,7 +2165,7 @@ fn selecting_the_next_deck_flushes_the_previous_session() {
 fn an_administrative_mutation_still_writes_immediately() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
-    post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     post_json(&base, "/api/deselect", "{}");
 
     let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.md"}"#);
@@ -2168,7 +2188,7 @@ fn an_administrative_mutation_still_writes_immediately() {
 fn resetting_mid_session_does_not_resurrect_the_cleared_grade() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
-    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     assert_eq!(200, resp.status);
 
     let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.md"}"#);
@@ -2714,6 +2734,66 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
     assert_eq!("PASS", grades[0]["verdict"], "body: {body}");
 }
 
+/// The dropped-reply guard: every card-relative mutation echoes the state's
+/// `study_revision`; a replay with the revision that was current when the
+/// lost reply's request was accepted must 409 and mutate nothing, so a
+/// retried grade can never grade the NEXT card.
+#[test]
+fn a_replayed_grade_with_a_stale_revision_conflicts_and_mutates_nothing() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    let revision = body["study_revision"].as_u64().expect("revision on state");
+    let first_front = body["card"]["front"].clone();
+
+    let resp = http(
+        &base,
+        "POST",
+        "/api/acquire",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision.to_string()),
+        ],
+        b"{}",
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let advanced_front = body["card"]["front"].clone();
+    assert_ne!(first_front, advanced_front, "the session advanced: {body}");
+
+    // The replay carries the OLD revision (its reply was "lost").
+    let resp = http(
+        &base,
+        "POST",
+        "/api/acquire",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision.to_string()),
+        ],
+        b"{}",
+    );
+    assert_eq!(409, resp.status, "a stale replay must conflict");
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    assert_eq!(
+        advanced_front, body["card"]["front"],
+        "the stale replay must not have advanced the session: {body}"
+    );
+}
+
+/// Clients that do not speak the revision contract are refused loudly, not
+/// silently accepted with no protection.
+#[test]
+fn a_card_relative_mutation_without_the_revision_header_is_a_400() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/acquire", "{}");
+    assert_eq!(400, resp.status);
+}
+
 /// ADR 0027: advancing the card makes an older tutor completion ineligible.
 /// The fake backend parks on a FIFO; the card advances while it thinks; the
 /// released answer must be dropped, never shown under the new card.
@@ -2744,7 +2824,7 @@ fn a_tutor_answer_arriving_after_a_card_advance_is_dropped() {
     let (base, _guard) = spawn_full_server(Some(&fake));
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/ask", r#"{"question":"why?"}"#);
+    let resp = post_gated(&base, "/api/ask", r#"{"question":"why?"}"#);
     assert_eq!(200, resp.status);
     let probe_started = Instant::now();
     while !started.exists() {
@@ -2755,7 +2835,7 @@ fn a_tutor_answer_arriving_after_a_card_advance_is_dropped() {
         thread::sleep(Duration::from_millis(5));
     }
 
-    let resp = post_json(&base, "/api/skip", "{}");
+    let resp = post_gated(&base, "/api/skip", "{}");
     assert_eq!(200, resp.status);
     std::fs::write(&fifo, "go\n").unwrap();
 
@@ -2800,9 +2880,9 @@ fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
     let (base, guard) = spawn_full_server(Some(&fake));
     select_fixture(&base);
 
-    post_json(&base, "/api/ask", r#"{"question":"why?"}"#);
+    post_gated(&base, "/api/ask", r#"{"question":"why?"}"#);
     poll_until(&base, "/api/ask", |b| b["thinking"] == false);
-    let resp = post_json(&base, "/api/ask/note", "{}");
+    let resp = post_gated(&base, "/api/ask/note", "{}");
     assert_eq!(200, resp.status);
     let probe_started = Instant::now();
     while !started.exists() {
@@ -2813,7 +2893,7 @@ fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
         thread::sleep(Duration::from_millis(5));
     }
 
-    post_json(&base, "/api/skip", "{}");
+    post_gated(&base, "/api/skip", "{}");
     std::fs::write(&fifo, "go\n").unwrap();
     poll_until(&base, "/api/ask", |b| b["thinking"] == false);
 
@@ -3131,7 +3211,7 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     select_fixture(&base);
 
     // Seed a tutor exchange so the transcript is non-empty before drafting.
-    let resp = post_json(&base, "/api/ask", r#"{"question":"why does this matter?"}"#);
+    let resp = post_gated(&base, "/api/ask", r#"{"question":"why does this matter?"}"#);
     assert_eq!(200, resp.status);
     // The wait idiom this test reuses verbatim: `poll_until` (this file,
     // defined above at the `fn poll_until` declaration), a bounded (up to
@@ -3147,7 +3227,7 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     );
 
     // Draft a card from the conversation.
-    let resp = post_json(&base, "/api/ask/card/draft", "{}");
+    let resp = post_gated(&base, "/api/ask/card/draft", "{}");
     assert_eq!(200, resp.status);
     let body = poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
     assert_eq!("term?", body["draft"]["front"], "body: {body}");
@@ -3160,7 +3240,7 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     // Create the learner's edited version, deliberately different front/back
     // than the draft, to prove `/api/ask/card/create` mints what was posted,
     // not the draft still sitting on the ask DTO.
-    let resp = post_json(
+    let resp = post_gated(
         &base,
         "/api/ask/card/create",
         r#"{"front":"edited term?","back":["edited definition"]}"#,
@@ -3209,10 +3289,10 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
 fn ask_card_draft_and_create_are_refused_for_a_kids_audience() {
     let (base, _guard) = spawn_kids_server();
 
-    let draft_resp = post_json(&base, "/api/ask/card/draft", "{}");
+    let draft_resp = post_gated(&base, "/api/ask/card/draft", "{}");
     assert_eq!(403, draft_resp.status);
 
-    let create_resp = post_json(
+    let create_resp = post_gated(
         &base,
         "/api/ask/card/create",
         r#"{"front":"f","back":["b"]}"#,
