@@ -15,54 +15,54 @@ struct Candidate {
     is_workspace: bool,
 }
 
-fn dir_candidates(decks_dir: &Path, cache: &mut DeckCache) -> Vec<Candidate> {
+fn dir_candidates(
+    decks_dir: &Path,
+    cache: &mut DeckCache,
+) -> Result<Vec<Candidate>, std::io::Error> {
     if cache.is_workspace(decks_dir) {
-        return vec![Candidate {
+        return Ok(vec![Candidate {
             name: file_name(decks_dir),
             path: decks_dir.to_path_buf(),
             last_used_ms: None,
             is_workspace: true,
-        }];
+        }]);
     }
-    let mut cands: Vec<Candidate> = match std::fs::read_dir(decks_dir) {
-        Ok(read_dir) => read_dir
-            .filter_map(|r| r.ok().map(|d| d.path()))
-            // Dot-prefixed entries are hidden: `alix generate`'s workspace
-            // staging dir uses one and must not surface as a bogus workspace.
-            .filter(|path| !file_name(path).starts_with('.'))
-            .filter_map(|path| {
-                let name = file_name(&path);
-                let is_deck = path.is_file()
-                    && path.extension().is_some_and(|e| e == "md")
-                    && !workspace::is_conventional_non_deck(&name)
-                    && !workspace::is_conflict_name(&name)
-                    && cache.is_deck(&path);
-                if is_deck {
-                    Some((path, false))
-                } else if cache.is_workspace(&path) || cache.has_decks(&path) {
-                    Some((path, true))
-                } else {
-                    None
-                }
-            })
-            .map(|(path, is_workspace)| Candidate {
-                name: file_name(&path),
-                path,
-                last_used_ms: None,
-                is_workspace,
-            })
-            .collect(),
-        Err(_) => Vec::new(),
-    };
+    let mut cands: Vec<Candidate> = std::fs::read_dir(decks_dir)?
+        .filter_map(|r| r.ok().map(|d| d.path()))
+        // Dot-prefixed entries are hidden: `alix generate`'s workspace
+        // staging dir uses one and must not surface as a bogus workspace.
+        .filter(|path| !file_name(path).starts_with('.'))
+        .filter_map(|path| {
+            let name = file_name(&path);
+            let is_deck = path.is_file()
+                && path.extension().is_some_and(|e| e == "md")
+                && !workspace::is_conventional_non_deck(&name)
+                && !workspace::is_conflict_name(&name)
+                && cache.is_deck(&path);
+            if is_deck {
+                Some((path, false))
+            } else if cache.is_workspace(&path) || cache.has_decks(&path) {
+                Some((path, true))
+            } else {
+                None
+            }
+        })
+        .map(|(path, is_workspace)| Candidate {
+            name: file_name(&path),
+            path,
+            last_used_ms: None,
+            is_workspace,
+        })
+        .collect();
     cands.sort_by(|a, b| a.name.cmp(&b.name));
-    cands
+    Ok(cands)
 }
 
 fn build_candidates(
     decks_dir: &Path,
     recent: &RecentDecks,
     cache: &mut DeckCache,
-) -> Vec<Candidate> {
+) -> Result<Vec<Candidate>, std::io::Error> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
 
@@ -79,12 +79,12 @@ fn build_candidates(
         }
     }
 
-    for candidate in dir_candidates(decks_dir, cache) {
+    for candidate in dir_candidates(decks_dir, cache)? {
         if !seen.contains(&candidate.path) {
             out.push(candidate);
         }
     }
-    out
+    Ok(out)
 }
 
 pub use crate::listing::{WorkspaceReadiness, workspace_readiness};
@@ -145,8 +145,12 @@ pub struct DeckEntry {
     pub icon: Option<PathBuf>,
 }
 
-pub fn catalog(decks_dir: &Path, recent: &RecentDecks, cache: &mut DeckCache) -> Vec<DeckEntry> {
-    build_candidates(decks_dir, recent, cache)
+pub fn catalog(
+    decks_dir: &Path,
+    recent: &RecentDecks,
+    cache: &mut DeckCache,
+) -> Result<Vec<DeckEntry>, std::io::Error> {
+    Ok(build_candidates(decks_dir, recent, cache)?
         .into_iter()
         .map(|c| {
             if c.is_workspace {
@@ -196,7 +200,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks, cache: &mut DeckCache) ->
                 }
             }
         })
-        .collect()
+        .collect())
 }
 
 pub(crate) fn deck_label(path: &Path) -> Option<String> {
@@ -225,6 +229,24 @@ mod tests {
     }
 
     #[test]
+    fn a_plain_file_as_decks_root_errors_while_an_empty_dir_lists_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root_file = dir.path().join("root.txt");
+        std::fs::write(&root_file, "not a directory").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        assert!(
+            catalog(&root_file, &recent, &mut DeckCache::default()).is_err(),
+            "a plain-file root must surface the enumeration error"
+        );
+
+        let empty = tempfile::tempdir().unwrap();
+        let entries = catalog(empty.path(), &recent, &mut DeckCache::default())
+            .expect("an empty directory is a successful, empty listing");
+        assert!(entries.is_empty());
+    }
+
+    #[test]
     fn build_candidates_orders_recent_first_then_alpha() {
         let dir = tempfile::tempdir().unwrap();
         for n in ["zeta.md", "alpha.md", "mid.md"] {
@@ -234,7 +256,7 @@ mod tests {
         let mut recent = RecentDecks::load(&recent_path);
         recent.record(&[dir.path().join("mid.md")], 1000);
 
-        let cands = build_candidates(dir.path(), &recent, &mut DeckCache::default());
+        let cands = build_candidates(dir.path(), &recent, &mut DeckCache::default()).unwrap();
         let names: Vec<&str> = cands.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(vec!["mid.md", "alpha.md", "zeta.md"], names);
         assert!(cands[0].last_used_ms.is_some());
@@ -248,7 +270,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("decks")).unwrap();
         write_initialized(&dir.path().join("decks/m.md"), "## f\nb\n");
         let recent = RecentDecks::load(dir.path().join("recent.json"));
-        let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
+        let entries = catalog(dir.path(), &recent, &mut DeckCache::default()).unwrap();
         assert_eq!(1, entries.len());
         assert!(entries[0].is_workspace);
         assert_eq!(1, entries[0].members.len());
@@ -260,7 +282,7 @@ mod tests {
         std::fs::write(dir.path().join("alix.toml"), "title = \"T\"\n").unwrap();
         let recent = RecentDecks::load(dir.path().join("recent.json"));
 
-        let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
+        let entries = catalog(dir.path(), &recent, &mut DeckCache::default()).unwrap();
 
         assert_eq!(1, entries.len());
         assert!(entries[0].is_workspace);
@@ -276,7 +298,7 @@ mod tests {
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         recent.record(&[dir.path().join("zeta.md")], 1000);
 
-        let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
+        let entries = catalog(dir.path(), &recent, &mut DeckCache::default()).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(vec!["zeta.md", "alpha.md"], names);
         assert_eq!(dir.path().join("zeta.md"), entries[0].path);
@@ -336,7 +358,7 @@ mod tests {
         std::fs::write(ws.join(workspace::MANIFEST), "title = \"English\"\n").unwrap();
         let recent = RecentDecks::load(dir.path().join("recent.json"));
 
-        let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
+        let entries = catalog(dir.path(), &recent, &mut DeckCache::default()).unwrap();
         let w = entries
             .iter()
             .find(|e| e.is_workspace)
@@ -354,7 +376,7 @@ mod tests {
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         recent.record(&[dir.path().join("deleted.md")], 1000);
 
-        let cands = build_candidates(dir.path(), &recent, &mut DeckCache::default());
+        let cands = build_candidates(dir.path(), &recent, &mut DeckCache::default()).unwrap();
         let names: Vec<&str> = cands.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(vec!["real.md"], names);
     }
@@ -368,13 +390,14 @@ mod tests {
         std::fs::write(leftover.join("x.md"), "## q\na\n").unwrap();
 
         let names: Vec<String> = dir_candidates(dir.path(), &mut DeckCache::default())
+            .unwrap()
             .iter()
             .map(|c| c.name.clone())
             .collect();
         assert_eq!(vec!["real.md".to_string()], names);
 
         let recent = RecentDecks::load(dir.path().join("recent.json"));
-        let entries = catalog(dir.path(), &recent, &mut DeckCache::default());
+        let entries = catalog(dir.path(), &recent, &mut DeckCache::default()).unwrap();
         assert!(entries.iter().all(|e| !e.name.starts_with('.')));
         assert_eq!(1, entries.len());
     }
@@ -421,6 +444,7 @@ mod tests {
         std::fs::write(dir.path().join("README.md"), "about\n").unwrap();
         std::fs::write(dir.path().join("LICENSE.md"), "MIT\n").unwrap();
         let names: Vec<String> = dir_candidates(dir.path(), &mut DeckCache::default())
+            .unwrap()
             .into_iter()
             .map(|c| c.name)
             .collect();
@@ -437,6 +461,7 @@ mod tests {
         )
         .unwrap();
         let names: Vec<String> = dir_candidates(dir.path(), &mut DeckCache::default())
+            .unwrap()
             .into_iter()
             .map(|c| c.name)
             .collect();
@@ -448,6 +473,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_initialized(&dir.path().join("stub.md"), "---\ntrace: a walk\n---\n");
         let names: Vec<String> = dir_candidates(dir.path(), &mut DeckCache::default())
+            .unwrap()
             .into_iter()
             .map(|c| c.name)
             .collect();

@@ -268,6 +268,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An unreadable decks folder (deleted, renamed, or pointing at a plain file)
+  no longer masquerades as an empty catalog: `GET /api/decks` now answers 500
+  and logs the cause instead of returning "no decks". The adult picker shows a
+  calm loading line while fetching and, on failure, a quiet "Couldn't read the
+  decks folder." notice with a Retry button; the kids client's existing
+  "couldn't find your boxes" notice now actually appears in this case (the
+  empty-success response used to show "No boxes yet" instead). Selecting by
+  name is unaffected: an unknown name still answers 400.
 - The server no longer dies when the consumer of its stdout goes away (for
   example `alix ~/decks | head`, or a supervisor closing the pipe after the
   URL line): the startup announcement lines now tolerate a closed stream

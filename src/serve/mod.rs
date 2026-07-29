@@ -403,7 +403,7 @@ pub fn run_review(
                 respond_json(request, &DoctorDto { rows })
             }
             (Method::Get, "/api/decks") => {
-                let catalog = decks_list_dto(
+                match decks_list_dto(
                     scoped,
                     config_path.as_deref(),
                     &mut *decks_dir,
@@ -412,8 +412,13 @@ pub fn run_review(
                     &mut *launcher_icons,
                     review_cfg,
                     &mut *cache,
-                );
-                respond_json(request, &catalog)
+                ) {
+                    Ok(catalog) => respond_json(request, &catalog),
+                    Err(e) => {
+                        eprintln!("deck listing failed for {}: {e}", decks_dir.display());
+                        respond_status(request, 500);
+                    }
+                }
             }
             (Method::Get, key) if key.starts_with("/img/") => {
                 let name = &key["/img/".len()..];
@@ -637,7 +642,7 @@ pub fn run_review(
                     respond_status(request, 500);
                     continue;
                 }
-                let catalog = decks_list_dto(
+                match decks_list_dto(
                     scoped,
                     config_path.as_deref(),
                     &mut *decks_dir,
@@ -646,8 +651,13 @@ pub fn run_review(
                     &mut *launcher_icons,
                     review_cfg,
                     &mut *cache,
-                );
-                respond_json(request, &catalog);
+                ) {
+                    Ok(catalog) => respond_json(request, &catalog),
+                    Err(e) => {
+                        eprintln!("deck listing failed for {}: {e}", decks_dir.display());
+                        respond_status(request, 500);
+                    }
+                }
             }
             (Method::Post, "/api/import") => {
                 #[derive(Deserialize)]
@@ -1911,7 +1921,7 @@ fn decks_list_dto(
     launcher_icons: &mut HashMap<String, PathBuf>,
     review_cfg: crate::config::ReviewConfig,
     cache: &mut DeckCache,
-) -> DeckListDto {
+) -> Result<DeckListDto, std::io::Error> {
     let dir = effective_decks_dir(scoped, config_path, decks_dir);
     if dir != *decks_dir {
         *decks_dir = dir;

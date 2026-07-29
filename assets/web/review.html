@@ -2339,7 +2339,10 @@ const idleInSelect = () =>
   state && state.phase === "select" && !browsing && !examData && !augmentData && !walkData && !asking;
 window.addEventListener("focus", async () => {
   if (!idleInSelect()) return;
-  const fresh = await api("/api/decks");
+  // An opportunistic re-scan stays quiet on failure too; the visible error
+  // state belongs to the deliberate loads (initial, refresh, retry).
+  const fresh = await api("/api/decks").catch(() => null);
+  if (!fresh) return;
   // Re-check after the await: the user may have started something meanwhile.
   if (idleInSelect() && catalogSignature(fresh) !== lastDecksSignature) {
     renderSelect(fresh);
@@ -2366,7 +2369,25 @@ async function renderSelect(preloaded) {
   // session just finished (the strengths are recomputed on next focus).
   topoCache = {};
 
-  const data = preloaded || await api("/api/decks");
+  let data = preloaded;
+  if (!data) {
+    stage.innerHTML = "";
+    stage.appendChild(el("div", "msg", "loading decks…"));
+    try {
+      data = await api("/api/decks");
+    } catch {
+      stage.innerHTML = "";
+      const wrap = el("div", "select");
+      wrap.appendChild(el("div", "lede", "choose decks to study"));
+      wrap.appendChild(el("div", "msg", "Couldn't read the decks folder."));
+      const retry = el("button", "chip primary", "Retry");
+      retry.addEventListener("click", () => renderSelect());
+      wrap.appendChild(retry);
+      stage.appendChild(wrap);
+      return;
+    }
+    stage.innerHTML = "";
+  }
   lastDecksSignature = catalogSignature(data);
   const workspaces = data.workspaces || [];
   const recent = data.recent || [];

@@ -288,7 +288,7 @@ fn resolve_row_keeps_a_manifest_only_workspace_addressable() {
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"Empty\"\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
-    let entries = picker::catalog(dir.path(), &recent, &mut DeckCache::default());
+    let entries = picker::catalog(dir.path(), &recent, &mut DeckCache::default()).unwrap();
     assert_eq!(1, entries.len());
     assert!(entries[0].is_workspace);
     assert!(entries[0].members.is_empty());
@@ -643,7 +643,8 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
         &mut icons,
         ReviewConfig::default(),
         &mut DeckCache::default(),
-    );
+    )
+    .unwrap();
 
     let animals = dto
         .workspaces
@@ -694,7 +695,8 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
         &mut icons,
         ReviewConfig::default(),
         &mut DeckCache::default(),
-    );
+    )
+    .unwrap();
 
     let letters = dto
         .folders
@@ -720,6 +722,7 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     );
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let entry = picker::catalog(dir.path(), &recent, &mut DeckCache::default())
+        .unwrap()
         .into_iter()
         .find(|e| e.name == "broken.md")
         .expect("catalog lists the broken deck file even though it won't parse");

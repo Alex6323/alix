@@ -379,13 +379,13 @@ pub(super) fn deck_catalog(
     icons: &mut HashMap<String, PathBuf>,
     review: ReviewConfig,
     cache: &mut DeckCache,
-) -> DeckListDto {
+) -> Result<DeckListDto, std::io::Error> {
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
     let mut folders = Vec::new();
     let augment = AugmentCache::open_for_workspace(decks_dir)
         .unwrap_or_else(|_| AugmentCache::open(Path::new("")));
-    for e in picker::catalog(decks_dir, recent, cache) {
+    for e in picker::catalog(decks_dir, recent, cache)? {
         if e.is_workspace {
             let is_ws = cache.is_workspace(&e.path);
             let (members, readiness) =
@@ -466,11 +466,11 @@ pub(super) fn deck_catalog(
             &e, store, decks_dir, with_lock, &augment, review, cache,
         ));
     }
-    DeckListDto {
+    Ok(DeckListDto {
         workspaces,
         recent: recent_decks,
         folders,
-    }
+    })
 }
 
 pub(super) struct Selection {
@@ -534,12 +534,14 @@ pub(super) enum Resolved {
     Unknown,
 }
 
+/// Resolution treats an unreadable root as "no names known" (requests then
+/// 400 as before); only the listing endpoint surfaces the root error itself.
 fn resolve_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
     cache: &mut DeckCache,
 ) -> Vec<picker::DeckEntry> {
-    picker::catalog(decks_dir, recent, cache)
+    picker::catalog(decks_dir, recent, cache).unwrap_or_default()
 }
 
 /// A name seen more than once (bare row or qualified member) resolves to
