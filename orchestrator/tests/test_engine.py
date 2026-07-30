@@ -379,7 +379,7 @@ class FakeScoreExecutor:
         self, args: list[str], cwd: Path, timeout: float | None = None
     ) -> CommandResult:
         del cwd, timeout
-        if args == ["make", "gate"]:
+        if args == ["make", "mutants"]:
             return CommandResult(0, "mutants: 0 missed", "", 0.1)
         if args[:2] == ["cargo", "clippy"]:
             return CommandResult(0, "", "warning: pedantic example\n", 0.1)
@@ -390,8 +390,8 @@ class FakeWinnerExecutor(FakeScoreExecutor):
     def run(
         self, args: list[str], cwd: Path, timeout: float | None = None
     ) -> CommandResult:
-        if args == ["make", "gate"] and cwd.name == "codex":
-            return CommandResult(1, "mutants: 2 missed", "", 0.1)
+        if args == ["make", "check"] and cwd.name == "codex":
+            return CommandResult(1, "", "test result: FAILED", 0.1)
         return super().run(args, cwd, timeout)
 
 

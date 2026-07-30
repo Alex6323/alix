@@ -12,7 +12,11 @@ class BranchScore:
     unresolved_defects: int
     pedantic_warnings: int
     diff_loc: int
-    gate_ok: bool
+    check_ok: bool
+
+    @property
+    def cross_tests_failed(self) -> int:
+        return max(0, self.cross_tests_total - self.cross_tests_passed)
 
     @property
     def cross_test_rate(self) -> float:
@@ -22,11 +26,9 @@ class BranchScore:
 
     @property
     def penalty(self) -> float:
-        gate = 0 if self.gate_ok else 1_000_000
         return (
-            gate
-            + self.unresolved_defects * 10_000
-            + (1.0 - self.cross_test_rate) * 1_000
+            self.unresolved_defects * 10_000
+            + self.cross_tests_failed * 10_000
             + self.mutants_missed * 100
             + self.pedantic_warnings * 2
             + self.diff_loc / 1_000
@@ -35,16 +37,16 @@ class BranchScore:
     def to_dict(self) -> dict[str, object]:
         result: dict[str, object] = asdict(self)
         result["cross_test_rate"] = self.cross_test_rate
+        result["cross_tests_failed"] = self.cross_tests_failed
         result["penalty"] = self.penalty
         return result
 
 
 def recommend(scores: list[BranchScore]) -> str | None:
-    if not scores:
+    eligible = [score for score in scores if score.check_ok]
+    if not eligible:
         return None
-    ordered = sorted(scores, key=lambda score: (score.penalty, score.agent))
-    if not ordered[0].gate_ok:
-        return None
+    ordered = sorted(eligible, key=lambda score: (score.penalty, score.agent))
     if len(ordered) > 1 and ordered[0].penalty == ordered[1].penalty:
         return None
     return ordered[0].agent

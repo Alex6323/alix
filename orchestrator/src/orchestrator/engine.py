@@ -543,12 +543,23 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
         else:
             cross_total = 1
             cross_passed = 1 if state.property_suite_passed else 0
-        gate = executor.run(["make", "gate"], worktree)
+        check = executor.run(["make", "check"], worktree)
+        mutants = (
+            executor.run(["make", "mutants"], worktree)
+            if check.returncode == 0
+            else None
+        )
         gate_transcript = (
             Path(state.run_dir) / "transcripts" / f"score-gate-{agent}.txt"
         )
         gate_transcript.write_text(
-            f"[stdout]\n{gate.stdout}\n[stderr]\n{gate.stderr}",
+            f"[check stdout]\n{check.stdout}\n[check stderr]\n{check.stderr}\n"
+            + (
+                f"[mutants stdout]\n{mutants.stdout}\n"
+                f"[mutants stderr]\n{mutants.stderr}"
+                if mutants is not None
+                else "[mutants] skipped: make check failed"
+            ),
             encoding="utf-8",
         )
         clippy = executor.run(
@@ -567,7 +578,11 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
                 agent=agent,
                 cross_tests_passed=cross_passed,
                 cross_tests_total=cross_total,
-                mutants_missed=_missed_mutants(gate.stdout + "\n" + gate.stderr),
+                mutants_missed=(
+                    _missed_mutants(mutants.stdout + "\n" + mutants.stderr)
+                    if mutants is not None
+                    else 0
+                ),
                 unresolved_defects=sum(
                     finding.verified
                     and not finding.resolved
@@ -585,7 +600,7 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
                     state.base_sha,
                     state.agents[agent].last_sha,
                 ),
-                gate_ok=gate.returncode == 0,
+                check_ok=check.returncode == 0,
             )
         )
     _save_scores(Path(state.run_dir) / "scores.json", scores)
@@ -810,7 +825,7 @@ def _load_scores(path: Path) -> list[BranchScore]:
                 unresolved_defects=_score_int(data, "unresolved_defects"),
                 pedantic_warnings=_score_int(data, "pedantic_warnings"),
                 diff_loc=_score_int(data, "diff_loc"),
-                gate_ok=_score_bool(data, "gate_ok"),
+                check_ok=_score_bool(data, "check_ok"),
             )
         )
     return scores
@@ -876,11 +891,18 @@ def _cross_tests(
         target = scratch / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
-        compiled = executor.run(["cargo", "nextest", "run", "--no-run"], scratch)
+        target = Path(name).stem
+        compiled = executor.run(
+            ["cargo", "nextest", "run", "--no-run", "--test", target],
+            scratch,
+        )
         if compiled.returncode != 0:
             continue
         total += 1
-        result = executor.run(["cargo", "nextest", "run"], scratch)
+        result = executor.run(
+            ["cargo", "nextest", "run", "--test", target],
+            scratch,
+        )
         if result.returncode == 0:
             passed += 1
     return passed, total

@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard
+.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants
 
 # Compile the workspace.
 build:
@@ -127,13 +127,15 @@ check: pre-1-0-check deps-check changelog-check lint test site-media-check docs-
 # run once, right before requesting review, never in the inner loop or CI.
 GATE_JOBS ?= 8
 
-gate: export TMPDIR ?= $(HOME)/tmp
-gate: gate-guard check
+gate: gate-guard check mutants
+
+mutants: export TMPDIR ?= $(HOME)/tmp
+mutants: gate-guard
 	git diff $$(git merge-base main HEAD) > target/review.diff
 	cargo mutants --in-diff target/review.diff --jobs $(GATE_JOBS) --timeout-multiplier 12
 
 gate-guard:
-	@! pgrep -x cargo-mutants > /dev/null || { echo "make gate: a cargo-mutants run is already active on this machine; wait for it or stop it first"; exit 1; }
+	@! pgrep -x cargo-mutants > /dev/null || { echo "a cargo-mutants run is already active on this machine; wait for it or stop it first"; exit 1; }
 
 # The Rust CI bundle: nightly formatting, clippy + tests under `-Dwarnings`, the
 # lean core, and coverage with the warnings gate cleared (coverage instruments

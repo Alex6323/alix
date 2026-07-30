@@ -14,7 +14,7 @@ Requirements:
 - Python 3.12 or newer
 - `uv`
 - `claude` and `codex` on `PATH`
-- a Rust target repository with `make check` and `make gate`
+- a Rust target repository with `make check`, `make mutants`, and `make gate`
 - `cargo nextest` and `cargo mutants`
 
 ```sh
@@ -93,16 +93,27 @@ verbatim to the implementation branch and remain immutable during fix rounds.
 
 ## Scoring and landing
 
-The lower penalty wins:
+A branch is eligible only if `make check` passes on it. Among eligible
+branches the lower penalty wins:
 
-- failed gate: 1,000,000
-- each unresolved verified defect: 10,000
-- cross-test failure rate: up to 1,000
+- each unresolved verified defect filed against the branch: 10,000
+- each of the opponent's regression tests the branch fails: 10,000
 - each missed mutant: 100
 - each pedantic warning: 2
 - changed lines: 0.001 each
 
-Exact ties and runs with no passing gate stop for a human decision. Otherwise
+The two 10,000 terms are deliberately equal. A defect is a defect whether it
+was filed against this branch or only caught by the other agent's test, and
+findings are directional: an agent that finds a bug in its opponent is never
+asked whether its own branch has the same one.
+
+Eligibility is `make check`, not `make gate`, so correctness disqualifies a
+branch but test-completeness does not. Missed mutants are a graded cost
+instead: a surviving mutant says the branch's tests are thin, which should
+lose to a rival that is genuinely wrong only if nothing worse is on the table.
+
+Exact ties and runs where no branch passes `make check` stop for a human
+decision. Otherwise
 landing requires the base ref to remain at its frozen SHA and its checkout to be
 clean. The orchestrator commits the union of tests first, applies the winning
 implementation second, then fast-forwards the base.

@@ -84,7 +84,7 @@ def render_report(
             "",
             "## Scores",
             "",
-            "| Agent | Cross tests | Mutants missed | Unresolved | Pedantic | LOC | Gate | Penalty |",
+            "| Agent | Cross tests | Mutants missed | Unresolved | Pedantic | LOC | Check | Penalty |",
             "| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
         ]
     )
@@ -93,7 +93,7 @@ def render_report(
             f"| {score.agent} | {score.cross_tests_passed}/{score.cross_tests_total} | "
             f"{score.mutants_missed} | {score.unresolved_defects} | "
             f"{score.pedantic_warnings} | {score.diff_loc} | "
-            f"{'pass' if score.gate_ok else 'fail'} | {score.penalty:.3f} |"
+            f"{'pass' if score.check_ok else 'fail'} | {score.penalty:.3f} |"
         )
     recommendation = (
         f"Merge `{winner}`." if winner is not None else "Tie: human decision required."
