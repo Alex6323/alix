@@ -487,8 +487,8 @@ fn run_supervised(
         .with_context(|| format!("cannot run '{}' — is it installed?", config.command))?;
 
     let stdin = child.stdin.take().expect("stdin was piped");
-    let mut stdout_pipe = child.stdout.take().expect("stdout was piped");
-    let mut stderr_pipe = child.stderr.take().expect("stderr was piped");
+    let stdout_pipe = child.stdout.take().expect("stdout was piped");
+    let stderr_pipe = child.stderr.take().expect("stderr was piped");
     {
         let mut guard = slot.lock().unwrap_or_else(|p| p.into_inner());
         if matches!(*guard, ChildSlot::Cancelled) {

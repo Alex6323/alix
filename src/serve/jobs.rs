@@ -137,6 +137,10 @@ impl Ask {
     // from the card here bit once (a walk checkpoint card carries no id, so
     // start aligned on None while poll aligned on the checkpoint id, and the
     // mismatch dropped every pending walk answer).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "typed tutor inputs keep the owner transition explicit"
+    )]
     fn start(
         &mut self,
         cfg: &AskConfig,
