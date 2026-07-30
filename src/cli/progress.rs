@@ -309,7 +309,10 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
             .unwrap_or_else(|| workspace::root_store_path(dir));
         let (initialized, uninitialized) = workspace::classified_deck_files(dir)
             .context("refusing to judge orphans while the target cannot be listed")?;
-        Ok((initialized.into_iter().chain(uninitialized).collect(), store))
+        Ok((
+            initialized.into_iter().chain(uninitialized).collect(),
+            store,
+        ))
     };
     let (deck_paths, store_path) = match &args.target {
         Some(target) if target.is_file() => {

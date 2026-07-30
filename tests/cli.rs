@@ -748,8 +748,14 @@ fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read()
     // A deck the parser rejects hides whatever ids it holds, so every key in
     // the target would look orphaned: the sweep stops instead of pruning.
     for (shape, broken) in [
-        ("an invalid card id", "---\nid: \"deck-b\"\n---\n## q <!-- id: nope -->\na\n"),
-        ("unclosed frontmatter", "---\nid: \"deck-b\"\n## q <!-- id: card-b1 -->\na\n"),
+        (
+            "an invalid card id",
+            "---\nid: \"deck-b\"\n---\n## q <!-- id: nope -->\na\n",
+        ),
+        (
+            "unclosed frontmatter",
+            "---\nid: \"deck-b\"\n## q <!-- id: card-b1 -->\na\n",
+        ),
         ("a front without an answer", "## q <!-- id: card-b1 -->\n"),
     ] {
         let dir = TempDir::new().unwrap();
@@ -805,7 +811,11 @@ fn reset_orphans_spares_the_cards_of_a_deck_that_lost_its_frontmatter_id() {
     store.get_or_insert("card-math1", 0);
     store.save().unwrap();
     let progress = store.path().to_path_buf();
-    write(dir.path(), "math.md", "## What is 2 + 2? <!-- id: card-math1 -->\n4\n");
+    write(
+        dir.path(),
+        "math.md",
+        "## What is 2 + 2? <!-- id: card-math1 -->\n4\n",
+    );
 
     let out = alix(&[
         "reset",

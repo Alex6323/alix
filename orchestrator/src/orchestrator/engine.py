@@ -891,16 +891,16 @@ def _cross_tests(
         target = scratch / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
-        target = Path(name).stem
+        test_target = Path(name).stem
         compiled = executor.run(
-            ["cargo", "nextest", "run", "--no-run", "--test", target],
+            ["cargo", "nextest", "run", "--no-run", "--test", test_target],
             scratch,
         )
         if compiled.returncode != 0:
             continue
         total += 1
         result = executor.run(
-            ["cargo", "nextest", "run", "--test", target],
+            ["cargo", "nextest", "run", "--test", test_target],
             scratch,
         )
         if result.returncode == 0:
