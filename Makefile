@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants
+.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
 
 # Compile the workspace.
 build:
@@ -126,6 +126,9 @@ check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-c
 # PRs here), with cargo-mutants' default cargo-test runner. Costed and slow:
 # run once, right before requesting review, never in the inner loop or CI.
 GATE_JOBS ?= 8
+
+bump-rust:
+	@sh scripts/bump-rust.sh
 
 gate: gate-guard check mutants
 
