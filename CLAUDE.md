@@ -118,7 +118,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make fmt-changelog` | Wrap `CHANGELOG.md` at the ~80-column house width (wrap-only, idempotent). |
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, count never decreases vs HEAD); part of `make check`. |
 | `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
-| `make gate` | `check` + `cargo mutants` over this branch's diff vs local main. Run ONCE, right before requesting review; never inner-loop, never CI. |
+| `make gate` | `check` + `cargo mutants` over this branch's diff vs local main (8 jobs, `GATE_JOBS` overrides). Refuses to start while another cargo-mutants runs anywhere on the machine. Run ONCE, right before requesting review; never inner-loop, never CI. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
