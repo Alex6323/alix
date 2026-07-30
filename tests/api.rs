@@ -2734,6 +2734,100 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
     assert_eq!("PASS", grades[0]["verdict"], "body: {body}");
 }
 
+/// Every gated route, not just one: a stale echo must 409 and the session
+/// must not move. Kills the guard-disabling mutants route by route.
+#[test]
+fn every_gated_route_rejects_a_stale_revision_and_mutates_nothing() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "an answer");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    let resp = post_json(&base, "/api/select", r#"{"deck":"choice-armed.md"}"#);
+    assert_eq!(200, resp.status);
+
+    let gated: &[(&str, &str)] = &[
+        ("/api/grade", r#"{"grade":"passed"}"#),
+        ("/api/skip", "{}"),
+        ("/api/acquire", "{}"),
+        ("/api/check", r#"{"lines":["x"]}"#),
+        ("/api/choose", r#"{"index":0}"#),
+        ("/api/remove", "{}"),
+        ("/api/promote", "{}"),
+        ("/api/restart", "{}"),
+        ("/api/ask", r#"{"question":"why?"}"#),
+        ("/api/ask/note", "{}"),
+        ("/api/ask/card/draft", "{}"),
+        ("/api/ask/card/create", r#"{"front":"f","back":["b"]}"#),
+    ];
+    for (path, body) in gated {
+        let state = http(&base, "GET", "/api/state", &[], &[]);
+        let before: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+        let fresh = before["study_revision"].as_u64().expect("revision on state");
+        let stale = fresh.wrapping_sub(1).to_string();
+
+        let resp = http(
+            &base,
+            "POST",
+            path,
+            &[
+                ("Content-Type", "application/json"),
+                ("X-Alix-Study-Revision", &stale),
+            ],
+            body.as_bytes(),
+        );
+        assert_eq!(409, resp.status, "{path} must reject a stale echo");
+
+        let state = http(&base, "GET", "/api/state", &[], &[]);
+        let after: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+        assert_eq!(
+            fresh,
+            after["study_revision"].as_u64().unwrap(),
+            "{path} must not advance the revision on a stale echo"
+        );
+        assert_eq!(
+            before["card"]["front"], after["card"]["front"],
+            "{path} must not move the session on a stale echo"
+        );
+    }
+}
+
+/// Each accepted card-advancing mutation strictly advances the revision, so
+/// the previous echo goes stale. Kills the bump-corruption mutants (a
+/// revision pinned at its old value re-accepts the replay forever).
+#[test]
+fn every_accepted_mutation_advances_the_revision() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    for path in ["/api/skip", "/api/acquire", "/api/restart"] {
+        let state = http(&base, "GET", "/api/state", &[], &[]);
+        let before: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+        let fresh = before["study_revision"].as_u64().unwrap();
+
+        let resp = post_gated(&base, path, "{}");
+        assert_eq!(200, resp.status, "{path}");
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        let bumped = body["study_revision"].as_u64().unwrap();
+        assert!(
+            bumped > fresh,
+            "{path} must strictly advance the revision ({fresh} -> {bumped})"
+        );
+
+        // The just-used echo is now stale: the replay is refused.
+        let resp = http(
+            &base,
+            "POST",
+            path,
+            &[
+                ("Content-Type", "application/json"),
+                ("X-Alix-Study-Revision", &fresh.to_string()),
+            ],
+            b"{}",
+        );
+        assert_eq!(409, resp.status, "{path} replay with the used echo");
+    }
+}
+
 /// The dropped-reply guard: every card-relative mutation echoes the state's
 /// `study_revision`; a replay with the revision that was current when the
 /// lost reply's request was accepted must 409 and mutate nothing, so a
