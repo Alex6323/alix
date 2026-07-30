@@ -109,6 +109,14 @@ account. Tool grants are translated into each provider's command-line controls;
 provider behavior and enforcement are part of Alix's trusted computing base.
 Prompts and supplied context leave the machine for the selected provider.
 
+The development-only dual-agent orchestrator also executes provider CLIs as the
+local user. It gives Claude Code edit permission and Codex workspace-write
+permission inside isolated experiment worktrees, but it is not a security
+sandbox. Specs, plans, target repositories, provider configuration, and agent
+commands must be trusted. Run evidence may contain source code, prompts, model
+output, command output, and filesystem paths, so its external run directory
+should be protected like the target checkout (`orchestrator/`).
+
 Filesystem grounding is opt-in. `[ask] source_access = true` is effective only
 when the deck or workspace declares an explicit `origin`; `source` and `at`
 remain evidence locators and never infer a wider project root (`src/deck.rs`,

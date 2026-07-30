@@ -15,6 +15,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their checkpoint shape. Explicit styles are parsed and checked before a deck
   is written, and the optional review pass preserves the requested contract.
 
+- A standalone `orchestrate` research CLI runs Claude Code and Codex against one
+  frozen spec in isolated worktrees. Symmetric differential review accepts only
+  mechanically reproduced, user-relevant defects; asymmetric runs pair an
+  implementation with an independent property suite. Atomic state, raw
+  transcripts, bounded fixes, serialized mutation gates, machine scoring, and
+  test-first landing make every run resumable and inspectable.
+
 - The kids client and the mobile app now show the persistent "progress isn't
   saving" banner the adult web client already had. On mobile a failed
   per-grade save no longer aborts the grade behind the scenes: the review or
