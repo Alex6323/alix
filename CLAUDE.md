@@ -488,6 +488,42 @@ to this codebase. When in doubt, mirror the surrounding code.
 - **A fix must be shown to fix.** Reproduce the failure first, then confirm it disappears
   *because of* the change, not alongside it. A red build plus a plausible story is the most
   expensive thing you can believe.
+- **A code-review finding is not reportable without a deterministic red repro.** Pin the
+  exact reviewed commit, add the smallest executable regression, and run that test by itself.
+  Discard a finding that cannot be made deterministically red. For every surviving finding,
+  explain the ordinary user action or supported concurrency/filesystem path that triggers it
+  and the concrete user-visible consequence. Be candid when a path is lower-frequency; do not
+  present an architectural preference or a purely adversarial edge as a user defect. Provide
+  one ready-to-apply test-only patch, verify that it applies cleanly, and include its checksum,
+  exact commands, observed failures, explicit retractions, and final worktree state. A repro
+  owns its temporary processes and files and cleans them before asserting, so the expected
+  failure cannot leak or wedge the suite. Use this handoff format:
+
+  ```text
+  Review target: <exact commit>
+  Repro patch: <path or link>
+  SHA-256: <checksum>
+  Apply check: <command and result>
+
+  1. <finding title>
+
+  Test: <exact test name>
+
+  Observed:
+  - <minimal failure evidence>
+
+  Real-user path: <ordinary trigger, why it is not fringe, and concrete impact>
+
+  [Repeat for every finding.]
+
+  Apply and run:
+  <exact commands>
+
+  Not submitted:
+  - <retracted or unproven concern and why>
+
+  Worktree state: <production edits, scratch cleanup, and status>
+  ```
 - **A subagent inherits nothing.** Restate every binding constraint per brief; never assert
   what a file contains (tell it to read). Scope a dispatch to minutes, ask for a plan before
   it builds, keep expensive verification with the controller, and poll it —
