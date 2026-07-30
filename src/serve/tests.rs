@@ -8,7 +8,7 @@ use std::{
 use super::*;
 use crate::{
     answer::{Input, Mode, mode_name},
-    ask::Reply,
+    ask::{self, Reply},
     augment::AugmentCache,
     cache::DeckCache,
     card::{Card, CardImage},
@@ -25,7 +25,7 @@ use crate::{
     trace::{Delta, Walk},
 };
 #[cfg(unix)]
-use crate::{ask, source::SourceBase};
+use crate::source::SourceBase;
 
 /// A panicked owner must drain an idle server by itself: the trip unblocks
 /// tiny_http directly instead of waiting for a next request to notice the

@@ -957,6 +957,8 @@ mod tests {
         assert!(!p.contains("WebFetch"));
     }
 
+    // The fake backend is a /bin/sh script (`testutil` is unix-only).
+    #[cfg(unix)]
     #[test]
     fn walk_runs_the_backend_and_returns_checkpoints() {
         use crate::testutil::{ask_config, exec_lock, fake_reply};
