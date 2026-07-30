@@ -9,7 +9,7 @@ import subprocess
 import tarfile
 import time
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -56,6 +56,7 @@ class RunOptions:
     run_root: Path
     max_fix_rounds: int
     implementer: AgentName
+    models: dict[str, str] = field(default_factory=dict)
 
 
 def initialize_run(options: RunOptions, run_id: str | None = None) -> RunState:
@@ -93,6 +94,7 @@ def initialize_run(options: RunOptions, run_id: str | None = None) -> RunState:
         implementer=options.implementer,
         spec_hash=_sha256(run_dir / "spec.md"),
         prompt_hashes=_prompt_hashes(),
+        models=dict(options.models),
         plan_path="plan.md" if plan is not None else None,
     )
     save_state(run_dir / "state.json", state)

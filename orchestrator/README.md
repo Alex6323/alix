@@ -35,6 +35,12 @@ uv run --project orchestrator orchestrate run \
   --max-fix-rounds 2
 ```
 
+`--claude-model` and `--codex-model` pin each agent's model for the whole run
+(`--claude-model opus`, `--codex-model gpt-5.6-sol`). Both are recorded in
+`state.json`, so a resume reuses them. Without them each CLI follows its own
+ambient default, which leaves the run unreproducible and can strand it on an
+exhausted model's rate limit.
+
 Resume or print the current report:
 
 ```sh

@@ -45,6 +45,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="claude",
         help="asymmetric implementer (default: claude)",
     )
+    run.add_argument(
+        "--claude-model",
+        help="pin Claude Code's model for this run (default: the CLI's own)",
+    )
+    run.add_argument(
+        "--codex-model",
+        help="pin Codex's model for this run (default: the CLI's own)",
+    )
 
     resume = commands.add_parser("resume", help="resume from state.json")
     resume.add_argument("--run-dir", type=Path, required=True)
@@ -74,6 +82,14 @@ def main(argv: list[str] | None = None) -> int:
                     run_root=run_root,
                     max_fix_rounds=args.max_fix_rounds,
                     implementer=args.implementer,
+                    models={
+                        agent: model
+                        for agent, model in (
+                            ("claude", args.claude_model),
+                            ("codex", args.codex_model),
+                        )
+                        if model is not None
+                    },
                 )
             )
             print(state.run_dir)
@@ -97,7 +113,9 @@ def drive_run(
 ) -> RunState:
     state_path = run_dir.resolve() / "state.json"
     state = load_state(state_path)
-    active_invoker = invoker or SubprocessInvoker(Path(state.run_dir))
+    active_invoker = invoker or SubprocessInvoker(
+        Path(state.run_dir), models=state.models
+    )
     active_executor = executor or SubprocessExecutor()
     while state.phase != "COMPLETE":
         phase = state.phase

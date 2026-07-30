@@ -5,8 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator.agents import SubprocessInvoker, command_for
+from orchestrator.agents import AgentName, SubprocessInvoker, command_for
 from orchestrator.commands import CommandResult
+
+AGENTS: tuple[AgentName, ...] = ("claude", "codex")
 
 
 class AgentCommandTests(unittest.TestCase):
@@ -44,13 +46,30 @@ class AgentCommandTests(unittest.TestCase):
             command,
         )
 
+    def test_a_pinned_model_reaches_both_clis_and_the_prompt_stays_last(self) -> None:
+        for agent in AGENTS:
+            command = command_for(agent, "implement this", "a-model")
+
+            self.assertEqual(agent, command[0])
+            self.assertEqual("implement this", command[-1])
+            index = command.index("--model")
+            self.assertEqual("a-model", command[index + 1])
+
+    def test_an_unpinned_model_passes_no_model_flag(self) -> None:
+        for agent in AGENTS:
+            self.assertNotIn("--model", command_for(agent, "implement this"))
+
 
 class _EditingExecutor:
     """Stands in for the agent CLI: edits a file instead of calling a model."""
 
+    def __init__(self) -> None:
+        self.commands: list[list[str]] = []
+
     def run(
         self, args: list[str], cwd: Path, timeout: float | None = None
     ) -> CommandResult:
+        self.commands.append(args)
         (cwd / "edited.txt").write_text("agent change\n", encoding="utf-8")
         return CommandResult(
             returncode=0, stdout="done", stderr="", duration_seconds=0.01
@@ -90,3 +109,25 @@ class SubprocessInvokerTests(unittest.TestCase):
             patch = Path(invocation.patch_path).read_text(encoding="utf-8")
             self.assertIn("edited.txt", patch)
             self.assertEqual(0, invocation.exit_code)
+
+    def test_invoke_pins_the_configured_model_for_that_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = _seed_repo(root)
+            run_dir = root / "run"
+            (run_dir / "transcripts").mkdir(parents=True)
+            (run_dir / "patches").mkdir(parents=True)
+
+            executor = _EditingExecutor()
+            invoker = SubprocessInvoker(
+                run_dir, executor=executor, models={"claude": "opus"}
+            )
+            invoker.invoke("claude", "do the thing", repo, 5.0)
+            invoker.invoke("codex", "do the thing", repo, 5.0)
+
+            claude_command, codex_command = executor.commands
+            self.assertIn("--model", claude_command)
+            self.assertEqual(
+                "opus", claude_command[claude_command.index("--model") + 1]
+            )
+            self.assertNotIn("--model", codex_command)

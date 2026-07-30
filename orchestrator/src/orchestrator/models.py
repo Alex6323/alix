@@ -160,6 +160,7 @@ class RunState:
     implementer: AgentName
     spec_hash: str
     prompt_hashes: dict[str, str]
+    models: dict[str, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     history: list[PhaseHistory] = field(default_factory=list)
     token_usage: dict[str, int] = field(default_factory=dict)
@@ -189,6 +190,7 @@ class RunState:
             "implementer": self.implementer,
             "spec_hash": self.spec_hash,
             "prompt_hashes": self.prompt_hashes,
+            "models": self.models,
             "findings": [finding.to_dict() for finding in self.findings],
             "history": [item.to_dict() for item in self.history],
             "token_usage": self.token_usage,
@@ -256,6 +258,7 @@ class RunState:
             implementer=cast(AgentName, implementer),
             spec_hash=_string(data, "spec_hash"),
             prompt_hashes=_string_map(data, "prompt_hashes"),
+            models=_string_map(data, "models"),
             findings=[Finding.from_dict(item) for item in raw_findings],
             history=[PhaseHistory.from_dict(item) for item in raw_history],
             token_usage=_int_map(data, "token_usage"),

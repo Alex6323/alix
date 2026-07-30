@@ -17,9 +17,15 @@ class Invoker(Protocol):
 
 
 class SubprocessInvoker:
-    def __init__(self, run_dir: Path, executor: Executor | None = None) -> None:
+    def __init__(
+        self,
+        run_dir: Path,
+        executor: Executor | None = None,
+        models: dict[str, str] | None = None,
+    ) -> None:
         self.run_dir = run_dir
         self.executor = executor or SubprocessExecutor()
+        self.models = dict(models or {})
 
     def invoke(
         self, agent: AgentName, prompt: str, cwd: Path, timeout: float
@@ -29,7 +35,9 @@ class SubprocessInvoker:
         transcript = self.run_dir / "transcripts" / f"{stem}.txt"
         patch_path = self.run_dir / "patches" / f"{stem}.patch"
         baseline = _git(cwd, "rev-parse", "HEAD").strip()
-        result = self.executor.run(command_for(agent, prompt), cwd, timeout)
+        result = self.executor.run(
+            command_for(agent, prompt, self.models.get(agent)), cwd, timeout
+        )
         _git(cwd, "add", "-N", ".")
         patch_path.write_text(
             _git(cwd, "diff", "--binary", baseline) + "\n",
@@ -51,11 +59,13 @@ class SubprocessInvoker:
         )
 
 
-def command_for(agent: AgentName, prompt: str) -> list[str]:
+def command_for(agent: AgentName, prompt: str, model: str | None = None) -> list[str]:
     # Verified against Claude Code 2.1.220 and Codex CLI 0.145.0 on 2026-07-30.
     # subprocess cwd, rather than a CLI flag, selects the isolated worktree.
+    # An unpinned model follows each CLI's ambient default, which makes a run
+    # unreproducible and can strand it on an exhausted model's rate limit.
     if agent == "claude":
-        return [
+        command = [
             "claude",
             "--print",
             "--output-format",
@@ -63,9 +73,11 @@ def command_for(agent: AgentName, prompt: str) -> list[str]:
             "--permission-mode",
             "acceptEdits",
             "--no-session-persistence",
-            prompt,
         ]
-    return [
+        if model is not None:
+            command += ["--model", model]
+        return [*command, prompt]
+    command = [
         "codex",
         "--ask-for-approval",
         "never",
@@ -74,8 +86,10 @@ def command_for(agent: AgentName, prompt: str) -> list[str]:
         "--ephemeral",
         "--sandbox",
         "workspace-write",
-        prompt,
     ]
+    if model is not None:
+        command += ["--model", model]
+    return [*command, prompt]
 
 
 def _usage(agent: AgentName, stdout: str) -> tuple[str, int | None, float | None]:
