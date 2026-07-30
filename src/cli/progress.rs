@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+};
 
 use alix::{
     assemble::{load_decks, open_store, store_path_for},
@@ -299,24 +302,30 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
 }
 
 fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
+    let folder_scope = |dir: &Path| -> Result<(Vec<PathBuf>, PathBuf)> {
+        let store = args
+            .store
+            .clone()
+            .unwrap_or_else(|| workspace::root_store_path(dir));
+        let (initialized, uninitialized) = workspace::classified_deck_files(dir)
+            .context("refusing to judge orphans while the target cannot be listed")?;
+        Ok((initialized.into_iter().chain(uninitialized).collect(), store))
+    };
     let (deck_paths, store_path) = match &args.target {
-        Some(target) => {
-            let target = expand_target(target, config)?;
+        Some(target) if target.is_file() => {
+            let decks = vec![target.clone()];
             let store = args
                 .store
                 .clone()
-                .or_else(|| store_path_for(&target.decks, None))
-                .or_else(|| target.default_store.clone());
-            (target.decks, store)
+                .or_else(|| store_path_for(&decks, None))
+                .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d)))
+                .or_else(alix::store::default_store_path)
+                .context("cannot determine the data directory")?;
+            (decks, store)
         }
-        None => {
-            let dir = config.decks_dir().context("cannot determine ~/decks")?;
-            let store = args
-                .store
-                .clone()
-                .unwrap_or_else(|| workspace::root_store_path(&dir));
-            (workspace::deck_files(&dir), Some(store))
-        }
+        Some(target) if target.is_dir() => folder_scope(target)?,
+        Some(target) => bail!("`{}` is neither a deck file nor a folder", target.display()),
+        None => folder_scope(&config.decks_dir().context("cannot determine ~/decks")?)?,
     };
 
     // An unstamped card has no id and no store entry, so it's neither known
@@ -324,16 +333,16 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
     let mut known_cards: HashSet<String> = HashSet::new();
     let mut known_deck_tokens: HashSet<String> = HashSet::new();
     for path in &deck_paths {
-        if let Ok(deck) = Deck::load(path) {
-            known_deck_tokens.extend(deck.deck_token.clone());
-            known_cards.extend(deck.cards.iter().filter_map(Card::id));
-        }
+        let deck = Deck::load(path)
+            .context("refusing to judge orphans while a deck in the target cannot be read")?;
+        known_deck_tokens.extend(deck.deck_token.clone());
+        known_cards.extend(deck.cards.iter().filter_map(Card::id));
     }
 
-    let store_path = store_path
-        .or_else(alix::store::default_store_path)
-        .context("cannot determine the data directory")?;
-    let mut store = state::open_stores(&deck_paths, &store_path)?;
+    let mut store = match args.target.as_deref() {
+        Some(deck) if deck.is_file() => state::open_store(deck, &store_path)?,
+        _ => state::open_aggregate_store(&store_path)?,
+    };
     let orphans = store.orphans(&known_cards, &known_deck_tokens);
     if orphans.is_empty() {
         println!("No orphaned progress to reset.");

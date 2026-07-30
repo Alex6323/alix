@@ -74,8 +74,13 @@ relevant documents in memory without creating an authoritative combined file.
   `<!-- id: … -->` comment, a hand-deleted deck, a pre-1.0 numeric id).
   Orphans are never removed automatically (they are evidence and a reclaim
   pool), so this is the explicit opt-in. It scopes to a named folder/workspace
-  store, else the decks-dir root store. Run `alix doctor` first to see what it
-  would clear.
+  store, else the decks-dir root store, and reads every progress document under
+  it (the same documents `alix doctor` reports on). A single deck file scopes
+  to that deck's own document instead. A folder whose last deck was deleted is
+  still a valid target. Every deck-like file in a folder is scanned for live
+  ids, including one still awaiting its `id:` line, and any of them failing to
+  parse aborts the sweep, since its cards cannot be told apart from orphans.
+  Run `alix doctor` first to see what it would clear.
 
 Deck [dependencies](09-dependencies.md) (`requires:`) are edited by hand in
 the deck file. There's no separate command for it.

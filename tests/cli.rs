@@ -671,6 +671,245 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
 }
 
 #[test]
+fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
+    // `doctor` scans the target root's whole aggregate, so `reset --orphans`
+    // must too: reading only the named deck's own document hides the orphan
+    // whenever the target holds exactly one live deck.
+    for live_decks in [1usize, 2] {
+        let dir = TempDir::new().unwrap();
+        let store_path = dir.path().join("state");
+        let mut live: Vec<(PathBuf, String)> = Vec::new();
+        for index in 0..live_decks {
+            let deck = write(
+                dir.path(),
+                &format!("live{index}.md"),
+                &format!(
+                    "---\nid: \"deck-live{index}\"\n---\n\
+                     ## question {index} <!-- id: card-live{index} -->\nanswer\n"
+                ),
+            );
+            let mut store = deck_store(&deck, &store_path);
+            let card = format!("card-live{index}");
+            store.get_or_insert(&card, 0);
+            store.save().unwrap();
+            live.push((store.path().to_path_buf(), card));
+        }
+        let ghost_path = alix::state::UserFiles::new(&store_path).progress_for("deck-ghost");
+        let mut ghost =
+            alix::store::Store::open_deck(&ghost_path, "deck-ghost", "ghost.md").unwrap();
+        ghost.get_or_insert("card-ghost1", 0);
+        ghost.save().unwrap();
+
+        let reset = &[
+            "reset",
+            "--orphans",
+            dir.path().to_str().unwrap(),
+            "--yes",
+            "--store",
+            store_path.to_str().unwrap(),
+        ];
+        let out = alix(reset);
+
+        assert!(
+            out.status.success(),
+            "{live_decks} live deck(s): stderr: {}",
+            stderr(&out)
+        );
+        assert!(
+            stdout(&out).contains("Reset 1 orphaned key(s)."),
+            "{live_decks} live deck(s): the deleted deck's key was not reported: {}",
+            stdout(&out)
+        );
+        let ghost_text = std::fs::read_to_string(&ghost_path).unwrap();
+        assert!(
+            !ghost_text.contains("card-ghost1"),
+            "{live_decks} live deck(s): the orphaned key survives in {}: {ghost_text}",
+            ghost_path.display()
+        );
+        for (path, card) in &live {
+            let text = std::fs::read_to_string(path).unwrap();
+            assert!(
+                text.contains(card.as_str()),
+                "{live_decks} live deck(s): live progress for {card} was pruned: {text}"
+            );
+        }
+
+        let out = alix(reset);
+        assert!(
+            stdout(&out).contains("No orphaned progress to reset."),
+            "{live_decks} live deck(s): a swept target still reported orphans: {}",
+            stdout(&out)
+        );
+    }
+}
+
+#[test]
+fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read() {
+    // A deck the parser rejects hides whatever ids it holds, so every key in
+    // the target would look orphaned: the sweep stops instead of pruning.
+    for (shape, broken) in [
+        ("an invalid card id", "---\nid: \"deck-b\"\n---\n## q <!-- id: nope -->\na\n"),
+        ("unclosed frontmatter", "---\nid: \"deck-b\"\n## q <!-- id: card-b1 -->\na\n"),
+        ("a front without an answer", "## q <!-- id: card-b1 -->\n"),
+    ] {
+        let dir = TempDir::new().unwrap();
+        let store_path = dir.path().join("state");
+        let live = write(dir.path(), "live.md", VALID_DECK);
+        let mut store = deck_store(&live, &store_path);
+        store.get_or_insert("card-math1", 0);
+        store.save().unwrap();
+        let live_progress = store.path().to_path_buf();
+        let ghost_path =
+            write_progress_document(&store_path, "deck-ghost", "ghost.md", "\"card-ghost1\":{}");
+        write(dir.path(), "broken.md", broken);
+        let before = (
+            std::fs::read_to_string(&live_progress).unwrap(),
+            std::fs::read_to_string(&ghost_path).unwrap(),
+        );
+
+        let out = alix(&[
+            "reset",
+            "--orphans",
+            dir.path().to_str().unwrap(),
+            "--yes",
+            "--store",
+            store_path.to_str().unwrap(),
+        ]);
+
+        assert!(
+            !out.status.success(),
+            "{shape}: the sweep ran anyway: {}",
+            stdout(&out)
+        );
+        assert_eq!(
+            before.0,
+            std::fs::read_to_string(&live_progress).unwrap(),
+            "{shape}: live progress changed"
+        );
+        assert_eq!(
+            before.1,
+            std::fs::read_to_string(&ghost_path).unwrap(),
+            "{shape}: the orphaned document was pruned on an unreadable target"
+        );
+    }
+}
+
+#[test]
+fn reset_orphans_spares_the_cards_of_a_deck_that_lost_its_frontmatter_id() {
+    // Stripping the `id:` line drops the file out of the initialized listing;
+    // its cards are still live cards, not orphans.
+    let dir = TempDir::new().unwrap();
+    let store_path = dir.path().join("state");
+    let deck = write(dir.path(), "math.md", VALID_DECK);
+    let mut store = deck_store(&deck, &store_path);
+    store.get_or_insert("card-math1", 0);
+    store.save().unwrap();
+    let progress = store.path().to_path_buf();
+    write(dir.path(), "math.md", "## What is 2 + 2? <!-- id: card-math1 -->\n4\n");
+
+    let out = alix(&[
+        "reset",
+        "--orphans",
+        dir.path().to_str().unwrap(),
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("No orphaned progress to reset."),
+        "the unstamped deck's live card was judged an orphan: {}",
+        stdout(&out)
+    );
+    let after = std::fs::read_to_string(&progress).unwrap();
+    assert!(after.contains("card-math1"), "live card pruned: {after}");
+}
+
+#[test]
+fn reset_orphans_on_a_deck_file_spares_a_neighbours_live_progress() {
+    // A deck file names one deck, so only that deck's document is judged: a
+    // neighbour sharing the store root is not in the scan, and its live
+    // progress is not an orphan.
+    let dir = TempDir::new().unwrap();
+    let store_path = dir.path().join("state");
+    let target = write(dir.path(), "math.md", VALID_DECK);
+    let neighbour = write(
+        dir.path(),
+        "other.md",
+        "---\nid: \"deck-otherdeck\"\n---\n## other <!-- id: card-other1 -->\nb\n",
+    );
+
+    let mut store = deck_store(&target, &store_path);
+    store.get_or_insert("card-math1", 0);
+    store.get_or_insert("orphan1", 0);
+    store.save().unwrap();
+    let mut neighbour_store = deck_store(&neighbour, &store_path);
+    neighbour_store.get_or_insert("card-other1", 0);
+    neighbour_store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        "--orphans",
+        &target,
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset 1 orphaned key(s)."),
+        "the deck file's own orphan was not cleared: {}",
+        stdout(&out)
+    );
+    let after = std::fs::read_to_string(store.path()).unwrap();
+    assert!(!after.contains("orphan1"), "orphan not cleared: {after}");
+    assert!(
+        after.contains("card-math1"),
+        "the target's live card was pruned: {after}"
+    );
+    let neighbour_after = std::fs::read_to_string(neighbour_store.path()).unwrap();
+    assert!(
+        neighbour_after.contains("card-other1"),
+        "a neighbouring deck's live progress was pruned: {neighbour_after}"
+    );
+}
+
+#[test]
+fn reset_orphans_names_a_target_that_is_neither_a_deck_file_nor_a_folder() {
+    let dir = TempDir::new().unwrap();
+    let store_path = dir.path().join("state");
+    let dangling = dir.path().join("dangling.md");
+    std::os::unix::fs::symlink(dir.path().join("gone.md"), &dangling).unwrap();
+
+    for (shape, target) in [
+        ("a path that does not exist", dir.path().join("missing.md")),
+        ("a symlink to a deleted deck", dangling),
+    ] {
+        let out = alix(&[
+            "reset",
+            "--orphans",
+            target.to_str().unwrap(),
+            "--yes",
+            "--store",
+            store_path.to_str().unwrap(),
+        ]);
+
+        assert!(
+            !out.status.success(),
+            "{shape}: the sweep ran anyway: {}",
+            stdout(&out)
+        );
+        assert!(
+            stderr(&out).contains("is neither a deck file nor a folder"),
+            "{shape}: refused for the wrong reason: {}",
+            stderr(&out)
+        );
+    }
+}
+
+#[test]
 fn deck_reset_drops_that_decks_virtual_cards() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

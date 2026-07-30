@@ -290,6 +290,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix reset --orphans <folder>` now finds orphans when the folder holds
+  exactly one live deck. It had opened only that deck's own progress document,
+  so a leftover `progress/<id>.json` stayed invisible: the command reported "No
+  orphaned progress to reset." while `alix doctor` kept reporting the orphan. A
+  folder target now scans its store root's whole aggregate, the same documents
+  `doctor` reads; a deck-file target judges only its own document, so it cannot
+  reach a sibling's progress. A folder whose last deck was deleted is a valid
+  target.
+- `alix reset --orphans` now aborts when a deck-like file in the target cannot
+  be parsed, instead of judging that deck's live progress orphaned and deleting
+  it. Decks still awaiting an `id:` line count as live.
+- `alix reset --orphans` names a target that is neither a deck file nor a
+  folder instead of reporting it as unlistable.
 - The picker no longer reopens an inactive workspace's progress from disk once
   that workspace has been studied this run: the progress owner retains a
   projection of every document it has owned, so a progress file briefly parked
