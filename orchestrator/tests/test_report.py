@@ -71,4 +71,29 @@ class ReportTests(unittest.TestCase):
         self.assertIn("human review: existing test lines changed", report)
         self.assertIn("$0.2500", report)
         self.assertIn("claude", report)
+        self.assertIn("eligible", report)
+        self.assertIn("1/2", report)
+        self.assertIn("Check", report)
         self.assertIn("different cache key", report)
+
+        blocked = render_report(
+            state,
+            [
+                BranchScore(
+                    "claude",
+                    3,
+                    3,
+                    1,
+                    0,
+                    885,
+                    426,
+                    False,
+                    check_ok=False,
+                ),
+                BranchScore("codex", 1, 4, 0, 0, 886, 277, True),
+            ],
+        )
+        self.assertIn(
+            "Incomplete eligible comparison: human decision required.",
+            blocked,
+        )

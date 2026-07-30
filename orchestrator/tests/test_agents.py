@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -132,6 +134,21 @@ class _EditingExecutor:
         )
 
 
+class _BlockingExecutor(_EditingExecutor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run(
+        self, args: list[str], cwd: Path, timeout: float | None = None
+    ) -> CommandResult:
+        self.started.set()
+        if not self.release.wait(timeout=1):
+            raise AssertionError("test did not release the fake invocation")
+        return super().run(args, cwd, timeout)
+
+
 def _seed_repo(root: Path) -> Path:
     repo = root / "repo"
     repo.mkdir()
@@ -151,6 +168,44 @@ def _seed_repo(root: Path) -> Path:
 
 
 class SubprocessInvokerTests(unittest.TestCase):
+    def test_invoke_records_start_and_heartbeat_before_the_agent_returns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = _seed_repo(root)
+            run_dir = root / "run"
+            (run_dir / "transcripts").mkdir(parents=True)
+            (run_dir / "patches").mkdir(parents=True)
+            executor = _BlockingExecutor()
+            invoker = SubprocessInvoker(
+                run_dir,
+                executor=executor,
+                heartbeat_seconds=0.01,
+            )
+            completed = threading.Event()
+
+            def invoke() -> None:
+                invoker.invoke("claude", "do the thing", repo, 5.0)
+                completed.set()
+
+            worker = threading.Thread(target=invoke)
+            worker.start()
+            self.assertTrue(executor.started.wait(timeout=1))
+            progress = run_dir / "progress.log"
+            deadline = time.monotonic() + 1
+            while (
+                "heartbeat" not in progress.read_text(encoding="utf-8")
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+
+            self.assertFalse(completed.is_set())
+            self.assertIn("started", progress.read_text(encoding="utf-8"))
+            self.assertIn("heartbeat", progress.read_text(encoding="utf-8"))
+            executor.release.set()
+            worker.join(timeout=1)
+            self.assertTrue(completed.is_set())
+            self.assertIn("finished", progress.read_text(encoding="utf-8"))
+
     def test_invoke_diffs_the_patch_against_the_pre_invocation_head(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

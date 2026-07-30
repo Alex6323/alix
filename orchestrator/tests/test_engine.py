@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -165,25 +166,32 @@ class FakeInvoker:
         self.run_dir = run_dir
         self.calls: list[str] = []
         self.claude_attempts = 0
+        self.lock = threading.Lock()
 
     def invoke(
         self, agent: str, prompt: str, cwd: Path, timeout: float
     ) -> Invocation:
         del prompt, timeout
-        self.calls.append(agent)
+        with self.lock:
+            self.calls.append(agent)
+            sequence = len(self.calls)
+            if agent == "claude":
+                self.claude_attempts += 1
+                claude_attempt = self.claude_attempts
+            else:
+                claude_attempt = 0
         if agent == "claude":
-            self.claude_attempts += 1
-            if self.claude_attempts == 1:
+            if claude_attempt == 1:
                 (cwd / "Makefile").write_text("gate:\n\t@true\n")
             else:
                 (cwd / "src/claude.rs").write_text("pub fn implementation() {}\n")
         else:
             (cwd / "src/codex.rs").write_text("pub fn implementation() {}\n")
         git(cwd, "add", "-N", ".")
-        patch = self.run_dir / "patches" / f"{len(self.calls):03d}.patch"
+        patch = self.run_dir / "patches" / f"{sequence:03d}.patch"
         patch.write_text(git(cwd, "diff", "--binary", "HEAD") + "\n")
         transcript = (
-            self.run_dir / "transcripts" / f"{len(self.calls):03d}-{agent}.txt"
+            self.run_dir / "transcripts" / f"{sequence:03d}-{agent}.txt"
         )
         transcript.write_text("done\n")
         return Invocation(
@@ -193,6 +201,55 @@ class FakeInvoker:
             final_message="done",
             duration_seconds=0.1,
         )
+
+
+class BarrierInvoker:
+    def __init__(self, run_dir: Path) -> None:
+        self.run_dir = run_dir
+        self.barrier = threading.Barrier(2)
+        self.calls: list[str] = []
+        self.lock = threading.Lock()
+
+    def invoke(
+        self, agent: str, prompt: str, cwd: Path, timeout: float
+    ) -> Invocation:
+        del prompt, timeout
+        with self.lock:
+            self.calls.append(agent)
+        self.barrier.wait(timeout=1)
+        (cwd / f"src/{agent}.rs").write_text("pub fn implementation() {}\n")
+        git(cwd, "add", "-N", ".")
+        patch = self.run_dir / "patches" / f"parallel-{agent}.patch"
+        patch.write_text(git(cwd, "diff", "--binary", "HEAD") + "\n")
+        transcript = self.run_dir / "transcripts" / f"parallel-{agent}.txt"
+        transcript.write_text("done\n")
+        return Invocation(
+            exit_code=0,
+            transcript_path=str(transcript),
+            patch_path=str(patch),
+            final_message="done",
+            duration_seconds=0.1,
+        )
+
+
+class InterruptingInvoker:
+    def __init__(self) -> None:
+        self.barrier = threading.Barrier(2)
+        self.cancelled = threading.Event()
+
+    def invoke(
+        self, agent: str, prompt: str, cwd: Path, timeout: float
+    ) -> Invocation:
+        del prompt, cwd, timeout
+        self.barrier.wait(timeout=1)
+        if agent == "claude":
+            raise KeyboardInterrupt
+        if not self.cancelled.wait(timeout=1):
+            raise RuntimeError("the peer invocation was not cancelled")
+        raise RuntimeError("cancelled")
+
+    def cancel_all(self) -> None:
+        self.cancelled.set()
 
 
 class InterruptedInvoker(FakeInvoker):
@@ -262,12 +319,15 @@ class FakeReviewInvoker:
     def __init__(self, run_dir: Path) -> None:
         self.run_dir = run_dir
         self.calls = 0
+        self.lock = threading.Lock()
 
     def invoke(
         self, agent: str, prompt: str, cwd: Path, timeout: float
     ) -> Invocation:
         del prompt, timeout
-        self.calls += 1
+        with self.lock:
+            self.calls += 1
+            sequence = self.calls
         output = cwd / ".orchestrator-review"
         output.mkdir()
         patch = output / "repro.patch"
@@ -291,16 +351,42 @@ class FakeReviewInvoker:
             "}]\n"
         )
         transcript = (
-            self.run_dir / "transcripts" / f"review-{self.calls}-{agent}.txt"
+            self.run_dir / "transcripts" / f"review-{sequence}-{agent}.txt"
         )
         transcript.write_text("review complete\n")
-        snapshot = self.run_dir / "patches" / f"review-{self.calls}-{agent}.patch"
+        snapshot = self.run_dir / "patches" / f"review-{sequence}-{agent}.patch"
         snapshot.write_text("")
         return Invocation(
             exit_code=0,
             transcript_path=str(transcript),
             patch_path=str(snapshot),
             final_message="review complete",
+            duration_seconds=0.1,
+        )
+
+
+class BarrierReviewInvoker:
+    def __init__(self, run_dir: Path) -> None:
+        self.run_dir = run_dir
+        self.barrier = threading.Barrier(2)
+
+    def invoke(
+        self, agent: str, prompt: str, cwd: Path, timeout: float
+    ) -> Invocation:
+        del prompt, timeout
+        self.barrier.wait(timeout=1)
+        output = cwd / ".orchestrator-review"
+        output.mkdir()
+        (output / "findings.json").write_text("[]\n")
+        transcript = self.run_dir / "transcripts" / f"parallel-review-{agent}.txt"
+        transcript.write_text("done\n")
+        patch = self.run_dir / "patches" / f"parallel-review-{agent}.patch"
+        patch.write_text("")
+        return Invocation(
+            exit_code=0,
+            transcript_path=str(transcript),
+            patch_path=str(patch),
+            final_message="done",
             duration_seconds=0.1,
         )
 
@@ -331,20 +417,23 @@ class FakeFixInvoker:
         self.run_dir = run_dir
         self.calls = 0
         self.prompts: list[str] = []
+        self.lock = threading.Lock()
 
     def invoke(
         self, agent: str, prompt: str, cwd: Path, timeout: float
     ) -> Invocation:
         del timeout
-        self.calls += 1
-        self.prompts.append(prompt)
+        with self.lock:
+            self.calls += 1
+            sequence = self.calls
+            self.prompts.append(prompt)
         self.asserted_test = (cwd / "tests/repro.rs").read_text()
         (cwd / f"src/{agent}_fix.rs").write_text("pub fn fixed() {}\n")
         git(cwd, "add", "-N", ".")
-        patch = self.run_dir / "patches" / f"fix-{self.calls}-{agent}.patch"
+        patch = self.run_dir / "patches" / f"fix-{sequence}-{agent}.patch"
         patch.write_text(git(cwd, "diff", "--binary", "HEAD") + "\n")
         transcript = (
-            self.run_dir / "transcripts" / f"fix-{self.calls}-{agent}.txt"
+            self.run_dir / "transcripts" / f"fix-{sequence}-{agent}.txt"
         )
         transcript.write_text("fixed\n")
         return Invocation(
@@ -378,21 +467,40 @@ class FakeScoreExecutor:
     def run(
         self, args: list[str], cwd: Path, timeout: float | None = None
     ) -> CommandResult:
-        del cwd, timeout
+        del timeout
         if args == ["make", "gate"]:
             return CommandResult(0, "mutants: 0 missed", "", 0.1)
         if args[:2] == ["cargo", "clippy"]:
-            return CommandResult(0, "", "warning: pedantic example\n", 0.1)
+            warning = "warning: pedantic example\n" if cwd.name == "codex" else ""
+            return CommandResult(0, "", warning, 0.1)
         return CommandResult(0, "passed", "", 0.1)
 
 
-class FakeWinnerExecutor(FakeScoreExecutor):
+class SerializedGateExecutor(FakeScoreExecutor):
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.active_gates = 0
+        self.max_active_gates = 0
+        self.check_calls = 0
+
     def run(
         self, args: list[str], cwd: Path, timeout: float | None = None
     ) -> CommandResult:
-        if args == ["make", "gate"] and cwd.name == "codex":
-            return CommandResult(1, "mutants: 2 missed", "", 0.1)
-        return super().run(args, cwd, timeout)
+        if args == ["make", "check"]:
+            self.check_calls += 1
+        if args != ["make", "gate"]:
+            return super().run(args, cwd, timeout)
+        with self.lock:
+            self.active_gates += 1
+            self.max_active_gates = max(
+                self.max_active_gates,
+                self.active_gates,
+            )
+        try:
+            return super().run(args, cwd, timeout)
+        finally:
+            with self.lock:
+                self.active_gates -= 1
 
 
 class FakeAsymmetricInvoker:
@@ -428,6 +536,58 @@ class FakeAsymmetricInvoker:
 
 
 class PhaseExecutionTests(unittest.TestCase):
+    def test_interrupting_a_parallel_phase_cancels_the_peer_invocation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = target_repo(root)
+            spec = root / "input.md"
+            spec.write_text("# Implement\n")
+            state = initialize_run(
+                RunOptions(
+                    mode="symmetric",
+                    spec=spec,
+                    plan=None,
+                    repo=repo,
+                    base="main",
+                    run_root=root / "runs",
+                    max_fix_rounds=0,
+                    implementer="claude",
+                ),
+                run_id="interrupt-parallel",
+            )
+            invoker = InterruptingInvoker()
+
+            with self.assertRaises(KeyboardInterrupt):
+                run_implementation_phase(state, invoker)
+
+            self.assertTrue(invoker.cancelled.is_set())
+
+    def test_symmetric_implementers_run_concurrently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = target_repo(root)
+            spec = root / "input.md"
+            spec.write_text("# Implement\n")
+            state = initialize_run(
+                RunOptions(
+                    mode="symmetric",
+                    spec=spec,
+                    plan=None,
+                    repo=repo,
+                    base="main",
+                    run_root=root / "runs",
+                    max_fix_rounds=0,
+                    implementer="claude",
+                ),
+                run_id="parallel-implementation",
+            )
+            invoker = BarrierInvoker(Path(state.run_dir))
+
+            run_implementation_phase(state, invoker)
+
+            self.assertCountEqual(["claude", "codex"], invoker.calls)
+            self.assertEqual("SCORE", state.phase)
+
     def test_implementation_rejects_once_then_reprompts_and_commits_uniformly(
         self,
     ) -> None:
@@ -453,7 +613,8 @@ class PhaseExecutionTests(unittest.TestCase):
 
             run_implementation_phase(state, invoker)
 
-            self.assertEqual(["claude", "claude", "codex"], invoker.calls)
+            self.assertEqual(2, invoker.calls.count("claude"))
+            self.assertEqual(1, invoker.calls.count("codex"))
             self.assertEqual("REVIEW_ROUND_1", state.phase)
             for name in ("claude", "codex"):
                 worktree = Path(state.agents[name].worktree)
@@ -559,6 +720,35 @@ new file mode 100644
                 ],
                 executor.calls,
             )
+
+    def test_review_authors_run_concurrently_before_serial_verification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = target_repo(root)
+            spec = root / "input.md"
+            spec.write_text("# Implement\n")
+            state = initialize_run(
+                RunOptions(
+                    mode="symmetric",
+                    spec=spec,
+                    plan=None,
+                    repo=repo,
+                    base="main",
+                    run_root=root / "runs",
+                    max_fix_rounds=1,
+                    implementer="claude",
+                ),
+                run_id="parallel-review",
+            )
+            run_implementation_phase(state, FakeInvoker(Path(state.run_dir)))
+
+            run_review_phase(
+                state,
+                BarrierReviewInvoker(Path(state.run_dir)),
+                FakeExecutor(),
+            )
+
+            self.assertEqual("SCORE", state.phase)
 
     def test_review_verification_rejects_rewriting_an_existing_test(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -867,7 +1057,7 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                     kind="defect",
                     test_patch="findings/F1.patch",
                     verified=True,
-                    resolved=False,
+                    resolved=True,
                     summary="codex loses a user update",
                     test_name="update_is_retained",
                     real_user_path="Submit two supported updates.",
@@ -877,12 +1067,18 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                 )
             )
 
-            run_score_phase(state, FakeScoreExecutor())
+            executor = SerializedGateExecutor()
+            run_score_phase(state, executor)
 
             scores = json.loads((Path(state.run_dir) / "scores.json").read_text())
             self.assertEqual("LAND", state.phase)
             self.assertEqual(2, len(scores))
             self.assertEqual(0, scores[0]["mutants_missed"])
+            self.assertEqual(0, scores[0]["pedantic_warnings"])
+            self.assertEqual(0, scores[0]["pedantic_warnings_added"])
+            self.assertEqual(1, scores[1]["pedantic_warnings_added"])
+            self.assertEqual(1, executor.max_active_gates)
+            self.assertEqual(2, executor.check_calls)
             self.assertIn("Merge `claude`.", (Path(state.run_dir) / "report.md").read_text())
 
     def test_land_commits_union_tests_before_the_winning_implementation(
@@ -925,7 +1121,7 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
             )
             state.agents["claude"].last_sha = git(claude, "rev-parse", "HEAD")
             state.phase = "SCORE"
-            run_score_phase(state, FakeWinnerExecutor())
+            run_score_phase(state, FakeScoreExecutor())
 
             run_land_phase(state)
 

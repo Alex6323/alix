@@ -53,7 +53,16 @@ uv run --project orchestrator orchestrate report \
 The run root must be outside the target repository. Agent worktrees live under
 its hidden `.worktrees/` directory. The visible run directory contains only the
 frozen inputs and durable evidence: atomic `state.json`, transcripts, patch
-snapshots, finding patches, scores, and the Markdown report.
+snapshots, finding patches, scores, an append-only `progress.log`, and the
+Markdown report. Progress is also mirrored to stderr. Agent entries include a
+periodic elapsed-time heartbeat and the number of changed worktree paths, so a
+long invocation remains observable without exposing partial model prose.
+
+Independent agent calls within one protocol phase run concurrently.
+Per-worktree patch validation and commits remain isolated. Shared state saves,
+review repro verification, and both `make gate` runs are serialized. Interrupting
+a parallel phase terminates every active agent process group before returning
+control to the resumable state machine.
 
 ## Protocols
 
@@ -93,19 +102,32 @@ verbatim to the implementation branch and remain immutable during fix rounds.
 
 ## Scoring and landing
 
-The lower penalty wins:
+Correctness is an eligibility boundary, not a score. A candidate is eligible
+only when:
 
-- failed gate: 1,000,000
-- each unresolved verified defect: 10,000
-- cross-test failure rate: up to 1,000
-- each missed mutant: 100
-- each pedantic warning: 2
-- changed lines: 0.001 each
+- `make check` passes
+- no verified defect remains unresolved
 
-Exact ties and runs with no passing gate stop for a human decision. Otherwise
-landing requires the base ref to remain at its frozen SHA and its checkout to be
-clean. The orchestrator commits the union of tests first, applies the winning
+Raw cross-tests are opponent-authored evidence, not a neutral gate. Among
+eligible candidates, the lower quality penalty wins: up to 1,000 points for
+cross-test failure rate, 100 points for each missed mutant, two points for each
+pedantic warning added beyond the frozen base, plus 0.001 per changed line.
+`make gate` still runs and its mutation result remains visible, but a survivor
+measures the candidate tests rather than making an otherwise correct
+implementation ineligible. A symmetric run requires every candidate to be
+eligible before making a recommendation; one surviving branch is not a
+complete comparison. Exact ties, incomplete comparisons, and runs with no
+eligible candidate stop for a human decision. Otherwise landing requires the
+base ref to remain at its frozen SHA and its checkout to be clean. The
+orchestrator commits the union of tests first, applies the winning
 implementation second, then fast-forwards the base.
+
+Runs retain full agent worktrees, build outputs, neutral review exports, and
+evidence. The first full Alix run used about 7.6 GB. Budget at least 10 GB for a
+comparable run; concurrent agents raise peak usage and can otherwise fail
+mid-run with ENOSPC. This machine sweeps files under `~/tmp` after seven
+untouched days, so put `--run-dir` outside `~/tmp` when the evidence must remain
+inspectable. Build scratch and disposable worktrees may still live there.
 
 ## Development gates
 
