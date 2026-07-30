@@ -52,6 +52,23 @@ jobs:
       - run: cargo fetch
       - run: make check
 
+  # The development orchestrator is a standalone Python project outside Cargo.
+  # Its deterministic unit and type checks block every PR; the real-agent smoke
+  # remains a separate, costed manual command.
+  orchestrator:
+    name: orchestrator (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.16"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: orchestrator/uv.lock
+      - run: uv run --frozen --project orchestrator python -m unittest discover -s orchestrator/tests
+      - run: uv run --frozen --project orchestrator mypy --config-file orchestrator/pyproject.toml orchestrator/src orchestrator/tests
+
   # The persistence and path-sensitive suites on the other two supported
   # desktop platforms. Cross-compiling a Windows binary does not test Windows
   # filesystem semantics (rename-over-existing, the dir-fsync no-op), so these
