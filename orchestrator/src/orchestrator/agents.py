@@ -98,6 +98,12 @@ def _usage(agent: AgentName, stdout: str) -> tuple[str, int | None, float | None
             value = cast(object, json.loads(stdout))
         except json.JSONDecodeError:
             return stdout.strip(), None, None
+        # --output-format json emits an array of records; the result is last.
+        if isinstance(value, list):
+            records = [
+                item for item in cast(list[object], value) if isinstance(item, dict)
+            ]
+            value = records[-1] if records else None
         if not isinstance(value, dict):
             return stdout.strip(), None, None
         data = cast(dict[str, object], value)
@@ -106,7 +112,7 @@ def _usage(agent: AgentName, stdout: str) -> tuple[str, int | None, float | None
         usage = data.get("usage")
         return (
             message if isinstance(message, str) else stdout.strip(),
-            _token_total(usage),
+            _token_total(usage, ()),
             float(cost) if isinstance(cost, (int, float)) else None,
         )
     message = ""
@@ -127,13 +133,18 @@ def _usage(agent: AgentName, stdout: str) -> tuple[str, int | None, float | None
             ):
                 message = cast(str, item_data["text"])
         usage = data.get("usage")
-        parsed_tokens = _token_total(usage)
+        parsed_tokens = _token_total(usage, CODEX_SUBSET_KEYS)
         if parsed_tokens is not None:
             codex_tokens = parsed_tokens
     return message or stdout.strip(), codex_tokens, None
 
 
-def _token_total(value: object) -> int | None:
+# Codex reports these as portions of input_tokens and output_tokens, so adding
+# them counts the same tokens twice. Anthropic's buckets are disjoint.
+CODEX_SUBSET_KEYS = ("cached_input_tokens", "reasoning_output_tokens")
+
+
+def _token_total(value: object, subset_keys: tuple[str, ...]) -> int | None:
     if not isinstance(value, dict):
         return None
     total = 0
@@ -142,6 +153,7 @@ def _token_total(value: object) -> int | None:
         if (
             isinstance(key, str)
             and key.endswith("_tokens")
+            and key not in subset_keys
             and isinstance(item, int)
             and not isinstance(item, bool)
         ):

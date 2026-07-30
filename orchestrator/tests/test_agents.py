@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator.agents import AgentName, SubprocessInvoker, command_for
+from orchestrator.agents import AgentName, SubprocessInvoker, _usage, command_for
 from orchestrator.commands import CommandResult
 
 AGENTS: tuple[AgentName, ...] = ("claude", "codex")
@@ -58,6 +59,61 @@ class AgentCommandTests(unittest.TestCase):
     def test_an_unpinned_model_passes_no_model_flag(self) -> None:
         for agent in AGENTS:
             self.assertNotIn("--model", command_for(agent, "implement this"))
+
+
+class UsageParsingTests(unittest.TestCase):
+    # Claude Code 2.1.220 --output-format json emits an array of records whose
+    # last entry is the result; Codex emits one JSON object per line.
+    CLAUDE_STDOUT = json.dumps(
+        [
+            {"type": "system", "subtype": "init"},
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": "implemented it",
+                "total_cost_usd": 1.25,
+                "usage": {
+                    "input_tokens": 21,
+                    "cache_creation_input_tokens": 100,
+                    "cache_read_input_tokens": 200,
+                    "output_tokens": 50,
+                },
+            },
+        ]
+    )
+    CODEX_STDOUT = "\n".join(
+        [
+            json.dumps({"item": {"type": "agent_message", "text": "implemented it"}}),
+            json.dumps(
+                {
+                    "usage": {
+                        "input_tokens": 1000,
+                        "cached_input_tokens": 900,
+                        "cache_write_input_tokens": 0,
+                        "output_tokens": 100,
+                        "reasoning_output_tokens": 40,
+                    }
+                }
+            ),
+        ]
+    )
+
+    def test_claude_usage_survives_the_streamed_array_shape(self) -> None:
+        message, tokens, cost = _usage("claude", self.CLAUDE_STDOUT)
+
+        self.assertEqual("implemented it", message)
+        self.assertEqual(1.25, cost)
+        # Anthropic reports four disjoint buckets, so they sum.
+        self.assertEqual(371, tokens)
+
+    def test_codex_cached_and_reasoning_subsets_are_not_counted_twice(self) -> None:
+        message, tokens, cost = _usage("codex", self.CODEX_STDOUT)
+
+        self.assertEqual("implemented it", message)
+        self.assertIsNone(cost)
+        # cached_input_tokens is part of input_tokens, and
+        # reasoning_output_tokens is part of output_tokens.
+        self.assertEqual(1100, tokens)
 
 
 class _EditingExecutor:
