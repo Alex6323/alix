@@ -125,6 +125,7 @@ check: pre-1-0-check deps-check changelog-check lint test site-media-check docs-
 # Mutation-tests only this branch's diff against local main (no remotes, no
 # PRs here), with cargo-mutants' default cargo-test runner. Costed and slow:
 # run once, right before requesting review, never in the inner loop or CI.
+gate: export TMPDIR ?= $(HOME)/tmp
 gate: check
 	git diff $$(git merge-base main HEAD) > target/review.diff
 	cargo mutants --in-diff target/review.diff
