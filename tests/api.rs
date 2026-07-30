@@ -2734,6 +2734,198 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
     assert_eq!("PASS", grades[0]["verdict"], "body: {body}");
 }
 
+/// Coverage round from the mutation gate: /api/remove had no effective
+/// end-to-end test (deleting its whole match arm survived the suite).
+#[test]
+fn remove_drops_the_current_card_from_the_session_and_the_deck_file() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let before: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    let front = before["card"]["front"].as_str().unwrap().to_string();
+
+    let resp = post_gated(&base, "/api/remove", "{}");
+    assert_eq!(200, resp.status);
+    let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_ne!(front, after["card"]["front"], "the session moved on: {after}");
+    let deck = std::fs::read_to_string(guard.dir().join("sample.md")).unwrap();
+    assert!(
+        !deck.contains(&front),
+        "the removed card must leave the deck file: {deck}"
+    );
+}
+
+/// Arm-existence smokes for routes whose deletion survived the gate: the
+/// distinguishing status is 409 (no active sitting), never the 404 a
+/// deleted arm would produce.
+#[test]
+fn exam_answer_and_remediate_arms_exist_without_a_sitting() {
+    let (base, _guard) = spawn_test_server();
+    let resp = post_json(&base, "/api/exam/answer", r#"{"text":"x"}"#);
+    assert_eq!(409, resp.status);
+    let resp = post_json(&base, "/api/exam/remediate", "{}");
+    assert_eq!(409, resp.status);
+}
+
+/// The exam answer arm, in-flow: setting the text before grading reaches
+/// the sitting (the graded answer is the one set here).
+#[test]
+fn exam_answer_sets_the_text_the_grade_submits() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(
+        scripts.path(),
+        r#"{"verdict":"pass","feedback":"good","missed":[]}"#,
+    );
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
+
+    let resp = post_json(&base, "/api/exam/answer", r#"{"text":"my answer"}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("answering", body["phase"], "body: {body}");
+
+    let resp = post_json(&base, "/api/exam/grade", r#"{"text":"my answer"}"#);
+    assert_eq!(200, resp.status);
+    let body = poll_until(&base, "/api/exam", |b| b["phase"] != "grading");
+    assert_eq!("results", body["phase"], "body: {body}");
+}
+
+/// The web generate flow end to end: start answers a generating phase, the
+/// poll settles, the deck lands in the destination, close frees the slot
+/// (a later poll is 409), and the new deck resolves by name.
+#[test]
+fn generate_lands_the_deck_then_close_frees_the_slot() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(
+        scripts.path(),
+        "---\ntitle: Generated\n---\n## q1\na1\n\n## q2\na2\n",
+    );
+    let (base, guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/generate",
+        r#"{"url":"https://example.org/article"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("generating", body["phase"], "body: {body}");
+
+    let body = poll_until(&base, "/api/generate", |b| b["phase"] != "generating");
+    assert_eq!("done", body["phase"], "body: {body}");
+    let deck = body["deck"].as_str().expect("landed deck name").to_string();
+    assert!(
+        guard.dir().join("decks").join(&deck).exists() || guard.dir().join(&deck).exists(),
+        "the generated deck landed: {deck}"
+    );
+
+    let resp = post_json(&base, "/api/generate/close", "{}");
+    assert_eq!(200, resp.status);
+    let resp = http(&base, "GET", "/api/generate", &[], &[]);
+    assert_eq!(409, resp.status, "the closed slot polls as 409");
+}
+
+/// share/zip produces a real zip of the staged decks, and receive/zip lands
+/// it back: the round trip that covers both archive arms.
+#[test]
+fn share_zip_roundtrips_through_receive_zip() {
+    let (base, guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/share/zip", &[], &[]);
+    assert_eq!(200, resp.status);
+    assert_eq!(Some("application/zip"), resp.header("Content-Type"));
+    assert!(resp.body.len() > 4, "a non-empty archive");
+    assert_eq!(&resp.body[..2], b"PK", "a zip magic header");
+
+    let inbox = guard.dir().join("inbox");
+    std::fs::create_dir(&inbox).unwrap();
+    std::fs::write(inbox.join("alix.toml"), "title = \"Inbox\"\n").unwrap();
+    let resp = http(
+        &base,
+        "POST",
+        "/api/receive/zip?dest=inbox",
+        &[("Content-Type", "application/zip")],
+        &resp.body,
+    );
+    assert_eq!(200, resp.status, "{:?}", String::from_utf8_lossy(&resp.body));
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("done", body["phase"], "body: {body}");
+}
+
+/// Close arms answer 200 with no job active (a deleted arm would 404).
+#[test]
+fn share_and_receive_close_arms_exist() {
+    let (base, _guard) = spawn_test_server();
+    assert_eq!(200, post_json(&base, "/api/share/close", "{}").status);
+    assert_eq!(200, post_json(&base, "/api/receive/close", "{}").status);
+    assert_eq!(200, post_json(&base, "/api/remote/generate/close", "{}").status);
+}
+
+/// The walk tutor: a question lands in the walk transcript, and a note
+/// condensed from it is appended to the trace deck file.
+#[test]
+fn walk_ask_question_then_note_writes_to_the_checkpoint() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let count = scripts.path().join("calls");
+    let fake = scripts.path().join("fake-walk-tutor");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\necho x >> {count}\nif [ \"$(wc -l < {count})\" -gt 1 ]; then echo '- the hop forwards the value'; else echo 'a walk answer'; fi\n",
+            count = count.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
+
+    let resp = post_gated(&base, "/api/walk/ask", r#"{"question":"why?"}"#);
+    assert_eq!(200, resp.status);
+    let body = poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    assert_eq!(1, body["transcript"].as_array().unwrap().len(), "{body}");
+
+    let resp = post_gated(&base, "/api/walk/ask/note", "{}");
+    assert_eq!(200, resp.status);
+    poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    let deck = std::fs::read_to_string(guard.dir().join("trace.md")).unwrap();
+    assert!(
+        deck.contains("the hop forwards the value"),
+        "the note landed in the trace deck: {deck}"
+    );
+}
+
+/// Recent history is recorded through the owner and drives the listing
+/// order: the most recently selected deck leads the recent section.
+#[test]
+fn recent_ordering_over_the_wire_follows_selects() {
+    let _lock = exec_lock();
+    let (base, _guard) = spawn_full_server(None);
+
+    post_json(&base, "/api/select", r#"{"deck":"sample.md"}"#);
+    post_gated(&base, "/api/deselect", "{}");
+    post_json(&base, "/api/select", r#"{"deck":"choice.md"}"#);
+    post_gated(&base, "/api/deselect", "{}");
+
+    let resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let recent: Vec<&str> = body["recent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["name"].as_str().unwrap())
+        .collect();
+    let sample = recent.iter().position(|n| *n == "sample.md").unwrap();
+    let choice = recent.iter().position(|n| *n == "choice.md").unwrap();
+    assert!(
+        choice < sample,
+        "the later select leads the recent ordering: {recent:?}"
+    );
+}
+
 /// Every gated route, not just one: a stale echo must 409 and the session
 /// must not move. Kills the guard-disabling mutants route by route.
 #[test]

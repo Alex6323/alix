@@ -123,11 +123,16 @@ impl Ask {
         }
     }
 
+    // `subject` is the same key the owner's poll realigns with; deriving it
+    // from the card here bit once (a walk checkpoint card carries no id, so
+    // start aligned on None while poll aligned on the checkpoint id, and the
+    // mismatch dropped every pending walk answer).
     fn start(
         &mut self,
         cfg: &AskConfig,
         audience: Audience,
         card: &Card,
+        subject: Option<String>,
         context: &ask::TutorContext,
         has_source_context: bool,
         action: AskAction,
@@ -135,7 +140,7 @@ impl Ask {
         if self.pending.is_some() {
             return false;
         }
-        self.align(card.id());
+        self.align(subject);
         if matches!(action, AskAction::Condense | AskAction::DraftCard)
             && self.transcript.is_empty()
         {
@@ -563,8 +568,9 @@ impl Reviewing {
             root: live_root,
             frozen: frozen.as_deref(),
         };
+        let subject = card.id();
         self.ask
-            .start(cfg, audience, &card, &context, has_source_context, action)
+            .start(cfg, audience, &card, subject, &context, has_source_context, action)
     }
 
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
@@ -1337,8 +1343,9 @@ impl Walking {
             root: live_root,
             frozen: frozen.as_deref(),
         };
+        let subject = self.walk.checkpoint().map(|c| c.card_id.clone());
         self.ask
-            .start(cfg, audience, &card, &context, has_source_context, action)
+            .start(cfg, audience, &card, subject, &context, has_source_context, action)
     }
 
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
