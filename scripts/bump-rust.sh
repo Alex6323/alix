@@ -4,7 +4,6 @@
 # declares `toolchain` as a required input and errors when it is empty.
 set -eu
 
-WORKFLOWS='.github/workflows/ci.yml .github/workflows/release.yml .github/workflows/mobile-release.yml'
 STABLE_PIN='^\( *\)toolchain: [0-9][0-9.]*$'
 NIGHTLY_PIN='^\( *\)toolchain: nightly-[0-9][0-9-]*$'
 
@@ -43,7 +42,11 @@ if [ -n "$NIGHTLY" ]; then
     printf '  %-26s %s -> %s\n' .rust-nightly-version "$old" "$NIGHTLY"
 fi
 
-for workflow in $WORKFLOWS; do
+for workflow in .github/workflows/*.yml; do
+    case "$workflow" in
+        .github/workflows/backend-drift.yml) continue ;;
+        .github/workflows/mobile-drift.yml) continue ;;
+    esac
     changed=''
     if [ -n "$RUST" ]; then
         hits=$(grep -c "$STABLE_PIN" "$workflow" || true)

@@ -79,11 +79,30 @@ if [ "$fail" -eq 0 ]; then
     ok "every external GitHub Action uses a full commit SHA"
 fi
 
-for workflow in .github/workflows/ci.yml .github/workflows/release.yml .github/workflows/mobile-release.yml; do
-    if grep -Eq 'toolchain:[[:space:]]*"?((stable|nightly))"?[[:space:]]*$' "$workflow"; then
-        bad "$workflow uses a floating Rust toolchain outside a drift job"
-    fi
-done
+# Enumerated from the files, never from a list of known workflows: a pin added
+# to a new workflow, or a stale one beside a correct one, must not pass unseen.
+stray=$(
+    for workflow in .github/workflows/*.yml; do
+        case "$workflow" in
+            .github/workflows/backend-drift.yml) continue ;;
+            .github/workflows/mobile-drift.yml) continue ;;
+        esac
+        awk -v file="$workflow" -v rust="$rust" -v nightly="$nightly" '
+            /^[[:space:]]*toolchain:[[:space:]]*/ {
+                value = $2
+                gsub(/"/, "", value)
+                if (value != rust && value != nightly) {
+                    printf "  %s:%d has toolchain: %s\n", file, NR, value
+                }
+            }' "$workflow"
+    done
+)
+if [ -n "$stray" ]; then
+    bad "every workflow Rust pin must be $rust or $nightly outside named drift jobs"
+    printf '%s\n' "$stray" >&2
+else
+    ok "every workflow Rust pin is exact ($rust / $nightly)"
+fi
 
 require_literal Makefile 'RUST_NIGHTLY := $(shell cat .rust-nightly-version)' \
     "Make targets read the date-pinned nightly"
