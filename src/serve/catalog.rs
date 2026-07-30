@@ -388,6 +388,10 @@ pub(super) fn effective_decks_dir(
 
 /// `with_lock` is false for the browse screen: locking gates review only, so
 /// any deck stays browsable.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the catalog entry point takes the whole build input set"
+)]
 pub(super) fn deck_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
