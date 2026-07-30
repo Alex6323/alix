@@ -87,6 +87,7 @@ mod tests {
             permission_mode: None,
             access,
             session_args,
+            progress: false,
         }
     }
 
@@ -145,6 +146,7 @@ mod tests {
             permission_mode: Some("dontAsk"),
             access: Access::None,
             session_args: &[],
+            progress: false,
         });
         let model_at = argv
             .iter()

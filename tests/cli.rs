@@ -2357,6 +2357,48 @@ fn generate_single_deck_writes_a_deck_file() {
 }
 
 #[test]
+fn generate_forwards_structured_agent_progress_without_printing_partial_markdown() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let cli = dir.path().join("fake-claude");
+    std::fs::write(
+        &cli,
+        r###"#!/bin/sh
+cat >/dev/null
+echo '{"type":"system","subtype":"init"}'
+echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebFetch","input":{"url":"https://example.org"}}]}}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"partial deck must stay hidden"}]}}'
+echo '{"type":"result","subtype":"success","result":"## Generated Q\nGenerated A\n"}'
+"###,
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{}\"\n", cli.display()),
+    );
+
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--print",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("Claude: fetching the source..."),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(!stderr(&out).contains("partial deck must stay hidden"));
+    assert!(stdout(&out).contains("## Generated Q\nGenerated A"));
+}
+
+#[test]
 fn generate_single_deck_passes_goal_language_and_card_style_to_the_model() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -2506,6 +2548,11 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
     ]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("Claude: producing a response..."),
+        "workspace generation should report wrapper activity: {}",
+        stderr(&out)
+    );
     let request = std::fs::read_to_string(request).unwrap();
     assert!(request.contains("recognize Germany's institutions"));
     assert!(request.contains("German"));

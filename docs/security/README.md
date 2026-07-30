@@ -109,6 +109,16 @@ account. Tool grants are translated into each provider's command-line controls;
 provider behavior and enforcement are part of Alix's trusted computing base.
 Prompts and supplied context leave the machine for the selected provider.
 
+During `alix generate`, Claude and Codex return structured event streams. Alix
+prints fixed status labels instead of model text, tool inputs, tool results, or
+partial generated content. It retains stdout for final extraction and
+validation, forwards each provider stderr line as a bounded local diagnostic,
+and kills the provider process group when the configured absolute or inactivity
+limit expires. Unstructured backends and custom wrappers receive the same
+inactivity guard and expose only generic stdout activity unless they write a
+diagnostic to stderr (`src/ask.rs`, `src/backend/claude.rs`,
+`src/backend/codex.rs`).
+
 The development-only dual-agent orchestrator also executes provider CLIs as the
 local user. It gives Claude Code edit permission and Codex workspace-write
 permission inside isolated experiment worktrees, but it is not a security
@@ -223,6 +233,9 @@ The most relevant deterministic checks currently live beside their controls:
   sync conflicts;
 - `src/fsio.rs`: durable file replacement (data and directory-entry sync
   around the rename) shared by every state, deck, and manifest writer;
+- `src/ask.rs`, `src/backend/claude.rs`, and `src/backend/codex.rs`: bounded
+  generation diagnostics, partial-output redaction, event-driven inactivity,
+  and provider process-group termination;
 - `src/trace_ai.rs`: generated snapshot provenance; and
 - `src/math.rs` and renderer tests: validation and sanitization of generated
   math SVG.

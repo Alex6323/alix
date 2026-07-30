@@ -206,6 +206,8 @@ pub struct AskConfig {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub timeout_secs: u64,
+    pub progress: bool,
+    pub idle_timeout_secs: Option<u64>,
     pub permission_mode: String,
     pub allowed_tools: Vec<String>,
     pub cwd: Option<PathBuf>,
@@ -221,6 +223,8 @@ impl Default for AskConfig {
             model: None,
             effort: None,
             timeout_secs: 120,
+            progress: false,
+            idle_timeout_secs: None,
             permission_mode: "dontAsk".to_string(),
             allowed_tools: vec!["WebFetch".to_string(), "WebSearch".to_string()],
             cwd: None,
@@ -234,6 +238,7 @@ impl Default for AskConfig {
 pub struct GenerateDeckConfig {
     pub model: Option<String>,
     pub timeout_secs: u64,
+    pub idle_timeout_secs: u64,
     pub max_cards: usize,
     pub language: Option<String>,
     pub audience: Option<String>,
@@ -247,7 +252,8 @@ impl Default for GenerateDeckConfig {
     fn default() -> Self {
         Self {
             model: None,
-            timeout_secs: 300,
+            timeout_secs: 3600,
+            idle_timeout_secs: 300,
             max_cards: 30,
             language: None,
             audience: None,
@@ -571,6 +577,7 @@ struct RawServe {
 struct RawGenerate {
     model: Option<String>,
     timeout_secs: Option<u64>,
+    idle_timeout_secs: Option<u64>,
     max_cards: Option<usize>,
     language: Option<String>,
     audience: Option<String>,
@@ -783,6 +790,9 @@ impl Config {
         }
         if let Some(secs) = raw.generate.timeout_secs {
             generate.timeout_secs = secs;
+        }
+        if let Some(secs) = raw.generate.idle_timeout_secs {
+            generate.idle_timeout_secs = secs;
         }
         if let Some(max) = raw.generate.max_cards {
             generate.max_cards = max;
@@ -1126,7 +1136,8 @@ pub fn default_config_toml() -> &'static str {
 # permission mode and tool allowlist (WebFetch reads the page).
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
-# timeout_secs = 300            # generation is slower than a single question
+# timeout_secs = 3600           # absolute safety limit for one generation call
+# idle_timeout_secs = 300       # stop after this long without an agent event
 # max_cards = 30                # upper bound on cards per deck
 # language = ""                 # output language; empty = follow the source
 # audience = ""                 # intended learner, e.g. "new Rust programmers"
@@ -1744,12 +1755,17 @@ mod tests {
         assert_eq!(None, defaults.generate.language);
         assert_eq!(None, defaults.generate.audience);
         assert_eq!(GenerateCardStyle::Mixed, defaults.generate.card_style);
+        assert_eq!(3600, defaults.generate.timeout_secs);
+        assert_eq!(300, defaults.generate.idle_timeout_secs);
 
         let config = Config::from_toml(
-            "[generate]\nlanguage = \"German\"\naudience = \"new voters\"\n\
+            "[generate]\ntimeout_secs = 7200\nidle_timeout_secs = 600\n\
+             language = \"German\"\naudience = \"new voters\"\n\
              card_style = \"authored-choices\"\n",
         )
         .unwrap();
+        assert_eq!(7200, config.generate.timeout_secs);
+        assert_eq!(600, config.generate.idle_timeout_secs);
         assert_eq!(Some("German".to_string()), config.generate.language);
         assert_eq!(Some("new voters".to_string()), config.generate.audience);
         assert_eq!(

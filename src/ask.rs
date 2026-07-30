@@ -1,15 +1,15 @@
 use std::{
-    io::{Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::mpsc::{Receiver, channel},
+    sync::mpsc::{Receiver, Sender, channel},
     time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    backend::{Access, PromptDelivery, RunOpts, backend_for},
+    backend::{Access, Backend, PromptDelivery, RunOpts, backend_for},
     card::Card,
     config::{AskConfig, Audience},
 };
@@ -476,6 +476,7 @@ fn run_supervised(
         },
         access: Access::from_allowed_tools(&config.allowed_tools),
         session_args,
+        progress: config.progress,
     };
     let mut argv = backend.build_argv(&opts);
     // Arg-delivery backends take the prompt as a positional arg, not stdin, so it's appended here
@@ -529,23 +530,19 @@ fn run_supervised(
         PromptDelivery::Arg | PromptDelivery::ExecArg => drop(stdin),
     }
 
-    // Reader threads drain output so the child never deadlocks on a full pipe while this thread
-    // watches the deadline.
-    let out = std::thread::spawn(move || {
-        let mut stdout = stdout_pipe;
-        let mut s = String::new();
-        let _ = stdout.read_to_string(&mut s);
-        s
-    });
-    let err = std::thread::spawn(move || {
-        let mut stderr = stderr_pipe;
-        let mut s = String::new();
-        let _ = stderr.read_to_string(&mut s);
-        s
-    });
+    // Reader threads drain output so the child never deadlocks on a full pipe.
+    let (pipe_tx, pipe_rx) = channel();
+    let out = drain_pipe(stdout_pipe, Pipe::Stdout, pipe_tx.clone());
+    let err = drain_pipe(stderr_pipe, Pipe::Stderr, pipe_tx);
 
-    let deadline = Instant::now() + Duration::from_secs(config.timeout_secs);
+    let started = Instant::now();
+    let deadline = started + Duration::from_secs(config.timeout_secs);
+    let idle_timeout = config.idle_timeout_secs.map(Duration::from_secs);
+    let mut progress = ProgressState::new(started);
     let status = loop {
+        let now = Instant::now();
+        progress.receive(&pipe_rx, backend.as_ref(), config.progress, now);
+
         {
             let mut guard = slot.lock().unwrap_or_else(|p| p.into_inner());
             match &mut *guard {
@@ -554,26 +551,50 @@ fn run_supervised(
                         *guard = ChildSlot::Finished;
                         break status;
                     }
-                    if Instant::now() >= deadline {
-                        kill_tree(child);
-                        *guard = ChildSlot::Finished;
-                        drop(guard);
-                        bail!(
-                            "'{}' timed out after {}s",
-                            config.command,
-                            config.timeout_secs
-                        );
+                    match timeout_kind(now, deadline, progress.last_activity, idle_timeout) {
+                        Some(TimeoutKind::Absolute) => {
+                            kill_tree(child);
+                            *guard = ChildSlot::Finished;
+                            drop(guard);
+                            bail!(
+                                "'{}' timed out after {}s",
+                                config.command,
+                                config.timeout_secs
+                            );
+                        }
+                        Some(TimeoutKind::Idle) => {
+                            kill_tree(child);
+                            *guard = ChildSlot::Finished;
+                            drop(guard);
+                            bail!(
+                                "'{}' made no progress for {}s ({}s elapsed)",
+                                config.command,
+                                idle_timeout.map_or(0, |timeout| timeout.as_secs()),
+                                now.duration_since(started).as_secs()
+                            );
+                        }
+                        None => {}
                     }
                 }
                 // cancel() killed and reaped it synchronously.
                 _ => bail!("the ask was cancelled"),
             }
         }
+        if heartbeat_due(config.progress, now.duration_since(progress.last_report)) {
+            eprintln!(
+                "{}: still working ({}s elapsed, {}s since last activity).",
+                backend_label(backend.name()),
+                now.duration_since(started).as_secs(),
+                now.duration_since(progress.last_activity).as_secs()
+            );
+            progress.last_report = now;
+        }
         std::thread::sleep(Duration::from_millis(100));
     };
 
     let stdout = out.join().unwrap_or_default();
     let stderr = err.join().unwrap_or_default();
+    progress.receive(&pipe_rx, backend.as_ref(), config.progress, Instant::now());
     if !status.success() {
         let detail = stderr.trim();
         let detail = if detail.is_empty() {
@@ -583,11 +604,149 @@ fn run_supervised(
         };
         bail!("{}", map_run_failure(&config.command, detail));
     }
-    let answer = backend.extract(&stdout)?;
+    let answer = if config.progress {
+        backend.extract_progress(&stdout)?
+    } else {
+        backend.extract(&stdout)?
+    };
     if answer.is_empty() {
         bail!("'{}' returned an empty answer", config.command);
     }
     Ok(answer)
+}
+
+#[derive(Clone, Copy)]
+enum Pipe {
+    Stdout,
+    Stderr,
+}
+
+struct PipeEvent {
+    pipe: Pipe,
+    line: String,
+}
+
+struct ProgressState {
+    last_activity: Instant,
+    last_report: Instant,
+    last_message: Option<String>,
+}
+
+impl ProgressState {
+    fn new(started: Instant) -> Self {
+        Self {
+            last_activity: started,
+            last_report: started,
+            last_message: None,
+        }
+    }
+
+    fn receive(
+        &mut self,
+        events: &Receiver<PipeEvent>,
+        backend: &dyn Backend,
+        show: bool,
+        now: Instant,
+    ) {
+        while let Ok(event) = events.try_recv() {
+            if event.line.trim().is_empty() {
+                continue;
+            }
+            match event.pipe {
+                Pipe::Stdout => {
+                    let update = backend.progress_update(&event.line);
+                    if update.activity {
+                        self.last_activity = now;
+                    }
+                    if !show {
+                        continue;
+                    }
+                    if let Some(message) = update.message {
+                        self.report(message, now);
+                    } else if !backend.structured_progress() {
+                        self.report(
+                            format!("{}: producing a response...", backend_label(backend.name())),
+                            now,
+                        );
+                    }
+                }
+                Pipe::Stderr => {
+                    self.last_activity = now;
+                    if show {
+                        let detail = event.line.trim().replace(['\r', '\n'], " ");
+                        let detail = truncate(&detail, 180);
+                        self.report(format!("{}: {detail}", backend_label(backend.name())), now);
+                    }
+                }
+            }
+        }
+    }
+
+    fn report(&mut self, message: String, now: Instant) {
+        if self.last_message.as_deref() == Some(&message) {
+            return;
+        }
+        eprintln!("{message}");
+        self.last_message = Some(message);
+        self.last_report = now;
+    }
+}
+
+fn drain_pipe<R: Read + Send + 'static>(
+    pipe: R,
+    kind: Pipe,
+    events: Sender<PipeEvent>,
+) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(pipe);
+        let mut output = String::new();
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    output.push_str(&line);
+                    let _ = events.send(PipeEvent { pipe: kind, line });
+                }
+            }
+        }
+        output
+    })
+}
+
+fn backend_label(name: &str) -> &str {
+    match name {
+        "claude" => "Claude",
+        "codex" => "Codex",
+        "gemini" => "Gemini",
+        "copilot" => "Copilot",
+        other => other,
+    }
+}
+
+fn heartbeat_due(progress: bool, since_last: Duration) -> bool {
+    progress && since_last >= Duration::from_secs(15)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TimeoutKind {
+    Absolute,
+    Idle,
+}
+
+fn timeout_kind(
+    now: Instant,
+    deadline: Instant,
+    last_activity: Instant,
+    idle_timeout: Option<Duration>,
+) -> Option<TimeoutKind> {
+    if now >= deadline {
+        Some(TimeoutKind::Absolute)
+    } else if idle_timeout.is_some_and(|timeout| now.duration_since(last_activity) >= timeout) {
+        Some(TimeoutKind::Idle)
+    } else {
+        None
+    }
 }
 
 fn truncate(s: &str, max: usize) -> &str {
@@ -1060,6 +1219,111 @@ mod tests {
         let cli = fake_cli(dir.path(), "sleep 30");
         let err = run(&config(&cli, 1), "x", &[]).unwrap_err();
         assert!(format!("{err:#}").contains("timed out"));
+    }
+
+    #[test]
+    fn run_stops_when_a_progress_stream_goes_idle() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let blocked = dir.path().join("blocked");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&blocked)
+                .status()
+                .unwrap()
+                .success(),
+            "creating the blocked-process fixture"
+        );
+        let cli = fake_cli(
+            dir.path(),
+            &format!("cat >/dev/null; cat {}", blocked.display()),
+        );
+        let config = AskConfig {
+            progress: true,
+            idle_timeout_secs: Some(0),
+            ..config(&cli, 10)
+        };
+        let err = run(&config, "x", &[]).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("made no progress for 0s"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn progress_timeout_policy_resets_on_activity_and_prefers_the_absolute_limit() {
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(10);
+        for (now, last_activity, idle, expected) in [
+            (9, 0, None, None),
+            (10, 9, Some(2), Some(TimeoutKind::Absolute)),
+            (9, 7, Some(2), Some(TimeoutKind::Idle)),
+            (9, 8, Some(2), None),
+            (0, 0, Some(0), Some(TimeoutKind::Idle)),
+        ] {
+            assert_eq!(
+                expected,
+                timeout_kind(
+                    started + Duration::from_secs(now),
+                    deadline,
+                    started + Duration::from_secs(last_activity),
+                    idle.map(Duration::from_secs),
+                ),
+                "now={now}, last_activity={last_activity}, idle={idle:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_nonempty_pipe_event_resets_the_idle_clock() {
+        let started = Instant::now();
+        let mut progress = ProgressState::new(started);
+        let (tx, rx) = channel();
+        for (index, pipe, line, resets) in [
+            (1, Pipe::Stdout, "provider output", true),
+            (2, Pipe::Stdout, " \n", false),
+            (3, Pipe::Stderr, "provider diagnostic", true),
+        ] {
+            tx.send(PipeEvent {
+                pipe,
+                line: line.to_string(),
+            })
+            .unwrap();
+            let now = started + Duration::from_secs(index);
+            let before = progress.last_activity;
+            progress.receive(&rx, &crate::backend::ClaudeBackend, false, now);
+            assert_eq!(
+                if resets { now } else { before },
+                progress.last_activity,
+                "pipe event {index}: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn progress_labels_and_heartbeat_policy_cover_every_backend() {
+        for (progress, elapsed_secs, expected) in [
+            (false, 16, false),
+            (true, 14, false),
+            (true, 15, true),
+            (true, 16, true),
+        ] {
+            assert_eq!(
+                expected,
+                heartbeat_due(progress, Duration::from_secs(elapsed_secs)),
+                "progress={progress}, elapsed_secs={elapsed_secs}"
+            );
+        }
+
+        for (name, expected) in [
+            ("claude", "Claude"),
+            ("codex", "Codex"),
+            ("gemini", "Gemini"),
+            ("copilot", "Copilot"),
+            ("custom", "custom"),
+        ] {
+            assert_eq!(expected, backend_label(name), "backend={name}");
+        }
     }
 
     #[test]
