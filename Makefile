@@ -122,13 +122,14 @@ roadmap:
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
 check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-check docs-audit-manifest-check toolchain-check
 
+# Bump the Rust toolchain across the repo
+bump-rust:
+	@sh scripts/bump-rust.sh
+
 # Mutation-tests only this branch's diff against local main (no remotes, no
 # PRs here), with cargo-mutants' default cargo-test runner. Costed and slow:
 # run once, right before requesting review, never in the inner loop or CI.
-GATE_JOBS ?= 8
-
-bump-rust:
-	@sh scripts/bump-rust.sh
+GATE_JOBS ?= 2
 
 gate: gate-guard check mutants
 
