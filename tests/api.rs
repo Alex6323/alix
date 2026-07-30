@@ -3289,15 +3289,23 @@ fn every_accepted_mutation_advances_the_revision() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    for path in ["/api/skip", "/api/acquire", "/api/restart"] {
+    // `remove` runs last: it deletes the current card from the deck file, so
+    // the earlier routes keep the fixture's full queue.
+    for (path, body) in [
+        ("/api/skip", "{}"),
+        ("/api/acquire", "{}"),
+        ("/api/restart", "{}"),
+        ("/api/grade", r#"{"grade":"passed"}"#),
+        ("/api/remove", "{}"),
+    ] {
         let state = http(&base, "GET", "/api/state", &[], &[]);
         let before: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
         let fresh = before["study_revision"].as_u64().unwrap();
 
-        let resp = post_gated(&base, path, "{}");
+        let resp = post_gated(&base, path, body);
         assert_eq!(200, resp.status, "{path}");
-        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-        let bumped = body["study_revision"].as_u64().unwrap();
+        let resp_body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        let bumped = resp_body["study_revision"].as_u64().unwrap();
         assert!(
             bumped > fresh,
             "{path} must strictly advance the revision ({fresh} -> {bumped})"
@@ -3312,7 +3320,7 @@ fn every_accepted_mutation_advances_the_revision() {
                 ("Content-Type", "application/json"),
                 ("X-Alix-Study-Revision", &fresh.to_string()),
             ],
-            b"{}",
+            body.as_bytes(),
         );
         assert_eq!(409, resp.status, "{path} replay with the used echo");
     }
@@ -3365,29 +3373,6 @@ fn every_session_transition_strictly_advances_the_revision() {
         r5 >= r4 + 2,
         "a walk select and the following select must each advance the revision ({r4} -> {r5})"
     );
-}
-
-/// Grade and remove mutate the current card and must strictly advance the
-/// revision their own responses report, so a replayed echo cannot hit the
-/// next card.
-#[test]
-fn grade_and_remove_each_strictly_advance_the_revision() {
-    let (base, _guard) = spawn_test_server();
-    select_fixture(&base);
-    let rev = |b: &serde_json::Value| b["study_revision"].as_u64().unwrap();
-
-    let state = http(&base, "GET", "/api/state", &[], &[]);
-    let r0 = rev(&serde_json::from_slice(&state.body).unwrap());
-
-    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
-    assert_eq!(200, resp.status);
-    let r1 = rev(&serde_json::from_slice(&resp.body).unwrap());
-    assert!(r1 > r0, "grade must advance the revision ({r0} -> {r1})");
-
-    let resp = post_gated(&base, "/api/remove", "{}");
-    assert_eq!(200, resp.status);
-    let r2 = rev(&serde_json::from_slice(&resp.body).unwrap());
-    assert!(r2 > r1, "remove must advance the revision ({r1} -> {r2})");
 }
 
 /// The dropped-reply guard: every card-relative mutation echoes the state's
@@ -4096,7 +4081,7 @@ fn spawn_kids_server() -> (String, Guard) {
 /// non-empty text does, for that step) and, reused for the draft call, as the
 /// text `ask::parse_drafted_card` turns into a `DraftCardDto`.
 #[test]
-fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue() {
+fn ask_card_draft_create_then_promote_round_trips_a_learner_card_into_the_deck() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let fake = fake_reply(scripts.path(), "## term?\ndefinition\n");
@@ -4176,42 +4161,13 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
         "edited term?", state_body["card"]["front"],
         "body: {state_body}"
     );
-}
 
-/// The happy promote path: a tutor-minted virtual card promotes into its deck
-/// file with a 200, and the response's revision strictly advances. The
-/// non-virtual 400 test above cannot prove the virtuality check's polarity
-/// (an inverted check still rejects, for a different reason); only a
-/// succeeding promote can.
-#[test]
-fn promoting_a_virtual_card_succeeds_and_advances_the_revision() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(scripts.path(), "## term?\ndefinition\n");
-    let (base, _guard) = spawn_full_server(Some(&fake));
-    select_fixture(&base);
-
-    let resp = post_gated(&base, "/api/ask", r#"{"question":"why does this matter?"}"#);
-    assert_eq!(200, resp.status);
-    poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
-    let resp = post_gated(&base, "/api/ask/card/draft", "{}");
-    assert_eq!(200, resp.status);
-    poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
-    let resp = post_gated(
-        &base,
-        "/api/ask/card/create",
-        r#"{"front":"term?","back":["definition"]}"#,
-    );
-    assert_eq!(200, resp.status);
-
-    // Cram-reselect serves the minted virtual card first (the same idiom the
-    // draft round-trip test above documents).
-    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md","cram":true}"#);
-    assert_eq!(200, resp.status);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("term?", body["card"]["front"], "body: {body}");
-    let before = body["study_revision"].as_u64().unwrap();
-
+    // And promotable: the happy promote path lives here because the 400 test
+    // for a non-virtual card cannot prove the virtuality check's polarity
+    // (an inverted check still rejects, for a different reason); only a
+    // succeeding promote can, and this scenario already holds the minted
+    // virtual card as the current card.
+    let before = state_body["study_revision"].as_u64().unwrap();
     let resp = post_gated(&base, "/api/promote", "{}");
     assert_eq!(
         200,
@@ -4219,8 +4175,8 @@ fn promoting_a_virtual_card_succeeds_and_advances_the_revision() {
         "a virtual card must promote; body: {}",
         String::from_utf8_lossy(&resp.body)
     );
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    let after = body["study_revision"].as_u64().unwrap();
+    let promoted: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let after = promoted["study_revision"].as_u64().unwrap();
     assert!(
         after > before,
         "promote must advance the revision ({before} -> {after})"
