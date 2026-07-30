@@ -922,12 +922,15 @@ mod tests {
     #[cfg(unix)]
     use crate::testutil::{ask_config, exec_lock, fake_reply};
 
-    fn workspace(source_text: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    fn workspace(source_text: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         let directory = tempfile::tempdir().unwrap();
         // Staging canonicalizes the workspace root; on macOS the raw tempdir
         // path traverses the /var -> /private/var symlink, so the fixture must
         // embed the canonical form or `source:` comparisons spuriously differ.
-        let root = directory.path().canonicalize().unwrap();
+        // The root nests one level down so the staging sibling stays inside
+        // the tempdir; at the tempdir root it would outlive the fixture.
+        let root = directory.path().canonicalize().unwrap().join("ws");
+        fs::create_dir(&root).unwrap();
         fs::create_dir(root.join(workspace::DECKS)).unwrap();
         fs::write(root.join(workspace::MANIFEST), "").unwrap();
         let source = root.join("source");
@@ -943,7 +946,7 @@ mod tests {
         )
         .unwrap();
         assets::freeze_member(&deck).unwrap();
-        (directory, source, deck)
+        (directory, root, source, deck)
     }
 
     #[cfg(unix)]
@@ -958,16 +961,16 @@ mod tests {
     #[test]
     fn changed_learning_content_cannot_keep_the_old_card_id() {
         let _lock = exec_lock();
-        let (workspace, source, deck) = workspace("Old answer\n");
+        let (_dir, workspace, source, deck) = workspace("Old answer\n");
         let command = fake_reply(
-            workspace.path(),
+            &workspace,
             &proposal(
                 &source,
                 "## Rewritten question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
             ),
         );
         let error = stage(
-            workspace.path(),
+            &workspace,
             &GenerateDeckConfig::default(),
             &ask_config(&command),
         )
@@ -990,16 +993,16 @@ mod tests {
     #[test]
     fn changed_authored_distractors_cannot_keep_the_old_card_id() {
         let _lock = exec_lock();
-        let (workspace, source, _) = workspace("Old answer\n");
+        let (_dir, workspace, source, _) = workspace("Old answer\n");
         let command = fake_reply(
-            workspace.path(),
+            &workspace,
             &proposal(
                 &source,
                 "## Old question <!-- id: card-oldcard -->\n- [x] Old answer\n- [ ] New distractor\n<!-- at: code.rs:1 -->\n",
             ),
         );
         let error = stage(
-            workspace.path(),
+            &workspace,
             &GenerateDeckConfig::default(),
             &ask_config(&command),
         )
@@ -1015,9 +1018,9 @@ mod tests {
     #[test]
     fn note_and_locator_maintenance_can_retain_a_card_id() {
         let _lock = exec_lock();
-        let (workspace, source, deck) = workspace("moved\nOld answer\n");
+        let (_dir, workspace, source, deck) = workspace("moved\nOld answer\n");
         let command = fake_reply(
-            workspace.path(),
+            &workspace,
             &proposal(
                 &source,
                 "## Old question <!-- id: card-oldcard -->\nOld answer\n> Clearer note.\n<!-- at: code.rs:2 -->\n",
@@ -1025,7 +1028,7 @@ mod tests {
         );
 
         let report = stage(
-            workspace.path(),
+            &workspace,
             &GenerateDeckConfig::default(),
             &ask_config(&command),
         )
@@ -1049,7 +1052,7 @@ mod tests {
     #[test]
     fn obsolete_cards_retire_their_ids_and_replacements_get_fresh_ids() {
         let _lock = exec_lock();
-        let (workspace, source, deck) = workspace("Old answer\nNew answer\n");
+        let (_dir, workspace, source, deck) = workspace("Old answer\nNew answer\n");
         let original = Deck::load(&deck).unwrap();
         let mut augmentation = AugmentCache::open_for_deck(&original).unwrap();
         augmentation.set_note(
@@ -1058,11 +1061,11 @@ mod tests {
             original.cards[0].content_fingerprint,
         );
         augmentation.save().unwrap();
-        let mut progress = crate::state::open_store(&deck, workspace.path()).unwrap();
+        let mut progress = crate::state::open_store(&deck, &workspace).unwrap();
         progress.get_or_insert("card-oldcard", 0);
         progress.save().unwrap();
         let command = fake_reply(
-            workspace.path(),
+            &workspace,
             &proposal(
                 &source,
                 "## New question\nNew answer\n<!-- at: code.rs:2 -->\n",
@@ -1070,7 +1073,7 @@ mod tests {
         );
 
         let staged = stage(
-            workspace.path(),
+            &workspace,
             &GenerateDeckConfig::default(),
             &ask_config(&command),
         )
@@ -1106,7 +1109,7 @@ mod tests {
                 .any(|card| card.id().as_deref() == Some("card-oldcard"))
         );
 
-        let applied = apply(workspace.path()).unwrap();
+        let applied = apply(&workspace).unwrap();
 
         assert_eq!(1, applied.decks[0].added);
         let current = Deck::load(&deck).unwrap();
@@ -1123,7 +1126,7 @@ mod tests {
                 .contains("card-oldcard")
         );
         assert!(
-            crate::state::open_store(&deck, workspace.path())
+            crate::state::open_store(&deck, &workspace)
                 .unwrap()
                 .get("card-oldcard")
                 .is_some()
@@ -1135,9 +1138,9 @@ mod tests {
     #[test]
     fn a_citation_less_source_backed_member_is_reported_live_only_and_update_proceeds() {
         let _lock = exec_lock();
-        let (workspace, source, _) = workspace("Old answer\n");
+        let (_dir, workspace, source, _) = workspace("Old answer\n");
         fs::write(
-            workspace.path().join("decks/plain.md"),
+            workspace.join("decks/plain.md"),
             format!(
                 "---\nid: \"deck-deck9\"\nsource: {}\n---\n## p <!-- id: card-plain1 -->\na\n",
                 parser::yaml_quote(&source.display().to_string())
@@ -1145,7 +1148,7 @@ mod tests {
         )
         .unwrap();
         let command = fake_reply(
-            workspace.path(),
+            &workspace,
             &proposal(
                 &source,
                 "## Old question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
@@ -1153,7 +1156,7 @@ mod tests {
         );
 
         let report = stage(
-            workspace.path(),
+            &workspace,
             &GenerateDeckConfig::default(),
             &ask_config(&command),
         )
@@ -1174,40 +1177,40 @@ mod tests {
     #[test]
     fn apply_rejects_a_workspace_changed_after_staging() {
         let _lock = exec_lock();
-        let (workspace, source, deck) = workspace("Old answer\n");
+        let (_dir, workspace, source, deck) = workspace("Old answer\n");
         let command = fake_reply(
-            workspace.path(),
+            &workspace,
             &proposal(
                 &source,
                 "## Old question <!-- id: card-oldcard -->\nOld answer\n> reviewed\n<!-- at: code.rs:1 -->\n",
             ),
         );
         stage(
-            workspace.path(),
+            &workspace,
             &GenerateDeckConfig::default(),
             &ask_config(&command),
         )
         .unwrap();
         fs::write(&deck, format!("{}\n", fs::read_to_string(&deck).unwrap())).unwrap();
 
-        let error = apply(workspace.path()).unwrap_err();
+        let error = apply(&workspace).unwrap_err();
 
         assert!(format!("{error:#}").contains("changed after the proposal was staged"));
-        assert!(staging_path(workspace.path()).exists());
+        assert!(staging_path(&workspace).exists());
     }
 
     #[test]
     fn discard_removes_only_the_staged_proposal() {
-        let (workspace, _, deck) = workspace("Old answer\n");
-        let staging = staging_path(workspace.path());
+        let (_dir, workspace, _, deck) = workspace("Old answer\n");
+        let staging = staging_path(&workspace);
         fs::create_dir(&staging).unwrap();
         fs::write(staging.join("candidate"), "x").unwrap();
         let before = fs::read(&deck).unwrap();
 
-        assert!(discard(workspace.path()).unwrap());
+        assert!(discard(&workspace).unwrap());
         assert!(!staging.exists());
         assert_eq!(before, fs::read(deck).unwrap());
-        assert!(!discard(workspace.path()).unwrap());
+        assert!(!discard(&workspace).unwrap());
     }
 
     #[test]
