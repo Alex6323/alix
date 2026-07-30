@@ -48,3 +48,4 @@ __pycache__/
 
 # llvm-cov run residue
 *.profraw
+/mutants.out*/
