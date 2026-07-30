@@ -727,6 +727,46 @@ fn an_active_workspace_listing_reads_the_progress_owner_projection() {
 }
 
 #[test]
+fn an_inactive_workspace_listing_reads_the_progress_owner_projection() {
+    fn member_row(base: &str) -> serde_json::Value {
+        let response = http(base, "GET", "/api/decks", &[], &[]);
+        assert_eq!(200, response.status);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        body["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|workspace| workspace["name"] == "animals")
+            .unwrap()
+            .get("members")
+            .and_then(serde_json::Value::as_array)
+            .unwrap()
+            .iter()
+            .find(|member| member["name"] == "animals/one.md")
+            .unwrap()
+            .clone()
+    }
+
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(200, selected.status);
+    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/deselect", "{}").status);
+
+    let before = member_row(&base);
+    let progress = guard.dir().join("animals/progress/deck-animalone.json");
+    let parked = progress.with_extension("json.parked");
+    std::fs::rename(&progress, &parked).unwrap();
+
+    let after = member_row(&base);
+    std::fs::rename(&parked, &progress).unwrap();
+    assert_eq!(
+        before, after,
+        "the Progress owner must project non-active documents too, rather than silently resurrecting their decks as new"
+    );
+}
+
+#[test]
 fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
     let (base, _guard) = spawn_test_server();
 
@@ -2304,6 +2344,44 @@ fn post_api_augment_open_with_an_unknown_deck_yields_400() {
 }
 
 #[test]
+fn a_rejected_augment_open_keeps_the_active_progress_store() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        let workspace = dir.join("dupes");
+        let decks = workspace.join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "title = \"Duplicates\"\n").unwrap();
+        std::fs::write(
+            decks.join("one.md"),
+            "---\nid: \"deck-one\"\n---\n## first <!-- id: card-shared -->\na\n",
+        )
+        .unwrap();
+        std::fs::write(
+            decks.join("two.md"),
+            "---\nid: \"deck-two\"\n---\n## second <!-- id: card-shared -->\nb\n",
+        )
+        .unwrap();
+    });
+    assert_eq!(200, select_fixture(&base).status);
+
+    let progress = state_root(guard.dir()).join("progress/deck-sample.json");
+    let before: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+
+    let rejected = post_json(&base, "/api/augment/open", r#"{"deck":"dupes"}"#);
+    assert_eq!(409, rejected.status);
+
+    let acquired = post_gated(&base, "/api/acquire", "{}");
+    assert_eq!(200, acquired.status);
+
+    let after: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+    assert!(
+        after["revision"].as_u64().unwrap() > before["revision"].as_u64().unwrap(),
+        "the accepted mutation must save through the still-active store: before={before}, after={after}"
+    );
+}
+
+#[test]
 fn post_api_augment_remove_on_an_empty_cache_still_succeeds_as_a_noop() {
     let (base, _guard) = spawn_test_server();
     post_json(&base, "/api/augment/open", r#"{"deck":"sample.md"}"#);
@@ -3278,6 +3356,170 @@ fn server_shutdown_cancels_the_in_flight_tutor_worker() {
     assert!(
         !survived_shutdown,
         "shutdown returned while tutor subprocess {pid} was still alive"
+    );
+}
+
+#[test]
+fn server_shutdown_cancels_tutor_descendant_processes() {
+    fn process_exists(pid: u32) -> bool {
+        std::process::Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    }
+
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let started = scripts.path().join("started");
+    let pid_file = scripts.path().join("descendant-pid");
+    let fifo = scripts.path().join("release.fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs")
+            .success()
+    );
+    let descendant = scripts.path().join("descendant");
+    std::fs::write(
+        &descendant,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\necho $$ > {pid_file}\n: > {started}\nread _ < {fifo}\n",
+            pid_file = pid_file.display(),
+            started = started.display(),
+            fifo = fifo.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&descendant, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let fake = scripts.path().join("tutor-with-descendant");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\n{descendant} &\nwait\n",
+            descendant = descendant.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server(Some(&fake));
+    select_fixture(&base);
+    assert_eq!(
+        200,
+        post_gated(&base, "/api/ask", r#"{"question":"why?"}"#).status
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !started.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "the tutor descendant never started"
+        );
+        thread::yield_now();
+    }
+    let pid: u32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(
+        process_exists(pid),
+        "the parked descendant must still be running"
+    );
+
+    drop(guard);
+    let survived_shutdown = process_exists(pid);
+
+    if survived_shutdown {
+        std::fs::write(&fifo, "go\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while process_exists(pid) && Instant::now() < deadline {
+            thread::yield_now();
+        }
+    }
+    assert!(
+        !survived_shutdown,
+        "shutdown returned while tutor descendant {pid} was still alive"
+    );
+}
+
+#[test]
+fn server_shutdown_cancels_the_in_flight_remote_tutor_worker() {
+    fn process_exists(pid: u32) -> bool {
+        std::process::Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    }
+
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let started = scripts.path().join("started");
+    let pid_file = scripts.path().join("pid");
+    let fifo = scripts.path().join("release.fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs")
+            .success()
+    );
+    let fake = scripts.path().join("parked-remote-tutor");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\necho $$ > {pid_file}\n: > {started}\nread _ < {fifo}\necho done\n",
+            pid_file = pid_file.display(),
+            started = started.display(),
+            fifo = fifo.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server(Some(&fake));
+    let response = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+            "history":[],"question":"why?"}"#,
+    );
+    assert_eq!(200, response.status);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !started.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "the remote tutor worker never started"
+        );
+        thread::yield_now();
+    }
+    let pid: u32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(
+        process_exists(pid),
+        "the parked remote tutor must still be running"
+    );
+
+    drop(guard);
+    let survived_shutdown = process_exists(pid);
+
+    if survived_shutdown {
+        std::fs::write(&fifo, "go\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while process_exists(pid) && Instant::now() < deadline {
+            thread::yield_now();
+        }
+    }
+    assert!(
+        !survived_shutdown,
+        "shutdown returned while remote tutor subprocess {pid} was still alive"
     );
 }
 

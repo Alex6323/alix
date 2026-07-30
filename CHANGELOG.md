@@ -283,6 +283,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The picker no longer reopens an inactive workspace's progress from disk once
+  that workspace has been studied this run: the progress owner retains a
+  projection of every document it has owned, so a progress file briefly parked
+  or replaced by an editor or sync tool cannot resurrect a mid-study deck as
+  "new" in the listing.
+- A rejected augment open (for example over a duplicate card token) no longer
+  swaps in the progress store it validated against: like exam start, select,
+  and browse before it, validation runs on a candidate and the store installs
+  only when the augment session actually opens, so subsequent grades keep
+  saving through the still-active document.
+- Cancelling an AI call now kills the backend's whole process tree, not just
+  the CLI itself: the child starts as its own process-group leader and cancel
+  signals the group, so helpers the backend spawns (node, browsers, git) die
+  with it instead of surviving with API quota and source access. On Windows
+  only the direct child is killed, as before.
+- Shutting down while a paired client's tutor request is in flight now cancels
+  that subprocess too: the remote ask path kept no cancellation handle, so the
+  server could report shutdown complete while the AI process kept running.
 - A rejected exam start, deck selection, or browse no longer swaps in the
   progress store it validated against: validation runs on a candidate and the
   store is installed only when the transition actually happens, so an accepted

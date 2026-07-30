@@ -6,7 +6,7 @@ mod jobs_owner;
 mod respond;
 mod study;
 
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, thread};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, thread};
 
 use anyhow::{Result, anyhow};
 use catalog::*;
@@ -215,6 +215,7 @@ pub fn run_review(
                 audience,
             },
             store,
+            retained: HashMap::new(),
             store_dirty: false,
             save_error: None,
             reviewing: None,

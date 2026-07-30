@@ -405,11 +405,26 @@ impl AskJob {
     pub fn cancel(&self) {
         let mut slot = self.child.lock().unwrap_or_else(|p| p.into_inner());
         if let ChildSlot::Running(child) = &mut *slot {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_tree(child);
         }
         *slot = ChildSlot::Cancelled;
     }
+}
+
+// The child is spawned as its own process-group leader, so descendants the
+// backend CLI spawns (node, browsers, git) die with it; a direct kill would
+// orphan them with quota and source access. The child is unreaped when this
+// runs, so its pid cannot have been recycled. kill(1) is POSIX; if spawning
+// it fails, the direct kill below still reaps the child itself.
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-9", "--", &format!("-{}", child.id())])
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 pub fn spawn(
@@ -479,6 +494,11 @@ fn run_supervised(
     if let Some(dir) = &config.cwd {
         cmd.current_dir(dir);
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -492,8 +512,7 @@ fn run_supervised(
     {
         let mut guard = slot.lock().unwrap_or_else(|p| p.into_inner());
         if matches!(*guard, ChildSlot::Cancelled) {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_tree(&mut child);
             bail!("the ask was cancelled");
         }
         *guard = ChildSlot::Running(child);
@@ -536,8 +555,7 @@ fn run_supervised(
                         break status;
                     }
                     if Instant::now() >= deadline {
-                        let _ = child.kill();
-                        let _ = child.wait();
+                        kill_tree(child);
                         *guard = ChildSlot::Finished;
                         drop(guard);
                         bail!(

@@ -5,6 +5,7 @@
 //! request and workers never see the store.
 
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{Arc, mpsc},
     thread,
@@ -33,6 +34,11 @@ pub(super) struct StudyConfig {
 pub(super) struct StudyState {
     pub(super) config: StudyConfig,
     pub(super) store: Store,
+    // Snapshots of swapped-out documents, keyed by store path. The owner is
+    // their single writer, so its memory is at least as fresh as disk; the
+    // catalog reads these so a briefly parked or replaced progress file
+    // cannot resurrect a known deck as new.
+    pub(super) retained: HashMap<PathBuf, Arc<Store>>,
     pub(super) store_dirty: bool,
     pub(super) save_error: Option<String>,
     pub(super) reviewing: Option<Reviewing>,
@@ -54,6 +60,7 @@ pub(super) struct StudyState {
 
 pub(super) struct StudyProjection {
     pub(super) store: Arc<Store>,
+    pub(super) retained: HashMap<PathBuf, Arc<Store>>,
     pub(super) writes: u64,
 }
 
@@ -540,6 +547,14 @@ fn flush_presented(
 }
 
 impl StudyState {
+    fn install_store(&mut self, store: Store) {
+        let outgoing = std::mem::replace(&mut self.store, store);
+        self.retained
+            .insert(outgoing.path().to_path_buf(), Arc::new(outgoing));
+        let active = self.store.path().to_path_buf();
+        self.retained.remove(&active);
+    }
+
     fn review_dto(&self) -> StateDto {
         review_state(
             self.reviewing.as_ref(),
@@ -592,7 +607,7 @@ impl StudyState {
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
-                        self.store = s;
+                        self.install_store(s);
                         self.writes = self.writes.wrapping_add(1);
                     }
                     self.revision += 1;
@@ -787,7 +802,7 @@ impl StudyState {
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
-                        self.store = s;
+                        self.install_store(s);
                         self.writes = self.writes.wrapping_add(1);
                     }
                     Transition::Done(self.review_dto())
@@ -881,7 +896,7 @@ impl StudyState {
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
-                        self.store = s;
+                        self.install_store(s);
                         self.writes = self.writes.wrapping_add(1);
                     }
                     Transition::Done(self.review_dto())
@@ -971,7 +986,7 @@ impl StudyState {
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
-                        self.store = s;
+                        self.install_store(s);
                         self.writes = self.writes.wrapping_add(1);
                     }
                     Transition::Done(self.review_dto())
@@ -994,6 +1009,7 @@ impl StudyState {
             StudyCommand::Projection(reply) => {
                 let _ = reply.send(StudyProjection {
                     store: Arc::new(self.store.clone()),
+                    retained: self.retained.clone(),
                     writes: self.writes,
                 });
             }
@@ -1010,10 +1026,7 @@ impl StudyState {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
-        if let Ok(s) = assemble::store_for(&files, self.config.cfg.instance_store.as_deref()) {
-            self.store = s;
-            self.writes = self.writes.wrapping_add(1);
-        }
+        let candidate = assemble::store_for(&files, self.config.cfg.instance_store.as_deref()).ok();
         // Stamp before loading: unstamped ids collapse the cache to key 0,
         // orphaning the spend at the first real stamp.
         let Ok(cards) = assemble::stamp_and_load_cards(&files) else {
@@ -1038,6 +1051,10 @@ impl StudyState {
         let Ok(cache) = AugmentCache::open_for_decks(&workspace_root, &decks) else {
             return Transition::Rejected;
         };
+        if let Some(s) = candidate {
+            self.install_store(s);
+            self.writes = self.writes.wrapping_add(1);
+        }
         let aug = Augmenting::open(name, cards, deck_tokens, cache, workspace_dir);
         let dto = aug.dto();
         self.augmenting = Some(aug);
@@ -1063,7 +1080,7 @@ impl StudyState {
         let recorded_paths = paths.clone();
         match assemble::select(paths, &mut candidate, &self.config.cfg, &opts) {
             Ok(assemble::Selected::Walk(wb)) => {
-                self.store = candidate;
+                self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
                 let w = Walking::new(wb.walk, wb.grade);
                 let dto = walk_dto(&w);
@@ -1074,7 +1091,7 @@ impl StudyState {
                 Transition::Done((SelectedDto::Walk(dto), None))
             }
             Ok(assemble::Selected::Review(b)) => {
-                self.store = candidate;
+                self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
                 let record = (!b.session.is_finished()).then_some(recorded_paths);
                 let mut r = Reviewing::new(b);
@@ -1108,7 +1125,7 @@ impl StudyState {
         let recorded_paths = paths.clone();
         match assemble::browse(paths, self.config.cfg.instance_store.as_deref()) {
             Ok(b) => {
-                self.store = candidate;
+                self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
                 self.browsing = Some(Browsing::new(b));
                 self.reviewing = None;
@@ -1165,7 +1182,7 @@ impl StudyState {
             return Transition::Rejected;
         };
         if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
-            self.store = s;
+            self.install_store(s);
             self.writes = self.writes.wrapping_add(1);
         }
         Transition::Done(ResetDto {
@@ -1356,7 +1373,7 @@ impl StudyState {
                     sitting,
                     deck_path: path,
                 };
-                self.store = candidate;
+                self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
                 let dto = exam_dto(&ex);
                 self.examining = Some(ex);

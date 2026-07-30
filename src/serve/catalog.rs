@@ -6,6 +6,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     hash::Hasher,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use serde::Deserialize;
@@ -203,25 +204,32 @@ pub(super) fn workspace_members(
     with_lock: bool,
     review: ReviewConfig,
     instance_store: &Store,
+    retained: &HashMap<PathBuf, Arc<Store>>,
     cache: &mut DeckCache,
 ) -> (Vec<MemberDto>, picker::WorkspaceReadiness) {
     let review = review.for_workspace(&e.path);
     let is_ws = cache.is_workspace(&e.path);
-    // The active projection is authoritative for its own workspace: opening
-    // that store from disk here could resurrect members as new while the
-    // owner holds unflushed truth or the document is briefly unavailable
-    // (an editor or sync tool mid-rename).
-    let projection_covers = is_ws
-        && instance_store
-            .path()
-            .starts_with(crate::workspace::store_path(&e.path));
-    let own_workspace_store = (is_ws && !projection_covers)
-        .then(|| crate::state::open_aggregate_store(&crate::workspace::store_path(&e.path)).ok())
+    // The owner's projection is authoritative for every document it has
+    // owned, active or retained: opening such a store from disk here could
+    // resurrect members as new while the owner holds unflushed truth or the
+    // document is briefly unavailable (an editor or sync tool mid-rename).
+    let ws_store_root = crate::workspace::store_path(&e.path);
+    let projection_covers = is_ws && instance_store.path().starts_with(&ws_store_root);
+    let retained_store = (is_ws && !projection_covers)
+        .then(|| {
+            retained
+                .iter()
+                .find(|(path, _)| path.starts_with(&ws_store_root))
+                .map(|(_, store)| Arc::clone(store))
+        })
+        .flatten();
+    let own_workspace_store = (is_ws && !projection_covers && retained_store.is_none())
+        .then(|| crate::state::open_aggregate_store(&ws_store_root).ok())
         .flatten();
     let store: Option<&Store> = if !is_ws || projection_covers {
         Some(instance_store)
     } else {
-        own_workspace_store.as_ref()
+        retained_store.as_deref().or(own_workspace_store.as_ref())
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
     let augment = AugmentCache::open_for_workspace(&e.path).ok();
@@ -384,6 +392,7 @@ pub(super) fn deck_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
     store: &Store,
+    retained: &HashMap<PathBuf, Arc<Store>>,
     with_lock: bool,
     icons: &mut HashMap<String, PathBuf>,
     review: ReviewConfig,
@@ -398,7 +407,7 @@ pub(super) fn deck_catalog(
         if e.is_workspace {
             let is_ws = cache.is_workspace(&e.path);
             let (members, readiness) =
-                workspace_members(&e, decks_dir, with_lock, review, store, cache);
+                workspace_members(&e, decks_dir, with_lock, review, store, retained, cache);
             // A deadline is a real workspace's own setting (`alix.local.toml`);
             // a plain folder never has one.
             let deadline = is_ws

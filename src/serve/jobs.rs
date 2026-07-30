@@ -290,6 +290,13 @@ pub(super) struct RemoteAsk {
     purpose: RemoteAskPurpose,
     started_ms: u64,
     outcome: Option<RemoteAskOutcome>,
+    job: ask::AskJob,
+}
+
+impl Drop for RemoteAsk {
+    fn drop(&mut self) {
+        self.job.cancel();
+    }
 }
 
 impl RemoteAsk {
@@ -328,12 +335,13 @@ impl RemoteAsk {
     }
 
     fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose) -> Self {
-        let (rx, _job) = ask::spawn(cfg.clone(), prompt, Vec::new());
+        let (rx, job) = ask::spawn(cfg.clone(), prompt, Vec::new());
         Self {
             rx,
             purpose,
             started_ms: now_ms(),
             outcome: None,
+            job,
         }
     }
 
