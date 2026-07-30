@@ -117,7 +117,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make fmt-check` | Verify formatting without writing. |
 | `make fmt-changelog` | Wrap `CHANGELOG.md` at the ~80-column house width (wrap-only, idempotent). |
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, count never decreases vs HEAD); part of `make check`. |
-| `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
+| `make check` | `fmt-check` + `lint` + `test`, cheap checks first; run before considering work done. A local pass now implies the same Rust gates CI runs. |
 | `make gate` | `check` + `mutants`. Run ONCE, right before requesting review; never inner-loop, never CI. |
 | `make mutants` | `cargo mutants` alone over this branch's diff vs local main (8 jobs, `GATE_JOBS` overrides). Refuses to start while another cargo-mutants runs anywhere on the machine. Use when `check` has already passed. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
@@ -291,8 +291,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   blocks to that scenario instead of duplicating the setup. Guardrails: every assert
   message names its step and values; a fixture that would need branching means two
   tests. The mutation gate measures this: misses cluster where a law went unstated.
-- **Tests and clippy must be green** before a change is done (`make check`).
-  Formatting is run deliberately with `make fmt`, not enforced as a gate.
+- **Formatting, tests, and clippy must be green** before a change is done
+  (`make check`, which verifies formatting first: 0.6s, and fails on drift
+  rather than rewriting your tree). Fix drift with `make fmt`, never by hand.
 - **Implementations and drafted specs/ADRs get sourced alix study decks**
   (user rule, clarified 2026-07-26). Do not create decks for questions,
   investigations, plans, roadmap notes, or other simple requests. When runtime,

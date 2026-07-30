@@ -120,7 +120,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: pre-1-0-check deps-check changelog-check lint test site-media-check docs-audit-manifest-check toolchain-check
+check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-check docs-audit-manifest-check toolchain-check
 
 # Mutation-tests only this branch's diff against local main (no remotes, no
 # PRs here), with cargo-mutants' default cargo-test runner. Costed and slow:
