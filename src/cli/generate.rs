@@ -15,10 +15,25 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
     {
         bail!("`--source-url` must be an http or https URL");
     }
-    let goal = args
-        .goal
-        .as_deref()
-        .unwrap_or("understand the whole source");
+    let goal = args.goal.as_deref().unwrap_or(generate::DEFAULT_GOAL);
+    let mut spec = generate::GenerationSpec::from_config(goal, &config.generate);
+    if let Some(language) = args.language.as_deref() {
+        let language = language.trim();
+        if language.is_empty() {
+            bail!("`--language` cannot be empty");
+        }
+        spec.language = Some(language.to_string());
+    }
+    if let Some(audience) = args.audience.as_deref() {
+        let audience = audience.trim();
+        if audience.is_empty() {
+            bail!("`--audience` cannot be empty");
+        }
+        spec.audience = Some(audience.to_string());
+    }
+    if let Some(style) = args.card_style {
+        spec.card_style = style;
+    }
     let src_path = PathBuf::from(&args.source);
 
     if src_path.is_file()
@@ -35,7 +50,7 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
         if args.plan {
             return trace_suggest(&args.source, args.yes, &config);
         }
-        return generate_trace_walk(&args, &config, goal);
+        return generate_trace_walk(&args, &config, &spec);
     }
 
     if src_path.is_dir() && !args.deck {
@@ -55,18 +70,18 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
             "Exploring {source} for a learning plan toward \"{goal}\" (one pass — \
              this can take a minute)…"
         );
-        let plan = alix::explore::explore(&source, goal, &config.trace, &config.ask)?;
+        let plan = alix::explore::explore(&source, &spec, &config.trace, &config.ask)?;
         let items = alix::explore::parse_plan(&plan).len();
         println!("{plan}");
         if args.plan {
             return Ok(());
         }
         if items > 1 {
-            return build_workspace(&args, &config, &source, goal, items);
+            return build_workspace(&args, &config, &source, &spec, items);
         }
         eprintln!("The plan has one item — generating a single deck.");
     }
-    generate_single_deck(&args, &config)
+    generate_single_deck(&args, &config, &spec)
 }
 
 fn canonical_source(source: &str) -> String {
@@ -126,7 +141,7 @@ fn build_workspace(
     args: &GenerateArgs,
     config: &Config,
     source: &str,
-    goal: &str,
+    spec: &generate::GenerationSpec,
     items: usize,
 ) -> Result<()> {
     let dir = workspace_dest(args, config, source)?;
@@ -141,10 +156,11 @@ fn build_workspace(
         return Ok(());
     }
     eprintln!(
-        "Exploring {source} and filling the workspace toward \"{goal}\" (explore \
-         + fill in one session — this can take a few minutes)…"
+        "Exploring {source} and filling the workspace toward \"{}\" (explore \
+         + fill in one session; this can take a few minutes)…",
+        spec.goal
     );
-    let (plan, filled) = alix::explore::explore_and_fill(source, goal, &config.trace, &config.ask)?;
+    let (plan, filled) = alix::explore::explore_and_fill(source, spec, &config.trace, &config.ask)?;
     println!("{plan}");
 
     let staging = staging_dir_for(&dir);
@@ -152,7 +168,7 @@ fn build_workspace(
     let materialized = alix::explore::materialize(
         &plan,
         &staging,
-        goal,
+        &spec.goal,
         args.title.as_deref(),
         source,
         args.source_url.as_deref(),
@@ -219,7 +235,11 @@ fn build_workspace(
     Ok(())
 }
 
-fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
+fn generate_single_deck(
+    args: &GenerateArgs,
+    config: &Config,
+    spec: &generate::GenerationSpec,
+) -> Result<()> {
     let mut gen_cfg = config.generate.clone();
     if let Some(cards) = args.cards {
         gen_cfg.max_cards = cards;
@@ -235,14 +255,14 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
 
     preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
-    let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask)?;
+    let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask, spec)?;
     if let Some(url) = &args.source_url {
         text = alix::deck::with_added_source(&text, url)?;
     }
 
     if args.review || gen_cfg.review {
         eprintln!("Reviewing the deck to remove redundant cards…");
-        text = generate::review_deck(&text, &gen_cfg, &config.ask)?;
+        text = generate::review_deck(&text, &gen_cfg, &config.ask, spec)?;
     }
 
     // Parse against the final name (part of every card's id hash); a parse
@@ -414,14 +434,18 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Result<()> {
+fn generate_trace_walk(
+    args: &GenerateArgs,
+    config: &Config,
+    spec: &generate::GenerationSpec,
+) -> Result<()> {
     let source = canonical_source(&args.source);
     preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!(
         "Exploring {source} to build an explore walk (one pass — this can take a \
          minute)…"
     );
-    let checkpoints = alix::explore::walk(&source, goal, &config.trace, &config.ask)?;
+    let checkpoints = alix::explore::walk(&source, spec, &config.trace, &config.ask)?;
 
     let name = Path::new(&source)
         .file_name()

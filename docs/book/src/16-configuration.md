@@ -155,8 +155,11 @@ settings:
 - **`[ask]`**: the tutor: `command` (how to invoke the CLI), `backend`,
   `permission_mode`, the tool allowlist, a `model` override, `timeout_secs`,
   and an `effort`.
-- **`[generate]`**: `alix generate`'s deck drafting: `model`, `timeout_secs` (300), `max_cards` (30),
-  `extra`, a full `prompt` override, and `review`.
+- **`[generate]`**: `alix generate`'s deck drafting: `model`, `timeout_secs`
+  (300), `max_cards` (30), default `language` and `audience`, `card_style`
+  (`mixed`, `plain`, `cloze`, or `authored-choices`), `extra`, a `prompt`
+  override, and `review`. Per-run flags override the language, audience, and
+  style defaults.
 - **`[exam]`**: the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
   `pass_threshold` (1.0), `strictness` (`balanced`), `extra`.
 - **`[trace]`**: `alix generate`'s trace and plan passes: defaults `model = "opus"`

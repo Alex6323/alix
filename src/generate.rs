@@ -5,10 +5,104 @@ use anyhow::{Result, bail};
 use crate::{
     ask,
     backend::ensure_source_reachable,
-    config::{AskConfig, GenerateDeckConfig},
+    config::{AskConfig, GenerateCardStyle, GenerateDeckConfig},
     deck::is_url,
+    parser,
     source::resolve_source,
 };
+
+pub const DEFAULT_GOAL: &str = "understand the whole source";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GenerationSpec {
+    pub goal: String,
+    pub language: Option<String>,
+    pub audience: Option<String>,
+    pub card_style: GenerateCardStyle,
+}
+
+impl GenerationSpec {
+    pub fn from_config(goal: impl Into<String>, config: &GenerateDeckConfig) -> Self {
+        Self {
+            goal: goal.into(),
+            language: config.language.clone(),
+            audience: config.audience.clone(),
+            card_style: config.card_style,
+        }
+    }
+
+    pub(crate) fn requirements(&self) -> String {
+        self.build_requirements(true)
+    }
+
+    pub(crate) fn learner_requirements(&self) -> String {
+        self.build_requirements(false)
+    }
+
+    fn build_requirements(&self, include_card_style: bool) -> String {
+        let mut requirements = format!("GENERATION REQUIREMENTS:\n- Learning goal: {}", self.goal);
+        if include_card_style {
+            requirements.push_str(&format!("\n- Card style: {}", self.card_style.as_str()));
+        }
+        if let Some(language) = &self.language {
+            requirements.push_str(&format!(
+                "\n- Output language: {language}. Write every learner-facing word in this language, including fronts, answers, choices, and notes."
+            ));
+        }
+        if let Some(audience) = &self.audience {
+            requirements.push_str(&format!(
+                "\n- Audience: {audience}. Match vocabulary, assumed knowledge, examples, and difficulty to this audience."
+            ));
+        }
+        requirements.push_str("\nThese requirements are binding.");
+        requirements
+    }
+
+    fn is_default(&self) -> bool {
+        self.goal == DEFAULT_GOAL
+            && self.language.is_none()
+            && self.audience.is_none()
+            && self.card_style == GenerateCardStyle::Mixed
+    }
+}
+
+pub(crate) fn card_format(style: GenerateCardStyle) -> &'static str {
+    match style {
+        GenerateCardStyle::Mixed => {
+            "- The plain lines BELOW a front are the answer/back. EVERY card MUST have at \
+             least one answer line; never write a front with no answer. Keep answers short \
+             and do not prefix them with bullets or dashes.\n\
+             - A fill-in-the-blank (cloze) card wraps each hidden answer span as \
+             `\\blank{...}`. Blanks belong in answer lines, NEVER on the front. Use cloze \
+             only when there is a natural word to hide; otherwise use a plain card. Example: \
+             `When the owner leaves scope, the value is \\blank{dropped}.`\n\
+             - For a mapping of pairs, make one cloze card with one pair per line and the \
+             recalled half in `\\blank{...}`, so every pair is drilled on its own."
+        }
+        GenerateCardStyle::Plain => {
+            "- Write every card as a plain question and answer. The plain unindented lines \
+             BELOW the front are the answer/back. EVERY card MUST have at least one short \
+             answer line. Do not prefix answers with bullets or dashes. Do not use \
+             `\\blank{...}` or task-list choices. Split mappings into one card per pair."
+        }
+        GenerateCardStyle::Cloze => {
+            "- Write EVERY card as cloze. The answer lines must contain the full answer with \
+             at least one hidden span wrapped as `\\blank{...}`. Blanks belong in answer \
+             lines, NEVER on the front. Do not prefix answers with bullets or dashes. Do not \
+             write plain answers or task-list choices. Put a mapping in one card with one \
+             pair per line and the recalled half in `\\blank{...}`."
+        }
+        GenerateCardStyle::AuthoredChoices => {
+            "- Write EVERY card as authored multiple-choice. Directly below the `## ` front, \
+             write 3-5 GitHub task-list options: exactly one checked `- [x]` correct answer \
+             and at least two unchecked `- [ ]` plausible distractors. Do not add a separate \
+             plain answer or use `\\blank{...}`. Keep options parallel in form and length. \
+             Add a short `> ` note explaining the mistaken premise behind the distractors. \
+             For a mapping, make one authored-choice card per pair and use plausible values \
+             from the same domain as distractors."
+        }
+    }
+}
 
 const DEFAULT_PROMPT: &str = "\
 You are an expert at creating spaced-repetition flashcards. Read the web page \
@@ -18,30 +112,11 @@ into a flashcard deck.
 OUTPUT FORMAT — a Markdown deck, one card after another:
 - A card starts with `## ` at column 0, followed by the question/front on the \
 same line. Never indent a card front.
-- The plain lines BELOW it (no indentation, no bullet) are the answer/back. \
-EVERY card MUST have at least one answer line — never write a front with no \
-answer. Keep answers short — one fact or a few words; several lines are allowed.
+{card_format}
 - A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
 brief elaboration, a concrete example, a mnemonic, or why it matters — one or \
 two short lines, never just restating the answer. Put each note line on its \
 own `> ` line, after the answer lines.
-- A fill-in-the-blank (cloze) card hides spans of its answer: wrap each hidden \
-span as `\\blank{...}` inside the answer line. The front is a short \
-instruction; the answer line(s) hold the full sentence with the hidden spans \
-wrapped. Braces outside a `\\blank{...}` marker are literal, so code with `{}` \
-is fine. The blanks live in the answer lines, NEVER on the front. Use \
-`\\blank{...}` only when there is a natural word to blank out; otherwise write \
-a plain question-and-answer card. Example of one plain card followed by one \
-cloze card:
-
-## What guarantee does ownership give each value in Rust?
-Exactly one owner at a time.
-> This is what lets Rust free memory deterministically, with no garbage collector.
-
-## Fill in the ownership rule about scope.
-When the owner goes out of scope, the value is \\blank{dropped}.
-> \"Dropped\" means its destructor runs and its memory is freed.
-
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -54,10 +129,11 @@ The `link:` key lets the learner ask follow-up questions against the source.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\blank{...}` holes) here.
-  2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
-  3. Application — \"given X, what happens / what would you do?\" (plain cards).
+  1. Facts & terminology: definitions and key terms.
+  2. Concepts & mechanisms: \"why\" and \"how\" questions.
+  3. Application: \"given X, what happens / what would you do?\"
   4. Connections — how ideas relate, contrast, or build on each other.
+Use the required card style throughout all four layers.
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
@@ -70,14 +146,8 @@ several items, split it into several one-idea cards instead — one card per ite
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
 sequence) keep it as one card with a `<!-- reveal: line -->` line right below \
 its front and one item per answer line.
-- A MAPPING of pairs (each X with its Y: ABIs to target triples, terms to \
-meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
-card that recalls the whole table at once, and never use `<!-- reveal: line -->` \
-for one; make it ONE cloze card, one line per pair with the recalled half in \
-`\\blank{...}`, so every pair is drilled on its own.
-- Give answers and notes clean structure when the content has it (short lines, \
-one point per line — do NOT prefix items with a bullet or dash; bullets are added \
-later by `alix deck augment --target format`); keep an atomic answer atomic — \
+- Give non-choice answers and notes clean structure when the content has it \
+(short lines, one point per line); keep an atomic answer atomic; \
 never pad a one-word answer into a list.
 - Format the question for readability, but never let its layout leak the answer \
 (don't hint how many items the answer has).
@@ -108,18 +178,10 @@ deck.
 OUTPUT FORMAT — a Markdown deck, one card after another:
 - A card starts with `## ` at column 0, followed by the question/front on the \
 same line. Never indent a card front.
-- The plain lines BELOW it (no indentation, no bullet) are the answer/back. \
-EVERY card MUST have at least one answer line — never write a front with no \
-answer. Keep answers short — one fact or a few words; several lines are allowed.
+{card_format}
 - A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
 brief elaboration, a concrete example, a mnemonic, or why it matters — one or \
 two short lines, never just restating the answer.
-- A fill-in-the-blank (cloze) card hides spans of its answer: wrap each hidden \
-span as `\\blank{...}` inside the answer line. The front is a short \
-instruction; the answer line(s) hold the full sentence with the hidden spans \
-wrapped — the blanks live in the answer lines, NEVER on the front. Braces \
-outside a `\\blank{...}` marker are literal, so code with `{}` is fine. Use \
-`\\blank{...}` only when there is a natural word to blank out.
 - A `<!-- at: file:start-end -->` line under a card cites where its answer \
 lives in the source (e.g. `<!-- at: src/string.rs:120-128 -->`; the path is \
 relative to the source root — your working directory). Add one to every card \
@@ -139,10 +201,11 @@ your understanding against it.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\blank{...}` holes) here.
-  2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
-  3. Application — \"given X, what happens / what would you do?\" (plain cards).
+  1. Facts & terminology: definitions and key terms.
+  2. Concepts & mechanisms: \"why\" and \"how\" questions.
+  3. Application: \"given X, what happens / what would you do?\"
   4. Connections — how the pieces relate, contrast, or build on each other.
+Use the required card style throughout all four layers.
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
@@ -155,14 +218,8 @@ several items, split it into several one-idea cards instead — one card per ite
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
 sequence) keep it as one card with a `<!-- reveal: line -->` line right below \
 its front and one item per answer line.
-- A MAPPING of pairs (each X with its Y: ABIs to target triples, terms to \
-meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
-card that recalls the whole table at once, and never use `<!-- reveal: line -->` \
-for one; make it ONE cloze card, one line per pair with the recalled half in \
-`\\blank{...}`, so every pair is drilled on its own.
-- Give answers and notes clean structure when the content has it (short lines, \
-one point per line — do NOT prefix items with a bullet or dash; bullets are added \
-later by `alix deck augment --target format`); keep an atomic answer atomic — \
+- Give non-choice answers and notes clean structure when the content has it \
+(short lines, one point per line); keep an atomic answer atomic; \
 never pad a one-word answer into a list.
 - Format the question for readability, but never let its layout leak the answer \
 (don't hint how many items the answer has).
@@ -191,26 +248,21 @@ the answer.
 - Tighten any card whose answer covers more than its front asks: narrow the \
 answer to the question, move the extra fact to the `> ` note, or split it into \
 distinct cards. A front and its answer must ask and tell the same thing.
-- Rewrite any card that recalls a whole mapping or table of pairs at once \
-(\"match each X to its Y\") as one cloze card: one line per pair, the recalled \
-half in `\\blank{...}`. Ordered steps may stay a `<!-- reveal: line -->` card; \
-unordered pairs never.
+{mapping_review}
 - Keep the EXACT same file format: the leading `---` frontmatter block, `## ` \
-card fronts at column 0, plain answer lines below each front, `> ` notes, and \
-any `<!-- key: value -->` directive lines. A cloze card keeps its \
+card fronts at column 0, plain or task-list answers below each front, `> ` \
+notes, and any `<!-- key: value -->` directive lines. A cloze card keeps its \
 `\\blank{...}` holes in its answer lines.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
-
-The deck to review:
-
 ";
 
 pub fn generate_deck(
     source: &str,
     cfg: &GenerateDeckConfig,
     ask_cfg: &AskConfig,
+    spec: &GenerationSpec,
 ) -> Result<String> {
     let url = is_url(source);
     ensure_source_reachable(ask_cfg, url)?;
@@ -220,12 +272,13 @@ pub fn generate_deck(
         let (base_dir, _) = resolve_source(None, Some(source));
         Some(base_dir)
     };
-    let prompt = build_prompt(source, url, cfg);
+    let prompt = build_prompt(source, url, cfg, spec);
     let raw = ask::run(&run_config(cfg, ask_cfg, url, cwd), &prompt, &[])?;
     let deck = clean_output(&raw);
     if deck.trim().is_empty() {
         bail!("the model returned no deck content");
     }
+    validate_card_style(&deck, spec)?;
     Ok(deck)
 }
 
@@ -234,21 +287,28 @@ pub fn spawn(
     cfg: GenerateDeckConfig,
     ask: AskConfig,
 ) -> Receiver<Result<String, String>> {
+    let spec = GenerationSpec::from_config(DEFAULT_GOAL, &cfg);
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = tx.send(generate_deck(&source, &cfg, &ask).map_err(|e| format!("{e:#}")));
+        let _ = tx.send(generate_deck(&source, &cfg, &ask, &spec).map_err(|e| format!("{e:#}")));
     });
     rx
 }
 
-pub fn review_deck(deck: &str, cfg: &GenerateDeckConfig, ask_cfg: &AskConfig) -> Result<String> {
-    let prompt = build_review_prompt(deck);
+pub fn review_deck(
+    deck: &str,
+    cfg: &GenerateDeckConfig,
+    ask_cfg: &AskConfig,
+    spec: &GenerationSpec,
+) -> Result<String> {
+    let prompt = build_review_prompt(deck, spec);
     // The reviewer only rewrites the supplied text; no source access needed.
     let raw = ask::run(&run_config(cfg, ask_cfg, true, None), &prompt, &[])?;
     let reviewed = clean_output(&raw);
     if reviewed.trim().is_empty() {
         bail!("the review pass returned no deck content");
     }
+    validate_card_style(&reviewed, spec)?;
     Ok(reviewed)
 }
 
@@ -273,20 +333,54 @@ fn run_config(
     }
 }
 
-fn build_review_prompt(deck: &str) -> String {
-    format!("{REVIEW_PROMPT}{deck}")
+fn build_review_prompt(deck: &str, spec: &GenerationSpec) -> String {
+    let review = REVIEW_PROMPT.replace("{mapping_review}", review_mapping(spec.card_style));
+    format!(
+        "{review}{}\n\n{}\n\nThe deck to review:\n\n{deck}",
+        spec.requirements(),
+        card_format(spec.card_style)
+    )
 }
 
-fn build_prompt(source: &str, url: bool, cfg: &GenerateDeckConfig) -> String {
+fn review_mapping(style: GenerateCardStyle) -> &'static str {
+    match style {
+        GenerateCardStyle::Mixed | GenerateCardStyle::Cloze => {
+            "- Rewrite any card that recalls a whole mapping or table of pairs at once \
+             (\"match each X to its Y\") as one cloze card: one line per pair, the recalled \
+             half in `\\blank{...}`. Ordered steps may stay a `<!-- reveal: line -->` card; \
+             unordered pairs never."
+        }
+        GenerateCardStyle::Plain => {
+            "- Rewrite any card that recalls a whole mapping or table of pairs at once \
+             (\"match each X to its Y\") as distinct plain cards, one pair per card. \
+             Ordered steps may stay a `<!-- reveal: line -->` card; unordered pairs never."
+        }
+        GenerateCardStyle::AuthoredChoices => {
+            "- Rewrite any card that recalls a whole mapping or table of pairs at once \
+             (\"match each X to its Y\") as distinct authored-choice cards, one pair per \
+             card, with plausible values from the same domain as distractors. Ordered \
+             steps may stay a `<!-- reveal: line -->` card; unordered pairs never."
+        }
+    }
+}
+
+fn build_prompt(
+    source: &str,
+    url: bool,
+    cfg: &GenerateDeckConfig,
+    spec: &GenerationSpec,
+) -> String {
     let template = cfg.prompt.as_deref().unwrap_or(if url {
         DEFAULT_PROMPT
     } else {
         DEFAULT_SOURCE_PROMPT
     });
+    let has_card_format = template.contains("{card_format}");
     let mut prompt = template
         .replace("{url}", source)
         .replace("{source}", source)
-        .replace("{max_cards}", &cfg.max_cards.to_string());
+        .replace("{max_cards}", &cfg.max_cards.to_string())
+        .replace("{card_format}", card_format(spec.card_style));
     if let Some(extra) = cfg
         .extra
         .as_deref()
@@ -296,7 +390,49 @@ fn build_prompt(source: &str, url: bool, cfg: &GenerateDeckConfig) -> String {
         prompt.push_str("\n\nAdditional instructions:\n");
         prompt.push_str(extra);
     }
+    if cfg.prompt.is_none() || !spec.is_default() {
+        prompt.push_str("\n\n");
+        prompt.push_str(&spec.requirements());
+        if !has_card_format {
+            prompt.push_str("\n\n");
+            prompt.push_str(card_format(spec.card_style));
+        }
+    }
     prompt
+}
+
+pub(crate) fn validate_card_style(deck: &str, spec: &GenerationSpec) -> Result<()> {
+    if spec.card_style == GenerateCardStyle::Mixed {
+        return Ok(());
+    }
+    let cards = parser::parse_str("generated.md", deck)
+        .map_err(|error| anyhow::anyhow!("cannot verify generated card style: {error}"))?;
+    if cards.is_empty() {
+        bail!("the model returned no cards");
+    }
+    let invalid = cards
+        .iter()
+        .filter(|card| match spec.card_style {
+            GenerateCardStyle::Mixed => false,
+            GenerateCardStyle::Plain => {
+                card.hole.is_some() || !card.authored_distractors.is_empty()
+            }
+            GenerateCardStyle::Cloze => card.hole.is_none(),
+            GenerateCardStyle::AuthoredChoices => {
+                !(2..=4).contains(&card.authored_distractors.len())
+            }
+        })
+        .count();
+    if invalid > 0 {
+        bail!(
+            "the model returned {invalid} card(s) that do not match the requested {} style",
+            match spec.card_style {
+                GenerateCardStyle::AuthoredChoices => "authored multiple-choice",
+                style => style.as_str(),
+            }
+        );
+    }
+    Ok(())
 }
 
 /// Trailing prose isn't stripped: it can't be told apart from a card's
@@ -421,9 +557,13 @@ mod tests {
         }
     }
 
+    fn spec() -> GenerationSpec {
+        GenerationSpec::from_config(DEFAULT_GOAL, &GenerateDeckConfig::default())
+    }
+
     #[test]
     fn prompt_substitutes_url_and_card_count() {
-        let p = build_prompt("https://example.org/page", true, &cfg(12));
+        let p = build_prompt("https://example.org/page", true, &cfg(12), &spec());
         assert!(p.contains("https://example.org/page"));
         assert!(p.contains("AT MOST 12 cards"));
         assert!(p.contains("link: https://example.org/page"));
@@ -446,7 +586,7 @@ mod tests {
 
     #[test]
     fn review_prompt_embeds_the_deck_and_asks_to_dedupe() {
-        let p = build_review_prompt("---\nlink: u\n---\n\n## Q\nA\n");
+        let p = build_review_prompt("---\nlink: u\n---\n\n## Q\nA\n", &spec());
         assert!(p.contains("## Q"));
         assert!(p.contains("MERGE cards that test the same fact"));
         assert!(p.contains("Output ONLY the improved deck"));
@@ -460,22 +600,241 @@ mod tests {
     fn extra_guidance_is_appended() {
         let mut g = cfg(10);
         g.extra = Some("Focus on the public API.".to_string());
-        let p = build_prompt("u", true, &g);
+        let p = build_prompt("u", true, &g, &spec());
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on the public API."));
+    }
+
+    #[test]
+    fn prompt_carries_goal_language_and_authored_choice_contract() {
+        let spec = GenerationSpec {
+            goal: "recognize the constitutional institutions".to_string(),
+            language: Some("German".to_string()),
+            audience: Some("German high-school students".to_string()),
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+        let p = build_prompt("u", true, &cfg(10), &spec);
+
+        assert!(p.contains("recognize the constitutional institutions"));
+        assert!(p.contains("German"));
+        assert!(p.contains("German high-school students"));
+        assert!(p.contains("- [x]"));
+        assert!(p.contains("- [ ]"));
+        assert!(p.contains("exactly one checked"));
+        assert!(!p.contains("no bullet"));
+    }
+
+    #[test]
+    fn generation_spec_reads_configured_defaults() {
+        let config = GenerateDeckConfig {
+            language: Some("German".to_string()),
+            audience: Some("new voters".to_string()),
+            card_style: GenerateCardStyle::AuthoredChoices,
+            ..GenerateDeckConfig::default()
+        };
+
+        let spec = GenerationSpec::from_config("recognize institutions", &config);
+
+        assert_eq!("recognize institutions", spec.goal);
+        assert_eq!(Some("German".to_string()), spec.language);
+        assert_eq!(Some("new voters".to_string()), spec.audience);
+        assert_eq!(GenerateCardStyle::AuthoredChoices, spec.card_style);
+    }
+
+    #[test]
+    fn explicit_controls_are_appended_to_a_custom_prompt() {
+        let mut config = cfg(5);
+        config.prompt = Some("Custom prompt for {source}.".to_string());
+        let cases = [
+            GenerationSpec {
+                goal: "recognize institutions".to_string(),
+                ..spec()
+            },
+            GenerationSpec {
+                language: Some("German".to_string()),
+                ..spec()
+            },
+            GenerationSpec {
+                audience: Some("new voters".to_string()),
+                ..spec()
+            },
+            GenerationSpec {
+                card_style: GenerateCardStyle::AuthoredChoices,
+                ..spec()
+            },
+        ];
+
+        for spec in cases {
+            let prompt = build_prompt("notes.md", false, &config, &spec);
+            assert!(prompt.starts_with("Custom prompt for notes.md."));
+            assert!(prompt.contains("GENERATION REQUIREMENTS"));
+            assert!(prompt.contains(&spec.goal));
+            if let Some(language) = spec.language {
+                assert!(prompt.contains(&language));
+            }
+            if let Some(audience) = spec.audience {
+                assert!(prompt.contains(&audience));
+            }
+            if spec.card_style == GenerateCardStyle::AuthoredChoices {
+                assert!(prompt.contains("exactly one checked"));
+            }
+        }
+    }
+
+    #[test]
+    fn review_prompt_preserves_language_and_authored_choices() {
+        let spec = GenerationSpec {
+            goal: "learn the topic".to_string(),
+            language: Some("de".to_string()),
+            audience: Some("beginners".to_string()),
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+        let p = build_review_prompt("## Frage\n- [x] Ja\n- [ ] Nein\n", &spec);
+
+        assert!(p.contains("de"));
+        assert!(p.contains("beginners"));
+        assert!(p.contains("authored multiple-choice"));
+        assert!(p.contains("exactly one checked"));
+        assert!(p.contains("one pair per"));
+        assert!(!p.contains("as one cloze card"));
+    }
+
+    #[test]
+    fn review_deck_runs_the_backend_and_returns_the_checked_style() {
+        use crate::testutil::{ask_config, exec_lock, fake_reply};
+
+        let _guard = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(
+            dir.path(),
+            "## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+        );
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+
+        let reviewed = review_deck(
+            "## Draft\n- [ ] A\n- [x] B\n- [ ] C\n",
+            &cfg(10),
+            &ask_config(&cli),
+            &spec,
+        )
+        .unwrap();
+
+        assert!(reviewed.contains("- [x] Correct"));
+    }
+
+    #[test]
+    fn authored_choice_generation_rejects_plain_cards() {
+        use crate::testutil::{ask_config, exec_lock, fake_reply};
+
+        let _guard = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), "## Plain question\nPlain answer\n");
+        let spec = GenerationSpec {
+            goal: "learn the topic".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+
+        let err =
+            generate_deck("https://example.org", &cfg(10), &ask_config(&cli), &spec).unwrap_err();
+
+        assert!(format!("{err:#}").contains("authored multiple-choice"));
+    }
+
+    #[test]
+    fn authored_choices_require_three_to_five_options() {
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+
+        let too_few = validate_card_style("## Pick one\n- [x] Right\n- [ ] Wrong\n", &spec);
+        let too_many = validate_card_style(
+            "## Pick one\n- [x] Right\n- [ ] A\n- [ ] B\n- [ ] C\n- [ ] D\n- [ ] E\n",
+            &spec,
+        );
+
+        assert!(too_few.is_err());
+        assert!(too_many.is_err());
+    }
+
+    #[test]
+    fn each_explicit_card_style_accepts_its_canonical_shape() {
+        let cases = [
+            (GenerateCardStyle::Plain, "## Question\nAnswer\n"),
+            (
+                GenerateCardStyle::Cloze,
+                "## Complete it\nThe value is \\blank{dropped}.\n",
+            ),
+            (
+                GenerateCardStyle::AuthoredChoices,
+                "## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+            ),
+        ];
+
+        for (card_style, deck) in cases {
+            let spec = GenerationSpec {
+                goal: "learn it".to_string(),
+                language: None,
+                audience: None,
+                card_style,
+            };
+            validate_card_style(deck, &spec).unwrap();
+        }
+    }
+
+    #[test]
+    fn cloze_style_rejects_a_plain_card() {
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::Cloze,
+        };
+
+        let error = validate_card_style("## Question\nAnswer\n", &spec).unwrap_err();
+
+        assert!(format!("{error:#}").contains("requested cloze style"));
+    }
+
+    #[test]
+    fn plain_style_rejects_cloze_and_authored_choices() {
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::Plain,
+        };
+
+        let cloze = validate_card_style("## Complete it\nIt is \\blank{done}.\n", &spec);
+        let choices = validate_card_style(
+            "## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+            &spec,
+        );
+
+        assert!(cloze.is_err());
+        assert!(choices.is_err());
     }
 
     #[test]
     fn full_prompt_override_replaces_template() {
         let mut g = cfg(5);
         g.prompt = Some("Make {max_cards} cards from {url}.".to_string());
-        let p = build_prompt("U", true, &g);
+        let p = build_prompt("U", true, &g, &spec());
         assert_eq!("Make 5 cards from U.", p);
     }
 
     #[test]
     fn source_prompt_explores_locally_and_ties_to_source() {
-        let p = build_prompt("src/scheduler.rs", false, &cfg(8));
+        let p = build_prompt("src/scheduler.rs", false, &cfg(8), &spec());
         assert!(p.contains("src/scheduler.rs"));
         assert!(p.contains("Read, Glob and Grep"));
         assert!(p.contains("source: src/scheduler.rs"));
@@ -490,7 +849,7 @@ mod tests {
 
     #[test]
     fn url_prompt_does_not_ask_for_line_citations() {
-        let p = build_prompt("https://example.org/page", true, &cfg(8));
+        let p = build_prompt("https://example.org/page", true, &cfg(8), &spec());
         assert!(!p.contains("<!-- at:"));
     }
 

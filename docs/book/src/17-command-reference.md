@@ -87,15 +87,21 @@ records a public source (added to the deck or workspace `source:`) for later
 tutor and exam context after local evidence is frozen. What generate makes
 follows the source:
 
+`--goal <TEXT>` scopes what every new deck or workspace teaches.
+`--language <LANGUAGE>` controls learner-facing output, and
+`--audience <TEXT>` controls assumed knowledge and difficulty.
+`--card-style mixed|plain|cloze|authored-choices` selects the facts-card shape;
+workspace trace items retain their checkpoint shape.
+
 - a **web page URL or a local file** → one
   [facts deck](11-generating-decks.md) (`-o/--output`, `--cards`, `--review`,
   `--print`, `--force`; `--workspace <dir>` writes it into that workspace).
 - a **directory** → explored first for an
-  [ordered learning plan](14-explore.md) scoped by `--goal`: a one-item plan
-  becomes a single deck, a bigger plan a **workspace build**, confirmed before
-  it runs (`--workspace <dir>` sets the destination, `--title`/`--icon` name
-  and brand it). `--plan` prints the plan and stops; `--deck` forces a single
-  deck from a directory.
+  [ordered learning plan](14-explore.md) scoped by the same controls: a
+  one-item plan becomes a single deck, a bigger plan a **workspace build**,
+  confirmed before it runs (`--workspace <dir>` sets the destination,
+  `--title`/`--icon` name and brand it). `--plan` prints the plan and stops;
+  `--deck` forces a single deck from a directory.
 - with **`--trace`** → a [trace](13-trace-decks.md) authored over the source,
   written as a trace deck (`-o/--output`, default `explore.md`;
   `--workspace <dir>` places it). `--trace --plan` prints a ranked menu of

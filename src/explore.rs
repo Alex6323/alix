@@ -11,6 +11,7 @@ use crate::{
     backend::ensure_source_reachable,
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
+    generate::{self, GenerationSpec},
     library,
     parser::yaml_quote,
     share,
@@ -22,7 +23,12 @@ use crate::{
 };
 
 /// `source` is a scope directly (a directory, file, or URL), not a deck.
-pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
+pub fn explore(
+    source: &str,
+    spec: &GenerationSpec,
+    cfg: &TraceConfig,
+    ask_cfg: &AskConfig,
+) -> Result<String> {
     let url = is_url(source);
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
@@ -31,7 +37,7 @@ pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig)
         let (base_dir, _) = resolve_source(None, Some(source));
         Some(base_dir)
     };
-    let prompt = explore_prompt(source, goal, url, cfg);
+    let prompt = explore_prompt(source, spec, url, cfg);
     let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
     let raw = ask::run(&run_cfg, &prompt, &[])?;
     let plan = raw.trim().to_string();
@@ -41,7 +47,8 @@ pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig)
     Ok(plan)
 }
 
-fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
+fn explore_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfig) -> String {
+    let goal = &spec.goal;
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
     } else {
@@ -121,10 +128,17 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
         p.push_str("\n\nAdditional instructions:\n");
         p.push_str(extra);
     }
+    p.push_str("\n\n");
+    p.push_str(&spec.requirements());
     p
 }
 
-pub fn walk(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
+pub fn walk(
+    source: &str,
+    spec: &GenerationSpec,
+    cfg: &TraceConfig,
+    ask_cfg: &AskConfig,
+) -> Result<String> {
     let url = is_url(source);
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
@@ -133,7 +147,7 @@ pub fn walk(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) ->
         let (base_dir, _) = resolve_source(None, Some(source));
         Some(base_dir)
     };
-    let prompt = walk_prompt(source, goal, url, cfg);
+    let prompt = walk_prompt(source, spec, url, cfg);
     let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
     let raw = ask::run(&run_cfg, &prompt, &[])?;
     let cards = clean_to_cards(&raw);
@@ -143,7 +157,8 @@ pub fn walk(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) ->
     Ok(cards)
 }
 
-fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
+fn walk_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfig) -> String {
+    let goal = &spec.goal;
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
     } else {
@@ -199,6 +214,8 @@ fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String
         p.push_str("\n\nAdditional instructions:\n");
         p.push_str(extra);
     }
+    p.push_str("\n\n");
+    p.push_str(&spec.learner_requirements());
     p
 }
 
@@ -209,7 +226,7 @@ fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn explore_and_fill(
     source: &str,
-    goal: &str,
+    spec: &GenerationSpec,
     cfg: &TraceConfig,
     ask_cfg: &AskConfig,
 ) -> Result<(String, HashMap<usize, String>)> {
@@ -226,7 +243,7 @@ pub fn explore_and_fill(
 
     let plan = ask::run(
         &run_cfg,
-        &explore_prompt(source, goal, url, cfg),
+        &explore_prompt(source, spec, url, cfg),
         &session.args(),
     )?
     .trim()
@@ -240,11 +257,27 @@ pub fn explore_and_fill(
         bail!("the plan has no items to fill");
     }
 
-    let filled = ask::run(&run_cfg, &fill_prompt(&items), &session.args())?;
-    Ok((plan, parse_filled(&filled)))
+    let filled = ask::run(&run_cfg, &fill_prompt(&items, spec), &session.args())?;
+    let filled = parse_filled(&filled);
+    validate_filled_card_styles(&items, &filled, spec)?;
+    Ok((plan, filled))
 }
 
-fn fill_prompt(items: &[Item]) -> String {
+fn validate_filled_card_styles(
+    items: &[Item],
+    filled: &HashMap<usize, String>,
+    spec: &GenerationSpec,
+) -> Result<()> {
+    for item in items.iter().filter(|item| item.kind == Kind::Deck) {
+        if let Some(deck) = filled.get(&item.num) {
+            generate::validate_card_style(deck, spec)
+                .with_context(|| format!("generated workspace item {}", item.num))?;
+        }
+    }
+    Ok(())
+}
+
+fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
     let mut list = String::new();
     for item in items {
         let kind = match item.kind {
@@ -267,16 +300,17 @@ fn fill_prompt(items: &[Item]) -> String {
          lines, an `<!-- at: file:start-end -->` locator line citing the REAL \
          lines, and an optional `> ` note. Each hop opens on the previous reveal, \
          predicts forward, and its key points are grounded in the cited lines.\n\
-         - a [deck] → FACT cards: each is a `## ` front at column 0, then its back \
-         line(s) as plain unindented lines, plus an `<!-- at: file:start-end -->` \
+         - a [deck] → FACT cards: each is a `## ` front at column 0, followed by \
+         the required deck-card shape below, plus an `<!-- at: file:start-end -->` \
          locator line citing the REAL lines whenever the fact maps to a specific \
          range (so the card can show its source on reveal; omit it when the fact \
          synthesizes across several places). One fact per card, concise and \
          recall-oriented. Do NOT cram an enumeration into one prose answer: if the \
          answer is a list of several items, split it into several one-idea cards \
-         (one card per item or group), or give it clean structure with one point \
-         per line (no bullet or dash prefix — bullets come later from the format \
-         augment); keep an atomic answer atomic.\n\n\
+         (one card per item or group); keep an atomic answer atomic.\n\n\
+         {card_format}\n\n\
+         The selected card style applies to [deck] items. [trace] items retain \
+         their predict-and-verify checkpoint shape.\n\n\
          Every `at:` `file` part MUST be written relative to the SAME root — the \
          source root you explored (your working directory) — as ONE consistent path \
          per file across ALL items; never drop or add a leading directory (always \
@@ -285,7 +319,10 @@ fn fill_prompt(items: &[Item]) -> String {
          `# ` title — those are already written; output only the `## ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
          between the last card of one item and the next `=== item ===` line.\n\n\
-         The plan:\n{list}"
+         {requirements}\n\n\
+         The plan:\n{list}",
+        card_format = generate::card_format(spec.card_style),
+        requirements = spec.requirements(),
     )
 }
 
@@ -769,11 +806,20 @@ fn toml_escape(s: &str) -> String {
 mod tests {
     use super::*;
 
+    fn spec(goal: &str) -> GenerationSpec {
+        GenerationSpec {
+            goal: goal.to_string(),
+            language: None,
+            audience: None,
+            card_style: crate::config::GenerateCardStyle::Mixed,
+        }
+    }
+
     #[test]
     fn explore_prompt_carries_goal_means_coverage_and_order() {
         let p = explore_prompt(
             ".",
-            "understand the alix repo",
+            &spec("understand the alix repo"),
             false,
             &TraceConfig::default(),
         );
@@ -794,7 +840,7 @@ mod tests {
     fn explore_prompt_url_uses_webfetch() {
         let p = explore_prompt(
             "https://x",
-            "understand the page",
+            &spec("understand the page"),
             true,
             &TraceConfig::default(),
         );
@@ -820,7 +866,7 @@ mod tests {
                 source: ".".to_string(),
             },
         ];
-        let p = fill_prompt(&items);
+        let p = fill_prompt(&items, &spec("understand the source"));
         assert!(p.contains("FACT cards"));
         assert!(p.contains("<!-- at: file:start-end -->"));
         assert!(!p.contains("TAB-indented"));
@@ -831,8 +877,73 @@ mod tests {
     }
 
     #[test]
+    fn workspace_fill_carries_language_and_authored_choice_contract() {
+        let items = vec![Item {
+            num: 1,
+            kind: Kind::Deck,
+            title: "Institutions".to_string(),
+            requires: Vec::new(),
+            source: "notes.md".to_string(),
+        }];
+        let spec = crate::generate::GenerationSpec {
+            goal: "understand the institutions".to_string(),
+            language: Some("German".to_string()),
+            audience: Some("new voters".to_string()),
+            card_style: crate::config::GenerateCardStyle::AuthoredChoices,
+        };
+
+        let p = fill_prompt(&items, &spec);
+
+        assert!(p.contains("understand the institutions"));
+        assert!(p.contains("German"));
+        assert!(p.contains("new voters"));
+        assert!(p.contains("- [x]"));
+        assert!(p.contains("- [ ]"));
+        assert!(p.contains("[deck]"));
+        assert!(p.contains("[trace]"));
+    }
+
+    #[test]
+    fn workspace_authored_choices_reject_a_plain_deck_but_not_a_trace() {
+        let items = vec![
+            Item {
+                num: 1,
+                kind: Kind::Deck,
+                title: "Facts".to_string(),
+                requires: Vec::new(),
+                source: "notes.md".to_string(),
+            },
+            Item {
+                num: 2,
+                kind: Kind::Trace,
+                title: "Flow".to_string(),
+                requires: vec![1],
+                source: ".".to_string(),
+            },
+        ];
+        let spec = GenerationSpec {
+            goal: "understand it".to_string(),
+            language: None,
+            audience: None,
+            card_style: crate::config::GenerateCardStyle::AuthoredChoices,
+        };
+        let filled = HashMap::from([
+            (1, "## Plain fact\nplain answer".to_string()),
+            (2, "## Trace checkpoint\nplain key point".to_string()),
+        ]);
+
+        let error = validate_filled_card_styles(&items, &filled, &spec).unwrap_err();
+
+        assert!(format!("{error:#}").contains("workspace item 1"));
+        assert!(format!("{error:#}").contains("authored multiple-choice"));
+    }
+
+    #[test]
     fn walk_prompt_predicts_shape_with_evidence() {
-        let p = walk_prompt(".", "understand the repo", false, &TraceConfig::default());
+        let mut spec = spec("understand the repo");
+        spec.language = Some("German".to_string());
+        spec.audience = Some("new contributors".to_string());
+        let p = walk_prompt(".", &spec, false, &TraceConfig::default());
         assert!(p.contains("EXPLORE walk"));
         assert!(p.contains("PREDICT its"));
         assert!(p.contains("DOMAIN NOUNS"));
@@ -841,7 +952,32 @@ mod tests {
         assert!(p.contains("candidate traces"));
         assert!(p.contains("<!-- at:"));
         assert!(p.contains("Read, Glob"));
+        assert!(p.contains("German"));
+        assert!(p.contains("new contributors"));
         assert!(!p.contains("WebFetch"));
+    }
+
+    #[test]
+    fn walk_runs_the_backend_and_returns_checkpoints() {
+        use crate::testutil::{ask_config, exec_lock, fake_reply};
+
+        let _guard = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(
+            dir.path(),
+            "## What happens next?\nThe parser builds a card.\n",
+        );
+
+        let checkpoints = walk(
+            "https://example.org/source",
+            &spec("understand the path"),
+            &TraceConfig::default(),
+            &ask_config(&cli),
+        )
+        .unwrap();
+
+        assert!(checkpoints.contains("What happens next?"));
+        assert!(checkpoints.contains("parser builds a card"));
     }
 
     const SAMPLE_PLAN: &str = "\

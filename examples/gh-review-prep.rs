@@ -389,7 +389,8 @@ fn build_workspace(
     let config = alix::config::Config::load(None).context("failed to load alix config")?;
     let source_text = root.to_string_lossy();
     let source: &str = &source_text;
-    let (plan, filled) = alix::explore::explore_and_fill(source, goal, &config.trace, &config.ask)
+    let spec = alix::generate::GenerationSpec::from_config(goal, &config.generate);
+    let (plan, filled) = alix::explore::explore_and_fill(source, &spec, &config.trace, &config.ask)
         .context("explore/fill failed")?;
     let report =
         alix::explore::materialize(&plan, ws, goal, Some(title), source, None, Some(&filled))

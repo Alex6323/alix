@@ -47,13 +47,32 @@ alix generate <source> --cards 15                # cap the number of cards
 alix generate <source> --review                  # a 2nd pass that dedups and tightens
 alix generate <source> --print                   # print to stdout instead of writing a file
 alix generate <source> --workspace ~/decks/rust/ # write it under that workspace's decks/
+alix generate <source> --goal "pass the citizenship test"
+alix generate <source> --language German --audience "new voters"
+alix generate <source> --card-style authored-choices
 ```
 
+`--goal` controls what the learner should understand for every new deck or
+workspace, including a single deck generated from a URL or file. `--language`
+sets the language of fronts, answers, choices, and notes. `--audience` steers
+vocabulary, assumed knowledge, examples, and difficulty.
+
+`--card-style` accepts `mixed` (the default), `plain`, `cloze`, or
+`authored-choices`. Authored choices use the deck's GitHub task-list format,
+with one checked correct answer and unchecked distractors. Alix parses the
+result and refuses a generated facts deck containing a card of the wrong shape,
+so a model cannot silently turn an authored-choice request into ordinary
+recall cards. In a generated workspace the style applies to every `[deck]`
+item; `[trace]` items keep their predict-and-verify checkpoint shape. Goal,
+language, and audience apply to both.
+
 `--review` runs a **second** model call that takes the draft and returns a
-deduplicated, tightened version. It costs an extra call, but it's worth it when
-the source is repetitive. The prompt and limits (`model`, `timeout_secs`
-(default 300), `max_cards` (default 30), and an `extra` instruction field) live
-in the `[generate]` section of the config.
+deduplicated, tightened version while preserving the requested language,
+audience, and card style. It costs an extra call, but it's worth it when the
+source is repetitive. The prompt and defaults (`model`, `timeout_secs`
+(default 300), `max_cards` (default 30), `language`, `audience`, `card_style`,
+and an `extra` instruction field) live in the `[generate]` section of the
+config.
 
 ## Generate, then own it
 

@@ -235,6 +235,9 @@ pub struct GenerateDeckConfig {
     pub model: Option<String>,
     pub timeout_secs: u64,
     pub max_cards: usize,
+    pub language: Option<String>,
+    pub audience: Option<String>,
+    pub card_style: GenerateCardStyle,
     pub extra: Option<String>,
     pub prompt: Option<String>,
     pub review: bool,
@@ -246,9 +249,43 @@ impl Default for GenerateDeckConfig {
             model: None,
             timeout_secs: 300,
             max_cards: 30,
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::default(),
             extra: None,
             prompt: None,
             review: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
+pub enum GenerateCardStyle {
+    #[default]
+    Mixed,
+    Plain,
+    Cloze,
+    AuthoredChoices,
+}
+
+impl GenerateCardStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mixed => "mixed",
+            Self::Plain => "plain",
+            Self::Cloze => "cloze",
+            Self::AuthoredChoices => "authored-choices",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "mixed" => Some(Self::Mixed),
+            "plain" => Some(Self::Plain),
+            "cloze" => Some(Self::Cloze),
+            "authored-choices" => Some(Self::AuthoredChoices),
+            _ => None,
         }
     }
 }
@@ -535,6 +572,9 @@ struct RawGenerate {
     model: Option<String>,
     timeout_secs: Option<u64>,
     max_cards: Option<usize>,
+    language: Option<String>,
+    audience: Option<String>,
+    card_style: Option<String>,
     extra: Option<String>,
     prompt: Option<String>,
     review: Option<bool>,
@@ -746,6 +786,16 @@ impl Config {
         }
         if let Some(max) = raw.generate.max_cards {
             generate.max_cards = max;
+        }
+        generate.language = raw.generate.language.filter(|s| !s.trim().is_empty());
+        generate.audience = raw.generate.audience.filter(|s| !s.trim().is_empty());
+        if let Some(style) = raw.generate.card_style.filter(|s| !s.trim().is_empty()) {
+            match GenerateCardStyle::parse(&style) {
+                Some(value) => generate.card_style = value,
+                None => bail!(
+                    "invalid generate.card_style {style:?}: expected mixed, plain, cloze, or authored-choices"
+                ),
+            }
         }
         generate.extra = raw.generate.extra.filter(|s| !s.trim().is_empty());
         generate.prompt = raw.generate.prompt.filter(|s| !s.trim().is_empty());
@@ -1078,8 +1128,11 @@ pub fn default_config_toml() -> &'static str {
 # model = ""                    # --model override; empty = use [ask] / CLI default
 # timeout_secs = 300            # generation is slower than a single question
 # max_cards = 30                # upper bound on cards per deck
+# language = ""                 # output language; empty = follow the source
+# audience = ""                 # intended learner, e.g. "new Rust programmers"
+# card_style = "mixed"          # mixed | plain | cloze | authored-choices
 # extra = ""                    # extra guidance appended to the prompt
-# prompt = ""                   # full prompt override; may use {url} and {max_cards}
+# prompt = ""                   # override; supports {url}, {source}, {max_cards}, {card_format}
 # review = false                # run a second pass to drop redundant cards (--review)
 
 # AI exam. Generates open understanding questions from the deck's `source:`
@@ -1683,6 +1736,46 @@ mod tests {
     fn invalid_exam_strictness_is_rejected() {
         let err = Config::from_toml("[exam]\nstrictness = \"harsh\"\n").unwrap_err();
         assert!(format!("{err:#}").contains("strictness"));
+    }
+
+    #[test]
+    fn generation_language_and_card_style_default_and_parse() {
+        let defaults = Config::default();
+        assert_eq!(None, defaults.generate.language);
+        assert_eq!(None, defaults.generate.audience);
+        assert_eq!(GenerateCardStyle::Mixed, defaults.generate.card_style);
+
+        let config = Config::from_toml(
+            "[generate]\nlanguage = \"German\"\naudience = \"new voters\"\n\
+             card_style = \"authored-choices\"\n",
+        )
+        .unwrap();
+        assert_eq!(Some("German".to_string()), config.generate.language);
+        assert_eq!(Some("new voters".to_string()), config.generate.audience);
+        assert_eq!(
+            GenerateCardStyle::AuthoredChoices,
+            config.generate.card_style
+        );
+
+        for style in [
+            GenerateCardStyle::Mixed,
+            GenerateCardStyle::Plain,
+            GenerateCardStyle::Cloze,
+            GenerateCardStyle::AuthoredChoices,
+        ] {
+            assert_eq!(Some(style), GenerateCardStyle::parse(style.as_str()));
+        }
+
+        let generated = default_config_toml();
+        assert!(generated.contains("# language = \"\""));
+        assert!(generated.contains("# audience = \"\""));
+        assert!(generated.contains("# card_style = \"mixed\""));
+    }
+
+    #[test]
+    fn invalid_generation_card_style_is_rejected() {
+        let err = Config::from_toml("[generate]\ncard_style = \"quiz-like\"\n").unwrap_err();
+        assert!(format!("{err:#}").contains("card_style"));
     }
 
     #[test]

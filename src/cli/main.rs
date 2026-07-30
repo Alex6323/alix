@@ -323,6 +323,20 @@ struct GenerateArgs {
     #[arg(long)]
     goal: Option<String>,
 
+    /// Language for generated fronts, answers, choices, and notes.
+    #[arg(long, value_name = "LANGUAGE")]
+    language: Option<String>,
+
+    /// Intended learner, used to set vocabulary, assumed knowledge, examples,
+    /// and difficulty.
+    #[arg(long, value_name = "AUDIENCE")]
+    audience: Option<String>,
+
+    /// Card shape for generated facts decks. Workspace trace items retain
+    /// their predict-and-verify checkpoint shape.
+    #[arg(long, value_enum)]
+    card_style: Option<config::GenerateCardStyle>,
+
     /// Print the plan (directory source) or the trace suggestions (--trace)
     /// and stop: generate nothing.
     #[arg(long)]
@@ -711,6 +725,15 @@ fn config_cmd(init: bool) -> Result<()> {
     );
     println!("  timeout     {}s", config.generate.timeout_secs);
     println!("  max_cards   {}", config.generate.max_cards);
+    println!(
+        "  language    {}",
+        config.generate.language.as_deref().unwrap_or("(source)")
+    );
+    println!(
+        "  audience    {}",
+        config.generate.audience.as_deref().unwrap_or("(general)")
+    );
+    println!("  card_style  {}", config.generate.card_style.as_str());
     println!("  review      {}", config.generate.review);
     Ok(())
 }

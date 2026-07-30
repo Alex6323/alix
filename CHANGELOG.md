@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix generate` now accepts `--language`, `--audience`, and `--card-style`
+  (`mixed`, `plain`, `cloze`, or `authored-choices`), and applies `--goal` to
+  single decks as well as directory plans. The same controls reach generated
+  workspaces; card style governs facts-deck items while trace items retain
+  their checkpoint shape. Explicit styles are parsed and checked before a deck
+  is written, and the optional review pass preserves the requested contract.
+
 - The kids client and the mobile app now show the persistent "progress isn't
   saving" banner the adult web client already had. On mobile a failed
   per-grade save no longer aborts the grade behind the scenes: the review or

@@ -2108,6 +2108,172 @@ fn generate_single_deck_writes_a_deck_file() {
 }
 
 #[test]
+fn generate_single_deck_passes_goal_language_and_card_style_to_the_model() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let prompt = dir.path().join("prompt.txt");
+    let reply = dir.path().join("reply.txt");
+    std::fs::write(
+        &reply,
+        "## Welche Stadt ist die Hauptstadt?\n- [ ] Hamburg\n- [x] Berlin\n- [ ] München\n",
+    )
+    .unwrap();
+    let cli = dir.path().join("fake-claude");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\ncat > {}\ncat {}\n",
+            prompt.display(),
+            reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "[ask]\ncommand = \"{}\"\ntimeout_secs = 10\n",
+            cli.display()
+        ),
+    );
+
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--goal",
+        "recognize Germany's institutions",
+        "--language",
+        "German",
+        "--audience",
+        "new voters",
+        "--card-style",
+        "authored-choices",
+        "--print",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let prompt = std::fs::read_to_string(prompt).unwrap();
+    assert!(prompt.contains("recognize Germany's institutions"));
+    assert!(prompt.contains("German"));
+    assert!(prompt.contains("new voters"));
+    assert!(prompt.contains("authored multiple-choice"));
+}
+
+#[test]
+fn generate_workspace_applies_goal_language_audience_and_card_style() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir(&source).unwrap();
+    write(&source, "notes.md", "Berlin is Germany's capital.\n");
+
+    let plan = write(
+        dir.path(),
+        "plan.txt",
+        "Goal    recognize institutions\n\
+         Source  notes\n\
+         Spine   basics\n\n\
+         1. [deck] Institutions\n\
+            requires: none\n\
+            @source: notes.md\n\
+         2. [deck] Terms\n\
+            requires: 1\n\
+            @source: notes.md\n",
+    );
+    let filled = write(
+        dir.path(),
+        "filled.txt",
+        "=== item 1 ===\n\
+         ## Welche Stadt ist die Hauptstadt?\n\
+         - [ ] Hamburg\n\
+         - [x] Berlin\n\
+         - [ ] München\n\
+         > Hamburg und München sind Großstädte, aber keine Bundeshauptstadt.\n\
+         <!-- at: notes.md:1 -->\n\
+         === item 2 ===\n\
+         ## Welche Ebene ist hier gemeint?\n\
+         - [ ] Kommune\n\
+         - [x] Bund\n\
+         - [ ] Land\n\
+         > Kommune und Land bezeichnen andere staatliche Ebenen.\n\
+         <!-- at: notes.md:1 -->\n",
+    );
+    let request = dir.path().join("request.txt");
+    let cli = dir.path().join("fake-claude");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\ncat > {request}\n\
+             if grep -q 'Now WRITE THE FULL CONTENT' {request}; then\n\
+               cat {filled}\n\
+             else\n\
+               cat {plan}\n\
+             fi\n",
+            request = request.display(),
+            filled = filled,
+            plan = plan,
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "[ask]\ncommand = \"{}\"\ntimeout_secs = 10\n",
+            cli.display()
+        ),
+    );
+    let icon = write(
+        dir.path(),
+        "icon.svg",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"></svg>\n",
+    );
+    let workspace = dir.path().join("workspace");
+
+    let out = alix(&[
+        "generate",
+        source.to_str().unwrap(),
+        "--config",
+        &config,
+        "--workspace",
+        workspace.to_str().unwrap(),
+        "--icon",
+        &icon,
+        "--goal",
+        "recognize Germany's institutions",
+        "--language",
+        "German",
+        "--audience",
+        "new voters",
+        "--card-style",
+        "authored-choices",
+        "--yes",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let request = std::fs::read_to_string(request).unwrap();
+    assert!(request.contains("recognize Germany's institutions"));
+    assert!(request.contains("German"));
+    assert!(request.contains("new voters"));
+    assert!(request.contains("authored multiple-choice"));
+    for name in ["01-institutions.md", "02-terms.md"] {
+        let deck = alix::deck::Deck::load(workspace.join("decks").join(name)).unwrap();
+        assert!(
+            deck.cards
+                .iter()
+                .all(|card| card.authored_distractors.len() == 2),
+            "{name} should contain only authored three-option cards"
+        );
+    }
+}
+
+#[test]
 fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(
@@ -2333,17 +2499,45 @@ fn generate_single_deck_still_saves_text_that_does_not_parse() {
 
 #[test]
 fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
-    // A one-item (unparseable-as-a-plan) exploration result routes to a single
-    // deck rather than a multi-item workspace build.
+    use std::os::unix::fs::PermissionsExt;
+
+    // A real one-item plan routes to a single deck rather than a multi-item
+    // workspace build.
     let dir = TempDir::new().unwrap();
     let src = dir.path().join("src");
     std::fs::create_dir(&src).unwrap();
     write(&src, "notes.md", "some source material\n");
-    let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");
+    let request = dir.path().join("request.txt");
+    let plan = write(
+        dir.path(),
+        "plan.txt",
+        "1. [deck] The facts\n   requires: none\n   @source: notes.md\n",
+    );
+    let deck = write(dir.path(), "generated.txt", "## Generated Q\nGenerated A\n");
+    let cli = dir.path().join("fake-claude");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\ncat > {request}\n\
+             if grep -q 'Output a PLAN' {request}; then\n\
+               cat {plan}\n\
+             else\n\
+               cat {deck}\n\
+             fi\n",
+            request = request.display(),
+            plan = plan,
+            deck = deck,
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
     let config = write(
         dir.path(),
         "config.toml",
-        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+        &format!(
+            "[ask]\ncommand = \"{}\"\ntimeout_secs = 10\n",
+            cli.display()
+        ),
     );
     let ws = dir.path().join("ws");
     std::fs::create_dir_all(ws.join("decks")).unwrap();
