@@ -28,7 +28,7 @@ class SubprocessInvoker:
         stem = f"{sequence:03d}-{agent}"
         transcript = self.run_dir / "transcripts" / f"{stem}.txt"
         patch_path = self.run_dir / "patches" / f"{stem}.patch"
-        baseline = _git(cwd, "rev-parse", "HEAD")
+        baseline = _git(cwd, "rev-parse", "HEAD").strip()
         result = self.executor.run(command_for(agent, prompt), cwd, timeout)
         _git(cwd, "add", "-N", ".")
         patch_path.write_text(

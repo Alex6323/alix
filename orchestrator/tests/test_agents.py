@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
-from orchestrator.agents import command_for
+from orchestrator.agents import SubprocessInvoker, command_for
+from orchestrator.commands import CommandResult
 
 
 class AgentCommandTests(unittest.TestCase):
@@ -39,3 +43,50 @@ class AgentCommandTests(unittest.TestCase):
             ],
             command,
         )
+
+
+class _EditingExecutor:
+    """Stands in for the agent CLI: edits a file instead of calling a model."""
+
+    def run(
+        self, args: list[str], cwd: Path, timeout: float | None = None
+    ) -> CommandResult:
+        (cwd / "edited.txt").write_text("agent change\n", encoding="utf-8")
+        return CommandResult(
+            returncode=0, stdout="done", stderr="", duration_seconds=0.01
+        )
+
+
+def _seed_repo(root: Path) -> Path:
+    repo = root / "repo"
+    repo.mkdir()
+    for args in (
+        ("init", "-b", "main"),
+        ("config", "user.email", "t@example.invalid"),
+        ("config", "user.name", "t"),
+        ("config", "commit.gpgsign", "false"),
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "seed"], cwd=repo, check=True, capture_output=True
+    )
+    return repo
+
+
+class SubprocessInvokerTests(unittest.TestCase):
+    def test_invoke_diffs_the_patch_against_the_pre_invocation_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = _seed_repo(root)
+            run_dir = root / "run"
+            (run_dir / "transcripts").mkdir(parents=True)
+            (run_dir / "patches").mkdir(parents=True)
+
+            invoker = SubprocessInvoker(run_dir, executor=_EditingExecutor())
+            invocation = invoker.invoke("claude", "do the thing", repo, 5.0)
+
+            patch = Path(invocation.patch_path).read_text(encoding="utf-8")
+            self.assertIn("edited.txt", patch)
+            self.assertEqual(0, invocation.exit_code)
