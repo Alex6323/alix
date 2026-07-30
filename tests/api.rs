@@ -766,6 +766,151 @@ fn an_inactive_workspace_listing_reads_the_progress_owner_projection() {
     );
 }
 
+/// A named import destination resolves to that workspace's member dir, not
+/// the served root: a misresolved destination silently misfiles the deck.
+#[test]
+fn importing_into_a_named_workspace_lands_in_that_workspace() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let resp = post_json(
+        &base,
+        "/api/import",
+        r###"{"name":"geo.md","text":"## q?\na\n","dest":"animals"}"###,
+    );
+    assert_eq!(
+        200,
+        resp.status,
+        "body: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    assert!(
+        guard.dir().join("animals/decks/geo.md").is_file(),
+        "the import must land in the named workspace's member dir"
+    );
+    assert!(
+        !guard.dir().join("geo.md").exists(),
+        "the import must not land in the served root"
+    );
+}
+
+/// Uploads are strict: a deck that does not parse is refused with a 400 and
+/// the placed file is removed, never kept half-imported.
+#[test]
+fn importing_a_malformed_deck_is_refused_and_leaves_no_file() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let resp = post_json(
+        &base,
+        "/api/import",
+        r###"{"name":"broken.md","text":"## a question with no answer\n"}"###,
+    );
+    assert_eq!(400, resp.status);
+    assert!(
+        !guard.dir().join("broken.md").exists(),
+        "a refused import must not leave the file behind"
+    );
+}
+
+/// A plain folder (a grouping dir without `alix.toml`) has no store of its
+/// own: its member rows read the served root store. A wrong store choice
+/// leaves every folder member without status.
+#[test]
+fn a_folder_members_row_reads_the_served_root_store() {
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        let folder = dir.join("animals");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("one.md"),
+            "---\nid: \"deck-folderone\"\n---\n## q1 <!-- id: card-fq1 -->\na1\n",
+        )
+        .unwrap();
+    });
+    let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(200, selected.status);
+    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+
+    let response = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, response.status);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let member = body["folders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["label"] == "animals")
+        .unwrap_or_else(|| panic!("the folder groups its members; body: {body}"))["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == "animals/one.md")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        "started", member["state"],
+        "a folder member's progress lives in the root store; member: {member}"
+    );
+}
+
+/// Selecting a workspace member records it in the recent list (loose decks
+/// land there by the catalog scan alone, so only a member exercises the
+/// recording path), and an unfinished session must record: the writer skips
+/// only finished sessions.
+#[test]
+fn selecting_a_workspace_member_records_it_in_recent() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(200, selected.status);
+
+    // Members render under their workspace row, not the recent section, so
+    // the observable is the recorded file itself. The listing call is the
+    // ordering barrier: the catalog owner processed the select's
+    // record-recent command before it answered this list.
+    let response = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, response.status);
+    let recent = std::fs::read_to_string(guard.dir().join("recent.json")).unwrap_or_default();
+    assert!(
+        recent.contains("one.md"),
+        "an unfinished member session must be recorded in recent; recent.json: {recent}"
+    );
+}
+
+/// `/api/remote/ask`'s 400 guard, both polarities: an empty question is
+/// refused whatever the card holds, an all-empty card is refused with a real
+/// question, and an empty front with a non-empty back passes (the card is
+/// askable). The passing probe matters: a wrongly widened guard turns valid
+/// mobile asks into 400s.
+#[test]
+fn remote_ask_refuses_empty_questions_and_empty_cards_but_not_partial_cards() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "fine");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+            "history":[],"question":"   "}"#,
+    );
+    assert_eq!(400, resp.status, "an empty question must be refused");
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.md","front":" ","back":[" "],"at":null},
+            "history":[],"question":"why?"}"#,
+    );
+    assert_eq!(400, resp.status, "an all-empty card must be refused");
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.md","front":" ","back":["4"],"at":null},
+            "history":[],"question":"why?"}"#,
+    );
+    assert_eq!(
+        200, resp.status,
+        "an empty front with a non-empty back is askable"
+    );
+}
+
 #[test]
 fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
     let (base, _guard) = spawn_test_server();
@@ -3173,6 +3318,78 @@ fn every_accepted_mutation_advances_the_revision() {
     }
 }
 
+/// The transition family: select, deselect, browse, and a trace-deck (walk)
+/// select each replace or drop the active session, and every one must
+/// strictly advance `study_revision`, or an in-flight card-relative request
+/// from the old session could land on the new one. Browse and walk payloads
+/// carry no revision, so their bumps are measured through the next select's
+/// delta: transition plus select is at least two.
+#[test]
+fn every_session_transition_strictly_advances_the_revision() {
+    // The full server: a trace-deck select routes through the walk classifier.
+    let (base, _guard) = spawn_full_server(None);
+    let rev = |b: &serde_json::Value| b["study_revision"].as_u64().unwrap();
+
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let r0 = rev(&serde_json::from_slice(&state.body).unwrap());
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md"}"#);
+    assert_eq!(200, resp.status);
+    let r1 = rev(&serde_json::from_slice(&resp.body).unwrap());
+    assert!(r1 > r0, "select must advance the revision ({r0} -> {r1})");
+
+    let resp = post_gated(&base, "/api/deselect", "{}");
+    assert_eq!(200, resp.status);
+    let r2 = rev(&serde_json::from_slice(&resp.body).unwrap());
+    assert!(r2 > r1, "deselect must advance the revision ({r1} -> {r2})");
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md"}"#);
+    assert_eq!(200, resp.status);
+    let r3 = rev(&serde_json::from_slice(&resp.body).unwrap());
+    let resp = post_json(&base, "/api/browse", r#"{"deck":"sample.md"}"#);
+    assert_eq!(200, resp.status);
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md"}"#);
+    assert_eq!(200, resp.status);
+    let r4 = rev(&serde_json::from_slice(&resp.body).unwrap());
+    assert!(
+        r4 >= r3 + 2,
+        "browse and the following select must each advance the revision ({r3} -> {r4})"
+    );
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
+    assert_eq!(200, resp.status);
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md"}"#);
+    assert_eq!(200, resp.status);
+    let r5 = rev(&serde_json::from_slice(&resp.body).unwrap());
+    assert!(
+        r5 >= r4 + 2,
+        "a walk select and the following select must each advance the revision ({r4} -> {r5})"
+    );
+}
+
+/// Grade and remove mutate the current card and must strictly advance the
+/// revision their own responses report, so a replayed echo cannot hit the
+/// next card.
+#[test]
+fn grade_and_remove_each_strictly_advance_the_revision() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+    let rev = |b: &serde_json::Value| b["study_revision"].as_u64().unwrap();
+
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let r0 = rev(&serde_json::from_slice(&state.body).unwrap());
+
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, resp.status);
+    let r1 = rev(&serde_json::from_slice(&resp.body).unwrap());
+    assert!(r1 > r0, "grade must advance the revision ({r0} -> {r1})");
+
+    let resp = post_gated(&base, "/api/remove", "{}");
+    assert_eq!(200, resp.status);
+    let r2 = rev(&serde_json::from_slice(&resp.body).unwrap());
+    assert!(r2 > r1, "remove must advance the revision ({r1} -> {r2})");
+}
+
 /// The dropped-reply guard: every card-relative mutation echoes the state's
 /// `study_revision`; a replay with the revision that was current when the
 /// lost reply's request was accepted must 409 and mutate nothing, so a
@@ -3958,6 +4175,55 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     assert_eq!(
         "edited term?", state_body["card"]["front"],
         "body: {state_body}"
+    );
+}
+
+/// The happy promote path: a tutor-minted virtual card promotes into its deck
+/// file with a 200, and the response's revision strictly advances. The
+/// non-virtual 400 test above cannot prove the virtuality check's polarity
+/// (an inverted check still rejects, for a different reason); only a
+/// succeeding promote can.
+#[test]
+fn promoting_a_virtual_card_succeeds_and_advances_the_revision() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "## term?\ndefinition\n");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    select_fixture(&base);
+
+    let resp = post_gated(&base, "/api/ask", r#"{"question":"why does this matter?"}"#);
+    assert_eq!(200, resp.status);
+    poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
+    let resp = post_gated(&base, "/api/ask/card/draft", "{}");
+    assert_eq!(200, resp.status);
+    poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
+    let resp = post_gated(
+        &base,
+        "/api/ask/card/create",
+        r#"{"front":"term?","back":["definition"]}"#,
+    );
+    assert_eq!(200, resp.status);
+
+    // Cram-reselect serves the minted virtual card first (the same idiom the
+    // draft round-trip test above documents).
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md","cram":true}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("term?", body["card"]["front"], "body: {body}");
+    let before = body["study_revision"].as_u64().unwrap();
+
+    let resp = post_gated(&base, "/api/promote", "{}");
+    assert_eq!(
+        200,
+        resp.status,
+        "a virtual card must promote; body: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let after = body["study_revision"].as_u64().unwrap();
+    assert!(
+        after > before,
+        "promote must advance the revision ({before} -> {after})"
     );
 }
 
