@@ -8,15 +8,14 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, mpsc},
+    sync::mpsc,
     thread,
     time::SystemTime,
 };
 
-use super::{catalog::*, dto::DeckListDto};
+use super::{catalog::*, dto::DeckListDto, study::StudyProjection};
 use crate::{
-    cache::DeckCache, config::ReviewConfig, recent::RecentDecks, session::now_ms, store::Store,
-    workspace,
+    cache::DeckCache, config::ReviewConfig, recent::RecentDecks, session::now_ms, workspace,
 };
 
 pub(super) struct CatalogConfig {
@@ -33,16 +32,18 @@ pub(super) struct CatalogState {
     pub(super) recent: RecentDecks,
     resolution: Option<CachedResolution>,
     rebuilds: u64,
-    // One in-flight complete build at a time: the first requester leads and
-    // builds on its own worker thread from cloned inputs, later requesters
-    // wait on its result, and the owner stays free to resolve names.
-    build: Option<InFlightBuild>,
+    // In-flight complete builds, keyed by the progress-projection version
+    // they were begun with: requests sharing a version coalesce onto one
+    // leader, requests carrying a different version lead their own build,
+    // and the owner stays free to resolve names throughout.
+    builds: Vec<InFlightBuild>,
     build_generation: u64,
     builds_merged: u64,
 }
 
 struct InFlightBuild {
     generation: u64,
+    writes: u64,
     waiters: Vec<Reply<BuildWait>>,
 }
 
@@ -80,7 +81,7 @@ impl CatalogState {
             recent,
             resolution: None,
             rebuilds: 0,
-            build: None,
+            builds: Vec::new(),
             build_generation: 0,
             builds_merged: 0,
         }
@@ -142,9 +143,13 @@ pub(super) enum CatalogCommand {
         name: Option<String>,
         reply: Reply<Option<PathBuf>>,
     },
-    BeginList(Reply<BuildStart>),
+    BeginList {
+        writes: u64,
+        reply: Reply<BuildStart>,
+    },
     FinishList {
         generation: u64,
+        writes: u64,
         result: Result<DeckListDto, String>,
         cache: DeckCache,
         launcher_icons: HashMap<String, PathBuf>,
@@ -189,15 +194,16 @@ impl CatalogHandle {
     }
     /// A complete listing: leads the build on this thread or waits on the
     /// in-flight leader's result; an invalidated completion retries.
-    pub(super) fn list(&self, projection: Arc<Store>) -> Option<Result<DeckListDto, String>> {
+    pub(super) fn list(&self, projection: StudyProjection) -> Option<Result<DeckListDto, String>> {
+        let writes = projection.writes;
         loop {
-            match self.call(CatalogCommand::BeginList)? {
+            match self.call(|reply| CatalogCommand::BeginList { writes, reply })? {
                 BuildStart::Lead(inputs) => {
                     let mut inputs = *inputs;
                     let result = deck_catalog(
                         &inputs.decks_dir,
                         &inputs.recent,
-                        &projection,
+                        &projection.store,
                         true,
                         &mut inputs.launcher_icons,
                         inputs.review_cfg,
@@ -206,6 +212,7 @@ impl CatalogHandle {
                     .map_err(|e| format!("{}: {e}", inputs.decks_dir.display()));
                     match self.call(|reply| CatalogCommand::FinishList {
                         generation: inputs.generation,
+                        writes,
                         result,
                         cache: inputs.cache,
                         launcher_icons: inputs.launcher_icons,
@@ -266,17 +273,18 @@ impl CatalogState {
             CatalogCommand::ResolveDest { name, reply } => {
                 let _ = reply.send(self.resolve_dest(name.as_deref()));
             }
-            CatalogCommand::BeginList(reply) => {
-                let _ = reply.send(self.begin_list());
+            CatalogCommand::BeginList { writes, reply } => {
+                let _ = reply.send(self.begin_list(writes));
             }
             CatalogCommand::FinishList {
                 generation,
+                writes,
                 result,
                 cache,
                 launcher_icons,
                 reply,
             } => {
-                let out = self.finish_list(generation, result, cache, launcher_icons);
+                let out = self.finish_list(generation, writes, result, cache, launcher_icons);
                 let _ = reply.send(out);
             }
             CatalogCommand::SetDeadline { name, date, reply } => {
@@ -310,7 +318,10 @@ impl CatalogState {
         );
         if dir != self.decks_dir {
             self.decks_dir = dir;
-            self.resolution = None;
+            // A root change invalidates the build generation too, so an
+            // in-flight complete build from the old root is discarded at
+            // finish instead of publishing stale rows and caches.
+            self.invalidate();
         }
     }
 
@@ -365,15 +376,16 @@ impl CatalogState {
         self.build_generation = self.build_generation.wrapping_add(1);
     }
 
-    fn begin_list(&mut self) -> BuildStart {
-        if let Some(build) = self.build.as_mut() {
+    fn begin_list(&mut self, writes: u64) -> BuildStart {
+        if let Some(build) = self.builds.iter_mut().find(|b| b.writes == writes) {
             let (tx, rx) = mpsc::channel();
             build.waiters.push(tx);
             return BuildStart::Join(rx);
         }
         self.refresh_root();
-        self.build = Some(InFlightBuild {
+        self.builds.push(InFlightBuild {
             generation: self.build_generation,
+            writes,
             waiters: Vec::new(),
         });
         BuildStart::Lead(Box::new(BuildInputs {
@@ -389,13 +401,15 @@ impl CatalogState {
     fn finish_list(
         &mut self,
         generation: u64,
+        writes: u64,
         result: Result<DeckListDto, String>,
         cache: DeckCache,
         launcher_icons: HashMap<String, PathBuf>,
     ) -> BuildWait {
-        let Some(build) = self.build.take() else {
+        let Some(at) = self.builds.iter().position(|b| b.writes == writes) else {
             return BuildWait::Retry;
         };
+        let build = self.builds.remove(at);
         if build.generation != generation || generation != self.build_generation {
             // Invalidated mid-build: discard the completion (plan phase 5)
             // and send everyone back to begin again.
@@ -439,6 +453,7 @@ impl CatalogState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::Store;
 
     fn write_deck(path: &Path, stem: &str) {
         std::fs::write(path, format!("---\nid: \"deck-{stem}\"\n---\n## f\nb\n")).unwrap();
@@ -462,14 +477,15 @@ mod tests {
         write_deck(&dir.path().join("alpha.md"), "alpha");
         let mut s = state_over(dir.path());
 
-        let BuildStart::Lead(inputs) = s.begin_list() else {
+        let BuildStart::Lead(inputs) = s.begin_list(0) else {
             panic!("the first requester leads");
         };
-        let BuildStart::Join(rx) = s.begin_list() else {
+        let BuildStart::Join(rx) = s.begin_list(0) else {
             panic!("the second requester joins the in-flight build");
         };
         let done = s.finish_list(
             inputs.generation,
+            0,
             Ok(DeckListDto {
                 workspaces: Vec::new(),
                 recent: Vec::new(),
@@ -484,20 +500,104 @@ mod tests {
     }
 
     #[test]
+    fn inequivalent_progress_projections_do_not_share_a_complete_build() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("alpha.md");
+        std::fs::write(
+            &deck_path,
+            "---\nid: \"deck-alpha\"\n---\n## f <!-- id: card-alpha -->\nb\n",
+        )
+        .unwrap();
+        let mut s = state_over(dir.path());
+
+        let empty = Store::open(dir.path().join("empty.json")).unwrap();
+        let mut started = Store::open(dir.path().join("started.json")).unwrap();
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        started.get_or_insert(&deck.cards[0].id().unwrap(), now_ms());
+
+        let BuildStart::Lead(mut inputs) = s.begin_list(0) else {
+            panic!("the first requester leads");
+        };
+        let first_result = deck_catalog(
+            &inputs.decks_dir,
+            &inputs.recent,
+            &empty,
+            true,
+            &mut inputs.launcher_icons,
+            inputs.review_cfg,
+            &mut inputs.cache,
+        )
+        .unwrap();
+
+        let mut expected_cache = DeckCache::default();
+        let expected_second = deck_catalog(
+            dir.path(),
+            &RecentDecks::load(dir.path().join("recent.json")),
+            &started,
+            true,
+            &mut HashMap::new(),
+            ReviewConfig::default(),
+            &mut expected_cache,
+        )
+        .unwrap();
+
+        // The fixed design: a request carrying a different projection version
+        // leads its own build instead of joining the in-flight one.
+        let BuildStart::Lead(mut second_inputs) = s.begin_list(1) else {
+            panic!("an inequivalent projection must lead its own build");
+        };
+        let done = s.finish_list(
+            inputs.generation,
+            0,
+            Ok(first_result),
+            inputs.cache,
+            inputs.launcher_icons,
+        );
+        assert!(matches!(done, BuildWait::Ready(Ok(_))));
+        let second_result = deck_catalog(
+            &second_inputs.decks_dir,
+            &second_inputs.recent,
+            &started,
+            true,
+            &mut second_inputs.launcher_icons,
+            second_inputs.review_cfg,
+            &mut second_inputs.cache,
+        )
+        .unwrap();
+        let done = s.finish_list(
+            second_inputs.generation,
+            1,
+            Ok(second_result),
+            second_inputs.cache,
+            second_inputs.launcher_icons,
+        );
+        let BuildWait::Ready(Ok(actual_second)) = done else {
+            panic!("the second request receives a complete result");
+        };
+
+        assert_eq!(
+            serde_json::to_value(expected_second).unwrap(),
+            serde_json::to_value(actual_second).unwrap(),
+            "a request carrying a different progress projection must not receive the first request's snapshot"
+        );
+    }
+
+    #[test]
     fn an_invalidation_mid_build_discards_the_completion_and_retries() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(&dir.path().join("alpha.md"), "alpha");
         let mut s = state_over(dir.path());
 
-        let BuildStart::Lead(inputs) = s.begin_list() else {
+        let BuildStart::Lead(inputs) = s.begin_list(0) else {
             panic!("the first requester leads");
         };
-        let BuildStart::Join(rx) = s.begin_list() else {
+        let BuildStart::Join(rx) = s.begin_list(0) else {
             panic!("the second requester joins");
         };
         s.invalidate();
         let done = s.finish_list(
             inputs.generation,
+            0,
             Ok(DeckListDto {
                 workspaces: Vec::new(),
                 recent: Vec::new(),
@@ -512,12 +612,66 @@ mod tests {
     }
 
     #[test]
+    fn changing_the_effective_root_invalidates_an_in_flight_complete_build() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first");
+        let second = dir.path().join("second");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        write_deck(&first.join("alpha.md"), "alpha");
+        write_deck(&second.join("beta.md"), "beta");
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            format!("decks_dir = \"{}\"\n", first.display()),
+        )
+        .unwrap();
+        let mut s = CatalogState::new(
+            CatalogConfig {
+                scoped: false,
+                config_path: Some(config_path.clone()),
+                review_cfg: ReviewConfig::default(),
+            },
+            first.clone(),
+            RecentDecks::load(dir.path().join("recent.json")),
+        );
+
+        let BuildStart::Lead(inputs) = s.begin_list(0) else {
+            panic!("the first requester leads");
+        };
+        std::fs::write(
+            &config_path,
+            format!("decks_dir = \"{}\"\n", second.display()),
+        )
+        .unwrap();
+        s.refresh_root();
+        assert_eq!(second, s.decks_dir);
+
+        let done = s.finish_list(
+            inputs.generation,
+            0,
+            Ok(DeckListDto {
+                workspaces: Vec::new(),
+                recent: Vec::new(),
+                folders: Vec::new(),
+            }),
+            inputs.cache,
+            inputs.launcher_icons,
+        );
+        assert!(
+            matches!(done, BuildWait::Retry),
+            "a listing built from the old root must be discarded"
+        );
+        assert_eq!(0, s.builds_merged);
+    }
+
+    #[test]
     fn resolution_answers_while_a_complete_build_is_in_flight() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(&dir.path().join("alpha.md"), "alpha");
         let mut s = state_over(dir.path());
 
-        let BuildStart::Lead(_inputs) = s.begin_list() else {
+        let BuildStart::Lead(_inputs) = s.begin_list(0) else {
             panic!("the first requester leads");
         };
         // The owner is not building anything itself: a resolve between

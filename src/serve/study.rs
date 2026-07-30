@@ -40,12 +40,21 @@ pub(super) struct StudyState {
     // current card can change, checked against every card-relative
     // mutation's echoed header before the mutation applies.
     pub(super) revision: u64,
+    // Progress-content version: bumped on every store mutation or
+    // replacement, so catalog builds can refuse to coalesce requests
+    // carrying different progress states.
+    pub(super) writes: u64,
     pub(super) browsing: Option<Browsing>,
     pub(super) examining: Option<Examining>,
     pub(super) walking: Option<Walking>,
     // Owned here (not by Jobs yet) because opening an augment session
     // replaces the active store, and the store has exactly one owner.
     pub(super) augmenting: Option<Augmenting>,
+}
+
+pub(super) struct StudyProjection {
+    pub(super) store: Arc<Store>,
+    pub(super) writes: u64,
 }
 
 pub(super) enum SessionSnapshot {
@@ -233,7 +242,7 @@ pub(super) enum StudyCommand {
         reply: Reply<ImageSource>,
     },
     StorePath(Reply<PathBuf>),
-    Projection(Reply<Arc<Store>>),
+    Projection(Reply<StudyProjection>),
 }
 
 #[derive(Clone)]
@@ -463,7 +472,7 @@ impl StudyHandle {
     pub(super) fn image_path(&self, key: String) -> Option<ImageSource> {
         self.call(|reply| StudyCommand::ImagePath { key, reply })
     }
-    pub(super) fn projection(&self) -> Option<Arc<Store>> {
+    pub(super) fn projection(&self) -> Option<StudyProjection> {
         self.call(StudyCommand::Projection)
     }
 }
@@ -554,6 +563,7 @@ impl StudyState {
                             &mut self.store_dirty,
                             &mut self.save_error,
                         );
+                        self.writes = self.writes.wrapping_add(1);
                     }
                     SessionSnapshot::Review(Box::new(self.review_dto()))
                 };
@@ -583,6 +593,7 @@ impl StudyState {
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
                         self.store = s;
+                        self.writes = self.writes.wrapping_add(1);
                     }
                     self.revision += 1;
                     Transition::Done(self.review_dto())
@@ -613,6 +624,7 @@ impl StudyState {
                             &mut self.store_dirty,
                             &mut self.save_error,
                         );
+                        self.writes = self.writes.wrapping_add(1);
                         r.rotate_variant();
                         self.revision += 1;
                         Some(())
@@ -629,6 +641,7 @@ impl StudyState {
                         r.session.acquire_current(&mut self.store, now_ms());
                         let _ = r.session.take_presented_stamped();
                         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
+                        self.writes = self.writes.wrapping_add(1);
                         r.rotate_variant();
                         self.revision += 1;
                         Some(())
@@ -649,6 +662,7 @@ impl StudyState {
                             &mut self.store_dirty,
                             &mut self.save_error,
                         );
+                        self.writes = self.writes.wrapping_add(1);
                         r.rotate_variant();
                         self.revision += 1;
                         Some(())
@@ -774,6 +788,7 @@ impl StudyState {
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
                         self.store = s;
+                        self.writes = self.writes.wrapping_add(1);
                     }
                     Transition::Done(self.review_dto())
                 };
@@ -825,6 +840,7 @@ impl StudyState {
                                 &mut self.store_dirty,
                                 &mut self.save_error,
                             );
+                            self.writes = self.writes.wrapping_add(1);
                         }
                         Some(exam_dto(ex))
                     }
@@ -866,6 +882,7 @@ impl StudyState {
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
                         self.store = s;
+                        self.writes = self.writes.wrapping_add(1);
                     }
                     Transition::Done(self.review_dto())
                 };
@@ -899,6 +916,7 @@ impl StudyState {
                                     &mut self.store_dirty,
                                     &mut self.save_error,
                                 );
+                                self.writes = self.writes.wrapping_add(1);
                                 w.clear_grade();
                                 WalkGradeReply::Dto(Box::new(walk_dto(w)))
                             }
@@ -954,6 +972,7 @@ impl StudyState {
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
                         self.store = s;
+                        self.writes = self.writes.wrapping_add(1);
                     }
                     Transition::Done(self.review_dto())
                 };
@@ -973,7 +992,10 @@ impl StudyState {
                 let _ = reply.send(self.store.path().to_path_buf());
             }
             StudyCommand::Projection(reply) => {
-                let _ = reply.send(Arc::new(self.store.clone()));
+                let _ = reply.send(StudyProjection {
+                    store: Arc::new(self.store.clone()),
+                    writes: self.writes,
+                });
             }
         }
     }
@@ -990,6 +1012,7 @@ impl StudyState {
         }
         if let Ok(s) = assemble::store_for(&files, self.config.cfg.instance_store.as_deref()) {
             self.store = s;
+            self.writes = self.writes.wrapping_add(1);
         }
         // Stamp before loading: unstamped ids collapse the cache to key 0,
         // orphaning the spend at the first real stamp.
@@ -1029,15 +1052,19 @@ impl StudyState {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
-        if let Err(e) = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
-            .map(|s| self.store = s)
-        {
-            eprintln!("warning: could not open the progress store: {e}");
-            return Transition::Rejected;
-        }
+        let mut candidate =
+            match assemble::store_for(&paths, self.config.cfg.instance_store.as_deref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("warning: could not open the progress store: {e}");
+                    return Transition::Rejected;
+                }
+            };
         let recorded_paths = paths.clone();
-        match assemble::select(paths, &mut self.store, &self.config.cfg, &opts) {
+        match assemble::select(paths, &mut candidate, &self.config.cfg, &opts) {
             Ok(assemble::Selected::Walk(wb)) => {
+                self.store = candidate;
+                self.writes = self.writes.wrapping_add(1);
                 let w = Walking::new(wb.walk, wb.grade);
                 let dto = walk_dto(&w);
                 self.walking = Some(w);
@@ -1047,6 +1074,8 @@ impl StudyState {
                 Transition::Done((SelectedDto::Walk(dto), None))
             }
             Ok(assemble::Selected::Review(b)) => {
+                self.store = candidate;
+                self.writes = self.writes.wrapping_add(1);
                 let record = (!b.session.is_finished()).then_some(recorded_paths);
                 let mut r = Reviewing::new(b);
                 // `assemble::select` already saved the store, stamp included.
@@ -1068,15 +1097,19 @@ impl StudyState {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
-        if let Err(e) = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
-            .map(|s| self.store = s)
+        let candidate = match assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
         {
-            eprintln!("warning: could not open the progress store: {e}");
-            return Transition::Rejected;
-        }
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("warning: could not open the progress store: {e}");
+                return Transition::Rejected;
+            }
+        };
         let recorded_paths = paths.clone();
         match assemble::browse(paths, self.config.cfg.instance_store.as_deref()) {
             Ok(b) => {
+                self.store = candidate;
+                self.writes = self.writes.wrapping_add(1);
                 self.browsing = Some(Browsing::new(b));
                 self.reviewing = None;
                 self.walking = None;
@@ -1133,6 +1166,7 @@ impl StudyState {
         };
         if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
             self.store = s;
+            self.writes = self.writes.wrapping_add(1);
         }
         Transition::Done(ResetDto {
             deck: name,
@@ -1156,6 +1190,7 @@ impl StudyState {
         }
         let _ = r.session.take_presented_stamped();
         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
+        self.writes = self.writes.wrapping_add(1);
         r.rotate_variant();
         self.revision += 1;
         Some(self.review_dto())
@@ -1174,9 +1209,11 @@ impl StudyState {
             }
             let _ = r.session.take_presented_stamped();
             flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
+            self.writes = self.writes.wrapping_add(1);
             r.files.remove_block(&deck_id, line);
         }
         flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
+        self.writes = self.writes.wrapping_add(1);
         self.revision += 1;
         Some(self.review_dto())
     }
@@ -1201,8 +1238,10 @@ impl StudyState {
             return Feedback::Bad;
         }
         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
+        self.writes = self.writes.wrapping_add(1);
         r.session.poll(&mut self.store, now_ms());
         flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
+        self.writes = self.writes.wrapping_add(1);
         self.revision += 1;
         Feedback::Ok(self.review_dto())
     }
@@ -1243,6 +1282,7 @@ impl StudyState {
         ) {
             Ok(id) => {
                 flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
+                self.writes = self.writes.wrapping_add(1);
                 CreateOutcome::Ok(CreateCardResp { id })
             }
             Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
@@ -1261,16 +1301,19 @@ impl StudyState {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
-        if let Ok(s) = assemble::store_for(
+        // Validate against a candidate store; the active store is replaced
+        // only once the sitting definitely starts, so every rejection path
+        // leaves the current session writing to its own document.
+        let Ok(candidate) = assemble::store_for(
             std::slice::from_ref(&path),
             self.config.cfg.instance_store.as_deref(),
-        ) {
-            self.store = s;
-        }
+        ) else {
+            return Transition::Rejected;
+        };
         match Deck::load(&path) {
             Ok(deck)
                 if deck.has_exam()
-                    && !deck::is_locked(&deck, Some(decks_root.as_path()), &self.store) =>
+                    && !deck::is_locked(&deck, Some(decks_root.as_path()), &candidate) =>
             {
                 let strictness = deck
                     .settings
@@ -1280,7 +1323,7 @@ impl StudyState {
                     match trace::Trace::from_deck(&deck) {
                         Ok(t) => {
                             if let Some(ms) = exam::cooldown_remaining_ms(
-                                &self.store,
+                                &candidate,
                                 deck.deck_token.as_deref().unwrap_or_default(),
                                 self.config.exam_cfg.retry_cooldown_secs,
                                 now_ms(),
@@ -1313,6 +1356,8 @@ impl StudyState {
                     sitting,
                     deck_path: path,
                 };
+                self.store = candidate;
+                self.writes = self.writes.wrapping_add(1);
                 let dto = exam_dto(&ex);
                 self.examining = Some(ex);
                 Transition::Done(Box::new(dto))

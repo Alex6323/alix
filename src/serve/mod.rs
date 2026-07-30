@@ -219,6 +219,7 @@ pub fn run_review(
             save_error: None,
             reviewing: None,
             revision: 0,
+            writes: 0,
             browsing: None,
             examining: None,
             walking: None,

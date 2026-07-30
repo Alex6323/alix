@@ -207,13 +207,21 @@ pub(super) fn workspace_members(
 ) -> (Vec<MemberDto>, picker::WorkspaceReadiness) {
     let review = review.for_workspace(&e.path);
     let is_ws = cache.is_workspace(&e.path);
-    let own_workspace_store = is_ws
+    // The active projection is authoritative for its own workspace: opening
+    // that store from disk here could resurrect members as new while the
+    // owner holds unflushed truth or the document is briefly unavailable
+    // (an editor or sync tool mid-rename).
+    let projection_covers = is_ws
+        && instance_store
+            .path()
+            .starts_with(crate::workspace::store_path(&e.path));
+    let own_workspace_store = (is_ws && !projection_covers)
         .then(|| crate::state::open_aggregate_store(&crate::workspace::store_path(&e.path)).ok())
         .flatten();
-    let store: Option<&Store> = if is_ws {
-        own_workspace_store.as_ref()
-    } else {
+    let store: Option<&Store> = if !is_ws || projection_covers {
         Some(instance_store)
+    } else {
+        own_workspace_store.as_ref()
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
     let augment = AugmentCache::open_for_workspace(&e.path).ok();

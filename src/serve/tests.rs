@@ -1215,6 +1215,7 @@ fn poll_ask_records_answer_in_transcript() {
     r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
+        job: ask::AskJob::default(),
         purpose: Purpose::Question("why is s1 invalid?".to_string()),
         card,
     });
@@ -1259,6 +1260,7 @@ fn poll_ask_condense_appends_note_to_deck() {
     r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
+        job: ask::AskJob::default(),
         purpose: Purpose::Condense,
         card,
     });
@@ -1280,6 +1282,7 @@ fn poll_ask_error_resets_session() {
     r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
+        job: ask::AskJob::default(),
         purpose: Purpose::Question("q".to_string()),
         card,
     });
@@ -1383,6 +1386,7 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
     r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
         rx,
+        job: ask::AskJob::default(),
         purpose: Purpose::DraftCard,
         card,
     });
@@ -1557,6 +1561,7 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
     w.ask.subject = w.walk.checkpoint().map(|c| c.card_id.clone());
     w.ask.pending = Some(Pending {
         rx,
+        job: ask::AskJob::default(),
         purpose: Purpose::Condense,
         card,
     });

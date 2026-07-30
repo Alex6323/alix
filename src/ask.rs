@@ -384,22 +384,65 @@ pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
     })
 }
 
-pub fn spawn(config: AskConfig, prompt: String, extra_args: Vec<String>) -> Receiver<Reply> {
+/// A handle onto a spawned ask's child process: cancel kills and reaps it
+/// synchronously, so no AI subprocess outlives its owner (a dropped pending
+/// exchange or the application shutdown).
+#[derive(Clone, Default)]
+pub struct AskJob {
+    child: std::sync::Arc<std::sync::Mutex<ChildSlot>>,
+}
+
+#[derive(Default)]
+enum ChildSlot {
+    #[default]
+    NotStarted,
+    Running(std::process::Child),
+    Finished,
+    Cancelled,
+}
+
+impl AskJob {
+    pub fn cancel(&self) {
+        let mut slot = self.child.lock().unwrap_or_else(|p| p.into_inner());
+        if let ChildSlot::Running(child) = &mut *slot {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        *slot = ChildSlot::Cancelled;
+    }
+}
+
+pub fn spawn(
+    config: AskConfig,
+    prompt: String,
+    extra_args: Vec<String>,
+) -> (Receiver<Reply>, AskJob) {
     let (tx, rx) = channel();
+    let job = AskJob::default();
+    let slot = std::sync::Arc::clone(&job.child);
     std::thread::spawn(move || {
-        let reply = match run(&config, &prompt, &extra_args) {
+        let reply = match run_supervised(&config, &prompt, &extra_args, &slot) {
             Ok(answer) => Reply::Answer(answer),
             Err(e) => Reply::Error(format!("{e:#}")),
         };
         // The receiver may be gone if the user left the ask view.
         let _ = tx.send(reply);
     });
-    rx
+    (rx, job)
 }
 
 // The default WebFetch/WebSearch allowlist under dontAsk lets Claude consult deck links without
 // blocking on an unanswerable permission prompt.
 pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Result<String> {
+    run_supervised(config, prompt, extra_args, &Default::default())
+}
+
+fn run_supervised(
+    config: &AskConfig,
+    prompt: &str,
+    extra_args: &[String],
+    slot: &std::sync::Mutex<ChildSlot>,
+) -> Result<String> {
     let backend = backend_for(config)?;
     // Session flags are Claude-specific; forwarding them to a backend without a session mechanism
     // would error on an unknown flag.
@@ -444,6 +487,17 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         .with_context(|| format!("cannot run '{}' — is it installed?", config.command))?;
 
     let stdin = child.stdin.take().expect("stdin was piped");
+    let mut stdout_pipe = child.stdout.take().expect("stdout was piped");
+    let mut stderr_pipe = child.stderr.take().expect("stderr was piped");
+    {
+        let mut guard = slot.lock().unwrap_or_else(|p| p.into_inner());
+        if matches!(*guard, ChildSlot::Cancelled) {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("the ask was cancelled");
+        }
+        *guard = ChildSlot::Running(child);
+    }
     match backend.prompt_delivery() {
         PromptDelivery::Stdin => {
             let mut stdin = stdin;
@@ -458,14 +512,14 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
 
     // Reader threads drain output so the child never deadlocks on a full pipe while this thread
     // watches the deadline.
-    let mut stdout = child.stdout.take().expect("stdout was piped");
-    let mut stderr = child.stderr.take().expect("stderr was piped");
     let out = std::thread::spawn(move || {
+        let mut stdout = stdout_pipe;
         let mut s = String::new();
         let _ = stdout.read_to_string(&mut s);
         s
     });
     let err = std::thread::spawn(move || {
+        let mut stderr = stderr_pipe;
         let mut s = String::new();
         let _ = stderr.read_to_string(&mut s);
         s
@@ -473,17 +527,29 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
 
     let deadline = Instant::now() + Duration::from_secs(config.timeout_secs);
     let status = loop {
-        if let Some(status) = child.try_wait().context("cannot wait for the CLI")? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            bail!(
-                "'{}' timed out after {}s",
-                config.command,
-                config.timeout_secs
-            );
+        {
+            let mut guard = slot.lock().unwrap_or_else(|p| p.into_inner());
+            match &mut *guard {
+                ChildSlot::Running(child) => {
+                    if let Some(status) = child.try_wait().context("cannot wait for the CLI")? {
+                        *guard = ChildSlot::Finished;
+                        break status;
+                    }
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        *guard = ChildSlot::Finished;
+                        drop(guard);
+                        bail!(
+                            "'{}' timed out after {}s",
+                            config.command,
+                            config.timeout_secs
+                        );
+                    }
+                }
+                // cancel() killed and reaped it synchronously.
+                _ => bail!("the ask was cancelled"),
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     };
@@ -1098,7 +1164,7 @@ mod tests {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(dir.path(), "cat");
-        let rx = spawn(config(&cli, 10), "ping".to_string(), Vec::new());
+        let (rx, _job) = spawn(config(&cli, 10), "ping".to_string(), Vec::new());
         match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
             Reply::Answer(a) => assert_eq!("ping", a),
             Reply::Error(e) => panic!("unexpected error: {e}"),
@@ -1117,7 +1183,7 @@ mod tests {
             "why is it Because?",
             true,
         );
-        let rx = spawn(config(&cli, 10), prompt, Vec::new());
+        let (rx, _job) = spawn(config(&cli, 10), prompt, Vec::new());
         match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
             Reply::Answer(a) => assert_eq!("sure, let's look at this card together!", a),
             Reply::Error(e) => panic!("unexpected error: {e}"),

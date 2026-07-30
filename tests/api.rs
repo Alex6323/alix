@@ -665,6 +665,68 @@ fn select_fixture(base: &str) -> HttpResp {
 }
 
 #[test]
+fn a_rejected_exam_start_keeps_the_active_progress_store() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    assert_eq!(200, select_fixture(&base).status);
+
+    let progress = state_root(guard.dir()).join("progress/deck-sample.json");
+    let before: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+
+    let rejected = post_json(&base, "/api/exam/start", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(409, rejected.status);
+
+    let acquired = post_gated(&base, "/api/acquire", "{}");
+    assert_eq!(200, acquired.status);
+
+    let after: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+    assert!(
+        after["revision"].as_u64().unwrap() > before["revision"].as_u64().unwrap(),
+        "the accepted mutation must save through the still-active store: before={before}, after={after}"
+    );
+}
+
+#[test]
+fn an_active_workspace_listing_reads_the_progress_owner_projection() {
+    fn member_row(base: &str) -> serde_json::Value {
+        let response = http(base, "GET", "/api/decks", &[], &[]);
+        assert_eq!(200, response.status);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        body["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|workspace| workspace["name"] == "animals")
+            .unwrap()
+            .get("members")
+            .and_then(serde_json::Value::as_array)
+            .unwrap()
+            .iter()
+            .find(|member| member["name"] == "animals/one.md")
+            .unwrap()
+            .clone()
+    }
+
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(200, selected.status);
+    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+
+    let before = member_row(&base);
+    let progress = guard.dir().join("animals/progress/deck-animalone.json");
+    let parked = progress.with_extension("json.parked");
+    std::fs::rename(&progress, &parked).unwrap();
+
+    let after = member_row(&base);
+    std::fs::rename(&parked, &progress).unwrap();
+    assert_eq!(
+        before, after,
+        "the active Progress owner projection must remain authoritative while the on-disk document is temporarily unavailable"
+    );
+}
+
+#[test]
 fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
     let (base, _guard) = spawn_test_server();
 
@@ -2747,7 +2809,10 @@ fn remove_drops_the_current_card_from_the_session_and_the_deck_file() {
     let resp = post_gated(&base, "/api/remove", "{}");
     assert_eq!(200, resp.status);
     let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_ne!(front, after["card"]["front"], "the session moved on: {after}");
+    assert_ne!(
+        front, after["card"]["front"],
+        "the session moved on: {after}"
+    );
     let deck = std::fs::read_to_string(guard.dir().join("sample.md")).unwrap();
     assert!(
         !deck.contains(&front),
@@ -2849,7 +2914,12 @@ fn share_zip_roundtrips_through_receive_zip() {
         &[("Content-Type", "application/zip")],
         &resp.body,
     );
-    assert_eq!(200, resp.status, "{:?}", String::from_utf8_lossy(&resp.body));
+    assert_eq!(
+        200,
+        resp.status,
+        "{:?}",
+        String::from_utf8_lossy(&resp.body)
+    );
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("done", body["phase"], "body: {body}");
 }
@@ -2860,7 +2930,10 @@ fn share_and_receive_close_arms_exist() {
     let (base, _guard) = spawn_test_server();
     assert_eq!(200, post_json(&base, "/api/share/close", "{}").status);
     assert_eq!(200, post_json(&base, "/api/receive/close", "{}").status);
-    assert_eq!(200, post_json(&base, "/api/remote/generate/close", "{}").status);
+    assert_eq!(
+        200,
+        post_json(&base, "/api/remote/generate/close", "{}").status
+    );
 }
 
 /// The walk tutor: a question lands in the walk transcript, and a note
@@ -2954,7 +3027,9 @@ fn every_gated_route_rejects_a_stale_revision_and_mutates_nothing() {
     for (path, body) in gated {
         let state = http(&base, "GET", "/api/state", &[], &[]);
         let before: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
-        let fresh = before["study_revision"].as_u64().expect("revision on state");
+        let fresh = before["study_revision"]
+            .as_u64()
+            .expect("revision on state");
         let stale = fresh.wrapping_sub(1).to_string();
 
         let resp = http(
@@ -3130,6 +3205,79 @@ fn a_tutor_answer_arriving_after_a_card_advance_is_dropped() {
         0,
         body["transcript"].as_array().unwrap().len(),
         "the late answer must not enter the new card's transcript: {body}"
+    );
+}
+
+#[test]
+fn server_shutdown_cancels_the_in_flight_tutor_worker() {
+    fn process_exists(pid: u32) -> bool {
+        std::process::Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    }
+
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let started = scripts.path().join("started");
+    let pid_file = scripts.path().join("pid");
+    let fifo = scripts.path().join("release.fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo runs")
+            .success()
+    );
+    let fake = scripts.path().join("parked-tutor");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\necho $$ > {pid_file}\n: > {started}\nread _ < {fifo}\necho done\n",
+            pid_file = pid_file.display(),
+            started = started.display(),
+            fifo = fifo.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server(Some(&fake));
+    select_fixture(&base);
+    assert_eq!(
+        200,
+        post_gated(&base, "/api/ask", r#"{"question":"why?"}"#).status
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !started.exists() {
+        assert!(Instant::now() < deadline, "the tutor worker never started");
+        thread::yield_now();
+    }
+    let pid: u32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(
+        process_exists(pid),
+        "the parked tutor must still be running"
+    );
+
+    drop(guard);
+    let survived_shutdown = process_exists(pid);
+
+    if survived_shutdown {
+        std::fs::write(&fifo, "go\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while process_exists(pid) && Instant::now() < deadline {
+            thread::yield_now();
+        }
+    }
+    assert!(
+        !survived_shutdown,
+        "shutdown returned while tutor subprocess {pid} was still alive"
     );
 }
 

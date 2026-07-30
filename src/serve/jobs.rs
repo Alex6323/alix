@@ -54,6 +54,16 @@ pub(super) struct Pending {
     pub(super) rx: Receiver<Reply>,
     pub(super) purpose: Purpose,
     pub(super) card: Card,
+    pub(super) job: ask::AskJob,
+}
+
+// A dropped pending exchange is ineligible (card advance, tutor replaced,
+// owner shutdown): reap its subprocess synchronously so no AI child ever
+// outlives its owner or keeps burning quota for an answer nobody applies.
+impl Drop for Pending {
+    fn drop(&mut self) {
+        self.job.cancel();
+    }
 }
 
 pub(super) enum Purpose {
@@ -174,11 +184,12 @@ impl Ask {
                 Purpose::DraftCard,
             ),
         };
-        let rx = ask::spawn(run_cfg, prompt, args);
+        let (rx, job) = ask::spawn(run_cfg, prompt, args);
         self.pending = Some(Pending {
             rx,
             purpose,
             card: card.clone(),
+            job,
         });
         true
     }
@@ -197,8 +208,11 @@ impl Ask {
                 }
             },
         };
-        let pending = self.pending.take().expect("pending was present");
-        match (reply, pending.purpose) {
+        let mut pending = self.pending.take().expect("pending was present");
+        let purpose = std::mem::replace(&mut pending.purpose, Purpose::Condense);
+        let pending_card = pending.card.clone();
+        drop(pending);
+        match (reply, purpose) {
             (Reply::Answer(answer), Purpose::Question(question)) => {
                 self.cli.started = true;
                 self.transcript.push((question, answer));
@@ -210,7 +224,7 @@ impl Ask {
                 if notes.is_empty() {
                     return (Some("nothing to save".to_string()), None);
                 }
-                match save(&pending.card, &notes) {
+                match save(&pending_card, &notes) {
                     Ok(()) => (Some("note saved".to_string()), None),
                     Err(e) => (None, Some(e)),
                 }
@@ -310,7 +324,7 @@ impl RemoteAsk {
     }
 
     fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose) -> Self {
-        let rx = ask::spawn(cfg.clone(), prompt, Vec::new());
+        let (rx, _job) = ask::spawn(cfg.clone(), prompt, Vec::new());
         Self {
             rx,
             purpose,
@@ -569,8 +583,15 @@ impl Reviewing {
             frozen: frozen.as_deref(),
         };
         let subject = card.id();
-        self.ask
-            .start(cfg, audience, &card, subject, &context, has_source_context, action)
+        self.ask.start(
+            cfg,
+            audience,
+            &card,
+            subject,
+            &context,
+            has_source_context,
+            action,
+        )
     }
 
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
@@ -1344,8 +1365,15 @@ impl Walking {
             frozen: frozen.as_deref(),
         };
         let subject = self.walk.checkpoint().map(|c| c.card_id.clone());
-        self.ask
-            .start(cfg, audience, &card, subject, &context, has_source_context, action)
+        self.ask.start(
+            cfg,
+            audience,
+            &card,
+            subject,
+            &context,
+            has_source_context,
+            action,
+        )
     }
 
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
