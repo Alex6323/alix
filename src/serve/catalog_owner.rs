@@ -625,9 +625,14 @@ mod tests {
         write_deck(&first.join("alpha.md"), "alpha");
         write_deck(&second.join("beta.md"), "beta");
         let config_path = dir.path().join("config.toml");
+        // Forward slashes: in a TOML basic string a Windows `\U...` path
+        // reads as an (invalid) escape sequence.
         std::fs::write(
             &config_path,
-            format!("decks_dir = \"{}\"\n", first.display()),
+            format!(
+                "decks_dir = \"{}\"\n",
+                first.display().to_string().replace('\\', "/")
+            ),
         )
         .unwrap();
         let mut s = CatalogState::new(
@@ -645,7 +650,10 @@ mod tests {
         };
         std::fs::write(
             &config_path,
-            format!("decks_dir = \"{}\"\n", second.display()),
+            format!(
+                "decks_dir = \"{}\"\n",
+                second.display().to_string().replace('\\', "/")
+            ),
         )
         .unwrap();
         s.refresh_root();
