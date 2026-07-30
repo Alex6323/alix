@@ -32,7 +32,7 @@ test-inventory:
 
 # Lint, including tests and examples.
 lint:
-	cargo clippy --all-targets
+	cargo clippy --all-targets -- -D warnings
 
 # Reject newly compiled incompatible dependency families. Run this before and
 # after changing Cargo.toml so an avoidable duplicate is caught at the decision
