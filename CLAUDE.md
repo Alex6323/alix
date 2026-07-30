@@ -282,6 +282,14 @@ to this codebase. When in doubt, mirror the surrounding code.
   deterministic half of the QUALITY plan; the grader calibration
   (`make calibrate`) is the AI half, run deliberately before every release and
   after touching `grade_*`.
+- **Prefer law-shaped tests over example piles** (user rule, 2026-07-30). When coverage
+  can be phrased as "for every X, Y holds" (all gated routes, every session transition,
+  each DTO snapshot), write one sweep/invariant test that iterates the set and grows by
+  adding a row; a point example is for a single rule with trivial setup. When a
+  scenario's setup dominates (a server plus fake-CLI flow), append labeled assertion
+  blocks to that scenario instead of duplicating the setup. Guardrails: every assert
+  message names its step and values; a fixture that would need branching means two
+  tests. The mutation gate measures this: misses cluster where a law went unstated.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
 - **Implementations and drafted specs/ADRs get sourced alix study decks**
