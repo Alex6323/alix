@@ -276,6 +276,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A rejected exam start, deck selection, or browse no longer swaps in the
+  progress store it validated against: validation runs on a candidate and the
+  store is installed only when the transition actually happens, so an accepted
+  grade after a refusal keeps saving through the still-active document instead
+  of silently writing progress into the wrong one.
+- The picker no longer reopens progress from disk for the workspace that is
+  actively being studied: the listing reads the study owner's own view, so a
+  deck mid-review cannot resurface as "new" while an editor or sync tool
+  briefly parks or replaces its progress file.
+- Shutting the server down now cancels an in-flight tutor call and reaps its
+  subprocess (advancing past the card or replacing the question does the
+  same), so a Ctrl-C while the AI is thinking no longer leaves an orphaned
+  process burning quota with source access.
+- A catalog listing can no longer be served from a build whose inputs went
+  stale while it ran: a refresh carrying newer progress leads its own build
+  instead of joining the in-flight one, and changing the decks folder mid-build
+  discards that build instead of publishing a listing of the old root.
 - A tutor exchange that finishes after the card has already advanced is now
   discarded: the late answer no longer appears under the next card's
   transcript, and a late note or draft is no longer applied (previously the
