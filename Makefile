@@ -135,11 +135,11 @@ gate: gate-guard check mutants
 
 MUTANTS_BASE ?=
 
-mutants: export TMPDIR ?= $(HOME)/tmp
 mutants: gate-guard
 	@base="$(MUTANTS_BASE)"; [ -n "$$base" ] || base=$$(git merge-base main HEAD); \
-	echo "mutants: diffing against $$base"; \
-	mkdir -p target "$$TMPDIR"; \
+	if [ -z "$$TMPDIR" ] && [ -d "$$HOME/tmp" ]; then TMPDIR="$$HOME/tmp"; export TMPDIR; fi; \
+	echo "mutants: diffing against $$base (TMPDIR=$${TMPDIR:-system default})"; \
+	mkdir -p target; \
 	git diff "$$base" > target/review.diff; \
 	cargo mutants --in-diff target/review.diff --jobs $(GATE_JOBS) --timeout-multiplier 12
 
