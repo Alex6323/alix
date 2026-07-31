@@ -6,7 +6,14 @@ mod jobs_owner;
 mod respond;
 mod study;
 
-use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, thread};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Result, anyhow};
 use catalog::*;
@@ -55,6 +62,31 @@ const BALOO2_500: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-500
 const BALOO2_600: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-600.woff2");
 const BALOO2_700: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-700.woff2");
 const BALOO2_800: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-800.woff2");
+
+/// One line per request under `ALIX_HTTP_LOG`, emitted when the request is done
+/// rather than when it arrives: a stall shows as either a late `at=` (the
+/// request waited to be read at all) or a large `took=` (the handler was slow),
+/// and those have different causes.
+struct RequestTiming {
+    worker: usize,
+    method: String,
+    path: String,
+    popped: Instant,
+    since_start: Duration,
+}
+
+impl Drop for RequestTiming {
+    fn drop(&mut self) {
+        eprintln!(
+            "[http] at={}ms took={}ms w={} {} {}",
+            self.since_start.as_millis(),
+            self.popped.elapsed().as_millis(),
+            self.worker,
+            self.method,
+            self.path
+        );
+    }
+}
 
 fn font_bytes(name: &str) -> Option<&'static [u8]> {
     match name {
@@ -202,6 +234,7 @@ pub fn run_review(
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
     let http_log = std::env::var_os("ALIX_HTTP_LOG").is_some();
+    let started_at = Instant::now();
 
     let failure = OwnerFailure::new(Arc::clone(&server));
 
@@ -255,7 +288,7 @@ pub fn run_review(
     );
 
     thread::scope(|scope| {
-        for _ in 0..WORKERS {
+        for worker in 0..WORKERS {
             let study = study.clone();
             let catalog = catalog.clone();
             let jobs = jobs.clone();
@@ -289,9 +322,16 @@ pub fn run_review(
                 }
                 let method = request.method().clone();
                 let path = request_path(&request);
-                if http_log {
-                    eprintln!("[http] {method} {path}");
-                }
+                // Dropped at the end of the iteration, however this request
+                // exits, so it times the whole pop-to-response span rather than
+                // one handler's happy path.
+                let _timing = http_log.then(|| RequestTiming {
+                    worker,
+                    method: method.to_string(),
+                    path: path.clone(),
+                    popped: Instant::now(),
+                    since_start: started_at.elapsed(),
+                });
                 if !is_authorized(
                     &path,
                     header_value(&request, "Authorization"),
