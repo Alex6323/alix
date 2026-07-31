@@ -265,6 +265,12 @@ impl Default for GenerateDeckConfig {
     }
 }
 
+impl GenerateDeckConfig {
+    pub fn idle_timeout(&self) -> Option<u64> {
+        (self.idle_timeout_secs > 0).then_some(self.idle_timeout_secs)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum GenerateCardStyle {
@@ -1137,7 +1143,7 @@ pub fn default_config_toml() -> &'static str {
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
 # timeout_secs = 3600           # absolute safety limit for one generation call
-# idle_timeout_secs = 300       # stop after this long without an agent event
+# idle_timeout_secs = 300       # structured-event inactivity limit; 0 disables
 # max_cards = 30                # upper bound on cards per deck
 # language = ""                 # output language; empty = follow the source
 # audience = ""                 # intended learner, e.g. "new Rust programmers"

@@ -114,10 +114,11 @@ prints fixed status labels instead of model text, tool inputs, tool results, or
 partial generated content. It retains stdout for final extraction and
 validation, forwards each provider stderr line as a bounded local diagnostic,
 and kills the provider process group when the configured absolute or inactivity
-limit expires. Unstructured backends and custom wrappers receive the same
-inactivity guard and expose only generic stdout activity unless they write a
-diagnostic to stderr (`src/ask.rs`, `src/backend/claude.rs`,
-`src/backend/codex.rs`).
+limit expires. The inactivity guard is armed only when the selected backend
+provides structured progress events; silence from an unstructured backend does
+not prove that it is stuck. Those backends retain the absolute limit and expose
+only generic stdout activity unless they write a diagnostic to stderr
+(`src/ask.rs`, `src/backend/claude.rs`, `src/backend/codex.rs`).
 
 The development-only dual-agent orchestrator also executes provider CLIs as the
 local user. It gives Claude Code edit permission and Codex workspace-write

@@ -3634,3 +3634,182 @@ fn sigterm_flushes_and_exits_the_server_cleanly() {
         "SIGTERM must drain and exit cleanly, not kill the process: {status:?}"
     );
 }
+
+#[test]
+fn generate_trace_keeps_a_silent_backends_full_trace_budget() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "notes.md", "some source material\n");
+    let reply = dir.path().join("reply.txt");
+    std::fs::write(&reply, "## what it is\nsome point\n<!-- at: 1 -->\n").unwrap();
+    let cli = dir.path().join("fake-gemini");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\nsleep 2\ncat {}\n",
+            reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "[ask]\nbackend = \"gemini\"\ncommand = \"{}\"\n\
+             [trace]\ntimeout_secs = 20\n\
+             [generate]\nidle_timeout_secs = 1\n",
+            cli.display()
+        ),
+    );
+    let out_path = dir.path().join("walk.md");
+
+    let out = alix(&[
+        "generate",
+        dir.path().to_str().unwrap(),
+        "--trace",
+        "--config",
+        &config,
+        "--output",
+        out_path.to_str().unwrap(),
+    ]);
+
+    assert!(
+        out.status.success(),
+        "a backend alix never puts in a streaming mode must keep its [trace] budget: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn workspace_update_stops_a_wedged_provider_at_the_inactivity_limit() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let workspace = root.join("workspace");
+    let source = root.join("source");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    std::fs::write(source.join("facts.rs"), "old\nnew\n").unwrap();
+    let deck = workspace.join("decks/facts.md");
+    std::fs::write(
+        &deck,
+        format!(
+            "---\nid: \"deck-deck1\"\nsource: {}\n---\n## Old? <!-- id: card-oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
+            alix::parser::yaml_quote(source.to_str().unwrap())
+        ),
+    )
+    .unwrap();
+    alix::assets::freeze_member(&deck).unwrap();
+
+    let cli = dir.path().join("wedged-claude");
+    std::fs::write(
+        &cli,
+        "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\nexec sleep 600\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "[ask]\ncommand = \"{}\"\n[generate]\ntimeout_secs = 3\nidle_timeout_secs = 1\n",
+            cli.display()
+        ),
+    );
+
+    let out = alix(&[
+        "workspace",
+        "update",
+        workspace.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("made no progress"),
+        "`workspace update` must honour the inactivity limit: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn generate_reports_the_providers_own_error_not_the_raw_event_stream() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let stream = dir.path().join("stream.jsonl");
+    std::fs::write(
+        &stream,
+        concat!(
+            r#"{"type":"system","subtype":"hook_started","hook_id":"05cd5ae8","hook_name":"SessionStart:startup","hook_event":"SessionStart","uuid":"108cbf45","session_id":"57d5cf05"}"#,
+            "\n",
+            r#"{"type":"system","subtype":"init","session_id":"57d5cf05","tools":["Read","WebFetch"]}"#,
+            "\n",
+            r#"{"type":"result","subtype":"success","is_error":true,"result":"There is an issue with the selected model (no-such-model). It may not exist or you may not have access to it."}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    let cli = dir.path().join("fake-claude");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\ncat {}\nexit 1\n",
+            stream.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{}\"\n", cli.display()),
+    );
+
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--print",
+    ]);
+
+    assert!(!out.status.success(), "the run must fail");
+    assert!(
+        stderr(&out).contains("issue with the selected model"),
+        "the provider's own error must be reported: {}",
+        stderr(&out)
+    );
+    assert!(
+        !stderr(&out).contains("hook_started"),
+        "the raw event stream must not be the failure detail: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn a_zero_inactivity_limit_does_not_break_every_generation() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\n[generate]\nidle_timeout_secs = 0\n"),
+    );
+
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--print",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("## Generated Q"), "{}", stdout(&out));
+}

@@ -376,7 +376,7 @@ const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 /// path off (self-graded walk, no augmentation), which is what every non-AI
 /// test in this family wants.
 fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
-    spawn_full_server_fixture(ask_command, |_dir| {})
+    spawn_full_server_fixture(ask_command, |_dir| {}, |_opts| {})
 }
 
 /// Like [`spawn_full_server`], but runs `extra` against the decks dir before
@@ -385,6 +385,7 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
 fn spawn_full_server_fixture(
     ask_command: Option<&Path>,
     extra: impl FnOnce(&Path),
+    tune: impl FnOnce(&mut ReviewOptions),
 ) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("sample.md"), FIXTURE_DECK).unwrap();
@@ -450,7 +451,7 @@ fn spawn_full_server_fixture(
     // `build_walk` stub — `trace_auto_grade` reproduces what this fixture's
     // old stub computed itself (`ask_command.is_some()`).
     let auto_grade = ask_command.is_some();
-    let opts = ReviewOptions {
+    let mut opts = ReviewOptions {
         cfg: AssembleConfig {
             trace_auto_grade: auto_grade,
             pacing: Pacing {
@@ -462,6 +463,7 @@ fn spawn_full_server_fixture(
         },
         ..opts
     };
+    tune(&mut opts);
 
     let stop_handle = Arc::clone(&server);
     let handle = thread::spawn(move || {
@@ -2112,29 +2114,33 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     const CLOZE_DECK: &str = "---\nid: \"deck-frb\"\n---\n## What is frb, in one sentence? <!-- id: card-frb1 -->\n\
         A \\blank{code-generation} tool generating the \\blank{FFI} glue on both sides.\n";
     for seed_store in [true, false] {
-        let (base, _guard) = spawn_full_server_fixture(None, |dir| {
-            std::fs::write(dir.join("frb.md"), CLOZE_DECK).unwrap();
-            let cards = parser::parse_str("frb.md", CLOZE_DECK).unwrap();
-            let deck_path = dir.join("frb.md");
-            let fixture_state = state_root(dir);
-            let deck = alix::deck::Deck::load(&deck_path).unwrap();
-            let mut cache = alix::augment::AugmentCache::open_for_deck(&deck).unwrap();
-            for c in &cards {
-                cache.set_distractors(
-                    &c.id().unwrap(),
-                    vec!["IPC".into(), "RPC".into(), "a REST API".into()],
-                    c.content_fingerprint,
-                );
-            }
-            cache.save().unwrap();
-            if seed_store {
-                let mut store = alix::state::open_store(&deck_path, &fixture_state).unwrap();
+        let (base, _guard) = spawn_full_server_fixture(
+            None,
+            |dir| {
+                std::fs::write(dir.join("frb.md"), CLOZE_DECK).unwrap();
+                let cards = parser::parse_str("frb.md", CLOZE_DECK).unwrap();
+                let deck_path = dir.join("frb.md");
+                let fixture_state = state_root(dir);
+                let deck = alix::deck::Deck::load(&deck_path).unwrap();
+                let mut cache = alix::augment::AugmentCache::open_for_deck(&deck).unwrap();
                 for c in &cards {
-                    store.get_or_insert(&c.id().unwrap(), 0);
+                    cache.set_distractors(
+                        &c.id().unwrap(),
+                        vec!["IPC".into(), "RPC".into(), "a REST API".into()],
+                        c.content_fingerprint,
+                    );
                 }
-                store.save().unwrap();
-            }
-        });
+                cache.save().unwrap();
+                if seed_store {
+                    let mut store = alix::state::open_store(&deck_path, &fixture_state).unwrap();
+                    for c in &cards {
+                        store.get_or_insert(&c.id().unwrap(), 0);
+                    }
+                    store.save().unwrap();
+                }
+            },
+            |_opts| {},
+        );
         let resp = post_json(
             &base,
             "/api/select",
@@ -2840,7 +2846,7 @@ fn write_plain_folder_fixture(dir: &Path) {
 
 #[test]
 fn augment_open_on_a_workspace_unions_member_cards_and_offers_the_icon_row() {
-    let (base, _guard) = spawn_full_server_fixture(None, write_workspace_fixture);
+    let (base, _guard) = spawn_full_server_fixture(None, write_workspace_fixture, |_opts| {});
 
     let resp = post_json(&base, "/api/augment/open", r#"{"deck":"ws"}"#);
     assert_eq!(200, resp.status);
@@ -2887,7 +2893,7 @@ fn icon_target_generates_the_workspace_emblem_with_its_steer() {
     )
     .unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_workspace_fixture);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_workspace_fixture, |_opts| {});
     post_json(&base, "/api/augment/open", r#"{"deck":"ws"}"#);
 
     let resp = post_json(
@@ -4853,7 +4859,8 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
     )
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
+    let (base, _guard) =
+        spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
 
     let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
     assert_eq!(200, resp.status);
@@ -4902,7 +4909,8 @@ fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
     )
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
+    let (base, _guard) =
+        spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
 
     post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
@@ -5158,7 +5166,7 @@ fn remote_endpoints_never_write_the_server_store() {
     )
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
     let fixture_state = state_root(guard.dir());
     let before = snapshot_dir(&fixture_state);
     let decks_before = snapshot_dir(guard.dir());
@@ -5374,5 +5382,44 @@ fn parallel_keep_alive_requests_all_complete_promptly() {
         start.elapsed() < Duration::from_secs(10),
         "parallel keep-alive requests wedged: took {:?}",
         start.elapsed()
+    );
+}
+
+/// The web "Add deck…" flow must stop a provider that produces nothing, at the
+/// `[generate] idle_timeout_secs` inactivity limit rather than only at the
+/// (one-hour by default) absolute limit.
+#[test]
+fn web_generate_stops_a_wedged_provider_at_the_inactivity_limit() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = scripts.path().join("wedged-claude");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\nexec sleep 600\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let (base, _guard) = spawn_full_server_fixture(
+        Some(&fake),
+        |_dir| {},
+        |opts| {
+            opts.generate.timeout_secs = 3;
+            opts.generate.idle_timeout_secs = 1;
+        },
+    );
+
+    let resp = post_json(
+        &base,
+        "/api/generate",
+        r#"{"url":"https://example.org/article"}"#,
+    );
+    assert_eq!(200, resp.status);
+
+    let body = poll_until(&base, "/api/generate", |b| b["phase"] != "generating");
+    let error = body["error"].as_str().unwrap_or_default().to_string();
+    assert!(
+        error.contains("made no progress"),
+        "the serve generate path must honour the inactivity limit: {error}"
     );
 }

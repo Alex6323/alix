@@ -327,6 +327,8 @@ fn run_config(
         allowed_tools,
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
         timeout_secs: cfg.timeout_secs,
+        progress: true,
+        idle_timeout_secs: cfg.idle_timeout(),
         cwd,
         source_access: false,
         ..ask_cfg.clone()

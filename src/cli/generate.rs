@@ -11,7 +11,7 @@ use crate::{
 pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
     let mut config = Config::load(args.config.as_deref())?;
     config.ask.progress = true;
-    config.ask.idle_timeout_secs = Some(config.generate.idle_timeout_secs);
+    config.ask.idle_timeout_secs = config.generate.idle_timeout();
     if let Some(url) = &args.source_url
         && !alix::deck::is_url(url)
     {

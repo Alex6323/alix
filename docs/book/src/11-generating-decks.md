@@ -16,11 +16,13 @@ source, and a **directory** source is explored for a whole learning plan first
 
 While the model works, `alix` prints short progress updates to stderr, such as
 source fetching, source reading, and drafting. Partial generated cards stay
-hidden until the complete result has passed validation. Generation has two
-guards: deck drafting has a one-hour absolute limit, and every generation path
-has a five-minute inactivity limit that resets on each real agent event.
-Configure them with `timeout_secs` and `idle_timeout_secs` under `[generate]`.
-Trace and workspace planning calls keep their absolute limit under `[trace]`.
+hidden until the complete result has passed validation. Deck drafting has a
+one-hour absolute limit. With a structured-event backend, every generation
+path also has a five-minute inactivity limit that resets on each real agent
+event. Set `idle_timeout_secs = 0` to disable it. Backends without structured
+events keep the absolute limit because silence does not prove they are stuck.
+Configure the limits under `[generate]`. Trace and workspace planning calls
+keep their absolute limit under `[trace]`.
 
 Also available from the web UI's ☰ menu (**Add deck…**), URL sources only.
 See [the web app](15-the-web-app.md).
@@ -78,9 +80,9 @@ language, and audience apply to both.
 deduplicated, tightened version while preserving the requested language,
 audience, and card style. It costs an extra call, but it's worth it when the
 source is repetitive. The prompt and defaults (`model`, `timeout_secs`
-(default 3600), `idle_timeout_secs` (default 300), `max_cards` (default 30),
-`language`, `audience`, `card_style`, and an `extra` instruction field) live in
-the `[generate]` section of the config.
+(default 3600), `idle_timeout_secs` (default 300, `0` disables),
+`max_cards` (default 30), `language`, `audience`, `card_style`, and an `extra`
+instruction field) live in the `[generate]` section of the config.
 
 ## Generate, then own it
 

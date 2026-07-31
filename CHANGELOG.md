@@ -10,11 +10,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `alix generate` now reports calm, live progress from structured Claude and
   Codex events while keeping partial deck text private until validation
-  succeeds. Deck-drafting calls have a one-hour absolute safety limit, while
-  every generation path has a separate five-minute inactivity limit that
-  resets whenever the agent emits real activity. Gemini, Copilot, and custom
-  wrappers report generic activity, forward bounded stderr diagnostics, and
-  receive the same inactivity guard.
+  succeeds. Deck-drafting calls have a one-hour absolute safety limit.
+  Generation paths using structured events also have a separate five-minute
+  inactivity limit that resets whenever the agent emits real activity and can
+  be disabled with `idle_timeout_secs = 0`. Gemini, Copilot, and unstructured
+  wrappers retain their absolute limit because silence does not prove they are
+  stuck; they report generic activity and forward bounded stderr diagnostics.
 
 - `alix generate` now accepts `--language`, `--audience`, and `--card-style`
   (`mixed`, `plain`, `cloze`, or `authored-choices`), and applies `--goal` to

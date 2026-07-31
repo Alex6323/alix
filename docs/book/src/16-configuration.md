@@ -156,7 +156,8 @@ settings:
   `permission_mode`, the tool allowlist, a `model` override, `timeout_secs`,
   and an `effort`.
 - **`[generate]`**: `alix generate`'s deck drafting: `model`, the absolute
-  `timeout_secs` (3600), the event-driven `idle_timeout_secs` (300),
+  `timeout_secs` (3600), the structured-event `idle_timeout_secs` (300, or `0`
+  to disable),
   `max_cards` (30), default `language` and `audience`, `card_style` (`mixed`,
   `plain`, `cloze`, or `authored-choices`), `extra`, a `prompt` override, and
   `review`. Per-run flags override the language, audience, and style defaults.

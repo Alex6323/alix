@@ -537,7 +537,8 @@ fn run_supervised(
 
     let started = Instant::now();
     let deadline = started + Duration::from_secs(config.timeout_secs);
-    let idle_timeout = config.idle_timeout_secs.map(Duration::from_secs);
+    let idle_timeout =
+        effective_idle_timeout(backend.as_ref(), config.progress, config.idle_timeout_secs);
     let mut progress = ProgressState::new(started);
     let status = loop {
         let now = Instant::now();
@@ -596,12 +597,20 @@ fn run_supervised(
     let stderr = err.join().unwrap_or_default();
     progress.receive(&pipe_rx, backend.as_ref(), config.progress, Instant::now());
     if !status.success() {
-        let detail = stderr.trim();
-        let detail = if detail.is_empty() {
-            stdout.trim()
-        } else {
-            detail
-        };
+        let progress_detail = config
+            .progress
+            .then(|| backend.extract_progress(&stdout).err())
+            .flatten()
+            .map(|error| format!("{error:#}"));
+        let detail = [
+            Some(stderr.trim()),
+            progress_detail.as_deref(),
+            Some(stdout.trim()),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|detail| !detail.is_empty())
+        .unwrap_or_default();
         bail!("{}", map_run_failure(&config.command, detail));
     }
     let answer = if config.progress {
@@ -726,6 +735,18 @@ fn backend_label(name: &str) -> &str {
 
 fn heartbeat_due(progress: bool, since_last: Duration) -> bool {
     progress && since_last >= Duration::from_secs(15)
+}
+
+fn effective_idle_timeout(
+    backend: &dyn Backend,
+    progress: bool,
+    seconds: Option<u64>,
+) -> Option<Duration> {
+    if progress && backend.structured_progress() {
+        seconds.map(Duration::from_secs)
+    } else {
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1272,6 +1293,26 @@ mod tests {
                 "now={now}, last_activity={last_activity}, idle={idle:?}"
             );
         }
+    }
+
+    #[test]
+    fn inactivity_requires_a_structured_progress_stream() {
+        assert_eq!(
+            Some(Duration::from_secs(5)),
+            effective_idle_timeout(&crate::backend::ClaudeBackend, true, Some(5))
+        );
+        assert_eq!(
+            None,
+            effective_idle_timeout(&crate::backend::ClaudeBackend, false, Some(5))
+        );
+        assert_eq!(
+            None,
+            effective_idle_timeout(&crate::backend::GeminiBackend, true, Some(5))
+        );
+        assert_eq!(
+            None,
+            effective_idle_timeout(&crate::backend::ClaudeBackend, true, None)
+        );
     }
 
     #[test]
