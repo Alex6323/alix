@@ -1218,7 +1218,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "---\nid: \"deck-d1\"\nlink: https://x\n---\n## q <!-- id: card-q1 -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nlink: https://x\n---\n## q <!-- id: card-q1 -->\na\n",
         );
         let authored = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let authored_line = authored.cards[0].line;
@@ -1283,7 +1283,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "---\nid: \"deck-d1\"\n---\n## q <!-- id: card-q1 -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q <!-- id: card-q1 -->\na\n",
         );
         let before_bytes = std::fs::read(root.join("d.md")).unwrap();
 
@@ -1464,7 +1464,7 @@ mod tests {
         let deck = root.join("d.md");
         write(
             &deck,
-            "---\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
         );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
         let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");
@@ -1498,7 +1498,7 @@ mod tests {
         let deck = root.join("d.md");
         write(
             &deck,
-            "---\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
         );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
         let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");

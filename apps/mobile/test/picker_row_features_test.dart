@@ -288,15 +288,15 @@ void main() {
     Directory mixedRoot() {
       final root = tempRoot('alix-picker-mastered-');
       File('${root.path}/a-active.md').writeAsStringSync(
-        '---\nid: "deck-activea"\n---\n# Active A\n\n'
+        '---\nformat-version: 1\nid: "deck-activea"\n---\n# Active A\n\n'
         '## q <!-- id: card-activeaq -->\na\n',
       );
       File('${root.path}/b-active.md').writeAsStringSync(
-        '---\nid: "deck-activeb"\n---\n# Active B\n\n'
+        '---\nformat-version: 1\nid: "deck-activeb"\n---\n# Active B\n\n'
         '## q <!-- id: card-activebq -->\na\n',
       );
       File('${root.path}/z-mastered.md').writeAsStringSync(
-        '---\nid: "deck-masteredz"\n---\n# Mastered Z\n\n'
+        '---\nformat-version: 1\nid: "deck-masteredz"\n---\n# Mastered Z\n\n'
         '## q <!-- id: card-masteredzq -->\na\n',
       );
       Directory('${root.path}/progress').createSync();
