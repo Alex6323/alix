@@ -79,6 +79,24 @@ if [ "$fail" -eq 0 ]; then
     ok "every external GitHub Action uses a full commit SHA"
 fi
 
+# A 40-hex ref is well-formed whether or not it exists. Requiring one SHA per
+# action makes a new workflow reuse a pin already proven to resolve, which is
+# the offline half of "this commit is real"; Dependabot moves them in lockstep.
+divergent=$(
+    for workflow in .github/workflows/*.yml; do
+        sed -n 's/^[[:space:]-]*uses:[[:space:]]*//p' "$workflow" \
+            | sed 's/#.*//; s/[[:space:]]*$//' \
+            | grep -E '^[^./][^@]*@[0-9a-f]{40}$' || true
+    done | sort -u | awk -F@ '{count[$1]++; pins[$1]=pins[$1]" "$2}
+        END {for (a in count) if (count[a] > 1) printf "  %s is pinned to%s\n", a, pins[a]}'
+)
+if [ -n "$divergent" ]; then
+    bad "an action must use one SHA across all workflows"
+    printf '%s\n' "$divergent" >&2
+else
+    ok "every action is pinned to a single SHA repo-wide"
+fi
+
 # Enumerated from the files, never from a list of known workflows: a pin added
 # to a new workflow, or a stale one beside a correct one, must not pass unseen.
 stray=$(

@@ -1,0 +1,84 @@
+name: Mutation nightly
+
+# Mutation-tests one day of merged work, not the whole repository. A full sweep
+# is 5,364 mutants, roughly 21 hours at 8 jobs, so it cannot be nightly and
+# cannot fit a GitHub job. Scoping to the last day keeps the economics of the
+# manual `make gate` while covering the case automation is good at: something
+# merged without the gate being run.
+#
+# This backstops `make gate`, it does not replace it. A red run here tells you
+# about a miss the morning after the code landed; the manual gate tells you
+# before you ask for review.
+on:
+  schedule:
+    # 04:23 UTC daily, off the top of the hour and clear of the 03:17 drift job.
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Commit to diff against (default: newest commit older than 24h)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    name: mutation gate (one day of merges)
+    runs-on: ubuntu-latest
+    # Under the 6h hard limit, so an unusually large day fails cleanly on time
+    # instead of being killed mid-run with no summary.
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The day-based diff needs real history; the default shallow clone
+          # cannot resolve a commit from 24 hours ago.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
+        with:
+          tool: cargo-mutants,cargo-nextest
+
+      - name: Resolve the day's base commit
+        id: base
+        run: |
+          base="${{ inputs.base }}"
+          if [ -z "$base" ]; then
+            base=$(git rev-list -1 --before="24 hours ago" origin/main)
+          fi
+          if [ -z "$base" ]; then
+            echo "no commit older than 24h; nothing to scope against" >&2
+            exit 1
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "diffing $base..origin/main"
+          git --no-pager log --oneline "$base..origin/main"
+
+      - name: Skip when nothing merged
+        id: changed
+        run: |
+          n=$(git rev-list --count "${{ steps.base.outputs.base }}..origin/main")
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          [ "$n" -gt 0 ] || echo "no commits in the last day; the run is a no-op"
+
+      # Four jobs: GitHub's standard runner is 4-core, and unlike the laptop
+      # there is nothing else competing for it.
+      - name: Mutate the day's diff
+        if: steps.changed.outputs.count != '0'
+        run: make mutants MUTANTS_BASE=${{ steps.base.outputs.base }} GATE_JOBS=4
+
+      - name: Keep the outcome
+        if: always() && steps.changed.outputs.count != '0'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-${{ steps.base.outputs.base }}
+          path: mutants.out/
+          retention-days: 14
+          if-no-files-found: ignore

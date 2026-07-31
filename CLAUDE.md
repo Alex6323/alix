@@ -112,15 +112,15 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make deps-check` | Reject newly introduced incompatible dependency families against the reviewed baseline; run before and after changing dependencies. |
 | `make pre-1-0-check` | Reject backwards-compatibility vocabulary in production code while the package is `0.x`. |
 | `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |
-| `make toolchain-check` | Enforce exact production toolchains, full-SHA Action references, and named drift-only exceptions. |
+| `make toolchain-check` | Enforce exact production toolchains, full-SHA Action references pinned to one SHA repo-wide, and named drift-only exceptions. |
 | `make bump-rust RUST=… NIGHTLY=…` | Bump the Rust pins: rewrites `rust-toolchain.toml`, `.rust-nightly-version`, and every `toolchain:` literal in the three production workflows, then runs `toolchain-check`. Either variable alone works (`RUST=X.Y.Z`, `NIGHTLY=nightly-YYYY-MM-DD`); other shapes are rejected. Drift workflows keep their floating pins. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
 | `make fmt-changelog` | Wrap `CHANGELOG.md` at the ~80-column house width (wrap-only, idempotent). |
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, count never decreases vs HEAD); part of `make check`. |
 | `make check` | `fmt-check` + `lint` + `test`, cheap checks first; run before considering work done. A local pass now implies the same Rust gates CI runs. |
-| `make gate` | `check` + `mutants`. Run ONCE, right before requesting review; never inner-loop, never CI. |
-| `make mutants` | `cargo mutants` alone over this branch's diff vs local main (8 jobs, `GATE_JOBS` overrides). Refuses to start while another cargo-mutants runs anywhere on the machine. Use when `check` has already passed. |
+| `make gate` | `check` + `mutants`. Run ONCE, right before requesting review; never inner-loop. Nightly CI mutates one day of merges (below), which backstops this and does not replace it. |
+| `make mutants` | `cargo mutants` alone over this branch's diff vs local main (`GATE_JOBS` sets parallelism, `MUTANTS_BASE` overrides the diff base). Refuses to start while another cargo-mutants runs anywhere on the machine. Use when `check` has already passed. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
@@ -370,10 +370,22 @@ to this codebase. When in doubt, mirror the surrounding code.
   releases use the exact native version files and full-SHA Action references
   enforced by `make toolchain-check`. The workflows repeat the version as a
   literal because `dtolnay/rust-toolchain` requires the input and cannot read
-  `rust-toolchain.toml`; bump with `make bump-rust`, never by hand. Only named
-  scheduled drift workflows may follow current tool versions, and they never
-  publish artifacts. Review Dependabot Action-pin updates as executable code;
-  never auto-merge them.
+  `rust-toolchain.toml`; bump with `make bump-rust`, never by hand. An action
+  uses **one SHA repo-wide**: a 40-hex ref is well-formed whether or not it
+  exists, so reusing a pin already proven to resolve is the offline half of
+  "this commit is real" (a fabricated SHA passed the form check once). Only
+  named scheduled drift workflows may follow current tool versions, and they
+  never publish artifacts. Review Dependabot Action-pin updates as executable
+  code; never auto-merge them.
+
+- **Mutation testing is diff-scoped, always.** A full sweep is 5,364 mutants,
+  about 21 hours at 8 jobs, so it can never be a nightly or a CI job. `make
+  gate` mutates a branch against local main before review; the
+  `mutants-nightly` workflow mutates one day of merges (`MUTANTS_BASE` set to
+  the newest commit older than 24h). The nightly backstops a forgotten gate; it
+  does not replace one, because it reports a miss the morning *after* the code
+  landed.
+
 - **Keep the living docs lean — this file, `CHANGELOG.md`, commit/PR text.** Condense each
   rule/change to its shortest form that still carries the information — cut filler, war-stories,
   and rationale-at-length (those go in the spec or memory), never the substance. If it can't be
