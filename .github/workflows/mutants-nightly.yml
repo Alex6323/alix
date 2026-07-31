@@ -1,10 +1,14 @@
 name: Mutation nightly
 
 # Mutation-tests one day of merged work, not the whole repository. A full sweep
-# is 5,364 mutants, roughly 21 hours at 8 jobs, so it cannot be nightly and
+# is 5,466 mutants, roughly 21 hours at 8 jobs, so it cannot be nightly and
 # cannot fit a GitHub job. Scoping to the last day keeps the economics of the
 # manual `make gate` while covering the case automation is good at: something
 # merged without the gate being run.
+#
+# The day's mutants are split across shards because one day's diff already
+# exceeds a single job: a 1,064-line day measured 274 mutants in 79 minutes at
+# 4 jobs, and a normal day is several times that, past GitHub's 6h ceiling.
 #
 # This backstops `make gate`, it does not replace it. A red run here tells you
 # about a miss the morning after the code landed; the manual gate tells you
@@ -23,28 +27,22 @@ permissions:
   contents: read
 
 jobs:
-  mutants:
-    name: mutation gate (one day of merges)
+  # Resolved once and fanned out. Re-resolving "24 hours ago" inside each shard
+  # would evaluate it at six different wall-clock instants, and a commit landing
+  # mid-run would leave the shards diffing against different bases, which
+  # silently drops mutants that no shard owns.
+  base:
+    name: resolve the day's base
     runs-on: ubuntu-latest
-    # Under the 6h hard limit, so an unusually large day fails cleanly on time
-    # instead of being killed mid-run with no summary.
-    timeout-minutes: 330
+    outputs:
+      base: ${{ steps.base.outputs.base }}
+      count: ${{ steps.changed.outputs.count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The day-based diff needs real history; the default shallow clone
           # cannot resolve a commit from 24 hours ago.
           fetch-depth: 0
-
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
-        with:
-          toolchain: 1.97.1
-
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-
-      - uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
-        with:
-          tool: cargo-mutants,cargo-nextest
 
       - name: Resolve the day's base commit
         id: base
@@ -68,17 +66,49 @@ jobs:
           echo "count=$n" >> "$GITHUB_OUTPUT"
           [ "$n" -gt 0 ] || echo "no commits in the last day; the run is a no-op"
 
+  mutants:
+    name: mutants ${{ matrix.shard }}/6
+    needs: base
+    if: needs.base.outputs.count != '0'
+    runs-on: ubuntu-latest
+    # Under the 6h hard limit, so an unusually large day fails cleanly on time
+    # instead of being killed mid-run with no summary.
+    timeout-minutes: 330
+    strategy:
+      # Every shard reports its own misses; stopping at the first red would
+      # hide the rest of the day's.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
+        with:
+          tool: cargo-mutants,cargo-nextest
+
       # Four jobs: GitHub's standard runner is 4-core, and unlike the laptop
       # there is nothing else competing for it.
-      - name: Mutate the day's diff
-        if: steps.changed.outputs.count != '0'
-        run: make mutants MUTANTS_BASE=${{ steps.base.outputs.base }} GATE_JOBS=4
+      - name: Mutate this shard of the day's diff
+        run: |
+          make mutants \
+            MUTANTS_BASE=${{ needs.base.outputs.base }} \
+            MUTANTS_SHARD=${{ matrix.shard }}/6 \
+            GATE_JOBS=4
 
       - name: Keep the outcome
-        if: always() && steps.changed.outputs.count != '0'
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mutants-${{ steps.base.outputs.base }}
+          name: mutants-${{ needs.base.outputs.base }}-shard${{ matrix.shard }}
           path: mutants.out/
           retention-days: 14
           if-no-files-found: ignore

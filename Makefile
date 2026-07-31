@@ -135,13 +135,17 @@ gate: gate-guard check mutants
 
 MUTANTS_BASE ?=
 
+# Shards are 0-indexed: `0/6` through `5/6`. `6/6` selects nothing and exits 0.
+MUTANTS_SHARD ?=
+
 mutants: gate-guard
 	@base="$(MUTANTS_BASE)"; [ -n "$$base" ] || base=$$(git merge-base main HEAD); \
 	if [ -z "$$TMPDIR" ] && [ -d "$$HOME/tmp" ]; then TMPDIR="$$HOME/tmp"; export TMPDIR; fi; \
-	echo "mutants: diffing against $$base (TMPDIR=$${TMPDIR:-system default})"; \
+	shard=""; [ -z "$(MUTANTS_SHARD)" ] || shard="--shard $(MUTANTS_SHARD)"; \
+	echo "mutants: diffing against $$base (TMPDIR=$${TMPDIR:-system default})$${shard:+ $$shard}"; \
 	mkdir -p target; \
 	git diff "$$base" > target/review.diff; \
-	cargo mutants --in-diff target/review.diff --jobs $(GATE_JOBS) --timeout-multiplier 12
+	cargo mutants --in-diff target/review.diff $$shard --jobs $(GATE_JOBS) --timeout-multiplier 12
 
 gate-guard:
 	@! pgrep -x cargo-mutants > /dev/null || { echo "a cargo-mutants run is already active on this machine; wait for it or stop it first"; exit 1; }

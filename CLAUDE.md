@@ -120,7 +120,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, count never decreases vs HEAD); part of `make check`. |
 | `make check` | `fmt-check` + `lint` + `test`, cheap checks first; run before considering work done. A local pass now implies the same Rust gates CI runs. |
 | `make gate` | `check` + `mutants`. Run ONCE, right before requesting review; never inner-loop. Nightly CI mutates one day of merges (below), which backstops this and does not replace it. |
-| `make mutants` | `cargo mutants` alone over this branch's diff vs local main (`GATE_JOBS` sets parallelism, `MUTANTS_BASE` overrides the diff base). Refuses to start while another cargo-mutants runs anywhere on the machine. Use when `check` has already passed. |
+| `make mutants` | `cargo mutants` alone over this branch's diff vs local main (`GATE_JOBS` sets parallelism, `MUTANTS_BASE` overrides the diff base, `MUTANTS_SHARD` runs one 0-indexed shard such as `0/6`). Refuses to start while another cargo-mutants runs anywhere on the machine. Use when `check` has already passed. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
@@ -378,15 +378,16 @@ to this codebase. When in doubt, mirror the surrounding code.
   never publish artifacts. Review Dependabot Action-pin updates as executable
   code; never auto-merge them.
 
-- **Mutation testing is diff-scoped, always.** A full sweep is 5,364 mutants,
+- **Mutation testing is diff-scoped, always.** A full sweep is 5,466 mutants,
   about 84 hours at the `GATE_JOBS ?= 2` default (21 at 8), so it can never be a
   nightly or a CI job. 2 is deliberate: 8 costs too much CPU and disk on this
   machine. The nightly overrides it to 4 on a runner. `make
   gate` mutates a branch against local main before review; the
   `mutants-nightly` workflow mutates one day of merges (`MUTANTS_BASE` set to
-  the newest commit older than 24h). The nightly backstops a forgotten gate; it
-  does not replace one, because it reports a miss the morning *after* the code
-  landed.
+  the newest commit older than 24h) across six `MUTANTS_SHARD` jobs, since one
+  day already exceeds GitHub's 6h ceiling in a single job. The nightly backstops
+  a forgotten gate; it does not replace one, because it reports a miss the
+  morning *after* the code landed.
 
 - **Keep the living docs lean — this file, `CHANGELOG.md`, commit/PR text.** Condense each
   rule/change to its shortest form that still carries the information — cut filler, war-stories,
