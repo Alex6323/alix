@@ -119,8 +119,13 @@ recognized, for Recognize; at or past 21 days of FSRS stability, for
 Recall/Reconstruct, in practice a few weeks of regular drilling. Only the
 highest badged depth shows: **solid** while the deck still clears the bar,
 **dotted** once a card has since lapsed below it (a badge, once earned, keeps
-its date, a high-water mark, not a live pass/fail). A deck that gains new
-cards after being badged shows a small "new" chip.
+its date, a high-water mark, not a live pass/fail).
+
+A deck shows a small "new" chip while **any** of its cards has never been
+presented, whether or not the deck is badged. It clears only once every card
+has been seen at least once, so a large deck you are working through keeps the
+chip until you reach the end of it: the chip answers "is there anything in here
+I have never met?", not "have I started this deck?".
 
 ## Retiring cards
 

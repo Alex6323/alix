@@ -2721,7 +2721,9 @@ async function renderSelect(preloaded) {
         cancel.appendChild(el("span", "k", "esc"));
         cancel.addEventListener("mousedown", e => e.preventDefault());
         cancel.addEventListener("click", () => { depthMenuOpen = false; syncPrimary(); });
-        legend.appendChild(cancel);
+        // Takes Back's slot rather than trailing the depth chips: it is the
+        // same "leave this level" action Esc performs, so it stays put.
+        legendLeft.appendChild(cancel);
         return;
       }
       // "Ready by…"'s inline date prompt: the same whole-footer swap as the
@@ -2758,7 +2760,7 @@ async function renderSelect(preloaded) {
         const cancel = el("button", "chip", "Cancel");
         cancel.appendChild(el("span", "k", "esc"));
         cancel.addEventListener("click", closePrompt);
-        legend.appendChild(cancel);
+        legendLeft.appendChild(cancel);
         input.focus();
         return;
       }
@@ -2989,6 +2991,10 @@ async function renderSelect(preloaded) {
           { duration: DRAWER_MS, easing: DRAWER_EASE }
         );
       }
+      // The drawer is fetched asynchronously, so the browser has already
+      // finished scrolling to the row by the time it appears below it. On the
+      // last row it lands off-screen and reads as "the drawer didn't open".
+      if (wrap.scrollIntoView) wrap.scrollIntoView({ block: "nearest" });
     }
 
     // Opens/updates the drawer for the newly focused deck. Cached payloads render
@@ -3035,6 +3041,24 @@ async function renderSelect(preloaded) {
       if (row) row.focus();
     };
     stage.addEventListener("mousedown", stage._refocus);
+
+    // The handler above only covers clicks that land inside the stage. A click
+    // anywhere else still strands focus on <body>, where the row-nav keys are
+    // silently dead. Catch it after the fact instead of preventing the click,
+    // so selecting text elsewhere still works.
+    if (stage._refocusOut) document.removeEventListener("focusout", stage._refocusOut);
+    stage._refocusOut = () => {
+      if (!stage.contains(wrap)) return; // picker no longer showing
+      setTimeout(() => {
+        if (!stage.contains(wrap)) return;
+        const active = document.activeElement;
+        if (active && active !== document.body) return; // focus landed somewhere real
+        const v = visibleRows();
+        const row = (focusedEl && v.includes(focusedEl)) ? focusedEl : v[0];
+        if (row) row.focus();
+      }, 0);
+    };
+    document.addEventListener("focusout", stage._refocusOut);
 
     // No filter → show each row's default set (Recent hides finished/locked and
     // non-recent decks); with a filter → search every row by label. Empty

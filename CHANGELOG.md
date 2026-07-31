@@ -335,6 +335,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The picker keeps keyboard focus when you click outside the deck list, so the
+  row-navigation keys keep responding instead of going silently dead. Only
+  clicks inside the stage were handled before; a click anywhere else stranded
+  focus on the page body.
+
+- Jumping to the last deck with `G`/`End` now scrolls its drawer into view. The
+  drawer is fetched after the jump, so it opened below the fold and looked like
+  it had not opened at all.
+
+- A submenu's Cancel now sits where Back does, on the left, instead of trailing
+  the depth chips on the right. It is the same "leave this level" action Esc
+  performs, so it no longer moves depending on which menu is open.
+
 - The tutor panel names the model that actually answered instead of showing
   `model: default`. When `[ask] model` is unset the backend CLI chooses, and
   alix could not name it; it now reads the model out of the backend's own
