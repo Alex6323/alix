@@ -639,6 +639,112 @@ fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
 }
 
 #[test]
+fn workspace_members_fall_back_to_the_workspaces_own_store_on_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("animals");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
+
+    // Saved to the workspace's own store, with nothing retained in memory: the
+    // only way to see it is to open that store from disk.
+    let paths = crate::workspace::deck_files(&ws);
+    let ws_root = crate::workspace::store_path(&ws);
+    let mut ws_store = crate::state::open_stores(&paths, &ws_root).unwrap();
+    let now = now_ms();
+    let id = Deck::load(ws.join("decks/one.md")).unwrap().cards[0]
+        .id()
+        .unwrap();
+    ws_store.get_or_insert(&id, now).recognized_ms = Some(now);
+    ws_store.save().unwrap();
+
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    // Deliberately a different store that does not cover the workspace root.
+    let global_store = Store::open(dir.path().join("global.json")).unwrap();
+    let mut icons = HashMap::new();
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &global_store,
+        &HashMap::new(),
+        true,
+        &mut icons,
+        ReviewConfig::default(),
+        &mut DeckCache::default(),
+    )
+    .unwrap();
+
+    let animals = dto
+        .workspaces
+        .iter()
+        .find(|w| w.name == "animals")
+        .expect("animals workspace row");
+    let member = animals.members.first().expect("one member");
+    assert_eq!(
+        "started", member.state,
+        "the workspace's own on-disk store must reach the member row: {member:?}"
+    );
+    assert!(
+        !member.new_cards,
+        "without that store the member reads as untouched: {member:?}"
+    );
+}
+
+#[test]
+fn workspace_members_prefer_a_retained_store_over_reopening_from_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("animals");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
+
+    // Recognized only in memory, never saved: on-disk the card is untouched.
+    // The owner's retained projection is authoritative, so a member built from
+    // it must see this; one rebuilt by reopening the store from disk cannot.
+    let paths = crate::workspace::deck_files(&ws);
+    let ws_root = crate::workspace::store_path(&ws);
+    let mut retained_store = crate::state::open_stores(&paths, &ws_root).unwrap();
+    let now = now_ms();
+    let id = Deck::load(ws.join("decks/one.md")).unwrap().cards[0]
+        .id()
+        .unwrap();
+    retained_store.get_or_insert(&id, now).recognized_ms = Some(now);
+
+    let mut retained: HashMap<PathBuf, Arc<Store>> = HashMap::new();
+    retained.insert(ws_root, Arc::new(retained_store));
+
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let global_store = Store::open(dir.path().join("global.json")).unwrap();
+    let mut icons = HashMap::new();
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &global_store,
+        &retained,
+        true,
+        &mut icons,
+        ReviewConfig::default(),
+        &mut DeckCache::default(),
+    )
+    .unwrap();
+
+    let animals = dto
+        .workspaces
+        .iter()
+        .find(|w| w.name == "animals")
+        .expect("animals workspace row");
+    let member = animals.members.first().expect("one member");
+    assert_eq!(
+        "started", member.state,
+        "the owner's unflushed recognition must reach the member row: {member:?}"
+    );
+    assert!(
+        !member.new_cards,
+        "reopening the store from disk would miss the unsaved entry: {member:?}"
+    );
+}
+
+#[test]
 fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("animals");

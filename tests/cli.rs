@@ -2360,6 +2360,55 @@ fn generate_single_deck_writes_a_deck_file() {
 }
 
 #[test]
+fn generate_over_an_existing_deck_replaces_it_instead_of_writing_a_new_one() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let args = |extra: &[&str]| {
+        let mut a = vec![
+            "generate".to_string(),
+            "https://example.org/page".to_string(),
+            "--config".to_string(),
+            config.clone(),
+            "--workspace".to_string(),
+            ws.to_str().unwrap().to_string(),
+            "--output".to_string(),
+            "gen".to_string(),
+        ];
+        a.extend(extra.iter().map(|s| s.to_string()));
+        a
+    };
+
+    let first = alix(&args(&[]).iter().map(String::as_str).collect::<Vec<_>>());
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    assert!(stdout(&first).contains("Wrote"), "{}", stdout(&first));
+
+    // The destination now exists, so the second run takes the replace path:
+    // it rewrites the deck in place and reports wiped progress, rather than
+    // placing a fresh one.
+    let second = alix(
+        &args(&["--force"])
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+    );
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+    assert!(
+        stdout(&second).contains("Replaced"),
+        "an existing destination must be replaced, not written anew: {}",
+        stdout(&second)
+    );
+    assert!(ws.join("decks/gen.md").is_file());
+}
+
+#[test]
 fn generate_forwards_structured_agent_progress_without_printing_partial_markdown() {
     use std::os::unix::fs::PermissionsExt;
 
