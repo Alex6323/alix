@@ -1359,6 +1359,34 @@ mod tests {
     }
 
     #[test]
+    fn a_poll_drops_a_card_that_has_stopped_being_servable() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let first = all[0].id().unwrap();
+        let second = all[1].id().unwrap();
+        let mut s = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            0,
+        );
+        assert_eq!(Some(first.clone()), s.current().and_then(|c| c.id()));
+
+        store.get_or_insert(&first, 1_000).recognized_ms = Some(1_000);
+
+        s.poll(&mut store, 1_000);
+        assert_eq!(
+            Some(second),
+            s.current().and_then(|c| c.id()),
+            "keeping the current card is conditional on it still being servable"
+        );
+    }
+
+    #[test]
     fn a_passed_earlier_card_does_not_return_after_its_cooldown() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
