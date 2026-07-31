@@ -373,7 +373,9 @@ fn reconcile(
     run.cwd = Some(cwd);
     run.source_access = false;
     run.model = generate.model.clone().or_else(|| ask.model.clone());
-    run.timeout_secs = generate.timeout_secs;
+    run.timeout_secs = generate.timeout_for(crate::backend::supports_structured_progress(ask));
+    run.progress = true;
+    run.idle_timeout_secs = generate.idle_timeout();
     let prompt = format!("{UPDATE_PROMPT}{live_deck}");
     let raw = crate::ask::run(&run, &prompt, &[])?;
     clean_model_output(&raw)

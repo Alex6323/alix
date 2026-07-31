@@ -1,6 +1,7 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
+use serde_json::Value;
 
-use super::{Backend, PromptDelivery, RunOpts};
+use super::{Backend, ProgressUpdate, PromptDelivery, RunOpts};
 
 pub struct CodexBackend;
 
@@ -19,6 +20,9 @@ impl Backend for CodexBackend {
             "--sandbox".to_string(),
             "read-only".to_string(),
         ];
+        if opts.progress {
+            argv.push("--json".to_string());
+        }
 
         // Codex has no --effort/--permission-mode equivalent, so both are dropped.
         if let Some(model) = opts.model {
@@ -38,17 +42,94 @@ impl Backend for CodexBackend {
         Ok(stdout.trim().to_string())
     }
 
+    fn extract_progress(&self, stdout: &str) -> Result<String> {
+        let mut saw_stream_event = false;
+        let mut answer = None;
+        for line in stdout.lines() {
+            let Ok(event) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            let Some(event_type) = codex_event_type(&event) else {
+                continue;
+            };
+            saw_stream_event = true;
+            if event_type == "item.completed"
+                && event.pointer("/item/type").and_then(Value::as_str) == Some("agent_message")
+                && let Some(text) = event.pointer("/item/text").and_then(Value::as_str)
+            {
+                answer = Some(text.trim().to_string());
+            }
+        }
+        if let Some(answer) = answer {
+            return Ok(answer);
+        }
+        if saw_stream_event {
+            bail!("Codex's progress stream ended without a final agent message");
+        }
+        self.extract(stdout)
+    }
+
+    fn structured_progress(&self) -> bool {
+        true
+    }
+
+    fn progress_update(&self, line: &str) -> ProgressUpdate {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            let activity = !line.trim().is_empty();
+            return ProgressUpdate {
+                activity,
+                message: activity.then(|| "Codex: producing a response...".to_string()),
+            };
+        };
+        let Some(event_type) = codex_event_type(&event) else {
+            return ProgressUpdate {
+                activity: true,
+                message: Some("Codex: producing a response...".to_string()),
+            };
+        };
+        let message = match event_type {
+            "thread.started" | "turn.started" => Some("Codex: started.".to_string()),
+            "item.started"
+                if event.pointer("/item/type").and_then(Value::as_str)
+                    == Some("command_execution") =>
+            {
+                Some("Codex: reading the source...".to_string())
+            }
+            "item.started" => Some("Codex: working...".to_string()),
+            "item.completed"
+                if event.pointer("/item/type").and_then(Value::as_str) == Some("agent_message") =>
+            {
+                Some("Codex: drafted the response.".to_string())
+            }
+            "turn.completed" => Some("Codex: finished.".to_string()),
+            _ => None,
+        };
+        ProgressUpdate {
+            activity: true,
+            message,
+        }
+    }
+
     fn can_fetch_web(&self) -> bool {
         false
     }
 
     fn required_help_flags(&self) -> &'static [&'static str] {
-        &["exec", "--sandbox", "--ask-for-approval"]
+        &["exec", "--sandbox", "--ask-for-approval", "--json"]
     }
 
     fn name(&self) -> &'static str {
         "codex"
     }
+}
+
+fn codex_event_type(event: &Value) -> Option<&str> {
+    let event_type = event.get("type").and_then(Value::as_str)?;
+    (event_type.starts_with("thread.")
+        || event_type.starts_with("turn.")
+        || event_type.starts_with("item.")
+        || event_type == "error")
+        .then_some(event_type)
 }
 
 #[cfg(test)]
@@ -63,6 +144,7 @@ mod tests {
             permission_mode: None,
             access,
             session_args,
+            progress: false,
         }
     }
 
@@ -109,6 +191,7 @@ mod tests {
             permission_mode: Some("dontAsk"), // Claude-only, must be dropped
             access: Access::None,
             session_args: &[],
+            progress: false,
         });
         assert_flag_value(&argv, "-m", "gpt-5");
         assert!(!argv.iter().any(|a| a == "--effort" || a == "high"));
@@ -153,5 +236,92 @@ mod tests {
         assert!(flags.contains(&"exec"));
         assert!(flags.contains(&"--sandbox"));
         assert!(flags.contains(&"--ask-for-approval"));
+        assert!(flags.contains(&"--json"));
+    }
+
+    #[test]
+    fn codex_progress_uses_json_events_and_extracts_the_agent_message() {
+        let argv = CodexBackend.build_argv(&RunOpts {
+            model: None,
+            effort: None,
+            permission_mode: None,
+            access: Access::None,
+            session_args: &[],
+            progress: true,
+        });
+        assert!(argv.iter().any(|a| a == "--json"), "argv: {argv:?}");
+
+        let event =
+            r#"{"type":"item.started","item":{"type":"command_execution","command":"rg source"}}"#;
+        let update = CodexBackend.progress_update(event);
+        assert!(update.activity);
+        assert_eq!(
+            Some("Codex: reading the source..."),
+            update.message.as_deref()
+        );
+
+        let stream = concat!(
+            "{\"type\":\"thread.started\",\"thread_id\":\"t\"}\n",
+            "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"## Q\\nA\\n\"}}\n",
+            "{\"type\":\"turn.completed\",\"usage\":{}}\n",
+        );
+        assert_eq!("## Q\nA", CodexBackend.extract_progress(stream).unwrap());
+    }
+
+    #[test]
+    fn codex_plain_json_answer_is_not_mistaken_for_a_progress_stream() {
+        for answer in [
+            r#"{"0":["point one","point two"]}"#,
+            r#"{"type":"deck","cards":[]}"#,
+        ] {
+            assert_eq!(
+                answer,
+                CodexBackend.extract_progress(answer).unwrap(),
+                "answer: {answer}"
+            );
+        }
+    }
+
+    #[test]
+    fn codex_progress_events_map_to_calm_statuses() {
+        for (event, message) in [
+            (
+                r#"{"type":"thread.started","thread_id":"t"}"#,
+                Some("Codex: started."),
+            ),
+            (
+                r#"{"type":"item.started","item":{"type":"command_execution","command":"rg source"}}"#,
+                Some("Codex: reading the source..."),
+            ),
+            (
+                r#"{"type":"item.started","item":{"type":"web_search","query":"source"}}"#,
+                Some("Codex: working..."),
+            ),
+            (
+                r#"{"type":"item.completed","item":{"type":"agent_message","text":"secret draft"}}"#,
+                Some("Codex: drafted the response."),
+            ),
+            (
+                r#"{"type":"item.completed","item":{"type":"command_execution","output":"secret source"}}"#,
+                None,
+            ),
+            (
+                r#"{"type":"turn.completed","usage":{}}"#,
+                Some("Codex: finished."),
+            ),
+            (
+                "malformed but active",
+                Some("Codex: producing a response..."),
+            ),
+        ] {
+            let update = CodexBackend.progress_update(event);
+            assert!(update.activity, "event: {event}");
+            assert_eq!(message, update.message.as_deref(), "event: {event}");
+        }
+        assert_eq!(
+            ProgressUpdate::default(),
+            CodexBackend.progress_update(" \n")
+        );
+        assert!(CodexBackend.structured_progress());
     }
 }

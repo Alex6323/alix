@@ -724,6 +724,7 @@ fn config_cmd(init: bool) -> Result<()> {
             .unwrap_or("(ask / CLI default)")
     );
     println!("  timeout     {}s", config.generate.timeout_secs);
+    println!("  idle        {}s", config.generate.idle_timeout_secs);
     println!("  max_cards   {}", config.generate.max_cards);
     println!(
         "  language    {}",

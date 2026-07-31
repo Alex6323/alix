@@ -50,6 +50,13 @@ pub struct RunOpts<'a> {
     pub permission_mode: Option<&'a str>,
     pub access: Access,
     pub session_args: &'a [String],
+    pub progress: bool,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ProgressUpdate {
+    pub activity: bool,
+    pub message: Option<String>,
 }
 
 pub trait Backend: Send + Sync {
@@ -60,6 +67,21 @@ pub trait Backend: Send + Sync {
     fn prompt_delivery(&self) -> PromptDelivery;
 
     fn extract(&self, stdout: &str) -> anyhow::Result<String>;
+
+    fn extract_progress(&self, stdout: &str) -> anyhow::Result<String> {
+        self.extract(stdout)
+    }
+
+    fn structured_progress(&self) -> bool {
+        false
+    }
+
+    fn progress_update(&self, line: &str) -> ProgressUpdate {
+        ProgressUpdate {
+            activity: !line.trim().is_empty(),
+            message: None,
+        }
+    }
 
     fn agentic(&self) -> bool {
         true
@@ -93,6 +115,10 @@ pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
         BackendKind::Codex => Ok(Box::new(CodexBackend)),
         BackendKind::Copilot => Ok(Box::new(CopilotBackend)),
     }
+}
+
+pub fn supports_structured_progress(cfg: &AskConfig) -> bool {
+    backend_for(cfg).is_ok_and(|backend| backend.structured_progress())
 }
 
 pub fn ensure_source_reachable(cfg: &AskConfig, is_url: bool) -> anyhow::Result<()> {
@@ -176,6 +202,40 @@ mod tests {
         assert!(!GeminiBackend.supports_session());
         assert!(!CodexBackend.supports_session());
         assert!(!CopilotBackend.supports_session());
+    }
+
+    #[test]
+    fn unstructured_backends_use_the_plain_progress_contract() {
+        let backend = GeminiBackend;
+        assert!(!backend.structured_progress());
+        assert_eq!(
+            "plain answer",
+            backend.extract_progress("  plain answer\n").unwrap()
+        );
+        assert_eq!(
+            ProgressUpdate {
+                activity: true,
+                message: None,
+            },
+            backend.progress_update("some output")
+        );
+        assert_eq!(ProgressUpdate::default(), backend.progress_update(" \n"));
+    }
+
+    #[test]
+    fn structured_progress_capability_matches_the_backend_contract() {
+        for (backend, expected) in [
+            (BackendKind::Claude, true),
+            (BackendKind::Codex, true),
+            (BackendKind::Gemini, false),
+            (BackendKind::Copilot, false),
+        ] {
+            let cfg = AskConfig {
+                backend,
+                ..AskConfig::default()
+            };
+            assert_eq!(expected, supports_structured_progress(&cfg), "{backend:?}");
+        }
     }
 
     #[test]

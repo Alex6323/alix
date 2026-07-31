@@ -87,6 +87,7 @@ mod tests {
             permission_mode: None,
             access,
             session_args,
+            progress: false,
         }
     }
 
@@ -196,6 +197,7 @@ mod tests {
             permission_mode: Some("x"),
             access: Access::None,
             session_args: &[],
+            progress: false,
         });
         assert!(
             argv.iter().any(|a| a == "--model=claude-sonnet-4-6"),
