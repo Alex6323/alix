@@ -97,6 +97,33 @@ test("a task-list front renders as static checkboxes", async ({ page }) => {
   await expect(page.locator(".region.q .checklist-box")).toHaveText(["☑", "☐"]);
 });
 
+test("locking in a choice redraws only the answer, not the question", async ({ page }) => {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+  await expect(page.locator(".front-text")).toHaveText("Which animal is the tallest in the world?");
+
+  // Mark the live question node. If answering rebuilds the card the marker is
+  // gone with it, which is the flicker: the question is destroyed and recreated
+  // even though only the answer changed.
+  await page.locator(".region.q").evaluate((node) => { node.dataset.probe = "kept"; });
+
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/choose")),
+    page.getByRole("button", { name: /Giraffe/ }).click(),
+  ]);
+
+  await expect(page.locator(".option.correct")).toHaveCount(1); // the answer did update
+  await expect(
+    page.locator('.region.q[data-probe="kept"]'),
+    "the question region was rebuilt when only the answer changed"
+  ).toHaveCount(1);
+});
+
 test("revealed inline formatting renders as safe DOM elements", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click();

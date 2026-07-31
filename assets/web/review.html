@@ -1156,12 +1156,15 @@ function modeLabel() {
 function choose(i) {
   api("/api/choose", post({ index: i })).catch(() => { load(); return Promise.reject(); }).then(f => {
     feedback = f;
-    render();
+    // Only the answer changed. A full render() rebuilds the question too, which
+    // reads as a flicker (and re-rasterises any math in it).
+    fillBottom();
+    renderLegend();
   });
 }
 function submitCheck() {
   const lines = Array.from(document.querySelectorAll("#ansRegion input.field")).map(i => i.value);
-  api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(f => { feedback = f; render(); }).catch(() => load());
+  api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(f => { feedback = f; fillBottom(); renderLegend(); }).catch(() => load());
 }
 // TypeLine: one line at a time; the server derives the position-paired check
 // from the card's own mode. Resubmits every line checked so far (the
@@ -3000,23 +3003,18 @@ async function renderSelect(preloaded) {
       // (which animates the property directly, no transition-trigger timing to get
       // wrong); the base stays `auto`, so it sits at the content height afterward.
       const h = wrap.offsetHeight;
+      // Scrolled BEFORE the animation starts, while the wrap still stands at its
+      // natural height. The drawer is fetched after the jump, so under the last
+      // row it lands off-screen; scrolling once the animation has squashed it to
+      // 0px reveals nothing, and scrolling after the animation lands as a late
+      // jump whenever the move is long enough to actually scroll.
+      if (wrap.scrollIntoView) wrap.scrollIntoView({ block: "nearest" });
       if (h && wrap.animate) {
         wrap._anim = wrap.animate(
           [{ height: "0px" }, { height: h + "px" }],
           { duration: DRAWER_MS, easing: DRAWER_EASE }
         );
       }
-      // Not chained off the animation: clearDrawer cancels it, and a cancelled
-      // animation's promise rejects, so a drawer that was re-opened would never
-      // scroll. Once now (covers no animation at all) and once after it has its
-      // real height; scrolling something already in view is a no-op.
-      const reveal = () => { if (wrap.isConnected) wrap.scrollIntoView({ block: "nearest" }); };
-      reveal();
-      setTimeout(reveal, DRAWER_MS + 30);
-      // The drawer is fetched asynchronously, so the browser finished scrolling
-      // to the row before it existed; under the last row it lands off-screen and
-      // reads as "the drawer didn't open". Scroll once it actually has height:
-      // during the open animation it is 0px tall and there is nothing to reveal.
     }
 
     // Opens/updates the drawer for the newly focused deck. Cached payloads render
