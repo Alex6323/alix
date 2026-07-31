@@ -57,6 +57,10 @@ pub struct RunOpts<'a> {
 pub struct ProgressUpdate {
     pub activity: bool,
     pub message: Option<String>,
+    /// The model the backend reports it actually loaded, when it says so.
+    /// Discovered, never assumed: alix does not choose it and cannot name it
+    /// from configuration alone.
+    pub model: Option<String>,
 }
 
 pub trait Backend: Send + Sync {
@@ -80,6 +84,7 @@ pub trait Backend: Send + Sync {
         ProgressUpdate {
             activity: !line.trim().is_empty(),
             message: None,
+            model: None,
         }
     }
 
@@ -106,6 +111,17 @@ pub trait Backend: Send + Sync {
     fn default_trace_model(&self) -> Option<&'static str> {
         None
     }
+
+    /// What the tutor pins when `[ask] model` is unset. Without a pin alix
+    /// cannot name what answered, because the backend CLI chooses and never
+    /// reports back.
+    fn default_ask_model(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn default_ask_effort(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
@@ -119,6 +135,26 @@ pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
 
 pub fn supports_structured_progress(cfg: &AskConfig) -> bool {
     backend_for(cfg).is_ok_and(|backend| backend.structured_progress())
+}
+
+/// The single resolution both the invocation and the readout use, so what the
+/// tutor panel names is always what was actually passed.
+pub fn resolved_ask_model(cfg: &AskConfig) -> Option<String> {
+    cfg.model.clone().or_else(|| {
+        backend_for(cfg)
+            .ok()
+            .and_then(|backend| backend.default_ask_model())
+            .map(str::to_string)
+    })
+}
+
+pub fn resolved_ask_effort(cfg: &AskConfig) -> Option<String> {
+    cfg.effort.clone().or_else(|| {
+        backend_for(cfg)
+            .ok()
+            .and_then(|backend| backend.default_ask_effort())
+            .map(str::to_string)
+    })
 }
 
 pub fn ensure_source_reachable(cfg: &AskConfig, is_url: bool) -> anyhow::Result<()> {
@@ -216,6 +252,7 @@ mod tests {
             ProgressUpdate {
                 activity: true,
                 message: None,
+                model: None,
             },
             backend.progress_update("some output")
         );

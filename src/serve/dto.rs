@@ -306,11 +306,17 @@ pub(super) struct ImportDto {
 
 impl AskInfoDto {
     pub(super) fn from(cfg: &AskConfig) -> Self {
-        let or_default = |s: &Option<String>| s.clone().unwrap_or_else(|| "default".to_string());
+        let or_default = |s: Option<String>| s.unwrap_or_else(|| "default".to_string());
+        let backend = cfg.backend.name();
         Self {
-            backend: cfg.backend.name(),
-            model: or_default(&cfg.model),
-            effort: or_default(&cfg.effort),
+            backend,
+            // A pinned model is known up front; otherwise report what the
+            // backend itself said it loaded, rather than guessing for it.
+            model: or_default(
+                crate::backend::resolved_ask_model(cfg)
+                    .or_else(|| crate::ask::observed_model(backend)),
+            ),
+            effort: or_default(crate::backend::resolved_ask_effort(cfg)),
         }
     }
 }

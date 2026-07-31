@@ -1455,11 +1455,17 @@ function startAskPoll() {
   stopAskPoll();
   askPoll = setInterval(() => {
     const ep = walkData ? "/api/walk/ask" : "/api/ask";
-    api(ep).then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); });
+    api(ep).then(d => { askData = d; if (!d.thinking) { stopAskPoll(); refreshAskInfo(); } if (asking) syncAsk(); });
   }, 400);
   updateBusy();
 }
 function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } updateBusy(); }
+// An unpinned backend only names its model once it has answered, so pick that
+// up the first time and stop showing "default".
+function refreshAskInfo() {
+  if (askInfo.model !== "default") return;
+  api("/api/ask-info").then(ai => { if (ai) { askInfo = ai; if (asking) syncAsk(); } }).catch(() => {});
+}
 
 // (Re)fill just the transcript log from askData.
 function fillAskLog(log) {

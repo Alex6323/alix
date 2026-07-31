@@ -79,12 +79,14 @@ impl Backend for CodexBackend {
             return ProgressUpdate {
                 activity,
                 message: activity.then(|| "Codex: producing a response...".to_string()),
+                model: None,
             };
         };
         let Some(event_type) = codex_event_type(&event) else {
             return ProgressUpdate {
                 activity: true,
                 message: Some("Codex: producing a response...".to_string()),
+                model: None,
             };
         };
         let message = match event_type {
@@ -107,6 +109,7 @@ impl Backend for CodexBackend {
         ProgressUpdate {
             activity: true,
             message,
+            model: None,
         }
     }
 

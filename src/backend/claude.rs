@@ -109,14 +109,22 @@ impl Backend for ClaudeBackend {
             return ProgressUpdate {
                 activity,
                 message: activity.then(|| "Claude: producing a response...".to_string()),
+                model: None,
             };
         };
         let Some(event_type) = claude_event_type(&event) else {
             return ProgressUpdate {
                 activity: true,
                 message: Some("Claude: producing a response...".to_string()),
+                model: None,
             };
         };
+        let is_init =
+            event_type == "system" && event.get("subtype").and_then(Value::as_str) == Some("init");
+        let model = is_init
+            .then(|| event.get("model").and_then(Value::as_str))
+            .flatten()
+            .map(str::to_string);
         let message = match event_type {
             "system" if event.get("subtype").and_then(Value::as_str) == Some("init") => {
                 Some("Claude: started.".to_string())
@@ -131,6 +139,7 @@ impl Backend for ClaudeBackend {
         ProgressUpdate {
             activity: true,
             message,
+            model,
         }
     }
 
@@ -391,6 +400,29 @@ mod tests {
             assert!(
                 ClaudeBackend.extract_progress(event).is_err(),
                 "event should fail: {event}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_active_model_is_read_from_the_init_event_never_assumed() {
+        for (event, expected) in [
+            (
+                r#"{"type":"system","subtype":"init","model":"claude-opus-5"}"#,
+                Some("claude-opus-5"),
+            ),
+            // No model reported: alix must not invent one.
+            (r#"{"type":"system","subtype":"init"}"#, None),
+            // Only the init event announces the model.
+            (
+                r#"{"type":"result","subtype":"success","model":"claude-sonnet-5"}"#,
+                None,
+            ),
+        ] {
+            assert_eq!(
+                expected.map(str::to_string),
+                ClaudeBackend.progress_update(event).model,
+                "{event}"
             );
         }
     }

@@ -466,9 +466,11 @@ fn run_supervised(
     } else {
         &[]
     };
+    let model = crate::backend::resolved_ask_model(config);
+    let effort = crate::backend::resolved_ask_effort(config);
     let opts = RunOpts {
-        model: config.model.as_deref(),
-        effort: config.effort.as_deref(),
+        model: model.as_deref(),
+        effort: effort.as_deref(),
         permission_mode: if config.permission_mode.is_empty() {
             None
         } else {
@@ -635,6 +637,23 @@ struct PipeEvent {
     line: String,
 }
 
+/// What each backend last reported it was actually running, learned from its
+/// own stream. The tutor panel names this instead of "default"; empty until a
+/// first streamed answer, because a backend that was never asked has not said.
+static OBSERVED_MODELS: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, String>>,
+> = std::sync::OnceLock::new();
+
+fn note_observed_model(backend: &str, model: &str) {
+    if let Ok(mut seen) = OBSERVED_MODELS.get_or_init(Default::default).lock() {
+        seen.insert(backend.to_string(), model.to_string());
+    }
+}
+
+pub fn observed_model(backend: &str) -> Option<String> {
+    OBSERVED_MODELS.get()?.lock().ok()?.get(backend).cloned()
+}
+
 struct ProgressState {
     last_activity: Instant,
     last_report: Instant,
@@ -666,6 +685,9 @@ impl ProgressState {
                     let update = backend.progress_update(&event.line);
                     if update.activity {
                         self.last_activity = now;
+                    }
+                    if let Some(model) = &update.model {
+                        note_observed_model(backend.name(), model);
                     }
                     if !show {
                         continue;
@@ -1352,6 +1374,29 @@ mod tests {
                 "pipe event {index}: {line:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_observed_model_is_recorded_from_the_stream_and_read_back() {
+        let started = Instant::now();
+        let mut progress = ProgressState::new(started);
+        let (tx, rx) = channel();
+        tx.send(PipeEvent {
+            pipe: Pipe::Stdout,
+            line: r#"{"type":"system","subtype":"init","model":"claude-probe-model"}"#.to_string(),
+        })
+        .unwrap();
+        progress.receive(
+            &rx,
+            &crate::backend::ClaudeBackend,
+            true,
+            started + Duration::from_secs(1),
+        );
+        assert_eq!(
+            Some("claude-probe-model".to_string()),
+            observed_model("claude"),
+            "the readout must be able to name what the backend said it loaded"
+        );
     }
 
     #[test]

@@ -335,6 +335,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The tutor panel names the model that actually answered instead of showing
+  `model: default`. When `[ask] model` is unset the backend CLI chooses, and
+  alix could not name it; it now reads the model out of the backend's own
+  startup event and reports that. Unset stays unset: alix does not pin a model
+  on your behalf, it just stops pretending not to know once the backend has
+  said. Still shows `default` before the first answer of a session, which is
+  the only point at which nothing has been reported yet.
+
 - Reading session state no longer moves you to a different card. Sitting on one
   card for longer than the five-minute acquire cooldown (asking the tutor, for
   example) let an earlier failed card come off its floor, and because the server
