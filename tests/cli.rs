@@ -3859,3 +3859,69 @@ fn a_wedged_unstructured_backend_still_stops_at_the_inactivity_limit() {
         stderr(&out)
     );
 }
+
+// A prerequisite that fails must fail before the backend is spawned: a paid
+// generation should never be spent on a workspace that does not exist or a
+// deck that is already there. The fake backend leaves a marker when it runs,
+// so "was the model called" is observable rather than inferred.
+#[test]
+fn a_failed_prerequisite_never_reaches_the_backend() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let marker = dir.path().join("backend-was-called");
+    let cli = dir.path().join("fake-claude");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\ntouch {}\necho '## q'\necho a\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\nbackend = \"claude\"\ncommand = \"{}\"\n", cli.display()),
+    );
+
+    let existing = dir.path().join("taken.md");
+    std::fs::write(&existing, "## q <!-- id: card-taken1 -->\na\n").unwrap();
+
+    for (shape, extra) in [
+        (
+            "a workspace that does not exist",
+            vec![
+                "--workspace".to_string(),
+                dir.path().join("no-such-workspace").display().to_string(),
+            ],
+        ),
+        (
+            "a deck that already exists",
+            vec!["--output".to_string(), existing.display().to_string()],
+        ),
+    ] {
+        let _ = std::fs::remove_file(&marker);
+        let mut argv = vec![
+            "generate".to_string(),
+            "https://example.org/page".to_string(),
+            "--config".to_string(),
+            config.clone(),
+        ];
+        argv.extend(extra);
+        let out = alix(&argv.iter().map(String::as_str).collect::<Vec<_>>());
+
+        assert!(
+            !out.status.success(),
+            "{shape}: the run succeeded instead of refusing: {}",
+            stderr(&out)
+        );
+        assert!(
+            !marker.exists(),
+            "{shape}: the backend was spawned before the prerequisite was checked, \
+             so a paid call was spent on a run that could never succeed. stderr: {}",
+            stderr(&out)
+        );
+    }
+}

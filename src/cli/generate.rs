@@ -86,6 +86,24 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
     generate_single_deck(&args, &config, &spec)
 }
 
+// Resolved before any backend call so a missing workspace or an existing deck
+// fails in milliseconds instead of after a paid generation.
+fn resolve_destination(
+    args: &GenerateArgs,
+    config: &Config,
+    name: &str,
+) -> Result<(PathBuf, PathBuf)> {
+    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
+    let target = dir.join(name);
+    if target.exists() && !args.force {
+        bail!(
+            "{} already exists; pass --force to overwrite",
+            target.display()
+        );
+    }
+    Ok((dir, target))
+}
+
 fn canonical_source(source: &str) -> String {
     let path = Path::new(source);
     if path.exists() {
@@ -255,6 +273,21 @@ fn generate_single_deck(
         args.source.clone()
     };
 
+    let name = match &args.output {
+        Some(name) => name.clone(),
+        None => generate::deck_name(&source),
+    };
+    let name = if name.ends_with(".md") {
+        name
+    } else {
+        format!("{name}.md")
+    };
+    let destination = if args.print {
+        None
+    } else {
+        Some(resolve_destination(args, config, &name)?)
+    };
+
     preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask, spec)?;
@@ -269,15 +302,6 @@ fn generate_single_deck(
 
     // Parse against the final name (part of every card's id hash); a parse
     // error still saves the output rather than losing the generation.
-    let name = match &args.output {
-        Some(name) => name.clone(),
-        None => generate::deck_name(&source),
-    };
-    let name = if name.ends_with(".md") {
-        name
-    } else {
-        format!("{name}.md")
-    };
     let parsed = parser::parse(&name, &text);
 
     if args.print {
@@ -303,15 +327,8 @@ fn generate_single_deck(
         bail!("generated deck `{name}` has invalid LaTeX math: {diagnostic}");
     }
 
-    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
-    let target = dir.join(&name);
+    let (dir, target) = destination.expect("resolved above unless --print returned early");
     if target.exists() {
-        if !args.force {
-            bail!(
-                "{} already exists; pass --force to overwrite",
-                target.display()
-            );
-        }
         let mut store = store_for(std::slice::from_ref(&target), None, config)?;
         let report = library::replace_deck(&dir, &name, &text, &mut store)?;
         if Path::new(&source).exists() {
@@ -442,6 +459,20 @@ fn generate_trace_walk(
     spec: &generate::GenerationSpec,
 ) -> Result<()> {
     let source = canonical_source(&args.source);
+    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
+    let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
+    let out = if args.workspace.is_some() {
+        dir.join(&raw)
+    } else {
+        raw
+    };
+    if out.exists() && !args.force {
+        bail!(
+            "{} already exists; pass --force to overwrite",
+            out.display()
+        );
+    }
+
     preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!(
         "Exploring {source} to build an explore walk (one pass — this can take a \
@@ -465,13 +496,6 @@ fn generate_trace_walk(
     if let Some(url) = &args.source_url {
         deck_text = alix::deck::with_added_source(&deck_text, url)?;
     }
-    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
-    let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
-    let out = if args.workspace.is_some() {
-        dir.join(&raw)
-    } else {
-        raw
-    };
     let out_dir = out
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -483,12 +507,6 @@ fn generate_trace_walk(
         .unwrap_or("explore.md")
         .to_string();
     if out.exists() {
-        if !args.force {
-            bail!(
-                "{} already exists; pass --force to overwrite",
-                out.display()
-            );
-        }
         let mut store = store_for(std::slice::from_ref(&out), None, config)?;
         let report = library::replace_deck(&out_dir, &name, &deck_text, &mut store)?;
         println!(

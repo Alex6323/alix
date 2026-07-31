@@ -302,6 +302,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix generate` now checks the output destination before calling the AI
+  backend. Pointing it at a workspace that does not exist, or at a deck name
+  already taken without `--force`, spent a full generation (minutes, and a paid
+  call) before reporting a failure that was knowable up front. Both the deck
+  and the `--trace` walk paths resolve the destination first.
 - A card whose answer is taller than the review area now opens at its top
   instead of part-way down. The answer region centres a short answer, and
   centring a scrollable column pushes the top of an overflowing one past the
