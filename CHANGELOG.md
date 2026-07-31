@@ -353,7 +353,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   clicks inside the stage were handled before; a click anywhere else stranded
   focus on the page body.
 
-- Jumping to the last deck with `G`/`End` now scrolls its drawer into view. The
+- Jumping to the last deck with `G`/`End` now reveals its drawer. The
   drawer is fetched after the jump, so it opened below the fold and looked like
   it had not opened at all.
 

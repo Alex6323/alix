@@ -286,6 +286,23 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   await drawer.screenshot({ path: "/tmp/claude-1000/-home-me-dev-developer-alex6323-projects-flashcard2-claude-agent-2/ea6ad9c5-47cc-4ff1-9a0d-b19dd66cad08/scratchpad/drawer.png" });
 });
 
+test("jumping to the last deck with G reveals its drawer, not just opens it", async ({ page }) => {
+  // A viewport short enough that the last row sits at the bottom edge: the
+  // drawer opens *below* it, so merely existing is not enough. This is the
+  // reported case, and a tall viewport cannot reproduce it.
+  await page.setViewportSize({ width: 900, height: 340 });
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "cats").click();
+  await page.keyboard.press("Shift+G");
+
+  const focused = page.locator(".deckrow:focus");
+  await expect(focused).toHaveCount(1);
+  const drawer = page.locator(".drawer-wrap");
+  await expect(drawer).toHaveCount(1);
+  // The drawer is animated open, so give it its height before asking where it is.
+  await expect(drawer).toBeInViewport();
+});
+
 test("a card merely shown in an earlier session reads as a grey seen cell", async ({ page }) => {
   // The task-list test above selected `fronts` and rendered its only card
   // without acknowledging or grading it: presented, nothing more. The drawer
