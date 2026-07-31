@@ -1264,11 +1264,24 @@ mod tests {
             idle_timeout_secs: Some(0),
             ..config(&cli, 10)
         };
-        let err = run(&config, "x", &[]).unwrap_err();
-        assert!(
-            format!("{err:#}").contains("made no progress for 0s"),
-            "{err:#}"
-        );
+        // The child blocks on a fifo nothing writes to, so the idle timeout is
+        // the only thing that ends this run. Bound the wait: without it, a
+        // defect in the timeout logic hangs the suite instead of failing it.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(run(&config, "x", &[]).map_err(|err| format!("{err:#}")));
+        });
+        let outcome = rx.recv_timeout(Duration::from_secs(20));
+        if outcome.is_err() {
+            // Unblock the child so it cannot outlive the test.
+            let _ = std::fs::write(&blocked, "x");
+        }
+        let err = match outcome {
+            Ok(Err(err)) => err,
+            Ok(Ok(answer)) => panic!("expected an idle timeout, got {answer:?}"),
+            Err(_) => panic!("run did not return within 20s: the idle timeout never fired"),
+        };
+        assert!(err.contains("made no progress for 0s"), "{err}");
     }
 
     #[test]
@@ -1337,6 +1350,36 @@ mod tests {
                 if resets { now } else { before },
                 progress.last_activity,
                 "pipe event {index}: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pipe_event_is_reported_only_when_progress_is_shown() {
+        let started = Instant::now();
+        for (pipe, show, reported) in [
+            (Pipe::Stdout, true, true),
+            (Pipe::Stdout, false, false),
+            (Pipe::Stderr, true, true),
+            (Pipe::Stderr, false, false),
+        ] {
+            let mut progress = ProgressState::new(started);
+            let (tx, rx) = channel();
+            tx.send(PipeEvent {
+                pipe,
+                line: "provider output".to_string(),
+            })
+            .unwrap();
+            progress.receive(
+                &rx,
+                &crate::backend::GeminiBackend,
+                show,
+                started + Duration::from_secs(1),
+            );
+            assert_eq!(
+                reported,
+                progress.last_message.is_some(),
+                "show={show}: whether a pipe event is reported must follow the show flag"
             );
         }
     }
