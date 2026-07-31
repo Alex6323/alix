@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `CardDto` now carries the card's `id` on the wire (`card-<token>`, or the
+  `-N` / `-r` sub-id for a cloze hole or reversed twin), the same spelling
+  `CreateCardResp` returns. Clients could not previously tell whether a served
+  card had actually changed except by comparing rendered text. Null for a card
+  with no id marker yet.
+
 - `alix generate` now reports calm, live progress from structured Claude and
   Codex events while keeping partial deck text private until validation
   succeeds. Deck-drafting calls have a one-hour absolute safety limit.

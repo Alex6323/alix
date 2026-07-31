@@ -555,6 +555,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 
 | Key | Type | Meaning |
 |---|---|---|
+| `id` | string? | The card's prefixed id (`card-<token>`, `card-<token>-N` for a cloze hole, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed; it is stable across edits to the card's text. |
 | `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
 | `front_units` | [NoteUnitDto]? | Present when the front contains a task list, fenced code, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |

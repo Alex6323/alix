@@ -94,6 +94,7 @@ fn statedto_review_phase_wire_shape() {
         study_revision: 7,
         phase: "review",
         card: Some(CardDto {
+            id: Some("card-9w2c7xkq4m".to_string()),
             front: "What is ownership?".to_string(),
             front_runs: crate::inline::parse_inline("What is **ownership**?"),
             front_units: None,
@@ -196,6 +197,7 @@ fn statedto_review_phase_wire_shape() {
             "kind": "review",
             "phase": "review",
             "card": {
+                "id": "card-9w2c7xkq4m",
                 "front": "What is ownership?",
                 "front_runs": [
                     {"text": "What is "},
@@ -607,34 +609,38 @@ fn examdto_cooldown_phase_wire_shape() {
 
 #[test]
 fn carddto_wire_shape() {
-    let dto = card_dto(crate::review::CardView {
-        front: "Pick a city:\n- [x] Paris\n- [ ] Rome".to_string(),
-        front_runs: crate::inline::parse_inline("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
-        front_units: crate::render::front_units("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
-        context: Vec::new(),
-        context_runs: Vec::new(),
-        back: vec!["Use **x**".to_string(), "France".to_string()],
-        back_runs: vec![
-            crate::inline::parse_inline("Use `**x**`"),
-            crate::inline::parse_inline("*France*"),
-        ],
-        back_units: vec![NoteUnit::Sentence {
-            text: "Use **x** France".to_string(),
-            runs: crate::inline::parse_inline("Use `**x**` *France*"),
-        }],
-        reshaped: false,
-        note: vec![NoteUnit::Sentence {
-            text: "A **city**.".to_string(),
-            runs: crate::inline::parse_inline("A **city**."),
-        }],
-        images: Vec::new(),
-        images_back: Vec::new(),
-        citations: Vec::new(),
-    });
+    let dto = card_dto(
+        crate::review::CardView {
+            front: "Pick a city:\n- [x] Paris\n- [ ] Rome".to_string(),
+            front_runs: crate::inline::parse_inline("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
+            front_units: crate::render::front_units("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
+            context: Vec::new(),
+            context_runs: Vec::new(),
+            back: vec!["Use **x**".to_string(), "France".to_string()],
+            back_runs: vec![
+                crate::inline::parse_inline("Use `**x**`"),
+                crate::inline::parse_inline("*France*"),
+            ],
+            back_units: vec![NoteUnit::Sentence {
+                text: "Use **x** France".to_string(),
+                runs: crate::inline::parse_inline("Use `**x**` *France*"),
+            }],
+            reshaped: false,
+            note: vec![NoteUnit::Sentence {
+                text: "A **city**.".to_string(),
+                runs: crate::inline::parse_inline("A **city**."),
+            }],
+            images: Vec::new(),
+            images_back: Vec::new(),
+            citations: Vec::new(),
+        },
+        Some("card-9w2c7xkq4m".to_string()),
+    );
     pin(
         "CardDto",
         &dto,
         json!({
+            "id": "card-9w2c7xkq4m",
             "front": "Pick a city:\n- [x] Paris\n- [ ] Rome",
             "front_runs": [
                 {"text": "Pick a city:\n- [x] "},
@@ -724,6 +730,7 @@ fn carddto_math_wire_shape() {
         ..InlineRun::default()
     };
     let dto = CardDto {
+        id: Some("card-9w2c7xkq4m".to_string()),
         front: "x^2".to_string(),
         front_runs: vec![inline],
         front_units: None,
@@ -754,6 +761,7 @@ fn carddto_math_wire_shape() {
         "CardDto.math",
         &dto,
         json!({
+            "id": "card-9w2c7xkq4m",
             "front": "x^2",
             "front_runs": [{
                 "text": "x^2",
@@ -1050,6 +1058,7 @@ fn browsedto_wire_shape() {
         phase: "browse",
         label: "rust.md".to_string(),
         cards: vec![CardDto {
+            id: Some("card-9w2c7xkq4m".to_string()),
             front: "q".to_string(),
             front_runs: crate::inline::parse_inline("q"),
             front_units: None,
@@ -1076,6 +1085,7 @@ fn browsedto_wire_shape() {
             "phase": "browse",
             "label": "rust.md",
             "cards": [{
+                "id": "card-9w2c7xkq4m",
                 "front": "q",
                 "front_runs": [{"text": "q"}],
                 "context": [],

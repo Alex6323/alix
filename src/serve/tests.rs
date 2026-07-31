@@ -159,7 +159,7 @@ fn card_dto_structures_the_note() {
         Some(note.to_string()),
         1,
     );
-    let dto = card_dto((&card).into());
+    let dto = card_dto((&card).into(), card.id());
 
     assert_eq!(dto.front, "the front");
     assert_eq!(dto.back, vec!["the back".to_string()]);
@@ -192,7 +192,7 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
         alt: None,
     }];
 
-    let dto = card_dto((&card).into());
+    let dto = card_dto((&card).into(), card.id());
     let img = &dto.images.first().expect("front image url").src;
     let img_back = &dto.images_back.first().expect("back image url").src;
     assert!(img.starts_with("/img/"));
@@ -218,7 +218,7 @@ fn plain_card_has_no_image_urls() {
         None,
         1,
     );
-    let dto = card_dto((&card).into());
+    let dto = card_dto((&card).into(), card.id());
     assert!(dto.images.is_empty() && dto.images_back.is_empty());
     assert!(collect_images(std::slice::from_ref(&card)).is_empty());
 }

@@ -21,6 +21,7 @@ use crate::{
 
 #[derive(Debug, Serialize)]
 pub(super) struct CardDto {
+    pub(super) id: Option<String>,
     pub(super) front: String,
     pub(super) front_runs: Vec<InlineRun>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -895,7 +896,7 @@ pub(super) fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
                 cards: b
                     .cards
                     .iter()
-                    .map(|card| card_dto(CardView::project(card, &mut projector)))
+                    .map(|card| card_dto(CardView::project(card, &mut projector), card.id()))
                     .collect(),
             }
         }
@@ -973,7 +974,7 @@ pub(super) fn review_state(
         Vec::new()
     };
     let card_with_citation = s.card.zip(session.current()).map(|(view, c)| {
-        let mut dto = card_dto(view);
+        let mut dto = card_dto(view, c.id());
         // A cache can hold several like-named topologies (decks sharing a
         // store); the card id disambiguates which one actually applies.
         if let Some(name) = &r.topology_name
@@ -1135,12 +1136,13 @@ pub(super) fn deck_drawer_dto(
     }
 }
 
-pub(super) fn card_dto(view: CardView) -> CardDto {
+pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
     let img_dto = |i: &review::ImageView| ImageDto {
         src: format!("/img/{}", img_key(Path::new(&i.src))),
         alt: i.alt.clone(),
     };
     CardDto {
+        id,
         images: view.images.iter().map(&img_dto).collect(),
         images_back: view.images_back.iter().map(&img_dto).collect(),
         front: view.front,
