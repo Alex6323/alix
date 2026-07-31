@@ -411,7 +411,7 @@ impl Session {
     }
 
     pub fn poll(&mut self, store: &mut Store, now_ms: u64) -> bool {
-        self.advance(store, now_ms);
+        self.select(store, now_ms, true);
         self.current_idx.is_some()
     }
 
@@ -453,14 +453,21 @@ impl Session {
         self.floors.insert(id.to_string(), now_ms);
     }
 
+    fn advance(&mut self, store: &mut Store, now_ms: u64) {
+        self.select(store, now_ms, false);
+    }
+
     // The single site where a card becomes current, so also the single site
     // that stamps its first presentation.
-    fn advance(&mut self, store: &mut Store, now_ms: u64) {
-        let next = self
-            .roster
-            .iter()
-            .copied()
-            .find(|&i| self.servable(i, store, now_ms));
+    fn select(&mut self, store: &mut Store, now_ms: u64, keep_current: bool) {
+        let sticky = if keep_current { self.current_idx } else { None }
+            .filter(|&i| self.roster.contains(&i) && self.servable(i, store, now_ms));
+        let next = sticky.or_else(|| {
+            self.roster
+                .iter()
+                .copied()
+                .find(|&i| self.servable(i, store, now_ms))
+        });
         if let Some(i) = next
             && next != self.current_idx
         {
@@ -974,6 +981,7 @@ mod tests {
         let mut drained = false;
 
         for _ in 0..2000 {
+            let before = session.current_idx;
             session.poll(&mut store, now);
 
             let servable: Vec<usize> = session
@@ -1001,10 +1009,9 @@ mod tests {
                 session.servable(idx, &store, now),
                 "the served card must be servable"
             );
-            assert_eq!(
-                session.current_idx,
-                servable.first().copied(),
-                "the cursor points at the first servable roster card"
+            assert!(
+                session.current_idx == servable.first().copied() || session.current_idx == before,
+                "the cursor is the first servable roster card, or the one already being studied"
             );
             assert!(!passed[idx], "a passed card must never be served again");
 
@@ -1276,8 +1283,12 @@ mod tests {
             "the floor keeps A from immediately following itself"
         );
 
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
-        assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
+        session.grade(&mut store, Grade::Fail, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        assert_eq!(
+            Some(a_id.clone()),
+            session.current().unwrap().id(),
+            "A is eligible again once its floor passes, and takes over when B is graded"
+        );
     }
 
     #[test]
@@ -1307,6 +1318,67 @@ mod tests {
 
         session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(Some(id), session.current().and_then(|c| c.id()));
+    }
+
+    #[test]
+    fn a_poll_past_an_earlier_cards_cooldown_keeps_the_current_card() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let earlier = all[0].id().unwrap();
+        let current = all[1].id().unwrap();
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+
+        assert_eq!(
+            Some(earlier.clone()),
+            session.current().and_then(|c| c.id()),
+            "roster order: the earlier card is served first"
+        );
+
+        session.grade(&mut store, Grade::Fail, now);
+        assert_eq!(
+            Some(current.clone()),
+            session.current().and_then(|c| c.id()),
+            "failing the earlier card moves the learner to the later one"
+        );
+
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
+        assert_eq!(
+            Some(current.clone()),
+            session.current().and_then(|c| c.id()),
+            "inside the earlier card's cooldown the learner stays put"
+        );
+
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        assert_eq!(
+            Some(current),
+            session.current().and_then(|c| c.id()),
+            "the earlier card coming off cooldown must not yank the learner off the card \
+             they are on; a poll reports state, it does not reshuffle it"
+        );
+    }
+
+    #[test]
+    fn a_passed_earlier_card_does_not_return_after_its_cooldown() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let current = all[1].id().unwrap();
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+
+        session.grade(&mut store, Grade::Pass, now);
+        assert_eq!(
+            Some(current.clone()),
+            session.current().and_then(|c| c.id()),
+            "passing the earlier card moves the learner to the later one"
+        );
+
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        assert_eq!(
+            Some(current),
+            session.current().and_then(|c| c.id()),
+            "a passed card leaves the roster, so no cooldown can bring it back"
+        );
     }
 
     #[test]
@@ -2967,11 +3039,15 @@ mod tests {
             "A and B are both still floored — C is the only unfloored card left"
         );
 
-        s.poll(&mut store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS + 500);
+        s.grade(
+            &mut store,
+            Grade::Fail,
+            1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS + 500,
+        );
         assert_eq!(
             a,
             s.current().unwrap().id(),
-            "A's own floor has passed (B's hasn't) — floors are independent per card"
+            "A's own floor has passed (B's hasn't): floors are independent per card"
         );
     }
 

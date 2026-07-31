@@ -302,10 +302,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- `alix profile list` now shows each profile's config file path, so an unexpected
+- `alix profile list` now shows each profile's config file path, so an
+  unexpected
   decks directory or port can be traced to the file that set it.
 
 ### Fixed
+
+- Reading session state no longer moves you to a different card. Sitting on one
+  card for longer than the five-minute acquire cooldown (asking the tutor, for
+  example) let an earlier failed card come off its floor, and because the server
+  re-picked the first servable card in roster order on every state read, closing
+  the tutor landed you on the card before the one you were working on. Polling
+  now reports the session rather than reshuffling it: the card you are on is
+  kept while it remains servable. Grading, skipping, acquiring, and removing
+  still move on exactly as before.
 
 - `alix generate` now checks the output destination before calling the AI
   backend. Pointing it at a workspace that does not exist, or at a deck name
