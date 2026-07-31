@@ -1,0 +1,10 @@
+# `!` means do NOT ignore, overriding .gitignore: ripgrep reads this file at
+# higher precedence. The local design notes stay untracked; this only restores
+# them to search (VS Code's search bar is ripgrep). `specs` needs the `*` because
+# .gitignore ignores its entries, not the directory.
+!/docs/plans/
+!/docs/specs/*
+!/docs/product/
+!/docs/bugs/
+!/docs/results/
+!/docs/dev/
