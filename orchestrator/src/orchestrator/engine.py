@@ -9,10 +9,12 @@ import subprocess
 import tarfile
 import time
 import tomllib
-from dataclasses import dataclass, field
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Iterator, cast
 
 from orchestrator.agents import Invoker
 from orchestrator.commands import Executor
@@ -20,6 +22,7 @@ from orchestrator.models import (
     AgentName,
     AgentState,
     Finding,
+    Invocation,
     Mode,
     PhaseHistory,
     RunState,
@@ -139,6 +142,7 @@ def run_implementation_phase(state: RunState, invoker: Invoker) -> None:
     started_wall = _now()
     started = time.monotonic()
     details: list[str] = []
+    pending: list[tuple[AgentName, str, str]] = []
     for agent in ("claude", "codex"):
         step = f"IMPLEMENT:{agent}"
         if step in state.completed_steps:
@@ -149,16 +153,29 @@ def run_implementation_phase(state: RunState, invoker: Invoker) -> None:
             Path(state.agents[agent].worktree),
             failure_summary="",
         )
-        flags = _run_agent_change(
-            state,
-            agent,
-            prompt,
-            invoker,
-            f"[orchestrator] implement {agent}",
-        )
-        details.extend(flags)
-        state.completed_steps.append(step)
-        save_state(Path(state.run_dir) / "state.json", state)
+        pending.append((agent, step, prompt))
+    with _invocation_pool(invoker, max(1, len(pending))) as pool:
+        futures = {
+            agent: pool.submit(
+                _run_agent_change,
+                state,
+                agent,
+                prompt,
+                invoker,
+                f"[orchestrator] implement {agent}",
+            )
+            for agent, _, prompt in pending
+        }
+        errors: list[Exception] = []
+        for agent, step, _ in pending:
+            try:
+                details.extend(futures[agent].result())
+                state.completed_steps.append(step)
+                save_state(Path(state.run_dir) / "state.json", state)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise errors[0]
     state.phase = "REVIEW_ROUND_1" if state.max_fix_rounds > 0 else "SCORE"
     state.completed_steps.clear()
     state.history.append(
@@ -197,16 +214,6 @@ def run_asymmetric_implementation_phase(
         failure_summary="",
     )
     implement_step = f"IMPLEMENT_PROPERTIES:{implementer}"
-    if implement_step not in state.completed_steps:
-        _run_agent_change(
-            state,
-            implementer,
-            implementation_prompt,
-            invoker,
-            f"[orchestrator] implement {implementer}",
-        )
-        state.completed_steps.append(implement_step)
-        save_state(Path(state.run_dir) / "state.json", state)
     property_worktree = Path(state.agents[property_author].worktree)
     properties_prompt = _render_prompt(
         state,
@@ -216,17 +223,50 @@ def run_asymmetric_implementation_phase(
     )
     property_step = f"IMPLEMENT_PROPERTIES:{property_author}"
     completed = True
-    if property_step not in state.completed_steps:
-        completed = _run_property_change(
-            state,
-            property_author,
-            properties_prompt,
-            invoker,
-            executor,
-        )
-        if completed:
-            state.completed_steps.append(property_step)
-            save_state(Path(state.run_dir) / "state.json", state)
+    tasks: dict[AgentName, tuple[str, Future[object]]] = {}
+    with _invocation_pool(invoker, 2) as pool:
+        if implement_step not in state.completed_steps:
+            tasks[implementer] = (
+                implement_step,
+                pool.submit(
+                    _run_agent_change,
+                    state,
+                    implementer,
+                    implementation_prompt,
+                    invoker,
+                    f"[orchestrator] implement {implementer}",
+                ),
+            )
+        if property_step not in state.completed_steps:
+            tasks[property_author] = (
+                property_step,
+                pool.submit(
+                    _run_property_change,
+                    state,
+                    property_author,
+                    properties_prompt,
+                    invoker,
+                    executor,
+                ),
+            )
+        errors: list[Exception] = []
+        for agent in (implementer, property_author):
+            task = tasks.get(agent)
+            if task is None:
+                continue
+            step, future = task
+            try:
+                result = future.result()
+                if agent == property_author:
+                    completed = cast(bool, result)
+                    if not completed:
+                        continue
+                state.completed_steps.append(step)
+                save_state(Path(state.run_dir) / "state.json", state)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise errors[0]
     phase = state.phase
     if completed:
         state.phase = "RUN"
@@ -544,6 +584,13 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
             cross_total = 1
             cross_passed = 1 if state.property_suite_passed else 0
         check = executor.run(["make", "check"], worktree)
+        check_transcript = (
+            Path(state.run_dir) / "transcripts" / f"score-check-{agent}.txt"
+        )
+        check_transcript.write_text(
+            f"[stdout]\n{check.stdout}\n[stderr]\n{check.stderr}",
+            encoding="utf-8",
+        )
         mutants = (
             executor.run(["make", "mutants"], worktree)
             if check.returncode == 0
@@ -562,17 +609,6 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
             ),
             encoding="utf-8",
         )
-        clippy = executor.run(
-            [
-                "cargo",
-                "clippy",
-                "--all-targets",
-                "--",
-                "-W",
-                "clippy::pedantic",
-            ],
-            worktree,
-        )
         scores.append(
             BranchScore(
                 agent=agent,
@@ -589,12 +625,7 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
                     and finding.against == agent
                     for finding in state.findings
                 ),
-                pedantic_warnings=len(
-                    re.findall(
-                        r"(?m)^warning:",
-                        clippy.stdout + "\n" + clippy.stderr,
-                    )
-                ),
+                pedantic_warnings=_pedantic_warnings(executor, worktree),
                 diff_loc=_diff_loc(
                     worktree,
                     state.base_sha,
@@ -603,6 +634,17 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
                 check_ok=check.returncode == 0,
             )
         )
+    baseline_worktree = Path(state.agents[names[0]].worktree)
+    baseline_tip = state.agents[names[0]].last_sha
+    _git(baseline_worktree, "reset", "--hard", state.base_sha)
+    try:
+        base_pedantic_warnings = _pedantic_warnings(executor, baseline_worktree)
+    finally:
+        _git(baseline_worktree, "reset", "--hard", baseline_tip)
+    scores = [
+        replace(score, base_pedantic_warnings=base_pedantic_warnings)
+        for score in scores
+    ]
     _save_scores(Path(state.run_dir) / "scores.json", scores)
     winner = recommend(scores)
     state.phase = "LAND" if winner is not None else "COMPLETE"
@@ -826,6 +868,11 @@ def _load_scores(path: Path) -> list[BranchScore]:
                 pedantic_warnings=_score_int(data, "pedantic_warnings"),
                 diff_loc=_score_int(data, "diff_loc"),
                 check_ok=_score_bool(data, "check_ok"),
+                base_pedantic_warnings=_score_optional_int(
+                    data,
+                    "base_pedantic_warnings",
+                    0,
+                ),
             )
         )
     return scores
@@ -845,11 +892,53 @@ def _score_int(data: dict[object, object], key: str) -> int:
     return value
 
 
+def _score_optional_int(
+    data: dict[object, object],
+    key: str,
+    default: int,
+) -> int:
+    value = data.get(key, default)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"score {key} must be an integer")
+    return value
+
+
 def _score_bool(data: dict[object, object], key: str) -> bool:
     value = data.get(key)
     if not isinstance(value, bool):
         raise ValueError(f"score {key} must be a boolean")
     return value
+
+
+def _score_optional_bool(
+    data: dict[object, object],
+    key: str,
+    default: bool,
+) -> bool:
+    value = data.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"score {key} must be a boolean")
+    return value
+
+
+def _pedantic_warnings(executor: Executor, worktree: Path) -> int:
+    result = executor.run(
+        [
+            "cargo",
+            "clippy",
+            "--all-targets",
+            "--",
+            "-W",
+            "clippy::pedantic",
+        ],
+        worktree,
+    )
+    return len(
+        re.findall(
+            r"(?m)^warning:",
+            result.stdout + "\n" + result.stderr,
+        )
+    )
 
 
 def _cross_tests(
@@ -1077,6 +1166,9 @@ def run_review_phase(
         / "reviews"
         / f"round-{round_number}"
     )
+    pending: list[
+        tuple[AgentName, AgentName, str, Path, str]
+    ] = []
     for review_index, (reviewer_name, target_name) in enumerate(
         (("claude", "codex"), ("codex", "claude")),
         start=1,
@@ -1089,17 +1181,37 @@ def run_review_phase(
         checkout = review_root / f"candidate-{review_index}"
         _export_tree(Path(state.repo), state.agents[target].last_sha, checkout)
         prompt = _render_prompt(state, "review", checkout, failure_summary="")
-        invocation = invoker.invoke(
-            reviewer,
-            prompt,
-            checkout,
-            AGENT_TIMEOUT_SECONDS,
-        )
+        pending.append((reviewer, target, step, checkout, prompt))
+    invocations: dict[AgentName, Invocation] = {}
+    errors: list[Exception] = []
+    with _invocation_pool(invoker, max(1, len(pending))) as pool:
+        futures = {
+            reviewer: pool.submit(
+                invoker.invoke,
+                reviewer,
+                prompt,
+                checkout,
+                AGENT_TIMEOUT_SECONDS,
+            )
+            for reviewer, _, _, checkout, prompt in pending
+        }
+        for reviewer, _, _, _, _ in pending:
+            try:
+                invocations[reviewer] = futures[reviewer].result()
+            except Exception as error:
+                errors.append(error)
+    for reviewer, target, step, checkout, _ in pending:
+        invocation = invocations.get(reviewer)
+        if invocation is None:
+            continue
         _record_usage(state, reviewer, invocation.tokens, invocation.cost_usd)
         if invocation.exit_code != 0:
-            raise RuntimeError(
-                f"{reviewer} review failed; see {invocation.transcript_path}"
+            errors.append(
+                RuntimeError(
+                    f"{reviewer} review failed; see {invocation.transcript_path}"
+                )
             )
+            continue
         dirty = [
             line
             for line in _git(checkout, "status", "--porcelain").splitlines()
@@ -1161,6 +1273,8 @@ def run_review_phase(
             )
         state.completed_steps.append(step)
         save_state(Path(state.run_dir) / "state.json", state)
+    if errors:
+        raise errors[0]
     new_findings = state.findings[findings_before:]
     has_defects = any(
         finding.verified and not finding.resolved for finding in state.findings
@@ -1197,6 +1311,9 @@ def run_fix_phase(
     phase_name = state.phase
     started_wall = _now()
     started = time.monotonic()
+    pending: list[
+        tuple[AgentName, str, list[Finding], Path, str, str]
+    ] = []
     for agent in ("claude", "codex"):
         step = f"{phase_name}:{agent}"
         if step in state.completed_steps:
@@ -1225,30 +1342,58 @@ def run_fix_phase(
             worktree,
             failure_summary=failure_summary,
         )
-        _run_fix_change(
-            state,
-            agent,
-            findings,
-            prompt,
-            invoker,
-            f"[orchestrator] fix round {round_number} {agent}",
-        )
-        for finding in findings:
-            result = executor.run(
-                [
-                    "cargo",
-                    "nextest",
-                    "run",
-                    "--filter-expr",
-                    f"test(={finding.test_name})",
-                ],
+        pending.append(
+            (
+                agent,
+                step,
+                findings,
                 worktree,
+                prompt,
+                f"[orchestrator] fix round {round_number} {agent}",
             )
-            finding.resolved = result.returncode == 0
-            if not finding.resolved:
-                finding.observed = _output(result.stdout, result.stderr)
-        state.completed_steps.append(step)
-        save_state(Path(state.run_dir) / "state.json", state)
+        )
+    with _invocation_pool(invoker, max(1, len(pending))) as pool:
+        futures = {
+            agent: pool.submit(
+                _run_fix_change,
+                state,
+                agent,
+                findings,
+                prompt,
+                invoker,
+                commit_message,
+            )
+            for agent, _, findings, _, prompt, commit_message in pending
+        }
+        errors: list[Exception] = []
+        successful: set[AgentName] = set()
+        for agent, _, _, _, _, _ in pending:
+            try:
+                futures[agent].result()
+                successful.add(agent)
+            except Exception as error:
+                errors.append(error)
+        for agent, step, findings, worktree, _, _ in pending:
+            if agent not in successful:
+                continue
+            for finding in findings:
+                result = executor.run(
+                    [
+                        "cargo",
+                        "nextest",
+                        "run",
+                        "--filter-expr",
+                        f"test(={finding.test_name})",
+                    ],
+                    worktree,
+                )
+                finding.resolved = result.returncode == 0
+                if not finding.resolved:
+                    finding.observed = _output(result.stdout, result.stderr)
+            state.completed_steps.append(step)
+            save_state(Path(state.run_dir) / "state.json", state)
+        if errors:
+            raise errors[0]
     state.rounds_completed = round_number
     state.phase = next_symmetric_phase(
         phase_name,
@@ -1472,6 +1617,24 @@ def _run_agent_change(
         agent_state.last_sha = _git(worktree, "rev-parse", "HEAD")
         return list(validation.review_flags)
     raise AssertionError("unreachable retry loop")
+
+
+@contextmanager
+def _invocation_pool(
+    invoker: Invoker,
+    max_workers: int,
+) -> Iterator[ThreadPoolExecutor]:
+    pool = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        yield pool
+    except BaseException:
+        cancel = getattr(invoker, "cancel_all", None)
+        if callable(cancel):
+            cancel()
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    else:
+        pool.shutdown(wait=True)
 
 
 def _uniform_commit(worktree: Path, last_sha: str, message: str) -> None:

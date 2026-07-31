@@ -84,20 +84,31 @@ def render_report(
             "",
             "## Scores",
             "",
-            "| Agent | Cross tests | Mutants missed | Unresolved | Pedantic | LOC | Check | Penalty |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
+            "| Agent | Cross tests | Mutants missed | Unresolved | Pedantic raw/added | LOC | Check | Eligibility | Penalty |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |",
         ]
     )
     for score in scores:
+        eligibility = (
+            "eligible"
+            if score.eligible
+            else "ineligible: " + ", ".join(score.ineligible_reasons)
+        )
         lines.append(
             f"| {score.agent} | {score.cross_tests_passed}/{score.cross_tests_total} | "
             f"{score.mutants_missed} | {score.unresolved_defects} | "
-            f"{score.pedantic_warnings} | {score.diff_loc} | "
-            f"{'pass' if score.check_ok else 'fail'} | {score.penalty:.3f} |"
+            f"{score.pedantic_warnings}/{score.pedantic_warnings_added} | "
+            f"{score.diff_loc} | {'pass' if score.check_ok else 'fail'} | "
+            f"{eligibility} | {score.penalty:.3f} |"
         )
-    recommendation = (
-        f"Merge `{winner}`." if winner is not None else "Tie: human decision required."
-    )
+    if winner is not None:
+        recommendation = f"Merge `{winner}`."
+    elif len(scores) > 1 and any(not score.eligible for score in scores):
+        recommendation = "Incomplete eligible comparison: human decision required."
+    elif any(score.eligible for score in scores):
+        recommendation = "Eligible candidates tied: human decision required."
+    else:
+        recommendation = "No eligible candidate: human decision required."
     lines.extend(["", "## Merge recommendation", "", recommendation])
     if state.spec_bug is not None:
         lines.extend(["", "## Spec bug", "", state.spec_bug])

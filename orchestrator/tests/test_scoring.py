@@ -5,105 +5,107 @@ import unittest
 from orchestrator.scoring import BranchScore, recommend
 
 
-def score(agent: str, **overrides: object) -> BranchScore:
-    fields: dict[str, object] = {
-        "agent": agent,
-        "cross_tests_passed": 1,
-        "cross_tests_total": 1,
-        "mutants_missed": 0,
-        "unresolved_defects": 0,
-        "pedantic_warnings": 0,
-        "diff_loc": 100,
-        "check_ok": True,
-    }
-    fields.update(overrides)
-    return BranchScore(**fields)  # type: ignore[arg-type]
-
-
 class ScoringTests(unittest.TestCase):
-    def test_verified_defects_and_cross_tests_dominate_size(self) -> None:
-        robust = score(
-            "claude",
+    def test_cross_tests_rank_but_do_not_disqualify_candidates(self) -> None:
+        robust = BranchScore(
+            agent="claude",
             cross_tests_passed=4,
             cross_tests_total=4,
-            mutants_missed=1,
+            mutants_missed=0,
+            unresolved_defects=0,
             pedantic_warnings=2,
             diff_loc=900,
+            check_ok=True,
         )
-        small_but_wrong = score(
-            "codex",
+        small_but_wrong = BranchScore(
+            agent="codex",
             cross_tests_passed=3,
             cross_tests_total=4,
-            unresolved_defects=1,
+            mutants_missed=0,
+            unresolved_defects=0,
+            pedantic_warnings=0,
             diff_loc=100,
+            check_ok=True,
         )
 
         self.assertEqual("claude", recommend([robust, small_but_wrong]))
+        self.assertTrue(small_but_wrong.eligible)
+        self.assertEqual(250, small_but_wrong.cross_test_penalty)
 
     def test_an_exact_score_tie_is_left_to_the_human(self) -> None:
-        self.assertIsNone(recommend([score("claude"), score("codex")]))
+        first = BranchScore("claude", 1, 1, 0, 0, 0, 100, True)
+        second = BranchScore("codex", 1, 1, 0, 0, 0, 100, True)
 
-    def test_a_failed_check_cannot_win(self) -> None:
-        failed = score("claude", cross_tests_total=10, cross_tests_passed=10, check_ok=False)
-        passed = score(
-            "codex",
-            cross_tests_passed=1,
-            cross_tests_total=2,
-            mutants_missed=5,
-            pedantic_warnings=5,
-            diff_loc=500,
-        )
+        self.assertIsNone(recommend([first, second]))
 
+    def test_a_mutation_survivor_is_scored_without_making_the_candidate_ineligible(
+        self,
+    ) -> None:
+        failed = BranchScore("claude", 10, 10, 1, 0, 0, 10, True)
+        passed = BranchScore("codex", 2, 2, 0, 0, 5, 500, True)
+
+        self.assertTrue(failed.eligible)
         self.assertEqual("codex", recommend([failed, passed]))
 
-    def test_no_eligible_branch_recommends_nothing(self) -> None:
-        self.assertIsNone(
-            recommend([score("claude", check_ok=False), score("codex", check_ok=False)])
-        )
-
-    def test_a_missed_mutant_is_graded_not_disqualifying(self) -> None:
-        # The real run's shape: one surviving mutant against a branch that
-        # fails three of the opponent's regression tests.
-        thorough = score(
+    def test_a_symmetric_comparison_with_a_failed_check_never_auto_lands(
+        self,
+    ) -> None:
+        broken = BranchScore(
             "claude",
-            cross_tests_passed=3,
-            cross_tests_total=3,
-            mutants_missed=1,
-            pedantic_warnings=885,
-            diff_loc=426,
+            10,
+            10,
+            0,
+            0,
+            0,
+            10,
+            check_ok=False,
         )
-        leaky = score(
+        sound = BranchScore("codex", 2, 2, 0, 0, 5, 500, True)
+
+        self.assertIsNone(recommend([broken, sound]))
+        self.assertIn("check failed", broken.ineligible_reasons)
+
+    def test_one_eligible_asymmetric_candidate_can_be_recommended(self) -> None:
+        candidate = BranchScore("claude", 1, 1, 0, 0, 0, 10, True)
+
+        self.assertEqual("claude", recommend([candidate]))
+
+    def test_the_first_live_run_requires_a_human_instead_of_contradicting_evidence(
+        self,
+    ) -> None:
+        claude = BranchScore("claude", 3, 3, 1, 0, 885, 426, True)
+        codex = BranchScore("codex", 1, 4, 0, 0, 886, 277, True)
+
+        self.assertEqual("claude", recommend([claude, codex]))
+        self.assertTrue(claude.eligible)
+        self.assertTrue(codex.eligible)
+        self.assertEqual(100, claude.mutant_penalty)
+        self.assertEqual(750, codex.cross_test_penalty)
+
+    def test_only_warnings_added_beyond_the_frozen_base_are_scored(self) -> None:
+        inherited = BranchScore(
+            "claude",
+            1,
+            1,
+            0,
+            0,
+            885,
+            100,
+            True,
+            base_pedantic_warnings=885,
+        )
+        added = BranchScore(
             "codex",
-            cross_tests_passed=1,
-            cross_tests_total=4,
-            pedantic_warnings=886,
-            diff_loc=277,
+            1,
+            1,
+            0,
+            0,
+            886,
+            100,
+            True,
+            base_pedantic_warnings=885,
         )
 
-        self.assertEqual("claude", recommend([thorough, leaky]))
-
-    def test_a_defect_costs_the_same_whoever_filed_it(self) -> None:
-        # A finding filed against you and a defect only the opponent's test
-        # catches are the same thing: one defect still on your branch.
-        filed_against_me = score("claude", unresolved_defects=1)
-        caught_by_their_test = score(
-            "codex",
-            cross_tests_passed=0,
-            cross_tests_total=1,
-        )
-
-        self.assertEqual(
-            filed_against_me.penalty,
-            caught_by_their_test.penalty,
-            "a defect's cost must not depend on which agent found it",
-        )
-
-    def test_cross_tests_failed_counts_every_failure(self) -> None:
-        for passed, total, expected in [(3, 3, 0), (1, 4, 3), (0, 2, 2), (5, 3, 0)]:
-            with self.subTest(passed=passed, total=total):
-                branch = score(
-                    "claude",
-                    cross_tests_passed=passed,
-                    cross_tests_total=total,
-                )
-                self.assertEqual(expected, branch.cross_tests_failed)
+        self.assertEqual(0, inherited.pedantic_warnings_added)
+        self.assertEqual(1, added.pedantic_warnings_added)
+        self.assertLess(inherited.penalty, added.penalty)

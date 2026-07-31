@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
 from orchestrator.commands import Executor, SubprocessExecutor
 from orchestrator.models import Invocation
+from orchestrator.storage import append_progress
 
 AgentName = Literal["claude", "codex"]
 
@@ -22,21 +25,65 @@ class SubprocessInvoker:
         run_dir: Path,
         executor: Executor | None = None,
         models: dict[str, str] | None = None,
+        heartbeat_seconds: float = 15.0,
     ) -> None:
         self.run_dir = run_dir
         self.executor = executor or SubprocessExecutor()
         self.models = dict(models or {})
+        self.heartbeat_seconds = heartbeat_seconds
+        self._sequence = max(
+            (
+                int(path.stem.split("-", 1)[0])
+                for path in (self.run_dir / "transcripts").glob("*.txt")
+                if path.stem.split("-", 1)[0].isdigit()
+            ),
+            default=0,
+        )
+        self._sequence_lock = threading.Lock()
+
+    def cancel_all(self) -> None:
+        cancel = getattr(self.executor, "cancel_all", None)
+        if callable(cancel):
+            cancel()
 
     def invoke(
         self, agent: AgentName, prompt: str, cwd: Path, timeout: float
     ) -> Invocation:
-        sequence = len(list((self.run_dir / "transcripts").glob("*.txt"))) + 1
+        with self._sequence_lock:
+            self._sequence += 1
+            sequence = self._sequence
         stem = f"{sequence:03d}-{agent}"
         transcript = self.run_dir / "transcripts" / f"{stem}.txt"
         patch_path = self.run_dir / "patches" / f"{stem}.patch"
         baseline = _git(cwd, "rev-parse", "HEAD").strip()
-        result = self.executor.run(
-            command_for(agent, prompt, self.models.get(agent)), cwd, timeout
+        started = time.monotonic()
+        append_progress(self.run_dir, f"agent {agent} started")
+        command = command_for(agent, prompt, self.models.get(agent))
+        stopped = threading.Event()
+
+        def heartbeat() -> None:
+            while not stopped.wait(self.heartbeat_seconds):
+                elapsed = time.monotonic() - started
+                append_progress(
+                    self.run_dir,
+                    f"agent {agent} heartbeat after {elapsed:.0f}s; "
+                    f"{_change_summary(cwd)}",
+                )
+
+        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        heartbeat_thread.start()
+        try:
+            result = self.executor.run(command, cwd, timeout)
+        except Exception as error:
+            append_progress(self.run_dir, f"agent {agent} failed: {error}")
+            raise
+        finally:
+            stopped.set()
+            heartbeat_thread.join()
+        append_progress(
+            self.run_dir,
+            f"agent {agent} finished with exit {result.returncode} "
+            f"after {result.duration_seconds:.1f}s",
         )
         _git(cwd, "add", "-N", ".")
         patch_path.write_text(
@@ -57,6 +104,17 @@ class SubprocessInvoker:
             tokens=tokens,
             cost_usd=cost,
         )
+
+
+def _change_summary(cwd: Path) -> str:
+    try:
+        changed = [
+            line for line in _git(cwd, "status", "--short").splitlines() if line
+        ]
+    except RuntimeError:
+        return "change summary unavailable"
+    label = "path" if len(changed) == 1 else "paths"
+    return f"{len(changed)} changed {label}"
 
 
 def command_for(agent: AgentName, prompt: str, model: str | None = None) -> list[str]:

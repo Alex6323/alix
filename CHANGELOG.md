@@ -19,7 +19,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   frozen spec in isolated worktrees. Symmetric differential review accepts only
   mechanically reproduced, user-relevant defects; asymmetric runs pair an
   implementation with an independent property suite. Atomic state, raw
-  transcripts, bounded fixes, serialized mutation gates, machine scoring, and
+  transcripts, live durable heartbeats, concurrent independent agent calls,
+  bounded fixes, serialized mutation gates, correctness-gated scoring, and
   test-first landing make every run resumable and inspectable.
 
 - The kids client and the mobile app now show the persistent "progress isn't

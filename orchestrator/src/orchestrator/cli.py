@@ -20,7 +20,7 @@ from orchestrator.engine import (
 )
 from orchestrator.models import AgentName, Mode, PhaseHistory, RunState
 from orchestrator.report import render_report
-from orchestrator.storage import load_state, save_state
+from orchestrator.storage import append_progress, load_state, save_state
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -119,6 +119,7 @@ def drive_run(
     active_executor = executor or SubprocessExecutor()
     while state.phase != "COMPLETE":
         phase = state.phase
+        append_progress(Path(state.run_dir), f"phase {phase} started")
         try:
             if phase == "IMPLEMENT":
                 run_implementation_phase(state, active_invoker)
@@ -147,7 +148,15 @@ def drive_run(
                 run_land_phase(state)
             else:
                 raise ValueError(f"unknown state phase {phase!r}")
+            append_progress(
+                Path(state.run_dir),
+                f"phase {phase} finished; next phase {state.phase}",
+            )
         except Exception as error:
+            append_progress(
+                Path(state.run_dir),
+                f"phase {phase} failed: {error}",
+            )
             state.history.append(
                 PhaseHistory(
                     phase=phase,

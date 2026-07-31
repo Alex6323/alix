@@ -14,7 +14,7 @@ Requirements:
 - Python 3.12 or newer
 - `uv`
 - `claude` and `codex` on `PATH`
-- a Rust target repository with `make check`, `make mutants`, and `make gate`
+- a Rust target repository with `make check` and `make gate`
 - `cargo nextest` and `cargo mutants`
 
 ```sh
@@ -53,7 +53,16 @@ uv run --project orchestrator orchestrate report \
 The run root must be outside the target repository. Agent worktrees live under
 its hidden `.worktrees/` directory. The visible run directory contains only the
 frozen inputs and durable evidence: atomic `state.json`, transcripts, patch
-snapshots, finding patches, scores, and the Markdown report.
+snapshots, finding patches, scores, an append-only `progress.log`, and the
+Markdown report. Progress is also mirrored to stderr. Agent entries include a
+periodic elapsed-time heartbeat and the number of changed worktree paths, so a
+long invocation remains observable without exposing partial model prose.
+
+Independent agent calls within one protocol phase run concurrently.
+Per-worktree patch validation and commits remain isolated. Shared state saves,
+review repro verification, and both `make gate` runs are serialized. Interrupting
+a parallel phase terminates every active agent process group before returning
+control to the resumable state machine.
 
 ## Protocols
 
@@ -93,30 +102,32 @@ verbatim to the implementation branch and remain immutable during fix rounds.
 
 ## Scoring and landing
 
-A branch is eligible only if `make check` passes on it. Among eligible
-branches the lower penalty wins:
+Correctness is an eligibility boundary, not a score. A candidate is eligible
+only when:
 
-- each unresolved verified defect filed against the branch: 10,000
-- each of the opponent's regression tests the branch fails: 10,000
-- each missed mutant: 100
-- each pedantic warning: 2
-- changed lines: 0.001 each
+- `make check` passes
+- no verified defect remains unresolved
 
-The two 10,000 terms are deliberately equal. A defect is a defect whether it
-was filed against this branch or only caught by the other agent's test, and
-findings are directional: an agent that finds a bug in its opponent is never
-asked whether its own branch has the same one.
-
-Eligibility is `make check`, not `make gate`, so correctness disqualifies a
-branch but test-completeness does not. Missed mutants are a graded cost
-instead: a surviving mutant says the branch's tests are thin, which should
-lose to a rival that is genuinely wrong only if nothing worse is on the table.
-
-Exact ties and runs where no branch passes `make check` stop for a human
-decision. Otherwise
-landing requires the base ref to remain at its frozen SHA and its checkout to be
-clean. The orchestrator commits the union of tests first, applies the winning
+Raw cross-tests are opponent-authored evidence, not a neutral gate. Among
+eligible candidates, the lower quality penalty wins: up to 1,000 points for
+cross-test failure rate, 100 points for each missed mutant, two points for each
+pedantic warning added beyond the frozen base, plus 0.001 per changed line.
+`make gate` still runs and its mutation result remains visible, but a survivor
+measures the candidate tests rather than making an otherwise correct
+implementation ineligible. A symmetric run requires every candidate to be
+eligible before making a recommendation; one surviving branch is not a
+complete comparison. Exact ties, incomplete comparisons, and runs with no
+eligible candidate stop for a human decision. Otherwise landing requires the
+base ref to remain at its frozen SHA and its checkout to be clean. The
+orchestrator commits the union of tests first, applies the winning
 implementation second, then fast-forwards the base.
+
+Runs retain full agent worktrees, build outputs, neutral review exports, and
+evidence. The first full Alix run used about 7.6 GB. Budget at least 10 GB for a
+comparable run; concurrent agents raise peak usage and can otherwise fail
+mid-run with ENOSPC. This machine sweeps files under `~/tmp` after seven
+untouched days, so put `--run-dir` outside `~/tmp` when the evidence must remain
+inspectable. Build scratch and disposable worktrees may still live there.
 
 ## Development gates
 
