@@ -340,6 +340,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck stopped loading entirely: a file copied from the manual's frontmatter
   example hit this on its first initialization.
 
+- The picker no longer stays blank forever when a start-up request stalls. Boot
+  already retried a *failed* request, but a request that never answers is not a
+  failure: nothing settled, so nothing retried, and only a manual reload
+  recovered. Start-up now gives up on a stalled request after four seconds and
+  retries, which is the recovery the existing retry was meant to provide. This
+  bounds the symptom; it is not a fix for whatever strands the request.
+
 - Cloze cards read as fill-in-the-blank. The gap you are answering is a chip
   with a single rule on the baseline instead of four separated underscores, the
   other holes are quiet chips instead of `[…]`, and the gapped sentence now

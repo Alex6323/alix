@@ -22,6 +22,25 @@ test.afterEach(() => {
   if (fs.existsSync(HIDDEN_DIR)) fs.renameSync(HIDDEN_DIR, DECKS_DIR);
 });
 
+test("a boot request that never answers still loads the picker", async ({ page }) => {
+  // Not a rejection: the response never arrives at all. That is the shape the
+  // keep-alive stall produces, and the one boot's retry used to miss, because
+  // Promise.all never settles so .catch never fires. Hangs once, so the retry
+  // has something to succeed with.
+  let hang = true;
+  await page.route("**/api/ask-info", async (route) => {
+    if (hang) {
+      hang = false;
+      await new Promise(() => {}); // never fulfilled: the request just stalls
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await expect(adultDeckRow(page, "Animals")).toBeVisible({ timeout: 20000 });
+});
+
 test("an unreadable decks root shows a calm retryable notice, and retry recovers", async ({ page, pageErrors }) => {
   await expect(adultDeckRow(page, "Animals")).toBeVisible();
 

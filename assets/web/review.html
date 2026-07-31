@@ -5128,13 +5128,21 @@ document.getElementById("mAbout").addEventListener("click", () => {
 // connection from a killed one, can fail the first request; the picker-keys
 // endpoint also falls back to the Vim defaults on an older server. Without the
 // retry a failed first request left a blank page until a manual refresh.
+// A request that never answers is not a rejection, so the retry below could not
+// see it: Promise.all simply never settled and the picker stayed blank until a
+// manual reload. Bound the wait so a stranded request becomes a retry.
+const BOOT_TIMEOUT_MS = 4000;
 function boot() {
-  Promise.all([
+  const bounded = (work) => Promise.race([
+    work,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("boot timed out")), BOOT_TIMEOUT_MS)),
+  ]);
+  bounded(Promise.all([
     api("/api/keys"),
     api("/api/picker-keys").catch(() => ({})),
     api("/api/ask-info").catch(() => null),
     api("/api/browse-keys").catch(() => null),
-  ]).then(([k, pk, ai, bk]) => {
+  ])).then(([k, pk, ai, bk]) => {
     KEYS = k;
     if (ai) askInfo = ai;
     if (bk) BK = bk;
