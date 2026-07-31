@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     ask,
-    backend::ensure_source_reachable,
+    backend::{ensure_source_reachable, supports_structured_progress},
     config::{AskConfig, GenerateCardStyle, GenerateDeckConfig},
     deck::is_url,
     parser,
@@ -326,7 +326,7 @@ fn run_config(
     AskConfig {
         allowed_tools,
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
-        timeout_secs: cfg.timeout_secs,
+        timeout_secs: cfg.timeout_for(supports_structured_progress(ask_cfg)),
         progress: true,
         idle_timeout_secs: cfg.idle_timeout(),
         cwd,

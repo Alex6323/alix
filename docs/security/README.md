@@ -116,8 +116,10 @@ validation, forwards each provider stderr line as a bounded local diagnostic,
 and kills the provider process group when the configured absolute or inactivity
 limit expires. The inactivity guard is armed only when the selected backend
 provides structured progress events; silence from an unstructured backend does
-not prove that it is stuck. Those backends retain the absolute limit and expose
-only generic stdout activity unless they write a diagnostic to stderr
+not prove that it is stuck. For deck generation, those backends instead cap the
+absolute limit at the configured inactivity value, preserving a bounded wedge
+without claiming to observe activity. They expose only generic stdout activity
+unless they write a diagnostic to stderr
 (`src/ask.rs`, `src/backend/claude.rs`, `src/backend/codex.rs`).
 
 The development-only dual-agent orchestrator also executes provider CLIs as the

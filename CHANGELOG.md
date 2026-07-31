@@ -13,9 +13,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   succeeds. Deck-drafting calls have a one-hour absolute safety limit.
   Generation paths using structured events also have a separate five-minute
   inactivity limit that resets whenever the agent emits real activity and can
-  be disabled with `idle_timeout_secs = 0`. Gemini, Copilot, and unstructured
-  wrappers retain their absolute limit because silence does not prove they are
-  stuck; they report generic activity and forward bounded stderr diagnostics.
+  be disabled with `idle_timeout_secs = 0`. For Gemini, Copilot, and
+  unstructured wrappers, the same setting is a nonrenewing absolute fallback:
+  by default they retain the prior five-minute ceiling rather than waiting the
+  full hour when wedged. They report generic activity and forward bounded
+  stderr diagnostics.
 
 - `alix generate` now accepts `--language`, `--audience`, and `--card-style`
   (`mixed`, `plain`, `cloze`, or `authored-choices`), and applies `--goal` to

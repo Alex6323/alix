@@ -19,10 +19,11 @@ source fetching, source reading, and drafting. Partial generated cards stay
 hidden until the complete result has passed validation. Deck drafting has a
 one-hour absolute limit. With a structured-event backend, every generation
 path also has a five-minute inactivity limit that resets on each real agent
-event. Set `idle_timeout_secs = 0` to disable it. Backends without structured
-events keep the absolute limit because silence does not prove they are stuck.
-Configure the limits under `[generate]`. Trace and workspace planning calls
-keep their absolute limit under `[trace]`.
+event. For a backend without structured events, that five-minute value becomes
+a nonrenewing absolute fallback because Alix cannot distinguish silence from
+work. Set `idle_timeout_secs = 0` to disable either use and leave only the
+one-hour limit. Configure the limits under `[generate]`. Trace and workspace
+planning calls keep their absolute limit under `[trace]`.
 
 Also available from the web UI's ☰ menu (**Add deck…**), URL sources only.
 See [the web app](15-the-web-app.md).
@@ -80,7 +81,8 @@ language, and audience apply to both.
 deduplicated, tightened version while preserving the requested language,
 audience, and card style. It costs an extra call, but it's worth it when the
 source is repetitive. The prompt and defaults (`model`, `timeout_secs`
-(default 3600), `idle_timeout_secs` (default 300, `0` disables),
+(default 3600), `idle_timeout_secs` (default 300; structured inactivity or an
+unstructured absolute fallback, and `0` disables),
 `max_cards` (default 30), `language`, `audience`, `card_style`, and an `extra`
 instruction field) live in the `[generate]` section of the config.
 

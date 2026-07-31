@@ -117,6 +117,10 @@ pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
     }
 }
 
+pub fn supports_structured_progress(cfg: &AskConfig) -> bool {
+    backend_for(cfg).is_ok_and(|backend| backend.structured_progress())
+}
+
 pub fn ensure_source_reachable(cfg: &AskConfig, is_url: bool) -> anyhow::Result<()> {
     let backend = backend_for(cfg)?;
     if is_url && !backend.can_fetch_web() {
@@ -216,6 +220,22 @@ mod tests {
             backend.progress_update("some output")
         );
         assert_eq!(ProgressUpdate::default(), backend.progress_update(" \n"));
+    }
+
+    #[test]
+    fn structured_progress_capability_matches_the_backend_contract() {
+        for (backend, expected) in [
+            (BackendKind::Claude, true),
+            (BackendKind::Codex, true),
+            (BackendKind::Gemini, false),
+            (BackendKind::Copilot, false),
+        ] {
+            let cfg = AskConfig {
+                backend,
+                ..AskConfig::default()
+            };
+            assert_eq!(expected, supports_structured_progress(&cfg), "{backend:?}");
+        }
     }
 
     #[test]

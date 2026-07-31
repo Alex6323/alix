@@ -3813,3 +3813,49 @@ fn a_zero_inactivity_limit_does_not_break_every_generation() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(stdout(&out).contains("## Generated Q"), "{}", stdout(&out));
 }
+
+#[test]
+fn a_wedged_unstructured_backend_still_stops_at_the_inactivity_limit() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let cli = dir.path().join("wedged-gemini");
+    std::fs::write(
+        &cli,
+        "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\nsleep 30\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "[ask]\nbackend = \"gemini\"\ncommand = \"{}\"\n\
+             [generate]\ntimeout_secs = 6\nidle_timeout_secs = 1\n",
+            cli.display()
+        ),
+    );
+    let out_path = dir.path().join("deck.md");
+
+    let started = std::time::Instant::now();
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--output",
+        out_path.to_str().unwrap(),
+    ]);
+    let elapsed = started.elapsed();
+
+    assert!(!out.status.success(), "the wedged run somehow succeeded");
+    assert!(
+        elapsed < std::time::Duration::from_secs(4),
+        "an unstructured backend has no inactivity guard, so a wedged provider \
+         runs to the absolute limit: gave up after {:?}, not the 1s inactivity \
+         limit; with the shipped default that is 3600s where the parent commit \
+         stopped at 300s. stderr: {}",
+        elapsed,
+        stderr(&out)
+    );
+}

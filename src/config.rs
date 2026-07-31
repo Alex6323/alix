@@ -269,6 +269,16 @@ impl GenerateDeckConfig {
     pub fn idle_timeout(&self) -> Option<u64> {
         (self.idle_timeout_secs > 0).then_some(self.idle_timeout_secs)
     }
+
+    pub fn timeout_for(&self, structured_progress: bool) -> u64 {
+        if structured_progress {
+            self.timeout_secs
+        } else {
+            self.idle_timeout().map_or(self.timeout_secs, |fallback| {
+                self.timeout_secs.min(fallback)
+            })
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -1142,8 +1152,8 @@ pub fn default_config_toml() -> &'static str {
 # permission mode and tool allowlist (WebFetch reads the page).
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
-# timeout_secs = 3600           # absolute safety limit for one generation call
-# idle_timeout_secs = 300       # structured-event inactivity limit; 0 disables
+# timeout_secs = 3600           # maximum absolute limit for one generation call
+# idle_timeout_secs = 300       # structured idle / unstructured absolute fallback; 0 disables
 # max_cards = 30                # upper bound on cards per deck
 # language = ""                 # output language; empty = follow the source
 # audience = ""                 # intended learner, e.g. "new Rust programmers"
@@ -1792,6 +1802,20 @@ mod tests {
         assert!(generated.contains("# language = \"\""));
         assert!(generated.contains("# audience = \"\""));
         assert!(generated.contains("# card_style = \"mixed\""));
+    }
+
+    #[test]
+    fn generation_timeout_keeps_long_structured_runs_and_caps_unstructured_runs() {
+        let mut config = GenerateDeckConfig::default();
+        assert_eq!(3600, config.timeout_for(true));
+        assert_eq!(300, config.timeout_for(false));
+
+        config.timeout_secs = 120;
+        assert_eq!(120, config.timeout_for(false));
+
+        config.timeout_secs = 3600;
+        config.idle_timeout_secs = 0;
+        assert_eq!(3600, config.timeout_for(false));
     }
 
     #[test]
