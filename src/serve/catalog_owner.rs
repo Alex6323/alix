@@ -457,7 +457,11 @@ mod tests {
     use crate::store::Store;
 
     fn write_deck(path: &Path, stem: &str) {
-        std::fs::write(path, format!("---\nid: \"deck-{stem}\"\n---\n## f\nb\n")).unwrap();
+        std::fs::write(
+            path,
+            format!("---\nformat-version: 1\nid: \"deck-{stem}\"\n---\n## f\nb\n"),
+        )
+        .unwrap();
     }
 
     fn state_over(dir: &Path) -> CatalogState {
@@ -506,7 +510,7 @@ mod tests {
         let deck_path = dir.path().join("alpha.md");
         std::fs::write(
             &deck_path,
-            "---\nid: \"deck-alpha\"\n---\n## f <!-- id: card-alpha -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-alpha\"\n---\n## f <!-- id: card-alpha -->\nb\n",
         )
         .unwrap();
         let mut s = state_over(dir.path());

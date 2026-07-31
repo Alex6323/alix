@@ -101,8 +101,7 @@ fn stderr(out: &Output) -> String {
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
-const VALID_DECK: &str =
-    "---\nid: \"deck-mathdeck\"\n---\n## What is 2 + 2? <!-- id: card-math1 -->\n4\n";
+const VALID_DECK: &str = "---\nformat-version: 1\nid: \"deck-mathdeck\"\n---\n## What is 2 + 2? <!-- id: card-math1 -->\n4\n";
 
 #[test]
 fn profile_add_list_and_remove_are_hermetic() {
@@ -169,7 +168,7 @@ fn deck_copy_lands_the_public_deck_and_reports_the_boundary() {
     let deck = write(
         &source.join("decks"),
         "facts.md",
-        "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
+        "---\nformat-version: 1\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
     );
 
     let out = alix(&["deck", "copy", &deck, destination.to_str().unwrap()]);
@@ -196,7 +195,7 @@ fn deck_move_requires_confirmation_and_reports_progress() {
     let deck = write(
         &source.join("decks"),
         "facts.md",
-        "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
+        "---\nformat-version: 1\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
     );
     write_progress_document(&source, "deck-deck1", "facts.md", "");
 
@@ -312,7 +311,7 @@ fn doctor_nudges_a_long_source_list_toward_its_common_root() {
     let deck = write(
         dir.path(),
         "cards.md",
-        "---\nid: \"deck-deck1\"\nsource:\n  - a.rs\n  - b.rs\n  - c.rs\n  - d.rs\n---\n## q\na\n<!-- id: card-card1 -->\n",
+        "---\nformat-version: 1\nid: \"deck-deck1\"\nsource:\n  - a.rs\n  - b.rs\n  - c.rs\n  - d.rs\n---\n## q\na\n<!-- id: card-card1 -->\n",
     );
     let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
@@ -345,7 +344,7 @@ fn workspace_deadline_shows_sets_and_clears() {
     std::fs::write(ws.join("alix.toml"), "title = \"Ws\"\n").unwrap();
     std::fs::write(
         ws.join("decks/cards.md"),
-        "---\nid: \"deck-cards\"\n---\n## Q?\nA\n",
+        "---\nformat-version: 1\nid: \"deck-cards\"\n---\n## Q?\nA\n",
     )
     .unwrap();
 
@@ -422,12 +421,12 @@ fn stats_on_a_folder_reports_every_deck_inside() {
     write(
         dir.path(),
         "alpha.md",
-        "---\nid: deck-alpha\n---\n## a? <!-- id: card-a1 -->\na\n",
+        "---\nformat-version: 1\nid: deck-alpha\n---\n## a? <!-- id: card-a1 -->\na\n",
     );
     write(
         dir.path(),
         "beta.md",
-        "---\nid: deck-beta\n---\n## b? <!-- id: card-b1 -->\nb\n",
+        "---\nformat-version: 1\nid: deck-beta\n---\n## b? <!-- id: card-b1 -->\nb\n",
     );
     let store = dir.path().join("state");
     let out = alix(&[
@@ -454,12 +453,12 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     let a = write(
         &members,
         "a.md",
-        "---\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
+        "---\nformat-version: 1\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
     );
     let b = write(
         &members,
         "b.md",
-        "---\nid: deck-deckb\n---\n## qb <!-- id: card-qb1 -->\nans-b\n",
+        "---\nformat-version: 1\nid: deck-deckb\n---\n## qb <!-- id: card-qb1 -->\nans-b\n",
     );
     let store_path = ws.clone();
     let mut store = decks_store(&[&a, &b], &store_path);
@@ -599,7 +598,7 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     write(
         dir.path(),
         "other.md",
-        "---\nid: \"deck-otherdeck\"\n---\n## other <!-- id: card-other1 -->\nb\n",
+        "---\nformat-version: 1\nid: \"deck-otherdeck\"\n---\n## other <!-- id: card-other1 -->\nb\n",
     );
     let store_path = dir.path().join("state");
 
@@ -684,7 +683,7 @@ fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
                 dir.path(),
                 &format!("live{index}.md"),
                 &format!(
-                    "---\nid: \"deck-live{index}\"\n---\n\
+                    "---\nformat-version: 1\nid: \"deck-live{index}\"\n---\n\
                      ## question {index} <!-- id: card-live{index} -->\nanswer\n"
                 ),
             );
@@ -750,11 +749,11 @@ fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read()
     for (shape, broken) in [
         (
             "an invalid card id",
-            "---\nid: \"deck-b\"\n---\n## q <!-- id: nope -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-b\"\n---\n## q <!-- id: nope -->\na\n",
         ),
         (
             "unclosed frontmatter",
-            "---\nid: \"deck-b\"\n## q <!-- id: card-b1 -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-b\"\n## q <!-- id: card-b1 -->\na\n",
         ),
         ("a front without an answer", "## q <!-- id: card-b1 -->\n"),
     ] {
@@ -847,7 +846,7 @@ fn reset_orphans_on_a_deck_file_spares_a_neighbours_live_progress() {
     let neighbour = write(
         dir.path(),
         "other.md",
-        "---\nid: \"deck-otherdeck\"\n---\n## other <!-- id: card-other1 -->\nb\n",
+        "---\nformat-version: 1\nid: \"deck-otherdeck\"\n---\n## other <!-- id: card-other1 -->\nb\n",
     );
 
     let mut store = deck_store(&target, &store_path);
@@ -926,7 +925,7 @@ fn deck_reset_drops_that_decks_virtual_cards() {
     let other = write(
         dir.path(),
         "other.md",
-        "---\nid: deck-otherdeck\n---\n## Other <!-- id: card-other1 -->\nanswer\n",
+        "---\nformat-version: 1\nid: deck-otherdeck\n---\n## Other <!-- id: card-other1 -->\nanswer\n",
     );
     let store_path = dir.path().join("state");
 
@@ -1102,7 +1101,7 @@ fn augment_target_format_caches_a_reshape() {
     let deck = write(
         dir.path(),
         "parts.md",
-        "---\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n",
+        "---\nformat-version: 1\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n",
     );
     // The model returns a structured reshape for card index 0: a list body and a
     // line-by-line mode suggestion.
@@ -1141,7 +1140,7 @@ fn augment_target_format_caches_a_reshape() {
         "card text and token preserved: {deck_after}"
     );
     assert!(
-        deck_after.starts_with("---\nid: \"deck-"),
+        deck_after.starts_with("---\nformat-version: 1\nid: \"deck-"),
         "the deck keeps its initialized frontmatter id: {deck_after}"
     );
 }
@@ -1155,7 +1154,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
     let deck = write(
         dir.path(),
         "parts.md",
-        "---\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n",
+        "---\nformat-version: 1\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n",
     );
 
     let store_path = dir.path().join("state");
@@ -1201,8 +1200,7 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     // `deck augment --target format` must filter those out exactly like
     // `assemble::select`'s injection does, or the same card gets warmed twice.
     let dir = TempDir::new().unwrap();
-    let deck_text =
-        "---\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n";
+    let deck_text = "---\nformat-version: 1\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n";
     let deck = write(dir.path(), "parts.md", deck_text);
     let real_id = alix::parser::parse_str("parts.md", deck_text).unwrap()[0]
         .id()
@@ -1566,7 +1564,7 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
     let dir = TempDir::new().unwrap();
     // Card 1: recall=review (state 2), reconstruct=learning (state 1), recognized.
     // Card 2: recall=learning only — no reconstruct schedule, not recognized.
-    let deck_text = "---\nid: deck-cardsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n";
+    let deck_text = "---\nformat-version: 1\nid: deck-cardsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n";
     let deck = write(dir.path(), "cards.md", deck_text);
     let cards = alix::parser::parse_str("cards.md", deck_text).unwrap();
     let (id1, id2) = (cards[0].id().unwrap(), cards[1].id().unwrap());
@@ -1599,7 +1597,8 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
 #[test]
 fn stats_shows_per_depth_due_counts() {
     let dir = TempDir::new().unwrap();
-    let deck_text = "---\nid: deck-statsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n";
+    let deck_text =
+        "---\nformat-version: 1\nid: deck-statsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n";
     let deck = write(dir.path(), "stats.md", deck_text);
     let card_id = alix::parser::parse_str("stats.md", deck_text).unwrap()[0]
         .id()
@@ -1975,7 +1974,7 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
 
     std::fs::write(
         &received_deck,
-        "---\nid: \"deck-mathdeck\"\n---\n## changed <!-- id: card-math1 -->\nlocal\n",
+        "---\nformat-version: 1\nid: \"deck-mathdeck\"\n---\n## changed <!-- id: card-math1 -->\nlocal\n",
     )
     .unwrap();
     let mut changed_augmentation = alix::augment::AugmentCache::open_for_deck(
@@ -2009,7 +2008,11 @@ fn share_zip_of_a_workspace_folder_strips_personal_state() {
     let members = ws.join("decks");
     std::fs::create_dir_all(&members).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
-    write(&members, "a.md", "---\nid: \"deck-a\"\n---\n## q\na\n");
+    write(
+        &members,
+        "a.md",
+        "---\nformat-version: 1\nid: \"deck-a\"\n---\n## q\na\n",
+    );
     std::fs::create_dir(ws.join("progress")).unwrap();
     write(&ws.join("progress"), "a.json", "{}");
     let out_dir = dir.path().join("out");
@@ -2865,7 +2868,7 @@ fn augment_choices_caches_distractors_for_two_cards() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n",
+        "---\nformat-version: 1\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"], "1": ["W3", "W4"]}"#);
     let config = write(
@@ -2913,7 +2916,7 @@ fn a_workspace_store_override_does_not_relocate_augmentation() {
     let deck = write(
         &workspace.join("decks"),
         "quiz.md",
-        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
+        "---\nformat-version: 1\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"]}"#);
     let config = write(
@@ -2937,7 +2940,7 @@ fn augment_notes_caches_a_trivia_note() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
+        "---\nformat-version: 1\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": "a fun fact"}"#);
     let config = write(
@@ -2968,7 +2971,7 @@ fn augment_without_a_store_flag_caches_beside_the_loose_deck() {
     let deck = write(
         decks.path(),
         "quiz.md",
-        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
+        "---\nformat-version: 1\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(decks.path(), r#"{"0": "a fun fact"}"#);
 
@@ -2998,7 +3001,7 @@ fn augment_questions_caches_a_reworded_variant() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
+        "---\nformat-version: 1\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["Rephrased Q1?"]}"#);
     let config = write(
@@ -3029,7 +3032,7 @@ fn augment_questions_on_a_cloze_only_deck_errors() {
     let deck = write(
         dir.path(),
         "c.md",
-        "---\nid: \"deck-cloze\"\n---\n## Complete <!-- id: card-c1 -->\nThe capital of France is \\blank{Paris}.\n",
+        "---\nformat-version: 1\nid: \"deck-cloze\"\n---\n## Complete <!-- id: card-c1 -->\nThe capital of France is \\blank{Paris}.\n",
     );
     let config = write(
         dir.path(),
@@ -3062,7 +3065,7 @@ fn augment_keypoints_caches_decomposed_claims() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
+        "---\nformat-version: 1\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n",
     );
     let cli = fake_claude(dir.path(), r#"{"0": ["point one", "point two"]}"#);
     let config = write(
@@ -3094,7 +3097,7 @@ fn augment_order_prints_and_caches_the_walk() {
     let deck = write(
         dir.path(),
         "quiz.md",
-        "---\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n",
+        "---\nformat-version: 1\nid: \"deck-quiz\"\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n",
     );
     let cli = fake_claude(
         dir.path(),
@@ -3130,7 +3133,7 @@ fn augment_on_an_empty_deck_errors_without_calling_the_backend() {
     let deck = write(
         dir.path(),
         "empty.md",
-        "---\nid: deck-emptydeck\n---\n# Nothing\n",
+        "---\nformat-version: 1\nid: deck-emptydeck\n---\n# Nothing\n",
     );
     let config = write(
         dir.path(),
@@ -3173,7 +3176,10 @@ fn deck_init_stamps_an_intended_markdown_deck() {
         stdout(&out)
     );
     let stamped = std::fs::read_to_string(&deck).unwrap();
-    assert!(stamped.starts_with("---\nid: \"deck-"), "{stamped}");
+    assert!(
+        stamped.starts_with("---\nformat-version: 1\nid: \"deck-"),
+        "{stamped}"
+    );
     assert_eq!(1, stamped.matches("<!-- id: ").count(), "{stamped}");
 }
 
@@ -3368,14 +3374,14 @@ fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     std::fs::write(
         &deck,
         format!(
-            "---\nid: \"deck-deck1\"\nsource: {}\n---\n## Old? <!-- id: card-oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old? <!-- id: card-oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
             alix::parser::yaml_quote(source.to_str().unwrap())
         ),
     )
     .unwrap();
     alix::assets::freeze_member(&deck).unwrap();
     let proposal = format!(
-        "---\nid: \"deck-deck1\"\nsource: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
+        "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
         alix::parser::yaml_quote(source.to_str().unwrap())
     );
     let cli = fake_claude(dir.path(), &proposal);
@@ -3507,7 +3513,7 @@ fn reset_by_token_card_id_without_a_target() {
 #[test]
 fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
     let dir = TempDir::new().unwrap();
-    let deck_text = "---\nid: deck-geography\n---\n## Capital of Japan? <!-- id: card-gj1 -->\nTokyo\n\n## Largest planet? <!-- id: card-gp1 -->\nJupiter\n";
+    let deck_text = "---\nformat-version: 1\nid: deck-geography\n---\n## Capital of Japan? <!-- id: card-gj1 -->\nTokyo\n\n## Largest planet? <!-- id: card-gp1 -->\nJupiter\n";
     let deck = write(dir.path(), "geo.md", deck_text);
     let cards = alix::parser::parse_str("geo.md", deck_text).unwrap();
     let store_path = dir.path().join("state");
@@ -3550,7 +3556,7 @@ fn reset_by_text_query_with_no_match_reports_nothing() {
     let deck = write(
         dir.path(),
         "geo.md",
-        "---\nid: deck-geography\n---\n## Capital of Japan? <!-- id: card-gj1 -->\nTokyo\n",
+        "---\nformat-version: 1\nid: deck-geography\n---\n## Capital of Japan? <!-- id: card-gj1 -->\nTokyo\n",
     );
     let store_path = dir.path().join("state");
     let out = alix(&[
@@ -3578,7 +3584,7 @@ fn sigterm_flushes_and_exits_the_server_cleanly() {
     let deck = write(
         dir.path(),
         "d.md",
-        "---\nid: deck-sigdeck\n---\n## q <!-- id: card-sig1 -->\na\n",
+        "---\nformat-version: 1\nid: deck-sigdeck\n---\n## q <!-- id: card-sig1 -->\na\n",
     );
     assert!(alix(&["deck", "init", &deck]).status.success());
 
@@ -3698,7 +3704,7 @@ fn workspace_update_stops_a_wedged_provider_at_the_inactivity_limit() {
     std::fs::write(
         &deck,
         format!(
-            "---\nid: \"deck-deck1\"\nsource: {}\n---\n## Old? <!-- id: card-oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old? <!-- id: card-oldcard -->\nold\n<!-- at: facts.rs:1 -->\n",
             alix::parser::yaml_quote(source.to_str().unwrap())
         ),
     )

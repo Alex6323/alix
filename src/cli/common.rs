@@ -232,7 +232,7 @@ mod tests {
         let deck = dir.path().join("loose.md");
         std::fs::write(
             &deck,
-            "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n",
+            "---\nformat-version: 1\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n",
         )
         .unwrap();
         let config = Config {
@@ -254,7 +254,7 @@ mod tests {
         let deck = dir.path().join("loose.md");
         std::fs::write(
             &deck,
-            "---\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n",
+            "---\nformat-version: 1\nid: deck-loose\n---\n## q <!-- id: card-q -->\na\n",
         )
         .unwrap();
         let override_path = dir.path().join("custom");
@@ -285,7 +285,7 @@ mod tests {
         let member = ws.join("decks/a.md");
         std::fs::write(
             &member,
-            "---\nid: \"deck-a\"\n---\n## q <!-- id: card-q -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-a\"\n---\n## q <!-- id: card-q -->\na\n",
         )
         .unwrap();
         let config = Config {

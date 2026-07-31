@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Decks carry a `format-version:` in frontmatter, written above `id:`. `alix
+  deck init`
+  writes it, it stays `1` before 1.0, and alix refuses any other number with a
+  message telling you to upgrade rather than guessing at a format it does not
+  know. This is the same detect-and-refuse guard the progress documents already
+  had, which decks lacked: a deck from a newer alix previously misparsed into
+  confusing lint noise.
+
+- Frontmatter now reads `authors`, `license`, `tags`, and `created-at`.
+  `authors` and `tags` accept one value or a list, `license` and `created-at`
+  are single strings (an SPDX identifier and an ISO 8601 date by convention).
+  They were accepted but discarded before. alix stores and
+  never rewrites them.
+
 - `CardDto` now carries the card's `id` on the wire (`card-<token>`, or the
   `-N` / `-r` sub-id for a cloze hole or reversed twin), the same spelling
   `CreateCardResp` returns. Clients could not previously tell whether a served
@@ -110,6 +124,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back to the canonical shape instead of scattering through the deck.
 
 ### Changed
+
+- Breaking: an initialized deck (one with an `id:`) must now also declare
+  `format-version: 1`. A deck without it fails to load and `alix doctor` names
+  the
+  conversion tool. Decks with no `id:` are unaffected: they are uninitialized,
+  and `alix deck init` writes both keys. Pre-1.0, existing decks are converted
+  by a disposable external script rather than by a compatibility path in alix.
 
 - Breaking: every card-relative review POST (`/api/grade`, `/api/skip`,
   `/api/acquire`, `/api/check`, `/api/choose`, `/api/remove`,

@@ -617,9 +617,9 @@ mod tests {
                 .flat_map(char::to_lowercase)
                 .collect();
             if let Some(rest) = text.strip_prefix("---\n") {
-                format!("---\nid: \"deck-{id}\"\n{rest}")
+                format!("---\nformat-version: 1\nid: \"deck-{id}\"\n{rest}")
             } else {
-                format!("---\nid: \"deck-{id}\"\n---\n{text}")
+                format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{text}")
             }
         } else {
             text.to_string()
@@ -866,15 +866,15 @@ mod tests {
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
         write(
             &ws.join("decks/base.md"),
-            "---\nid: \"deck-base1\"\nsource: https://x\n---\n## q <!-- id: card-qbase -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-base1\"\nsource: https://x\n---\n## q <!-- id: card-qbase -->\na\n",
         );
         write(
             &ws.join("decks/advanced.md"),
-            "---\nid: \"deck-adv1\"\nrequires: base\n---\n## q2 <!-- id: card-qadv -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-adv1\"\nrequires: base\n---\n## q2 <!-- id: card-qadv -->\nb\n",
         );
         write(
             &ws.join("decks/walk.md"),
-            "---\nid: \"deck-walk1\"\ntrace: How it flows\n---\n## hop? <!-- id: card-qhop -->\nstep\n",
+            "---\nformat-version: 1\nid: \"deck-walk1\"\ntrace: How it flows\n---\n## hop? <!-- id: card-qhop -->\nstep\n",
         );
 
         let store_path = workspace::store_path(&ws);
@@ -1127,7 +1127,7 @@ mod tests {
         let deck_path = dir.path().join("rust.md");
         std::fs::write(
             &deck_path,
-            "---\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
+            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -1170,7 +1170,7 @@ mod tests {
         let deck_path = dir.path().join("rust.md");
         std::fs::write(
             &deck_path,
-            "---\nid: \"deck-rust\"\n---\n## q1\na1\n## q2\na2\n",
+            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n## q1\na1\n## q2\na2\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -1452,7 +1452,7 @@ mod tests {
         let deck_path = dir.path().join("rust.md");
         std::fs::write(
             &deck_path,
-            "---\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
+            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();

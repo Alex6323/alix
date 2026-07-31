@@ -1,4 +1,5 @@
 ---
+format-version: 1
 id: "deck-5w9g21vjyf3xf3kpn9q8cckavs"
 trace: How `let s2 = s1` moves a String and avoids a double free.
 source: https://github.com/rust-lang/book/blob/main/src/ch04-01-what-is-ownership.md

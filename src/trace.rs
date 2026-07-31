@@ -606,7 +606,7 @@ mod tests {
             &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nid: \"deck-deck1\"\nsource: src/lib.rs\n---\n\
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: src/lib.rs\n---\n\
                  ## q\na\n<!-- at: src/lib.rs:1 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );
@@ -645,7 +645,7 @@ mod tests {
             &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nid: \"deck-deck1\"\nsource: src\n---\n\
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: src\n---\n\
                  ## q\na\n<!-- at: src/lib.rs:46-48 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );

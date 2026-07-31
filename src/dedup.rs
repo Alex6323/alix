@@ -314,7 +314,9 @@ mod tests {
         let path = dir.join(name);
         std::fs::write(
             &path,
-            format!("---\nid: \"{token}\"\n---\n## q <!-- id: {card_token} -->\na\n"),
+            format!(
+                "---\nformat-version: 1\nid: \"{token}\"\n---\n## q <!-- id: {card_token} -->\na\n"
+            ),
         )
         .unwrap();
         path
@@ -325,12 +327,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nid: \"deck-dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: card-shared1 -->\n\n## q2 <!-- id: card-samelinetok -->\nanswer\n",
+            "---\nformat-version: 1\nid: \"deck-dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: card-shared1 -->\n\n## q2 <!-- id: card-samelinetok -->\nanswer\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nid: \"deck-dtok2\"\n---\n## q3\n<!-- id: card-shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: card-fencedtok -->\n<!-- id: card-alsofenced -->\n```\n<!-- id: card-realtok -->\n",
+            "---\nformat-version: 1\nid: \"deck-dtok2\"\n---\n## q3\n<!-- id: card-shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: card-fencedtok -->\n<!-- id: card-alsofenced -->\n```\n<!-- id: card-realtok -->\n",
         )
         .unwrap();
         std::fs::write(dir.path().join("notes.md"), "just prose, no cards\n").unwrap();
@@ -389,13 +391,13 @@ mod tests {
         let a = dir.path().join("notes.md");
         std::fs::write(
             &a,
-            "---\nid: \"deck-dtoka\"\n---\n## q <!-- id: card-cshared -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-dtoka\"\n---\n## q <!-- id: card-cshared -->\na\n",
         )
         .unwrap();
         let b = dir.path().join("notes copy.md");
         std::fs::write(
             &b,
-            "---\nid: \"deck-dtokb\"\n---\n## q <!-- id: card-cshared -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-dtokb\"\n---\n## q <!-- id: card-cshared -->\nb\n",
         )
         .unwrap();
 
@@ -407,8 +409,8 @@ mod tests {
         assert_eq!(1, map.card_dupes.len());
         let dupe = &map.card_dupes[0];
         assert_eq!("card-cshared", dupe.token);
-        assert_eq!((a, 4), dupe.keeper);
-        assert_eq!(vec![(b, 4)], dupe.losers);
+        assert_eq!((a, 5), dupe.keeper);
+        assert_eq!(vec![(b, 5)], dupe.losers);
     }
 
     #[test]

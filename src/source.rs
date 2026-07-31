@@ -774,7 +774,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "decks/facts.md",
-            "---\nid: deck-deck1\nsource: own.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: 2 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nsource: own.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: 2 -->\n",
         );
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);
@@ -1016,7 +1016,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "deck.md",
-            "---\nid: \"deck-deck1\"\nsource: .\n---\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
              ## q\nanswer\n<!-- at: big.rs:1-100 -->\n<!-- id: card-card1 -->\n",
         );
         assert_eq!(1, stamp_citations(&deck_path).unwrap());
@@ -1339,7 +1339,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "deck.md",
-            "---\nid: \"deck-deck1\"\nsource: .\n---\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
              ## q\nanswer\n<!-- at: code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
         );
         assert_eq!(1, stamp_citations(&deck_path).unwrap());

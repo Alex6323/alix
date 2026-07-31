@@ -1015,7 +1015,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1101,7 +1101,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1127,7 +1127,7 @@ mod tests {
         let basics = write_deck(
             dir.path(),
             "basics.md",
-            "---\nid: \"deck-basics1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+            "---\nformat-version: 1\nid: \"deck-basics1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1275,7 +1275,7 @@ mod tests {
         write_deck(
             dir.path(),
             "a.md",
-            "---\nid: \"deck-a1\"\nsource: https://x\n---\n## a\n1\n",
+            "---\nformat-version: 1\nid: \"deck-a1\"\nsource: https://x\n---\n## a\n1\n",
         );
         write_deck(
             dir.path(),
@@ -1345,7 +1345,7 @@ mod tests {
             dir.path(),
             "basics.md",
             &format!(
-                "---\nid: \"{CANONICAL_DECK_ID}\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n"
+                "---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n"
             ),
         );
         let adv = write_deck(

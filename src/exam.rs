@@ -1091,7 +1091,7 @@ mod tests {
         let path = members.join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1119,7 +1119,7 @@ mod tests {
         let path = members.join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1636,7 +1636,7 @@ mod tests {
         let path = dir.join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck-d1\"\nsource: https://x\n---\n## c <!-- id: card-qc -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## c <!-- id: card-qc -->\na\n",
         )
         .unwrap();
         Deck::load(&path).unwrap()

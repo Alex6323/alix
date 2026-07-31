@@ -939,7 +939,7 @@ mod tests {
         w(
             dir.path(),
             "misplaced.md",
-            "---\nid: deck-misplaced\n---\n## q <!-- id: card-q1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-misplaced\n---\n## q <!-- id: card-q1 -->\na\n",
         );
 
         let report = workspace_findings(dir.path());
@@ -962,7 +962,7 @@ mod tests {
         let path = decks.join("facts.md");
         std::fs::write(
             &path,
-            "---\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: notes.md:1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: notes.md:1 -->\n",
         )
         .unwrap();
         let before = std::fs::read(&path).unwrap();
@@ -991,7 +991,7 @@ mod tests {
         std::fs::write(
             decks.join("facts.md"),
             format!(
-                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
                  ## q <!-- id: card-card1 -->\na\n"
             ),
         )
@@ -1020,7 +1020,7 @@ mod tests {
         std::fs::write(
             decks.join("facts.md"),
             format!(
-                "---\nid: deck-deck1\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\n---\n\
                  ## q <!-- id: card-card1 -->\n![diagram](assets/deck-deck2/{name})\na\n"
             ),
         )
@@ -1117,7 +1117,7 @@ mod tests {
         w(
             dir.path(),
             "cached.md",
-            "---\nid: deck-doctormathdeck\n---\n## q <!-- id: card-doctormath1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-doctormathdeck\n---\n## q <!-- id: card-doctormath1 -->\na\n",
         );
         let parsed =
             alix::parser::parse("cached.md", &std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -1193,7 +1193,7 @@ mod tests {
             dir.path(),
             "broken.md",
             &format!(
-                "---\nid: \"{CANONICAL_ID}\"\n---\n## q\na\n\
+                "---\nformat-version: 1\nid: \"{CANONICAL_ID}\"\n---\n## q\na\n\
                  <!-- at: 29.rs @ xxh64:0123456789abcdef from src/x.rs:1-3 -->\n"
             ),
         );
@@ -1265,7 +1265,9 @@ mod tests {
         w(
             dir.path(),
             "base.md",
-            &format!("---\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"),
+            &format!(
+                "---\nformat-version: 1\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"
+            ),
         );
         let resolvable = dir.path().join("resolvable.md");
         w(
@@ -1358,7 +1360,9 @@ mod tests {
         w(
             dir.path(),
             "base.md",
-            &format!("---\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"),
+            &format!(
+                "---\nformat-version: 1\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"
+            ),
         );
         w(
             dir.path(),
@@ -1410,22 +1414,22 @@ mod tests {
         w(
             &decks,
             "dup-deck.md",
-            "---\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
         );
         w(
             &decks,
             "dup-deck copy.md",
-            "---\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
         );
         w(
             &decks,
             "card-dup.md",
-            "---\nid: deck-cda\n---\n## q <!-- id: card-cshared -->\na\n",
+            "---\nformat-version: 1\nid: deck-cda\n---\n## q <!-- id: card-cshared -->\na\n",
         );
         w(
             &decks,
             "card-dup copy.md",
-            "---\nid: deck-cdb\n---\n## q <!-- id: card-cshared -->\nb\n",
+            "---\nformat-version: 1\nid: deck-cdb\n---\n## q <!-- id: card-cshared -->\nb\n",
         );
         w(
             &decks,
@@ -1450,7 +1454,7 @@ mod tests {
         w(
             &decks,
             "fresh.md",
-            "---\nid: \"deck-fresh\"\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-fresh\"\n---\n## q\na\n",
         );
         w(
             &decks,
@@ -1543,7 +1547,7 @@ mod tests {
         w(
             dir,
             "facts.md",
-            "---\nid: deck-deck1\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
         );
         w(dir, "notes.md", "one\n");
 
@@ -1565,7 +1569,7 @@ mod tests {
         w(
             dir.path(),
             "deck.md",
-            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         );
         let user_root = dir.path();
         alix::state::open_store(&dir.path().join("deck.md"), user_root)
@@ -1599,7 +1603,7 @@ mod tests {
         w(
             dir.path(),
             "deck.md",
-            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         );
         w(dir.path(), "progress.json", r#"{"version":1,"cards":{}}"#);
         w(dir.path(), "augment.json", r#"{"version":1,"cards":{}}"#);
@@ -1655,7 +1659,7 @@ mod tests {
             &decks,
             "facts.md",
             &format!(
-                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
                  ## q <!-- id: card-card1 -->\na\n"
             ),
         );
@@ -1688,7 +1692,7 @@ mod tests {
         w(
             &decks,
             "old-locator.md",
-            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n\
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n\
              <!-- at: 29.rs @ xxh64:0123456789abcdef from src/x.rs:1-3 -->\n",
         );
 
@@ -1725,7 +1729,7 @@ mod tests {
         w(
             &decks,
             "facts.md",
-            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         );
         std::fs::create_dir(dir.path().join("progress")).unwrap();
         w(
@@ -1774,7 +1778,7 @@ mod tests {
             dir.path(),
             "deck.md",
             &format!(
-                "---\nid: \"deck-deck1\"\nsource: .\n---\n\
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
                  ## q\nanswer\n<!-- at: code.rs:2-3 fingerprint: {fingerprint} -->\n\
                  <!-- id: card-card1 -->\n"
             ),

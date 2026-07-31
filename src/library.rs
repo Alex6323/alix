@@ -295,12 +295,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
+            "---\nformat-version: 1\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nid: \"deck-db\"\n---\n## qb <!-- id: card-qb -->\nans-b\n",
+            "---\nformat-version: 1\nid: \"deck-db\"\n---\n## qb <!-- id: card-qb -->\nans-b\n",
         )
         .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();
@@ -346,7 +346,7 @@ mod tests {
         std::fs::write(
             dir.join(name),
             format!(
-                "---\nid: \"deck-{deck_token}\"\n---\n## q <!-- id: card-{card_token} -->\nans\n"
+                "---\nformat-version: 1\nid: \"deck-{deck_token}\"\n---\n## q <!-- id: card-{card_token} -->\nans\n"
             ),
         )
         .unwrap();
@@ -675,7 +675,7 @@ mod tests {
     #[test]
     fn a_trace_rebuild_routes_through_replace_and_wipes_the_old_checkpoints() {
         let dir = tempfile::tempdir().unwrap();
-        let existing = "---\nid: \"deck-da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: card-c1 -->\nold\n";
+        let existing = "---\nformat-version: 1\nid: \"deck-da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: card-c1 -->\nold\n";
         let path = dir.path().join("t.md");
         std::fs::write(&path, existing).unwrap();
         let mut store = crate::state::open_store(&path, dir.path()).unwrap();
@@ -714,7 +714,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
+            "---\nformat-version: 1\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
         )
         .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();

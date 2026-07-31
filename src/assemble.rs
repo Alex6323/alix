@@ -642,7 +642,11 @@ mod tests {
             .filter(|ch| ch.is_ascii_alphanumeric())
             .flat_map(char::to_lowercase)
             .collect();
-        std::fs::write(path, format!("---\nid: \"deck-{id}\"\n---\n{text}")).unwrap();
+        std::fs::write(
+            path,
+            format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{text}"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -672,12 +676,12 @@ mod tests {
         let two = b.join("geo.md");
         std::fs::write(
             &one,
-            "---\nid: \"deck-aaaaaaaaaaaaaaaaaaaaaaaaaa\"\n---\n## q <!-- id: card-qa -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-aaaaaaaaaaaaaaaaaaaaaaaaaa\"\n---\n## q <!-- id: card-qa -->\na\n",
         )
         .unwrap();
         std::fs::write(
             &two,
-            "---\nid: \"deck-bbbbbbbbbbbbbbbbbbbbbbbbbb\"\n---\n## q <!-- id: card-qb -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-bbbbbbbbbbbbbbbbbbbbbbbbbb\"\n---\n## q <!-- id: card-qb -->\nb\n",
         )
         .unwrap();
 
@@ -780,7 +784,7 @@ mod tests {
         );
     }
 
-    const TRACE_DECK: &str = "---\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
+    const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
 ## Predict the first hop <!-- id: card-qhop1 -->\n\
 it reads the first line\n\
 <!-- at: 1 -->\n\
@@ -838,7 +842,7 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\
              the \\blank{alpha} and \\blank{beta}\n## Plain <!-- id: card-plaincard -->\nanswer\n",
         )
         .unwrap();
@@ -864,7 +868,7 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\\blank{alpha} then \\blank{beta}\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\\blank{alpha} then \\blank{beta}\n",
         )
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
@@ -881,7 +885,7 @@ it reads line two\n\
 
         std::fs::write(
             &path,
-            "---\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\\blank{beta} then \\blank{alpha}\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\\blank{beta} then \\blank{alpha}\n",
         )
         .unwrap();
         select(
@@ -910,7 +914,7 @@ it reads line two\n\
         let deck_path = dir.path().join("d.md");
         std::fs::write(
             &deck_path,
-            "---\nid: \"deck-deck1\"\n---\n## q <!-- id: card-qcard -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## q <!-- id: card-qcard -->\na\n",
         )
         .unwrap();
         let store_path = workspace::root_store_path(dir.path());
@@ -1057,7 +1061,7 @@ it reads line two\n\
         // matching is bound to (not card overlap).
         std::fs::write(
             &path,
-            "---\nid: \"deck-dtok1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
+            "---\nformat-version: 1\nid: \"deck-dtok1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
         )
         .unwrap();
         // Not a workspace, so pass an explicit `--store`-style override: a
@@ -1515,13 +1519,13 @@ it reads line two\n\
         let keeper = dir.path().join("notes.md");
         std::fs::write(
             &keeper,
-            "---\nid: \"deck-dtoka\"\n---\n## q <!-- id: card-cshared -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-dtoka\"\n---\n## q <!-- id: card-cshared -->\na\n",
         )
         .unwrap();
         let loser = dir.path().join("notes copy.md");
         std::fs::write(
             &loser,
-            "---\nid: \"deck-dtokb\"\n---\n## q <!-- id: card-cshared -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-dtokb\"\n---\n## q <!-- id: card-cshared -->\nb\n",
         )
         .unwrap();
 

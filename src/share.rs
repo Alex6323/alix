@@ -678,7 +678,7 @@ mod tests {
         std::fs::create_dir_all(src.join("decks")).unwrap();
         std::fs::write(
             src.join("decks/deck.md"),
-            "---\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         )
         .unwrap();
         touch(&src, "alix.toml");
@@ -719,7 +719,7 @@ mod tests {
         let deck = decks.join("facts.md");
         std::fs::write(
             &deck,
-            "---\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n",
         )
         .unwrap();
         let stage = dir.path().join("stage");
@@ -746,7 +746,7 @@ mod tests {
         std::fs::write(
             &deck_path,
             format!(
-                "---\nid: deck-deck1\nsource: assets/deck-deck1/{source_name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{source_name}\n---\n\
                  ## q <!-- id: card-card1 -->\na\n<!-- at: {source_name}:1 -->\n"
             ),
         )
@@ -808,7 +808,7 @@ mod tests {
         changed_augmentation.save().unwrap();
         std::fs::write(
             &received_deck,
-            "---\nid: deck-deck1\n---\n## changed <!-- id: card-card1 -->\nlocally\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## changed <!-- id: card-card1 -->\nlocally\n",
         )
         .unwrap();
 
@@ -834,7 +834,7 @@ mod tests {
         let deck = dir.path().join("facts.md");
         std::fs::write(
             &deck,
-            "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let transfer = dir.path().join("transfer");
@@ -857,7 +857,7 @@ mod tests {
         std::fs::write(
             &deck,
             format!(
-                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
                  ## q <!-- id: card-card1 -->\na\n"
             ),
         )
@@ -886,7 +886,7 @@ mod tests {
         std::fs::write(
             &deck,
             format!(
-                "---\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
                  ## q <!-- id: card-card1 -->\na\n"
             ),
         )

@@ -167,7 +167,12 @@ title.
 
 ```
 ---
+format-version: 1
 id: "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"
+authors: [Alex, "Claude (Opus 5)"]
+license: CC-BY-4.0
+tags: [french, vocabulary]
+created-at: 2026-07-31
 reveal: line
 order: sequential
 ---
@@ -175,7 +180,18 @@ order: sequential
 # French vocabulary, chapter 4
 ```
 
-Apart from `id`, frontmatter carries only what differs from the defaults,
+`format-version` is the version of the deck *format*, not of the deck itself.
+`alix deck init` writes it above `id`, it stays `1`, and alix refuses a deck
+declaring any other number rather than guessing at a format it does not know.
+It is written first because it says how to read everything below it, but alix
+accepts it anywhere in the block.
+
+`authors` and `tags` take one value or a list; `license` and `created-at` are
+single strings, by convention an SPDX identifier and an ISO 8601 date. Put both
+people and any AI that helped in `authors`. These four are yours to fill in and
+alix never changes them.
+
+Apart from `id` and `format-version`, frontmatter carries only what differs from the defaults,
 and a command-line flag always overrides it. Anything else you write before the
 first card is just prose (context, a reading order, whatever you like), so a
 deck can also read as a normal document. The full set of frontmatter and

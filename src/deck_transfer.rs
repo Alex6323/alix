@@ -499,7 +499,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nid: deck-deck1\n{frontmatter}---\n## q\nanswer\n<!-- id: card-card1 -->\n"
+                "---\nformat-version: 1\nid: deck-deck1\n{frontmatter}---\n## q\nanswer\n<!-- id: card-card1 -->\n"
             ),
         )
         .unwrap();
@@ -612,13 +612,13 @@ mod tests {
 
         std::fs::write(
             source.join("decks/dependent.md"),
-            "---\nid: deck-deck2\nrequires:\n  - facts\n---\n## q\nanswer\n<!-- id: card-card2 -->\n",
+            "---\nformat-version: 1\nid: deck-deck2\nrequires:\n  - facts\n---\n## q\nanswer\n<!-- id: card-card2 -->\n",
         )
         .unwrap();
         let destination_requirement = destination.join("decks/foundations.md");
         std::fs::write(
             &destination_requirement,
-            "---\nid: deck-base\n---\n## q\nanswer\n<!-- id: card-basecard -->\n",
+            "---\nformat-version: 1\nid: deck-base\n---\n## q\nanswer\n<!-- id: card-basecard -->\n",
         )
         .unwrap();
 
@@ -639,7 +639,7 @@ mod tests {
         let deck = deck(&source, "facts.md", "");
         std::fs::write(
             destination.join("decks/other.md"),
-            "---\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-other -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-other -->\n",
         )
         .unwrap();
 

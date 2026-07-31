@@ -221,9 +221,9 @@ mod tests {
             .unwrap_or("deck")
             .replace('-', "");
         let text = if let Some(rest) = text.strip_prefix("---\n") {
-            format!("---\nid: \"deck-{id}\"\n{rest}")
+            format!("---\nformat-version: 1\nid: \"deck-{id}\"\n{rest}")
         } else {
-            format!("---\nid: \"deck-{id}\"\n---\n{text}")
+            format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{text}")
         };
         std::fs::write(path, text).unwrap();
     }

@@ -1242,7 +1242,7 @@ back a
         fs::create_dir_all(staging.join("decks")).unwrap();
         fs::write(
             dest.join("decks/01-a.md"),
-            "---\nid: \"deck-da1\"\n---\n## old <!-- id: card-c1 -->\nold\n",
+            "---\nformat-version: 1\nid: \"deck-da1\"\n---\n## old <!-- id: card-c1 -->\nold\n",
         )
         .unwrap();
         fs::write(staging.join("decks/01-a.md"), "## new q\nnew ans\n").unwrap();
@@ -1309,7 +1309,7 @@ back a
         fs::write(
             dir.join("decks/01-t.md"),
             format!(
-                "---\nid: \"deck-trace\"\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
                 src.display()
             ),
         )
@@ -1317,7 +1317,7 @@ back a
         fs::write(
             dir.join("decks/02-d.md"),
             format!(
-                "---\nid: \"deck-facts\"\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-facts\"\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
                 src.display()
             ),
         )
@@ -1361,7 +1361,7 @@ back a
         fs::write(
             dir.join("decks/01-broken.md"),
             format!(
-                "---\nid: \"deck-broken\"\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-broken\"\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
                 dir.display()
             ),
         )

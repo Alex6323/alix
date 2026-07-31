@@ -56,7 +56,11 @@ fn write_initialized(path: &Path, text: &str) {
         .and_then(|stem| stem.to_str())
         .unwrap_or("deck")
         .replace('-', "");
-    std::fs::write(path, format!("---\nid: \"deck-{id}\"\n---\n{text}")).unwrap();
+    std::fs::write(
+        path,
+        format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{text}"),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1308,7 +1312,7 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nid: \"deck-frozendeck1\"\nsource: 29.rs\n---\n## q\na\n\
+        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nsource: 29.rs\n---\n## q\na\n\
          <!-- at: 29.rs:1 -->\n",
     )
     .unwrap();
@@ -1413,7 +1417,7 @@ fn exam_due_reports_the_decks_name_not_its_routing_id() {
     // keyed by it, but the wire value must stay the resolvable deck name.
     std::fs::write(
         &deck_path,
-        "---\nid: \"deck-examduedeck\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+        "---\nformat-version: 1\nid: \"deck-examduedeck\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
     )
     .unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();

@@ -468,7 +468,7 @@ mod tests {
     }
 
     fn deck(id: &str, body: &str) -> String {
-        format!("---\nid: \"deck-{id}\"\n---\n{body}")
+        format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{body}")
     }
 
     #[test]
@@ -611,7 +611,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write(
             &dir.path().join("deck.md"),
-            "---\nid: \"deck-deck1\"\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## q\na\n",
         );
         write(&dir.path().join("stub.md"), "---\ntrace: a walk\n---\n");
         write(
@@ -647,7 +647,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write(
             &dir.path().join("broken.md"),
-            "---\nid: \"deck-broken\"\n---\n## unanswered\n",
+            "---\nformat-version: 1\nid: \"deck-broken\"\n---\n## unanswered\n",
         );
 
         assert_eq!(vec![dir.path().join("broken.md")], deck_files(dir.path()));

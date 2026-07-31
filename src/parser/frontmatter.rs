@@ -3,9 +3,19 @@ use yaml_rust2::{Yaml, YamlLoader};
 use super::{LineSpan, Lint, LintKind, ParseError, WHITESPACE, trim_ws};
 use crate::{answer::Input, card::Direction, depth::Reveal, session::Order, token};
 
+/// Pinned at 1 pre-1.0: a break rewrites decks with the disposable conversion
+/// tool rather than bumping. Read to refuse a foreign document, never to adapt
+/// to one.
+pub const DECK_FORMAT_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
     pub id: Option<String>,
+    pub format_version: Option<u32>,
+    pub authors: Vec<String>,
+    pub license: Option<String>,
+    pub created_at: Option<String>,
+    pub tags: Vec<String>,
     pub source: Vec<String>,
     pub requires: Vec<String>,
     pub link: Vec<String>,
@@ -77,6 +87,7 @@ fn load_frontmatter(
     if trim_ws(&text).starts_with('{') {
         frontmatter.unspliceable = true;
     }
+    let mut id_line = first_line;
     for (key_node, value) in &mapping {
         let Yaml::String(key) = key_node else {
             lints.push(Lint {
@@ -98,6 +109,7 @@ fn load_frontmatter(
                         });
                     }
                     frontmatter.id = Some(s.clone());
+                    id_line = line;
                 }
                 other => {
                     return Err(ParseError::NonStringId {
@@ -107,6 +119,20 @@ fn load_frontmatter(
                 }
             },
             "alix-id" => return Err(ParseError::ObsoleteAlixId(line)),
+            "format-version" => match value {
+                Yaml::Integer(n) if *n == i64::from(DECK_FORMAT_VERSION) => {
+                    frontmatter.format_version = Some(DECK_FORMAT_VERSION);
+                }
+                Yaml::Integer(n) => {
+                    return Err(ParseError::UnsupportedDeckVersion { line, version: *n });
+                }
+                other => {
+                    return Err(ParseError::NonIntegerVersion {
+                        line,
+                        found: yaml_kind(other),
+                    });
+                }
+            },
             "source" => {
                 let entries = string_list(key, value, line, lints);
                 if entries.iter().any(|entry| entry.contains(" + ")) {
@@ -137,14 +163,26 @@ fn load_frontmatter(
                 None => lints.push(bad_value(line, key, describe(value))),
             },
             "origin" => return Err(ParseError::ObsoleteOrigin(line)),
+            "authors" => frontmatter.authors = string_list(key, value, line, lints),
+            "tags" => frontmatter.tags = string_list(key, value, line, lints),
+            "license" => match value {
+                Yaml::String(s) => frontmatter.license = Some(s.clone()),
+                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
+            },
+            "created-at" => match value {
+                Yaml::String(s) => frontmatter.created_at = Some(s.clone()),
+                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
+            },
             // Reserved for future deck metadata: ignored without a lint.
-            "tags" | "license" | "author" | "language" | "revision" | "generated-by"
-            | "generated-at" => {}
+            "language" | "revision" => {}
             _ => lints.push(Lint {
                 line,
                 kind: LintKind::UnknownKey { key: key.clone() },
             }),
         }
+    }
+    if frontmatter.id.is_some() && frontmatter.format_version.is_none() {
+        return Err(ParseError::MissingDeckVersion(id_line));
     }
     Ok(frontmatter)
 }

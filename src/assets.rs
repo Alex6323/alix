@@ -659,7 +659,7 @@ mod tests {
         std::fs::write(directory.path().join("diagram.PNG"), [0, 1, 2, 255]).unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\na\n<!-- at: notes.md:2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\na\n<!-- at: notes.md:2 -->\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -732,7 +732,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nid: \"deck-deck5\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck5\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:2 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -764,7 +764,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nid: \"deck-deck2\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck2\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -818,7 +818,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nid: \"deck-deck6\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck6\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -851,7 +851,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nid: \"deck-deck8\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:5-104 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck8\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:5-104 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -899,7 +899,7 @@ mod tests {
         std::fs::write(source.join("lib.rs"), "a\n").unwrap();
         let path = directory.path().join("decks/plain.md");
         let text = format!(
-            "---\nid: \"deck-deck3\"\nsource: {}\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck3\"\nsource: {}\n---\n## q\na\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -935,7 +935,7 @@ mod tests {
         let path = directory.path().join("decks/facts.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck-deck7\"\n---\n## q\na\n<!-- at: notes.md:2 -->\n<!-- id: card-card7 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck7\"\n---\n## q\na\n<!-- at: notes.md:2 -->\n<!-- id: card-card7 -->\n",
         )
         .unwrap();
 
@@ -974,7 +974,7 @@ mod tests {
         std::fs::write(&source, "a\n").unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nid: \"deck-deck4\"\nsource: {}\n---\n## q\n![d](missing.png)\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck4\"\nsource: {}\n---\n## q\n![d](missing.png)\na\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -1012,7 +1012,7 @@ mod tests {
         let path = directory.path().join("decks/mixed.md");
         std::fs::write(
             &path,
-            "---\nid: \"deck-deck1\"\nsource:\n  - https://example.test/page\n  - notes.md\n---\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource:\n  - https://example.test/page\n  - notes.md\n---\n\
              ## q\na\n<!-- at: notes.md:2 -->\n",
         )
         .unwrap();

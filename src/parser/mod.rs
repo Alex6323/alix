@@ -17,7 +17,7 @@ mod frontmatter;
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
-pub use frontmatter::{Frontmatter, yaml_quote};
+pub use frontmatter::{DECK_FORMAT_VERSION, Frontmatter, yaml_quote};
 use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
@@ -92,6 +92,16 @@ pub enum ParseError {
     )]
     ObsoleteOrigin(usize),
     #[error(
+        "line {0}: an initialized deck must declare `format-version: 1`; run the deck conversion tool if this deck predates deck-format versioning"
+    )]
+    MissingDeckVersion(usize),
+    #[error(
+        "line {line}: deck format version {version} is not supported; this deck was written by a newer alix, so upgrade alix rather than editing the deck"
+    )]
+    UnsupportedDeckVersion { line: usize, version: i64 },
+    #[error("line {line}: `format-version:` must be an integer, got {found}")]
+    NonIntegerVersion { line: usize, found: &'static str },
+    #[error(
         "line {0}: a `source:` value holds a \" + \"-joined expression; write one source per list entry, or run the deck conversion tool to split it"
     )]
     PlusJoinedSource(usize),
@@ -125,6 +135,7 @@ impl ParseError {
                 | ParseError::ObsoleteOrigin(_)
                 | ParseError::PlusJoinedSource(_)
                 | ParseError::InvalidLocator { .. }
+                | ParseError::MissingDeckVersion(_)
         )
     }
 }
@@ -950,7 +961,7 @@ mod tests {
     fn a_missing_frontmatter_close_is_a_hard_error() {
         assert_eq!(
             ParseError::UnclosedFrontmatter(1),
-            err("---\nid: \"deck-abc\"\n## q\na\n")
+            err("---\nformat-version: 1\nid: \"deck-abc\"\n## q\na\n")
         );
     }
 
@@ -969,12 +980,14 @@ mod tests {
 
     #[test]
     fn a_blank_line_before_the_frontmatter_closer_is_accepted() {
-        let deck = parse("---\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n\n---\n## q\na\n");
+        let deck = parse(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n\n---\n## q\na\n",
+        );
         assert_eq!(
             Some("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"),
             deck.deck_token.as_deref()
         );
-        assert_eq!(Some((1, 4)), deck.frontmatter_span);
+        assert_eq!(Some((1, 5)), deck.frontmatter_span);
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
     }
@@ -1003,13 +1016,73 @@ mod tests {
 
     #[test]
     fn a_quoted_prefixed_id_parses_verbatim() {
-        let deck = parse("---\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n");
+        let deck = parse(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n",
+        );
         assert_eq!(
             Some("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"),
             deck.deck_token.as_deref()
         );
         assert_eq!(deck.deck_token, deck.frontmatter.id);
         assert!(!deck.frontmatter.unspliceable);
+    }
+
+    #[test]
+    fn an_initialized_deck_without_a_version_is_a_hard_error() {
+        assert_eq!(
+            ParseError::MissingDeckVersion(2),
+            err("---\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n")
+        );
+    }
+
+    #[test]
+    fn a_deck_version_from_a_newer_alix_is_refused_by_number() {
+        assert_eq!(
+            ParseError::UnsupportedDeckVersion {
+                line: 2,
+                version: 2
+            },
+            err("---\nformat-version: 2\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n")
+        );
+    }
+
+    #[test]
+    fn a_version_of_one_parses() {
+        let deck = parse(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n",
+        );
+        assert_eq!(Some(1), deck.frontmatter.format_version);
+    }
+
+    #[test]
+    fn deck_metadata_keys_parse_as_single_values_or_lists() {
+        let deck = parse(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\nauthors: Alex\nlicense: CC-BY-4.0\ntags: [rust, memory]\n---\n## q\na\n",
+        );
+        assert_eq!(vec!["Alex".to_string()], deck.frontmatter.authors);
+        assert_eq!(Some("CC-BY-4.0"), deck.frontmatter.license.as_deref());
+        assert_eq!(
+            vec!["rust".to_string(), "memory".to_string()],
+            deck.frontmatter.tags
+        );
+    }
+
+    #[test]
+    fn several_authors_are_accepted_as_a_list() {
+        let deck = parse(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\nauthors:\n  - Alex\n  - Sam\n---\n## q\na\n",
+        );
+        assert_eq!(
+            vec!["Alex".to_string(), "Sam".to_string()],
+            deck.frontmatter.authors
+        );
+    }
+
+    #[test]
+    fn an_uninitialized_deck_needs_no_version() {
+        let deck = parse("## q\na\n");
+        assert_eq!(None, deck.frontmatter.id);
+        assert_eq!(None, deck.frontmatter.format_version);
     }
 
     #[test]
@@ -1079,20 +1152,20 @@ mod tests {
     fn an_id_failing_the_charset_is_a_line_numbered_error() {
         assert_eq!(
             ParseError::InvalidDeckId {
-                line: 2,
+                line: 3,
                 value: "deck-ABC".into()
             },
-            err("---\nid: \"deck-ABC\"\n---\n## q\na\n")
+            err("---\nformat-version: 1\nid: \"deck-ABC\"\n---\n## q\na\n")
         );
     }
 
     #[test]
     fn unknown_frontmatter_keys_are_linted_reserved_keys_are_not() {
         let deck = parse(
-            "---\ntags: [x, y]\nlicense: MIT\nauthor: me\nlanguage: de\nrevision: 3\n\
-             generated-by: alix\ngenerated-at: sometime\nfnord: 7\n---\n## q\na\n",
+            "---\ntags: [x, y]\nlicense: MIT\nauthors: me\nlanguage: de\nrevision: 3\n\
+             created-at: 2026-07-19\nfnord: 7\n---\n## q\na\n",
         );
-        assert_eq!(vec![unknown(9, "fnord")], deck.lints);
+        assert_eq!(vec![unknown(8, "fnord")], deck.lints);
     }
 
     #[test]
@@ -1136,7 +1209,9 @@ mod tests {
         let id = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
         assert_eq!(
             Ok(Some(id.to_string())),
-            deck_identity(&format!("---\nid: \"{id}\"\n---\n## q\na\n"))
+            deck_identity(&format!(
+                "---\nformat-version: 1\nid: \"{id}\"\n---\n## q\na\n"
+            ))
         );
         assert_eq!(Ok(None), deck_identity("## q\nid: \"abc\"\na\n"));
         assert_eq!(
@@ -1148,7 +1223,7 @@ mod tests {
             Err(ParseError::InvalidDeckId { .. })
         ));
         assert!(matches!(
-            deck_identity("---\nid: \"deck-ABC\"\n---\n## q\na\n"),
+            deck_identity("---\nformat-version: 1\nid: \"deck-ABC\"\n---\n## q\na\n"),
             Err(ParseError::InvalidDeckId { .. })
         ));
         assert!(matches!(
@@ -1160,7 +1235,7 @@ mod tests {
     #[test]
     fn deck_identity_survives_a_malformed_card_body() {
         let id = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
-        let text = format!("---\nid: \"{id}\"\n---\n## unanswered\n");
+        let text = format!("---\nformat-version: 1\nid: \"{id}\"\n---\n## unanswered\n");
         assert!(super::parse("deck.md", &text).is_err());
         assert_eq!(Ok(Some(id.to_string())), deck_identity(&text));
     }
@@ -1479,7 +1554,7 @@ mod tests {
     fn every_card_shape_is_stamped_with_the_decks_id() {
         let id = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
         let text = format!(
-            "---\nid: \"{id}\"\n---\n\
+            "---\nformat-version: 1\nid: \"{id}\"\n---\n\
              ## plain\na\n\
              ## choice\n- [x] a\n- [ ] b\n\
              ## cloze\nthe \\blank{{cat}} sat\n"
@@ -1980,6 +2055,7 @@ mod tests {
     #[test]
     fn a_full_directive_fixture_parses_to_exactly_this_snapshot() {
         let text = r#"---
+format-version: 1
 id: "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"
 source:
   - https://example.org/book
@@ -1995,11 +2071,10 @@ input: draw
 direction: both
 tags: [a, b]
 license: MIT
-author: someone
+authors: someone
 language: de
 revision: 3
-generated-by: alix
-generated-at: 2026-07-19
+created-at: 2026-07-19
 ---
 # The Title
 
@@ -2018,6 +2093,11 @@ the answer
         assert_eq!(
             Frontmatter {
                 id: Some("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f".into()),
+                format_version: Some(1),
+                authors: vec!["someone".into()],
+                created_at: Some("2026-07-19".into()),
+                license: Some("MIT".into()),
+                tags: vec!["a".into(), "b".into()],
                 source: vec!["https://example.org/book".into(), "notes.md".into()],
                 requires: vec!["basics".into()],
                 link: vec!["https://docs.rs/tokio".into()],

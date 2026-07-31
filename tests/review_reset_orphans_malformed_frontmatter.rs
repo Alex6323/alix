@@ -10,7 +10,7 @@ fn reset_orphans_refuses_when_a_live_decks_frontmatter_is_malformed() {
     let deck = dir.path().join("live.md");
     std::fs::write(
         &deck,
-        "---\nid: deck-live\n---\n## question <!-- id: card-live1 -->\nanswer\n",
+        "---\nformat-version: 1\nid: deck-live\n---\n## question <!-- id: card-live1 -->\nanswer\n",
     )
     .unwrap();
     let state = dir.path().join("state");

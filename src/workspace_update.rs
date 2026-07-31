@@ -942,7 +942,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nid: \"deck-deck1\"\nsource: {}\n---\n## Old question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -954,7 +954,7 @@ mod tests {
     #[cfg(unix)]
     fn proposal(source: &Path, body: &str) -> String {
         format!(
-            "---\nid: \"deck-deck1\"\nsource: {}\n---\n{body}",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n{body}",
             parser::yaml_quote(&source.display().to_string())
         )
     }
@@ -1144,7 +1144,7 @@ mod tests {
         fs::write(
             workspace.join("decks/plain.md"),
             format!(
-                "---\nid: \"deck-deck9\"\nsource: {}\n---\n## p <!-- id: card-plain1 -->\na\n",
+                "---\nformat-version: 1\nid: \"deck-deck9\"\nsource: {}\n---\n## p <!-- id: card-plain1 -->\na\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )

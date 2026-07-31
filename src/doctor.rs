@@ -312,12 +312,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("good.md"),
-            "---\nid: \"deck-good\"\n---\n## f\nb\n",
+            "---\nformat-version: 1\nid: \"deck-good\"\n---\n## f\nb\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("bad.md"),
-            "---\nid: \"deck-bad\"\n---\n## front with no answer\n",
+            "---\nformat-version: 1\nid: \"deck-bad\"\n---\n## front with no answer\n",
         )
         .unwrap();
         let finding = check_decks(dir.path());
@@ -331,12 +331,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("good.md"),
-            "---\nid: \"deck-good\"\n---\n## valid $x^2$\n$5 and $10 with unmatched $x\n",
+            "---\nformat-version: 1\nid: \"deck-good\"\n---\n## valid $x^2$\n$5 and $10 with unmatched $x\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("bad.md"),
-            "---\nid: \"deck-bad\"\n---\n## q\n$\\frac{1$\n> $\\sqrt{$\n",
+            "---\nformat-version: 1\nid: \"deck-bad\"\n---\n## q\n$\\frac{1$\n> $\\sqrt{$\n",
         )
         .unwrap();
 
@@ -347,7 +347,7 @@ mod tests {
             "{}",
             finding.detail
         );
-        assert!(finding.detail.contains("bad.md: card at line 4"));
+        assert!(finding.detail.contains("bad.md: card at line 5"));
         assert!(finding.detail.contains("\\frac{1"));
     }
 
@@ -401,7 +401,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(workspace::DECKS)).unwrap();
         std::fs::write(
             dir.path().join("decks/member.md"),
-            "---\nid: \"deck-member\"\n---\n## q\nanswer\n",
+            "---\nformat-version: 1\nid: \"deck-member\"\n---\n## q\nanswer\n",
         )
         .unwrap();
 
