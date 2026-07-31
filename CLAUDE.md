@@ -379,7 +379,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   code; never auto-merge them.
 
 - **Mutation testing is diff-scoped, always.** A full sweep is 5,364 mutants,
-  about 21 hours at 8 jobs, so it can never be a nightly or a CI job. `make
+  about 84 hours at the `GATE_JOBS ?= 2` default (21 at 8), so it can never be a
+  nightly or a CI job. 2 is deliberate: 8 costs too much CPU and disk on this
+  machine. The nightly overrides it to 4 on a runner. `make
   gate` mutates a branch against local main before review; the
   `mutants-nightly` workflow mutates one day of merges (`MUTANTS_BASE` set to
   the newest commit older than 24h). The nightly backstops a forgotten gate; it

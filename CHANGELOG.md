@@ -300,6 +300,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DeckTopologyDto` becomes `DeckDrawerDto` (gains `preamble` and a flat
   `heatmap`, drops `deck_due`), and `RegionInfoDto` drops its `due` field
 
+### Changed
+
+- `alix profile list` now shows each profile's config file path, so an unexpected
+  decks directory or port can be traced to the file that set it.
+
 ### Fixed
 
 - `alix generate` now checks the output destination before calling the AI

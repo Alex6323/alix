@@ -92,6 +92,7 @@ struct ProfileRow {
     audience: Audience,
     port: u16,
     decks: PathBuf,
+    config: PathBuf,
 }
 
 fn list() -> Result<()> {
@@ -108,9 +109,15 @@ fn list() -> Result<()> {
         .max()
         .unwrap_or_default()
         .max("name".len());
+    let decks_width = rows
+        .iter()
+        .map(|row| row.decks.display().to_string().len())
+        .max()
+        .unwrap_or_default()
+        .max("decks".len());
     println!(
-        "{:<name_width$}  {:<6}  {:>5}  decks",
-        "name", "flavor", "port"
+        "{:<name_width$}  {:<6}  {:>5}  {:<decks_width$}  config",
+        "name", "flavor", "port", "decks"
     );
     for row in rows {
         let audience = match row.audience {
@@ -118,10 +125,11 @@ fn list() -> Result<()> {
             Audience::Kids => "kids",
         };
         println!(
-            "{:<name_width$}  {audience:<6}  {:>5}  {}",
+            "{:<name_width$}  {audience:<6}  {:>5}  {:<decks_width$}  {}",
             row.name,
             row.port,
-            row.decks.display()
+            row.decks.display().to_string(),
+            row.config.display()
         );
     }
     Ok(())
@@ -144,6 +152,7 @@ fn profile_rows_in(dir: &Path) -> Result<Vec<ProfileRow>> {
             audience: config.serve.audience,
             port: config.serve.port,
             decks,
+            config: path,
         });
     }
     Ok(rows)
@@ -399,6 +408,7 @@ mod tests {
                 audience: Audience::Kids,
                 port: 7002,
                 decks,
+                config: path.clone(),
             }],
             profile_rows_in(&dir).unwrap()
         );
