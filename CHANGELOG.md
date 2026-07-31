@@ -340,6 +340,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck stopped loading entirely: a file copied from the manual's frontmatter
   example hit this on its first initialization.
 
+- Cloze cards read as fill-in-the-blank. The gap you are answering is a chip
+  with a single rule on the baseline instead of four separated underscores, the
+  other holes are quiet chips instead of `[…]`, and the gapped sentence now
+  leads the card while the front line above it steps back to a topic label. The
+  sentence is the question, but it was set smaller than the topic. Plain cards
+  are untouched: the topic styling applies only to a card that has context
+  lines.
+
 - The picker keeps keyboard focus when you click outside the deck list, so the
   row-navigation keys keep responding instead of going silently dead. Only
   clicks inside the stage were handled before; a click anywhere else stranded

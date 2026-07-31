@@ -279,9 +279,24 @@
   .crumb-cell.learned-weak { background: var(--again); }
   .crumb-cell.retired { background: var(--retired); }
   .drawer-flat { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-  .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
-  .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
-  .context .muted-hole { color: var(--dim); }                     /* sibling holes, hidden */
+  .front-text.topic { font-size: clamp(0.95rem, 2vw, 1.1rem); font-weight: 500; color: var(--dim); letter-spacing: 0.01em; }
+  .context { color: var(--bolt); font-family: var(--mono); white-space: pre-wrap;
+    font-size: clamp(1.15rem, 3vw, 1.45rem); line-height: 1.5; margin-top: 10px; }
+  /* Both holes render as chips with their glyphs hidden: the text still sizes
+     the chip and still copies, but `____` draws as four separated glyphs and
+     `[…]` is noise. Only the answerable gap gets the rule, which is drawn on
+     the content box so the padding insets it and it lands on the baseline. */
+  .context .hole { color: transparent; font-weight: 700;
+    background-color: color-mix(in srgb, var(--bolt-hi) 14%, transparent);
+    background-image: linear-gradient(var(--bolt-hi), var(--bolt-hi));
+    background-repeat: no-repeat;
+    background-origin: content-box;
+    background-size: 100% 2px;
+    background-position: center bottom 0.28em;
+    border-radius: 4px; padding: 0.06em 0.42em; }
+  .context .muted-hole { color: transparent;
+    background-color: color-mix(in srgb, var(--dim) 13%, transparent);
+    border-radius: 4px; padding: 0.06em 0.42em; }
   /* bound the image by its region (flex shrink + min-height:0), so it scales
      down to fit instead of scrolling; flex-grow 0 keeps small images at their
      natural size rather than ballooning. */
@@ -3272,7 +3287,11 @@ function renderCard() {
     }
     crumbStrip.appendChild(bc);
   }
-  q.appendChild(frontEl(c.front, c.front_runs, c.front_units));
+  const frontNode = frontEl(c.front, c.front_runs, c.front_units);
+  // On a cloze card the front is the topic and the gapped sentence below it is
+  // the actual question, so the sentence leads and the topic steps back.
+  if (c.context.length) frontNode.classList.add("topic");
+  q.appendChild(frontNode);
   for (let i = 0; i < c.context.length; i++) {
     q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
   }
@@ -3304,7 +3323,11 @@ function renderBrowse() {
     moreHint: false, // browse has no overflow marker
   });
 
-  q.appendChild(frontEl(c.front, c.front_runs, c.front_units));
+  const frontNode = frontEl(c.front, c.front_runs, c.front_units);
+  // On a cloze card the front is the topic and the gapped sentence below it is
+  // the actual question, so the sentence leads and the topic steps back.
+  if (c.context.length) frontNode.classList.add("topic");
+  q.appendChild(frontNode);
   for (let i = 0; i < c.context.length; i++) {
     q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
   }
