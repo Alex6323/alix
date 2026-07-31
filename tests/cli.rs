@@ -3883,7 +3883,10 @@ fn a_failed_prerequisite_never_reaches_the_backend() {
     let config = write(
         dir.path(),
         "config.toml",
-        &format!("[ask]\nbackend = \"claude\"\ncommand = \"{}\"\n", cli.display()),
+        &format!(
+            "[ask]\nbackend = \"claude\"\ncommand = \"{}\"\n",
+            cli.display()
+        ),
     );
 
     let existing = dir.path().join("taken.md");
