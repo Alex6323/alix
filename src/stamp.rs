@@ -160,10 +160,14 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     match (&deck_action, &deck_token) {
         (DeckAction::Splice(open), Some(tok)) => {
             let offset = line_start_of_next(body, *open).ok_or(StampError::MissingLine(*open))?;
-            inserts.push((
-                offset,
-                format!("format-version: {DECK_FORMAT_VERSION}\nid: \"{tok}\"\n"),
-            ));
+            // An author may already have written the version by hand; splicing
+            // a second one is a duplicate YAML key, which makes the deck
+            // unloadable.
+            let version = match deck.frontmatter.format_version {
+                Some(_) => String::new(),
+                None => format!("format-version: {DECK_FORMAT_VERSION}\n"),
+            };
+            inserts.push((offset, format!("{version}id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
             prepend = format!("---\nformat-version: {DECK_FORMAT_VERSION}\nid: \"{tok}\"\n\n---\n");
@@ -515,6 +519,23 @@ mod tests {
         assert!(stamped.starts_with(&format!(
             "{BOM}---\nformat-version: 1\nid: \"{deck_tok}\"\n\n---\n"
         )));
+    }
+
+    #[test]
+    fn initializing_a_deck_that_already_declares_a_version_does_not_duplicate_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        fs::write(&path, "---\nformat-version: 1\n---\n## q\na\n").unwrap();
+
+        stamp_deck(&path).unwrap();
+
+        let stamped = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            1,
+            stamped.matches("format-version:").count(),
+            "a second version key is a duplicate mapping key, so the deck stops parsing: {stamped}"
+        );
+        parser::parse("d.md", &stamped).expect("the stamped deck must still load");
     }
 
     #[test]

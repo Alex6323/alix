@@ -335,6 +335,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix deck init` no longer writes a second `format-version:` into a deck that
+  already declares one. The duplicate is an invalid YAML mapping key, so the
+  deck stopped loading entirely: a file copied from the manual's frontmatter
+  example hit this on its first initialization.
+
 - The picker keeps keyboard focus when you click outside the deck list, so the
   row-navigation keys keep responding instead of going silently dead. Only
   clicks inside the stage were handled before; a click anywhere else stranded
