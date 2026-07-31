@@ -712,6 +712,117 @@ mod tests {
     }
 
     #[test]
+    fn a_cooled_card_coming_back_cannot_regrade_the_pick_shown_for_another() {
+        use crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        let (mut store, mut augment, _dir) = fixtures();
+        let cards = parse(
+            "## The classic test pyramid, bottom to top\n\\blank{Unit} tests, \\blank{integration} tests, \\blank{end-to-end} tests.\n",
+        );
+        seen(&mut store, &cards);
+        for (card, distractors) in cards.iter().zip([
+            ["Acceptance", "Smoke", "Manual"],
+            ["component", "contract", "system"],
+            ["load", "regression", "exploratory"],
+        ]) {
+            augment.set_distractors(
+                &card.id().unwrap(),
+                distractors.iter().map(|d| d.to_string()).collect(),
+                card.content_fingerprint,
+            );
+        }
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let mut session = session_at(cards, &mut store, Depth::Recognize, now);
+
+        // Miss the first hole, which floors it and moves the learner to the next.
+        session.grade(&mut store, crate::scheduler::Grade::Fail, now);
+        let shown = current_question(&session, &store, &augment).expect("a pick");
+        let displayed = shown.options.clone();
+        let picked = shown.correct;
+
+        // The floored hole comes back off cooldown. Reading state must not swap
+        // the card underneath the learner: the client still shows `displayed`
+        // and gets only an index back, so a swap regrades one card's pick
+        // against another card's answer key.
+        let shown_card = session.current().and_then(|c| c.id());
+        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+
+        // Asserting on `passed` alone is not enough: two questions can put the
+        // answer at the same index, hiding the swap behind a coincidence.
+        assert_eq!(
+            shown_card,
+            session.current().and_then(|c| c.id()),
+            "the card being graded must be the card the learner was shown"
+        );
+        let feedback = choose(&session, &store, &augment, picked).expect("feedback");
+        assert!(
+            feedback.passed,
+            "learner saw {displayed:?} and picked {picked}, server flagged {} correct",
+            feedback.correct
+        );
+    }
+
+    #[test]
+    fn every_cloze_hole_marks_its_own_authored_answer_correct() {
+        let (mut store, mut augment, _dir) = fixtures();
+        let cards = parse(
+            "## The classic test pyramid, bottom to top\n\\blank{Unit} tests, \\blank{integration} tests, \\blank{end-to-end} tests.\n",
+        );
+        seen(&mut store, &cards);
+        // The real cached sets from Alex's deck, per hole.
+        let per_hole = [
+            ("Unit", ["Acceptance", "Smoke", "Manual"]),
+            ("integration", ["component", "contract", "system"]),
+            ("end-to-end", ["load", "regression", "exploratory"]),
+        ];
+        for (card, (_, distractors)) in cards.iter().zip(per_hole.iter()) {
+            augment.set_distractors(
+                &card.id().unwrap(),
+                distractors.iter().map(|d| d.to_string()).collect(),
+                card.content_fingerprint,
+            );
+        }
+        assert_eq!(3, cards.len(), "three holes, three sub-cards");
+
+        for (index, (answer, _)) in per_hole.iter().enumerate() {
+            let session = session_at(
+                vec![cards[index].clone()],
+                &mut store,
+                Depth::Recognize,
+                NOW,
+            );
+            let q = current_question(&session, &store, &augment).expect("a pick");
+            assert_eq!(
+                *answer, q.options[q.correct],
+                "hole {index}: options {:?} flagged {} correct",
+                q.options, q.correct
+            );
+        }
+    }
+
+    #[test]
+    fn the_displayed_answer_still_passes_after_the_session_is_polled() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+        seen(&mut store, &cards);
+        let mut session = session_at(cards, &mut store, Depth::Recognize, NOW);
+        let shown = current_question(&session, &store, &augment).expect("a pick");
+        // The learner clicks the option the client is displaying as the answer.
+        let picked = shown.correct;
+
+        // Reading session state must not reshuffle the question underneath the
+        // learner: the client keeps the options it already rendered and only
+        // receives an index back.
+        session.poll(&mut store, NOW + 1);
+
+        let feedback = choose(&session, &store, &augment, picked).expect("feedback");
+        assert!(
+            feedback.passed,
+            "picking the displayed answer must pass; options were {:?}, server now says {} is correct",
+            shown.options, feedback.correct
+        );
+    }
+
+    #[test]
     fn authored_choices_vary_between_study_sessions() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
