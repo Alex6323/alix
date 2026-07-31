@@ -1,3 +1,5 @@
+# These are gitignored to stay out of commits, but ripgrep (and so VS Code's
+# search) reads .gitignore too, which also made them unfindable.
 !/docs/plans/
 !/docs/specs/*
 !/docs/product/
