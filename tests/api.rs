@@ -5423,3 +5423,49 @@ fn web_generate_stops_a_wedged_provider_at_the_inactivity_limit() {
         "the serve generate path must honour the inactivity limit: {error}"
     );
 }
+
+/// Saving a tutor note writes the deck file underneath a live session. The
+/// card the learner was studying must still be the card they return to: the
+/// web client keeps its client-side reveal position across the tutor close
+/// (`closeAsk` assigns state without `apply`), which is only sound while the
+/// card cannot change with the panel open.
+#[test]
+fn a_tutor_note_leaves_the_learner_on_the_same_card() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = scripts.path().join("fake-tutor");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\nprintf '%s\\n' 'a tutor answer'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/select", r#"{"deck":"choice-armed.md"}"#);
+
+    // The reported sequence answers the card first, so the client sits in its
+    // feedback state with the tutor opened over it.
+    let resp = post_gated(&base, "/api/choose", r#"{"index":0}"#);
+    assert_eq!(200, resp.status, "answering the multiple-choice card");
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+    let graded: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let studied = graded["card"]["front"].as_str().unwrap().to_string();
+
+    let resp = post_gated(&base, "/api/ask", r#"{"question":"why?"}"#);
+    assert_eq!(200, resp.status, "opening the tutor");
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+
+    let resp = post_gated(&base, "/api/ask/note", "{}");
+    assert_eq!(200, resp.status, "saving the note");
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+    let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        studied,
+        after["card"]["front"].as_str().unwrap_or_default(),
+        "the learner returned to a different card after saving a tutor note; \
+         deck on disk:\n{}",
+        std::fs::read_to_string(guard.dir().join("sample.md")).unwrap_or_default()
+    );
+}
