@@ -2366,10 +2366,10 @@ fn generate_forwards_structured_agent_progress_without_printing_partial_markdown
         &cli,
         r###"#!/bin/sh
 cat >/dev/null
-echo '{"type":"system","subtype":"init"}'
-echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebFetch","input":{"url":"https://example.org"}}]}}'
-echo '{"type":"assistant","message":{"content":[{"type":"text","text":"partial deck must stay hidden"}]}}'
-echo '{"type":"result","subtype":"success","result":"## Generated Q\nGenerated A\n"}'
+printf '%s\n' '{"type":"system","subtype":"init"}'
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebFetch","input":{"url":"https://example.org"}}]}}'
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"partial deck must stay hidden"}]}}'
+printf '%s\n' '{"type":"result","subtype":"success","result":"## Generated Q\nGenerated A\n"}'
 "###,
     )
     .unwrap();
