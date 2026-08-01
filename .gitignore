@@ -15,7 +15,6 @@ PLAN.md
 /docs/deps/
 # transient screenshots dropped at the repo root (current.png, crates-io.png, …)
 /*.png
-/assets/ignore/
 
 # Codex CLI agent's per-repo scratch (its `rules/` + session state).
 .codex/
