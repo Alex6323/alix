@@ -24,7 +24,7 @@ use jobs_owner::*;
 use respond::*;
 use serde::Deserialize;
 use study::*;
-use tiny_http::{Method, Server};
+use tiny_http::{Method, Request, Server};
 
 pub use crate::assemble::SelectOptions;
 use crate::{
@@ -47,6 +47,17 @@ const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
 const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
 
 const MAX_REMOTE_BODY: usize = 256 * 1024;
+
+/// Every JSON body is read through this, never straight off the socket:
+/// `from_reader` keeps reading while a client keeps sending, so one request
+/// could grow the server's memory without bound. Generous next to what these
+/// routes carry (deck names, a card, a tutor question).
+const MAX_JSON_BODY: usize = 256 * 1024;
+
+fn json_body<T: serde::de::DeserializeOwned>(request: &mut Request) -> Option<T> {
+    let bytes = read_capped(request.as_reader(), MAX_JSON_BODY)?;
+    serde_json::from_slice(&bytes).ok()
+}
 
 const PLEX_SANS_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-400.woff2");
 const PLEX_SANS_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-500.woff2");
@@ -554,7 +565,7 @@ pub fn run_review(
                 struct Body {
                     deck: String,
                 }
-                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
+                let Some(body) = json_body::<Body>(&mut request)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -595,7 +606,7 @@ pub fn run_review(
                     #[serde(default, deserialize_with = "deserialize_some")]
                     date: Option<Option<String>>,
                 }
-                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
+                let Some(body) = json_body::<Body>(&mut request)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -639,7 +650,7 @@ pub fn run_review(
                     text: String,
                     dest: Option<String>,
                 }
-                let Some(b) = serde_json::from_reader::<_, Body>(request.as_reader()).ok() else {
+                let Some(b) = json_body::<Body>(&mut request) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -676,7 +687,7 @@ pub fn run_review(
                     guidance: Option<String>,
                     dest: Option<String>,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let Some(b) =
                     body.filter(|b| b.url.starts_with("http://") || b.url.starts_with("https://"))
                 else {
@@ -712,7 +723,7 @@ pub fn run_review(
                 struct Body {
                     deck: Option<String>,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let path = match body.and_then(|b| b.deck) {
                     None => catalog.decks_root(),
                     Some(name) => catalog.resolve_path(name).flatten(),
@@ -769,7 +780,7 @@ pub fn run_review(
                     code: String,
                     dest: Option<String>,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let Some(b) = body else {
                     respond_status(request, 400);
                     continue;
@@ -862,7 +873,7 @@ pub fn run_review(
                 struct Body {
                     lines: Vec<String>,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let Some(body) = body else {
                     respond_status(request, 400);
                     continue;
@@ -936,7 +947,7 @@ pub fn run_review(
                 struct Body {
                     question: String,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let action = body
                     .map(|b| b.question)
                     .filter(|q| !q.trim().is_empty())
@@ -979,7 +990,7 @@ pub fn run_review(
                     continue;
                 }
                 let Some(req) =
-                    serde_json::from_reader::<_, CreateCardReq>(request.as_reader()).ok()
+                    json_body::<CreateCardReq>(&mut request)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -1006,7 +1017,7 @@ pub fn run_review(
                 struct Body {
                     deck: String,
                 }
-                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
+                let Some(body) = json_body::<Body>(&mut request)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -1039,7 +1050,7 @@ pub fn run_review(
                     text: String,
                     goto: Option<usize>,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let (text, goto) = match body {
                     Some(b) => (b.text, b.goto),
                     None => (String::new(), None),
@@ -1055,7 +1066,7 @@ pub fn run_review(
                 struct Body {
                     text: String,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let text = body.map(|b| b.text).unwrap_or_default();
                 match study.exam_grade(text) {
                     None => respond_status(request, 503),
@@ -1080,7 +1091,7 @@ pub fn run_review(
                 struct Body {
                     deck: String,
                 }
-                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
+                let Some(body) = json_body::<Body>(&mut request)
                 else {
                     respond_status(request, 400);
                     continue;
@@ -1118,7 +1129,7 @@ pub fn run_review(
                 struct Body {
                     targets: Vec<TargetBody>,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let targets = body.map(|b| {
                     b.targets
                         .into_iter()
@@ -1150,7 +1161,7 @@ pub fn run_review(
                     target: String,
                     topology: Option<String>,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let Some(b) = body else {
                     match study.augment_poll(ai_cfg.clone(), ask_cfg.clone()) {
                         None => respond_status(request, 503),
@@ -1182,7 +1193,7 @@ pub fn run_review(
                 struct Body {
                     text: String,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let Some(b) = body else {
                     match study.walk_poll() {
                         None => respond_status(request, 503),
@@ -1216,7 +1227,7 @@ pub fn run_review(
                 struct Body {
                     question: String,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let body: Option<Body> = json_body::<Body>(&mut request);
                 let question = body.map(|b| b.question).filter(|q| !q.trim().is_empty());
                 match study.walk_ask(WalkAskAction::Question(question), ask_cfg.clone()) {
                     None => respond_status(request, 503),

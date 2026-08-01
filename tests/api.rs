@@ -3432,6 +3432,39 @@ fn a_replayed_grade_with_a_stale_revision_conflicts_and_mutates_nothing() {
 /// Clients that do not speak the revision contract are refused loudly, not
 /// silently accepted with no protection.
 #[test]
+fn an_oversized_json_body_is_refused_instead_of_being_buffered() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    // Just past the 256 KiB cap. The point is not the exact number: an
+    // uncapped reader keeps consuming while a client keeps sending, so the
+    // limit is what stops one request from growing the server's memory. That
+    // ordinary bodies still parse is covered by every other test in this file.
+    // A REAL deck plus padding in an ignored field: parsed, this body is
+    // valid and the route answers on the deck's own merits. Only its size can
+    // make it a 400, so the assertion cannot pass for the wrong reason.
+    let padded = format!(
+        "{{\"deck\":\"sample.md\",\"pad\":\"{}\"}}",
+        "x".repeat(256 * 1024 + 1)
+    );
+    let oversized = post_json(&base, "/api/exam/start", &padded);
+
+    let small = format!("{{\"deck\":\"sample.md\",\"pad\":\"{}\"}}", "x".repeat(16));
+    let ordinary = post_json(&base, "/api/exam/start", &small);
+
+    assert_ne!(
+        oversized.status, ordinary.status,
+        "the same body must be treated differently once it is oversized \
+         (both answered {})",
+        ordinary.status
+    );
+    assert_eq!(
+        400, oversized.status,
+        "an oversized body must be refused, not read to the end"
+    );
+}
+
+#[test]
 fn a_card_relative_mutation_without_the_revision_header_is_a_400() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
