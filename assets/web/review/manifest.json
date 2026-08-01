@@ -12,6 +12,7 @@
     "model.js",
     "dom.js",
     "exam.js",
+    "walk.js",
     "app.js"
   ]
 }
