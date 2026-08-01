@@ -11,6 +11,7 @@
     "api.js",
     "model.js",
     "dom.js",
+    "tutor.js",
     "exam.js",
     "walk.js",
     "app.js"

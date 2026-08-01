@@ -43,26 +43,19 @@ let drawTool = clientModel.drawTool;    // "pen" | "erase"
 let drawCanvasEl = clientModel.drawCanvas; // the live <canvas> while drawing
 // Per-device "Draw answers" preference (wired to the menu in Task 5).
 let drawToggle = clientModel.drawToggle;
-let asking = false;   // the ask-tutor overlay is open
-let askData = { transcript: [], thinking: false, status: null, error: null };
-let askInfo = { backend: "claude", model: "default", effort: "default" }; // who answers, from /api/ask-info
 // The configured backend's display name ("Claude", "Copilot", …) and the
 // shared "X is working…" progress line the exam and augment overlays show:
 // one place, so no surface can drift back to a hardcoded backend.
-const backendName = () => askInfo.backend.charAt(0).toUpperCase() + askInfo.backend.slice(1);
 function workingText(s) {
-  if (s < 2) return `${backendName()} is working…`;
-  if (s < 90) return `${backendName()} is working… ${s}s`;
-  return `${backendName()} is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
+  if (s < 2) return `${tutor.backendName()} is working…`;
+  if (s < 90) return `${tutor.backendName()} is working… ${s}s`;
+  return `${tutor.backendName()} is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
 }
-let askPoll = null;   // setInterval handle while a reply is pending
-let askConfirmingClose = false; // showing the "leave the tutor?" confirmation
 let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
 let augmentPoll = null; // setInterval handle while a generation is in flight
 let augTicked = new Set(); // gap-fill target kinds ticked for the next batch generate
 let duePoll = null;   // setInterval handle while the summary waits for a cooling card
 let browsing = null;  // {cards, label, i} while the read-only browse overlay is open
-let askNeedsStateRefresh = false; // a tutor note changed the current card/checkpoint
 let KEYS = {};        // configured review key bindings, from /api/keys
 let PK = {};          // configured deck-picker nav keys, from /api/picker-keys
 let BK = { next: [{ k: "l", ctrl: false }], prev: [{ k: "h", ctrl: false }] }; // browse pager keys, from /api/browse-keys
@@ -135,6 +128,39 @@ const exam = createExam({
   },
 });
 
+const tutor = createTutor({
+  api,
+  post,
+  rerender: render,
+  updateBusy,
+  timers: {
+    setInterval: window.setInterval.bind(window),
+    clearInterval: window.clearInterval.bind(window),
+  },
+  walk: {
+    isOpen: () => walk.isOpen(),
+    replace: (next) => walk.replace(next),
+  },
+  study: {
+    state: () => state,
+    replaceState: (next) => { state = next; },
+    load,
+  },
+  ui: {
+    appendRuns,
+    appendRunsOrText,
+    chip,
+    contextLine,
+    document,
+    el,
+    hit,
+    keys: () => KEYS,
+    label,
+    legend,
+    stage,
+  },
+});
+
 const walk = createWalk({
   api,
   fetchApi: apiClient.fetch,
@@ -144,10 +170,10 @@ const walk = createWalk({
   sessionStorage,
   examStart: exam.start,
   tutor: {
-    isOpen: () => asking,
-    open: openAsk,
-    close: closeAsk,
-    render: renderAsk,
+    isOpen: tutor.isOpen,
+    open: tutor.show,
+    close: tutor.close,
+    render: tutor.render,
   },
   ui: {
     appendRunsOrText,
@@ -467,7 +493,7 @@ function render() {
   menuWrap.style.display = state.phase === "done" ? "none" : "";
   setMenuContext("review");
 
-  if (asking) { renderAsk(); return; }
+  if (tutor.isOpen()) { tutor.render(); return; }
   if (screen === "summary") { renderSummary(); startDuePoll(); }
   else renderCard();
 }
@@ -480,296 +506,28 @@ function isAnswered() {
   if (feedback) return true;
   return !isChoice() && !isInput() && fullyRevealed();
 }
-function openAsk() {
-  asking = true;
-  askConfirmingClose = false;
-  askNeedsStateRefresh = false;
-  render(); // builds the panel once (entrance animation runs once)
-  const ep = walk.isOpen() ? "/api/walk/ask" : "/api/ask";
-  api(ep).then(d => { askData = d; if (asking) syncAsk(); }); // pick up any prior transcript
-}
-function closeAsk() {
-  // Leaving with an unsaved conversation gets the same pause as leaving a
-  // session: the transcript survives on this card, but moving on to the next
-  // one drops it before it became a note or a card.
-  if (!askConfirmingClose && askData && askData.transcript && askData.transcript.length) {
-    askConfirmingClose = true;
-    renderAskLeaveConfirm();
-    return;
-  }
-  askConfirmingClose = false;
-  asking = false;
-  stopAskPoll();
-  if (walk.isOpen() && askNeedsStateRefresh) {
-    // Re-pull the walk state (a saved note may have landed on a checkpoint).
-    api("/api/walk").then(d => { walk.replace(d); render(); }).catch(render);
-  } else if (!walk.isOpen() && askNeedsStateRefresh) {
-    // A note saved during the chat now lives on the server's card; re-pull the
-    // state so it shows on return without a manual reload. Keep the reveal
-    // position (`revealed`/`feedback` are client-side and the card can't change
-    // while the modal ask panel is open), so we don't reset the card to its front.
-    api("/api/state").then(s => { state = s; render(); }).catch(render);
-  } else render();
-}
-function sendAsk(text) {
-  const q = (text || "").trim();
-  if (!q || askData.thinking) return;
-  const ta = document.querySelector(".ask-input");
-  if (ta) ta.value = ""; // the textarea persists across syncAsk; clear the sent question
-  const ep = walk.isOpen() ? "/api/walk/ask" : "/api/ask";
-  api(ep, post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); }).catch(() => load());
-}
-// Save-note and Make-this-a-card both distill a completed exchange into
-// something durable, so both need at least one tutor answer and no in-flight
-// turn. Their footer chips are disabled (and these guards no-op) until then.
-function canDistill() { return !askData.thinking && askData.transcript.length > 0; }
-function saveAskNote() {
-  if (!canDistill()) return;
-  askNeedsStateRefresh = true;
-  const ep = walk.isOpen() ? "/api/walk/ask/note" : "/api/ask/note";
-  api(ep, post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); }).catch(() => load());
-}
-// Distill the conversation so far into one draft card, surfaced on askData.draft
-// once the poll picks up the tutor's reply. Adult-only (no walk equivalent).
-function draftCard() {
-  if (!canDistill()) return;
-  api("/api/ask/card/draft", post({}))
-    .then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); })
-    .catch(() => { askData = { ...askData, status: "couldn't draft a card" }; if (asking) syncAsk(); });
-}
-// Mint the edited draft as a free-standing card. A 422 (duplicate/malformed) or
-// any other non-2xx rejects `api()`, so the failure path always shows a status
-// instead of silently doing nothing.
-function createCard(front, back) {
-  api("/api/ask/card/create", post({ front, back }))
-    .then(() => { askData = { ...askData, draft: null, status: "card added" }; if (asking) syncAsk(); })
-    .catch(() => { askData = { ...askData, status: "couldn't add that card" }; if (asking) syncAsk(); });
-}
-function cancelDraft() { askData = { ...askData, draft: null }; if (asking) syncAsk(); }
-// Loop the header logo while any backend/server call is in flight — a calm loader
-// that complements the inline spinners; rest it otherwise.
+
+// Loop the header logo while any backend/server call is in flight.
 function updateBusy() {
-  var logo = document.querySelector(".brand alix-logo");
-  if (logo) logo.toggleAttribute("loop", !!(askPoll || exam.isPolling()));
+  const logo = document.querySelector(".brand alix-logo");
+  if (logo) logo.toggleAttribute("loop", !!(tutor.isPolling() || exam.isPolling()));
 }
-// Replay the header logo's reveal once — the reload button and the `r` key.
+
+// Replay the header logo's reveal once, for the reload button and the `r` key.
 function replayLogo() {
-  var logo = document.querySelector(".brand alix-logo");
+  const logo = document.querySelector(".brand alix-logo");
   if (logo && logo.replay) logo.replay();
 }
-// Render the dependency-tree prefix as CSS-drawn guides instead of box-drawing
-// glyphs. The prefix is 3-char groups ("│  "/"   " ancestors, "├─ "/"└─ " branch);
-// each group becomes a fixed-width cell whose CSS vertical extends past the row gap,
-// so adjacent rows' verticals connect into continuous lines (glyphs can't span it).
+
+// Render dependency-tree prefixes as CSS-drawn guide cells.
 function treeGuides(prefix) {
   const box = el("span", "tree");
   for (let i = 0; i + 3 <= prefix.length; i += 3) {
     const c = prefix[i];
     const cls = c === "│" ? "line" : c === "├" ? "tee" : c === "└" ? "ell" : "empty";
-    box.appendChild(el("span", "guide " + cls));
+    box.appendChild(el("span", `guide ${cls}`));
   }
   return box;
-}
-function startAskPoll() {
-  stopAskPoll();
-  askPoll = setInterval(() => {
-    const ep = walk.isOpen() ? "/api/walk/ask" : "/api/ask";
-    api(ep).then(d => { askData = d; if (!d.thinking) { stopAskPoll(); refreshAskInfo(); } if (asking) syncAsk(); });
-  }, 400);
-  updateBusy();
-}
-function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } updateBusy(); }
-// An unpinned backend only names its model once it has answered, so pick that
-// up the first time and stop showing "default".
-function refreshAskInfo() {
-  if (askInfo.model !== "default") return;
-  api("/api/ask-info").then(ai => { if (ai) { askInfo = ai; if (asking) syncAsk(); } }).catch(() => {});
-}
-
-// (Re)fill just the transcript log from askData.
-function fillAskLog(log) {
-  // Skip the rebuild when nothing visible changed (the poll ticks every 400ms
-  // while thinking): a rebuilt <alix-logo> would restart its loop each tick,
-  // and the scroll position would keep snapping.
-  const sig = JSON.stringify([askData.transcript.length, askData.thinking, askData.status, askData.error]);
-  if (log._sig === sig) return;
-  log._sig = sig;
-  log.innerHTML = "";
-  for (const ex of askData.transcript) {
-    log.appendChild(el("div", "ask-q", ex.q));
-    log.appendChild(el("div", "ask-a", ex.a));
-  }
-  if (askData.thinking) {
-    // The looping alix logo as the thinking indicator (the header's does too,
-    // but this one sits where you're looking).
-    const t = el("div", "ask-thinking");
-    const logo = document.createElement("alix-logo");
-    logo.setAttribute("height", "18");
-    logo.setAttribute("loop", "");
-    t.appendChild(logo);
-    t.appendChild(document.createTextNode("Thinking…"));
-    log.appendChild(t);
-  }
-  if (askData.status) log.appendChild(el("div", "ask-status", askData.status));
-  if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
-  if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error)
-    log.appendChild(el("div", "ask-hint", walk.isOpen() ? "Ask the tutor about this step." : "Ask the tutor about this card."));
-  // Keep the newest exchange in view; the card + conversation scroll together
-  // now (the card sticks), so scroll their shared container, not just the log.
-  const sc = log.closest(".ask-scroll") || log;
-  sc.scrollTop = sc.scrollHeight;
-}
-
-// The editable front/back form shown once the tutor distills a draft
-// (askData.draft). Rebuilt fresh on every call (same idiom as fillAskLog's
-// log rebuild), so renderAsk and syncAsk share one source of truth for it.
-function buildDraftBox() {
-  if (!askData.draft) return null;
-  const box = el("div", "draft-box");
-  box.appendChild(el("div", "draft-label", "New card (edit, then Add):"));
-  const frontField = el("input", "draft-front");
-  frontField.value = askData.draft.front;
-  box.appendChild(frontField);
-  const backField = el("textarea", "draft-back");
-  backField.value = askData.draft.back.join("\n");
-  backField.rows = Math.max(2, askData.draft.back.length);
-  box.appendChild(backField);
-  const actions = el("div", "draft-actions");
-  chip("Add", "primary", () => {
-    const back = backField.value.split("\n").map(s => s.trim()).filter(Boolean);
-    createCard(frontField.value.trim(), back);
-  }, "", actions);
-  chip("Cancel", "", cancelDraft, "", actions);
-  box.appendChild(actions);
-  return box;
-}
-
-// Update the open panel in place — no rebuild, so the entrance animation
-// doesn't re-run while we poll and the textarea keeps its focus/value.
-function syncAsk() {
-  const wrap = document.querySelector(".ask-panel");
-  if (!wrap) { render(); return; }
-  fillAskLog(wrap.querySelector(".ask-log"));
-  const oldDraftBox = wrap.querySelector(".draft-box");
-  if (oldDraftBox) oldDraftBox.remove();
-  const draftBox = buildDraftBox();
-  if (draftBox) wrap.insertBefore(draftBox, wrap.querySelector(".ask-input"));
-  const input = wrap.querySelector(".ask-input");
-  if (input) {
-    input.disabled = askData.thinking;
-    // Once the reply lands, focus the box so a follow-up can be typed
-    // immediately (the poll stops here, so this fires once per answer).
-    if (!askData.thinking) input.focus();
-  }
-  const send = legend.querySelector(".chip.primary");
-  if (send) send.disabled = askData.thinking;
-  // Enable Make this a note / Make this a card once an answer lands (or disable again
-  // when a follow-up is in flight). The legend is built once, so update here.
-  legend.querySelectorAll(".chip.distill").forEach(c => { c.disabled = !canDistill(); });
-}
-
-// `subject` is optional: null = use the current review card; an object with
-// {q, qRuns, items, itemRuns} = the walk checkpoint prompt and key points.
-function renderAsk(subject) {
-  const wrap = el("div", "ask-panel");
-  // Mono eyebrow header ("ASK TUTOR · card-scoped" / "· step-scoped"), with
-  // which model is answering (and its effort) alongside it — the tutor uses
-  // the CLI default unless `[ask]` pins one, not the stronger model that
-  // built the deck.
-  const head = el("div", "ask-head");
-  const title = el("span");
-  title.appendChild(el("span", "ask-eyebrow", "ASK TUTOR"));
-  title.appendChild(el("span", "ask-scope", subject ? "· step-scoped" : "· card-scoped"));
-  head.appendChild(title);
-  head.appendChild(el("span", "ask-model", `${askInfo.backend} · model: ${askInfo.model} · effort: ${askInfo.effort}`));
-  wrap.appendChild(head);
-
-  // The card/checkpoint and the conversation share one scroll region: the subject
-  // sticks to the top as a reference while the conversation scrolls under it.
-  const scroll = el("div", "ask-scroll");
-  if (subject) {
-    // Walk: show the checkpoint prompt + key points.
-    const ref = el("div", "ask-card");
-    const prompt = el("div", "ask-card-q");
-    appendRunsOrText(prompt, subject.q, subject.qRuns);
-    ref.appendChild(prompt);
-    for (let i = 0; i < (subject.items || []).length; i++) {
-      const answer = el("div", "ask-card-a");
-      answer.appendChild(document.createTextNode("▸ "));
-      appendRunsOrText(answer, subject.items[i], subject.itemRuns && subject.itemRuns[i]);
-      ref.appendChild(answer);
-    }
-    scroll.appendChild(ref);
-  } else {
-    // Review: show the current card's front + answer lines.
-    const c = state.card;
-    if (c) {
-      const ref = el("div", "ask-card");
-      const front = el("div", "ask-card-q");
-      if (c.front_runs) appendRuns(front, c.front_runs); else front.textContent = c.front;
-      ref.appendChild(front);
-      for (let i = 0; i < (c.context || []).length; i++) {
-        ref.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i], "ask-card-ctx"));
-      }
-      for (let i = 0; i < c.back.length; i++) {
-        const answer = el("div", "ask-card-a");
-        if (c.back_runs && c.back_runs[i]) appendRuns(answer, c.back_runs[i]);
-        else answer.textContent = c.back[i];
-        ref.appendChild(answer);
-      }
-      scroll.appendChild(ref);
-    }
-  }
-  const log = el("div", "ask-log");
-  fillAskLog(log);
-  scroll.appendChild(log);
-  wrap.appendChild(scroll);
-
-  const draftBox = buildDraftBox();
-  if (draftBox) wrap.appendChild(draftBox);
-
-  const input = el("textarea", "ask-input");
-  input.placeholder = subject ? "Ask about this step… (Shift+Enter to send)" : "Ask about this card… (Shift+Enter to send)";
-  input.rows = 2;
-  input.disabled = askData.thinking;
-  input.addEventListener("keydown", e => {
-    // Enter inserts a newline (compose freely); Shift+Enter sends.
-    if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); sendAsk(input.value); }
-  });
-  wrap.appendChild(input);
-  stage.appendChild(wrap);
-
-  renderAskFooter(input);
-  if (!askData.thinking) input.focus();
-}
-// The ask panel's footer chips — split out so Stay (below) can restore them
-// after the leave confirmation replaced the footer.
-function renderAskFooter(input) {
-  legend.innerHTML = "";
-  const send = chip("Send", "primary", () => sendAsk(input.value), "shift+enter");
-  send.disabled = askData.thinking;
-  // Make this a note / Make this a card distill a completed exchange, so they
-  // stay disabled (the `distill` class, refreshed on every poll in syncAsk)
-  // until a tutor answer exists.
-  chip("Make this a note", "distill", saveAskNote, label(KEYS.make_note)).disabled = !canDistill();
-  // Adult-only, review-scoped: drafting posts to the review-only draft endpoint,
-  // which the walk's tutor session (reviewing = None server-side) can't serve.
-  if (!walk.isOpen()) chip("Make this a card", "distill", draftCard, label(KEYS.make_card)).disabled = !canDistill();
-  chip("Close", "", closeAsk, "esc");
-}
-// The leave-the-tutor confirmation, mirroring the session/walk leave prompts:
-// it swaps only the footer, so the conversation stays on screen while you decide.
-function renderAskLeaveConfirm() {
-  legend.innerHTML = "";
-  legend.appendChild(el("span", "leave-msg",
-    "Leave the tutor? Moving on to the next card drops this conversation. Making a note or a card keeps it."));
-  chip("Leave anyway", "again", closeAsk);
-  chip("Stay", "primary", cancelAskLeave, "esc");
-}
-function cancelAskLeave() {
-  askConfirmingClose = false;
-  const input = document.querySelector(".ask-input");
-  if (input) { renderAskFooter(input); input.focus(); }
 }
 
 // ── AI augment (the picker's "Augment a" action, decks only) ────────────────
@@ -1204,7 +962,7 @@ function augFillContent(wrap) {
       : row.kind === "icon" ? augIconRow(d, row) : augCardRow(d, row));
   const foot = el("div", "aug-foot");
   foot.appendChild(el("div", "aug-cost",
-    `Generating runs ${backendName()} and costs tokens. It fills only the cards a target is missing.`));
+    `Generating runs ${tutor.backendName()} and costs tokens. It fills only the cards a target is missing.`));
   wrap.appendChild(foot);
 }
 function renderAugment() {
@@ -1286,7 +1044,7 @@ function catalogSignature(data) {
   return JSON.stringify(data).replace(/\d+[smhdw] ago/g, "\u0000 ago");
 }
 const idleInSelect = () =>
-  state && state.phase === "select" && !browsing && !exam.isOpen() && !augmentData && !walk.isOpen() && !asking;
+  state && state.phase === "select" && !browsing && !exam.isOpen() && !augmentData && !walk.isOpen() && !tutor.isOpen();
 window.addEventListener("focus", async () => {
   if (!idleInSelect()) return;
   // An opportunistic re-scan stays quiet on failure too; the visible error
@@ -2892,7 +2650,7 @@ function renderLegend() {
   if (feedback) {
     if (isAcquire()) {
       chip("Seen", "primary", acquire, label(KEYS.reveal)); // a pick acknowledges, never grades
-      chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight); // answer is showing: tutor allowed
+      chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight); // answer is showing: tutor allowed
     } else if (isRecognizeMc()) {
       if (feedback.passed) {
         // A correct Recognize pick: Next commits it; the quiet "I guessed"
@@ -2901,14 +2659,14 @@ function renderLegend() {
         // the learner always has the last word.
         chip("Next", "primary", () => grade("passed"), label(KEYS.reveal));
         chip("I guessed", "quiet", () => grade("failed"), label(KEYS.failed));
-        chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+        chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
       } else {
         // A wrong pick: the correct option is already highlighted on screen
         // (renderChoiceFeedback) — Continue is the only action, and it grades
         // the miss (there's no guess left to walk back). Ask tutor is offered
         // here too: "why is the highlighted option right, not the one I picked?"
         chip("Continue", "primary", () => grade("failed"), label(KEYS.reveal));
-        chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+        chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
       }
     } else {
       // A typed check's (or TypeLine's closing) result: pure evidence — the
@@ -2916,7 +2674,7 @@ function renderLegend() {
       chip("Missed it", "failed", () => grade("failed"), label(KEYS.failed));
       chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
       chip("Got it", "passed", () => grade("passed"), label(KEYS.passed));
-      chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+      chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
     }
   } else if (isAcquire()) {
     if (effectiveDraw()) {
@@ -2925,13 +2683,13 @@ function renderLegend() {
         chip("Skip", "", skip, label(KEYS.skip));
       } else {
         chip("Seen", "primary", acquire, label(KEYS.reveal));      // ungraded acknowledgment
-        chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+        chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
       }
     } else if (isAcquireChoice()) {
       chip("Skip", "", skip, label(KEYS.skip));            // options are tappable
     } else if (revealed > 0) {
       chip("Seen", "primary", acquire, label(KEYS.reveal)); // hide⟷show is the corner `h` toggle, not a footer button
-      chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+      chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
     } else {
       chip("Reveal", "primary", reveal, label(KEYS.reveal));
       chip("Skip", "", skip, label(KEYS.skip));
@@ -2965,17 +2723,17 @@ function renderLegend() {
       const answered = marks.filter(m => m !== undefined).length;
       chip(`Done ${answered}/${state.keypoints.length}`, "primary", submitKeypoints, "enter").disabled = true;
     }
-    chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+    chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
   } else if (isRecognizeFallback()) {
     // No MC could be built (too few distractors): attempt→reveal, boolean call.
     chip("Knew it", "passed", () => grade("passed"), label(KEYS.passed));
     chip("Not yet", "failed", () => grade("failed"), label(KEYS.failed));
-    chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+    chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
   } else {
     chip("Missed it", "failed", () => grade("failed"), label(KEYS.failed));
     chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
     chip("Got it", "passed", () => grade("passed"), label(KEYS.passed));
-    chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
+    chip("Ask tutor", "ask", tutor.show, label(KEYS.ask), legendRight);
   }
   chip("Leave", "", leaveSession, "esc", legendLeft); // pinned bottom-left; return to the deck picker
 }
@@ -3147,14 +2905,8 @@ document.addEventListener("keydown", (e) => {
   }
   // The ask overlay: Esc closes, the save-note key saves; the textarea handles
   // typing, Enter for a newline, and Shift+Enter to send.
-  if (asking) {
-    if (askConfirmingClose) {
-      if (e.key === "Escape") { e.preventDefault(); cancelAskLeave(); }
-      return;
-    }
-    if (e.key === "Escape") { e.preventDefault(); closeAsk(); return; }
-    if (hit(e, KEYS.make_note)) { e.preventDefault(); saveAskNote(); return; }
-    if (hit(e, KEYS.make_card)) { e.preventDefault(); draftCard(); return; }
+  if (tutor.isOpen()) {
+    tutor.handleKey(e);
     return;
   }
   // While the leave prompt is up: Enter confirms leaving, Esc stays; other keys
@@ -3186,7 +2938,7 @@ document.addEventListener("keydown", (e) => {
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
     // Post-reveal only: once the answer shows (revealed, or a pick's feedback),
     // the tutor is allowed here too, matching review's after-reveal rule.
-    if ((revealed > 0 || feedback) && hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
+    if ((revealed > 0 || feedback) && hit(e, KEYS.ask)) { e.preventDefault(); tutor.show(); return; }
     if (effectiveDraw()) {
       if (revealed === 0) {
         if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
@@ -3223,7 +2975,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (feedback) {
-    if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
+    if (hit(e, KEYS.ask)) { e.preventDefault(); tutor.show(); return; }
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
     if (isRecognizeMc()) {
       // Correct pick: reveal/Enter takes the primary "Next" (passed), and the
@@ -3283,7 +3035,7 @@ document.addEventListener("keydown", (e) => {
     if (hit(e, KEYS.reveal)) { e.preventDefault(); reveal(); return; }
     return;
   }
-  if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
+  if (hit(e, KEYS.ask)) { e.preventDefault(); tutor.show(); return; }
   // The key-point checklist replaces the grade buttons: walk the list top to
   // bottom with y/n (auto-advancing), the review up/down keys or arrows to move, Enter to submit once
   // every point is answered (the server derives the grade from coverage).
@@ -3314,8 +3066,8 @@ document.getElementById("mAsk").addEventListener("click", () => {
   menu.classList.remove("open");
   // Mirrors the footer/keyboard availability: a walk offers the tutor only once
   // a checkpoint is revealed (nothing to ask about while still predicting).
-  if (walk.isOpen()) { if (walk.data().phase === "reveal") openAsk(); }
-  else if (isAnswered()) openAsk();
+  if (walk.isOpen()) { if (walk.data().phase === "reveal") tutor.show(); }
+  else if (isAnswered()) tutor.show();
 });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
 document.getElementById("mPromote").addEventListener("click", () => { menu.classList.remove("open"); promote(); });
@@ -3723,7 +3475,7 @@ function boot() {
     api("/api/browse-keys").catch(() => null),
   ])).then(([k, pk, ai, bk]) => {
     KEYS = k;
-    if (ai) askInfo = ai;
+    tutor.setInfo(ai);
     if (bk) BK = bk;
     PK = Object.assign({
       up: [{ k: "k", ctrl: false }], down: [{ k: "j", ctrl: false }],
