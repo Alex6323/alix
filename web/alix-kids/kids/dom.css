@@ -1,1 +1,52 @@
+/* ── The Alix mascot cell (CSS-drawn; reused throughout) ────────────────── */
+.mascot {
+  position: relative; flex: 0 0 auto;
+  width: 64px; height: 64px;
+  border-radius: 48% 52% 50% 50% / 54% 54% 46% 46%;
+  background: radial-gradient(circle at 37% 32%, #ffdcb4, #ff8a3d);
+  box-shadow: 0 10px 22px rgba(255, 138, 61, 0.3);
+  animation: kidsBob 3s ease-in-out infinite;
+}
+.mascot .eye { position: absolute; top: 26px; width: 10px; height: 10px; border-radius: 50%; background: #3a2a1e; }
+.mascot .eye.l { left: 18px; }
+.mascot .eye.r { right: 18px; }
+.mascot .smile {
+  position: absolute; left: 50%; top: 39px; transform: translateX(-50%);
+  width: 18px; height: 9px; border-bottom: 3px solid #3a2a1e; border-radius: 0 0 18px 18px;
+}
+.rev-prompt .checklist { display: grid; gap: 6px; width: fit-content; margin: 10px auto 0; text-align: left; }
+.rev-prompt .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+.rev-prompt .checklist-box { flex: none; font-family: ui-monospace, monospace; }
+.rev-prompt pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: #fff3e6; border-radius: 12px; font: 16px/1.45 ui-monospace, monospace; }
+.rev-context { font-weight: 600; font-size: 19px; line-height: 1.4; color: var(--muted); margin: 4px 0; }
+.math-run { color: inherit; background: none; }
+.math-run[role="img"] { outline: none; }
+.math-inline { display: inline-flex; align-items: baseline; max-width: 100%; line-height: 1; vertical-align: -0.16em; }
+.math-inline svg { display: inline-block; width: auto; height: 1.12em; max-width: 100%; overflow: visible; }
+.math-inline.math-standalone svg { height: 1.45em; }
+.math-display { display: flex; justify-content: center; width: 100%; max-width: 100%; margin: 0.35em auto; overflow: hidden; }
+.math-display svg { display: block; width: auto; height: auto; max-width: 100%; }
+.math-run svg :where([fill]:not([fill="none"])) { fill: currentColor; }
+.math-run svg :where([stroke]:not([stroke="none"])) { stroke: currentColor; }
+.math-error { display: inline-flex; align-items: baseline; gap: 0.5em; max-width: 100%; color: #d9544a; }
+.math-error.math-display { justify-content: center; }
+.math-error-source { overflow-wrap: anywhere; font-family: ui-monospace, monospace; color: inherit; }
+.math-error-label { font: 0.7em/1.2 'Baloo 2', system-ui, sans-serif; color: var(--muted); white-space: nowrap; }
+.rev-context .hole { color: var(--accent); font-weight: 800; }
+.rev-context .muted-hole { color: var(--muted-2); }
+.rev-why-text .checklist { display: grid; gap: 5px; margin: 8px 0; }
+.rev-why-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+.rev-why-text .checklist-box { flex: none; font-family: ui-monospace, monospace; }
+/* A smaller Alix face for the reveal row (the standard cell is 64px). */
+.mascot.mascot-sm { width: 48px; height: 48px; box-shadow: 0 6px 14px rgba(255, 138, 61, 0.28); }
+.mascot.mascot-sm .eye { top: 19px; width: 8px; height: 8px; }
+.mascot.mascot-sm .eye.l { left: 14px; }
+.mascot.mascot-sm .eye.r { right: 14px; }
+.mascot.mascot-sm .smile { top: 28px; width: 15px; height: 7px; border-bottom-width: 2.5px; }
 
+/* A bigger Alix face for the Done screen. */
+.mascot.mascot-lg { width: 96px; height: 96px; box-shadow: 0 16px 34px rgba(255, 138, 61, 0.34); }
+.mascot.mascot-lg .eye { top: 40px; width: 13px; height: 13px; }
+.mascot.mascot-lg .eye.l { left: 28px; }
+.mascot.mascot-lg .eye.r { right: 28px; }
+.mascot.mascot-lg .smile { top: 58px; width: 26px; height: 13px; border-bottom-width: 3.5px; }

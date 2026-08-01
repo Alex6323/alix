@@ -1,15 +1,6 @@
 import { test, expect } from "./helpers";
 import { openApp } from "./helpers";
 
-declare function el(tag: string, cls?: string | null, text?: string): HTMLElement;
-declare function frontPrompt(card: any): HTMLElement;
-declare function contextLine(text: string, runs: any): HTMLElement;
-declare function answerFill(card: any): HTMLElement;
-declare function renderOptions(): HTMLElement;
-declare function renderWhy(parent: HTMLElement, card: any): void;
-declare let state: any;
-declare const stage: HTMLElement;
-
 test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -30,7 +21,9 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
   expect(selectResponse.ok(), await selectResponse.text()).toBeTruthy();
   const selected = await selectResponse.json();
 
-  await page.evaluate(({ cards, choiceState }) => {
+  await page.evaluate(async ({ cards, choiceState }) => {
+    const kids = await import("/kids.js");
+    const dom = kids.createKidsDom({ document });
     const byFront = (needle: string) => cards.find((card: any) => card.front.includes(needle));
     const choice = byFront("What does E = mc^2 describe?");
     const display = byFront("Evaluate this display formula");
@@ -43,54 +36,127 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
       throw new Error("math fixture cards are incomplete");
     }
 
-    const audit = el("div", "math-audit");
+    const stage = dom.el("main");
+    const actionbar = dom.el("footer");
+    let study: any;
+    const paint = () => {
+      stage.replaceChildren();
+      actionbar.replaceChildren();
+      study.render();
+    };
+    study = kids.createKidsStudy({
+      api: async (path: string) => path === "/api/choose"
+        ? { chosen: 0, correct: 0, passed: true }
+        : study.state(),
+      post: (body: object) => ({ method: "POST", body }),
+      model: {
+        create: kids.createKidsStudyModel,
+        apply: kids.applyKidsStudyState,
+        clear: kids.clearKidsStudyState,
+        choose: kids.chooseKidsAnswer,
+        reveal: kids.revealKidsAnswer,
+        backCount: kids.kidsBackCount,
+        choiceMode: kids.kidsChoiceMode,
+        revealDone: kids.kidsRevealDone,
+        screen: kids.kidsStudyScreen,
+      },
+      rerender: paint,
+      openTutor: () => {},
+      openPicker: () => {},
+      refreshPicker: () => {},
+      reportError: () => {},
+      ui: {
+        actionbar,
+        appendChecklist: dom.appendChecklist,
+        appendRuns: dom.appendRuns,
+        contextLine: dom.contextLine,
+        document,
+        el: dom.el,
+        frontPrompt: dom.frontPrompt,
+        mascot: dom.mascot,
+        stage,
+      },
+    });
+    const review = (card: any, extra = {}) => ({
+      ...choiceState,
+      kind: "review",
+      phase: "review",
+      acquire: false,
+      mode: "fill",
+      choices: null,
+      card,
+      ...extra,
+    });
+    const rendered = (selector: string) => {
+      const node = stage.querySelector(selector);
+      if (!node) throw new Error(`missing rendered surface ${selector}`);
+      return node.cloneNode(true);
+    };
+    const reveal = () => {
+      const button = actionbar.querySelector(".show-btn") as HTMLButtonElement | null;
+      if (!button) throw new Error("missing reveal control");
+      button.click();
+    };
+
+    const audit = dom.el("div", "math-audit");
     audit.style.cssText =
       "width:min(100%,660px);margin:0 auto;padding:20px;display:grid;gap:20px;overflow:hidden";
 
-    const front = el("section", "surface-front");
-    front.appendChild(frontPrompt(choice));
+    study.apply(review(choice));
+    const front = dom.el("section", "surface-front");
+    front.appendChild(rendered(".rev-prompt"));
     audit.appendChild(front);
 
-    const context = el("section", "surface-context");
-    context.appendChild(contextLine(cloze.context[0], cloze.context_runs[0]));
+    study.apply(review(cloze));
+    const context = dom.el("section", "surface-context");
+    context.appendChild(rendered(".rev-context"));
     audit.appendChild(context);
 
-    const answer = el("section", "surface-answer");
-    answer.appendChild(answerFill(display));
+    study.apply(review(display));
+    reveal();
+    const answer = dom.el("section", "surface-answer");
+    answer.appendChild(rendered(".rev-answer"));
     audit.appendChild(answer);
 
-    const task = el("section", "surface-checklist");
-    task.appendChild(frontPrompt(checklist));
+    study.apply(review(checklist));
+    const task = dom.el("section", "surface-checklist");
+    task.appendChild(rendered(".rev-prompt"));
     audit.appendChild(task);
 
-    state = choiceState;
-    const choices = el("section", "surface-choice");
-    choices.appendChild(renderOptions());
+    study.apply(choiceState);
+    const choices = dom.el("section", "surface-choice");
+    choices.appendChild(rendered(".rev-options"));
     audit.appendChild(choices);
 
-    const why = el("section", "surface-note");
-    renderWhy(why, choice);
+    study.apply({ ...choiceState, card: choice });
+    (stage.querySelector(".opt-btn") as HTMLButtonElement).click();
+    await Promise.resolve();
+    const why = dom.el("section", "surface-note");
+    why.appendChild(rendered(".rev-why"));
     audit.appendChild(why);
 
-    state = {
-      ...choiceState,
+    study.apply(review(explain, {
       keypoints: explain.back,
       keypoint_runs: explain.back_runs,
-    };
-    const keypoints = el("section", "surface-keypoint");
-    renderWhy(keypoints, { ...explain, note: [] });
+    }));
+    reveal();
+    const keypoints = dom.el("section", "surface-keypoint");
+    keypoints.appendChild(rendered(".rev-why"));
     audit.appendChild(keypoints);
 
-    const literal = el("section", "surface-code");
-    literal.appendChild(frontPrompt(code));
-    literal.appendChild(answerFill(code));
+    study.apply(review(code));
+    const literal = dom.el("section", "surface-code");
+    literal.appendChild(rendered(".rev-prompt"));
+    reveal();
+    literal.appendChild(rendered(".rev-answer"));
     audit.appendChild(literal);
 
-    const failed = el("section", "surface-error");
-    failed.appendChild(frontPrompt(error));
+    study.apply(review(error));
+    const failed = dom.el("section", "surface-error");
+    failed.appendChild(rendered(".rev-prompt"));
     audit.appendChild(failed);
 
-    stage.replaceChildren(audit);
+    document.getElementById("stage")?.replaceChildren(audit);
   }, { cards: browse.cards, choiceState: selected });
 
   for (const surface of [

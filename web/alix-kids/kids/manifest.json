@@ -2,13 +2,15 @@
   "css": [
     "shell.css",
     "dom.css",
-    "picker.css"
+    "picker.css",
+    "study.css"
   ],
   "javascript": [
     "api.js",
     "model.js",
     "dom.js",
     "picker.js",
+    "study.js",
     "app.js"
   ]
 }
