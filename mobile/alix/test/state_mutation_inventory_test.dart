@@ -37,11 +37,16 @@ void main() {
       1290,
       1306,
     ]);
-    expect(_linesContaining('lib/walk_screen.dart', 'setState('), [
-      152,
-      188,
-      193,
-      201,
+    expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
+    expect(
+      _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
+      [43, 50, 55, 60],
+      reason:
+          'setServerLive, predict, grade, and restart are the four named '
+          'WalkController mutations',
+    );
+    expect(_sites('lib/walk_screen.dart', 'ListenableBuilder('), [
+      'lib/walk_screen.dart:192',
     ]);
   });
 
