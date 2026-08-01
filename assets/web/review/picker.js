@@ -48,6 +48,8 @@ export function createPicker({
   let cramOn = false;
   let focusedEl = null;
   let iconNonce = 0;
+  const drawerDurationMs = 170;
+  const drawerEasing = "cubic-bezier(0.4, 0, 0.2, 1)";
   let keys = {
     up: [{ k: "k", ctrl: false }],
     down: [{ k: "j", ctrl: false }],
@@ -644,7 +646,7 @@ export function createPicker({
             wrap.style.height = cur + "px";       // pin so the cancel can't flash to full
             const a = wrap.animate(
               [{ height: cur + "px" }, { height: "0px" }],
-              { duration: DRAWER_MS, easing: DRAWER_EASE, fill: "forwards" }
+              { duration: drawerDurationMs, easing: drawerEasing, fill: "forwards" }
             );
             a.onfinish = done;
           } else {
@@ -774,7 +776,7 @@ export function createPicker({
         if (h && wrap.animate) {
           wrap._anim = wrap.animate(
             [{ height: "0px" }, { height: h + "px" }],
-            { duration: DRAWER_MS, easing: DRAWER_EASE }
+            { duration: drawerDurationMs, easing: drawerEasing }
           );
         }
       }
