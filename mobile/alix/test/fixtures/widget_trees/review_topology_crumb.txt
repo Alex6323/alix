@@ -1,0 +1,33 @@
+SizedBox(width=null, height=40.0)
+  SingleChildScrollView
+    Padding(EdgeInsets(20.0, 10.0, 20.0, 6.0))
+      Row
+        Column
+          SizedBox(width=null, height=16.0)
+            ConstrainedBox
+              Text("Intro")
+          SizedBox(width=null, height=3.0)
+          Row
+            Container
+              Padding(EdgeInsets(0.0, 0.0, 1.0, 0.0))
+                ConstrainedBox
+                  Padding(EdgeInsets.zero)
+            Container
+              Padding(EdgeInsets(0.0, 0.0, 1.0, 0.0))
+                ConstrainedBox
+                  Padding(EdgeInsets.zero)
+        SizedBox(width=14.0, height=null)
+        Column
+          SizedBox(width=null, height=16.0)
+            ConstrainedBox
+              Text("Details")
+          SizedBox(width=null, height=3.0)
+          Row
+            Container
+              Padding(EdgeInsets(0.0, 0.0, 1.0, 0.0))
+                ConstrainedBox
+                  Padding(EdgeInsets.zero)
+            Container
+              Padding(EdgeInsets(0.0, 0.0, 1.0, 0.0))
+                ConstrainedBox
+                  Padding(EdgeInsets.zero)

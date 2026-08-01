@@ -1,0 +1,71 @@
+Scaffold
+  Material
+    SafeArea
+      Padding(EdgeInsets.zero)
+        Column
+          Padding(EdgeInsets(20.0, 6.0, 20.0, 0.0))
+            Align
+              Text("how it works")
+          Expanded
+            Column
+              Expanded
+                SingleChildScrollView
+                  Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
+                    SizedBox(width=Infinity, height=null)
+                      Column
+                        Text("YOU PREDICTED")
+                        SizedBox(width=null, height=4.0)
+                        Text("a guess")
+                        SizedBox(width=null, height=16.0)
+                        Text("THE SOURCE")
+                        Padding(EdgeInsets(0.0, 8.0, 0.0, 0.0))
+                          Text("at 1")
+                        SizedBox(width=null, height=6.0)
+                        Container
+                          ConstrainedBox
+                            Padding(EdgeInsets(15.0, 13.0, 15.0, 13.0))
+                              Text("locator `1` gives only line numbers, but `source:` is not a single file; write it as `file:lines`")
+                        SizedBox(width=null, height=16.0)
+                        Column
+                          Text("KEY POINTS")
+                          SizedBox(width=null, height=6.0)
+                          Padding(EdgeInsets(0.0, 3.0, 0.0, 3.0))
+                            Row
+                              SizedBox(width=18.0, height=null)
+                                Text("▸")
+                              Expanded
+                                Text("it reads the first line")
+                        SizedBox(width=0.0, height=0.0)
+              Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
+                Wrap
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Missed it")
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Partly")
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Got it")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+                Padding(EdgeInsets.zero)
+                  Row
+                    Padding(EdgeInsets(0.0, 0.0, 16.0, 0.0))
+                      Center
+                        Text("checkpoint 1 / 1")
+    Stack

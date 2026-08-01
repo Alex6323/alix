@@ -1,0 +1,24 @@
+CustomPaint
+  ConstrainedBox
+  Scaffold
+    Material
+      FilledButton(enabled=true)
+        ConstrainedBox
+          Material
+            CustomPaint
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets(24.0, 0.0, 24.0, 0.0))
+                  Align
+                    Text("Open invalid walk")
+      SizedBox(width=null, height=null)
+        Align
+          Material
+            SafeArea
+              Padding(EdgeInsets.zero)
+                Padding(EdgeInsetsDirectional(24.0, 0.0, 24.0, 0.0))
+                  Wrap
+                    Row
+                      Expanded
+                        Padding(EdgeInsets(0.0, 14.0, 0.0, 14.0))
+                          Text("this deck is a card review, not a trace walk")
+      Stack

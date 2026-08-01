@@ -1,0 +1,85 @@
+CustomPaint
+  ConstrainedBox
+  Scaffold
+    Material
+      Column
+        Expanded
+          ListView
+            Column
+              Text("No decks here yet. Put Markdown (.md) decks in this folder, or choose a shared folder from Settings.")
+              SizedBox(width=null, height=16.0)
+              OutlinedButton(enabled=true)
+                ConstrainedBox
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsetsDirectional(16.0, 0.0, 24.0, 0.0))
+                          Align
+                            Row
+                              Icon(f33c)
+                                SizedBox(width=18.0, height=18.0)
+                                  Center
+                              Flexible
+                                Text("Add the tutorial deck")
+      ConstrainedBox
+        AppBar
+          Material
+            Align
+              SafeArea
+                Padding(EdgeInsets.zero)
+                  ConstrainedBox
+                    Center
+                      IconButton(enabled=true, tooltip="Settings")
+                        _IconButtonM3(enabled=true)
+                          ConstrainedBox
+                            Material
+                              CustomPaint
+                                Tooltip("Settings")
+                                  InkWell(tap=true, longPress=false)
+                                    Padding(EdgeInsets.all(8.0))
+                                      Align
+                                        Icon(e3dc)
+                                          SizedBox(width=24.0, height=24.0)
+                                            Center
+                  SizedBox(width=null, height=null)
+                    Text("alix")
+      Stack
+  ConstrainedBox
+  Padding(EdgeInsets.zero)
+    Align
+      ConstrainedBox
+        Material key=[GlobalKey#<id> BottomSheet child]
+          CustomPaint
+            SafeArea
+              Padding(EdgeInsets.zero)
+                Padding(EdgeInsets.all(24.0))
+                  Column
+                    Text("Generate deck")
+                    SizedBox(width=null, height=8.0)
+                    TextField(enabled=true, label="URL", hint="https://...", value="file:///local") key=[<'generate-url-field'>]
+                      Text("URL")
+                      Text("https://...")
+                      SizedBox(width=0.0, height=0.0)
+                      CustomPaint
+                    SizedBox(width=null, height=12.0)
+                    TextField(enabled=true, label="Guidance (optional)", hint="", value="") key=[<'generate-guidance-field'>]
+                      Text("Guidance (optional)")
+                      SizedBox(width=0.0, height=0.0)
+                      CustomPaint
+                    SizedBox(width=null, height=12.0)
+                    FilledButton(enabled=true)
+                      ConstrainedBox
+                        Material
+                          CustomPaint
+                            InkWell(tap=true, longPress=false)
+                              Padding(EdgeInsets(24.0, 0.0, 24.0, 0.0))
+                                Align
+                                  Text("Generate")
+                    SizedBox(width=null, height=8.0)
+                    Text("alix can only generate from an http:// or https:// URL.")
+  SizedBox(width=48.0, height=48.0)
+    Align
+      Padding(EdgeInsets.all(13.0))
+        SizedBox(width=22.0, height=22.0)
+          CustomPaint
+  SizedBox(width=0.0, height=0.0)

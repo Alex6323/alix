@@ -1,0 +1,42 @@
+Scaffold
+  Material
+    SafeArea
+      Padding(EdgeInsets.zero)
+        Column
+          SizedBox(width=0.0, height=0.0)
+          Expanded
+            SingleChildScrollView
+              Padding(EdgeInsets.all(24.0))
+                Column
+                  SizedBox(width=null, height=12.0)
+                  Text("SESSION COMPLETE")
+                  SizedBox(width=null, height=14.0)
+                  Text("Nothing due.")
+                  SizedBox(width=null, height=18.0)
+                  Container
+                    Padding(EdgeInsets(0.0, 9.0, 0.0, 10.0))
+                      Row
+                        Text("reviewed")
+                        Text("0")
+                  SizedBox(width=null, height=18.0)
+                  Container
+                    ConstrainedBox
+                      Padding(EdgeInsets(16.0, 13.0, 16.0, 13.0))
+                        Text("Next due in <minutes>.")
+                  SizedBox(width=null, height=24.0)
+                  Material
+                    CustomPaint
+                      InkWell(tap=false, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("New session")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+    Stack

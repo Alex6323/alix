@@ -1,0 +1,101 @@
+Scaffold
+  Material
+    SafeArea
+      Padding(EdgeInsets.zero)
+        ListView
+          ListTile(enabled=true, tap=true)
+            InkWell(tap=true, longPress=false)
+              Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                SafeArea
+                  Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                    Icon(e25b)
+                      SizedBox(width=24.0, height=24.0)
+                        Center
+                    Text("Support alix")
+          ListTile(enabled=true, tap=true)
+            InkWell(tap=true, longPress=false)
+              Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                SafeArea
+                  Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                    Icon(e1cb)
+                      SizedBox(width=24.0, height=24.0)
+                        Center
+                    Text("Connected devices")
+          Divider
+            SizedBox(width=null, height=24.0)
+              Center
+                Container
+                  Padding(EdgeInsetsDirectional(16.0, 0.0, 16.0, 0.0))
+                    ConstrainedBox
+                      Padding(EdgeInsets(0.0, 0.0, 0.0, 1.0))
+                        ConstrainedBox
+          ListTile(enabled=true, tap=true)
+            InkWell(tap=true, longPress=false)
+              Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                SafeArea
+                  Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                    Icon(f091)
+                      SizedBox(width=24.0, height=24.0)
+                        Center
+                    Text("Decks folder")
+          ListTile(enabled=true, tap=true)
+            InkWell(tap=true, longPress=false)
+              Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                SafeArea
+                  Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                    Icon(eea9)
+                      SizedBox(width=24.0, height=24.0)
+                        Center
+                    Text("Generate deck")
+          ListTile(enabled=true, tap=true)
+            InkWell(tap=true, longPress=false)
+              Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                SafeArea
+                  Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                    Icon(f24f)
+                      SizedBox(width=24.0, height=24.0)
+                        Center
+                    Text("Theme")
+          ListTile(enabled=true, tap=true)
+            InkWell(tap=true, longPress=false)
+              Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                SafeArea
+                  Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                    Icon(e33d)
+                      SizedBox(width=24.0, height=24.0)
+                        Center
+                    Text("About")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  Center
+                    IconButton(enabled=false, tooltip="")
+                      IconButton(enabled=true, tooltip="Back") key=[<StandardComponentType.backButton>]
+                        _IconButtonM3(enabled=true)
+                          ConstrainedBox
+                            Material
+                              CustomPaint
+                                Tooltip("Back")
+                                  InkWell(tap=true, longPress=false)
+                                    Padding(EdgeInsets.all(8.0))
+                                      Align
+                                        Icon(e092)
+                                          SizedBox(width=24.0, height=24.0)
+                                            Center
+                Text("Settings")
+    SizedBox(width=null, height=null)
+      Align
+        Material
+          SafeArea
+            Padding(EdgeInsets.zero)
+              Padding(EdgeInsetsDirectional(24.0, 0.0, 24.0, 0.0))
+                Wrap
+                  Row
+                    Expanded
+                      Padding(EdgeInsets(0.0, 14.0, 0.0, 14.0))
+                        Text("Paired with <version>.1")
+    Stack

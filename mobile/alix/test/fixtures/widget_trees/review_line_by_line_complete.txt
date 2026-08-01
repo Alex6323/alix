@@ -1,0 +1,62 @@
+Scaffold
+  Material
+    SafeArea
+      Padding(EdgeInsets.zero)
+        Column
+          SizedBox(width=0.0, height=0.0)
+          Expanded
+            Column
+              Expanded
+                SingleChildScrollView
+                  Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
+                    SizedBox(width=Infinity, height=null)
+                      Column
+                        SizedBox(width=null, height=8.0)
+                        Container
+                          Padding(EdgeInsets(10.0, 4.0, 10.0, 4.0))
+                            Text("LINE")
+                        SizedBox(width=null, height=12.0)
+                        Text("Ordered?")
+                        SizedBox(width=null, height=14.0)
+                        Container
+                          ConstrainedBox
+                            Padding(EdgeInsets.zero)
+                              ConstrainedBox
+                        SizedBox(width=null, height=22.0)
+                        Column
+                          Text("first")
+                          SizedBox(width=null, height=6.0)
+                          Text("second")
+              Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
+                Wrap
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Missed it")
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Partly")
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Got it")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+                Padding(EdgeInsets.zero)
+                  Row
+                    Padding(EdgeInsets(0.0, 0.0, 16.0, 0.0))
+                      Center
+                        Text("1 left")
+    Stack

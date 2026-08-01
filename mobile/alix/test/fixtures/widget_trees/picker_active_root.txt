@@ -1,0 +1,75 @@
+Scaffold
+  Material
+    Column
+      Expanded
+        ListView
+          Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+            Opacity(1.00)
+              Material
+                InkWell(tap=true, longPress=true)
+                  Container
+                    ConstrainedBox
+                      Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                        Row
+                          Expanded
+                            Column
+                              Text("Due")
+                          SizedBox(width=12.0, height=null)
+                          Icon(e163)
+                            SizedBox(width=8.0, height=8.0)
+                              Center
+          Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+            Opacity(1.00)
+              Material
+                InkWell(tap=true, longPress=true)
+                  Container
+                    ConstrainedBox
+                      Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                        Row
+                          Expanded
+                            Column
+                              Text("Exam")
+                          SizedBox(width=12.0, height=null)
+                          Text("exam")
+          Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+            Opacity(1.00)
+              Material
+                InkWell(tap=true, longPress=true)
+                  Container
+                    ConstrainedBox
+                      Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                        Row
+                          Expanded
+                            Column
+                              Text("Workspace")
+                          SizedBox(width=12.0, height=null)
+                          Icon(e163)
+                            SizedBox(width=8.0, height=8.0)
+                              Center
+                          SizedBox(width=8.0, height=null)
+                          Icon(e15f)
+                            SizedBox(width=22.0, height=22.0)
+                              Center
+          Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+            Material
+              InkWell(tap=true, longPress=false)
+                Container
+                  ConstrainedBox
+                    Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                      Row
+                        Expanded
+                          Text("Mastered · 1")
+                        Icon(e15f)
+                          SizedBox(width=22.0, height=22.0)
+                            Center
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+    Stack

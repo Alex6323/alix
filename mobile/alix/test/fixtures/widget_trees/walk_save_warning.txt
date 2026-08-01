@@ -1,0 +1,54 @@
+Scaffold
+  Material
+    SafeArea
+      Padding(EdgeInsets.zero)
+        Column
+          Container
+            Padding(EdgeInsets(12.0, 8.0, 12.0, 0.0))
+              Padding(EdgeInsets(12.0, 8.0, 12.0, 8.0))
+                Tooltip("<save-error>")
+                  Text("Progress isn't being saved. Grades stay on screen and save with the next successful one.")
+          Padding(EdgeInsets(20.0, 6.0, 20.0, 0.0))
+            Align
+              Text("how it works")
+          Expanded
+            Column
+              Expanded
+                SingleChildScrollView
+                  Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
+                    SizedBox(width=Infinity, height=null)
+                      Column
+                        SizedBox(width=null, height=8.0)
+                        Text("Predict the second hop")
+                        SizedBox(width=0.0, height=0.0)
+                        Padding(EdgeInsets(0.0, 8.0, 0.0, 0.0))
+                          Text("at 2-3")
+                        SizedBox(width=null, height=20.0)
+                        ConstrainedBox
+                          TextField(enabled=true, label="", hint="predict the next checkpoint, even a hunch beats nothing", value="")
+                            Text("predict the next checkpoint, even a hunch beats nothing")
+                            SizedBox(width=0.0, height=0.0)
+                            CustomPaint
+              Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
+                Wrap
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Reveal")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+                Padding(EdgeInsets.zero)
+                  Row
+                    Padding(EdgeInsets(0.0, 0.0, 16.0, 0.0))
+                      Center
+                        Text("checkpoint 2 / 2")
+    Stack

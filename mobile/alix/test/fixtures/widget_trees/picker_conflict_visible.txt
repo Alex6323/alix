@@ -1,0 +1,48 @@
+Scaffold
+  Material
+    Column
+      Container
+        Padding(EdgeInsets(12.0, 8.0, 12.0, 0.0))
+          Padding(EdgeInsets(12.0, 8.0, 12.0, 8.0))
+            Row
+              Expanded
+                Text("A sync conflict file sits next to your progress (1). Review on one device at a time and resolve it first; see the manual.")
+              IconButton(enabled=true, tooltip="")
+                _IconButtonM3(enabled=true)
+                  ConstrainedBox
+                    Material
+                      CustomPaint
+                        InkWell(tap=true, longPress=false)
+                          Padding(EdgeInsets.all(8.0))
+                            Align
+                              Icon(e16a)
+                                SizedBox(width=18.0, height=18.0)
+                                  Center
+      Expanded
+        ListView
+          Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+            Opacity(1.00)
+              Material
+                InkWell(tap=true, longPress=true)
+                  Container
+                    ConstrainedBox
+                      Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                        Row
+                          Expanded
+                            Column
+                              Text("Deck")
+                          SizedBox(width=12.0, height=null)
+                          Icon(e163)
+                            SizedBox(width=8.0, height=8.0)
+                              Center
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+    Stack

@@ -1,0 +1,159 @@
+CustomPaint
+  Scaffold
+    Material
+      Column
+        Expanded
+          ListView
+            Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+              Opacity(1.00)
+                Material
+                  InkWell(tap=true, longPress=true)
+                    Container
+                      ConstrainedBox
+                        Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                          Row
+                            Expanded
+                              Column
+                                Text("Deck")
+                            SizedBox(width=12.0, height=null)
+                            Icon(e163)
+                              SizedBox(width=8.0, height=8.0)
+                                Center
+            Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+              Opacity(1.00)
+                Material
+                  InkWell(tap=true, longPress=true)
+                    Container
+                      ConstrainedBox
+                        Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                          Row
+                            Expanded
+                              Column
+                                Text("Workspace")
+                            SizedBox(width=12.0, height=null)
+                            Icon(e163)
+                              SizedBox(width=8.0, height=8.0)
+                                Center
+                            SizedBox(width=8.0, height=null)
+                            Icon(e15f)
+                              SizedBox(width=22.0, height=22.0)
+                                Center
+      ConstrainedBox
+        AppBar
+          Material
+            Align
+              SafeArea
+                Padding(EdgeInsets.zero)
+                  ConstrainedBox
+                    Center
+                      IconButton(enabled=true, tooltip="Settings")
+                        _IconButtonM3(enabled=true)
+                          ConstrainedBox
+                            Material
+                              CustomPaint
+                                Tooltip("Settings")
+                                  InkWell(tap=true, longPress=false)
+                                    Padding(EdgeInsets.all(8.0))
+                                      Align
+                                        Icon(e3dc)
+                                          SizedBox(width=24.0, height=24.0)
+                                            Center
+                  SizedBox(width=null, height=null)
+                    Text("alix")
+      Stack
+  ConstrainedBox
+  Scaffold
+    Material
+      SafeArea
+        Padding(EdgeInsets.zero)
+          ListView
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(e25b)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Support alix")
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(e1cb)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Connected devices")
+            Divider
+              SizedBox(width=null, height=24.0)
+                Center
+                  Container
+                    Padding(EdgeInsetsDirectional(16.0, 0.0, 16.0, 0.0))
+                      ConstrainedBox
+                        Padding(EdgeInsets(0.0, 0.0, 0.0, 1.0))
+                          ConstrainedBox
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(f091)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Decks folder")
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(f24f)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Theme")
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(e33d)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("About")
+      ConstrainedBox
+        AppBar
+          Material
+            Align
+              SafeArea
+                Padding(EdgeInsets.zero)
+                  ConstrainedBox
+                    Center
+                      IconButton(enabled=false, tooltip="")
+                        IconButton(enabled=true, tooltip="Back") key=[<StandardComponentType.backButton>]
+                          _IconButtonM3(enabled=true)
+                            ConstrainedBox
+                              Material
+                                CustomPaint
+                                  Tooltip("Back")
+                                    InkWell(tap=true, longPress=false)
+                                      Padding(EdgeInsets.all(8.0))
+                                        Align
+                                          Icon(e092)
+                                            SizedBox(width=24.0, height=24.0)
+                                              Center
+                  Text("Settings")
+      Stack
+  ConstrainedBox
+  Padding(EdgeInsets.zero)
+    Align
+      ConstrainedBox
+        Material key=[GlobalKey#<id> BottomSheet child]
+          CustomPaint
+            SafeArea
+              Padding(EdgeInsets.zero)
+                Padding(EdgeInsets.all(24.0))
+                  Column
+                    Text("Support alix")
+                    SizedBox(width=null, height=12.0)
+                    Text("Free and open source. Telling someone who studies is the best support.")
+                    SizedBox(width=null, height=8.0)

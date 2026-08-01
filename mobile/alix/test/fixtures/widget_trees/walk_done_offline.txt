@@ -1,0 +1,51 @@
+Scaffold
+  Material
+    SafeArea
+      Padding(EdgeInsets.zero)
+        Column
+          Expanded
+            SingleChildScrollView
+              Padding(EdgeInsets.all(24.0))
+                Column
+                  SizedBox(width=null, height=12.0)
+                  Text("WALK COMPLETE")
+                  SizedBox(width=null, height=14.0)
+                  Text("how it works")
+                  SizedBox(width=null, height=18.0)
+                  Container
+                    Padding(EdgeInsets(0.0, 9.0, 0.0, 10.0))
+                      Row
+                        Text("got it")
+                        Text("1")
+                  Container
+                    Padding(EdgeInsets(0.0, 9.0, 0.0, 10.0))
+                      Row
+                        Text("partly")
+                        Text("0")
+                  Container
+                    Padding(EdgeInsets(0.0, 9.0, 0.0, 10.0))
+                      Row
+                        Text("missed it")
+                        Text("0")
+                  Container
+                    Padding(EdgeInsets(0.0, 9.0, 0.0, 10.0))
+                      Row
+                        Text("every checkpoint landed")
+                        Text("✓")
+                  SizedBox(width=null, height=24.0)
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
+                          Text("Walk again")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+    Stack

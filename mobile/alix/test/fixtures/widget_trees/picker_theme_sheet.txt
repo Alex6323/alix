@@ -1,0 +1,376 @@
+CustomPaint
+  Scaffold
+    Material
+      Column
+        Expanded
+          ListView
+            Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+              Opacity(1.00)
+                Material
+                  InkWell(tap=true, longPress=true)
+                    Container
+                      ConstrainedBox
+                        Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                          Row
+                            Expanded
+                              Column
+                                Text("Deck")
+                            SizedBox(width=12.0, height=null)
+                            Icon(e163)
+                              SizedBox(width=8.0, height=8.0)
+                                Center
+            Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+              Opacity(1.00)
+                Material
+                  InkWell(tap=true, longPress=true)
+                    Container
+                      ConstrainedBox
+                        Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                          Row
+                            Expanded
+                              Column
+                                Text("Workspace")
+                            SizedBox(width=12.0, height=null)
+                            Icon(e163)
+                              SizedBox(width=8.0, height=8.0)
+                                Center
+                            SizedBox(width=8.0, height=null)
+                            Icon(e15f)
+                              SizedBox(width=22.0, height=22.0)
+                                Center
+      ConstrainedBox
+        AppBar
+          Material
+            Align
+              SafeArea
+                Padding(EdgeInsets.zero)
+                  ConstrainedBox
+                    Center
+                      IconButton(enabled=true, tooltip="Settings")
+                        _IconButtonM3(enabled=true)
+                          ConstrainedBox
+                            Material
+                              CustomPaint
+                                Tooltip("Settings")
+                                  InkWell(tap=true, longPress=false)
+                                    Padding(EdgeInsets.all(8.0))
+                                      Align
+                                        Icon(e3dc)
+                                          SizedBox(width=24.0, height=24.0)
+                                            Center
+                  SizedBox(width=null, height=null)
+                    Text("alix")
+      Stack
+  ConstrainedBox
+  Scaffold
+    Material
+      SafeArea
+        Padding(EdgeInsets.zero)
+          ListView
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(e25b)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Support alix")
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(e1cb)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Connected devices")
+            Divider
+              SizedBox(width=null, height=24.0)
+                Center
+                  Container
+                    Padding(EdgeInsetsDirectional(16.0, 0.0, 16.0, 0.0))
+                      ConstrainedBox
+                        Padding(EdgeInsets(0.0, 0.0, 0.0, 1.0))
+                          ConstrainedBox
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(f091)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Decks folder")
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(f24f)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("Theme")
+            ListTile(enabled=true, tap=true)
+              InkWell(tap=true, longPress=false)
+                Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                  SafeArea
+                    Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                      Icon(e33d)
+                        SizedBox(width=24.0, height=24.0)
+                          Center
+                      Text("About")
+      ConstrainedBox
+        AppBar
+          Material
+            Align
+              SafeArea
+                Padding(EdgeInsets.zero)
+                  ConstrainedBox
+                    Center
+                      IconButton(enabled=false, tooltip="")
+                        IconButton(enabled=true, tooltip="Back") key=[<StandardComponentType.backButton>]
+                          _IconButtonM3(enabled=true)
+                            ConstrainedBox
+                              Material
+                                CustomPaint
+                                  Tooltip("Back")
+                                    InkWell(tap=true, longPress=false)
+                                      Padding(EdgeInsets.all(8.0))
+                                        Align
+                                          Icon(e092)
+                                            SizedBox(width=24.0, height=24.0)
+                                              Center
+                  Text("Settings")
+      Stack
+  ConstrainedBox
+  Padding(EdgeInsets.zero)
+    Align
+      ConstrainedBox
+        Material key=[GlobalKey#<id> BottomSheet child]
+          CustomPaint
+            SafeArea
+              Padding(EdgeInsets.zero)
+                SizedBox(width=null, height=450.0)
+                  ListView key=[<'theme-sheet-list'>]
+                    Padding(EdgeInsets(16.0, 12.0, 16.0, 4.0))
+                      Text("DARK")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-dark'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("alix")
+                              Icon(e156)
+                                SizedBox(width=18.0, height=18.0)
+                                  Center
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-github-dark'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("GitHub")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-one-dark'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("One Dark")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-dracula'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Dracula")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-monokai'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Monokai")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-catppuccin-mocha'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Catppuccin Mocha")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-tokyo-night'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Tokyo Night")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-solarized-dark'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Solarized")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-gruvbox-dark'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Gruvbox")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-nord'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Nord")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-ayu-dark'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Ayu")
+                    ListTile(enabled=true, tap=true) key=[<'theme-tile-rose-pine'>]
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.all(1.0))
+                                    Align
+                                      Row
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                                        SizedBox(width=4.0, height=null)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets.zero)
+                              Text("Rosé Pine")

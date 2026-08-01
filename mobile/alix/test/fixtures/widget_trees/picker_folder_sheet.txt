@@ -1,0 +1,86 @@
+CustomPaint
+  ConstrainedBox
+  Scaffold
+    Material
+      Column
+        Expanded
+          ListView
+            Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+              Opacity(1.00)
+                Material
+                  InkWell(tap=true, longPress=true)
+                    Container
+                      ConstrainedBox
+                        Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                          Row
+                            Expanded
+                              Column
+                                Text("Deck")
+                            SizedBox(width=12.0, height=null)
+                            Icon(e163)
+                              SizedBox(width=8.0, height=8.0)
+                                Center
+            Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+              Opacity(1.00)
+                Material
+                  InkWell(tap=true, longPress=true)
+                    Container
+                      ConstrainedBox
+                        Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
+                          Row
+                            Expanded
+                              Column
+                                Text("Workspace")
+                            SizedBox(width=12.0, height=null)
+                            Icon(e163)
+                              SizedBox(width=8.0, height=8.0)
+                                Center
+                            SizedBox(width=8.0, height=null)
+                            Icon(e15f)
+                              SizedBox(width=22.0, height=22.0)
+                                Center
+      ConstrainedBox
+        AppBar
+          Material
+            Align
+              SafeArea
+                Padding(EdgeInsets.zero)
+                  ConstrainedBox
+                    Center
+                      IconButton(enabled=true, tooltip="Settings")
+                        _IconButtonM3(enabled=true)
+                          ConstrainedBox
+                            Material
+                              CustomPaint
+                                Tooltip("Settings")
+                                  InkWell(tap=true, longPress=false)
+                                    Padding(EdgeInsets.all(8.0))
+                                      Align
+                                        Icon(e3dc)
+                                          SizedBox(width=24.0, height=24.0)
+                                            Center
+                  SizedBox(width=null, height=null)
+                    Text("alix")
+      Stack
+  ConstrainedBox
+  Padding(EdgeInsets.zero)
+    Align
+      ConstrainedBox
+        Material key=[GlobalKey#<id> BottomSheet child]
+          CustomPaint
+            SafeArea
+              Padding(EdgeInsets.zero)
+                Padding(EdgeInsets.all(24.0))
+                  Column
+                    Text("Decks folder")
+                    SizedBox(width=null, height=8.0)
+                    Text("<tmp>")
+                    SizedBox(width=null, height=16.0)
+                    FilledButton(enabled=true)
+                      ConstrainedBox
+                        Material
+                          CustomPaint
+                            InkWell(tap=true, longPress=false)
+                              Padding(EdgeInsets(24.0, 0.0, 24.0, 0.0))
+                                Align
+                                  Text("Choose shared folder…")

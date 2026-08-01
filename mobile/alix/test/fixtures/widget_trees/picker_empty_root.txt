@@ -1,0 +1,32 @@
+Scaffold
+  Material
+    Column
+      Expanded
+        ListView
+          Column
+            Text("No decks here yet. Put Markdown (.md) decks in this folder, or choose a shared folder from Settings.")
+            SizedBox(width=null, height=16.0)
+            OutlinedButton(enabled=true)
+              ConstrainedBox
+                Material
+                  CustomPaint
+                    InkWell(tap=true, longPress=false)
+                      Padding(EdgeInsetsDirectional(16.0, 0.0, 24.0, 0.0))
+                        Align
+                          Row
+                            Icon(f33c)
+                              SizedBox(width=18.0, height=18.0)
+                                Center
+                            Flexible
+                              Text("Add the tutorial deck")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+    Stack

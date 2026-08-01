@@ -1,0 +1,28 @@
+Scaffold
+  Material
+    Center
+      Padding(EdgeInsets.all(32.0))
+        Column
+          Text("CAN'T OPEN THIS DECK")
+          SizedBox(width=null, height=16.0)
+          Text("milestone 2 reviews a facts deck, not a trace")
+          SizedBox(width=null, height=24.0)
+          FilledButton(enabled=true)
+            ConstrainedBox
+              Material
+                CustomPaint
+                  InkWell(tap=true, longPress=false)
+                    Padding(EdgeInsets(24.0, 0.0, 24.0, 0.0))
+                      Align
+                        Text("Back")
+    ConstrainedBox
+      AppBar
+        Material
+          Align
+            SafeArea
+              Padding(EdgeInsets.zero)
+                ConstrainedBox
+                  SizedBox(width=56.0, height=null)
+                SizedBox(width=null, height=null)
+                  Text("alix")
+    Stack
