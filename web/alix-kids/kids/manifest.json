@@ -1,12 +1,14 @@
 {
   "css": [
     "shell.css",
-    "dom.css"
+    "dom.css",
+    "picker.css"
   ],
   "javascript": [
     "api.js",
     "model.js",
     "dom.js",
+    "picker.js",
     "app.js"
   ]
 }

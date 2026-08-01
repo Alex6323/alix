@@ -1629,7 +1629,7 @@ fn kids_assets_are_public_no_cache_and_allowlisted() {
         (
             "/kids.js",
             "application/javascript; charset=utf-8",
-            "loadDecks()",
+            "createKidsPicker",
         ),
     ] {
         let resp = http(&base, "GET", path, &[], &[]);

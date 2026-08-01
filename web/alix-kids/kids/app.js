@@ -10,12 +10,7 @@ function resyncState() {
 }
 
 // ── View state only (the engine behind /api/* owns everything else) ───────
-let screen = "home";     // "home" | "box" | "review" | "done"
-let currentBox = null;   // the opened workspace DeckItemDto (the box)
-let currentDeck = null;  // the deck (MemberDto) picked inside that box, if any
-let selectError = false; // a /api/select call failed -- show a gentle notice
-let deckList = null;     // last DeckListDto (null until the first load resolves)
-let loadError = false;   // the /api/decks fetch failed
+let screen = "home";     // "home" | "review" | "done"
 let studyModel = createKidsStudyModel();
 let { state, revealed, chosen } = studyModel;
 let askOpen = false;     // Ask-Alix overlay view state
@@ -87,6 +82,15 @@ const kidsApi = createKidsApiClient({
 const api = kidsApi.request;
 const post = kidsApi.postOptions;
 
+const picker = createKidsPicker({
+  api,
+  post,
+  openStudy: applyState,
+  rerender: render,
+  isVisible: () => screen === "home",
+  ui: { actionbar, document, el, mascot: mascotEl, stage },
+});
+
 // Mirrors the adult client: `save_error` is stateful, so the banner shows
 // exactly as long as the server keeps reporting it. Raw error on the tooltip.
 function syncSaveAlert() {
@@ -108,206 +112,12 @@ function render() {
   stage.innerHTML = "";
   actionbar.innerHTML = "";
   syncSaveAlert();
-  if (screen === "home") renderHome();
-  else if (screen === "box") renderBox();
+  if (screen === "home") picker.render();
   else if (screen === "review") renderReview();
   else if (screen === "done") renderDone();
   pokeFades();
 }
 
-function renderHome() {
-  // Before the first /api/decks resolves, show the brand-mark splash.
-  if (deckList == null && !loadError) {
-    const splash = el("div", "splash");
-    const logo = document.createElement("alix-logo");
-    logo.setAttribute("loop", "");
-    logo.setAttribute("height", "64");
-    logo.setAttribute("color", "#ff8a3d");
-    splash.appendChild(logo);
-    splash.appendChild(el("div", "splash-label", "Getting your boxes ready…"));
-    stage.appendChild(splash);
-    return;
-  }
-
-  const home = el("div", "home");
-
-  const greet = el("div", "greet");
-  greet.appendChild(mascotEl());
-  const gt = el("div");
-  gt.appendChild(el("div", "greet-title", "Hi! What do you want to practise?"));
-  gt.appendChild(el("div", "greet-sub", "Pick a box and let's go 🌟"));
-  greet.appendChild(gt);
-  home.appendChild(greet);
-
-  if (loadError) {
-    home.appendChild(el("div", "empty", "Hmm, I couldn't find your boxes just now. Try again in a moment 🌱"));
-    stage.appendChild(home);
-    return;
-  }
-
-  const boxes = (deckList && deckList.workspaces) || [];
-  if (!boxes.length) {
-    home.appendChild(el("div", "empty", "No boxes yet. Ask a grown-up to add some 🌱"));
-    stage.appendChild(home);
-    return;
-  }
-
-  const grid = el("div", "box-grid");
-  for (const b of boxes) grid.appendChild(boxCard(b));
-  home.appendChild(grid);
-  stage.appendChild(home);
-}
-
-// One workspace = one box. Fields used: `icon` (a /img/<key> URL, else a
-// friendly default emoji), `label` (title), and `reviewable` (a soft, honest
-// readiness line -- never a fabricated "N ready" count).
-function boxCard(b) {
-  const card = el("button", "box");
-  card.type = "button";
-  card.appendChild(iconEl(b, "box-icon", "box-emoji"));
-  card.appendChild(el("div", "box-name", b.label || b.name || "Box"));
-  card.appendChild(el("div", "box-ready", b.reviewable ? "ready to practise" : "all caught up 🌱"));
-  card.addEventListener("click", () => openBox(b));
-  return card;
-}
-
-// A workspace's emblem when it has one, else a friendly default emoji. `/img`
-// URLs are unauthenticated by design, so a plain <img src> is enough.
-function iconEl(item, imgCls, emojiCls) {
-  if (item && item.icon) {
-    const img = document.createElement("img");
-    img.className = imgCls;
-    img.src = item.icon;
-    img.alt = "";
-    return img;
-  }
-  return el("div", emojiCls, "📚");
-}
-
-function openBox(b) { currentBox = b; currentDeck = null; selectError = false; screen = "box"; render(); }
-function goHome() { screen = "home"; currentBox = null; currentDeck = null; selectError = false; render(); refresh(); }
-function openDeck(m) { currentDeck = m; selectError = false; render(); }
-function backToBox() { currentDeck = null; selectError = false; render(); }
-
-// The box screen, in two steps: pick a deck, then pick how to practise it.
-//
-// A review session is exactly ONE deck file -- the engine rejects a whole
-// workspace ("`…/animals` is a folder -- pick a deck inside it", `build_review`
-// in src/cli/launch.rs). So the box is an organizing layer, and the *decks*
-// are the launch controls; the depth choices belong to the deck a kid picked.
-function renderBox() {
-  if (currentDeck) { renderDeckLaunch(); return; }
-
-  const b = currentBox || {};
-  const back = el("button", "ghost-btn", "← Home");
-  back.type = "button";
-  back.addEventListener("click", goHome);
-  actionbar.appendChild(back);
-
-  const wrap = el("div", "box-detail");
-
-  const hero = el("div", "box-hero");
-  hero.appendChild(iconEl(b, "hero-icon", "hero-emoji"));
-  const heroText = el("div");
-  heroText.appendChild(el("div", "hero-title", b.label || b.name || "Box"));
-  if (b.description) heroText.appendChild(el("div", "soft", b.description));
-  hero.appendChild(heroText);
-  wrap.appendChild(hero);
-
-  const members = Array.isArray(b.members) ? b.members : [];
-  if (members.length) {
-    wrap.appendChild(el("div", "section-label", "Pick a deck"));
-    const list = el("div", "deck-list");
-    for (const m of members) list.appendChild(deckRow(m));
-    wrap.appendChild(list);
-  } else {
-    wrap.appendChild(el("div", "soft", "This box has no decks yet."));
-  }
-  stage.appendChild(wrap);
-}
-
-// A deck is picked: show its two depth choices ("how do you want to practise?"),
-// each gated on that deck's own honest per-depth due-ness.
-function renderDeckLaunch() {
-  const m = currentDeck || {};
-  const b = currentBox || {};
-
-  const back = el("button", "ghost-btn", "← " + (b.label || b.name || "Box"));
-  back.type = "button";
-  back.addEventListener("click", backToBox);
-  actionbar.appendChild(back);
-
-  // Deck, question and the two answers are one decision -- centre them together
-  // in the stage rather than stranding the buttons in the corner of the bar.
-  const wrap = el("div", "launch");
-  wrap.appendChild(iconEl(b, "launch-icon", "launch-emoji"));
-  wrap.appendChild(el("div", "launch-title", m.label || m.name || "Deck"));
-  const sub = el("div", "deck-sub");
-  sub.appendChild(masteryEl(m));
-  wrap.appendChild(sub);
-  wrap.appendChild(el("div", "soft", "How do you want to practise?"));
-
-  const choices = el("div", "depth-choices launch-choices");
-  choices.appendChild(depthBtn("👆 Tap the answer", "recognize", m.reviewable_recognize, m.name));
-  choices.appendChild(depthBtn("🗣️ Say it yourself", "recall", m.reviewable_recall, m.name));
-  wrap.appendChild(choices);
-
-  if (selectError) wrap.appendChild(el("div", "select-error", "Hmm, that didn't start. Want to try again? 🌱"));
-  stage.appendChild(wrap);
-}
-
-// One deck: tap it to choose how to practise. Shows its ⭐ mastery (or "New")
-// plus a chevron, so it reads as the tappable thing it is.
-function deckRow(m) {
-  const row = el("button", "deck-row");
-  row.type = "button";
-  row.appendChild(el("div", "deck-label", m.label || m.name || "Deck"));
-  const right = el("div", "deck-right");
-  right.appendChild(masteryEl(m));
-  right.appendChild(el("span", "deck-go", "›"));
-  row.appendChild(right);
-  row.addEventListener("click", () => openDeck(m));
-  return row;
-}
-
-// No badge yet (or a never-seen deck) reads as "New", not zero stars.
-// Otherwise one ⭐ per badged depth (recognize→1, recall→2, reconstruct→3);
-// a lapsed badge (`badge_dotted`) hollows out just the highest star.
-function masteryEl(m) {
-  if (!m.badge_depth || m.state === "new") return el("span", "pill-new", "New");
-  const n = m.badge_depth === "reconstruct" ? 3 : m.badge_depth === "recall" ? 2 : 1;
-  let stars = "";
-  for (let i = 0; i < n; i++) stars += (m.badge_dotted && i === n - 1) ? "☆" : "⭐";
-  return el("span", "deck-mastery", stars);
-}
-
-// A depth-start choice for the picked deck, gated on that deck's honest
-// per-depth due-ness. Both choices always render -- a caught-up one just can't
-// be tapped, so a kid never lands in an empty session.
-function depthBtn(label, depth, ready, targetName) {
-  const btn = el("button", "depth-btn" + (ready ? "" : " caught-up"));
-  btn.type = "button";
-  btn.appendChild(el("span", null, label));
-  if (ready) {
-    btn.addEventListener("click", () => startSelect(targetName, depth));
-  } else {
-    btn.disabled = true;
-    btn.appendChild(el("span", "depth-btn-note", "all caught up here 🌱"));
-  }
-  return btn;
-}
-
-// POST /api/select for ONE deck at the chosen depth and land on the review
-// screen. Mirrors how review.html's `select()` holds the session in a
-// module-level `state`; every review action funnels back through applyState.
-// A rejected select (a 400 carries no JSON body, so `api` throws) surfaces a
-// gentle notice instead of leaving a kid tapping a button that does nothing.
-function startSelect(name, depth) {
-  selectError = false;
-  api("/api/select", post({ deck: name, depth }))
-    .then(applyState)
-    .catch(() => { selectError = true; render(); });
-}
 
 // ── The review loop ───────────────────────────────────────────────────────
 // Every review action (/api/select, /api/grade, /api/acquire, /api/deselect)
@@ -616,12 +426,9 @@ function acquireNext() {
 // Leave the session for Home: deselect on the server, then re-scan the boxes.
 function homeFromReview() {
   screen = "home";
-  currentBox = null;
-  currentDeck = null;
-  selectError = false;
   syncStudyModel(clearKidsStudyState(studyModel));
-  render();
-  api("/api/deselect", post({})).catch(() => {}).then(refresh);
+  picker.home();
+  api("/api/deselect", post({})).catch(() => {}).then(picker.load);
 }
 // ── Ask-Alix tutor overlay ─────────────────────────────────────────────────
 // A card-scoped chat, mirroring review.html's ask wiring (openAsk / sendAsk /
@@ -812,13 +619,6 @@ document.getElementById("gateInput").addEventListener("keydown", (e) => { if (e.
 // ── Load ──────────────────────────────────────────────────────────────────
 // Home reads the box catalog once (no live counter -- a receding queue is a
 // false finish line). refresh() re-reads it, e.g. on returning from a session.
-function loadDecks() {
-  return api("/api/decks")
-    .then((d) => { deckList = d; loadError = false; })
-    .catch(() => { loadError = true; })
-    .finally(() => { if (screen === "home") render(); });
-}
-function refresh() { return loadDecks(); }
 
 Object.assign(window, { el, frontPrompt, contextLine, answerFill, renderOptions, renderWhy, stage });
 Object.defineProperty(window, "state", {
@@ -828,5 +628,5 @@ Object.defineProperty(window, "state", {
 });
 
 buildThemeSwatches();
-render();     // paints the splash immediately
-loadDecks();  // then fills the boxes
+render();       // paints the splash immediately
+picker.load();  // then fills the boxes
