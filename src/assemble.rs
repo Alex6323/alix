@@ -515,16 +515,19 @@ pub fn select(
     });
     // Recognize schedules only cards with cached distractors, so it never
     // degrades to a plain flip; un-augmented cards stay reviewable at other
-    // depths.
+    // depths. The excluded cards ride along on the session so the done
+    // summary can report what waits beyond this depth.
+    let mut depth_excluded = Vec::new();
     let cards = if depth == Depth::Recognize {
-        cards
+        let (kept, excluded): (Vec<_>, Vec<_>) = cards
             .into_iter()
-            .filter(|c| crate::depth::card_recognizable(c, &augment))
-            .collect()
+            .partition(|c| crate::depth::card_recognizable(c, &augment));
+        depth_excluded = excluded;
+        kept
     } else {
         cards
     };
-    let session = Session::new(
+    let mut session = Session::new(
         cards,
         store,
         Box::new(Fsrs::tuned(
@@ -535,6 +538,7 @@ pub fn select(
         options,
         now,
     );
+    session.set_depth_excluded(depth_excluded);
 
     // Quirk: this write always fires even when the built session has nothing
     // due, so a restart still reopens at the last-chosen depth.

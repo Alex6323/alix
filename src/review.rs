@@ -181,6 +181,11 @@ pub struct ReviewState {
     // still find.
     pub due_left: u32,
     pub new_left: u32,
+    /// Present only on an exhausted Recognize done: what the depth filter hid,
+    /// so the summary can point at Recall or at augmenting instead of at
+    /// nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recognize_gap: Option<session::RecognizeGap>,
     /// A failed progress save, kept until one succeeds; review continues in
     /// memory (non-fatal, mirroring the serve loop's banner semantics). The
     /// builder leaves it `None`; a stateful caller stamps it.
@@ -278,9 +283,19 @@ pub fn state(
         acquired: session.stats.acquired as u32,
         can_restart: session.has_due_now(store, now),
         promotable: session.current_is_virtual(store),
-        next_due_ms: finished.then(|| session.next_due_at(store)).flatten(),
+        next_due_ms: finished
+            .then(|| {
+                session
+                    .next_servable_at(store, now)
+                    .filter(|&t| t > now)
+                    .or_else(|| session.next_due_at(store))
+            })
+            .flatten(),
         due_left: due_left as u32,
         new_left: new_left as u32,
+        recognize_gap: finished
+            .then(|| session.recognize_gap(store, now))
+            .flatten(),
         save_error: None,
     }
 }

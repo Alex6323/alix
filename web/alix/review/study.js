@@ -2,6 +2,7 @@ export function createStudy({
   api,
   post,
   storage,
+  lastDeck,
   model,
   rerender,
   walkData,
@@ -1138,12 +1139,18 @@ export function createStudy({
   function renderSummary() {
     const acc = state.reviews > 0 ? Math.round(100 * state.passed / state.reviews) + "%" : "–";
     const wrap = el("div", "summary");
-    wrap.appendChild(el("div", "lede", "session complete"));
     // A first pass over a fresh deck is acquire-only: reviews stay 0 while
-    // every card was introduced. Say what actually happened.
+    // every card was introduced. Say what actually happened — and when nothing
+    // happened (an instant-empty select), don't call it a session at all, and
+    // never print a zero-valued row (a done screen must not read as "you did
+    // nothing"; user rule).
     const acquired = state.acquired || 0;
+    const didSomething = state.reviews > 0 || acquired > 0;
+    wrap.appendChild(el("div", "lede", didSomething ? "session complete" : "nothing to do here"));
+    const gap = state.recognize_gap;
     const headline = state.reviews > 0 ? "Nicely charged."
       : acquired > 0 ? "New cards planted."
+      : gap ? "Recognize is drained."
       : "Nothing due.";
     wrap.appendChild(el("h2", null, headline));
     const row = (label, value) => {
@@ -1153,18 +1160,31 @@ export function createStudy({
       wrap.appendChild(r);
     };
     if (acquired > 0) row("introduced", `${acquired}`);
-    row("reviewed", `${state.reviews}`);
     if (state.reviews > 0) {
+      row("reviewed", `${state.reviews}`);
       row("passed / failed", `${state.passed} / ${state.failed}`);
       row("accuracy", acc);
     }
     const dueLeft = state.due_left || 0;
     const newLeft = state.new_left || 0;
-    const nextDue = state.reviews === 0 && acquired === 0 ? nextDueNote(state.next_due_ms) : null;
-    if (nextDue) {
+    const nextDue = !didSomething && !gap ? nextDueNote(state.next_due_ms) : null;
+    // "N still due" beside a disabled Continue is a contradiction: when
+    // nothing is servable the cards are cooling, so say when one opens.
+    const cooling = dueLeft > 0 && !state.can_restart ? nextDueNote(state.next_due_ms) : null;
+    const dueSegment = dueLeft > 0
+      ? `${dueLeft} still due${cooling ? ` — cooling, ${cooling.charAt(0).toLowerCase() + cooling.slice(1, -1)}` : ""}`
+      : null;
+    if (gap) {
+      // Point at the two real exits: the cards this depth can't serve.
+      const parts = [];
+      if (dueSegment) parts.push(dueSegment);
+      if (gap.recall > 0) parts.push(`${gap.recall} card${gap.recall === 1 ? "" : "s"} wait at Recall`);
+      if (gap.unaugmented > 0) parts.push(`${gap.unaugmented} have no choices yet — augment to Recognize them`);
+      wrap.appendChild(el("div", "note", parts.join(" · ") + "."));
+    } else if (nextDue) {
       wrap.appendChild(el("div", "note", nextDue));
-    } else if (dueLeft > 0) {
-      wrap.appendChild(el("div", "note", `${dueLeft} still due.`));
+    } else if (dueSegment) {
+      wrap.appendChild(el("div", "note", `${dueSegment}.`));
     } else if (newLeft > 0) {
       wrap.appendChild(el("div", "note", `${newLeft} new waiting.`));
     } else if (newLeft === 0 && !state.can_restart) {
@@ -1182,10 +1202,18 @@ export function createStudy({
     // Continue the drain when due cards remain; otherwise say the next sitting
     // starts new cards, never an unlabeled button. The waiting count lives in
     // the note: the sitting plants only the capped share, not all of them.
+    // A drained Recognize sitting cannot restart into anything, so its
+    // primary action IS the pointed exit: reopen this deck at Recall.
+    const deck = lastDeck ? lastDeck() : null;
+    if (gap && gap.recall > 0 && deck) {
+      chip("Continue at Recall", examDue.length ? "" : "primary", () => {
+        api("/api/select", post({ deck, depth: "recall" })).then(apply).catch(() => load());
+      });
+    }
     const restartLabel = dueLeft > 0 ? "Continue"
       : newLeft > 0 ? "Start new"
       : "New session";
-    const newSession = chip(restartLabel, examDue.length ? "" : "primary", restart, label(keys.restart));
+    const newSession = chip(restartLabel, examDue.length || gap ? "" : "primary", restart, label(keys.restart));
     newSession.disabled = !state.can_restart;
     chip("Leave", "", deselect, "esc");
   }

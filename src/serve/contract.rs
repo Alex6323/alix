@@ -52,6 +52,7 @@ fn statedto_select_phase_wire_shape() {
         next_due_ms: None,
         due_left: 0,
         new_left: 0,
+        recognize_gap: None,
         label: "select decks".to_string(),
         save_error: None,
     };
@@ -185,6 +186,7 @@ fn statedto_review_phase_wire_shape() {
         next_due_ms: None,
         due_left: 0,
         new_left: 0,
+        recognize_gap: None,
         label: "rust.md".to_string(),
         save_error: Some(
             "progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
@@ -312,6 +314,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
         next_due_ms: Some(1_700_000_100_000),
         due_left: 12,
         new_left: 3,
+        recognize_gap: None,
         label: "rust.md".to_string(),
         save_error: None,
     };
@@ -344,6 +347,75 @@ fn statedto_done_phase_carries_the_next_due_instant() {
             "due_left": 12,
             "new_left": 3,
             "label": "rust.md"
+        }),
+    );
+}
+
+// The gap only ever rides an exhausted Recognize done; its absence elsewhere
+// is pinned by every other StateDto snapshot omitting the key.
+#[test]
+fn statedto_done_phase_carries_the_recognize_gap() {
+    let dto = StateDto {
+        kind: "review",
+        study_revision: 7,
+        phase: "done",
+        card: None,
+        choices: None,
+        choice_runs: None,
+        keypoints: None,
+        keypoint_runs: None,
+        acquire: false,
+        mode: "flip",
+        depth: "recognize",
+        input: "type",
+        remaining: 0,
+        initial: 0,
+        reviews: 0,
+        passed: 0,
+        failed: 0,
+        acquired: 0,
+        exam_due: Vec::new(),
+        can_restart: false,
+        promotable: false,
+        next_due_ms: None,
+        due_left: 0,
+        new_left: 0,
+        recognize_gap: Some(crate::session::RecognizeGap {
+            recall: 13,
+            unaugmented: 13,
+        }),
+        label: "status-codes.md".to_string(),
+        save_error: None,
+    };
+    pin(
+        "StateDto.recognize-gap",
+        &dto,
+        json!({
+            "kind": "review",
+            "phase": "done",
+            "card": null,
+            "choices": null,
+            "choice_runs": null,
+            "keypoints": null,
+            "keypoint_runs": null,
+            "acquire": false,
+            "mode": "flip",
+            "depth": "recognize",
+            "input": "type",
+            "remaining": 0,
+            "initial": 0,
+            "reviews": 0,
+            "study_revision": 7,
+            "passed": 0,
+            "failed": 0,
+            "acquired": 0,
+            "exam_due": [],
+            "can_restart": false,
+            "promotable": false,
+            "due_left": 0,
+            "new_left": 0,
+            "recognize_gap": {"recall": 13, "unaugmented": 13},
+            "label": "status-codes.md"
         }),
     );
 }

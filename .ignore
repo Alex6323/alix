@@ -1,8 +1,14 @@
 # These are gitignored to stay out of commits, but ripgrep (and so VS Code's
-# search) reads .gitignore too, which also made them unfindable.
+# search and Claude's tools) reads .gitignore too, which also made them
+# unfindable.
 !/docs/plans/
 !/docs/specs/*
 !/docs/product/
 !/docs/bugs/
 !/docs/results/
 !/docs/dev/
+!/PLAN.md
+!/ROADMAP.md
+!/QUALITY.md
+# bug-report screenshots dropped at the repo root (dated, issue-named)
+!/*.png

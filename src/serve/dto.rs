@@ -118,6 +118,8 @@ pub(super) struct StateDto {
     pub(super) next_due_ms: Option<u64>,
     pub(super) due_left: u32,
     pub(super) new_left: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) recognize_gap: Option<crate::session::RecognizeGap>,
     pub(super) label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) save_error: Option<String>,
@@ -949,6 +951,7 @@ pub(super) fn review_state(
             next_due_ms: None,
             due_left: 0,
             new_left: 0,
+            recognize_gap: None,
             label: "select decks".to_string(),
             save_error: save_error.map(str::to_string),
         };
@@ -1072,6 +1075,7 @@ pub(super) fn review_state(
         next_due_ms: s.next_due_ms,
         due_left: s.due_left,
         new_left: s.new_left,
+        recognize_gap: s.recognize_gap,
         label: r.label.clone(),
         save_error: save_error.map(str::to_string),
     }

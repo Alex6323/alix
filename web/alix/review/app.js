@@ -67,6 +67,7 @@ study = createStudy({
   api,
   post,
   storage: localStorage,
+  lastDeck: () => sessionStorage.getItem("alix.lastDeck"),
   model: { create: createModel, applyStudyState, enterPicker, currentScreen },
   rerender: render,
   walkData: () => walk.data(),

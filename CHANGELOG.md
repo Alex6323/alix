@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- An exhausted Recognize sitting now says what it was hiding instead of
+  "Nothing due — come back later": a deck whose pick-capable cards are all
+  recognized reports how many cards wait at Recall and how many have no
+  choices yet (`StateDto.recognize_gap`), and the adult summary points at
+  both exits, with a "Continue at Recall" action. Previously a deck with a
+  few authored choice cards defaulted to Recognize, served only those, and
+  then looked permanently empty while the rest of the deck was untouched.
+  The done summary also no longer prints zero-valued stat rows, an
+  instant-empty select no longer announces "session complete" for a session
+  that never happened, and "N still due" beside a disabled Continue now says
+  the cards are cooling and when one opens (`next_due_ms` carries the
+  acquire-floor instant, previously absent at Recognize).
+
 - Decks carry a `format-version:` in frontmatter, written above `id:`. `alix
   deck init`
   writes it, it stays `1` before 1.0, and alix refuses any other number with a

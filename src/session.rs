@@ -101,8 +101,20 @@ pub struct Session {
     scheduler: Box<dyn Scheduler>,
     options: SessionOptions,
     presented_stamped: bool,
+    // Cards the depth filter kept out of this sitting entirely (Recognize
+    // schedules only pick-capable cards), so the done summary can say what
+    // still waits beyond the depth instead of "nothing".
+    depth_excluded: Vec<Card>,
     pub initial_size: usize,
     pub stats: SessionStats,
+}
+
+/// What an exhausted Recognize sitting hides: cards workable at Recall right
+/// now, and cards no pick can be built for at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RecognizeGap {
+    pub recall: u32,
+    pub unaugmented: u32,
 }
 
 impl Session {
@@ -131,11 +143,37 @@ impl Session {
             scheduler,
             options,
             presented_stamped: false,
+            depth_excluded: Vec::new(),
             initial_size,
             stats: SessionStats::default(),
         };
         session.advance(store, now_ms);
         session
+    }
+
+    pub fn set_depth_excluded(&mut self, cards: Vec<Card>) {
+        self.depth_excluded = cards;
+    }
+
+    /// `None` unless this is a Recognize sitting that actually excluded cards.
+    pub fn recognize_gap(&self, store: &Store, now_ms: u64) -> Option<RecognizeGap> {
+        if self.options.depth != Depth::Recognize || self.depth_excluded.is_empty() {
+            return None;
+        }
+        let recall = self
+            .depth_excluded
+            .iter()
+            .chain(self.cards.iter())
+            .filter_map(|c| c.id())
+            .filter(|id| match store.progress(id) {
+                None => true,
+                Some(state) => self.scheduler.is_due(state, Depth::Recall, now_ms),
+            })
+            .count();
+        Some(RecognizeGap {
+            recall: recall as u32,
+            unaugmented: self.depth_excluded.len() as u32,
+        })
     }
 
     pub fn restart(&mut self, store: &mut Store, now_ms: u64) -> bool {
@@ -208,6 +246,45 @@ impl Session {
             }
         }
         (due_left, new_left)
+    }
+
+    /// The soonest instant an unserved roster card becomes servable, floors
+    /// included — `next_due_at` is schedule-wide and floor-blind, so it cannot
+    /// explain a done sitting whose cards are merely cooling.
+    pub fn next_servable_at(&self, store: &Store, now_ms: u64) -> Option<u64> {
+        let cooldown = self.scheduler.acquire_cooldown_ms();
+        self.roster
+            .iter()
+            .filter_map(|&i| {
+                let card = &self.cards[i];
+                if is_retired(card, store, self.options.retire_after_days) {
+                    return None;
+                }
+                let id = card.id()?;
+                let due_at = if self.options.depth == Depth::Recognize {
+                    let eligible = self.options.cram
+                        || store
+                            .progress(&id)
+                            .is_none_or(|s| s.recognized_ms.is_none());
+                    if !eligible {
+                        return None;
+                    }
+                    now_ms
+                } else {
+                    match store.progress(&id) {
+                        None => now_ms,
+                        Some(_) if self.options.cram => now_ms,
+                        Some(state) => self.scheduler.due_at(state, self.options.depth),
+                    }
+                };
+                let floor_open = self
+                    .floors
+                    .get(id.as_str())
+                    .map(|t| t.saturating_add(cooldown))
+                    .unwrap_or(now_ms);
+                Some(due_at.max(floor_open))
+            })
+            .min()
     }
 
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {

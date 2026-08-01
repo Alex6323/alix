@@ -2217,6 +2217,120 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     }
 }
 
+/// A deck whose Recognize pool is exhausted (every pick-capable card already
+/// recognized) must not answer a bare select with an empty done and nothing
+/// else: the DTO carries the gap — how many cards wait at Recall, and how
+/// many no pick can be built for — so the summary can point at the two real
+/// exits (continue at Recall, or augment choices) instead of "come back
+/// later" (user report 2026-08-01, deck 59: 2 authored picks recognized, 13
+/// cards invisible forever).
+#[test]
+fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
+    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicemixed\"\n---\n\
+        ## pick 1 <!-- id: card-cm1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n\n\
+        ## pick 2 <!-- id: card-cm2 -->\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n\n\
+        ## plain 1 <!-- id: card-cm3 -->\nback 3\n\n\
+        ## plain 2 <!-- id: card-cm4 -->\nback 4\n\n\
+        ## plain 3 <!-- id: card-cm5 -->\nback 5\n";
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            std::fs::write(dir.join("choice-mixed.md"), MIXED).unwrap();
+            let cards = parser::parse_str("choice-mixed.md", MIXED).unwrap();
+            let deck_path = dir.join("choice-mixed.md");
+            let fixture_state = state_root(dir);
+            let mut store = alix::state::open_store(&deck_path, &fixture_state).unwrap();
+            for c in cards.iter().filter(|c| !c.authored_distractors.is_empty()) {
+                let s = store.get_or_insert(&c.id().unwrap(), 1_000);
+                s.acquired_ms = Some(1_000);
+                s.recognized_ms = Some(2_000);
+            }
+            store.save().unwrap();
+        },
+        |_opts| {},
+    );
+
+    // A bare select resolves the deck's default depth: it has authored picks,
+    // so that is Recognize — whose pool is exhausted.
+    let resp = post_json(&base, "/api/select", r#"{"deck":"choice-mixed.md"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("done", body["phase"], "body: {body}");
+    assert_eq!("recognize", body["depth"], "body: {body}");
+    let gap = &body["recognize_gap"];
+    assert!(
+        gap.is_object(),
+        "an exhausted Recognize done must carry recognize_gap: {body}"
+    );
+    assert!(
+        gap["recall"].as_u64().unwrap_or(0) >= 3,
+        "the three never-seen plain cards wait at Recall: {body}"
+    );
+    assert_eq!(
+        3, gap["unaugmented"],
+        "the three plain cards can build no pick: {body}"
+    );
+
+    // The gap never leaks onto other depths or unfinished sessions: a Recall
+    // select over the same deck serves cards, and its state carries no gap.
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice-mixed.md","depth":"recall"}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["phase"], "body: {body}");
+    assert!(
+        body["recognize_gap"].is_null(),
+        "no gap outside an exhausted Recognize done: {body}"
+    );
+}
+
+/// Acquiring every fresh pick of a Recognize sitting parks them behind the
+/// acquire floor: the done summary then shows "N still due" beside a disabled
+/// Continue — a contradiction unless the state says when one opens (user
+/// report 2026-08-01). `next_due_ms` must carry the floor-open instant even
+/// at Recognize, where the schedule-wide next-due is undefined.
+#[test]
+fn a_recognize_done_with_floored_cards_says_when_one_opens() {
+    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicecool\"\n---\n\
+        ## cool 1 <!-- id: card-cc1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n\n\
+        ## cool 2 <!-- id: card-cc2 -->\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n\n\
+        ## cool plain <!-- id: card-cc3 -->\nback\n";
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| std::fs::write(dir.join("choice-cool.md"), MIXED).unwrap(),
+        |_opts| {},
+    );
+
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice-cool.md","depth":"recognize"}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["phase"], "two fresh picks serve: {body}");
+
+    post_gated(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/acquire", "{}");
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+
+    assert_eq!(
+        "done", body["phase"],
+        "both picks acquired and floored ends the sitting: {body}"
+    );
+    assert_eq!(2, body["due_left"], "the floored picks stay due: {body}");
+    assert_eq!(
+        false, body["can_restart"],
+        "nothing is servable while cooling: {body}"
+    );
+    assert!(
+        body["next_due_ms"].as_u64().is_some(),
+        "the summary must say when a floored card opens: {body}"
+    );
+}
+
 #[test]
 fn post_api_choose_with_a_malformed_body_yields_400() {
     let (base, _guard) = spawn_test_server();
