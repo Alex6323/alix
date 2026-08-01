@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Revealing a new card's answer now counts as the encounter: leave the
+  session right there, without pressing Seen, and the card still will not
+  re-introduce as new next time (it cools and returns as a regular review).
+  Leaving before the reveal keeps the card new. Both web clients report the
+  first reveal (and the first pick on a new choice card) via the new
+  `POST /api/reveal`, which records the engagement without advancing the
+  session. The drained-Recognize summary's Augment chip also gained its `a`
+  key binding, matching the picker.
+
 - An exhausted Recognize sitting now says what it was hiding instead of
   "Nothing due — come back later": a deck whose pick-capable cards are all
   recognized reports how many cards wait at Recall and how many have no

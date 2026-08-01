@@ -1360,12 +1360,16 @@ function barBtn(text, cls, fn) {
 // Reveal the answer: line mode steps one line; other modes jump to the full
 // answer. Just view state — nothing is recorded until a grade.
 function reveal() {
+  // Seeing a new card's answer counts as the encounter even if the session
+  // ends here (same rule as the adult client). Fire-and-forget.
+  if (revealed === 0 && state.acquire) api("/api/reveal", post({})).catch(() => {});
   revealed = state.mode === "line" ? Math.min(revealed + 1, backCount()) : backCount();
   render();
 }
 // A pick is evidence only (ChooseFeedbackDto, discloses the correct index); the
 // grade is separate, via the rate bar / /api/grade. Same card stays on screen.
 function choose(i) {
+  if (state.acquire && !chosen) api("/api/reveal", post({})).catch(() => {});
   api("/api/choose", post({ index: i, card: state.card.id })).then((f) => { chosen = f; render(); }).catch(resyncState);
 }
 // The rate bar. Try again → failed, Almost → partly, Got it → passed. /api/grade

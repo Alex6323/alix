@@ -113,7 +113,7 @@ so is every client.
    Every `StateDto` carries `study_revision`, the monotonic identity of the
    current review transition. **Echo it in the `X-Alix-Study-Revision`
    header on every card-relative POST** (`/api/grade`, `/api/skip`,
-   `/api/acquire`, `/api/check`, `/api/choose`, `/api/remove`,
+   `/api/acquire`, `/api/reveal`, `/api/check`, `/api/choose`, `/api/remove`,
    `/api/promote`, `/api/restart`, `/api/ask`, `/api/ask/note`,
    `/api/ask/card/draft`, `/api/ask/card/create`). A missing or malformed
    header is a 400. A stale revision is a 409 and mutates nothing, so
@@ -135,6 +135,11 @@ so is every client.
    Other transitions: `/api/skip`, `/api/acquire` (acknowledge a new card the
    learner has no recorded attempt on), `/api/remove` (mark for deck-file
    removal), `/api/promote` (virtual→deck file), `/api/restart`.
+   `POST /api/reveal` is NOT a transition: clients send it when a new card's
+   answer is first shown, and the server records the encounter (the card will
+   not re-introduce as new next session) without advancing the session,
+   bumping the revision, or changing the current card. Leaving before the
+   reveal keeps the card new.
 5. `GET /api/state` re-checks server-side due-ness (a missed card can cool back
    in) — poll it on the summary screen. Session end is `phase:"done"` on the
    same `StateDto`; there is no separate finished flag.
@@ -390,6 +395,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/grade` | `{grade}` or `{covered, total}` | `StateDto` | 400 neither shape; 409 no session |
 | POST | `/api/skip` | – | `StateDto` | 409 |
 | POST | `/api/acquire` | – | `StateDto` | 409 |
+| POST | `/api/reveal` | – | `StateDto` (unchanged card, same revision) | 409 |
 | POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
 | POST | `/api/choose` | `{index, card}` (`card`: the current `card.id`, required) | `ChooseFeedbackDto` | 400 bad body / no question; 409 no session / another card |
 | POST | `/api/remove` | – | `StateDto` | 409 |

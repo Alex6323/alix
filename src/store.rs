@@ -956,6 +956,19 @@ impl Store {
         }
     }
 
+    // A reveal is an encounter: seeing the answer engages the card even if
+    // the session ends without the Seen acknowledgment. Once-only, and never
+    // on a card the learner already engaged some other way.
+    pub fn note_revealed(&mut self, card_id: &str, now_ms: u64) -> bool {
+        let state = self.cards.entry(card_id.to_string()).or_default();
+        if state.engaged() {
+            false
+        } else {
+            state.acquired_ms = Some(now_ms);
+            true
+        }
+    }
+
     // Reflects actual reviews, not merely opening the deck.
     pub fn last_review_ms(&self) -> Option<u64> {
         self.cards

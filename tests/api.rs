@@ -2331,6 +2331,99 @@ fn a_recognize_done_with_floored_cards_says_when_one_opens() {
     );
 }
 
+/// Revealing a new card's answer IS the encounter: abandoning the session
+/// after the reveal must not re-introduce the card as new next time (user
+/// rule 2026-08-01). The reveal is reported to the server, which records the
+/// engagement without advancing the session.
+#[test]
+fn a_revealed_then_abandoned_new_card_does_not_return_as_new() {
+    const ONE: &str = "---\nformat-version: 1\nid: \"deck-revealone\"\n---\n\
+        ## the only card <!-- id: card-rv1 -->\nits answer\n";
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| std::fs::write(dir.join("reveal-one.md"), ONE).unwrap(),
+        |_opts| {},
+    );
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"reveal-one.md"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["phase"], "body: {body}");
+    assert_eq!(true, body["acquire"], "a fresh card starts new: {body}");
+
+    let resp = post_gated(&base, "/api/reveal", "{}");
+    assert_eq!(200, resp.status);
+
+    post_json(&base, "/api/deselect", "{}");
+    let resp = post_json(&base, "/api/select", r#"{"deck":"reveal-one.md"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        "done", body["phase"],
+        "a revealed card is engaged, not new; it cools instead of re-introducing: {body}"
+    );
+    assert!(
+        body["next_due_ms"].as_u64().is_some(),
+        "the cooling engagement has a next-open instant: {body}"
+    );
+}
+
+/// The other half of the rule: leaving BEFORE the reveal keeps the card new.
+#[test]
+fn an_unrevealed_new_card_stays_new_after_abandoning() {
+    const ONE: &str = "---\nformat-version: 1\nid: \"deck-unrevealed\"\n---\n\
+        ## the only card <!-- id: card-ur1 -->\nits answer\n";
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| std::fs::write(dir.join("unrevealed.md"), ONE).unwrap(),
+        |_opts| {},
+    );
+
+    post_json(&base, "/api/select", r#"{"deck":"unrevealed.md"}"#);
+    post_json(&base, "/api/deselect", "{}");
+    let resp = post_json(&base, "/api/select", r#"{"deck":"unrevealed.md"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+
+    assert_eq!("review", body["phase"], "body: {body}");
+    assert_eq!(
+        true, body["acquire"],
+        "merely being shown is not an encounter; the card stays new: {body}"
+    );
+}
+
+/// Within the sitting the revealed card stays current and stays the acquire
+/// card: the engagement is for FUTURE sessions only. If the live
+/// classification flipped, the next state poll would swap the card without a
+/// revision bump (the wrong-card-grading class).
+#[test]
+fn a_reveal_keeps_the_current_card_current_and_new_within_the_sitting() {
+    let (base, _guard) = spawn_test_server();
+    let resp = select_fixture(&base);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let front = body["card"]["front"].as_str().unwrap().to_string();
+    let revision = body["study_revision"].as_u64().unwrap();
+
+    let resp = post_gated(&base, "/api/reveal", "{}");
+    assert_eq!(200, resp.status);
+
+    for pull in 0..2 {
+        let resp = http(&base, "GET", "/api/state", &[], &[]);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!(
+            front,
+            body["card"]["front"].as_str().unwrap_or_default(),
+            "pull {pull}: the revealed card must stay current: {body}"
+        );
+        assert_eq!(
+            true, body["acquire"],
+            "pull {pull}: it stays the acquire card this sitting: {body}"
+        );
+        assert_eq!(
+            revision,
+            body["study_revision"].as_u64().unwrap_or(0),
+            "pull {pull}: a reveal is not a transition; the revision holds: {body}"
+        );
+    }
+}
+
 #[test]
 fn post_api_choose_with_a_malformed_body_yields_400() {
     let (base, _guard) = spawn_test_server();
@@ -3462,6 +3555,7 @@ fn every_gated_route_rejects_a_stale_revision_and_mutates_nothing() {
         ("/api/skip", "{}"),
         ("/api/acquire", "{}"),
         ("/api/check", r#"{"lines":["x"]}"#),
+        ("/api/reveal", "{}"),
         ("/api/choose", r#"{"index":0,"card":"CURRENT"}"#),
         ("/api/remove", "{}"),
         ("/api/promote", "{}"),

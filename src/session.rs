@@ -96,6 +96,11 @@ pub struct Session {
     // so the done-summary backlog counts don't re-count what was just drilled.
     // Accumulates across chained restarts within one session.
     served: HashSet<String>,
+    // Cards whose answer was revealed this sitting: the store records the
+    // engagement for FUTURE sessions, while THIS sitting keeps treating them
+    // as its acquire cards — otherwise the next poll would reclassify the
+    // on-screen card unservable and swap it without a revision bump.
+    revealed: HashSet<String>,
     appearances: Vec<u32>,
     choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
@@ -138,6 +143,7 @@ impl Session {
             remaining_now: 0,
             floors,
             served: HashSet::new(),
+            revealed: HashSet::new(),
             appearances,
             choice_seed: now_ms,
             scheduler,
@@ -335,7 +341,22 @@ impl Session {
     pub fn current_fresh(&self, store: &Store) -> bool {
         self.current()
             .and_then(Card::id)
-            .is_some_and(|id| store.progress(&id).is_none())
+            .is_some_and(|id| store.progress(&id).is_none() || self.revealed.contains(id.as_str()))
+    }
+
+    /// Records that the current acquire card's answer was shown: the store
+    /// remembers the encounter for future sessions, this sitting is
+    /// unaffected. `false` when the current card is not an acquire card.
+    pub fn reveal_current(&mut self, store: &mut Store, now_ms: u64) -> bool {
+        if !self.current_fresh(store) {
+            return false;
+        }
+        let Some(id) = self.current_id() else {
+            return false;
+        };
+        let recorded = store.note_revealed(&id, now_ms);
+        self.revealed.insert(id);
+        recorded
     }
 
     pub fn cards(&self) -> &[Card] {
@@ -508,7 +529,13 @@ impl Session {
                     .is_none_or(|s| s.recognized_ms.is_none())
         } else {
             match store.progress(&id) {
-                Some(state) => self.options.cram || self.scheduler.is_due(state, depth, now_ms),
+                Some(state) => {
+                    self.options.cram
+                        || self.scheduler.is_due(state, depth, now_ms)
+                        // A card revealed this sitting stays its acquire card
+                        // even though the store already sees it engaged.
+                        || self.revealed.contains(id.as_str())
+                }
                 None => true,
             }
         };

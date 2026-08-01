@@ -151,6 +151,10 @@ pub(super) enum StudyCommand {
         expected: u64,
         reply: Reply<Option<StateDto>>,
     },
+    Reveal {
+        expected: u64,
+        reply: Reply<Option<StateDto>>,
+    },
     Restart {
         expected: u64,
         reply: Reply<Option<StateDto>>,
@@ -306,6 +310,9 @@ impl StudyHandle {
     }
     pub(super) fn acquire(&self, expected: u64) -> Option<Option<StateDto>> {
         self.call(|reply| StudyCommand::Acquire { expected, reply })
+    }
+    pub(super) fn reveal(&self, expected: u64) -> Option<Option<StateDto>> {
+        self.call(|reply| StudyCommand::Reveal { expected, reply })
     }
     pub(super) fn restart(&self, expected: u64) -> Option<Option<StateDto>> {
         self.call(|reply| StudyCommand::Restart { expected, reply })
@@ -662,6 +669,27 @@ impl StudyState {
                         self.writes = self.writes.wrapping_add(1);
                         r.rotate_variant();
                         self.revision += 1;
+                        Some(())
+                    }
+                }
+                .map(|()| self.review_dto());
+                let _ = reply.send(dto);
+            }
+            // No revision bump and no variant rotation: a reveal records the
+            // encounter without being a transition — the card stays current.
+            StudyCommand::Reveal { expected, reply } => {
+                let dto = match self.reviewing.as_mut() {
+                    _ if self.revision != expected => None,
+                    None => None,
+                    Some(r) => {
+                        if r.session.reveal_current(&mut self.store, now_ms()) {
+                            flush_mutation(
+                                &self.store,
+                                &mut self.store_dirty,
+                                &mut self.save_error,
+                            );
+                            self.writes = self.writes.wrapping_add(1);
+                        }
                         Some(())
                     }
                 }

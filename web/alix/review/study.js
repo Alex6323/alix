@@ -237,6 +237,8 @@ export function createStudy({
   // override when correct, a plain "Continue" (grades failed) when wrong — so a
   // miss shows the right answer before the card moves on, same as any other check.
   function choose(i) {
+    // An acquire-card pick reveals its answer feedback: same encounter rule.
+    if (isAcquire() && !feedback) api("/api/reveal", post({})).catch(() => {});
     api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
       feedback = f;
       // Only the answer changed. A full rerender() rebuilds the question too, which
@@ -1213,7 +1215,7 @@ export function createStudy({
       }, "enter");
     }
     if (gap && gap.unaugmented > 0 && deck && openAugment) {
-      chip("Augment", "", () => openAugment(deck));
+      chip("Augment", "", () => openAugment(deck), "a");
     }
     const restartLabel = dueLeft > 0 ? "Continue"
       : newLeft > 0 ? "Start new"
@@ -1224,7 +1226,12 @@ export function createStudy({
   }
 
   function reveal() {
+    const firstLook = revealed === 0;
     revealed = state.mode === "line" ? Math.min(revealed + 1, backCount()) : backCount();
+    // Seeing a new card's answer IS the encounter: record it server-side so
+    // abandoning the session here does not re-introduce the card as new.
+    // Fire-and-forget: a lost mark degrades to the old behavior, nothing worse.
+    if (firstLook && isAcquire()) api("/api/reveal", post({})).catch(() => {});
     fillBottom();
     renderLegend();
   }
@@ -1320,6 +1327,9 @@ export function createStudy({
           return;
         }
         if (state.can_restart && hit(e, keys.restart)) { e.preventDefault(); restart(); }
+        if (e.key === "a" && state.recognize_gap && lastDeck && lastDeck() && openAugment) {
+          e.preventDefault(); openAugment(lastDeck());
+        }
         return;
       }
       // `s` swaps a cited card between its answer and its source, once answered.
