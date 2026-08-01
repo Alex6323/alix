@@ -72,6 +72,9 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     // Bind before announcing: a taken port errors here rather than after printing a success URL.
     // `Arc`-shared so `run_review` can be stopped from outside its own thread.
     let server = Arc::new(serve::bind(addr)?);
+    // Announce what the kernel bound, not what was asked: `--port 0` prints
+    // the assigned port instead of an unreachable `:0` URL.
+    let addr = server.server_addr().to_ip().unwrap_or(addr);
     let stopper = Arc::clone(&server);
     // Ctrl-C/SIGTERM drains the workers via the unblock relay; `run_review`
     // then flushes and returns, so the process exits cleanly instead of dying

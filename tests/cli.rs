@@ -3690,6 +3690,91 @@ fn sigterm_flushes_and_exits_the_server_cleanly() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn the_http_log_prints_a_timing_line_for_a_served_request() {
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "d.md",
+        "---\nformat-version: 1\nid: deck-httplog\n---\n## q <!-- id: card-hl1 -->\na\n",
+    );
+    assert!(alix(&["deck", "init", &deck]).status.success());
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_alix"))
+        .arg(dir.path())
+        .args(["--port", "0"])
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path())
+        .env("XDG_DATA_HOME", home.path())
+        .env("ALIX_HTTP_LOG", "1")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn the alix server");
+
+    // Readiness: the URL line prints only after the socket is bound.
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let (url_tx, url_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if line.contains("http://127.0.0.1:") {
+                let _ = url_tx.send(line);
+                break;
+            }
+        }
+    });
+    let url_line = url_rx
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the server never printed its URL");
+    let port: u16 = url_line
+        .split("http://127.0.0.1:")
+        .nth(1)
+        .and_then(|rest| {
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            digits.parse().ok()
+        })
+        .expect("the URL line carries no port");
+
+    let stderr = child.stderr.take().expect("stderr was piped");
+    let (log_tx, log_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stderr).lines() {
+            let Ok(line) = line else { break };
+            if line.contains("[http]") {
+                let _ = log_tx.send(line);
+                break;
+            }
+        }
+    });
+
+    {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))
+            .expect("failed to connect to the served port");
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            .expect("failed to send the request");
+        let mut response = Vec::new();
+        let _ = stream.read_to_end(&mut response);
+    }
+
+    let log_line = log_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("no [http] timing line reached stderr for the request");
+    assert!(
+        log_line.contains("at=") && log_line.contains("took=") && log_line.contains("GET /"),
+        "the timing line must carry at=, took=, and the request line: {log_line}"
+    );
+
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+}
+
 #[test]
 fn generate_trace_keeps_a_silent_backends_full_trace_budget() {
     use std::os::unix::fs::PermissionsExt;
