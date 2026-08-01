@@ -98,18 +98,17 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - run: cargo test ${{ matrix.args }}
 
-  # The served web clients contain inline JavaScript that Cargo never parses.
-  # Keep this a separate, fast blocking job so syntax failures do not wait for
-  # the browser suite to build Rust and install Playwright.
+  # Cargo never parses the served JavaScript. Keep this separate and fast so
+  # inline, standalone, and composed-module failures do not wait for browsers.
   web-lint:
-    name: web JavaScript syntax
+    name: web JavaScript composition
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20.18.0"
-      - run: make lint-js
+      - run: make lint-js unit-js
 
   # The lean core must keep compiling AI/server-free: the mobile-client contract.
   # This is the guard that stops a core module from quietly reaching into a gated one.

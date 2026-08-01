@@ -1,5 +1,3 @@
-import { mkdir } from "node:fs/promises";
-
 import { test, expect } from "./helpers";
 import { openApp } from "./helpers";
 
@@ -18,7 +16,7 @@ test.beforeEach(async ({ page, request }) => {
   await openApp(page);
 });
 
-test("kids card surfaces render shared math SVGs safely", async ({ page, request }) => {
+test("kids card surfaces render shared math SVGs safely", async ({ page, request }, testInfo) => {
   const browseResponse = await request.post("/api/browse", {
     data: { deck: "animals/math.md" },
   });
@@ -144,7 +142,6 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
   await expect(page.locator(".surface-code .math-run")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
 
-  await mkdir("/tmp/latex-math-shots", { recursive: true });
   await page.evaluate(() => {
     document.body.style.height = "auto";
     document.body.style.overflow = "visible";
@@ -160,6 +157,6 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
     stageElement.style.position = "static";
     stageElement.style.overflow = "visible";
   });
-  await page.screenshot({ path: "/tmp/latex-math-shots/kids.png", fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("kids.png"), fullPage: true });
   await request.post("/api/deselect", { data: {} });
 });

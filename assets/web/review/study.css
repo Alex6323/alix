@@ -1,0 +1,273 @@
+  /* ── stage + card ─────────────────────────────────────────────────── */
+  .stage { flex: 1; display: grid; place-items: center; padding: 28px 24px; min-height: 0; }
+  /* the review card is a borderless, centered column (~720px) — no card box,
+     no stacked-pile peek behind it; content flows and the answer region scrolls
+     inside (see .region.a). */
+  .stack {
+    position: relative; width: min(94vw, 720px);
+    max-height: 100%; min-height: 0; display: flex; flex-direction: column;
+    animation: cardIn 0.22s cubic-bezier(.2, .7, .3, 1) both;
+  }
+  @keyframes deal { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: none; } }
+  @keyframes cardIn { from { opacity: 0; } to { opacity: 1; } }   /* card-switch crossfade */
+  .peek { display: none; }   /* the borderless card carries no pile behind it */
+
+  /* borderless card, split into a question half and an answer half by the
+     separator (each half centers its own content). No frame, gradient, or
+     shadow — but a definite height keeps the region caps (%) resolving, so a
+     long answer scrolls inside its own region (.region.a) rather than the page. */
+  .card {
+    position: relative; height: var(--card-h);
+    background: transparent; border: none; box-shadow: none;
+    padding: 2px 4px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  /* the card stacks content-sized regions from the top: the answer sits right
+     under the question and grows downward, so revealing (incl. line-by-line)
+     and showing the note never shift anything. Each region is capped and
+     scrolls its own overflow, so a long answer doesn't push the note away. */
+  .region {
+    min-height: 0; overflow: auto;
+    display: flex; flex-direction: column; justify-content: flex-start;
+    text-align: center; gap: 12px; padding: 10px 0;
+    scrollbar-width: none;            /* Firefox: no scrollbar */
+  }
+  .region::-webkit-scrollbar { width: 0; height: 0; }   /* WebKit: no scrollbar */
+  /* instead of a scrollbar, fade the edge that has hidden content */
+  .region.a.fade-top {
+    mask-image: linear-gradient(to bottom, transparent, #000 34px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px);
+  }
+  .region.a.fade-bottom {
+    mask-image: linear-gradient(to top, transparent, #000 34px);
+    -webkit-mask-image: linear-gradient(to top, transparent, #000 34px);
+  }
+  .region.a.fade-top.fade-bottom {
+    mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
+  }
+  /* a clear "there's more below" marker when the answer/excerpt overflows the card */
+  .more-hint { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
+  .more-hint.show { opacity: 0.94; }
+  /* The question reserves space beneath itself, so a clear gap between question
+     and answer is ALWAYS present — even when the answer overflows and top-aligns,
+     the case where centring alone left it flush under the prompt. */
+  .region.q { flex: 0 0 auto; max-height: 38%; padding-bottom: 30px; }   /* question */
+  /* The answer fills the slack between the question and the bottom-pinned note.
+     A short answer that fits still centres (it settles near the note rather than
+     leaving a mid-card void); a long one top-aligns below the reserved gap and
+     scrolls inside its own region (fade masks + more-hint, driven by updateFade). */
+  .region.a { flex: 1 1 auto; max-height: 82%; position: relative; }
+  .region.a.withnote { max-height: 52%; }
+  /* An MC card's options fill the height down toward the note instead of
+     leaving a big gap above the bottom-pinned note; they use the room well. */
+  .region.a.choices.withnote { max-height: 74%; }
+  .region.a.balanced { justify-content: safe center; }
+  .region.a.filled { justify-content: flex-start; }
+  .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
+  /* keep the note (and its divider) pinned to the bottom of the card */
+  #noteDivider { margin-top: auto; }
+  /* a cited card's answer region is tappable to swap answer <-> source; a corner
+     icon marks it ( </> = view the source, ¶ = back to the answer ) */
+  .region.a.citable, .region.a.hidable { position: relative; cursor: pointer; }
+  .cite-toggle { position: absolute; top: 6px; right: 10px; display: inline-flex; align-items: center; gap: 6px;
+                 color: var(--dim); user-select: none; transition: color 0.12s; }
+  .cite-toggle .ci { font-family: var(--mono); font-size: 0.9rem; line-height: 1; }
+  .cite-toggle .k { font-family: var(--mono); font-size: 0.66rem; border: 1px solid var(--line);
+                    border-radius: 5px; padding: 1px 5px; }
+  .region.a.citable:hover .cite-toggle, .region.a.hidable:hover .cite-toggle { color: var(--bolt); }
+  .region.a.citable:hover .cite-toggle .k, .region.a.hidable:hover .cite-toggle .k { border-color: var(--bolt); }
+  /* Hide (acquire self-test): conceal ONLY the answer's content, visibility-only so
+     its box keeps its exact size and position — the note, the footer, and the layout
+     never move. The corner cue is excluded so you can still un-hide. */
+  .region.a.concealed > *:not(.cite-toggle) { visibility: hidden; }
+  .cite-err { color: var(--warn); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
+  .front-text { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
+  /* A multi-line front (a reversed card's alternatives) reads as centred lines
+     rather than one run-on where the browser collapsed the newlines. */
+  .front-text.multi { display: flex; flex-direction: column; gap: 0.4em; }
+  .front-text .checklist { display: grid; gap: 6px; margin: 4px auto 0; text-align: left; }
+  .front-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+  .front-text .checklist-box { flex: none; font-family: var(--mono); }
+  .front-text pre { margin: 4px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.25); border-radius: 8px; font: 0.82rem/1.45 var(--mono); }
+  /* The topological orientation breadcrumb: each region is its name over a thin
+     per-card heatmap bar. Two channels, kept apart: name weight/opacity = where
+     you are; bar color = each card's lifecycle tier (see paintHeatCell). Clips
+     rather than wraps to stay a thin strip. */
+  .crumb { display: flex; align-items: flex-start; gap: 14px; flex-wrap: nowrap;
+           overflow: hidden; max-width: 100%; }
+  .crumb-region { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .crumb-name { font-size: 0.74rem; letter-spacing: 0.02em; color: var(--ink);
+                white-space: nowrap; opacity: 0.5; }
+  .crumb-region.cur .crumb-name { opacity: 1; font-weight: 600; }
+  .crumb-bar { display: flex; gap: 1px; height: 3px; border-radius: 2px; overflow: hidden; }
+  .crumb-cell { flex: 1 1 0; min-width: 3px; }
+  /* The orientation breadcrumb is pinned just below the header hairline, centered. */
+  .crumb-strip { display: flex; justify-content: center; flex: none; padding: 14px 24px 2px; }
+  .crumb-strip:empty { display: none; }
+  /* The picker's focus drawer: opens under any selected deck. It shows the
+     deck's preamble (the prose under its H1, if any) and a per-card tier
+     heatmap (see paintHeatCell for the five tiers). A deck with a topology
+     augmentation splits that heatmap into named regions you can pick to
+     drill; a deck without one shows a single whole-deck bar. The reveal is a
+     single `height` transition on the clipping wrapper: the drawer's content
+     is laid out once and `overflow: hidden` just moves the clip line, so
+     opening and closing stay smooth, and it always animates to height 0
+     *before* it's removed (never a snap). */
+  .drawer-wrap { margin-left: 22px; overflow: hidden; flex: 0 0 auto; }
+                 /* height animated via the Web Animations API; flex:0 0 auto stops the
+                    flex column shrinking it to 0 (overflow:hidden ⇒ min-height:0) */
+  .drawer { margin: 2px 0 8px; display: flex; flex-direction: column; gap: 10px;
+            padding: 11px 13px; border: 1px solid var(--line); border-left: 2px solid var(--bolt);
+            border-radius: 9px; background: rgba(255,255,255,0.025); }
+  .drawer-head { display: flex; align-items: center; gap: 8px; }
+  .drawer-label { font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); }
+  /* The deck's static size, top-right of the drawer (the slot the old "X due"
+     readout used to hold, now size-only so it informs without backlog shock). */
+  .drawer-top { display: flex; align-items: center; justify-content: flex-end; }
+  .drawer-size { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .drawer-topo { font-family: var(--sans); font-size: 0.82rem; color: var(--ink);
+                 background: var(--menu-bg); border: 1px solid var(--line); border-radius: 7px;
+                 padding: 3px 7px; cursor: pointer; }
+  .drawer-body { display: flex; align-items: center; gap: 16px; }
+  .drawer-regions { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
+  .drawer-region { display: flex; flex-direction: column; gap: 3px; min-width: 52px;
+                   padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+                   background: transparent; cursor: pointer; transition: border-color 0.12s; }
+  .drawer-region:hover { border-color: var(--dim); }
+  .drawer-region.sel { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 8%, transparent); }
+  .drawer-region .crumb-name { font-size: 0.68rem; opacity: 0.8; }
+  .drawer-region.sel .crumb-name { opacity: 1; font-weight: 600; }
+  .drawer-region.all { justify-content: center; min-width: 0; }
+  .drawer-preamble { font-size: 0.8rem; color: var(--dim); line-height: 1.45; max-width: 640px;
+                     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .crumb-cell.empty { background: color-mix(in srgb, var(--dim) 26%, transparent); }
+  .crumb-cell.seen { background: color-mix(in srgb, var(--dim) 60%, transparent); }
+  .crumb-cell.acquired { background: color-mix(in srgb, var(--ink) 85%, transparent); }
+  .crumb-cell.learned-strong { background: var(--good); }
+  .crumb-cell.learned-fading { background: var(--warn); }
+  .crumb-cell.learned-weak { background: var(--again); }
+  .crumb-cell.retired { background: var(--retired); }
+  .drawer-flat { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .front-text.topic { font-size: clamp(0.95rem, 2vw, 1.1rem); font-weight: 500; color: var(--dim); letter-spacing: 0.01em; }
+  .context { color: var(--bolt); font-family: var(--mono); white-space: pre-wrap;
+    font-size: clamp(1.15rem, 3vw, 1.45rem); line-height: 1.5; margin-top: 10px; }
+  /* Both holes render as chips with their glyphs hidden: the text still sizes
+     the chip and still copies, but `____` draws as four separated glyphs and
+     `[…]` is noise. Only the answerable gap gets the rule, which is drawn on
+     the content box so the padding insets it and it lands on the baseline. */
+  .context .hole { color: transparent; font-weight: 700;
+    background-color: color-mix(in srgb, var(--bolt-hi) 14%, transparent);
+    background-image: linear-gradient(var(--bolt-hi), var(--bolt-hi));
+    background-repeat: no-repeat;
+    background-origin: content-box;
+    background-size: 100% 2px;
+    background-position: center bottom 0.28em;
+    border-radius: 4px; padding: 0.06em 0.42em; }
+  .context .muted-hole { color: transparent;
+    background-color: color-mix(in srgb, var(--dim) 13%, transparent);
+    border-radius: 4px; padding: 0.06em 0.42em; }
+  /* bound the image by its region (flex shrink + min-height:0), so it scales
+     down to fit instead of scrolling; flex-grow 0 keeps small images at their
+     natural size rather than ballooning. */
+  .card-img { flex: 0 1 auto; min-height: 0; align-self: center; max-width: 100%; object-fit: contain; margin: 12px auto 0; border-radius: 8px; }
+
+  .divider { flex: none; height: 1px; width: 70%; margin: 0 auto; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); }
+
+  .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
+  /* A reshaped list reveals as a left-aligned block, centered as a whole — its lines
+     are an enumeration, so their left edge must line up. */
+  .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
+  /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
+  .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
+  code { font-family: var(--mono); color: var(--code); }
+  pre code { color: inherit; font-family: inherit; }
+  .math-run { color: inherit; background: none; }
+  .math-run[role="img"] { outline: none; }
+  .math-inline { display: inline-flex; align-items: baseline; max-width: 100%; line-height: 1; vertical-align: -0.16em; }
+  .math-inline svg { display: inline-block; width: auto; height: 1.12em; max-width: 100%; overflow: visible; }
+  .math-inline.math-standalone svg { height: 1.45em; }
+  .math-display { display: flex; justify-content: center; width: 100%; max-width: 100%; margin: 0.35em auto; overflow: hidden; }
+  .math-display svg { display: block; width: auto; height: auto; max-width: 100%; }
+  .math-run svg :where([fill]:not([fill="none"])) { fill: currentColor; }
+  .math-run svg :where([stroke]:not([stroke="none"])) { stroke: currentColor; }
+  .math-error { display: inline-flex; align-items: baseline; gap: 0.5em; max-width: 100%; color: var(--again); }
+  .math-error.math-display { justify-content: center; }
+  .math-error-source { overflow-wrap: anywhere; font-family: var(--mono); color: inherit; }
+  .math-error-label { font: 0.7em/1.2 var(--sans); color: var(--dim); white-space: nowrap; }
+  @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* revealed answer: neutral ink in Plex Mono (green is reserved for a genuinely
+     correct check — a passed typed line, a correct option, a ✓ key point). */
+  .answer { color: var(--ink); font-family: var(--mono); font-weight: 500; font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 0 0 4px; white-space: pre-wrap; }
+  .answer.pass { color: var(--good); }
+  .answer.pending { color: var(--dim); }
+  .acquire-hint { color: var(--dim); font-size: 0.85rem; margin-top: 12px; font-style: italic; }
+  /* a wrong typed line recedes (dim + small) so the correct answer leads */
+  .answer.miss { color: var(--again); opacity: 0.5; font-size: clamp(0.92rem, 2.6vw, 1.08rem); }
+  .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
+  .expected { color: var(--good); font-family: var(--mono); font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 2px 0 8px; }
+
+  /* typing / typeline input fields */
+  .inputs { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 520px; margin: 0 auto; }
+  .field {
+    width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+    border-radius: 12px; padding: 13px 16px; min-height: 52px; color: var(--ink);
+    font-family: var(--mono); font-size: 1.1rem; text-align: center; outline: none;
+  }
+  .field:focus { border-color: var(--bolt); }
+  /* type badge — the small bordered-mono pill at the top-left of the card,
+     naming the check you're doing (flip / choice / typing…); see renderCard. */
+  .mode-tag {
+    align-self: center; flex: none; max-width: 100%;
+    margin: 2px 0 6px;
+    font-family: var(--mono); font-size: 0.66rem;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint);
+    border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* notes: a warm, clearly-separated block (yellow, like the TUI), sharing the
+     answer/choice content column and its text scale */
+  .note {
+    box-sizing: border-box; width: 100%; max-width: min(96vw, 1040px);
+    text-align: left; margin: 18px auto 0;
+    background: var(--note-bg); border: 1px solid var(--note-line);
+    border-radius: 10px;
+    padding: 12px 15px; color: var(--note-ink);
+    font-size: clamp(1.02rem, 2.9vw, 1.22rem);
+  }
+  .card:has(.region.a.choices) .note { font-size: 1.05rem; }
+  .note p { margin: 0 0 10px; } .note p:last-child { margin-bottom: 0; }
+  .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: var(--note-code); }
+  .note .checklist { display: grid; gap: 6px; margin: 8px 0; }
+  .note .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+  .note .checklist-box { flex: none; font-family: var(--mono); }
+
+  /* multiple-choice options */
+  .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: min(96vw, 1040px); margin: 0 auto; }
+  .option {
+    display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--text);
+    border-radius: 12px; padding: 13px 16px; min-height: 52px;
+    font-family: var(--mono); font-size: 1.05rem; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .option .num { font-family: var(--mono); font-size: 0.85rem; color: var(--faint); }
+  .option .opt { white-space: pre-wrap; }
+  .option.focused { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 10%, transparent); }
+  button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
+  .option.correct { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
+  .option.correct .num { color: var(--good); }
+  .option.wrong { border-color: var(--again); background: color-mix(in srgb, var(--again) 13%, transparent); color: var(--again); }
+  .option.wrong .num { color: var(--again); }
+  .option.dim { opacity: 0.45; }
+
+  /* ── summary ──────────────────────────────────────────────────────── */
+  .summary { width: var(--card-w); text-align: left; animation: deal 0.3s both; }
+  .summary .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 14px; }
+  .summary h2 { font-size: 1.6rem; margin: 0 0 18px; }
+  .summary .row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--dim); }
+  .summary .row b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+  /* the walk's done-summary tallies its got/partly/missed counts in the grade colours (the review summary passes no class, so it stays neutral ink). */
+  .summary .row b.passed { color: var(--good); }
+  .summary .row b.partly { color: var(--warn); }
+  .summary .row b.failed { color: var(--again); }

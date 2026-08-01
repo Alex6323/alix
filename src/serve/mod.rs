@@ -5,6 +5,7 @@ mod jobs;
 mod jobs_owner;
 mod respond;
 mod study;
+mod web_assets;
 
 use std::{
     collections::HashMap,
@@ -25,6 +26,7 @@ use respond::*;
 use serde::Deserialize;
 use study::*;
 use tiny_http::{Method, Request, Server};
+use web_assets::*;
 
 pub use crate::assemble::SelectOptions;
 use crate::{
@@ -38,14 +40,6 @@ use crate::{
     store::Store,
 };
 
-const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
-const KIDS_HTML: &str = include_str!("../../assets/web/kids/kids.html");
-const THEME_CSS: &str = include_str!("../../assets/web/theme.css");
-const THEME_JS: &str = include_str!("../../assets/web/theme.js");
-const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.js");
-const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
-const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
-
 const MAX_REMOTE_BODY: usize = 256 * 1024;
 
 /// Every JSON body is read through this, never straight off the socket:
@@ -58,21 +52,6 @@ fn json_body<T: serde::de::DeserializeOwned>(request: &mut Request) -> Option<T>
     let bytes = read_capped(request.as_reader(), MAX_JSON_BODY)?;
     serde_json::from_slice(&bytes).ok()
 }
-
-const PLEX_SANS_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-400.woff2");
-const PLEX_SANS_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-500.woff2");
-const PLEX_SANS_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-600.woff2");
-const PLEX_SANS_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-700.woff2");
-const PLEX_MONO_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-400.woff2");
-const PLEX_MONO_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-500.woff2");
-const PLEX_MONO_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-600.woff2");
-const PLEX_MONO_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-700.woff2");
-
-const BALOO2_400: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-400.woff2");
-const BALOO2_500: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-500.woff2");
-const BALOO2_600: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-600.woff2");
-const BALOO2_700: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-700.woff2");
-const BALOO2_800: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-800.woff2");
 
 /// One line per request under `ALIX_HTTP_LOG`, emitted when the request is done
 /// rather than when it arrives: a stall shows as either a late `at=` (the
@@ -96,43 +75,6 @@ impl Drop for RequestTiming {
             self.method,
             self.path
         );
-    }
-}
-
-fn font_bytes(name: &str) -> Option<&'static [u8]> {
-    match name {
-        "ibm-plex-sans-400.woff2" => Some(PLEX_SANS_400),
-        "ibm-plex-sans-500.woff2" => Some(PLEX_SANS_500),
-        "ibm-plex-sans-600.woff2" => Some(PLEX_SANS_600),
-        "ibm-plex-sans-700.woff2" => Some(PLEX_SANS_700),
-        "ibm-plex-mono-400.woff2" => Some(PLEX_MONO_400),
-        "ibm-plex-mono-500.woff2" => Some(PLEX_MONO_500),
-        "ibm-plex-mono-600.woff2" => Some(PLEX_MONO_600),
-        "ibm-plex-mono-700.woff2" => Some(PLEX_MONO_700),
-        "baloo2-400.woff2" => Some(BALOO2_400),
-        "baloo2-500.woff2" => Some(BALOO2_500),
-        "baloo2-600.woff2" => Some(BALOO2_600),
-        "baloo2-700.woff2" => Some(BALOO2_700),
-        "baloo2-800.woff2" => Some(BALOO2_800),
-        _ => None,
-    }
-}
-
-static REVIEW_PAGE: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| compose_page(REVIEW_HTML));
-
-static KIDS_PAGE: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| compose_page(KIDS_HTML));
-
-fn compose_page(html: &str) -> String {
-    html.replace("<!--%head%-->", HEAD_HTML)
-        .replace("<!--%brand%-->", BRAND_HTML)
-}
-
-fn app_page(audience: Audience) -> &'static str {
-    match audience {
-        Audience::Adult => &REVIEW_PAGE,
-        Audience::Kids => &KIDS_PAGE,
     }
 }
 
@@ -350,6 +292,12 @@ pub fn run_review(
                     auth.as_deref(),
                 ) {
                     respond_status(request, 401);
+                    continue;
+                }
+                if method == Method::Get
+                    && let Some((body, content_type)) = adult_asset(&path)
+                {
+                    respond_asset(request, body, content_type);
                     continue;
                 }
                 // Stateless routes are served first, so a slow stateful

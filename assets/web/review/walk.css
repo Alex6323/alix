@@ -1,0 +1,54 @@
+  /* ── trace-walk (in-page mode) ──────────────────────────────────────
+     The card shell and chip/legend/score come from the review styles above.
+     Only walk-unique pieces live here: the excerpt panel, key-points list,
+     prediction block, compose box, and done-summary extras. */
+  .walk-eyebrow { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
+  /* givens: off-screen symbols the question leans on */
+  .givens { display: flex; flex-wrap: wrap; gap: 6px; }
+  .given { font-family: var(--mono); font-size: 0.76rem; color: var(--bolt-hi); background: color-mix(in srgb, var(--bolt) 8%, transparent); border: 1px solid color-mix(in srgb, var(--bolt) 22%, transparent); border-radius: 7px; padding: 3px 9px; }
+  /* the committed prediction recalled on the question side at reveal */
+  .predicted { border-left: 3px solid var(--dim); padding: 2px 0 2px 12px; }
+  .predicted .wlbl { display: block; margin-bottom: 4px; }
+  .predicted p { margin: 0; color: var(--ink); opacity: 0.8; line-height: 1.45; white-space: pre-wrap; }
+  .predicted.empty p { font-style: italic; opacity: 0.5; }
+  /* shared small label used in walk regions */
+  .wlbl { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+  /* the reveal: the real source (the oracle), in an editor-style excerpt */
+  .reveal-head { display: flex; align-items: baseline; gap: 10px; }
+  .reveal-head .wlbl { color: var(--bolt); }
+  .reveal-head .at { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* shared editor-style source panel for trace reveals and fact-card citations */
+  .source-excerpt { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--excerpt-bg); }
+  .source-stack { width: 100%; display: flex; flex-direction: column; gap: 14px; }
+  .source-file { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 7px 13px; border-bottom: 1px solid var(--line); background: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-code { margin: 0; padding: 9px 0; overflow-x: auto; }
+  .source-line { display: flex; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; }
+  .source-number { flex: none; width: 3.2em; padding-right: 13px; text-align: right; color: var(--dim); opacity: 0.55; user-select: none; }
+  .source-text { white-space: pre; color: var(--ink); padding-right: 16px; }
+  mark.source-term { color: var(--bolt-hi); background: transparent; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--bolt) 55%, transparent); text-underline-offset: 0.18em; }
+  .source-truncated { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 5px 13px 0; }
+  .excerpt-miss { color: var(--dim); font-size: 0.86rem; font-style: italic; padding: 13px 15px; border: 1px dashed var(--line); border-radius: 12px; }
+  /* key points the revealed truth makes */
+  .wpoints { margin: 0; padding: 0; list-style: none; }
+  .wpoints .wlbl { display: block; color: var(--good); margin-bottom: 6px; }
+  .wpoints li.wpt { position: relative; padding: 4px 0 4px 20px; color: var(--ink); line-height: 1.45; }
+  .wpoints li.wpt::before { content: "▸"; position: absolute; left: 0; color: var(--good); }
+  /* the predict / compress text box fills the answer region */
+  .wcompose { height: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .wfield { flex: 1 1 auto; width: 100%; resize: none; min-height: 120px; padding: 14px 16px; border-radius: 13px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: 1.02rem/1.5 var(--sans); outline: none; }
+  .wfield:focus { border-color: var(--bolt); }
+  .wlede { flex: none; color: var(--dim); font-size: 0.9rem; line-height: 1.5; }
+  /* walk's done summary compression block */
+  .summary .compression { margin-top: 18px; border-left: 3px solid var(--bolt); padding: 4px 0 4px 14px; }
+  .summary .compression .wlbl { display: block; color: var(--bolt); margin-bottom: 6px; }
+  .summary .compression p { margin: 0; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
+  /* leave-confirmation message, colored for the walk context */
+  .leave-walk-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }
+
+  /* Pairing-token gate (shown on a 401 under `serve --lan`). */
+  #tokengate[hidden] { display: none; }
+  #tokengate .sheet-panel { display: grid; gap: 13px; }
+  #tokengate p { margin: 0; color: var(--dim); font-size: 0.85rem; line-height: 1.5; }
+  #tokengate code { font-family: var(--mono); color: var(--ink); }
+  #tokengate .bar-filter { width: 100%; box-sizing: border-box; }
+  #tokengate .bar-chip { justify-self: end; }

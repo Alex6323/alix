@@ -92,6 +92,8 @@ fn token_guards_only_the_api() {
     assert!(is_authorized("/", None, None, t));
     assert!(is_authorized("/img/deadbeef", None, None, t));
     assert!(is_authorized("/theme.css", None, None, t));
+    assert!(is_authorized("/review.css", None, None, t));
+    assert!(is_authorized("/review.js", None, None, t));
     assert!(!is_authorized("/api/decks", None, None, t));
     assert!(!is_authorized("/api/decks", Some("Bearer wrong"), None, t));
     assert!(is_authorized("/api/decks", Some("Bearer secret"), None, t));
@@ -267,7 +269,34 @@ fn fonts_route_serves_woff2() {
 fn app_page_dispatches_the_kids_page_for_kids_and_review_for_adult() {
     assert_ne!(app_page(Audience::Adult), app_page(Audience::Kids));
     assert!(app_page(Audience::Adult).contains("<title>alix</title>"));
+    assert!(app_page(Audience::Adult).contains("href=\"/review.css\""));
+    assert!(app_page(Audience::Adult).contains("src=\"/review.js\""));
+    assert!(!app_page(Audience::Adult).contains("<style>"));
     assert!(app_page(Audience::Kids).contains("alix kids"));
+}
+
+#[test]
+fn adult_asset_manifest_matches_the_exact_composition_order() {
+    let manifest: serde_json::Value = serde_json::from_str(REVIEW_ASSET_MANIFEST).unwrap();
+    assert_eq!(serde_json::json!(REVIEW_CSS_SOURCES), manifest["css"]);
+    assert_eq!(serde_json::json!(REVIEW_JS_SOURCES), manifest["javascript"]);
+    assert_eq!(Some(&"app.js"), REVIEW_JS_SOURCES.last());
+
+    let (css, css_type) = adult_asset("/review.css").unwrap();
+    assert_eq!("text/css; charset=utf-8", css_type);
+    assert!(css.contains(":root"));
+    let (javascript, javascript_type) = adult_asset("/review.js").unwrap();
+    assert_eq!("application/javascript; charset=utf-8", javascript_type);
+    assert!(javascript.contains("boot()"));
+
+    for path in [
+        "/review/shell.css",
+        "/review/app.js",
+        "/review.css/extra",
+        "/review.js/extra",
+    ] {
+        assert!(adult_asset(path).is_none(), "path: {path}");
+    }
 }
 
 #[test]

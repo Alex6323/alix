@@ -1,0 +1,146 @@
+  /* ── deck-selection screen ────────────────────────────────────────── */
+  .select { width: var(--card-w); text-align: left; animation: deal 0.3s both; align-self: stretch; display: flex; flex-direction: column; min-height: 0; }
+  .select .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
+  /* a workspace drill-in's goal, shown under the eyebrow (pulled up close to it). */
+  .select .lede-desc { color: var(--dim); font-size: 0.85rem; line-height: 1.4; max-width: 64ch; margin: -10px 0 16px; }
+  /* the drill-in's deadline readout ({#deadlines}): same pulled-up placement as
+     lede-desc, right below it (or the eyebrow, when there's no description). */
+  /* inline behind the eyebrow title: undo its uppercase/letterspacing */
+  .select .lede .lede-deadline { color: var(--dim); font-size: 0.85rem; margin-left: 12px; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: normal; font-weight: 400; white-space: nowrap; }
+  .select .lede .lede-deadline.near { color: var(--bolt); }
+  .select .lede .lede-deadline.past { color: var(--warn); }
+  .select .msg { color: var(--dim); }
+  .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
+  .deck-filter::placeholder { color: var(--dim); }
+  .deck-filter:focus { outline: none; border-color: var(--bolt); }
+  .decklist { display: flex; flex-direction: column; gap: 8px; }
+  /* a single scroll container holds both the deck and workspace sections */
+  .lists { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  .lists::-webkit-scrollbar { width: 0; }
+  .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); margin: 18px 2px 9px; flex: none; }
+  .lists > .section:first-child { margin-top: 2px; }
+  .select .empty-hint { color: var(--dim); font-size: 0.85rem; padding: 4px 2px 0; }
+  /* single-launch rows: click a deck to start it, a workspace/folder to open.
+     A leading chevron (›) marks a drillable row; a glyph slot shows 🔒 / 🕒.
+     Members nest via their tree-branch guides (hidden on filter). */
+  .deckrow { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; flex: none; }
+  /* Transient error notice (a failed select otherwise returns a silent 400). */
+  #notice { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--void); color: var(--dim); font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 40; }
+  #notice.show { opacity: 1; }
+  /* Persistent save-failure banner: unlike #notice it stays until a save succeeds. */
+  #save-alert { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); max-width: min(92vw, 560px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 6px 12px; border: 1px solid color-mix(in srgb, var(--again) 55%, transparent); border-radius: 9px; background: var(--void); color: var(--again); font-size: 0.85rem; z-index: 40; }
+  .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px color-mix(in srgb, var(--bolt) 32%, transparent); }
+  .deckrow .open { flex: none; width: 22px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
+  .deckrow .icon { flex: none; width: 22px; height: 22px; }
+  .deckrow .icon.mask { background: var(--ink); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
+  .deckrow img.icon { object-fit: contain; border-radius: 5px; }
+  .deckrow:hover .open { color: var(--bolt); }
+  .deckrow .glyph { flex: none; line-height: 1; }
+  /* marks a deck whose focus drawer will open below it — a quiet ▾ tucked at the
+     bottom-centre of the box (out of flow, so it never nudges the badge column),
+     pointing down at where the drawer drops open; accent-lit on the focused row. */
+  /* dependency-tree branch lines (├─ └─ │) — muted, monospace; the trailing
+     space separates them from the title, so cancel the row gap. */
+  .deckrow .tree { flex: none; display: flex; align-self: stretch; margin-right: -3px; }
+  .deckrow .tree .guide { position: relative; width: 18px; align-self: stretch; }
+  /* Verticals extend past the row's padding + margin (~15px each way) so a parent's
+     line runs continuously through all its children instead of breaking up per row. */
+  .deckrow .tree .guide.line::before, .deckrow .tree .guide.tee::before,
+  .deckrow .tree .guide.ell::before { content: ""; position: absolute; left: 50%; top: -12px; border-left: 1px dotted var(--line); }
+  .deckrow .tree .guide.line::before, .deckrow .tree .guide.tee::before { bottom: -12px; }
+  .deckrow .tree .guide.ell::before { height: calc(50% + 12px); }  /* last child: stop at the middle */
+  /* Elbow: a horizontal from the vertical out to the label, at the row's middle. */
+  .deckrow .tree .guide.tee::after, .deckrow .tree .guide.ell::after { content: ""; position: absolute; left: 50%; right: -6px; top: 50%; border-top: 1px dotted var(--line); }
+  .lists.filtering .deckrow .tree { display: none; }
+  .deckrow .name { flex: 0 1 auto; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* a workspace row stacks its title over a dim description line */
+  .deckrow .rowtext { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .deckrow .rowtext .name { flex: none; font-weight: 600; }
+  .deckrow .desc { font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deckrow .kind { flex: none; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  .deckrow .loc { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); }
+  .deckrow .meta { margin-left: auto; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; }
+  .deckrow .meta.state-finished { color: var(--good); }
+  .deckrow .meta.state-examdue { color: var(--warn); }
+  /* a workspace row's "ready by" readout ({#deadlines}): dim, fixed-form, never
+     wraps or reflows the row — past due tints the same as an exam-due meta. */
+  /* Right-aligned as a column next to the meta: the chip does the flex
+     right-pushing (the meta's own auto margin then has nothing to eat), and
+     rows with a chip give the meta a stable width so chip right edges align
+     vertically across rows. */
+  /* A fixed-width column slot, content left-aligned: the target glyph starts
+     on the same vertical line in every row (a table column, not a ragged
+     right-aligned blob). 26ch fits the widest realistic form. */
+  .deckrow .deadline-chip { color: var(--dim); font-size: 0.78rem; white-space: nowrap; font-variant-numeric: tabular-nums; margin-left: auto; padding-left: 10px; min-width: 26ch; text-align: left; }
+  /* margin-left 0: with the chip's auto margin in the same row, two autos
+     would split the free space and strand the chip mid-row. */
+  .deckrow:has(.deadline-chip) .meta { min-width: 18ch; text-align: right; margin-left: 0; }
+  .deckrow .deadline-chip.near { color: var(--bolt); }
+  .deckrow .deadline-chip.past { color: var(--warn); }
+  /* the highest depth with a badge: solid border = currently solid, dashed =
+     earned once but lapsed (subsumption — only the highest ever shows). */
+  .deckrow .badge-depth { flex: none; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deckrow .badge-depth.dotted { border-style: dashed; }
+  .deckrow .badge-new { flex: none; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  /* dimmed + not startable: nothing due (🕒). A 🔒 exam-locked deck that's still
+     drillable stays bright. */
+  .deckrow.dim { opacity: 0.5; cursor: default; }
+  .chip:disabled { opacity: 0.4; cursor: default; }
+  .leave-msg { align-self: center; color: var(--again); font-size: 0.85rem; }
+
+  /* ── legend: compact, tappable, doubles as the keymap ─────────────── */
+  .legend { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 74px; padding: 13px 22px calc(13px + env(safe-area-inset-bottom)); }
+  /* three zones: Leave pinned left, action/grade chips centered, Ask tutor (or a readout) right */
+  .legend .keys { grid-column: 2; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .legend-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #legendLeft { grid-column: 1; justify-self: start; }
+  #legendRight { grid-column: 3; justify-self: end; }
+  .legend .score { font-family: var(--mono); font-size: 0.82rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .legend .score b { color: var(--good); font-weight: 600; }
+  .legend .score s { color: var(--again); text-decoration: none; font-weight: 600; }
+  .legend .score .left { color: var(--ink); margin-left: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: none; color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 15px; min-height: 42px;
+    font-family: var(--sans); font-size: 0.875rem; font-weight: 600; cursor: pointer;
+    transition: border-color 0.12s, color 0.12s, background 0.12s, filter 0.12s;
+  }
+  .chip .k { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+  /* the inline "Ready by…" date prompt, sized to sit level with the footer's
+     chips rather than a full sheet — a minimal in-place form, not a modal. */
+  .deadline-input { background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.85rem; padding: 9px 12px; min-height: 42px; box-sizing: border-box; }
+  .deadline-input:focus { outline: none; border-color: var(--bolt); }
+  .chip:hover { border-color: var(--bolt); color: var(--bolt-hi); }
+  .chip:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
+  /* primary action = brand orange (Reveal / Continue / Submit) */
+  .chip.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .chip.primary .k { color: var(--brand-ink); background: rgba(0,0,0,0.2); border-color: transparent; }
+  .chip.primary:hover { filter: brightness(1.06); color: var(--brand-ink); }
+  /* self-rate grades: always-tinted red / amber / green (Missed it / Partly / Got it) */
+  .chip.failed { border-color: color-mix(in srgb, var(--again) 42%, transparent); background: color-mix(in srgb, var(--again) 12%, transparent); color: var(--again); }
+  .chip.partly { border-color: color-mix(in srgb, var(--warn) 42%, transparent); background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+  .chip.passed { border-color: color-mix(in srgb, var(--good) 42%, transparent); background: color-mix(in srgb, var(--good) 13%, transparent); color: var(--good); }
+  .chip.failed:hover { border-color: var(--again); color: var(--again); filter: brightness(1.08); }
+  .chip.partly:hover { border-color: var(--warn); color: var(--warn); filter: brightness(1.08); }
+  .chip.passed:hover { border-color: var(--good); color: var(--good); filter: brightness(1.08); }
+  /* Ask tutor: brand-tinted ghost */
+  .chip.ask { border-color: color-mix(in srgb, var(--brand) 45%, transparent); background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand-text); }
+  .chip.ask:hover { border-color: var(--brand); color: var(--brand-text); filter: brightness(1.06); }
+  .chip.again:hover { border-color: var(--again); color: var(--again); }
+  /* the explain checklist's submit button, once every point is answered: a
+     filled chip tinted by the derived verdict (red / amber / green). */
+  .chip.v-failed, .chip.v-partly, .chip.v-passed { color: var(--void); }
+  .chip.v-failed { background: var(--again); border-color: var(--again); }
+  .chip.v-partly { background: var(--warn); border-color: var(--warn); }
+  .chip.v-passed { background: var(--good); border-color: var(--good); }
+  .chip.v-failed:hover, .chip.v-partly:hover, .chip.v-passed:hover { filter: brightness(1.08); color: var(--void); }
+  /* the split Learn button's depth tag ("Learn ·recall") — subtle, truncates
+     rather than growing the chip. */
+  .chip.primary .depth-tag { opacity: 0.65; font-size: 0.82em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* the ▾ beside Learn that opens the depth menu — same chip, tighter padding. */
+  .chip.split { padding-left: 10px; padding-right: 10px; }
+  /* a quiet link-style chip ("I guessed") — no border/fill, so it reads as the
+     lesser of the two options next to the primary "Next". */
+  .chip.quiet { border-color: transparent; background: none; color: var(--dim); font-weight: 400; }
+  .chip.quiet:hover { border-color: transparent; color: var(--bolt-hi); }

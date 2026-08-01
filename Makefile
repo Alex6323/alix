@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
+.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
 
 # Compile the workspace.
 build:
@@ -40,17 +40,25 @@ lint:
 deps-check:
 	@sh scripts/deps-check.sh
 
-# Syntax-check the JS embedded in the served HTML assets (assets/web/*.html).
-# That JS is shipped as static strings, so cargo never parses it — this catches a
-# syntax error the Rust gates can't see. Needs node; a no-op (not a failure) when
-# node isn't installed, so it does not block a cargo-only contributor. CI
-# installs Node in its blocking `web-lint` job. Keep this out of `check` so the
-# normal Rust gate does not acquire a Node prerequisite.
+# Syntax-check inline scripts, standalone adult modules, and the exact composed
+# module served to the browser. Needs node; a no-op when node isn't installed,
+# so it does not block a cargo-only contributor. CI installs Node in its
+# blocking `web-lint` job. Keep this out of `check` so the normal Rust gate does
+# not acquire a Node prerequisite.
 lint-js:
 	@if command -v node >/dev/null 2>&1; then \
 		node scripts/lint-js.js; \
 	else \
 		echo "lint-js: node not found — skipping JS asset check"; \
+	fi
+
+# Run the dependency-free adult workflow and state unit suite. Like lint-js,
+# this stays outside make check so a cargo-only contributor does not need Node.
+unit-js:
+	@if command -v node >/dev/null 2>&1; then \
+		npm --prefix e2e run unit; \
+	else \
+		echo "unit-js: node not found - skipping JS unit tests"; \
 	fi
 
 # Semantic release audit over every public text and visual surface. This makes a

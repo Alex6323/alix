@@ -1566,6 +1566,41 @@ fn get_api_nope_yields_404() {
 }
 
 #[test]
+fn adult_assets_are_public_no_cache_and_allowlisted() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    for (path, content_type, marker) in [
+        ("/review.css", "text/css; charset=utf-8", ":root"),
+        (
+            "/review.js",
+            "application/javascript; charset=utf-8",
+            "boot()",
+        ),
+    ] {
+        let resp = http(&base, "GET", path, &[], &[]);
+        assert_eq!(200, resp.status, "path: {path}");
+        assert_eq!(
+            Some(content_type),
+            resp.header("Content-Type"),
+            "path: {path}"
+        );
+        assert_eq!(
+            Some("no-cache"),
+            resp.header("Cache-Control"),
+            "path: {path}"
+        );
+        assert!(
+            String::from_utf8_lossy(&resp.body).contains(marker),
+            "path: {path}"
+        );
+    }
+
+    let resp = http(&base, "GET", "/review/nope.js", &[], &[]);
+    assert_eq!(404, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
 fn get_img_with_an_unknown_key_yields_404() {
     let (base, _guard) = spawn_test_server();
 

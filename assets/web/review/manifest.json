@@ -1,0 +1,16 @@
+{
+  "css": [
+    "shell.css",
+    "study.css",
+    "picker.css",
+    "ai.css",
+    "walk.css"
+  ],
+  "javascript": [
+    "contracts.js",
+    "api.js",
+    "model.js",
+    "dom.js",
+    "app.js"
+  ]
+}

@@ -1,19 +1,5 @@
-import { mkdir } from "node:fs/promises";
-
 import { test, expect } from "./helpers";
 import { openApp } from "./helpers";
-
-declare function el(tag: string, cls?: string | null, text?: string): HTMLElement;
-declare function frontEl(text: string, runs: any, units: any): HTMLElement;
-declare function contextLine(text: string, runs: any, cls?: string): HTMLElement;
-declare function appendReveal(parent: HTMLElement, lines: string[], runs: any, isList: boolean): void;
-declare function renderNote(parent: HTMLElement, units: any): void;
-declare function renderChoices(parent: HTMLElement): void;
-declare function renderExplain(parent: HTMLElement): void;
-declare let state: any;
-declare let revealed: number;
-declare let marks: Array<boolean | undefined>;
-declare const stage: HTMLElement;
 
 test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
@@ -21,7 +7,7 @@ test.beforeEach(async ({ page, request }) => {
   await openApp(page);
 });
 
-test("adult card surfaces render shared math SVGs safely", async ({ page, request }) => {
+test("adult card surfaces render shared math SVGs safely", async ({ page, request }, testInfo) => {
   const browseResponse = await request.post("/api/browse", {
     data: { deck: "animals/math.md" },
   });
@@ -35,7 +21,16 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
   expect(selectResponse.ok(), await selectResponse.text()).toBeTruthy();
   const selected = await selectResponse.json();
 
-  await page.evaluate(({ cards, choiceState }) => {
+  await page.evaluate(async ({ cards, choiceState }) => {
+    const {
+      appendChoiceOptions,
+      appendKeypointList,
+      appendReveal,
+      contextLine,
+      el,
+      frontEl,
+      renderNote,
+    } = await import("/review.js");
     const byFront = (needle: string) => cards.find((card: any) => card.front.includes(needle));
     const choice = byFront("What does E = mc^2 describe?");
     const display = byFront("Evaluate this display formula");
@@ -72,22 +67,20 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
     task.appendChild(frontEl(checklist.front, checklist.front_runs, checklist.front_units));
     audit.appendChild(task);
 
-    state = choiceState;
     const choices = el("section", "surface-choice");
-    renderChoices(choices);
+    appendChoiceOptions(choices, {
+      choices: choiceState.choices,
+      choiceRuns: choiceState.choice_runs,
+    });
     audit.appendChild(choices);
 
-    state = {
-      ...choiceState,
-      mode: "explain",
-      card: explain,
-      keypoints: explain.back,
-      keypoint_runs: explain.back_runs,
-    };
-    revealed = 1;
-    marks = [];
     const keypoints = el("section", "surface-keypoint");
-    renderExplain(keypoints);
+    appendKeypointList(keypoints, {
+      keypoints: explain.back,
+      keypointRuns: explain.back_runs,
+      marks: [],
+      cursor: 0,
+    });
     audit.appendChild(keypoints);
 
     const literal = el("section", "surface-code");
@@ -101,7 +94,7 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
     failed.appendChild(frontEl(error.front, error.front_runs, error.front_units));
     audit.appendChild(failed);
 
-    stage.replaceChildren(audit);
+    document.getElementById("stage")!.replaceChildren(audit);
   }, { cards: browse.cards, choiceState: selected });
 
   for (const surface of [
@@ -153,7 +146,6 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
   await expect(page.locator(".surface-code .math-run")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
 
-  await mkdir("/tmp/latex-math-shots", { recursive: true });
   await page.evaluate(() => {
     document.body.style.height = "auto";
     document.body.style.overflow = "visible";
@@ -166,7 +158,7 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
     stageElement.style.overflow = "visible";
   });
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
-  await page.locator(".math-audit").screenshot({ path: "/tmp/latex-math-shots/adult-light.png" });
+  await page.locator(".math-audit").screenshot({ path: testInfo.outputPath("adult-light.png") });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
-  await page.locator(".math-audit").screenshot({ path: "/tmp/latex-math-shots/adult-dark.png" });
+  await page.locator(".math-audit").screenshot({ path: testInfo.outputPath("adult-dark.png") });
 });

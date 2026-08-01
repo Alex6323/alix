@@ -1,0 +1,122 @@
+  :root {
+    --card-w: min(94vw, 1200px);
+    --card-h: min(88vh, 780px);
+  }
+  * { box-sizing: border-box; }
+  /* A blinking caret should only ever appear inside a real text input or a
+     text-based source (a code excerpt you might read/select) — never on a focused
+     button, a chosen option, or page/card text (e.g. with the browser's
+     caret-browsing on). caret-color is inherited, so transparent here hides it
+     everywhere; the editable elements and source excerpts opt back in. */
+  html { caret-color: transparent; }
+  input, textarea, [contenteditable], .source-code, .code { caret-color: auto; }
+  /* Any scrollbar that remains visible belongs to the active theme. More
+     immersive regions override this below with width/height 0 and fade hints. */
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--dim) 55%, transparent) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--dim) 55%, transparent);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: var(--dim); background-clip: padding-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    /* One flat colour across header, stage and footer — no top-to-bottom halo,
+       so the three shell regions read as a single surface. */
+    background: var(--bg);
+    color: var(--ink); font-family: var(--sans);
+    display: flex; flex-direction: column; min-height: 100%; overflow: hidden;
+  }
+
+  /* ── status bar: the terminal lineage, in monospace ───────────────── */
+  .bar {
+    height: 58px; display: flex; align-items: center;
+    padding: 0 24px; font-family: var(--mono); font-size: 0.78rem;
+    color: var(--dim);
+  }
+  .bar-inner { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; width: 100%; }
+  .bar-center { justify-self: center; min-width: 0; display: flex; align-items: center; }
+  .bar-right { justify-self: end; display: flex; align-items: center; gap: 14px; }
+  .bar-chip { display: inline-flex; align-items: center; gap: 6px; background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 4px 11px; font-family: var(--sans); font-size: 0.8rem; white-space: nowrap; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+  .bar-chip:hover { border-color: var(--bolt); color: var(--bolt-hi); }
+  .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
+  /* No glow: the Alix Adult mock's wordmark is flat (plain brand-colored text,
+     no drop-shadow) — an always-on halo is exactly the "chrome that's always on
+     but rarely useful" the UI-noise gate warns against, so it's dropped rather
+     than recolored. */
+  .bar .brand svg { width: 13px; height: 16px; }
+  /* A long (hand-crafted) title must shorten with an ellipsis — never wrap to a
+     second line and grow the header's height. */
+  .bar .deck { color: var(--dim); font-weight: 500; font-size: 0.875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: min(52vw, 420px); }
+  .bar .sep { color: var(--line); }
+  .bar .spacer { flex: 1; }
+  /* Reused readout: exam strictness while examining, the deck's card count
+     while augmenting, the dim "N left" token while reviewing. */
+  .bar .hist { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bar .hist .left-token { color: var(--dim); font-size: 0.82rem; white-space: nowrap; }
+  .bar-filter { width: min(300px, 56vw); background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
+  .bar-filter::placeholder { color: var(--dim); }
+  .bar-filter:focus { outline: none; border-color: var(--bolt); }
+  .muted { color: var(--dim); }
+
+  /* overflow menu: most items neutral; destructive ones (Remove card, Reset) carry .danger */
+  .menu-wrap { position: relative; flex: none; }
+  .kebab { background: none; border: 0; color: var(--ink); cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 4px 8px; border-radius: 8px; }
+  /* Browser-style picker nav (back + refresh), for mouse/touch over keys. */
+  .bar-left { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+  .bar-nav { display: inline-flex; align-items: center; gap: 1px; flex: none; }
+  .navbtn { background: none; border: 0; color: var(--ink); cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 4px 8px; border-radius: 8px; }
+  .navbtn:hover:not(:disabled) { color: var(--ink); background: rgba(255,255,255,0.06); }
+  .navbtn:disabled { opacity: 0.3; cursor: default; }
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: grid; place-items: center; z-index: 60; }
+  .sheet[hidden] { display: none; }
+  /* Sheets float over the scrim, so — unlike the borderless content cards —
+     they legitimately keep a subtle panel border + shadow; background is
+     --menu-bg (the same floating-surface tone as .menu/.theme-panel), not
+     --void, so the sheet reads as a raised layer above the page behind it. */
+  .sheet-panel { background: var(--menu-bg); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; max-width: min(440px, 90vw); color: var(--ink); box-shadow: 0 12px 44px rgba(0,0,0,0.45); animation: deal 0.2s both; }
+  .sheet-panel h2 { margin: 0 0 14px; font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
+  .sheet-keys { display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; align-items: center; font-size: 0.9rem; }
+  .sheet-keys kbd { justify-self: start; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px; }
+  .sheet-about p { margin: 0 0 10px; font-size: 0.92rem; }
+  .sheet-about .about-name { font-size: 1.05rem; }
+  .sheet-about .about-tag { color: var(--dim); }
+  .sheet-about .about-support { color: var(--dim); font-size: 0.85rem; }
+  .sheet-about a { color: var(--bolt); text-decoration: none; }
+  .sheet-about a:hover { text-decoration: underline; }
+  .kebab:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
+  .menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; display: none; min-width: 172px; padding: 6px; background: var(--menu-bg); border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 14px 34px -12px rgba(0,0,0,0.8); }
+  .menu.open { display: block; }
+  /* Default is neutral text — most items here aren't destructive (Ask Tutor,
+     Theme…, About, Add deck…, …). Only the two that actually destroy
+     something (Remove card, Reset…) opt into the danger hue via .danger. */
+  .menu button { display: block; width: 100%; text-align: left; background: none; color: var(--text); border: 0; border-radius: 7px; padding: 11px 12px; font-size: 0.92rem; font-weight: 500; cursor: pointer; }
+  .menu button:hover:not(:disabled) { background: rgba(255,255,255,0.07); }
+  .menu button:disabled { opacity: 0.5; cursor: default; }
+  .menu button.danger { color: var(--again); }
+  .menu .mk { font-family: var(--mono); font-size: 0.66rem; color: var(--dim); float: right; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+  .menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+  .sheet-add { display: grid; gap: 12px; min-width: 300px; }
+  .sheet-add label { display: grid; gap: 6px; font-size: 0.85rem; color: var(--dim); }
+  .add-sec { display: grid; gap: 6px; }
+  .add-sec h3 { margin: 0; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+  .sheet-err { color: var(--again); }
+  .share-code { font-family: var(--mono); font-size: 1.4rem; user-select: all; }
+  /* Armed (name matches) reset button borrows the app's danger hue — the same
+     one the overflow menu's own destructive items use (see `.menu button.danger`). */
+  #resetGo:not(:disabled) { border-color: var(--again); color: var(--again); }
+  .sheet-doctor { display: grid; gap: 8px; min-width: 320px; }
+  .doc-row { display: flex; gap: 8px; }
+  .doc-glyph { width: 1em; flex: none; color: var(--dim); } /* unknown status: dim default */
+  .doc-ok .doc-glyph { color: var(--good); }
+  .doc-warn .doc-glyph { color: var(--warn); }
+  .doc-fail .doc-glyph { color: var(--again); }
+  .doc-detail { color: var(--dim); }
+  .doc-remedy { display: block; color: var(--dim); font-size: 0.8rem; }
+  .sheet-pair { display: grid; gap: 10px; justify-items: center; min-width: 260px; }
+  .pair-qr svg { display: block; width: 200px; height: 200px; }
+  .pair-url { font-family: var(--mono); font-size: 0.8rem; user-select: all; word-break: break-all; }
+  .sheet-hint { color: var(--dim); font-size: 0.9rem; }
