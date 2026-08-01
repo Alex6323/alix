@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/review/crumb_strip.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
@@ -33,7 +35,7 @@ void main() {
     WidgetTester tester, {
     required Directory root,
     required String deck,
-    required Depth depth,
+    required ReviewDepth depth,
     String? device,
   }) async {
     await tester.pumpWidget(
@@ -79,7 +81,12 @@ void main() {
       '---\ntrace: path\nsource: source.txt\n---\n'
       '## Predict\nanswer\n<!-- at: 1 -->\n',
     );
-    await pumpReview(tester, root: root, deck: trace, depth: Depth.recall);
+    await pumpReview(
+      tester,
+      root: root,
+      deck: trace,
+      depth: ReviewDepth.recall,
+    );
     await expectWidgetTree(
       tester,
       'review_cannot_open',
@@ -88,7 +95,12 @@ void main() {
 
     final fresh = '${root.path}/fresh.md';
     writeTestDeck(fresh, '## Fresh question?\nFresh answer\n');
-    await pumpReview(tester, root: root, deck: fresh, depth: Depth.recall);
+    await pumpReview(
+      tester,
+      root: root,
+      deck: fresh,
+      depth: ReviewDepth.recall,
+    );
     await expectWidgetTree(
       tester,
       'review_acquire_hidden',
@@ -118,7 +130,7 @@ void main() {
         tester,
         root: root,
         deck: deck,
-        depth: Depth.recall,
+        depth: ReviewDepth.recall,
         device: 'phone',
       );
       await expectWidgetTree(
@@ -161,7 +173,12 @@ void main() {
       '- [x] Paris\n- [ ] Rome\n- [ ] Bern\n- [ ] Madrid\n',
     );
     makeDue(deck, root.path);
-    await pumpReview(tester, root: root, deck: deck, depth: Depth.recognize);
+    await pumpReview(
+      tester,
+      root: root,
+      deck: deck,
+      depth: ReviewDepth.recognize,
+    );
     await expectWidgetTree(
       tester,
       'review_choice_waiting',
@@ -187,7 +204,7 @@ void main() {
       tester,
       root: root,
       deck: typing,
-      depth: Depth.reconstruct,
+      depth: ReviewDepth.reconstruct,
     );
     await expectWidgetTree(
       tester,
@@ -215,7 +232,7 @@ void main() {
       tester,
       root: root,
       deck: typeLine,
-      depth: Depth.reconstruct,
+      depth: ReviewDepth.reconstruct,
     );
     await expectWidgetTree(
       tester,
@@ -246,7 +263,7 @@ void main() {
       'first\nsecond\n',
     );
     makeDue(deck, root.path);
-    await pumpReview(tester, root: root, deck: deck, depth: Depth.recall);
+    await pumpReview(tester, root: root, deck: deck, depth: ReviewDepth.recall);
     await expectWidgetTree(
       tester,
       'review_line_by_line_hidden',
@@ -278,7 +295,12 @@ void main() {
       '## Why? <!-- id: card-explain -->\nfirst reason\nsecond reason\n',
     );
     makeDue(deck, root.path);
-    await pumpReview(tester, root: root, deck: deck, depth: Depth.reconstruct);
+    await pumpReview(
+      tester,
+      root: root,
+      deck: deck,
+      depth: ReviewDepth.reconstruct,
+    );
     await expectWidgetTree(
       tester,
       'review_explain_closed_attempt',
@@ -316,7 +338,7 @@ void main() {
         theme: alixDark(),
         home: Scaffold(
           body: CrumbStrip(
-            crumb: CrumbState(
+            crumb: ReviewCrumbModel(
               regions: const ['Intro', 'Details'],
               current: 1,
               cells: const [
@@ -337,7 +359,7 @@ void main() {
     final root = tempDir('alix-review-structure-summary-');
     final deck = '${root.path}/summary.md';
     writeTestDeck(deck, '## New? <!-- id: card-new -->\nanswer\n');
-    await pumpReview(tester, root: root, deck: deck, depth: Depth.recall);
+    await pumpReview(tester, root: root, deck: deck, depth: ReviewDepth.recall);
     await tester.tap(find.text('Reveal'));
     await tester.pump();
     await tester.tap(find.text('Seen'));
@@ -348,7 +370,7 @@ void main() {
       root: find.byType(ReviewScreen),
     );
 
-    await pumpReview(tester, root: root, deck: deck, depth: Depth.recall);
+    await pumpReview(tester, root: root, deck: deck, depth: ReviewDepth.recall);
     await expectWidgetTree(
       tester,
       'review_summary_nothing_due',

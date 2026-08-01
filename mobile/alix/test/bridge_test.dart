@@ -13,6 +13,7 @@ import 'package:alix_mobile/main.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/api/simple.dart';
@@ -666,7 +667,7 @@ void main() {
         home: ReviewScreen(
           deckPath: deck,
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
           device: 'phone-1',
         ),
       ),
@@ -684,7 +685,7 @@ void main() {
         home: ReviewScreen(
           deckPath: deck,
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
           device: 'phone-1',
         ),
       ),
@@ -733,7 +734,7 @@ void main() {
         home: ReviewScreen(
           deckPath: deck,
           rootDir: root.path,
-          depth: Depth.reconstruct,
+          depth: ReviewDepth.reconstruct,
         ),
       ),
     );
@@ -791,7 +792,7 @@ void main() {
           key: UniqueKey(),
           deckPath: choiceDeck,
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
         ),
       ),
     );
@@ -815,7 +816,7 @@ void main() {
           key: UniqueKey(),
           deckPath: displayDeck,
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
         ),
       ),
     );
@@ -844,7 +845,7 @@ void main() {
           key: UniqueKey(),
           deckPath: clozeDeck,
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
         ),
       ),
     );
@@ -876,7 +877,7 @@ void main() {
           key: UniqueKey(),
           deckPath: explainDeck,
           rootDir: root.path,
-          depth: Depth.reconstruct,
+          depth: ReviewDepth.reconstruct,
         ),
       ),
     );
@@ -899,7 +900,7 @@ void main() {
           key: UniqueKey(),
           deckPath: malformedDeck,
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
         ),
       ),
     );
@@ -934,7 +935,7 @@ void main() {
         home: ReviewScreen(
           deckPath: deck,
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
         ),
       ),
     );
@@ -974,7 +975,7 @@ void main() {
           home: ReviewScreen(
             deckPath: deck,
             rootDir: root.path,
-            depth: Depth.recognize,
+            depth: ReviewDepth.recognize,
           ),
         ),
       );
@@ -1004,7 +1005,7 @@ void main() {
         home: ReviewScreen(
           deckPath: deck,
           rootDir: root.path,
-          depth: Depth.recognize,
+          depth: ReviewDepth.recognize,
         ),
       ),
     );

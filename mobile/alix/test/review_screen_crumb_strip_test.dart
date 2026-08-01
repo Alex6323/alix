@@ -2,8 +2,8 @@
 // the first child of the review screen's body, under the AppBar, when a
 // session is topology-ordered.
 //
-// CrumbState is a plain Dart data class (its const constructor makes no
-// bridge call), so the render tests below pump CrumbStrip directly against
+// ReviewCrumbModel is a plain Dart data class; render tests below pump
+// CrumbStrip directly against
 // hand-built fixtures - deterministic, fast, no native init needed. That
 // sidesteps a real wall: building a genuine topology-ordered session needs
 // the deck's actual Card::id hashes, and the mobile bridge exposes no way
@@ -23,8 +23,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/review/crumb_strip.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
-import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -33,7 +34,7 @@ import 'support/deck_fixture.dart';
 void main() {
   setUpAll(() async => RustLib.init());
 
-  Future<void> pumpStrip(WidgetTester tester, CrumbState crumb) async {
+  Future<void> pumpStrip(WidgetTester tester, ReviewCrumbModel crumb) async {
     await tester.pumpWidget(MaterialApp(
       theme: alixDark(),
       home: Scaffold(
@@ -45,7 +46,7 @@ void main() {
 
   testWidgets('a topology crumb renders its region names and banded tier cells',
       (tester) async {
-    final crumb = CrumbState(
+    final crumb = ReviewCrumbModel(
       regions: const ['Intro', 'Body'],
       current: 1,
       cells: const [
@@ -73,7 +74,7 @@ void main() {
   });
 
   testWidgets('the current region is emphasized over the others', (tester) async {
-    final crumb = CrumbState(
+    final crumb = ReviewCrumbModel(
       regions: const ['Intro', 'Body'],
       current: 1,
       cells: const [
@@ -94,7 +95,7 @@ void main() {
 
   testWidgets('a long region path and many cells does not overflow or grow the strip',
       (tester) async {
-    final crumb = CrumbState(
+    final crumb = ReviewCrumbModel(
       regions: List.generate(12, (i) => 'A very long region name number $i that keeps going on'),
       current: 6,
       cells: List.generate(
@@ -140,7 +141,7 @@ void main() {
       home: ReviewScreen(
         deckPath: '${root.path}/facts.md',
         rootDir: root.path,
-        depth: Depth.recall,
+        depth: ReviewDepth.recall,
         supportDir: tempSupport(),
       ),
     ));

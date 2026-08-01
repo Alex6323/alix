@@ -4,38 +4,36 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('the phase-4 baseline mutation inventory is line-exact', () {
-    expect(_linesContaining('lib/review_screen.dart', 'setState('), [
-      168,
-      292,
-      846,
-      980,
-      996,
-      1071,
-      1222,
-      1244,
-      1265,
-      1277,
-      1437,
-      1538,
-    ]);
+    expect(_linesContaining('lib/review_screen.dart', 'setState('), isEmpty);
+    expect(
+      _linesContaining(
+        'lib/review/review_controller.dart',
+        'notifyListeners();',
+      ),
+      [79, 84, 89, 94, 99, 104, 109, 114, 119, 124],
+      reason:
+          'setServerLive, install, choose, check, openAttempt, '
+          'toggleKeypoint, reveal, revealNextLine, dismissForeignWriter, '
+          'and restart own every ReviewController mutation',
+    );
     expect(_linesContaining('lib/picker_screen.dart', 'setState('), [
-      144,
-      158,
-      276,
-      294,
-      381,
-      402,
-      808,
-      849,
-      1113,
-      1231,
+      145,
+      159,
+      282,
+      300,
+      387,
+      408,
+      814,
+      855,
+      1119,
       1237,
-      1251,
-      1259,
-      1274,
-      1282,
-      1290,
-      1306,
+      1243,
+      1257,
+      1265,
+      1280,
+      1288,
+      1296,
+      1312,
     ]);
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
@@ -45,9 +43,13 @@ void main() {
           'setServerLive, predict, grade, and restart are the four named '
           'WalkController mutations',
     );
-    expect(_sites('lib/walk_screen.dart', 'ListenableBuilder('), [
-      'lib/walk_screen.dart:192',
-    ]);
+    expect(
+      [
+        ..._sites('lib/review_screen.dart', 'ListenableBuilder('),
+        ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
+      ],
+      ['lib/review_screen.dart:231', 'lib/walk_screen.dart:192'],
+    );
   });
 
   test('the phase-4 baseline has one timer and no stream subscriptions', () {
@@ -58,7 +60,7 @@ void main() {
     ];
     expect(
       [for (final path in paths) ..._sites(path, 'Timer(')],
-      ['lib/picker_screen.dart:1307'],
+      ['lib/picker_screen.dart:1313'],
     );
     expect([
       for (final path in paths) ..._sites(path, 'StreamSubscription'),

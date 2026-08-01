@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/picker_screen.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
-import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
@@ -89,7 +89,7 @@ void main() {
         home: ReviewScreen(
           deckPath: '${root.path}/facts.md',
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
         ),
       ),
     );
@@ -129,7 +129,7 @@ void main() {
         home: ReviewScreen(
           deckPath: '${root.path}/trace.md',
           rootDir: root.path,
-          depth: Depth.recall,
+          depth: ReviewDepth.recall,
         ),
       ),
     );

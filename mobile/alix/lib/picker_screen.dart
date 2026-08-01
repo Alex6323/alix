@@ -9,6 +9,7 @@ import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/platform_access.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/settings_screen.dart';
@@ -267,7 +268,12 @@ class _PickerScreenState extends State<PickerScreen> {
         builder: (_) => ReviewScreen(
           deckPath: entry.path,
           rootDir: widget.root,
-          depth: depth,
+          depth: switch (depth) {
+            Depth.recognize => ReviewDepth.recognize,
+            Depth.recall => ReviewDepth.recall,
+            Depth.reconstruct => ReviewDepth.reconstruct,
+            null => null,
+          },
           device: widget.device,
         ),
       ),
