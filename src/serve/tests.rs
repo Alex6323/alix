@@ -50,6 +50,69 @@ fn a_panicked_owner_trips_the_failure_and_unblocks_an_idle_server() {
     assert!(unblocked, "the drained recv reports Err, not a request");
 }
 
+#[test]
+fn run_review_remains_alive_until_the_server_is_unblocked() {
+    let dir = tempfile::tempdir().unwrap();
+    let store_path = dir.path().join("progress.json");
+    let store = Store::open(&store_path).unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let decks_dir = dir.path().to_path_buf();
+    let server = Arc::new(crate::serve::bind("127.0.0.1:0".parse().unwrap()).unwrap());
+    let port = server
+        .server_addr()
+        .to_ip()
+        .expect("bound to a loopback IP")
+        .port();
+    let config = crate::config::Config::default();
+    let audience = config.serve.audience;
+    let opts = ReviewOptions {
+        keys: config.keys,
+        picker: config.picker,
+        browse: config.browse,
+        exam: config.exam,
+        ai: config.ai,
+        generate: config.generate,
+        audience,
+        auth: None,
+        config_path: None,
+        pair: PairInfo {
+            url: format!("http://127.0.0.1:{port}"),
+            lan: false,
+        },
+        scoped: true,
+        cfg: assemble::AssembleConfig {
+            review: config.review,
+            ask: config.ask,
+            trace_auto_grade: false,
+            pacing: assemble::Pacing {
+                max_session: 10,
+                new_cards_percent: 30,
+            },
+            instance_store: Some(store_path),
+        },
+    };
+
+    let stop = Arc::clone(&server);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let _ = tx.send(run_review(store, recent, decks_dir, server, opts));
+    });
+
+    assert!(
+        matches!(
+            rx.recv_timeout(std::time::Duration::from_millis(200)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ),
+        "run_review returned before the server was asked to stop"
+    );
+
+    stop.unblock();
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .expect("run_review must finish after the server is unblocked")
+        .expect("run_review shutdown must succeed");
+    handle.join().expect("run_review thread must not panic");
+}
+
 fn write_initialized(path: &Path, text: &str) {
     let id = path
         .file_stem()
