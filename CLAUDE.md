@@ -387,7 +387,14 @@ to this codebase. When in doubt, mirror the surrounding code.
   the newest commit older than 24h) across six `MUTANTS_SHARD` jobs, since one
   day already exceeds GitHub's 6h ceiling in a single job. The nightly backstops
   a forgotten gate; it does not replace one, because it reports a miss the
-  morning *after* the code landed.
+  morning *after* the code landed. A second job, `mutants-rotation`, sweeps the
+  whole tree (`MUTANTS_ALL=1`) one fourteenth per night, the shard picked from
+  the day of the year so no state is kept; it covers what predates the nightly
+  and re-covers everything on a rolling cycle. It is deliberately not a gate:
+  it reports into the job summary and stays green, because a nightly that is
+  always red stops being read. Retune the shard count from the SLOWEST slice,
+  never the average, since slices are contiguous file ranges and a
+  server-heavy one costs far more per mutant than a pure-function one.
 
 - **Keep the living docs lean — this file, `CHANGELOG.md`, commit/PR text.** Condense each
   rule/change to its shortest form that still carries the information — cut filler, war-stories,

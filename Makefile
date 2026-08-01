@@ -138,14 +138,24 @@ MUTANTS_BASE ?=
 # Shards are 0-indexed: `0/6` through `5/6`. `6/6` selects nothing and exits 0.
 MUTANTS_SHARD ?=
 
+# MUTANTS_ALL=1 mutates the whole tree instead of a diff: the rotation sweep
+# uses it with a shard, so each night covers one slice of everything rather
+# than only what changed.
+MUTANTS_ALL ?=
+
 mutants: gate-guard
-	@base="$(MUTANTS_BASE)"; [ -n "$$base" ] || base=$$(git merge-base main HEAD); \
-	if [ -z "$$TMPDIR" ] && [ -d "$$HOME/tmp" ]; then TMPDIR="$$HOME/tmp"; export TMPDIR; fi; \
+	@if [ -z "$$TMPDIR" ] && [ -d "$$HOME/tmp" ]; then TMPDIR="$$HOME/tmp"; export TMPDIR; fi; \
 	shard=""; [ -z "$(MUTANTS_SHARD)" ] || shard="--shard $(MUTANTS_SHARD)"; \
-	echo "mutants: diffing against $$base (TMPDIR=$${TMPDIR:-system default})$${shard:+ $$shard}"; \
-	mkdir -p target; \
-	git diff "$$base" > target/review.diff; \
-	cargo mutants --in-diff target/review.diff $$shard --jobs $(GATE_JOBS) --timeout-multiplier 12
+	if [ -n "$(MUTANTS_ALL)" ]; then \
+		echo "mutants: whole tree (TMPDIR=$${TMPDIR:-system default})$${shard:+ $$shard}"; \
+		cargo mutants $$shard --jobs $(GATE_JOBS) --timeout-multiplier 12; \
+	else \
+		base="$(MUTANTS_BASE)"; [ -n "$$base" ] || base=$$(git merge-base main HEAD); \
+		echo "mutants: diffing against $$base (TMPDIR=$${TMPDIR:-system default})$${shard:+ $$shard}"; \
+		mkdir -p target; \
+		git diff "$$base" > target/review.diff; \
+		cargo mutants --in-diff target/review.diff $$shard --jobs $(GATE_JOBS) --timeout-multiplier 12; \
+	fi
 
 gate-guard:
 	@! pgrep -x cargo-mutants > /dev/null || { echo "a cargo-mutants run is already active on this machine; wait for it or stop it first"; exit 1; }
