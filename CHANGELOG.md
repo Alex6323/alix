@@ -15,6 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix --port 0` (OS-assigned port) now announces the port the kernel
+  actually bound instead of printing an unreachable `http://127.0.0.1:0`
+  URL. Explicitly requested ports are unaffected.
+
 - The blank first load. A connection burst against a fresh or idle server
   (typically a page reload right after the server starts) could leave one
   accepted connection's request unread inside the HTTP layer's task queue,
