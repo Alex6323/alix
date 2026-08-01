@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/inline_runs.dart';
-import 'package:alix_mobile/src/rust/api/review.dart';
+import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/shared/inline_runs.dart';
 
 const _svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="12" '
@@ -12,32 +12,32 @@ const _wideSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="80" '
     'viewBox="0 0 1000 80"><path d="M0 0h1000v80H0z"/></svg>';
 
-InlineRun mathRun(
+InlineRunModel mathRun(
   String text, {
   bool display = false,
   String? svg = _svg,
   String? error,
 }) {
-  return InlineRun(
+  return InlineRunModel(
     text: text,
     bold: false,
     italic: false,
     code: false,
-    math: MathView(display: display, svg: svg, error: error),
+    math: InlineMathModel(display: display, svg: svg, error: error),
   );
 }
 
-InlineRun textRun(
+InlineRunModel textRun(
   String text, {
   bool bold = false,
   bool italic = false,
   bool code = false,
 }) {
-  return InlineRun(text: text, bold: bold, italic: italic, code: code);
+  return InlineRunModel(text: text, bold: bold, italic: italic, code: code);
 }
 
 Widget testApp(
-  List<InlineRun> runs, {
+  List<InlineRunModel> runs, {
   Color foreground = const Color(0xFF1847A0),
   double width = 320,
   bool contextHoles = false,

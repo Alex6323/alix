@@ -6,11 +6,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/inline_run_bridge.dart';
 import 'package:alix_mobile/exam_screen.dart';
-import 'package:alix_mobile/inline_runs.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/tutor_sheet.dart';
@@ -549,7 +550,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return Text(text, textAlign: textAlign, style: effectiveStyle);
     }
     return InlineRuns(
-      runs: runs,
+      runs: inlineRunsFromBridge(runs),
       style: effectiveStyle,
       textAlign: textAlign,
       contextHoles: contextHoles,

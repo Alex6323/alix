@@ -5,18 +5,18 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('the phase-4 baseline mutation inventory is line-exact', () {
     expect(_linesContaining('lib/review_screen.dart', 'setState('), [
-      167,
-      291,
-      845,
-      979,
-      995,
-      1070,
-      1221,
-      1243,
-      1264,
-      1276,
-      1436,
-      1537,
+      168,
+      292,
+      846,
+      980,
+      996,
+      1071,
+      1222,
+      1244,
+      1265,
+      1277,
+      1437,
+      1538,
     ]);
     expect(_linesContaining('lib/picker_screen.dart', 'setState('), [
       144,
@@ -38,10 +38,10 @@ void main() {
       1306,
     ]);
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), [
-      150,
-      186,
-      191,
-      199,
+      152,
+      188,
+      193,
+      201,
     ]);
   });
 

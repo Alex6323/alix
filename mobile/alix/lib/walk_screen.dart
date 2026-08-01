@@ -7,11 +7,13 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/inline_run_bridge.dart';
 import 'package:alix_mobile/exam_screen.dart';
-import 'package:alix_mobile/inline_runs.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -345,7 +347,7 @@ class _WalkScreenState extends State<WalkScreen> {
       child: Align(
         alignment: Alignment.centerLeft,
         child: InlineRuns(
-          runs: _state.descriptionRuns,
+          runs: inlineRunsFromBridge(_state.descriptionRuns),
           style: TextStyle(
             fontFamily: _mono,
             fontSize: 11.5,
@@ -377,7 +379,7 @@ class _WalkScreenState extends State<WalkScreen> {
       children: [
         const SizedBox(height: 8),
         InlineRuns(
-          runs: _state.promptRuns ?? const [],
+          runs: inlineRunsFromBridge(_state.promptRuns ?? const []),
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: _sans,
@@ -434,7 +436,7 @@ class _WalkScreenState extends State<WalkScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: InlineRuns(
-        runs: runs,
+        runs: inlineRunsFromBridge(runs),
         style: TextStyle(fontFamily: _mono, fontSize: 12, color: tokens.dim),
       ),
     );
@@ -688,7 +690,7 @@ class _WalkScreenState extends State<WalkScreen> {
                 ),
                 Expanded(
                   child: InlineRuns(
-                    runs: runs,
+                    runs: inlineRunsFromBridge(runs),
                     style: TextStyle(color: onSurface, height: 1.4),
                   ),
                 ),
@@ -715,7 +717,7 @@ class _WalkScreenState extends State<WalkScreen> {
         borderRadius: BorderRadius.circular(10),
       ),
       child: InlineRuns(
-        runs: _state.noteRuns ?? const [],
+        runs: inlineRunsFromBridge(_state.noteRuns ?? const []),
         style: TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
       ),
     );
@@ -790,14 +792,14 @@ class _WalkScreenState extends State<WalkScreen> {
           InlineRuns(
             runs: _state.description.isEmpty
                 ? [
-                    const InlineRun(
+                    const InlineRunModel(
                       text: 'Trace walked.',
                       bold: false,
                       italic: false,
                       code: false,
                     ),
                   ]
-                : _state.descriptionRuns,
+                : inlineRunsFromBridge(_state.descriptionRuns),
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w600,

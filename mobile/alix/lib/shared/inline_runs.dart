@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'package:alix_mobile/src/rust/api/review.dart';
+import 'package:alix_mobile/shared/inline_models.dart';
 
 const _mono = 'IBM Plex Mono';
 
@@ -16,7 +16,7 @@ class InlineRuns extends StatelessWidget {
     this.mutedHoleColor,
   });
 
-  final List<InlineRun> runs;
+  final List<InlineRunModel> runs;
   final TextStyle style;
   final TextAlign textAlign;
   final bool contextHoles;
@@ -26,12 +26,12 @@ class InlineRuns extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final blocks = <Widget>[];
-    var inline = <InlineRun>[];
+    var inline = <InlineRunModel>[];
 
     void flushInline() {
       if (inline.isEmpty) return;
       blocks.add(_inlineText(inline));
-      inline = <InlineRun>[];
+      inline = <InlineRunModel>[];
     }
 
     for (final run in runs) {
@@ -58,7 +58,7 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
-  Widget _inlineText(List<InlineRun> inline) {
+  Widget _inlineText(List<InlineRunModel> inline) {
     final standaloneMath = inline.length == 1 && inline.single.math != null;
     return Text.rich(
       TextSpan(
@@ -73,7 +73,10 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
-  List<InlineSpan> _inlineSpans(InlineRun run, {required bool standaloneMath}) {
+  List<InlineSpan> _inlineSpans(
+    InlineRunModel run, {
+    required bool standaloneMath,
+  }) {
     final math = run.math;
     if (math != null) {
       final svg = math.svg;
@@ -108,7 +111,7 @@ class InlineRuns extends StatelessWidget {
     return _contextSpans(run);
   }
 
-  List<InlineSpan> _contextSpans(InlineRun run) {
+  List<InlineSpan> _contextSpans(InlineRunModel run) {
     final spans = <InlineSpan>[];
     final marker = RegExp(r'____|\[…]');
     var start = 0;
@@ -143,7 +146,7 @@ class InlineRuns extends StatelessWidget {
     return spans;
   }
 
-  List<InlineSpan> _mathErrorSpans(InlineRun run) {
+  List<InlineSpan> _mathErrorSpans(InlineRunModel run) {
     return [
       TextSpan(
         text: run.text,
@@ -160,7 +163,7 @@ class InlineRuns extends StatelessWidget {
     ];
   }
 
-  Widget _displayMath(InlineRun run) {
+  Widget _displayMath(InlineRunModel run) {
     final svg = run.math?.svg;
     if (svg == null) {
       return Text.rich(
@@ -194,7 +197,7 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
-  TextStyle _runStyle(InlineRun run) {
+  TextStyle _runStyle(InlineRunModel run) {
     return style.copyWith(
       fontFamily: run.code ? _mono : style.fontFamily,
       fontWeight: run.bold ? FontWeight.w700 : style.fontWeight,
