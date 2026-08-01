@@ -1,0 +1,45 @@
+/* ── Ask-Alix overlay (card-scoped chat) -- a static modal shell like the
+ * pairing gate below: backdrop + centered card, toggled via [hidden], with
+ * only the bubble log rebuilt in JS. Bubbles stack child-right / Alix-left. */
+.ask-overlay {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(58, 42, 30, 0.28);
+  display: flex; align-items: center; justify-content: center; padding: 32px;
+}
+.ask-overlay[hidden] { display: none; }
+.ask-panel {
+  width: 100%; max-width: 480px; height: 560px; max-height: calc(100% - 8px);
+  background: #fff8f1; border-radius: 28px; box-shadow: 0 30px 70px rgba(120, 70, 30, 0.35);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ask-head { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 18px 22px; border-bottom: 2px solid #ffe7d4; }
+.ask-title { flex: 1; font-weight: 800; font-size: 20px; color: var(--accent); }
+.ask-close-btn {
+  width: 32px; height: 32px; border: none; border-radius: 50%; background: #ffe7d4;
+  color: #b6795a; font-family: inherit; font-weight: 700; font-size: 16px; cursor: pointer;
+}
+.ask-log {
+  flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.ask-log::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.ask-bubble { max-width: 82%; border-radius: 16px; padding: 12px 16px; font-family: inherit; font-weight: 500; font-size: 17px; line-height: 1.5; }
+.ask-bubble-q { align-self: flex-end; background: #ffd9b8; border-radius: 16px 16px 4px 16px; font-weight: 600; color: #6a4a2e; }
+.ask-bubble-a {
+  align-self: flex-start; background: #fff; border-radius: 16px 16px 16px 4px; color: #5a4a3a;
+  box-shadow: 0 4px 12px rgba(180, 110, 60, 0.12);
+}
+.ask-bubble-think { font-weight: 700; font-size: 18px; color: #ffab6b; }
+.ask-footer { flex: 0 0 auto; padding: 16px 22px 20px; border-top: 2px solid #ffe7d4; }
+.ask-input-row { display: flex; gap: 10px; align-items: center; }
+.ask-input-field {
+  flex: 1; min-height: 52px; background: #fff; border: 2px solid #ffcf9a; border-radius: 16px;
+  padding: 12px 16px; font-family: inherit; font-weight: 500; font-size: 16px; color: #6a4a2e; outline: none;
+}
+.ask-input-field:disabled { opacity: 0.6; }
+.ask-send-btn {
+  min-height: 52px; padding: 12px 24px; border: none; border-radius: 16px;
+  font-family: inherit; font-weight: 700; font-size: 17px; color: #fff;
+  background: var(--accent); box-shadow: 0 5px 0 var(--accent-sh); cursor: pointer;
+}
+.ask-send-btn:disabled { opacity: 0.6; cursor: default; }

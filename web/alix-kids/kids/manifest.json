@@ -3,7 +3,8 @@
     "shell.css",
     "dom.css",
     "picker.css",
-    "study.css"
+    "study.css",
+    "tutor.css"
   ],
   "javascript": [
     "api.js",
@@ -11,6 +12,7 @@
     "dom.js",
     "picker.js",
     "study.js",
+    "tutor.js",
     "app.js"
   ]
 }

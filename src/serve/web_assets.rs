@@ -50,6 +50,7 @@ composed_asset_sources!(KIDS_CSS, KIDS_CSS_SOURCES,
     "dom.css" => "../../web/alix-kids/kids/dom.css",
     "picker.css" => "../../web/alix-kids/kids/picker.css",
     "study.css" => "../../web/alix-kids/kids/study.css",
+    "tutor.css" => "../../web/alix-kids/kids/tutor.css",
 );
 composed_asset_sources!(KIDS_JS, KIDS_JS_SOURCES,
     "api.js" => "../../web/alix-kids/kids/api.js",
@@ -57,6 +58,7 @@ composed_asset_sources!(KIDS_JS, KIDS_JS_SOURCES,
     "dom.js" => "../../web/alix-kids/kids/dom.js",
     "picker.js" => "../../web/alix-kids/kids/picker.js",
     "study.js" => "../../web/alix-kids/kids/study.js",
+    "tutor.js" => "../../web/alix-kids/kids/tutor.js",
     "app.js" => "../../web/alix-kids/kids/app.js",
 );
 

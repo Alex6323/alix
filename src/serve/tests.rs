@@ -323,7 +323,7 @@ fn kids_asset_manifest_matches_the_exact_composition_order() {
     let manifest: serde_json::Value = serde_json::from_str(KIDS_ASSET_MANIFEST).unwrap();
     assert_eq!(
         KIDS_CSS_SOURCES,
-        &["shell.css", "dom.css", "picker.css", "study.css"]
+        &["shell.css", "dom.css", "picker.css", "study.css", "tutor.css"]
     );
     assert_eq!(
         KIDS_JS_SOURCES,
@@ -333,6 +333,7 @@ fn kids_asset_manifest_matches_the_exact_composition_order() {
             "dom.js",
             "picker.js",
             "study.js",
+            "tutor.js",
             "app.js",
         ]
     );
