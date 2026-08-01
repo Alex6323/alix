@@ -241,6 +241,50 @@ mod tests {
     }
 
     #[test]
+    fn a_configured_model_and_effort_resolve_verbatim_for_every_backend() {
+        for backend in [
+            BackendKind::Claude,
+            BackendKind::Gemini,
+            BackendKind::Codex,
+            BackendKind::Copilot,
+        ] {
+            let cfg = AskConfig {
+                backend,
+                model: Some("pinned-model".to_string()),
+                effort: Some("pinned-effort".to_string()),
+                ..AskConfig::default()
+            };
+            assert_eq!(
+                Some("pinned-model".to_string()),
+                resolved_ask_model(&cfg),
+                "{backend:?}"
+            );
+            assert_eq!(
+                Some("pinned-effort".to_string()),
+                resolved_ask_effort(&cfg),
+                "{backend:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn without_configured_values_no_backend_invents_a_model_or_effort() {
+        for backend in [
+            BackendKind::Claude,
+            BackendKind::Gemini,
+            BackendKind::Codex,
+            BackendKind::Copilot,
+        ] {
+            let cfg = AskConfig {
+                backend,
+                ..AskConfig::default()
+            };
+            assert_eq!(None, resolved_ask_model(&cfg), "{backend:?}");
+            assert_eq!(None, resolved_ask_effort(&cfg), "{backend:?}");
+        }
+    }
+
+    #[test]
     fn unstructured_backends_use_the_plain_progress_contract() {
         let backend = GeminiBackend;
         assert!(!backend.structured_progress());
