@@ -16,11 +16,7 @@ void main() {
           'toggleKeypoint, reveal, revealNextLine, dismissForeignWriter, '
           'and restart own every ReviewController mutation',
     );
-    expect(
-      _linesContaining('lib/picker_screen.dart', 'setState('),
-      [525, 531, 545, 553, 568, 576, 584, 598],
-      reason: 'only the not-yet-extracted generate sheet still uses setState',
-    );
+    expect(_linesContaining('lib/picker_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining(
         'lib/picker/picker_controller.dart',
@@ -30,6 +26,15 @@ void main() {
       reason:
           'setServerReachable, reload, and dismissConflicts own every picker '
           'listing mutation; deadline and tutorial transitions reload',
+    );
+    expect(
+      _linesContaining(
+        'lib/picker/generate_controller.dart',
+        'notifyListeners();',
+      ),
+      [62, 111, 115, 123],
+      reason:
+          'begin, complete, progress, and fail own every generation mutation',
     );
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
@@ -43,11 +48,13 @@ void main() {
       [
         ..._sites('lib/review_screen.dart', 'ListenableBuilder('),
         ..._sites('lib/picker_screen.dart', 'ListenableBuilder('),
+        ..._sites('lib/picker/generate_sheet.dart', 'ListenableBuilder('),
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
         'lib/review_screen.dart:231',
-        'lib/picker_screen.dart:305',
+        'lib/picker_screen.dart:307',
+        'lib/picker/generate_sheet.dart:42',
         'lib/walk_screen.dart:192',
       ],
     );
@@ -57,11 +64,12 @@ void main() {
     final paths = [
       'lib/review_screen.dart',
       'lib/picker_screen.dart',
+      'lib/picker/generate_controller.dart',
       'lib/walk_screen.dart',
     ];
     expect(
       [for (final path in paths) ..._sites(path, 'Timer(')],
-      ['lib/picker_screen.dart:599'],
+      ['lib/picker/generate_controller.dart:142'],
     );
     expect([
       for (final path in paths) ..._sites(path, 'StreamSubscription'),

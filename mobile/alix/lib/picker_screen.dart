@@ -8,6 +8,8 @@ import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/picker_bridge.dart';
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
+import 'package:alix_mobile/picker/generate_controller.dart';
+import 'package:alix_mobile/picker/generate_sheet.dart';
 import 'package:alix_mobile/picker/picker_controller.dart';
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
@@ -393,15 +395,16 @@ class _PickerScreenState extends State<PickerScreen> {
     final config = readServer(support);
     if (config == null) return;
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    final controller = GenerateController(
+      client: client,
+      pollInterval:
+          widget.generatePollInterval ?? const Duration(milliseconds: 400),
+    );
 
     final dto = await showModalBottomSheet<RemoteGenerate>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _GenerateSheet(
-        client: client,
-        pollInterval:
-            widget.generatePollInterval ?? const Duration(milliseconds: 400),
-      ),
+      builder: (_) => GenerateSheet(controller: controller),
     );
 
     final deck = dto?.deck;
@@ -479,186 +482,6 @@ class _PickerScreenState extends State<PickerScreen> {
         height: 48,
       ),
       applicationLegalese: 'MIT or Apache-2.0, at your option.',
-    );
-  }
-}
-
-class _GenerateSheet extends StatefulWidget {
-  const _GenerateSheet({
-    required this.client,
-    this.pollInterval = const Duration(milliseconds: 400),
-  });
-
-  final ServerClient client;
-  final Duration pollInterval;
-
-  @override
-  State<_GenerateSheet> createState() => _GenerateSheetState();
-}
-
-class _GenerateSheetState extends State<_GenerateSheet> {
-  final _urlController = TextEditingController();
-  final _guidanceController = TextEditingController();
-  Timer? _pollTimer;
-
-  bool _busy = false;
-  String? _message;
-  int? _elapsed;
-  bool _handedOff = false;
-
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    if (!_handedOff) {
-      widget.client.generateClose().catchError((_) {});
-      widget.client.close();
-    }
-    _urlController.dispose();
-    _guidanceController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final url = _urlController.text.trim();
-    final scheme = Uri.tryParse(url)?.scheme;
-    if (scheme != 'http' && scheme != 'https') {
-      setState(
-        () => _message =
-            'alix can only generate from an http:// or https:// URL.',
-      );
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _message = null;
-      _elapsed = null;
-    });
-    final guidance = _guidanceController.text.trim();
-    bool ok;
-    try {
-      ok = await widget.client.generateStart(
-        url,
-        guidance: guidance.isEmpty ? null : guidance,
-      );
-    } on PairingExpired {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _message = 'Pairing expired. Pair again from the deck list menu.';
-      });
-      return;
-    }
-    if (!mounted) return;
-    if (!ok) {
-      setState(() {
-        _busy = false;
-        _message = 'The desktop refused to generate this deck.';
-      });
-      return;
-    }
-    await _poll();
-  }
-
-  Future<void> _poll() async {
-    RemoteGenerate? dto;
-    try {
-      dto = await widget.client.generateGet();
-    } on PairingExpired {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _message = 'Pairing expired. Pair again from the deck list menu.';
-      });
-      return;
-    }
-    if (!mounted) return;
-    if (dto == null) {
-      setState(() {
-        _busy = false;
-        _message = 'Lost contact with the desktop.';
-      });
-      return;
-    }
-    if (dto.phase == 'error') {
-      final error = dto.error ?? 'The desktop failed to generate this deck.';
-      setState(() {
-        _busy = false;
-        _message = error;
-      });
-      return;
-    }
-    final settled = dto;
-    if (settled.phase == 'done' &&
-        settled.deck != null &&
-        settled.filename != null) {
-      _handedOff = true;
-      Navigator.of(context).pop(settled);
-      return;
-    }
-    setState(() => _elapsed = settled.elapsed);
-    _pollTimer = Timer(widget.pollInterval, _poll);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          24,
-          24,
-          24 + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Generate deck', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            if (_busy)
-              Text(
-                _elapsed != null
-                    ? 'The desktop is working… ${_elapsed}s'
-                    : 'The desktop is working…',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              )
-            else ...[
-              TextField(
-                key: const ValueKey('generate-url-field'),
-                controller: _urlController,
-                decoration: const InputDecoration(
-                  labelText: 'URL',
-                  hintText: 'https://...',
-                ),
-                maxLines: 1,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                key: const ValueKey('generate-guidance-field'),
-                controller: _guidanceController,
-                decoration: const InputDecoration(
-                  labelText: 'Guidance (optional)',
-                ),
-                maxLines: 1,
-              ),
-              const SizedBox(height: 12),
-              FilledButton(onPressed: _submit, child: const Text('Generate')),
-              if (_message != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _message!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
     );
   }
 }
