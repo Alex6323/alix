@@ -132,11 +132,9 @@ function render() {
   pokeFades();
 }
 function updateFades() {
-  const s = stage;
-  const up = s.scrollTop > 4;
-  const down = (s.scrollHeight - s.clientHeight - s.scrollTop) > 4;
-  fadeTop.classList.toggle("show", up);
-  fadeBot.classList.toggle("show", down);
+  const hints = kidsOverflowHints(stage);
+  fadeTop.classList.toggle("show", hints.showTop);
+  fadeBot.classList.toggle("show", hints.showBottom);
 }
 // Re-check after layout settles (fonts, images, screen swaps).
 function pokeFades() {

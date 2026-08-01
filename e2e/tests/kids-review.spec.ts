@@ -172,6 +172,65 @@ test("tapping an option on a never-seen card records the pick and offers only th
   await expect(page.locator(".rev-prompt")).not.toHaveText(firstFront ?? "");
 });
 
+test("a resynced study response does not close the kids tutor or lose its transcript", async ({
+  page,
+  pageErrors,
+}) => {
+  await page.route("**/api/ask", (route) => route.fulfill({
+    json: {
+      transcript: [{ q: "Why?", a: "Because this card says so." }],
+      thinking: false,
+      status: null,
+      error: null,
+    },
+  }));
+  await page.route("**/api/choose", async (route) => {
+    const headers = await route.request().allHeaders();
+    await route.continue({
+      headers: { ...headers, "x-alix-study-revision": "0" },
+    });
+  });
+
+  await openApp(page);
+  await page.locator(".box", { hasText: "Animals" }).click();
+  await kidsDeckRow(page, "wild").click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/select")),
+    page.getByRole("button", { name: "Tap the answer" }).click(),
+  ]);
+
+  await page.getByRole("button", { name: "Ask Alix" }).click();
+  const tutor = page.locator("#askOverlay");
+  await expect(tutor).toBeVisible();
+  await expect(tutor.locator(".ask-bubble")).toHaveText([
+    "Why?",
+    "Because this card says so.",
+  ]);
+
+  const resynced = page.waitForResponse((response) =>
+    response.url().includes("/api/state") && response.request().method() === "GET"
+  );
+  const rejected = page.waitForResponse((response) =>
+    response.url().includes("/api/choose") && response.request().method() === "POST"
+  );
+  const previousPrompt = await page.locator(".rev-prompt").elementHandle();
+  expect(previousPrompt).not.toBeNull();
+  await page.locator(".opt-btn").first().evaluate((element: HTMLButtonElement) => element.click());
+  expect((await rejected).status()).toBe(409);
+  expect((await resynced).status()).toBe(200);
+  await previousPrompt!.waitForElementState("hidden");
+
+  await expect(tutor).toBeVisible();
+  await expect(tutor.locator(".ask-bubble")).toHaveText([
+    "Why?",
+    "Because this card says so.",
+  ]);
+
+  const expected = pageErrors.filter((entry) => entry.includes("status of 409"));
+  expect(expected).toHaveLength(1);
+  pageErrors.splice(pageErrors.indexOf(expected[0]), 1);
+});
+
 test("a wrong Recognize pick can only record failed, never passed", async ({ page }) => {
   test.fixme(
     true,
