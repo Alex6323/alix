@@ -2,36 +2,10 @@
 
 captureKidsPairingToken({ location, history, sessionStorage });
 
-// ── Themes (accent-only; brand orange is never themed) ────────────────────
-const THEMES = {
-  Sunrise: { bgTop: "#fff5ec", bgBot: "#ffe7d4", accent: "#ff8a3d", sh: "#e0702a" },
-  Ocean:   { bgTop: "#eafaf7", bgBot: "#cdeeff", accent: "#0fa8b4", sh: "#0b7d86" },
-  Berry:   { bgTop: "#fdeefb", bgBot: "#f1dbff", accent: "#c04bd0", sh: "#9c34ab" },
-};
-let theme = loadTheme();
-
-function loadTheme() {
-  try {
-    const t = localStorage.getItem("alix-kids-theme");
-    return THEMES[t] ? t : "Sunrise";
-  } catch (e) { return "Sunrise"; }
-}
-function applyTheme() {
-  const t = THEMES[theme] || THEMES.Sunrise;
-  const r = document.documentElement.style;
-  r.setProperty("--bg-top", t.bgTop);
-  r.setProperty("--bg-bot", t.bgBot);
-  r.setProperty("--bg", "linear-gradient(168deg, " + t.bgTop + " 0%, " + t.bgBot + " 100%)");
-  r.setProperty("--accent", t.accent);
-  r.setProperty("--accent-sh", t.sh);
-}
-function setTheme(name) {
-  if (!THEMES[name]) return;
-  theme = name;
-  try { localStorage.setItem("alix-kids-theme", name); } catch (e) { /* ignore */ }
-  applyTheme();
-  updateSwatchState();
-}
+const theme = createKidsTheme({
+  storage: localStorage,
+  rootStyle: document.documentElement.style,
+});
 
 // ── DOM handles ───────────────────────────────────────────────────────────
 const stage = document.getElementById("stage");
@@ -135,7 +109,7 @@ document.addEventListener("keydown", (event) => {
 
 // ── Render dispatcher ─────────────────────────────────────────────────────
 function render() {
-  applyTheme();
+  theme.apply();
   stage.innerHTML = "";
   actionbar.innerHTML = "";
   if (study.isOpen()) study.render();
@@ -162,8 +136,8 @@ window.addEventListener("resize", updateFades);
 function buildThemeSwatches() {
   const host = document.getElementById("themes");
   host.innerHTML = "";
-  for (const name of Object.keys(THEMES)) {
-    const t = THEMES[name];
+  for (const name of theme.names()) {
+    const t = theme.palette(name);
     const b = el("button", "swatch");
     b.type = "button";
     b.dataset.theme = name;
@@ -173,14 +147,14 @@ function buildThemeSwatches() {
     const dot = el("span", "swatch-dot");
     dot.style.background = t.accent;
     b.appendChild(dot);
-    b.addEventListener("click", () => { setTheme(name); closeMenu(); });
+    b.addEventListener("click", () => { theme.set(name); updateSwatchState(); closeMenu(); });
     host.appendChild(b);
   }
   updateSwatchState();
 }
 function updateSwatchState() {
   const list = document.querySelectorAll(".swatch");
-  for (const s of list) s.setAttribute("aria-pressed", String(s.dataset.theme === theme));
+  for (const s of list) s.setAttribute("aria-pressed", String(s.dataset.theme === theme.current()));
 }
 function openMenu() {
   menuPop.hidden = false;

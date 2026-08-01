@@ -331,6 +331,7 @@ fn kids_asset_manifest_matches_the_exact_composition_order() {
             "api.js",
             "model.js",
             "dom.js",
+            "theme.js",
             "picker.js",
             "study.js",
             "tutor.js",

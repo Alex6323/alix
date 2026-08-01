@@ -10,6 +10,7 @@
     "api.js",
     "model.js",
     "dom.js",
+    "theme.js",
     "picker.js",
     "study.js",
     "tutor.js",
