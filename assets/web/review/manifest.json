@@ -12,6 +12,7 @@
     "model.js",
     "dom.js",
     "picker.js",
+    "study.js",
     "tutor.js",
     "exam.js",
     "walk.js",
