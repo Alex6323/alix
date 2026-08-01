@@ -10,6 +10,7 @@ pub use alix::{
     math::MathView,
     render::{ChecklistItem, NoteUnit},
     review::{CardView, CheckFeedback, ChoiceFeedback, ImageView, ReviewState},
+    session::RecognizeGap,
     trace::Phase as WalkPhase,
 };
 use anyhow::{Result, bail};
@@ -116,7 +117,16 @@ pub struct _ReviewState {
     // regen carries them across).
     pub due_left: u32,
     pub new_left: u32,
+    // Done-only, Recognize-only: what the depth filter hid (mobile summary
+    // does not surface it yet either).
+    pub recognize_gap: Option<RecognizeGap>,
     pub save_error: Option<String>,
+}
+
+#[flutter_rust_bridge::frb(mirror(RecognizeGap))]
+pub struct _RecognizeGap {
+    pub recall: u32,
+    pub unaugmented: u32,
 }
 
 #[flutter_rust_bridge::frb(mirror(ChoiceFeedback))]

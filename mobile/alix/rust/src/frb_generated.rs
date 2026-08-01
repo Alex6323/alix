@@ -1549,6 +1549,11 @@ const _: fn() = || {
         }
     }
     {
+        let RecognizeGap = None::<crate::api::review::RecognizeGap>.unwrap();
+        let _: u32 = RecognizeGap.recall;
+        let _: u32 = RecognizeGap.unaugmented;
+    }
+    {
         let ReviewState = None::<crate::api::review::ReviewState>.unwrap();
         let _: Option<crate::api::review::CardView> = ReviewState.card;
         let _: crate::api::review::Mode = ReviewState.mode;
@@ -1571,6 +1576,7 @@ const _: fn() = || {
         let _: Option<u64> = ReviewState.next_due_ms;
         let _: u32 = ReviewState.due_left;
         let _: u32 = ReviewState.new_left;
+        let _: Option<crate::api::review::RecognizeGap> = ReviewState.recognize_gap;
         let _: Option<String> = ReviewState.save_error;
     }
     {
@@ -2205,6 +2211,17 @@ impl SseDecode for Option<crate::api::review::MathView> {
     }
 }
 
+impl SseDecode for Option<crate::api::review::RecognizeGap> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::RecognizeGap>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::review::TutorCard> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2299,6 +2316,18 @@ impl SseDecode for Option<Vec<crate::api::review::NoteUnit>> {
     }
 }
 
+impl SseDecode for crate::api::review::RecognizeGap {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_recall = <u32>::sse_decode(deserializer);
+        let mut var_unaugmented = <u32>::sse_decode(deserializer);
+        return crate::api::review::RecognizeGap {
+            recall: var_recall,
+            unaugmented: var_unaugmented,
+        };
+    }
+}
+
 impl SseDecode for crate::api::review::ReviewState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2325,6 +2354,8 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_nextDueMs = <Option<u64>>::sse_decode(deserializer);
         let mut var_dueLeft = <u32>::sse_decode(deserializer);
         let mut var_newLeft = <u32>::sse_decode(deserializer);
+        let mut var_recognizeGap =
+            <Option<crate::api::review::RecognizeGap>>::sse_decode(deserializer);
         let mut var_saveError = <Option<String>>::sse_decode(deserializer);
         return crate::api::review::ReviewState {
             card: var_card,
@@ -2348,6 +2379,7 @@ impl SseDecode for crate::api::review::ReviewState {
             next_due_ms: var_nextDueMs,
             due_left: var_dueLeft,
             new_left: var_newLeft,
+            recognize_gap: var_recognizeGap,
             save_error: var_saveError,
         };
     }
@@ -3038,6 +3070,27 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::NoteUnit>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::RecognizeGap> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.recall.into_into_dart().into_dart(),
+            self.0.unaugmented.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::RecognizeGap>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::RecognizeGap>>
+    for crate::api::review::RecognizeGap
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::RecognizeGap> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewState> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3062,6 +3115,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.next_due_ms.into_into_dart().into_dart(),
             self.0.due_left.into_into_dart().into_dart(),
             self.0.new_left.into_into_dart().into_dart(),
+            self.0.recognize_gap.into_into_dart().into_dart(),
             self.0.save_error.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -3759,6 +3813,16 @@ impl SseEncode for Option<crate::api::review::MathView> {
     }
 }
 
+impl SseEncode for Option<crate::api::review::RecognizeGap> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::RecognizeGap>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::review::TutorCard> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3839,6 +3903,14 @@ impl SseEncode for Option<Vec<crate::api::review::NoteUnit>> {
     }
 }
 
+impl SseEncode for crate::api::review::RecognizeGap {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.recall, serializer);
+        <u32>::sse_encode(self.unaugmented, serializer);
+    }
+}
+
 impl SseEncode for crate::api::review::ReviewState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3866,6 +3938,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <Option<u64>>::sse_encode(self.next_due_ms, serializer);
         <u32>::sse_encode(self.due_left, serializer);
         <u32>::sse_encode(self.new_left, serializer);
+        <Option<crate::api::review::RecognizeGap>>::sse_encode(self.recognize_gap, serializer);
         <Option<String>>::sse_encode(self.save_error, serializer);
     }
 }

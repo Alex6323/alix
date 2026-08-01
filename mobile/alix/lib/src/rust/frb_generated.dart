@@ -1422,6 +1422,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RecognizeGap dco_decode_box_autoadd_recognize_gap(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_recognize_gap(raw);
+  }
+
+  @protected
   TutorCard dco_decode_box_autoadd_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_tutor_card(raw);
@@ -1793,6 +1799,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RecognizeGap? dco_decode_opt_box_autoadd_recognize_gap(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_recognize_gap(raw);
+  }
+
+  @protected
   TutorCard? dco_decode_opt_box_autoadd_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_tutor_card(raw);
@@ -1841,11 +1853,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RecognizeGap dco_decode_recognize_gap(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return RecognizeGap(
+      recall: dco_decode_u_32(arr[0]),
+      unaugmented: dco_decode_u_32(arr[1]),
+    );
+  }
+
+  @protected
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 22)
-      throw Exception('unexpected arr length: expect 22 but see ${arr.length}');
+    if (arr.length != 23)
+      throw Exception('unexpected arr length: expect 23 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
@@ -1868,7 +1892,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[18]),
       dueLeft: dco_decode_u_32(arr[19]),
       newLeft: dco_decode_u_32(arr[20]),
-      saveError: dco_decode_opt_String(arr[21]),
+      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[21]),
+      saveError: dco_decode_opt_String(arr[22]),
     );
   }
 
@@ -2180,6 +2205,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_math_view(deserializer));
+  }
+
+  @protected
+  RecognizeGap sse_decode_box_autoadd_recognize_gap(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_recognize_gap(deserializer));
   }
 
   @protected
@@ -2687,6 +2720,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RecognizeGap? sse_decode_opt_box_autoadd_recognize_gap(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_recognize_gap(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   TutorCard? sse_decode_opt_box_autoadd_tutor_card(
     SseDeserializer deserializer,
   ) {
@@ -2785,6 +2831,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RecognizeGap sse_decode_recognize_gap(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_recall = sse_decode_u_32(deserializer);
+    var var_unaugmented = sse_decode_u_32(deserializer);
+    return RecognizeGap(recall: var_recall, unaugmented: var_unaugmented);
+  }
+
+  @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_card = sse_decode_opt_box_autoadd_card_view(deserializer);
@@ -2808,6 +2862,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_nextDueMs = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_dueLeft = sse_decode_u_32(deserializer);
     var var_newLeft = sse_decode_u_32(deserializer);
+    var var_recognizeGap = sse_decode_opt_box_autoadd_recognize_gap(
+      deserializer,
+    );
     var var_saveError = sse_decode_opt_String(deserializer);
     return ReviewState(
       card: var_card,
@@ -2831,6 +2888,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       nextDueMs: var_nextDueMs,
       dueLeft: var_dueLeft,
       newLeft: var_newLeft,
+      recognizeGap: var_recognizeGap,
       saveError: var_saveError,
     );
   }
@@ -3185,6 +3243,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_math_view(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_recognize_gap(
+    RecognizeGap self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_recognize_gap(self, serializer);
   }
 
   @protected
@@ -3635,6 +3702,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_recognize_gap(
+    RecognizeGap? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_recognize_gap(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_tutor_card(
     TutorCard? self,
     SseSerializer serializer,
@@ -3736,6 +3816,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_recognize_gap(RecognizeGap self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.recall, serializer);
+    sse_encode_u_32(self.unaugmented, serializer);
+  }
+
+  @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_box_autoadd_card_view(self.card, serializer);
@@ -3759,6 +3846,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_64(self.nextDueMs, serializer);
     sse_encode_u_32(self.dueLeft, serializer);
     sse_encode_u_32(self.newLeft, serializer);
+    sse_encode_opt_box_autoadd_recognize_gap(self.recognizeGap, serializer);
     sse_encode_opt_String(self.saveError, serializer);
   }
 

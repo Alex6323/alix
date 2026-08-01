@@ -369,6 +369,24 @@ sealed class NoteUnit with _$NoteUnit {
       NoteUnit_Checklist;
 }
 
+class RecognizeGap {
+  final int recall;
+  final int unaugmented;
+
+  const RecognizeGap({required this.recall, required this.unaugmented});
+
+  @override
+  int get hashCode => recall.hashCode ^ unaugmented.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RecognizeGap &&
+          runtimeType == other.runtimeType &&
+          recall == other.recall &&
+          unaugmented == other.unaugmented;
+}
+
 class ReviewState {
   final CardView? card;
   final Mode mode;
@@ -391,6 +409,7 @@ class ReviewState {
   final BigInt? nextDueMs;
   final int dueLeft;
   final int newLeft;
+  final RecognizeGap? recognizeGap;
   final String? saveError;
 
   const ReviewState({
@@ -415,6 +434,7 @@ class ReviewState {
     this.nextDueMs,
     required this.dueLeft,
     required this.newLeft,
+    this.recognizeGap,
     this.saveError,
   });
 
@@ -441,6 +461,7 @@ class ReviewState {
       nextDueMs.hashCode ^
       dueLeft.hashCode ^
       newLeft.hashCode ^
+      recognizeGap.hashCode ^
       saveError.hashCode;
 
   @override
@@ -469,6 +490,7 @@ class ReviewState {
           nextDueMs == other.nextDueMs &&
           dueLeft == other.dueLeft &&
           newLeft == other.newLeft &&
+          recognizeGap == other.recognizeGap &&
           saveError == other.saveError;
 }
 

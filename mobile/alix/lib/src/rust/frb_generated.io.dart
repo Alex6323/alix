@@ -111,6 +111,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MathView dco_decode_box_autoadd_math_view(dynamic raw);
 
   @protected
+  RecognizeGap dco_decode_box_autoadd_recognize_gap(dynamic raw);
+
+  @protected
   TutorCard dco_decode_box_autoadd_tutor_card(dynamic raw);
 
   @protected
@@ -240,6 +243,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MathView? dco_decode_opt_box_autoadd_math_view(dynamic raw);
 
   @protected
+  RecognizeGap? dco_decode_opt_box_autoadd_recognize_gap(dynamic raw);
+
+  @protected
   TutorCard? dco_decode_opt_box_autoadd_tutor_card(dynamic raw);
 
   @protected
@@ -262,6 +268,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<NoteUnit>? dco_decode_opt_list_note_unit(dynamic raw);
+
+  @protected
+  RecognizeGap dco_decode_recognize_gap(dynamic raw);
 
   @protected
   ReviewState dco_decode_review_state(dynamic raw);
@@ -391,6 +400,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer);
+
+  @protected
+  RecognizeGap sse_decode_box_autoadd_recognize_gap(
+    SseDeserializer deserializer,
+  );
 
   @protected
   TutorCard sse_decode_box_autoadd_tutor_card(SseDeserializer deserializer);
@@ -534,6 +548,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MathView? sse_decode_opt_box_autoadd_math_view(SseDeserializer deserializer);
 
   @protected
+  RecognizeGap? sse_decode_opt_box_autoadd_recognize_gap(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   TutorCard? sse_decode_opt_box_autoadd_tutor_card(
     SseDeserializer deserializer,
   );
@@ -564,6 +583,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<NoteUnit>? sse_decode_opt_list_note_unit(SseDeserializer deserializer);
+
+  @protected
+  RecognizeGap sse_decode_recognize_gap(SseDeserializer deserializer);
 
   @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer);
@@ -714,6 +736,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_math_view(
     MathView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_recognize_gap(
+    RecognizeGap self,
     SseSerializer serializer,
   );
 
@@ -907,6 +935,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_recognize_gap(
+    RecognizeGap? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_tutor_card(
     TutorCard? self,
     SseSerializer serializer,
@@ -947,6 +981,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<NoteUnit>? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_recognize_gap(RecognizeGap self, SseSerializer serializer);
 
   @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer);
