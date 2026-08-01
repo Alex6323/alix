@@ -31,6 +31,8 @@ const REVIEW_JS: &str = concat!(
     "\n",
     include_str!("../../assets/web/review/dom.js"),
     "\n",
+    include_str!("../../assets/web/review/exam.js"),
+    "\n",
     include_str!("../../assets/web/review/app.js"),
     "\n",
 );
@@ -42,8 +44,14 @@ pub(super) const REVIEW_ASSET_MANIFEST: &str =
 pub(super) const REVIEW_CSS_SOURCES: &[&str] =
     &["shell.css", "study.css", "picker.css", "ai.css", "walk.css"];
 #[cfg(test)]
-pub(super) const REVIEW_JS_SOURCES: &[&str] =
-    &["contracts.js", "api.js", "model.js", "dom.js", "app.js"];
+pub(super) const REVIEW_JS_SOURCES: &[&str] = &[
+    "contracts.js",
+    "api.js",
+    "model.js",
+    "dom.js",
+    "exam.js",
+    "app.js",
+];
 
 const PLEX_SANS_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-400.woff2");
 const PLEX_SANS_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-500.woff2");

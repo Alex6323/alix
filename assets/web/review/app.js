@@ -56,10 +56,7 @@ function workingText(s) {
   return `${backendName()} is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
 }
 let askPoll = null;   // setInterval handle while a reply is pending
-let examData = null;  // the ExamDto while an exam is active (null otherwise)
-let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
 let askConfirmingClose = false; // showing the "leave the tutor?" confirmation
-let examPoll = null;  // setInterval handle while an exam call is in flight
 let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
 let augmentPoll = null; // setInterval handle while a generation is in flight
 let augTicked = new Set(); // gap-fill target kinds ticked for the next batch generate
@@ -112,6 +109,33 @@ const menu = document.getElementById("menu");
 function api(path, options) { return apiClient.request(path, options, validatorFor(path)); }
 function post(body) { return apiClient.postOptions(body); }
 function withToken(path) { return apiClient.withToken(path); }
+
+const exam = createExam({
+  api,
+  post,
+  rememberLaunch,
+  rerender: render,
+  applyStudy: apply,
+  updateBusy,
+  workingText,
+  timers: {
+    setInterval: window.setInterval.bind(window),
+    clearInterval: window.clearInterval.bind(window),
+  },
+  ui: {
+    alert: window.alert.bind(window),
+    chip,
+    deckEl,
+    document,
+    el,
+    headerBreadcrumb,
+    histEl,
+    legend,
+    menuWrap,
+    scoreEl,
+    stage,
+  },
+});
 // On load the page may be seeded in browse mode (a `alix browse --serve` launch):
 // the state then carries the browse phase + cards, so open the overlay directly.
 function load() { return api("/api/state").then(s => { if (s.phase === "browse") { browsing = { cards: s.cards, label: s.label, i: 0 }; state = s; render(); } else apply(s); }); }
@@ -388,7 +412,7 @@ function render() {
   clearLegendSides();
   menu.classList.remove("open");
 
-  if (examData) { renderExam(); return; }
+  if (exam.isOpen()) { exam.render(); return; }
   if (augmentData) { renderAugment(); return; }
   const screen = currentScreen({ ...clientModel, state, browsing, walk: walkData });
   if (screen === "walk") { renderWalk(); return; }
@@ -490,7 +514,7 @@ function cancelDraft() { askData = { ...askData, draft: null }; if (asking) sync
 // that complements the inline spinners; rest it otherwise.
 function updateBusy() {
   var logo = document.querySelector(".brand alix-logo");
-  if (logo) logo.toggleAttribute("loop", !!(askPoll || examPoll));
+  if (logo) logo.toggleAttribute("loop", !!(askPoll || exam.isPolling()));
 }
 // Replay the header logo's reveal once — the reload button and the `r` key.
 function replayLogo() {
@@ -710,192 +734,6 @@ function cancelAskLeave() {
   askConfirmingClose = false;
   const input = document.querySelector(".ask-input");
   if (input) { renderAskFooter(input); input.focus(); }
-}
-
-// ── AI exam ───────────────────────────────────────────────────────────
-// A self-contained overlay (like ask): the server runs the three backend calls
-// on a background thread and we poll /api/exam while `thinking`. Answers are
-// entered one question at a time; grading is a single batch call.
-function startExam(deck) {
-  rememberLaunch(deck);
-  api("/api/exam/start", post({ deck })).then(d => {
-    // A trace exam cooling down after a recent fail replies with a
-    // phase:"cooldown" ExamDto carrying the remaining time — re-sit later.
-    if (d && d.phase === "cooldown") {
-      const mins = Math.max(1, Math.round(d.cooldown_ms / 60000));
-      alert("This trace exam is cooling down after a recent fail.\nRe-walk it and try again in about " + mins + " min.");
-      return;
-    }
-    if (d && d.phase) { examData = d; render(); if (d.thinking) startExamPoll(); }
-  });
-}
-function closeExam() {
-  examConfirmingQuit = false;
-  stopExamPoll();
-  api("/api/exam/close", post({})).then(s => { examData = null; apply(s); });
-}
-
-// The answering-phase footer buttons — re-rendered on their own when the quit
-// confirmation is dismissed, so the textarea keeps the answer you typed.
-function examAnswerButtons(d) {
-  legend.innerHTML = "";
-  if (d.current > 0) chip("Back", "", () => examNav(d.current - 1));
-  if (d.on_last) chip("Submit for grading", "primary", examSubmit, "shift+enter");
-  else chip("Next", "primary", () => examNav(d.current + 1), "shift+enter");
-  chip("Quit", "", quitExam, "esc");
-}
-// Leaving mid-answer abandons the exam, so confirm first — exactly like leaving
-// a review session. Other phases (results/error/generating) just close.
-function quitExam() {
-  if (!examData || examData.phase !== "answering") { closeExam(); return; }
-  examConfirmingQuit = true;
-  legend.innerHTML = "";
-  legend.appendChild(el("span", "leave-msg", "Quit the exam? Your answers won't be graded."));
-  chip("Quit anyway", "again", closeExam, "enter");
-  chip("Keep going", "primary", cancelExamQuit, "esc");
-}
-function cancelExamQuit() { examConfirmingQuit = false; if (examData) examAnswerButtons(examData); }
-function startExamPoll() {
-  stopExamPoll();
-  examPoll = setInterval(() => {
-    api("/api/exam").then(d => {
-      // Only re-render when something visible changed; otherwise the spinner's
-      // entrance animation would re-run on every poll (flicker).
-      const prev = examData;
-      examData = d;
-      if (!d.thinking) stopExamPoll();
-      if (!prev || prev.phase !== d.phase || prev.error !== d.error) render();
-      else if (d.thinking) {
-        // Tick the elapsed counter in place — a full re-render would restart the
-        // entrance animation (flicker).
-        const e = document.querySelector(".exam-elapsed");
-        if (e) { e.innerHTML = ""; e.appendChild(el("span", "dot"));
-                 e.appendChild(document.createTextNode(examElapsedText(d))); }
-      }
-    });
-  }, 600);
-  updateBusy();
-}
-function stopExamPoll() { if (examPoll) { clearInterval(examPoll); examPoll = null; } updateBusy(); }
-// Progress line under the spinner: a live "X is working" counter — the only
-// honest signal we get from a headless CLI call that streams no token-level state.
-function examElapsedText(d) {
-  return workingText(d.elapsed || 0);
-}
-// Save the current answer, then move to question `goto`.
-function examNav(goto) {
-  const ta = document.querySelector(".exam-input");
-  api("/api/exam/answer", post({ text: ta ? ta.value : "", goto })).then(d => { examData = d; render(); });
-}
-// Save the last answer and submit all answers for grading.
-function examSubmit() {
-  const ta = document.querySelector(".exam-input");
-  api("/api/exam/grade", post({ text: ta ? ta.value : "" })).then(d => {
-    examData = d; render(); if (d.thinking) startExamPoll();
-  });
-}
-function examRemediate() {
-  api("/api/exam/remediate", post({})).then(d => { examData = d; render(); if (d.thinking) startExamPoll(); });
-}
-
-function renderExam() {
-  const d = examData;
-  headerBreadcrumb();
-  deckEl.textContent = "exam · " + d.deck;
-  histEl.textContent = d.strictness;
-  scoreEl.innerHTML = "";
-  menuWrap.style.display = "none";
-  const wrap = el("div", "exam");
-  // A failed backend call surfaces a prominent banner up top, so it's never
-  // mistaken for "nothing happened" (the result/grades may scroll below it).
-  if (d.error) wrap.appendChild(el("div", "exam-error", "⚠ " + d.error));
-
-  if (d.phase === "generating" || d.phase === "grading" || d.phase === "remediating") {
-    const msg = { generating: "Preparing your exam…", grading: "Grading your answers…",
-                  remediating: "Writing remediation cards…" }[d.phase];
-    wrap.appendChild(el("div", "exam-wait", msg));
-    const prog = el("div", "exam-elapsed");
-    prog.appendChild(el("span", "dot"));
-    prog.appendChild(document.createTextNode(examElapsedText(d)));
-    wrap.appendChild(prog);
-    stage.appendChild(wrap);
-    if (d.error || d.phase === "generating") chip("Close", "", closeExam, "esc");
-    return;
-  }
-
-  if (d.phase === "answering") {
-    wrap.appendChild(el("div", "exam-progress", `Question ${d.current + 1} / ${d.total}`));
-    wrap.appendChild(el("div", "exam-q", d.question || ""));
-    const ta = el("textarea", "exam-input");
-    ta.placeholder = "Type your answer… (Shift+Enter to continue)";
-    ta.value = d.answer || "";
-    ta.rows = 6;
-    // Enter inserts a newline; Shift+Enter takes the primary action — advance,
-    // or submit on the last question — matching the ask box.
-    ta.addEventListener("keydown", e => {
-      // Inert while the quit confirmation is up (Enter/Esc answer that instead).
-      if (e.key === "Enter" && e.shiftKey && !examConfirmingQuit) {
-        e.preventDefault();
-        if (examData.on_last) examSubmit(); else examNav(examData.current + 1);
-      }
-    });
-    wrap.appendChild(ta);
-    stage.appendChild(wrap);
-    ta.focus();
-    examAnswerButtons(d);
-    return;
-  }
-
-  if (d.phase === "results") {
-    wrap.appendChild(el("div", d.passed ? "exam-pass" : "exam-fail",
-      d.passed ? "PASSED — deck mastered ✓" : "FAILED"));
-    if (d.passed && d.unlocks.length)
-      wrap.appendChild(el("div", "exam-unlocks", "Unlocks: " + d.unlocks.join(", ")));
-    d.grades.forEach((g, i) => {
-      const q = el("div", "exam-result");
-      q.appendChild(el("div", "exam-rq", `Q${i + 1}. ${g.question}`));
-      const vd = el("div", "exam-verdict");
-      vd.appendChild(el("span", "v-pill v-" + g.verdict.toLowerCase(), g.verdict));
-      vd.appendChild(el("span", "vfb", g.feedback));
-      q.appendChild(vd);
-      if (g.verdict !== "PASS") {
-        if (g.points.length) {
-          q.appendChild(el("div", "exam-label", "A complete answer covers:"));
-          const ul = el("ul", "exam-points");
-          g.points.forEach(p => ul.appendChild(el("li", null, p)));
-          q.appendChild(ul);
-        }
-        if (g.missed.length) {
-          q.appendChild(el("div", "exam-label", "You missed:"));
-          const ul = el("ul", "exam-missed");
-          g.missed.forEach(m => ul.appendChild(el("li", null, m)));
-          q.appendChild(ul);
-        }
-      }
-      wrap.appendChild(q);
-    });
-    // A failed trace exam is re-walked (no card remediation — a trace is a path,
-    // not a card pile); a failed fact exam can turn its gaps into cards.
-    if (!d.passed && d.is_trace)
-      wrap.appendChild(el("div", "exam-wait", "Re-walk the trace to strengthen the weak hops, then re-sit."));
-    stage.appendChild(wrap);
-    if (!d.passed && d.can_remediate)
-      chip(d.error ? "Try remediation again" : "Add remediation cards", "primary", examRemediate);
-    chip("Close", "", closeExam, "esc");
-    return;
-  }
-
-  if (d.phase === "remediated") {
-    const n = d.remediated_count || 0;
-    const headline = n === 0
-      ? "No new remediation cards needed ✓"
-      : `Created ${n} remediation card${n === 1 ? "" : "s"} ✓`;
-    wrap.appendChild(el("div", "exam-pass", headline));
-    wrap.appendChild(el("div", "exam-wait", "Re-drill the deck, then re-sit the exam."));
-    stage.appendChild(wrap);
-    chip("Close", "", closeExam, "esc");
-    return;
-  }
 }
 
 // ── AI augment (the picker's "Augment a" action, decks only) ────────────────
@@ -1412,7 +1250,7 @@ function catalogSignature(data) {
   return JSON.stringify(data).replace(/\d+[smhdw] ago/g, "\u0000 ago");
 }
 const idleInSelect = () =>
-  state && state.phase === "select" && !browsing && !examData && !augmentData && !walkData && !asking;
+  state && state.phase === "select" && !browsing && !exam.isOpen() && !augmentData && !walkData && !asking;
 window.addEventListener("focus", async () => {
   if (!idleInSelect()) return;
   // An opportunistic re-scan stays quiet on failure too; the visible error
@@ -1526,7 +1364,7 @@ async function renderSelect(preloaded) {
     // A trace's primary action is always the WALK (its exam is reached via the
     // "Take exam" button, or the walk's capstone). An exam-due fact deck sits its
     // exam when available (sourced + prerequisites passed); else it reviews.
-    if (!it.is_trace && it.state === "examdue" && it.examable) startExam(it.name);
+    if (!it.is_trace && it.state === "examdue" && it.examable) exam.start(it.name);
     else {
       // Apply the focus drawer's topology/region pick, but only when it belongs
       // to the deck being launched (the drawer follows the focused row).
@@ -1901,7 +1739,7 @@ async function renderSelect(preloaded) {
         const ex = el("button", "chip", "Take exam");
         ex.appendChild(el("span", "k", it.examable ? "x" : "\u{1F512}"));
         ex.disabled = !it.examable;
-        if (it.examable) ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; startExam(it.name); });
+        if (it.examable) ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; exam.start(it.name); });
         legend.appendChild(ex);
       }
     }
@@ -2197,7 +2035,7 @@ async function renderSelect(preloaded) {
       else if (e.key === "r") { e.preventDefault(); refreshDecks(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
-        e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
+        e.preventDefault(); lastWorkspace = cur._wsName || null; exam.start(cur._item.name);
       }
     });
 
@@ -3163,7 +3001,7 @@ function renderSummary() {
   stage.appendChild(wrap);
   // An exam-due deck takes the primary action; otherwise the restart chip does.
   examDue.forEach((name, i) => {
-    chip(examDue.length === 1 ? "Take the exam" : `Exam: ${name}`, i === 0 ? "primary" : "", () => startExam(name));
+    chip(examDue.length === 1 ? "Take the exam" : `Exam: ${name}`, i === 0 ? "primary" : "", () => exam.start(name));
   });
   // Continue the drain when due cards remain; otherwise say the next sitting
   // starts new cards, never an unlabeled button. The waiting count lives in
@@ -3236,8 +3074,8 @@ function walkTakeExam() {
     walkData = null;
     walkConfirmingLeave = false;
     if (deckName) {
-      // startExam → closeExam → apply(s) lands us back on the picker.
-      startExam(deckName);
+      // The exam close transition applies the returned picker state.
+      exam.start(deckName);
     } else {
       api("/api/state").then(s => { state = s; render(); });
     }
@@ -3470,13 +3308,8 @@ document.addEventListener("keydown", (e) => {
   // The exam overlay takes priority. Esc asks to quit (it abandons the exam);
   // while that confirmation is up, Enter quits and Esc keeps going. The textarea
   // handles typing.
-  if (examData) {
-    if (examConfirmingQuit) {
-      if (e.key === "Enter") { e.preventDefault(); closeExam(); }
-      else if (e.key === "Escape") { e.preventDefault(); cancelExamQuit(); }
-      return;
-    }
-    if (e.key === "Escape") { e.preventDefault(); quitExam(); }
+  if (exam.isOpen()) {
+    exam.handleKey(e);
     return;
   }
   // The browse overlay: step cards (configurable next/prev + arrows/space/g/G),
