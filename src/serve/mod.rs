@@ -240,6 +240,32 @@ pub fn run_review(
         },
     );
 
+    // tiny_http can strand an accepted connection: a connection burst racing
+    // its task pool's waiter accounting leaves a reader task queued with its
+    // request unread in the kernel buffer, until some other connection event
+    // makes a pool thread pop the queue (measured: a browser reload against a
+    // fresh server stalled one subresource 110s, and a single connect+close
+    // released it in <1s). This pump IS that connection event, once a second,
+    // bounding any stranding to about one interval. It sends no request, so
+    // it never appears in the http log; it ends when the listener does.
+    {
+        let addr = server.server_addr();
+        thread::spawn(move || {
+            let port = addr.to_ip().map(|a| a.port()).unwrap_or(0);
+            if port == 0 {
+                return;
+            }
+            let target = SocketAddr::from(([127, 0, 0, 1], port));
+            loop {
+                thread::sleep(Duration::from_millis(1000));
+                match std::net::TcpStream::connect_timeout(&target, Duration::from_millis(500)) {
+                    Ok(stream) => drop(stream),
+                    Err(_) => return,
+                }
+            }
+        });
+    }
+
     thread::scope(|scope| {
         for worker in 0..WORKERS {
             let study = study.clone();

@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The blank first load. A connection burst against a fresh or idle server
+  (typically a page reload right after the server starts) could leave one
+  accepted connection's request unread inside the HTTP layer's task queue,
+  stalling a single asset or API call for about two minutes while its
+  siblings completed instantly; the page shell rendered but the app never
+  booted, and the focus drawer could silently fail the same way. The server
+  now pumps its own listener once a second, which releases any stranded
+  connection within about a second. Measured before/after: a
+  restart-and-reload loop in a real browser stalled on the first cycle
+  without the pump and completed 30 consecutive cycles with it.
+
 ### Added
 
 - Revealing a new card's answer now counts as the encounter: leave the
