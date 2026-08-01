@@ -281,9 +281,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   local runs can mask races (the `testutil` fake-CLI tests exist because one such
   race slipped through). Thin frontend glue (`serve` wiring) is the
   exception — a follow-up or manual check is enough there. This is the
-  deterministic half of the QUALITY plan; the grader calibration
-  (`make calibrate`) is the AI half, run deliberately before every release and
-  after touching `grade_*`.
+  deterministic half of the quality story (CONTRIBUTING.md's two layers); the
+  grader calibration (`make calibrate`) is the AI half, run deliberately
+  before every release and after touching `grade_*`.
 - **Prefer law-shaped tests over example piles** (user rule, 2026-07-30). When coverage
   can be phrased as "for every X, Y holds" (all gated routes, every session transition,
   each DTO snapshot), write one sweep/invariant test that iterates the set and grows by
