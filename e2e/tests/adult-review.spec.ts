@@ -520,6 +520,39 @@ test("jumping to the last deck with G reveals its drawer, not just opens it", as
   await expect(drawer).toBeInViewport();
 });
 
+test("a repeat G-jump keeps the drawer clear of the footer", async ({ page }) => {
+  // The cached-drawer path renders synchronously inside the focus handler, so
+  // the browser's own scroll-the-focused-row runs afterwards and can drop the
+  // drawer behind the footer legend (user report 2026-08-01: first jump
+  // works, repeats hide the drawer). Same short viewport as the reveal test.
+  await page.setViewportSize({ width: 900, height: 340 });
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "cats").click();
+  await page.keyboard.press("Shift+G");
+  // Two wraps can coexist briefly (the old drawer animating closed); the live
+  // one is the later in document order.
+  await page.locator(".drawer-wrap").last().waitFor();
+  await page.keyboard.press("g");
+  await page.waitForTimeout(400);
+  await page.keyboard.press("Shift+G");
+  await page.waitForTimeout(400);
+
+  const overlap = await page.evaluate(() => {
+    const wraps = document.querySelectorAll(".drawer-wrap");
+    const wrap = wraps[wraps.length - 1];
+    const legend = document.querySelector("#legend");
+    if (!wrap || !legend) return "missing";
+    const w = wrap.getBoundingClientRect();
+    const l = legend.getBoundingClientRect();
+    return { wrapBottom: Math.round(w.bottom), legendTop: Math.round(l.top) };
+  });
+  expect(overlap, "drawer and legend present").not.toBe("missing");
+  expect(
+    (overlap as { wrapBottom: number }).wrapBottom,
+    `repeat-jump drawer must sit fully above the footer: ${JSON.stringify(overlap)}`,
+  ).toBeLessThanOrEqual((overlap as { legendTop: number }).legendTop);
+});
+
 test("a card merely shown in an earlier session reads as a grey seen cell", async ({ page }) => {
   // The task-list test above selected `fronts` and rendered its only card
   // without acknowledging or grading it: presented, nothing more. The drawer

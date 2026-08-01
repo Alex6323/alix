@@ -778,6 +778,16 @@ export function createPicker({
             [{ height: "0px" }, { height: h + "px" }],
             { duration: drawerDurationMs, easing: drawerEasing }
           );
+          // A cached drawer renders synchronously inside the focus handler, so
+          // the browser's own scroll-the-focused-row runs AFTER the reveal
+          // above and can push the drawer's bottom out of the list's
+          // scrollport (behind the footer). Re-reveal once the height has
+          // settled; by then every competing scroll has run. `onfinish` never
+          // fires on a cancelled (closing) animation, and the guard skips a
+          // drawer that was replaced mid-open.
+          wrap._anim.onfinish = () => {
+            if (drawerEl === wrap && wrap.scrollIntoView) wrap.scrollIntoView({ block: "nearest" });
+          };
         }
       }
 
