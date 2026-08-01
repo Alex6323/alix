@@ -788,6 +788,58 @@ fn an_inactive_workspace_listing_reads_the_progress_owner_projection() {
     );
 }
 
+#[test]
+fn a_reset_reaches_the_listing_past_the_retained_workspace_snapshot() {
+    fn member_row(base: &str) -> serde_json::Value {
+        let response = http(base, "GET", "/api/decks", &[], &[]);
+        assert_eq!(200, response.status);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        body["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|workspace| workspace["name"] == "animals")
+            .unwrap()
+            .get("members")
+            .and_then(serde_json::Value::as_array)
+            .unwrap()
+            .iter()
+            .find(|member| member["name"] == "animals/one.md")
+            .unwrap()
+            .clone()
+    }
+
+    let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(200, selected.status);
+    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/deselect", "{}").status);
+
+    let before = member_row(&base);
+    assert_eq!(
+        "started", before["state"],
+        "the acquire must be visible pre-reset: {before}"
+    );
+
+    let reset = post_json(&base, "/api/reset", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(200, reset.status);
+    let cleared: serde_json::Value = serde_json::from_slice(&reset.body).unwrap();
+    assert_eq!(
+        1, cleared["cards_cleared"],
+        "the reset must clear the acquired card: {cleared}"
+    );
+
+    let after = member_row(&base);
+    assert_eq!(
+        "new", after["state"],
+        "the listing must serve the reset state, not the retained pre-reset snapshot: {after}"
+    );
+    assert_eq!(
+        true, after["reviewable_recall"],
+        "the reset deck must be startable again (this gates the picker's row actions): {after}"
+    );
+}
+
 /// A named import destination resolves to that workspace's member dir, not
 /// the served root: a misresolved destination silently misfiles the deck.
 #[test]

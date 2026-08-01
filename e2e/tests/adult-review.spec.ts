@@ -204,6 +204,9 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
   // reshape this session: start from a clean wild.
   const resetResponse = await page.request.post("/api/reset", { data: { deck: "animals/wild.md" } });
   expect(resetResponse.ok(), "the isolation reset must land").toBeTruthy();
+  // Reload after the out-of-band reset: the picker listing gates the row
+  // actions and was fetched before the reset landed.
+  await openApp(page);
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click();
   await page.getByTitle("choose a depth").click();
@@ -462,6 +465,9 @@ test("a revealed note matches its choice column width and text size", async ({ p
   // with a note) serves first regardless of what earlier tests engaged.
   const resetResponse = await page.request.post("/api/reset", { data: { deck: "animals/wild.md" } });
   expect(resetResponse.ok(), "the isolation reset must land").toBeTruthy();
+  // Reload after the out-of-band reset: the picker listing gates the row
+  // actions and was fetched before the reset landed.
+  await openApp(page);
   await openWildCram(page, "Recognize");
   await answerCurrentWildCard(page);
 
