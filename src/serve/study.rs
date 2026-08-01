@@ -1211,15 +1211,21 @@ impl StudyState {
         else {
             return Transition::Rejected;
         };
-        let Ok(cleared) = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
-            .and_then(|mut s| crate::library::reset_decks(&mut s, decks.iter()))
+        let Ok(mut scoped) = assemble::store_for(&paths, self.config.cfg.instance_store.as_deref())
         else {
+            return Transition::Rejected;
+        };
+        let Ok(cleared) = crate::library::reset_decks(&mut scoped, decks.iter()) else {
             return Transition::Rejected;
         };
         if let Ok(s) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
             self.install_store(s);
             self.writes = self.writes.wrapping_add(1);
         }
+        // Projections prefer a retained snapshot over disk, so the snapshot
+        // covering the store this reset just rewrote must go, or listings
+        // keep serving the pre-reset records.
+        self.retained.remove(scoped.path());
         Transition::Done(ResetDto {
             deck: name,
             cards_cleared: cleared,

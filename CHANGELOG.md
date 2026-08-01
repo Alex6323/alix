@@ -15,6 +15,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Resetting a workspace deck over the API now reaches the deck listing
+  immediately. Previously the listing could keep serving the pre-reset
+  progress (deck "started", nothing startable) from a retained store
+  snapshot until the workspace was next opened, leaving the picker's row
+  actions disabled for a deck that had just been cleared.
+
 - `alix --port 0` (OS-assigned port) now announces the port the kernel
   actually bound instead of printing an unreachable `http://127.0.0.1:0`
   URL. Explicitly requested ports are unaffected.
