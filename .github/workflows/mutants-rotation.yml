@@ -64,9 +64,14 @@ jobs:
         run: |
           started=$(date -u +%s)
           set +e
-          make mutants MUTANTS_ALL=1 MUTANTS_SHARD=${{ steps.pick.outputs.shard }}/${SHARDS} GATE_JOBS=4
+          # `timeout` rather than the job's own limit: a job killed by GitHub
+          # skips every remaining step, including the report and the artifact,
+          # so an overrun would destroy exactly the measurement this run exists
+          # to produce. Overrunning here ends the STEP (124) and the rest runs.
+          timeout 300m make mutants MUTANTS_ALL=1 MUTANTS_SHARD=${{ steps.pick.outputs.shard }}/${SHARDS} GATE_JOBS=4
           status=$?
           set -e
+          [ "$status" -eq 124 ] && echo "OVERRAN the 300m step budget" >> "$GITHUB_STEP_SUMMARY"
           echo "elapsed=$(( $(date -u +%s) - started ))" >> "$GITHUB_OUTPUT"
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
@@ -83,7 +88,8 @@ jobs:
             echo "| | |"
             echo "|---|---|"
             echo "| wall clock | $((elapsed / 60))m $((elapsed % 60))s |"
-            echo "| budget | 330m |"
+            echo "| step budget | 300m |"
+            echo "| exit | ${{ steps.sweep.outputs.status || 'n/a' }} (124 = overran) |"
             echo "| caught | $(count caught.txt) |"
             echo "| missed | $(count missed.txt) |"
             echo "| timeout | $(count timeout.txt) |"
