@@ -11,6 +11,7 @@
     "api.js",
     "model.js",
     "dom.js",
+    "picker.js",
     "tutor.js",
     "exam.js",
     "walk.js",
