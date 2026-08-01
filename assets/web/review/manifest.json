@@ -15,6 +15,7 @@
     "exam.js",
     "walk.js",
     "augment.js",
+    "sheets.js",
     "app.js"
   ]
 }

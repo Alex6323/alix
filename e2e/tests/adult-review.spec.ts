@@ -530,6 +530,18 @@ test("the ☰ menu opens without error", async ({ page }) => {
   await page.locator("#kebab").click(); // close it again
 });
 
+test("the shortcuts sheet opens and Escape closes it", async ({ page }) => {
+  await page.locator("#kebab").click();
+  await page.locator("#mShortcuts").click();
+
+  await expect(page.locator("#sheet")).toBeVisible();
+  await expect(page.locator("#sheetPanel")).toContainText("Picker shortcuts");
+
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("#sheet")).toBeHidden();
+});
+
 // KNOWN GAP — reported as skipped on every run, deliberately.
 //
 // The fixture ships no progress store, so every card is never-seen (`acquire`)
