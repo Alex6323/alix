@@ -89,7 +89,7 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
         Err(e) => Finding::bad(
             "store",
             Status::Fail,
-            format!("{} — {e:#}", path.display()),
+            format!("{}: {e:#}", path.display()),
             "a progress document is unreadable; move it aside to start fresh, or restore the folder from your own backup (your decks are plain files — back them up like any folder)",
         ),
     }
@@ -254,12 +254,12 @@ pub fn check_binary(name: &'static str, cmd: &str, purpose: &str, remedy: &str) 
         .status()
         .is_ok();
     if found {
-        Finding::ok(name, format!("`{cmd}` found — {purpose}"))
+        Finding::ok(name, format!("`{cmd}` found: {purpose}"))
     } else {
         Finding::bad(
             name,
             Status::Warn,
-            format!("`{cmd}` not found — {purpose} unavailable"),
+            format!("`{cmd}` not found: {purpose} unavailable"),
             remedy,
         )
     }

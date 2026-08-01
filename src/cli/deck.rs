@@ -462,8 +462,8 @@ pub(crate) fn import_cmd(args: ImportArgs) -> Result<()> {
             println!();
         }
         match parser::parse_str(&name, &text) {
-            Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
-            Err(e) => eprintln!("(warning: does not parse yet — {e})"),
+            Ok(cards) => eprintln!("({} cards, not written; --print)", cards.len()),
+            Err(e) => eprintln!("(warning: does not parse yet: {e})"),
         }
         return Ok(());
     }

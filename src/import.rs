@@ -35,7 +35,7 @@ pub fn tsv_to_deck(text: &str) -> Result<String> {
         cards += 1;
     }
     if cards == 0 {
-        bail!("no cards found — expected tab-separated `front<TAB>back` lines");
+        bail!("no cards found: expected tab-separated `front<TAB>back` lines");
     }
     Ok(out)
 }

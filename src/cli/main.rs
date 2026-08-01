@@ -674,7 +674,7 @@ fn config_cmd(init: bool) -> Result<()> {
         println!("config file: {}", path.display());
     } else {
         println!(
-            "no config file at {} — using defaults; create one with \
+            "no config file at {}, using defaults; create one with \
              `alix config --init`",
             path.display()
         );

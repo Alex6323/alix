@@ -1232,7 +1232,7 @@ impl Sharing {
 
 pub(super) fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<PathBuf> {
     if !path.is_file() && !crate::workspace::has_decks(path) {
-        bail!("no decks in `{}` — nothing to share", path.display());
+        bail!("no decks in `{}`, nothing to share", path.display());
     }
     share::stage_path(path, tmp.path()).map(|(stage, _)| stage)
 }

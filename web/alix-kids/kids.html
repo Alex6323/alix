@@ -648,7 +648,7 @@ function showOops(detail) {
   if (detail) console.error("alix kids:", detail);
   const box = document.getElementById("oops");
   if (!box) return;
-  box.textContent = "Oops — that didn't work. Try again? 🌱";
+  box.textContent = "Oops, that didn't work. Try again? 🌱";
   box.hidden = false;
   clearTimeout(oopsTimer);
   oopsTimer = setTimeout(() => { box.hidden = true; }, 6000);
@@ -918,7 +918,7 @@ function renderHome() {
 
   const boxes = (deckList && deckList.workspaces) || [];
   if (!boxes.length) {
-    home.appendChild(el("div", "empty", "No boxes yet — ask a grown-up to add some 🌱"));
+    home.appendChild(el("div", "empty", "No boxes yet. Ask a grown-up to add some 🌱"));
     stage.appendChild(home);
     return;
   }
@@ -1434,7 +1434,7 @@ function syncAsk() {
     askLog.appendChild(el("div", "ask-bubble ask-bubble-a", ex.a));
   }
   if (askData.thinking) askLog.appendChild(el("div", "ask-bubble ask-bubble-a ask-bubble-think", "Alix is thinking… 🤔"));
-  if (askData.error) askLog.appendChild(el("div", "ask-bubble ask-bubble-a", "Oops — I couldn't think just now. Try asking again! 🦊"));
+  if (askData.error) askLog.appendChild(el("div", "ask-bubble ask-bubble-a", "Oops, I couldn't think just now. Try asking again! 🦊"));
   askLog.scrollTop = askLog.scrollHeight;
 
   askInput.disabled = askData.thinking;

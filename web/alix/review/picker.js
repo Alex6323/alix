@@ -88,7 +88,7 @@ export function createPicker({
       if (isWalk(next)) openWalk(next);
       else applyStudy(next);
       return next;
-    }).catch(() => notice("could not start the session — the server log has details"));
+    }).catch(() => notice("could not start the session: the server log has details"));
   }
 
   function browse(item, workspaceName) {
@@ -327,7 +327,7 @@ export function createPicker({
             if (r._open && r._open.name === name) { r.focus(); break; }
           }
         })
-        .catch(() => notice("could not update the deadline — the server log has details"));
+        .catch(() => notice("could not update the deadline: the server log has details"));
     }
 
     // A drillable workspace/folder row (icon/chevron, opens its members).
@@ -494,7 +494,7 @@ export function createPicker({
           // The cram tick-box: include cards that aren't due (a due card still
           // grades as a normal review; an early pass only re-anchors).
           const cram = el("button", "chip" + (cramOn ? " primary" : ""), (cramOn ? "☑" : "☐") + " cram");
-          cram.title = "include cards that aren't due — due cards still count as normal reviews";
+          cram.title = "include cards that aren't due; due cards still count as normal reviews";
           cram.appendChild(el("span", "k", label(keys.cram)));
           cram.addEventListener("mousedown", e => e.preventDefault());
           cram.addEventListener("click", () => { cramOn = !cramOn; syncPrimary(); });
@@ -976,7 +976,7 @@ export function createPicker({
       renderList({
         headerFilter: true,
         filterPlaceholder: "Search  ·  /",
-        lede: "mastered \u{1F389} — reopen a deck to cram or re-examine",
+        lede: "mastered \u{1F389} (reopen a deck to cram or re-examine)",
         sections: [{ title: null, rows: mastered.map(d => deckRow({ ...d, tree: "" }, false, null, true, false)) }],
         back: renderTop, allowMastered: false,
       });

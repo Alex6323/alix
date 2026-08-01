@@ -69,7 +69,7 @@ export function createSheets({
         } else if (line && line.isConnected) {
           line.textContent = verb + "… " + (d.elapsed || 0) + "s";
         }
-      }).catch(() => { timers.clearInterval(t); notice(verb + " failed — the server log has details"); });
+      }).catch(() => { timers.clearInterval(t); notice(verb + " failed: the server log has details"); });
     }, 700);
     return t;
   }
@@ -125,7 +125,7 @@ export function createSheets({
             }
             jobPoll("/api/generate", "generating", (r) => addDone("deck '" + r.deck + "' added"));
           })
-          .catch(() => notice("could not start generating — the server log has details"));
+          .catch(() => notice("could not start generating: the server log has details"));
         if (line && line.isConnected) { line.textContent = "generating… 0s"; }
       });
       doc.getElementById("impFile").addEventListener("change", (e) => {
@@ -137,7 +137,7 @@ export function createSheets({
           api("/api/import", post({ name: f.name, text: r.result, dest: dest() || null }))
             .then((d2) => addDone("imported " + d2.cards + " cards into '" + d2.deck + "'"))
             .catch(() => {
-              const msg = "import failed — not a valid deck, or the name is taken";
+              const msg = "import failed: not a valid deck, or the name is taken";
               if (line && line.isConnected) line.textContent = msg;
               else notice(msg);
             });
@@ -165,7 +165,7 @@ export function createSheets({
               () => { delete sheet.dataset.receiveLive; }
             );
           })
-          .catch(() => notice("could not start receiving — the server log has details"));
+          .catch(() => notice("could not start receiving: the server log has details"));
         if (line && line.isConnected) { line.textContent = "receiving… 0s"; }
       });
       doc.getElementById("rcvZip").addEventListener("change", (e) => {
@@ -242,7 +242,7 @@ export function createSheets({
             }).catch(() => timers.clearInterval(liveJobTimer));
           }, 700);
         })
-        .catch(() => notice("could not start sharing — the server log has details"));
+        .catch(() => notice("could not start sharing: the server log has details"));
     });
   }
 
@@ -254,7 +254,7 @@ export function createSheets({
     if (!row) { notice("focus a deck first"); return; }
     show(
       '<h2>Reset progress</h2><div class="sheet-add">' +
-      '<p>Wipes all review progress for <b></b> — schedules, history, exam state. This cannot be undone.</p>' +
+      '<p>Wipes all review progress for <b></b>: schedules, history, exam state. This cannot be undone.</p>' +
       '<input id="resetConfirm" class="bar-filter" placeholder="type the name to confirm" autocomplete="off" spellcheck="false">' +
       '<button id="resetGo" class="bar-chip" disabled>Reset</button><p id="jobLine"></p></div>'
     );
@@ -265,7 +265,7 @@ export function createSheets({
     go.addEventListener("click", () => {
       api("/api/reset", post({ deck: row }))
         .then((d) => { close(); notice("reset " + d.cards_cleared + " card(s)"); refreshPicker(); })
-        .catch(() => { doc.getElementById("jobLine").textContent = "reset failed — the server log has details"; });
+        .catch(() => { doc.getElementById("jobLine").textContent = "reset failed: the server log has details"; });
     });
   }
 
@@ -278,7 +278,7 @@ export function createSheets({
     row.appendChild(el("span", "doc-glyph", glyph));
     const body = el("span");
     body.appendChild(el("b", null, r.name));
-    body.appendChild(el("span", "doc-detail", " — " + r.detail));
+    body.appendChild(el("span", "doc-detail", ": " + r.detail));
     if (r.remedy) body.appendChild(el("span", "doc-remedy", r.remedy));
     row.appendChild(body);
     return row;
@@ -298,7 +298,7 @@ export function createSheets({
       if (!d.lan) {
         show('<h2>Pair a device</h2><p class="sheet-hint"></p>');
         sheetPanel.querySelector(".sheet-hint").textContent =
-          "This server is localhost-only — start alix with --lan to pair another device.";
+          "This server is localhost-only. Start alix with --lan to pair another device.";
         return;
       }
       show(

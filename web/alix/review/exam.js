@@ -200,7 +200,7 @@ export function createExam({
       wrap.appendChild(el(
         "div",
         current.passed ? "exam-pass" : "exam-fail",
-        current.passed ? "PASSED — deck mastered ✓" : "FAILED",
+        current.passed ? "PASSED: deck mastered ✓" : "FAILED",
       ));
       if (current.passed && current.unlocks.length) {
         wrap.appendChild(el("div", "exam-unlocks", `Unlocks: ${current.unlocks.join(", ")}`));

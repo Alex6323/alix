@@ -16,11 +16,11 @@ fn check_one(cfg: &AskConfig) -> Result<()> {
     let cmd = &cfg.command;
     match probe(cfg) {
         Ok(_) => {
-            println!("✓ {name} ({cmd}) — ready");
+            println!("✓ {name} ({cmd}): ready");
             Ok(())
         }
         Err(e) => {
-            eprintln!("✗ {name} ({cmd}) — {e}");
+            eprintln!("✗ {name} ({cmd}): {e}");
             anyhow::bail!("backend check failed")
         }
     }
@@ -56,9 +56,9 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
             ..cfg.clone()
         };
         match probe(&per_kind) {
-            Ok(_) => println!("✓ {name:<name_width$}  ({cmd:<cmd_width$}) — ready"),
+            Ok(_) => println!("✓ {name:<name_width$}  ({cmd:<cmd_width$}): ready"),
             Err(e) => {
-                eprintln!("✗ {name:<name_width$}  ({cmd:<cmd_width$}) — {e}");
+                eprintln!("✗ {name:<name_width$}  ({cmd:<cmd_width$}): {e}");
                 any_failed = true;
             }
         }

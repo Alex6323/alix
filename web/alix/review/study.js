@@ -3,6 +3,7 @@ export function createStudy({
   post,
   storage,
   lastDeck,
+  openAugment,
   model,
   rerender,
   walkData,
@@ -148,7 +149,7 @@ export function createStudy({
   function cancelLeave() { confirmingLeave = false; rerender(); }
   function renderLeaveConfirm() {
     legend.innerHTML = "";
-    legend.appendChild(el("span", "leave-msg", `Session not finished — ${state.remaining} card${state.remaining === 1 ? "" : "s"} left.`));
+    legend.appendChild(el("span", "leave-msg", `Session not finished: ${state.remaining} card${state.remaining === 1 ? "" : "s"} left.`));
     chip("Leave anyway", "again", deselect, "enter");
     chip("Stay", "primary", cancelLeave, "esc");
   }
@@ -441,7 +442,7 @@ export function createStudy({
       } else if (revealed > 0) {
         fillAcquire(a); setNote(true);          // recall: answer shown after reveal
       } else {
-        a.appendChild(el("div", "acquire-hint", "new card — try to recall it, then reveal."));
+        a.appendChild(el("div", "acquire-hint", "new card: try to recall it, then reveal."));
         setNote(false);                          // recall: front only until revealed
       }
     }
@@ -990,7 +991,7 @@ export function createStudy({
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
-    a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in about a minute."));
+    a.appendChild(el("div", "acquire-hint", "new card: you'll be quizzed on it in about a minute."));
   }
 
   function fillAnswer(a) {
@@ -1172,14 +1173,14 @@ export function createStudy({
     // nothing is servable the cards are cooling, so say when one opens.
     const cooling = dueLeft > 0 && !state.can_restart ? nextDueNote(state.next_due_ms) : null;
     const dueSegment = dueLeft > 0
-      ? `${dueLeft} still due${cooling ? ` — cooling, ${cooling.charAt(0).toLowerCase() + cooling.slice(1, -1)}` : ""}`
+      ? `${dueLeft} still due${cooling ? ` (cooling, ${cooling.charAt(0).toLowerCase() + cooling.slice(1, -1)})` : ""}`
       : null;
     if (gap) {
       // Point at the two real exits: the cards this depth can't serve.
       const parts = [];
       if (dueSegment) parts.push(dueSegment);
       if (gap.recall > 0) parts.push(`${gap.recall} card${gap.recall === 1 ? "" : "s"} wait at Recall`);
-      if (gap.unaugmented > 0) parts.push(`${gap.unaugmented} have no choices yet — augment to Recognize them`);
+      if (gap.unaugmented > 0) parts.push(`${gap.unaugmented} need answer choices first (the Augment screen builds them)`);
       wrap.appendChild(el("div", "note", parts.join(" · ") + "."));
     } else if (nextDue) {
       wrap.appendChild(el("div", "note", nextDue));
@@ -1188,7 +1189,7 @@ export function createStudy({
     } else if (newLeft > 0) {
       wrap.appendChild(el("div", "note", `${newLeft} new waiting.`));
     } else if (newLeft === 0 && !state.can_restart) {
-      wrap.appendChild(el("div", "note", "Nothing due right now — come back later."));
+      wrap.appendChild(el("div", "note", "Nothing due right now. Come back later."));
     }
     const examDue = state.exam_due || [];
     examDue.forEach(name => {
@@ -1203,12 +1204,16 @@ export function createStudy({
     // starts new cards, never an unlabeled button. The waiting count lives in
     // the note: the sitting plants only the capped share, not all of them.
     // A drained Recognize sitting cannot restart into anything, so its
-    // primary action IS the pointed exit: reopen this deck at Recall.
+    // primary action IS the pointed exit: reopen this deck at Recall (Enter),
+    // with the Augment screen one chip away for the choice-less cards.
     const deck = lastDeck ? lastDeck() : null;
     if (gap && gap.recall > 0 && deck) {
       chip("Continue at Recall", examDue.length ? "" : "primary", () => {
         api("/api/select", post({ deck, depth: "recall" })).then(apply).catch(() => load());
-      });
+      }, "enter");
+    }
+    if (gap && gap.unaugmented > 0 && deck && openAugment) {
+      chip("Augment", "", () => openAugment(deck));
     }
     const restartLabel = dueLeft > 0 ? "Continue"
       : newLeft > 0 ? "Start new"
@@ -1307,10 +1312,11 @@ export function createStudy({
       // Esc returns to the deck picker (with a confirm when the session isn't done).
       if (e.key === "Escape") { e.preventDefault(); leaveSession(); return; }
       if (state.phase === "done") {
-        // Enter takes the primary action (the exam, when a deck is exam due).
-        if (state.exam_due && state.exam_due.length && e.key === "Enter") {
+        // Enter takes the primary action (the exam when one is due, else the
+        // pointed exit of a drained sitting, else an enabled New session).
+        if (e.key === "Enter") {
           const b = legend.querySelector(".chip.primary");
-          if (b) { e.preventDefault(); b.click(); }
+          if (b && !b.disabled) { e.preventDefault(); b.click(); }
           return;
         }
         if (state.can_restart && hit(e, keys.restart)) { e.preventDefault(); restart(); }

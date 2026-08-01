@@ -158,7 +158,7 @@ impl Trace {
             let Some(locator) = cp.locator.as_deref() else {
                 issues.push(LocatorIssue {
                     checkpoint: i,
-                    message: "no `at:` locator — a walk can't reveal its source".to_string(),
+                    message: "no `at:` locator, so a walk can't reveal its source".to_string(),
                 });
                 continue;
             };
@@ -171,7 +171,7 @@ impl Trace {
                     checkpoint: i,
                     message: format!(
                         "locator `{locator}` gives only line numbers, but `source:` \
-                         is not a single file — write it as `file:lines`"
+                         is not a single file; write it as `file:lines`"
                     ),
                 });
                 continue;
@@ -194,7 +194,7 @@ impl Trace {
                     checkpoint: i,
                     message: format!(
                         "locator `{locator}` starts at line {start}, but `{}` has only {n} \
-                         lines — the source changed; re-point it",
+                         lines; the source changed, re-point it",
                         path.display()
                     ),
                 });
@@ -203,7 +203,7 @@ impl Trace {
                     checkpoint: i,
                     message: format!(
                         "locator `{locator}` ends at line {end}, but `{}` has only {n} lines \
-                         — the excerpt is clamped short; re-point it",
+                         ; the excerpt is clamped short, re-point it",
                         path.display()
                     ),
                 });

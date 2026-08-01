@@ -12,7 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "Nothing due — come back later": a deck whose pick-capable cards are all
   recognized reports how many cards wait at Recall and how many have no
   choices yet (`StateDto.recognize_gap`), and the adult summary points at
-  both exits, with a "Continue at Recall" action. Previously a deck with a
+  both exits, with "Continue at Recall" (Enter) and "Augment" actions. Previously a deck with a
   few authored choice cards defaulted to Recognize, served only those, and
   then looked permanently empty while the rest of the deck was untouched.
   The done summary also no longer prints zero-valued stat rows, an

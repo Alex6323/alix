@@ -81,7 +81,7 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
         if items > 1 {
             return build_workspace(&args, &config, &source, &spec, items);
         }
-        eprintln!("The plan has one item — generating a single deck.");
+        eprintln!("The plan has one item; generating a single deck.");
     }
     generate_single_deck(&args, &config, &spec)
 }
@@ -172,7 +172,7 @@ fn build_workspace(
         ),
         args.yes,
     )? {
-        println!("Cancelled — `--plan` prints the plan without building.");
+        println!("Cancelled. `--plan` prints the plan without building.");
         return Ok(());
     }
     eprintln!(
@@ -310,8 +310,8 @@ fn generate_single_deck(
             println!();
         }
         match parser::parse_str(&name, &text) {
-            Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
-            Err(e) => eprintln!("(warning: does not parse yet — {e})"),
+            Ok(cards) => eprintln!("({} cards, not written; --print)", cards.len()),
+            Err(e) => eprintln!("(warning: does not parse yet: {e})"),
         }
         if let Ok(deck) = &parsed
             && let Err(diagnostic) = math::validate_generated(&deck.cards)

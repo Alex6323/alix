@@ -524,7 +524,7 @@ pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>
     }
     let dest = dest_dir.join(&name);
     if dest.exists() {
-        bail!("{} already exists — move it aside first", dest.display());
+        bail!("{} already exists; move it aside first", dest.display());
     }
     move_into(&got, &dest)?;
     Ok((name, stripped))

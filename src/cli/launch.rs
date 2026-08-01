@@ -58,7 +58,7 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
             (dir, user_root)
         }
         Some(path) if path.is_file() => bail!(
-            "`alix <deck>` was removed — run `alix` and pick the deck there, \
+            "`alix <deck>` was removed. Run `alix` and pick the deck there, \
              or serve its folder: `alix {}`",
             path.parent().unwrap_or_else(|| Path::new(".")).display()
         ),
@@ -159,7 +159,7 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> se
             say!("warning: no authentication — anyone on your network can reach this.");
         }
         (false, _) => {
-            say!("Serving {root} at http://127.0.0.1:{port} — open it in your browser.")
+            say!("Serving {root} at http://127.0.0.1:{port}. Open it in your browser.")
         }
     }
     say!("Press Ctrl-C to stop.");

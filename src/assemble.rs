@@ -381,7 +381,7 @@ pub fn select(
     };
     if !selectable(deck) {
         bail!(
-            "`{}` is a folder — serve it (`alix {}`) and pick a deck inside it",
+            "`{}` is a folder; serve it (`alix {}`) and pick a deck inside it",
             deck.display(),
             deck.display()
         );
@@ -604,7 +604,7 @@ pub fn browse(paths: Vec<PathBuf>, _instance: Option<&Path>) -> Result<CardsBuil
     };
     if !selectable(deck) {
         bail!(
-            "`{}` is a workspace — browse a deck inside it, or open it with `alix workspace`",
+            "`{}` is a workspace; browse a deck inside it, or open it with `alix workspace`",
             deck.display()
         );
     }

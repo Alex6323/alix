@@ -184,7 +184,7 @@ export function createWalk({
     }
     const compose = el("div", "wcompose");
     const input = el("textarea", "wfield");
-    input.placeholder = "Predict the next checkpoint — even a hunch beats “I don’t know.”";
+    input.placeholder = "Predict the next checkpoint. Even a hunch beats “I don’t know.”";
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && (event.shiftKey || event.metaKey || event.ctrlKey)) {
         event.preventDefault();

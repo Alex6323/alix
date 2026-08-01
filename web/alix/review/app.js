@@ -24,7 +24,7 @@ function showTokenGate() {
 function workingText(s) {
   if (s < 2) return `${tutor.backendName()} is working…`;
   if (s < 90) return `${tutor.backendName()} is working… ${s}s`;
-  return `${tutor.backendName()} is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
+  return `${tutor.backendName()} is working… ${Math.floor(s / 60)}m ${s % 60}s (this can take a couple of minutes)`;
 }
 let study = null;
 
@@ -68,6 +68,7 @@ study = createStudy({
   post,
   storage: localStorage,
   lastDeck: () => sessionStorage.getItem("alix.lastDeck"),
+  openAugment: (deck) => augment.open(deck),
   model: { create: createModel, applyStudyState, enterPicker, currentScreen },
   rerender: render,
   walkData: () => walk.data(),

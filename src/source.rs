@@ -512,7 +512,7 @@ fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Res
             .is_some_and(|file| !Path::new(file).is_absolute());
     if joins_onto_base && !base_dir.is_dir() {
         bail!(
-            "the `source:` base `{}` does not exist — the deck's source path is \
+            "the `source:` base `{}` does not exist; the deck's source path is \
              likely stale or wrong",
             base_dir.display()
         );
@@ -520,7 +520,7 @@ fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Res
     let path = locator_path(base_dir, source_file, file.as_deref()).ok_or_else(|| {
         anyhow!(
             "locator `{locator}` gives only line numbers, but `source:` \
-             is not a single file — write it as `file:lines`"
+             is not a single file; write it as `file:lines`"
         )
     })?;
     read_excerpt(&path, spec.as_deref())

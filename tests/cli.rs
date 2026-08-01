@@ -2680,7 +2680,7 @@ fn generate_single_deck_print_flag_prints_without_writing() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(stdout(&out).contains("Generated Q"), "{}", stdout(&out));
     assert!(
-        stderr(&out).contains("cards — not written; --print"),
+        stderr(&out).contains("cards, not written; --print"),
         "stderr: {}",
         stderr(&out)
     );
@@ -3310,7 +3310,7 @@ fn deck_import_print_flag_prints_without_writing() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(stdout(&out).contains("## Q1"), "{}", stdout(&out));
     assert!(
-        stderr(&out).contains("cards — not written; --print"),
+        stderr(&out).contains("cards, not written; --print"),
         "stderr: {}",
         stderr(&out)
     );

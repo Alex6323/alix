@@ -74,7 +74,7 @@ pub(crate) fn confirm(prompt: &str, yes: bool) -> Result<bool> {
         return Ok(true);
     }
     if !std::io::stdin().is_terminal() {
-        bail!("{prompt} (refusing without a terminal — pass --yes to proceed)");
+        bail!("{prompt} (refusing without a terminal; pass --yes to proceed)");
     }
     print!("{prompt} [y/N] ");
     std::io::stdout().flush().ok();

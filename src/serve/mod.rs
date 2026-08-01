@@ -101,7 +101,7 @@ pub struct PairInfo {
 pub fn bind(addr: SocketAddr) -> Result<Server> {
     Server::http(addr).map_err(|e| {
         anyhow!(
-            "cannot start the server on {addr}: {e} — is another alix using this port? try --port"
+            "cannot start the server on {addr}: {e}. Is another alix using this port? try --port"
         )
     })
 }
