@@ -192,7 +192,7 @@ preflight:
 	$(MAKE) fmt-check
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
-	RUSTFLAGS="-Dwarnings" cargo test --manifest-path apps/mobile/rust/Cargo.toml
+	RUSTFLAGS="-Dwarnings" cargo test --manifest-path mobile/alix/rust/Cargo.toml
 	$(MAKE) frb-check
 	$(MAKE) package-check
 	@test -z "$$(git status --porcelain)" || { \
@@ -263,7 +263,7 @@ web:
 web-debug:
 	ALIX_HTTP_LOG=1 cargo run -- $(ARGS) --port 7780
 
-# The mobile siblings of `web`: run the alix mobile app (apps/mobile) on a
+# The mobile siblings of `web`: run the alix mobile app (mobile/alix) on a
 # phone or tablet emulator (booting that AVD first if needed; the script
 # resolves AVDs by name, so both can run side by side), or as a native Linux
 # desktop window (fastest loop: hot reload, no emulator). flutter compiles the
@@ -274,7 +274,7 @@ phone:
 tablet:
 	@sh scripts/mobile-run.sh alix_tablet
 desktop:
-	cd apps/mobile && flutter run -d linux
+	cd mobile/alix && flutter run -d linux
 
 # Assert the frb toolchain-alignment invariants (codegen/Dart/Rust version
 # pins, the two template patches, the NDK the build uses) and fail on drift.
@@ -295,22 +295,22 @@ push-decks:
 # on-Android tier of the same suite is the weekly mobile-drift workflow's
 # to grow.
 mobile-test:
-	cargo build --release --manifest-path apps/mobile/rust/Cargo.toml
-	cd apps/mobile && flutter test
-	cd apps/mobile && flutter test integration_test -d linux
+	cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
+	cd mobile/alix && flutter test
+	cd mobile/alix && flutter test integration_test -d linux
 
 # The release APK (one arm64 artifact, matching the mobile-release workflow);
 # debug-signed unless android/key.properties exists. Smoke-install this on a
 # real phone before tagging mobile-vX.Y.Z (see RELEASING.md).
 apk:
-	cd apps/mobile && flutter build apk --release --target-platform android-arm64
-	@echo "APK: apps/mobile/build/app/outputs/flutter-apk/app-release.apk"
+	cd mobile/alix && flutter build apk --release --target-platform android-arm64
+	@echo "APK: mobile/alix/build/app/outputs/flutter-apk/app-release.apk"
 
 # The arm64 Android App Bundle for Google Play. Play generates device-specific
 # APKs from this upload; keep `make apk` for GitHub releases and phone smoke tests.
 aab:
-	cd apps/mobile && flutter build appbundle --release --target-platform android-arm64
-	@echo "AAB: apps/mobile/build/app/outputs/bundle/release/app-release.aab"
+	cd mobile/alix && flutter build appbundle --release --target-platform android-arm64
+	@echo "AAB: mobile/alix/build/app/outputs/bundle/release/app-release.aab"
 
 # Serve the user manual (docs/book) with live reload and open it in the browser.
 # Requires mdBook: `cargo install mdbook`.

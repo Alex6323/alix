@@ -11,19 +11,19 @@ case "$version" in
 esac
 
 pattern='legacy|compat|deprecated|sentinel|adopt|coexist|migrat(e|es|ed|ing|ion|ions|or|ors)|older[[:space:]_-]+clients|graceful[[:space:]_-]+upgrade|(^|[^[:alnum:]])shim([^[:alnum:]]|$)'
-roots='src assets/web apps/mobile/rust/src apps/mobile/lib'
+roots='src assets/web mobile/alix/rust/src mobile/alix/lib'
 report=$(mktemp)
 trap 'rm -f "$report"' EXIT HUP INT TERM
 
 set +e
 rg -n -i --color never \
-    --glob '!apps/mobile/lib/src/rust/**' \
+    --glob '!mobile/alix/lib/src/rust/**' \
     "$pattern" \
     $roots >"$report"
 content_status=$?
 
 rg --files \
-    --glob '!apps/mobile/lib/src/rust/**' \
+    --glob '!mobile/alix/lib/src/rust/**' \
     $roots |
     rg -n -i --color never "$pattern" >>"$report"
 path_status=$?

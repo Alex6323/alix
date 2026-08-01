@@ -17,7 +17,7 @@ relevant parts of:
 - `Cargo.toml`, `Makefile`, and `.github/workflows/`;
 - `src/cli/`, `src/parser/`, `src/config.rs`, `src/serve/`, and contract
   snapshots under `tests/contracts/`;
-- `assets/web/`, `apps/mobile/lib/`, and `apps/mobile/pubspec.yaml`;
+- `assets/web/`, `mobile/alix/lib/`, and `mobile/alix/pubspec.yaml`;
 - `e2e/shots/capture.cjs` when assessing published screenshots.
 
 Do not assume a documentation claim is true because another documentation file

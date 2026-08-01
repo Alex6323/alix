@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run the alix mobile app (apps/mobile) on the named Android AVD, booting that
+# Run the alix mobile app (mobile/alix) on the named Android AVD, booting that
 # emulator first when it is not already up. Resolves the AVD to its adb serial
 # by name, so several emulators (phone + tablet) can run side by side. Used by
 # `make phone` / `make tablet`.
@@ -45,4 +45,4 @@ if ! serial=$(serial_for_avd); then
 fi
 
 echo "running on $avd ($serial)"
-cd "$(dirname "$0")/../apps/mobile" && exec flutter run -d "$serial"
+cd "$(dirname "$0")/../mobile/alix" && exec flutter run -d "$serial"

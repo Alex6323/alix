@@ -26,7 +26,7 @@ jobs:
       - name: Check the tag against pubspec
         run: |
           tag="${GITHUB_REF_NAME#mobile-v}"
-          pub=$(sed -n 's/^version: //p' apps/mobile/pubspec.yaml)
+          pub=$(sed -n 's/^version: //p' mobile/alix/pubspec.yaml)
           name="${pub%+*}"
           build="${pub#*+}"
           echo "tag $tag / pubspec $pub"
@@ -43,7 +43,7 @@ jobs:
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
-          flutter-version-file: apps/mobile/.fvmrc
+          flutter-version-file: mobile/alix/.fvmrc
           cache: true
 
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -60,14 +60,14 @@ jobs:
         with:
           workspaces: |
             .
-            apps/mobile/rust
+            mobile/alix/rust
 
       - name: Install the pinned flutter_rust_bridge_codegen
         run: cargo install --locked --version 2.12.0 flutter_rust_bridge_codegen
 
       - name: Install the app-pinned NDK
         run: |
-          gradle="apps/mobile/android/app/build.gradle.kts"
+          gradle="mobile/alix/android/app/build.gradle.kts"
           ndk=$(sed -n 's/^[[:space:]]*ndkVersion = "\([0-9][0-9.]*\)"$/\1/p' "$gradle")
           echo "app pins NDK $ndk"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
@@ -85,26 +85,26 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/mobile/android/app/alix-release.jks
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > mobile/alix/android/app/alix-release.jks
           {
             echo "storeFile=alix-release.jks"
             echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
             echo "keyAlias=$ANDROID_KEY_ALIAS"
             echo "keyPassword=$ANDROID_KEY_PASSWORD"
-          } > apps/mobile/android/key.properties
+          } > mobile/alix/android/key.properties
 
       # ONE arm64 APK, no --split-per-abi: the split offsets versionCode
       # per ABI, which would poison the monotonic scheme for zero benefit
       # when only aarch64 is built anyway.
       - name: Build the signed release APK (arm64)
-        run: cd apps/mobile && flutter build apk --release --target-platform android-arm64
+        run: cd mobile/alix && flutter build apk --release --target-platform android-arm64
 
       # Missing secrets would silently fall back to debug signing (the
       # local-build convenience); a published debug-signed APK is worse
       # than a failed run.
       - name: Assert the APK is not debug-signed
         run: |
-          cert=$(keytool -printcert -jarfile apps/mobile/build/app/outputs/flutter-apk/app-release.apk)
+          cert=$(keytool -printcert -jarfile mobile/alix/build/app/outputs/flutter-apk/app-release.apk)
           echo "$cert" | head -3
           if echo "$cert" | grep -q "CN=Android Debug"; then
             echo "the APK is debug-signed; are the signing secrets set?"; exit 1
@@ -114,7 +114,7 @@ jobs:
       # default, and this guard fails loud if the toolchain regresses.
       - name: Assert 16KB page alignment
         run: |
-          unzip -o -q apps/mobile/build/app/outputs/flutter-apk/app-release.apk 'lib/arm64-v8a/*' -d /tmp/apk
+          unzip -o -q mobile/alix/build/app/outputs/flutter-apk/app-release.apk 'lib/arm64-v8a/*' -d /tmp/apk
           # -W (wide) keeps each program header on ONE line; without it readelf
           # wraps LOAD onto two lines and `$NF` grabs PhysAddr (0x0), not Align.
           align=$(readelf -lW /tmp/apk/lib/arm64-v8a/librust_lib_alix_mobile.so | awk '/LOAD/ {print $NF; exit}')
@@ -130,14 +130,14 @@ jobs:
         run: |
           awk -v ver="$MOBILE_VERSION" \
             '$0 ~ "^## \\[" ver "\\]" {on=1; next} /^## \[/ {on=0} on' \
-            apps/mobile/CHANGELOG.md > /tmp/notes.md
+            mobile/alix/CHANGELOG.md > /tmp/notes.md
           if ! grep -q '[^[:space:]]' /tmp/notes.md; then
-            echo "no [$MOBILE_VERSION] section in apps/mobile/CHANGELOG.md"; exit 1
+            echo "no [$MOBILE_VERSION] section in mobile/alix/CHANGELOG.md"; exit 1
           fi
           cat /tmp/notes.md
 
       - name: Name the artifact
-        run: cp apps/mobile/build/app/outputs/flutter-apk/app-release.apk alix-arm64-v8a.apk
+        run: cp mobile/alix/build/app/outputs/flutter-apk/app-release.apk alix-arm64-v8a.apk
 
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:

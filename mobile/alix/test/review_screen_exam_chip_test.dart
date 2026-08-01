@@ -31,7 +31,7 @@ void main() {
 
   /// `examinable`: a deck with `% source:` (never a trace), matching the
   /// bridge's own `has_exam` capture (`!is_trace() && !sources.is_empty()`,
-  /// `apps/mobile/rust/src/api/review.rs`). `plain` has no source, so it
+  /// `mobile/alix/rust/src/api/review.rs`). `plain` has no source, so it
   /// never sits an exam.
   Directory deckRoot({required bool examinable}) {
     final root = Directory.systemTemp.createTempSync('alix-exam-chip-decks-');

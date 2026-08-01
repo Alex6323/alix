@@ -6,7 +6,7 @@
 // that adds more themes to alixThemes as pure data is covered by this same
 // test with no changes needed.
 //
-// flutter test's cwd is apps/mobile (verified: Directory.current.path during
+// flutter test's cwd is mobile/alix (verified: Directory.current.path during
 // a run), so the repo root is two levels up.
 import 'dart:io';
 

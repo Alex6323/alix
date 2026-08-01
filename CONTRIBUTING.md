@@ -115,8 +115,8 @@ build (`make frb-check` + an APK build against current stable Flutter).
 
 Production CI and release versions are repository inputs, not ambient machine
 state: Rust comes from `rust-toolchain.toml`, formatting/coverage nightly from
-`.rust-nightly-version`, Flutter from `apps/mobile/.fvmrc`, and Android's NDK
-from `apps/mobile/android/app/build.gradle.kts`. Every external Action is pinned
+`.rust-nightly-version`, Flutter from `mobile/alix/.fvmrc`, and Android's NDK
+from `mobile/alix/android/app/build.gradle.kts`. Every external Action is pinned
 to a full commit SHA and Dependabot proposes grouped weekly updates. The
 scheduled drift jobs are the deliberate exception for tool versions; they
 never publish artifacts.

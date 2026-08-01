@@ -336,7 +336,7 @@ to this codebase. When in doubt, mirror the surrounding code.
   actually ships.
 - **A source-code review deck contains source code, not design prose.** Every
   card in a deck presented for implementation review must cite implementation
-  or regression-test files (`src/`, `apps/`, `tests/`, or the local equivalent).
+  or regression-test files (`src/`, `mobile/`, `tests/`, or the local equivalent).
   Put ADR, spec, plan, book, and other explanatory prose in a separately named
   architecture or context deck. Before recommending a code-review deck, inspect
   every `at:` locator and reject the deck if any locator points to prose.

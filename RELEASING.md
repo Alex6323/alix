@@ -8,8 +8,8 @@ cutting a release is cheap; a version communicates *what changed*, not *when*.
 
 Production CI and releases use the exact Rust version in
 `rust-toolchain.toml`, nightly in `.rust-nightly-version`, Flutter version in
-`apps/mobile/.fvmrc`, and Android NDK in
-`apps/mobile/android/app/build.gradle.kts`. Workflow inputs also pin Java,
+`mobile/alix/.fvmrc`, and Android NDK in
+`mobile/alix/android/app/build.gradle.kts`. Workflow inputs also pin Java,
 Node, FRB codegen, mdBook, and coverage tooling. Every external GitHub Action
 is referenced by a full commit SHA.
 
@@ -68,7 +68,7 @@ at. **crates.io is not automated.**
    `make check` here: it is lenient (no `-Dwarnings`), so it passes on warnings
    that CI rejects. README, `docs/book`, and `CHANGELOG.md` in sync with the work
    being shipped. Move any mobile-app-only entries out of the crate `CHANGELOG.md`
-   into `apps/mobile/CHANGELOG.md` (they ship on `mobile-v*` tags, not here). (The
+   into `mobile/alix/CHANGELOG.md` (they ship on `mobile-v*` tags, not here). (The
    README coverage badge is live Codecov since 0.4.0, tracking `main` by itself,
    no per-release refresh.) Re-read the tutorial deck
    (`assets/decks/tutorial.md`) against what shipped this release: a card
@@ -115,13 +115,13 @@ at. **crates.io is not automated.**
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
 
-## The mobile app (apps/mobile)
+## The mobile app (mobile/alix)
 
 The Android app releases on its **own version stream**: pubspec `version:
 X.Y.Z+N` and a **`mobile-vX.Y.Z` tag** (disjoint from the crate's `v*`
 pattern, so neither track ever triggers the other). The `mobile-release`
 workflow builds one signed arm64 APK (`alix-arm64-v8a.apk`) and attaches it
-to a GitHub Release, notes lifted from `apps/mobile/CHANGELOG.md`'s matching
+to a GitHub Release, notes lifted from `mobile/alix/CHANGELOG.md`'s matching
 section.
 
 Rules:
@@ -137,9 +137,9 @@ To cut one:
 
 1. **Green gate:** `make check && make frb-check && make mobile-test &&
    make apk`, then install the APK on a real phone
-   (`adb install -r apps/mobile/build/app/outputs/flutter-apk/app-release.apk`)
+   (`adb install -r mobile/alix/build/app/outputs/flutter-apk/app-release.apk`)
    and run one review.
-2. **Finalize** `apps/mobile/CHANGELOG.md` (rename `## [Unreleased]` to
+2. **Finalize** `mobile/alix/CHANGELOG.md` (rename `## [Unreleased]` to
    `## [X.Y.Z] - date`, fresh empty Unreleased above) and bump pubspec's
    `version:` to `X.Y.Z+N`.
 3. **Live grader calibration:** run `make calibrate` under the same failure rule
@@ -170,7 +170,7 @@ absent; that file (gitignored) can point at the keystore for local signed
 builds if ever needed.
 
 For Google Play, run `make aab` and upload
-`apps/mobile/build/app/outputs/bundle/release/app-release.aab`. Keep `make apk`
+`mobile/alix/build/app/outputs/bundle/release/app-release.aab`. Keep `make apk`
 for GitHub releases and real-phone smoke tests.
 
 ## After a release

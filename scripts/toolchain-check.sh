@@ -33,24 +33,24 @@ case "$nightly" in
     *) bad ".rust-nightly-version must contain nightly-YYYY-MM-DD (found '$nightly')" ;;
 esac
 
-flutter=$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([^"]*\)"[[:space:]]*$/\1/p' apps/mobile/.fvmrc)
+flutter=$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([^"]*\)"[[:space:]]*$/\1/p' mobile/alix/.fvmrc)
 case "$flutter" in
     [0-9]*.[0-9]*.[0-9]*) ok "Flutter toolchain is exact ($flutter)" ;;
-    *) bad "apps/mobile/.fvmrc must pin an exact X.Y.Z Flutter version (found '$flutter')" ;;
+    *) bad "mobile/alix/.fvmrc must pin an exact X.Y.Z Flutter version (found '$flutter')" ;;
 esac
 
-ndk=$(sed -n 's/^[[:space:]]*ndkVersion = "\([0-9][0-9.]*\)"$/\1/p' apps/mobile/android/app/build.gradle.kts)
+ndk=$(sed -n 's/^[[:space:]]*ndkVersion = "\([0-9][0-9.]*\)"$/\1/p' mobile/alix/android/app/build.gradle.kts)
 case "$ndk" in
     [0-9]*.[0-9]*.[0-9]*) ok "Android NDK is exact ($ndk)" ;;
-    *) bad "apps/mobile/android/app/build.gradle.kts must pin an exact NDK (found '$ndk')" ;;
+    *) bad "mobile/alix/android/app/build.gradle.kts must pin an exact NDK (found '$ndk')" ;;
 esac
 
-frb=$(sed -n 's/^  flutter_rust_bridge: \([0-9][0-9.]*\)$/\1/p' apps/mobile/pubspec.yaml)
+frb=$(sed -n 's/^  flutter_rust_bridge: \([0-9][0-9.]*\)$/\1/p' mobile/alix/pubspec.yaml)
 case "$frb" in
     [0-9]*.[0-9]*.[0-9]*) ok "flutter_rust_bridge codegen is exact ($frb)" ;;
-    *) bad "apps/mobile/pubspec.yaml must pin an exact flutter_rust_bridge version (found '$frb')" ;;
+    *) bad "mobile/alix/pubspec.yaml must pin an exact flutter_rust_bridge version (found '$frb')" ;;
 esac
-frb_rust=$(sed -n 's/^flutter_rust_bridge = "=\([0-9][0-9.]*\)"$/\1/p' apps/mobile/rust/Cargo.toml)
+frb_rust=$(sed -n 's/^flutter_rust_bridge = "=\([0-9][0-9.]*\)"$/\1/p' mobile/alix/rust/Cargo.toml)
 if [ "$frb" = "$frb_rust" ]; then
     ok "Dart and Rust flutter_rust_bridge pins agree"
 else
@@ -135,9 +135,9 @@ require_literal .github/workflows/release.yml "toolchain: $rust" \
     "desktop releases use the exact Rust toolchain"
 require_literal .github/workflows/ci.yml "toolchain: $nightly" \
     "formatting and coverage use the date-pinned nightly"
-require_literal .github/workflows/ci.yml "flutter-version-file: apps/mobile/.fvmrc" \
+require_literal .github/workflows/ci.yml "flutter-version-file: mobile/alix/.fvmrc" \
     "mobile CI reads the exact Flutter pin"
-require_literal .github/workflows/mobile-release.yml "flutter-version-file: apps/mobile/.fvmrc" \
+require_literal .github/workflows/mobile-release.yml "flutter-version-file: mobile/alix/.fvmrc" \
     "mobile releases read the exact Flutter pin"
 require_literal .github/workflows/mobile-release.yml 'java-version: "21.0.11+10"' \
     "mobile releases pin the Temurin patch"
@@ -148,7 +148,7 @@ require_literal .github/workflows/pages.yml 'tool: mdbook@0.5.3' \
 require_literal .github/workflows/ci.yml 'tool: cargo-llvm-cov@0.8.5' \
     "coverage pins cargo-llvm-cov"
 require_literal .github/workflows/mobile-release.yml \
-    'gradle="apps/mobile/android/app/build.gradle.kts"' \
+    'gradle="mobile/alix/android/app/build.gradle.kts"' \
     "mobile releases read the NDK from the app pin"
 require_literal .github/workflows/mobile-release.yml \
     "cargo install --locked --version $frb flutter_rust_bridge_codegen" \

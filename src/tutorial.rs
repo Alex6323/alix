@@ -74,19 +74,19 @@ mod tests {
         );
     }
 
-    // Skipped without apps/mobile (published crate ships src/+assets/ only);
+    // Skipped without mobile/alix (published crate ships src/+assets/ only);
     // stated loudly so a skip is never mistaken for a pass.
     #[test]
     fn the_mobile_copy_matches_the_canonical_deck() {
-        let mobile_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("apps/mobile");
+        let mobile_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("mobile/alix");
         if !mobile_dir.exists() {
-            eprintln!("skipping: no apps/mobile tree here (published crate)");
+            eprintln!("skipping: no mobile/alix tree here (published crate)");
             return;
         }
         let copy = std::fs::read_to_string(mobile_dir.join("assets/decks/tutorial.md")).unwrap();
         assert_eq!(
             TUTORIAL_DECK, copy,
-            "apps/mobile/assets/decks/tutorial.md drifted from \
+            "mobile/alix/assets/decks/tutorial.md drifted from \
              assets/decks/tutorial.md (copy the canonical file over)"
         );
     }

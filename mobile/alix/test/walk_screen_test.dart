@@ -4,7 +4,7 @@
 // exam-chip tests (review_screen_exam_chip_test.dart) for the client-
 // acquisition seam. A trace fixture always carries an in-folder `% source:`
 // so its checkpoints resolve real gutter lines, matching the rust bridge's
-// own `trace_fixture` (apps/mobile/rust/src/api/review.rs).
+// own `trace_fixture` (mobile/alix/rust/src/api/review.rs).
 import 'dart:async';
 import 'dart:io';
 
@@ -43,7 +43,7 @@ void main() {
   }
 
   /// A two-hop trace over a real in-folder source file, matching the rust
-  /// bridge's own `trace_fixture` verbatim (apps/mobile/rust/src/api/review.rs).
+  /// bridge's own `trace_fixture` verbatim (mobile/alix/rust/src/api/review.rs).
   Directory twoHopRoot() {
     final root = tempRoot('alix-walk-2hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\nthird\n');

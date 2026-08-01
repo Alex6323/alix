@@ -1,6 +1,6 @@
 #!/bin/sh
 # Assert the frb (flutter_rust_bridge) toolchain-alignment invariants for
-# apps/mobile and FAIL on drift, so a broken mobile build names its cause
+# mobile/alix and FAIL on drift, so a broken mobile build names its cause
 # instead of surfacing as a Gradle stacktrace. Run via `make frb-check`;
 # the mobile CI runs it before building. See docs/dev/frb-bridge-setup.md
 # for what each invariant is and how to fix a drifted one.
@@ -13,7 +13,7 @@
 # build uses. That only affects manual `cargo ndk` runs, not the app build.
 set -eu
 
-app="apps/mobile"
+app="mobile/alix"
 fail=0
 
 ok()   { printf 'ok:   %s\n' "$1"; }
