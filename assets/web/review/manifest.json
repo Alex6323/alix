@@ -14,6 +14,7 @@
     "tutor.js",
     "exam.js",
     "walk.js",
+    "augment.js",
     "app.js"
   ]
 }

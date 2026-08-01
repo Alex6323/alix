@@ -37,6 +37,8 @@ const REVIEW_JS: &str = concat!(
     "\n",
     include_str!("../../assets/web/review/walk.js"),
     "\n",
+    include_str!("../../assets/web/review/augment.js"),
+    "\n",
     include_str!("../../assets/web/review/app.js"),
     "\n",
 );
@@ -56,6 +58,7 @@ pub(super) const REVIEW_JS_SOURCES: &[&str] = &[
     "tutor.js",
     "exam.js",
     "walk.js",
+    "augment.js",
     "app.js",
 ];
 
