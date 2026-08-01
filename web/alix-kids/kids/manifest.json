@@ -4,7 +4,8 @@
     "dom.css",
     "picker.css",
     "study.css",
-    "tutor.css"
+    "tutor.css",
+    "settings.css"
   ],
   "javascript": [
     "api.js",
@@ -14,6 +15,7 @@
     "picker.js",
     "study.js",
     "tutor.js",
+    "settings.js",
     "app.js"
   ]
 }

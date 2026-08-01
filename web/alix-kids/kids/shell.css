@@ -121,24 +121,6 @@ body {
 
 
 
-/* ── Settings menu (theme switcher lives behind the ☰) ──────────────────── */
-.menu-backdrop { position: absolute; inset: 0; z-index: 15; }
-.menu-backdrop[hidden] { display: none; }
-.menu-pop {
-  position: absolute; top: 62px; right: 34px; z-index: 16; min-width: 150px;
-  background: #fff; border-radius: 20px; box-shadow: 0 16px 40px rgba(180, 110, 60, 0.22);
-  padding: 14px 16px; display: grid; gap: 10px;
-}
-.menu-pop[hidden] { display: none; }
-.menu-title { font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.themes { display: flex; gap: 10px; }
-.swatch {
-  width: 46px; height: 46px; padding: 0; border: 3px solid transparent; border-radius: 14px;
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-}
-.swatch[aria-pressed="true"] { border-color: var(--ink); }
-.swatch-dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); }
-
 /* ── Pairing-token gate (shown on a 401 under `alix --lan`) ─────────────── */
 .gate {
   position: absolute; inset: 0; z-index: 40;

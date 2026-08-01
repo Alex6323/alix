@@ -23,6 +23,21 @@ const askCloseBtn = document.getElementById("askCloseBtn");
 
 const { appendChecklist, appendRuns, contextLine, el, frontPrompt, mascot: mascotEl } = createKidsDom({ document });
 
+const settings = createKidsSettings({
+  theme,
+  ui: {
+    backdrop: menuBackdrop,
+    button: menuBtn,
+    document,
+    el,
+    host: document.getElementById("themes"),
+    popup: menuPop,
+  },
+});
+menuBtn.addEventListener("click", settings.toggle);
+menuBackdrop.addEventListener("click", settings.close);
+document.addEventListener("keydown", settings.handleKey);
+
 const errorReporter = createKidsErrorReporter({
   console,
   timers: { setTimeout, clearTimeout },
@@ -132,45 +147,6 @@ stage.addEventListener("scroll", updateFades, { passive: true });
 if (window.ResizeObserver) { new ResizeObserver(updateFades).observe(stage); }
 window.addEventListener("resize", updateFades);
 
-// ── Settings menu + theme swatches ────────────────────────────────────────
-function buildThemeSwatches() {
-  const host = document.getElementById("themes");
-  host.innerHTML = "";
-  for (const name of theme.names()) {
-    const t = theme.palette(name);
-    const b = el("button", "swatch");
-    b.type = "button";
-    b.dataset.theme = name;
-    b.title = name;
-    b.setAttribute("aria-label", name);
-    b.style.background = "linear-gradient(168deg, " + t.bgTop + ", " + t.bgBot + ")";
-    const dot = el("span", "swatch-dot");
-    dot.style.background = t.accent;
-    b.appendChild(dot);
-    b.addEventListener("click", () => { theme.set(name); updateSwatchState(); closeMenu(); });
-    host.appendChild(b);
-  }
-  updateSwatchState();
-}
-function updateSwatchState() {
-  const list = document.querySelectorAll(".swatch");
-  for (const s of list) s.setAttribute("aria-pressed", String(s.dataset.theme === theme.current()));
-}
-function openMenu() {
-  menuPop.hidden = false;
-  menuBackdrop.hidden = false;
-  menuBtn.setAttribute("aria-expanded", "true");
-  updateSwatchState();
-}
-function closeMenu() {
-  menuPop.hidden = true;
-  menuBackdrop.hidden = true;
-  menuBtn.setAttribute("aria-expanded", "false");
-}
-menuBtn.addEventListener("click", () => { menuPop.hidden ? openMenu() : closeMenu(); });
-menuBackdrop.addEventListener("click", closeMenu);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
-
 // ── Token gate (a 401 under `alix --lan`) ─────────────────────────────────
 function showGate() {
   const g = document.getElementById("tokengate");
@@ -192,6 +168,6 @@ document.getElementById("gateInput").addEventListener("keydown", (e) => { if (e.
 // Home reads the box catalog once (no live counter -- a receding queue is a
 // false finish line). refresh() re-reads it, e.g. on returning from a session.
 
-buildThemeSwatches();
+settings.build();
 render();       // paints the splash immediately
 picker.load();  // then fills the boxes

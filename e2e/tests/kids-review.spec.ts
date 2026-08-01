@@ -35,6 +35,19 @@ import { kidsDeckRow, openApp } from "./helpers";
 test("home lists the Animals box", async ({ page }) => {
   await openApp(page);
   await expect(page.locator(".box", { hasText: "Animals" })).toBeVisible();
+
+  const settings = page.getByRole("button", { name: "Settings" });
+  await settings.click();
+  await expect(page.getByRole("menu", { name: "Colours" })).toBeVisible();
+  await expect(settings).toHaveAttribute("aria-expanded", "true");
+
+  await page.getByRole("button", { name: "Ocean" }).click();
+  await expect(page.getByRole("menu", { name: "Colours" })).toBeHidden();
+  await expect(settings).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(":root")).toHaveCSS("--accent", "#0fa8b4");
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator(":root")).toHaveCSS("--accent", "#0fa8b4");
 });
 
 test("a box drills into its decks, and a deck offers the two depth choices", async ({ page }) => {
