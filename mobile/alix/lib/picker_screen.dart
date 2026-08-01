@@ -2,27 +2,25 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/picker_bridge.dart';
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
+import 'package:alix_mobile/picker/picker_controller.dart';
+import 'package:alix_mobile/picker/picker_models.dart';
+import 'package:alix_mobile/picker/picker_port.dart';
+import 'package:alix_mobile/picker/picker_view.dart';
+import 'package:alix_mobile/picker/picker_widgets.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/settings_screen.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/src/rust/api/generate.dart';
-import 'package:alix_mobile/src/rust/api/listing.dart';
-import 'package:alix_mobile/src/rust/api/review.dart';
-import 'package:alix_mobile/src/rust/api/simple.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
-/// One list screen serving both levels: the decks root, and (with [dir]) a
-/// drilled-into workspace or deck folder. The root level also owns the
-/// rare controls (decks folder, About) behind a single overflow menu.
 class PickerScreen extends StatefulWidget {
   const PickerScreen({
     super.key,
@@ -41,13 +39,10 @@ class PickerScreen extends StatefulWidget {
     this.generatePollInterval,
   }) : masteredEntries = null;
 
-  /// The Mastered window: this same screen with a fixed, pre-filtered entry
-  /// list (no bridge listing call, no root chrome) so mastered decks stay
-  /// openable to re-review via the ordinary row/tap path.
   const PickerScreen.mastered({
     super.key,
     required this.root,
-    required List<DeckEntry> entries,
+    required List<PickerEntry> entries,
     this.device,
   }) : masteredEntries = entries,
        dir = null,
@@ -65,84 +60,50 @@ class PickerScreen extends StatefulWidget {
   final String root;
   final String? dir;
   final String? title;
-
-  /// This install's label for the store's last-writer marker.
   final String? device;
-
-  /// The persisted shared-folder setting, if any (shown in the folder
-  /// sheet; enables the revert action).
   final String? sharedDir;
-
-  /// Set when the shared folder was unusable this launch.
   final String? staleDecksDir;
-
-  /// Platform plumbing for the folder feature; absent on drilled-in levels.
   final PlatformAccess? access;
-
-  /// Persists a folder choice and swaps the root (null = app storage).
   final Future<void> Function(String?)? onSetDecksDir;
-
-  /// The active theme id (per `themeById`); null resolves to the dark
-  /// default. Drives the theme sheet's current-marker.
   final String? currentThemeId;
-
-  /// Persists a theme choice and re-themes the whole app live.
   final Future<void> Function(String?)? onSetTheme;
-
-  /// The support dir the pairing sheet reads and writes settings from;
-  /// null uses the real app support dir. Tests inject a temp one.
   final Directory? supportDir;
-
-  /// Builds the probe client the pairing sheet and the generate sheet use;
-  /// null uses [HttpServerClient]. Tests inject a fake.
   final ServerClient Function(ServerConfig)? buildClient;
-
-  /// How often the generate sheet polls the paired desktop while it is
-  /// still working; null uses the sheet's own default. Tests shrink it.
   final Duration? generatePollInterval;
-
-  /// Set only by [PickerScreen.mastered]: a fixed pre-filtered list of
-  /// mastered decks, skipping the bridge listing call.
-  final List<DeckEntry>? masteredEntries;
+  final List<PickerEntry>? masteredEntries;
 
   @override
   State<PickerScreen> createState() => _PickerScreenState();
 }
 
 class _PickerScreenState extends State<PickerScreen> {
-  late List<DeckEntry> _entries;
-
-  /// Syncthing conflict copies next to any store under the root; a loud
-  /// banner until dismissed for this visit.
-  List<String> _conflicts = const [];
-  bool _conflictsDismissed = false;
-
-  /// Whether this instance is the Mastered window (see
-  /// [PickerScreen.mastered]), not the ordinary root/drill-in listing.
-  bool get _isMasteredView => widget.masteredEntries != null;
-
-  /// Whether a paired desktop is reachable right now: gates the "Generate
-  /// deck" menu item on a live probe (as review's Ask chip does), so a
-  /// paired-but-offline desktop hides the item instead of offering a dead
-  /// button. Probed on mount and re-probed after the pairing sheet closes.
-  bool _serverReachable = false;
-
-  /// The drilled-into workspace's "ready by" target, if one is set; null at
-  /// the root level (each workspace row carries its own there).
-  Deadline? _deadline;
+  late final PickerPort _port;
+  late final PickerController _controller;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _port = const PickerBridge();
+    _controller = PickerController(
+      port: _port,
+      root: widget.root,
+      dir: widget.dir,
+      masteredEntries: widget.masteredEntries,
+    );
     _loadPairing();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPairing() async {
     final support = await _support();
     final config = readServer(support);
     if (config == null) {
-      if (mounted) setState(() => _serverReachable = false);
+      if (mounted) _controller.setServerReachable(false);
       return;
     }
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
@@ -156,14 +117,9 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     final live =
         version != null && compareVersions(version, minServerVersion) >= 0;
-    if (mounted) setState(() => _serverReachable = live);
+    if (mounted) _controller.setServerReachable(live);
   }
 
-  /// Opens the Settings page (the root's rare controls), pushed up from the
-  /// bottom Signal-style; its own back arrow returns it. "Generate deck" is
-  /// present only when a paired server is reachable (see [_serverReachable]).
-  /// Each Settings row opens its sheet over the page; the picker keeps the
-  /// state, so nothing is threaded back except these action closures.
   void _openSettings() {
     Navigator.of(context).push(
       PageRouteBuilder<void>(
@@ -175,7 +131,7 @@ class _PickerScreenState extends State<PickerScreen> {
           onDecksFolder: _folderSheet,
           onTheme: _themeSheet,
           onAbout: _about,
-          onGenerate: _serverReachable ? _generateSheet : null,
+          onGenerate: _controller.serverReachable ? _generateSheet : null,
         ),
         transitionsBuilder: (_, animation, _, child) {
           final curved = CurvedAnimation(
@@ -195,73 +151,19 @@ class _PickerScreenState extends State<PickerScreen> {
     );
   }
 
-  /// The one quiet Support touchpoint (the Settings heart row): the free
-  /// alternative first, then the sponsors link. Never on a study surface.
   Future<void> _supportSheet() async {
-    final dimStyle = Theme.of(
-      context,
-    ).textTheme.bodySmall?.copyWith(color: Theme.of(context).alix.dim);
     await showModalBottomSheet<void>(
       context: context,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Support alix',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Free and open source. Telling someone who studies is the best '
-                'support.',
-                style: dimStyle,
-              ),
-              const SizedBox(height: 8),
-              SelectableText(
-                'https://github.com/sponsors/Alex6323',
-                style: dimStyle,
-              ),
-            ],
-          ),
-        ),
-      ),
+      builder: (_) => const PickerSupportSheet(),
     );
   }
 
-  void _load() {
-    final fixed = widget.masteredEntries;
-    if (fixed != null) {
-      _entries = fixed;
-      return;
-    }
-    final dir = widget.dir;
-    _entries = dir == null
-        ? listRoot(root: widget.root)
-        : listMembers(root: widget.root, dir: dir);
-    if (dir == null) {
-      _conflicts = syncConflicts(root: widget.root);
-    } else {
-      // The drilled-in workspace's "ready by" readout, re-fetched with each
-      // load so it tracks mastery changes from reviews inside.
-      _deadline = workspaceDeadline(root: widget.root, dir: dir);
-    }
-  }
-
-  /// Opens a review session. `depth: null` (the tap path) lets the core
-  /// resolve the deck's remembered depth, or its default when it has none:
-  /// no sheet, no per-tap prompt.
-  Future<void> _openDeck(DeckEntry entry, {Depth? depth}) async {
+  Future<void> _openDeck(PickerEntry entry, {PickerDepth? depth}) async {
     if (!mounted) return;
-    // A stale remembered Recognize on a now-unaugmented deck would open an
-    // empty pick-only session; fall back to Recall (the default) instead.
     if (depth == null &&
-        entry.lastDepth == Depth.recognize &&
+        entry.lastDepth == PickerDepth.recognize &&
         !entry.canRecognize) {
-      depth = Depth.recall;
+      depth = PickerDepth.recall;
     }
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -269,23 +171,19 @@ class _PickerScreenState extends State<PickerScreen> {
           deckPath: entry.path,
           rootDir: widget.root,
           depth: switch (depth) {
-            Depth.recognize => ReviewDepth.recognize,
-            Depth.recall => ReviewDepth.recall,
-            Depth.reconstruct => ReviewDepth.reconstruct,
+            PickerDepth.recognize => ReviewDepth.recognize,
+            PickerDepth.recall => ReviewDepth.recall,
+            PickerDepth.reconstruct => ReviewDepth.reconstruct,
             null => null,
           },
           device: widget.device,
         ),
       ),
     );
-    // Progress changed while reviewing; refresh the due dots.
-    setState(_load);
+    _controller.reload();
   }
 
-  /// Opens the on-device trace walk. Mirrors `_openDeck`'s shape (push,
-  /// await the pop, refresh the due dots): a walked trace can graduate its
-  /// checkpoints or gain exam mastery, either of which changes this list.
-  Future<void> _openWalk(DeckEntry entry) async {
+  Future<void> _openWalk(PickerEntry entry) async {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -297,100 +195,44 @@ class _PickerScreenState extends State<PickerScreen> {
         ),
       ),
     );
-    setState(_load);
+    _controller.reload();
   }
 
-  /// The long-press re-pick: `_pickDepth` with the deck's remembered depth
-  /// highlighted, opening with whatever is chosen.
-  Future<void> _rePickDepth(DeckEntry entry) async {
-    final depth = await _pickDepth(
-      context,
-      selected: entry.lastDepth,
-      canRecognize: entry.canRecognize,
+  Future<void> _rePickDepth(PickerEntry entry) async {
+    final depth = await showModalBottomSheet<PickerDepth>(
+      context: context,
+      builder: (sheet) => PickerDepthSheet(
+        selected: entry.lastDepth,
+        canRecognize: entry.canRecognize,
+        onChoose: (depth) => Navigator.of(sheet).pop(depth),
+      ),
     );
     if (depth == null || !mounted) return;
     await _openDeck(entry, depth: depth);
   }
 
-  /// The workspace row's chip text, the web's short form: past-due names the
-  /// missed date; ahead shows date, days left, and the readiness percent.
-  String _deadlineChipText(Deadline dl) {
-    if (dl.daysLeft < 0) return '🎯 was due ${dl.date}';
-    final total = dl.total == 0 ? 1 : dl.total;
-    return '🎯 ${dl.date} · ${dl.daysLeft}d · ${(100 * dl.ready / total).round()}%';
-  }
+  String _ymd(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}'
+      '-${value.month.toString().padLeft(2, '0')}'
+      '-${value.day.toString().padLeft(2, '0')}';
 
-  /// Urgency tint, the web's tiers: dim while far, accent inside the last
-  /// week, warn once past.
-  Color _deadlineTint(Deadline dl, AlixTokens tokens) {
-    if (dl.daysLeft < 0) return tokens.warn;
-    return dl.daysLeft <= 7 ? tokens.bolt : tokens.dim;
-  }
-
-  /// The drill-in's fuller readout under the lede, the web's long form.
-  Widget _deadlineLede(BuildContext context, Deadline dl) {
-    final when = dl.daysLeft < 0 ? 'was due ${dl.date}' : dl.date;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 0, 2, 16),
-      child: Text(
-        '🎯 $when · ${dl.ready}/${dl.total} mastered',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: 'IBM Plex Mono',
-          fontSize: 12,
-          color: _deadlineTint(dl, Theme.of(context).alix),
-        ),
-      ),
-    );
-  }
-
-  String _ymd(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}'
-      '-${d.month.toString().padLeft(2, '0')}'
-      '-${d.day.toString().padLeft(2, '0')}';
-
-  /// The long-press sheet on a workspace row: set or move the "ready by"
-  /// date, or clear it. Writes the workspace's own alix.local.toml (the same
-  /// file the desktop edits), then refreshes the listing.
-  Future<void> _deadlineSheet(DeckEntry entry) async {
+  Future<void> _deadlineSheet(PickerEntry entry) async {
     final current = entry.deadline;
     final action = await showModalBottomSheet<String>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const SizedBox(width: 22, child: Text('🎯')),
-              title: const Text('Ready by…'),
-              subtitle: Text(
-                current == null
-                    ? 'set a target date for this workspace'
-                    : 'currently ${current.date}',
-              ),
-              onTap: () => Navigator.of(context).pop('pick'),
-            ),
-            if (current != null)
-              ListTile(
-                leading: const SizedBox(width: 22),
-                title: const Text('Clear deadline'),
-                onTap: () => Navigator.of(context).pop('clear'),
-              ),
-          ],
-        ),
+      builder: (sheet) => PickerDeadlineSheet(
+        current: current,
+        onPick: () => Navigator.of(sheet).pop('pick'),
+        onClear: () => Navigator.of(sheet).pop('clear'),
       ),
     );
     if (!mounted) return;
     if (action == 'clear') {
-      setWorkspaceDeadline(dir: entry.path, date: null);
-      setState(_load);
+      _controller.clearDeadline(entry.path);
       return;
     }
     if (action != 'pick') return;
     final today = DateTime.now();
-    // A past current date would fall outside the picker's range; open on
-    // today instead (moving a missed deadline forward is the whole point).
     final currentDate = current == null
         ? null
         : DateTime.tryParse(current.date);
@@ -404,353 +246,28 @@ class _PickerScreenState extends State<PickerScreen> {
       lastDate: today.add(const Duration(days: 5 * 365)),
     );
     if (picked == null || !mounted) return;
-    setWorkspaceDeadline(dir: entry.path, date: _ymd(picked));
-    setState(_load);
+    _controller.setDeadline(dir: entry.path, date: _ymd(picked));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final isRoot = widget.dir == null;
-    // The rare controls live behind a hamburger at the root only; a drill-in
-    // shows the back arrow in the same leading slot instead.
-    final showMenu = isRoot && widget.onSetDecksDir != null;
-    // Only the root loose-deck list tucks mastered decks away (item 13); a
-    // workspace drill-in (item 14) keeps them in their dependency tree, and
-    // the Mastered window itself is already the filtered list.
-    final splitMastered = isRoot && !_isMasteredView;
-    final active = splitMastered
-        ? _entries.where((e) => !e.mastered).toList()
-        : _entries;
-    final mastered = splitMastered
-        ? _entries.where((e) => e.mastered).toList()
-        : const <DeckEntry>[];
-    return Scaffold(
-      // The root shows the hamburger (opens Settings), a drill-in shows the
-      // back arrow, and an unpopped non-menu level reserves an empty slot;
-      // alixAppBar holds the wordmark at a fixed x for all three (and pins it
-      // across transitions).
-      appBar: alixAppBar(
-        context,
-        leading: Navigator.of(context).canPop()
-            ? const BackButton()
-            : showMenu
-            ? IconButton(
-                icon: const Icon(Icons.menu),
-                tooltip: 'Settings',
-                onPressed: _openSettings,
-              )
-            : const SizedBox(width: 56),
-      ),
-      body: Column(
-        children: [
-          if (widget.staleDecksDir != null)
-            _notice(
-              context,
-              'Shared folder ${widget.staleDecksDir} is unavailable; '
-              'using app storage for now.',
-            ),
-          if (_conflicts.isNotEmpty && !_conflictsDismissed)
-            _conflictBanner(context),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                // The Mastered window's own eyebrow, else a drilled-into
-                // workspace's name, matching the web picker's lede — with the
-                // workspace's "ready by" readout under it when one is set
-                // (the web's .lede-deadline placement).
-                if (_isMasteredView)
-                  _lede(context, 'Mastered 🎉')
-                else if (!isRoot && widget.title != null) ...[
-                  _lede(context, widget.title!),
-                  if (_deadline case final dl?) _deadlineLede(context, dl),
-                ],
-                if (_entries.isEmpty)
-                  _emptyHint(context)
-                else ...[
-                  for (final entry in active) _deckRow(context, entry),
-                  if (mastered.isNotEmpty)
-                    _masteredAffordance(context, mastered),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// The web picker's cyan uppercase mono eyebrow.
-  Widget _lede(BuildContext context, String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 0, 2, 16),
-      child: Text(
-        text.toUpperCase(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: 'IBM Plex Mono',
-          color: Theme.of(context).alix.bolt,
-          fontSize: 12,
-          letterSpacing: 2.2,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  /// A deck or workspace as the web's bordered rounded row: a workspace's
-  /// resolved emblem leads the title (else no leading icon), a chevron
-  /// marks a drillable folder, and one trailing marker (trace / exam-due /
-  /// due) reports the row's state. Tap opens at the remembered depth with
-  /// no prompt; a deck row's long-press re-picks it (item 10). A workspace
-  /// member (`entry.tree` non-empty) leads with its dependency-tree branch
-  /// prefix instead of an icon; a locked member dims the whole row (browse
-  /// stays allowed, only the tap's dimmed to signal the gate) (item 14).
-  Widget _deckRow(BuildContext context, DeckEntry entry) {
-    // A workspace member (it carries a dependency-tree prefix) renders its
-    // tree as drawn, connected guides rather than an icon.
-    if (entry.tree.isNotEmpty) return _memberRow(context, entry);
-    final theme = Theme.of(context);
-    final tokens = theme.alix;
-    final canRePick = !entry.isWorkspace && !entry.isTrace;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Opacity(
-        opacity: entry.locked ? 0.5 : 1,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(11),
-            onTap: () => entry.isWorkspace
-                ? _drillInto(entry)
-                : entry.isTrace
-                ? _openWalk(entry)
-                : _openDeck(entry),
-            onLongPress: canRePick
-                ? () => _rePickDepth(entry)
-                : entry.isWorkspace
-                ? () => _deadlineSheet(entry)
-                : null,
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 54),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                border: Border.all(color: tokens.line),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Row(
-                children: [
-                  if (entry.icon != null) ...[
-                    _emblem(entry.icon!, tokens),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          entry.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        // The workspace's quiet "ready by" chip, mirroring the
-                        // web row's (dim; accent inside the last week; warn
-                        // once past). Truncates, never wraps.
-                        if (entry.deadline case final dl?)
-                          Text(
-                            _deadlineChipText(dl),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: 'IBM Plex Mono',
-                              fontSize: 11,
-                              color: _deadlineTint(dl, tokens),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  ..._trailingMarker(theme, entry),
-                  if (entry.isWorkspace) ...[
-                    const SizedBox(width: 8),
-                    Icon(Icons.chevron_right, size: 22, color: tokens.dim),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// The one trailing state marker a row carries: a `trace` label, an `exam`
-  /// (exam-due) label, or the cyan due dot, in that precedence. Shared by the
-  /// plain deck row and the workspace-member row.
-  List<Widget> _trailingMarker(ThemeData theme, DeckEntry entry) {
-    final tokens = theme.alix;
-    if (entry.isTrace) {
-      return [
-        const SizedBox(width: 12),
-        Text(
-          'trace',
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: tokens.faint,
-            fontFamily: 'monospace',
-            letterSpacing: 1.2,
-          ),
-        ),
-      ];
+  void _openEntry(PickerEntry entry) {
+    if (entry.isWorkspace) {
+      _drillInto(entry);
+    } else if (entry.isTrace) {
+      _openWalk(entry);
+    } else {
+      _openDeck(entry);
     }
-    if (entry.examDue) {
-      return [
-        const SizedBox(width: 12),
-        Text(
-          'exam',
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: tokens.warn,
-            fontFamily: 'monospace',
-            letterSpacing: 1.2,
-          ),
-        ),
-      ];
+  }
+
+  void _longPressEntry(PickerEntry entry) {
+    if (entry.isWorkspace) {
+      _deadlineSheet(entry);
+    } else if (!entry.isTrace) {
+      _rePickDepth(entry);
     }
-    if (entry.due) {
-      return [
-        const SizedBox(width: 12),
-        Icon(Icons.circle, size: 8, color: tokens.bolt),
-      ];
-    }
-    return const [];
   }
 
-  /// A workspace member (item 14): the dependency-tree guides fill the full
-  /// row height as drawn, connected lines (via [TreeGuides] in a stretched
-  /// row), then the title and its state marker. A locked member dims.
-  Widget _memberRow(BuildContext context, DeckEntry entry) {
-    final theme = Theme.of(context);
-    final tokens = theme.alix;
-    final canRePick = !entry.isTrace;
-    // Members render as a borderless tree list (not individual cards) so the
-    // drawn guides run continuously from parent to child; the whole workspace
-    // drill-in reads as one tree instead of a stack of boxes.
-    return Opacity(
-      opacity: entry.locked ? 0.5 : 1,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => entry.isTrace ? _openWalk(entry) : _openDeck(entry),
-          onLongPress: canRePick ? () => _rePickDepth(entry) : null,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 46),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: TreeGuides(tree: entry.tree, color: tokens.dim),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 12, 16, 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              entry.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          ..._trailingMarker(theme, entry),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// The one row tucking mastered decks out of the ROOT list (item 13):
-  /// styled distinctly (the good/celebration tint) with a count, opening the
-  /// Mastered window. Only rendered when at least one mastered deck exists.
-  Widget _masteredAffordance(BuildContext context, List<DeckEntry> mastered) {
-    final theme = Theme.of(context);
-    final tokens = theme.alix;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(11),
-          onTap: () => _openMastered(mastered),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 54),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              border: Border.all(color: tokens.good.withValues(alpha: 0.4)),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Mastered · ${mastered.length}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: tokens.good,
-                    ),
-                  ),
-                ),
-                Icon(Icons.chevron_right, size: 22, color: tokens.good),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// A workspace's picker emblem: a small leading glyph, tinted to the
-  /// row's icon ink (mirrors the web picker's CSS-mask recolor). Constrained
-  /// to the row's icon size so a hand-authored file cannot blow up the row.
-  Widget _emblem(String path, AlixTokens tokens) {
-    const size = 22.0;
-    if (path.toLowerCase().endsWith('.svg')) {
-      return SvgPicture.file(
-        File(path),
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(tokens.dim, BlendMode.srcIn),
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Image.file(
-        File(path),
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-      ),
-    );
-  }
-
-  void _drillInto(DeckEntry entry) {
+  void _drillInto(PickerEntry entry) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PickerScreen(
@@ -763,7 +280,7 @@ class _PickerScreenState extends State<PickerScreen> {
     );
   }
 
-  void _openMastered(List<DeckEntry> mastered) {
+  void _openMastered(List<PickerEntry> mastered) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PickerScreen.mastered(
@@ -775,93 +292,45 @@ class _PickerScreenState extends State<PickerScreen> {
     );
   }
 
-  Widget _emptyHint(BuildContext context) {
-    final theme = Theme.of(context);
-    final atRoot = widget.dir == null && !_isMasteredView;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          atRoot
-              ? 'No decks here yet. Put Markdown (.md) decks in this folder, or '
-                    'choose a shared folder from Settings.'
-              : 'no decks here',
-          style: theme.textTheme.bodyMedium?.copyWith(color: theme.alix.dim),
-        ),
-        if (atRoot) ...[
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: _addTutorial,
-            icon: const Icon(Icons.school_outlined),
-            label: const Text('Add the tutorial deck'),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Copies the bundled tutorial deck into the current folder from the empty
-  /// state, then re-lists so its row appears; a write that fails (an
-  /// unwritable shared folder) says so instead of doing nothing.
   Future<void> _addTutorial() async {
     try {
-      await addTutorialDeck(widget.root);
+      await _controller.addTutorial();
     } catch (_) {
       if (mounted) _snack('could not add the tutorial deck here.');
-      return;
     }
-    if (!mounted) return;
-    setState(_load);
   }
 
-  /// A quiet one-line notice (per-launch state, not dismissible).
-  Widget _notice(BuildContext context, String text) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Text(
-        text,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) => PickerView(
+        entries: _controller.entries,
+        conflicts: _controller.conflicts,
+        conflictsDismissed: _controller.conflictsDismissed,
+        deadline: _controller.deadline,
+        isRoot: widget.dir == null,
+        isMasteredView: _controller.isMasteredView,
+        leading: Navigator.of(context).canPop()
+            ? const BackButton()
+            : widget.dir == null && widget.onSetDecksDir != null
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                tooltip: 'Settings',
+                onPressed: _openSettings,
+              )
+            : const SizedBox(width: 56),
+        title: widget.title,
+        staleDecksDir: widget.staleDecksDir,
+        onOpenEntry: _openEntry,
+        onLongPressEntry: _longPressEntry,
+        onOpenMastered: _openMastered,
+        onAddTutorial: _addTutorial,
+        onDismissConflicts: _controller.dismissConflicts,
       ),
     );
   }
 
-  /// The one loud surface: a sync fork needs resolving before reviewing.
-  Widget _conflictBanner(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'A sync conflict file sits next to your progress '
-              '(${_conflicts.length}). Review on one device at a time and '
-              'resolve it first; see the manual.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onErrorContainer,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            onPressed: () => setState(() => _conflictsDismissed = true),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// The decks-folder sheet: current folder, one primary action, a ghost
-  /// revert. Hidden below Android 11 (no honest way to reach a shared
-  /// folder there).
   Future<void> _folderSheet() async {
     final access = widget.access;
     if (access == null) return;
@@ -869,66 +338,22 @@ class _PickerScreenState extends State<PickerScreen> {
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
-      builder: (sheet) {
-        final theme = Theme.of(sheet);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Decks folder', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text(
-                  widget.root,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (supported)
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.of(sheet).pop();
-                      _chooseShared();
-                    },
-                    child: const Text('Choose shared folder…'),
-                  )
-                else
-                  Text(
-                    'Shared folders need Android 11 or newer.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                if (widget.sharedDir != null) ...[
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(sheet).pop();
-                      widget.onSetDecksDir?.call(null);
-                    },
-                    child: const Text('Use app storage'),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (sheet) => PickerFolderSheet(
+        root: widget.root,
+        supported: supported,
+        hasSharedDir: widget.sharedDir != null,
+        onChoose: () {
+          Navigator.of(sheet).pop();
+          _chooseShared();
+        },
+        onUseAppStorage: () {
+          Navigator.of(sheet).pop();
+          widget.onSetDecksDir?.call(null);
+        },
+      ),
     );
   }
 
-  /// The theme picker sheet: `alixThemes` grouped Dark/Light, each a name
-  /// plus a [surface, bolt, good] swatch built from that theme's OWN data
-  /// (mirrors the web gallery's [bg, accent, green] preview dots). The
-  /// active theme (falling back to the dark default) carries the one
-  /// current-marker. Tapping a theme applies + persists it live and closes
-  /// the sheet.
   Future<void> _themeSheet() async {
     final onSetTheme = widget.onSetTheme;
     if (onSetTheme == null) return;
@@ -936,109 +361,19 @@ class _PickerScreenState extends State<PickerScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheet) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(sheet).size.height * 0.75,
-          child: ListView(
-            key: const ValueKey('theme-sheet-list'),
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              for (final mode in const [Brightness.dark, Brightness.light]) ...[
-                _themeGroupLabel(
-                  sheet,
-                  mode == Brightness.dark ? 'Dark' : 'Light',
-                ),
-                for (final entry in alixThemes.where((t) => t.mode == mode))
-                  _themeTile(
-                    sheet,
-                    entry,
-                    current: current,
-                    onSetTheme: onSetTheme,
-                  ),
-              ],
-            ],
-          ),
-        ),
+      builder: (sheet) => PickerThemeSheet(
+        current: current,
+        onChoose: (theme) {
+          onSetTheme(theme);
+          Navigator.of(sheet).pop();
+        },
       ),
     );
   }
-
-  /// The sheet's small uppercase mono eyebrow, mirroring `_lede`.
-  Widget _themeGroupLabel(BuildContext context, String label) {
-    final tokens = Theme.of(context).alix;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'IBM Plex Mono',
-          color: tokens.bolt,
-          fontSize: 12,
-          letterSpacing: 2.2,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  Widget _themeTile(
-    BuildContext context,
-    AlixTheme theme, {
-    required String current,
-    required Future<void> Function(String?) onSetTheme,
-  }) {
-    final tokens = Theme.of(context).alix;
-    final isCurrent = theme.id == current;
-    return ListTile(
-      key: ValueKey('theme-tile-${theme.id}'),
-      leading: _themeSwatch(theme),
-      title: Text(theme.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: isCurrent
-          ? Icon(Icons.check, size: 18, color: tokens.bolt)
-          : null,
-      onTap: () {
-        onSetTheme(theme.id);
-        Navigator.of(context).pop();
-      },
-    );
-  }
-
-  /// A 3-color chip built from the theme's own data: surface + bolt + good,
-  /// the same [bg, accent, green] triple the web's swatch uses.
-  Widget _themeSwatch(AlixTheme theme) {
-    final scheme = theme.data.colorScheme;
-    final tokens = theme.data.alix;
-    return Container(
-      width: 36,
-      height: 24,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: tokens.line),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _themeDot(tokens.bolt),
-          const SizedBox(width: 4),
-          _themeDot(tokens.good),
-        ],
-      ),
-    );
-  }
-
-  Widget _themeDot(Color color) => Container(
-    width: 8,
-    height: 8,
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-  );
 
   Future<Directory> _support() async =>
       widget.supportDir ?? await getApplicationSupportDirectory();
 
-  /// Opens the pairing sheet (see pairing_sheet.dart) and refreshes the
-  /// paired-desktop gate on close: the only pairing surface in the app.
   Future<void> _pairSheet() async {
     final support = await _support();
     if (!mounted) return;
@@ -1049,27 +384,14 @@ class _PickerScreenState extends State<PickerScreen> {
     );
     if (!mounted) return;
     if (message != null) _snack(message);
-    // A pair/unpair changes whether the server is reachable, so re-probe it;
-    // the "Generate deck" gate must not go stale for this open screen. Runs
-    // in the background so the snack shows without waiting on the probe.
     unawaited(_loadPairing());
   }
 
-  /// The generate sheet: URL + optional guidance, generated on the paired
-  /// desktop (the phone never runs the AI itself), then placed on-device.
-  /// The desktop only ever hands back text (the iron rule); this method
-  /// owns the one local, on-device decision the server can't make: where to
-  /// save it. Every exit frees the server's generation slot with
-  /// `generateClose` -- either the sheet's own `dispose` (cancelled or
-  /// failed before `done`) or this method (the dest pick was cancelled, or
-  /// the deck was placed).
   Future<void> _generateSheet() async {
     final support = await _support();
     if (!mounted) return;
     final config = readServer(support);
-    if (config == null) {
-      return; // the menu item is pairing-gated; a race here is a quiet no-op
-    }
+    if (config == null) return;
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
 
     final dto = await showModalBottomSheet<RemoteGenerate>(
@@ -1084,9 +406,7 @@ class _PickerScreenState extends State<PickerScreen> {
 
     final deck = dto?.deck;
     final filename = dto?.filename;
-    if (deck == null || filename == null) {
-      return; // cancelled or failed; the sheet's dispose closed the slot
-    }
+    if (deck == null || filename == null) return;
 
     if (!mounted) {
       await client.generateClose().catchError((_) {});
@@ -1094,9 +414,6 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
 
-    // The phone (never the desktop) chooses the destination, per the iron
-    // rule; default to the current decks root, reusing the same in-app
-    // browser the folder sheet drives.
     final dest = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => FolderBrowser(start: widget.root)),
     );
@@ -1107,7 +424,7 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
 
-    final written = applyGeneratedDeck(
+    final written = _port.applyGeneratedDeck(
       decksDir: dest,
       filename: filename,
       text: deck,
@@ -1116,7 +433,7 @@ class _PickerScreenState extends State<PickerScreen> {
     client.close();
     if (!mounted) return;
     _snack('saved as $written');
-    setState(_load);
+    _controller.reload();
   }
 
   Future<void> _chooseShared() async {
@@ -1130,8 +447,6 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
     if (!mounted) return;
-    // Android browses in-app (the system SAF picker's DocumentsUI crashes on
-    // some devices); the desktop dev vehicle keeps its native dialog.
     final dir = Platform.isAndroid
         ? await Navigator.of(context).push<String>(
             MaterialPageRoute(
@@ -1151,16 +466,13 @@ class _PickerScreenState extends State<PickerScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  /// App and embedded-core versions side by side; the app's from the
-  /// installed package (never drifts from the build), the core's across
-  /// the bridge.
   Future<void> _about() async {
     final app = await widget.access?.appVersion();
     if (!mounted) return;
     showAboutDialog(
       context: context,
       applicationName: 'alix',
-      applicationVersion: 'mobile ${app ?? 'dev'} / core ${coreVersion()}',
+      applicationVersion: 'mobile ${app ?? 'dev'} / core ${_port.coreVersion}',
       applicationIcon: Image.asset(
         'assets/icon/alix-192.png',
         width: 48,
@@ -1171,28 +483,13 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 }
 
-/// The generate sheet's body: a URL + optional guidance field, a Generate
-/// button, and (once submitted) a calm working state -- mirroring
-/// `_PairSheet`'s shape: every failure (a local URL check, a refused start,
-/// an error phase, an expired pairing, or an unreachable poll) shows one
-/// inline line and leaves the sheet open, so the user can fix the input and
-/// try again rather than getting bounced. Pops with the settled
-/// [RemoteGenerate] once `phase == "done"` (deck text and a suggested file
-/// name both present); the caller places the file. Pops with `null` when the
-/// user cancels without ever reaching `done` (back, or tapping outside).
 class _GenerateSheet extends StatefulWidget {
   const _GenerateSheet({
     required this.client,
     this.pollInterval = const Duration(milliseconds: 400),
   });
 
-  /// Owned by the caller ([_PickerScreenState._generateSheet]), which keeps
-  /// it open past this sheet's own lifetime for the dest-pick step; see
-  /// [_GenerateSheetState._handedOff].
   final ServerClient client;
-
-  /// How often to poll `GET /api/remote/generate` while the desktop is
-  /// still working. Tests shrink this well below the default.
   final Duration pollInterval;
 
   @override
@@ -1207,21 +504,12 @@ class _GenerateSheetState extends State<_GenerateSheet> {
   bool _busy = false;
   String? _message;
   int? _elapsed;
-
-  /// Set right before popping with a `done` DTO: the caller now owns
-  /// [widget.client] for the dest pick, placement, and the final
-  /// `generateClose`. Every other exit (cancel, a terminal failure the user
-  /// dismisses by leaving) is this sheet's own job to close, so `dispose`
-  /// only skips it here.
   bool _handedOff = false;
 
   @override
   void dispose() {
     _pollTimer?.cancel();
     if (!_handedOff) {
-      // Fire and forget, mirroring the exam screen's dispose: the slot is
-      // dropped either way, and a reply landing after dispose (including a
-      // thrown PairingExpired) must not surface as an unhandled error.
       widget.client.generateClose().catchError((_) {});
       widget.client.close();
     }
@@ -1307,10 +595,8 @@ class _GenerateSheetState extends State<_GenerateSheet> {
       Navigator.of(context).pop(settled);
       return;
     }
-    // Still working (an open phase vocabulary; anything but done/error
-    // counts as "keep polling", mirroring the exam screen).
     setState(() => _elapsed = settled.elapsed);
-    _pollTimer = Timer(widget.pollInterval, () => _poll());
+    _pollTimer = Timer(widget.pollInterval, _poll);
   }
 
   @override
@@ -1375,120 +661,4 @@ class _GenerateSheetState extends State<_GenerateSheet> {
       ),
     );
   }
-}
-
-/// The session depth pick (the long-press re-pick); [selected], when given,
-/// gets one calm check-mark leading its tile as the current choice.
-Future<Depth?> _pickDepth(
-  BuildContext context, {
-  Depth? selected,
-  bool canRecognize = true,
-}) {
-  return showModalBottomSheet<Depth>(
-    context: context,
-    builder: (context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Recognize is pick-only: a deck with no cached distractors can build
-          // no pick, so the depth is greyed out until it's augmented.
-          for (final (depth, label, hint) in [
-            (
-              Depth.recognize,
-              'Recognize',
-              canRecognize
-                  ? 'pick the answer out of four'
-                  : 'augment the deck to enable',
-            ),
-            (Depth.recall, 'Recall', 'the everyday review'),
-            (Depth.reconstruct, 'Reconstruct', 'type or rebuild the answer'),
-          ])
-            ListTile(
-              enabled: canRecognize || depth != Depth.recognize,
-              leading: SizedBox(
-                width: 22,
-                child: depth == selected
-                    ? Icon(
-                        Icons.check,
-                        size: 18,
-                        color: Theme.of(context).alix.bolt,
-                      )
-                    : null,
-              ),
-              title: Text(label),
-              subtitle: Text(hint),
-              onTap: () => Navigator.of(context).pop(depth),
-            ),
-        ],
-      ),
-    ),
-  );
-}
-
-/// Draws a workspace member's dependency-tree guides as connected lines,
-/// replacing the box-drawing glyphs (which can't bridge the gap between
-/// rows). The [tree] string is the core's branch prefix in three-char
-/// segments: `"|  "` a continuing ancestor, `"   "` a finished one, `"|- "`
-/// this row with more siblings, `"`- "` this row as the last child. Each
-/// segment becomes one fixed-width column; the vertical lines fill the row
-/// height (via a stretched parent) so consecutive rows read as one tree.
-class TreeGuides extends StatelessWidget {
-  const TreeGuides({super.key, required this.tree, required this.color});
-
-  final String tree;
-  final Color color;
-
-  /// One column per three-char segment.
-  static const double _column = 15;
-
-  @override
-  Widget build(BuildContext context) {
-    final columns = tree.length ~/ 3;
-    return SizedBox(
-      width: columns * _column,
-      child: CustomPaint(
-        painter: TreeGuidesPainter(tree: tree, color: color),
-      ),
-    );
-  }
-}
-
-class TreeGuidesPainter extends CustomPainter {
-  TreeGuidesPainter({required this.tree, required this.color});
-
-  final String tree;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.1
-      ..style = PaintingStyle.stroke;
-    const column = TreeGuides._column;
-    final midY = size.height / 2;
-    for (var i = 0; i * 3 + 3 <= tree.length; i++) {
-      final segment = tree[i * 3];
-      final x = i * column + column / 2;
-      // A continuing ancestor or this row's tee runs the full height; the last
-      // child's connector stops at the branch point.
-      if (segment == '│' || segment == '├') {
-        canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-      } else if (segment == '└') {
-        canvas.drawLine(Offset(x, 0), Offset(x, midY), paint);
-      }
-      // The connector (tee or last-child) reaches right toward the title.
-      if (segment == '├' || segment == '└') {
-        canvas.drawLine(
-          Offset(x, midY),
-          Offset(i * column + column, midY),
-          paint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(TreeGuidesPainter old) =>
-      old.tree != tree || old.color != color;
 }

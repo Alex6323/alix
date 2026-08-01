@@ -16,25 +16,21 @@ void main() {
           'toggleKeypoint, reveal, revealNextLine, dismissForeignWriter, '
           'and restart own every ReviewController mutation',
     );
-    expect(_linesContaining('lib/picker_screen.dart', 'setState('), [
-      145,
-      159,
-      282,
-      300,
-      387,
-      408,
-      814,
-      855,
-      1119,
-      1237,
-      1243,
-      1257,
-      1265,
-      1280,
-      1288,
-      1296,
-      1312,
-    ]);
+    expect(
+      _linesContaining('lib/picker_screen.dart', 'setState('),
+      [525, 531, 545, 553, 568, 576, 584, 598],
+      reason: 'only the not-yet-extracted generate sheet still uses setState',
+    );
+    expect(
+      _linesContaining(
+        'lib/picker/picker_controller.dart',
+        'notifyListeners();',
+      ),
+      [48, 53, 69],
+      reason:
+          'setServerReachable, reload, and dismissConflicts own every picker '
+          'listing mutation; deadline and tutorial transitions reload',
+    );
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
@@ -46,9 +42,14 @@ void main() {
     expect(
       [
         ..._sites('lib/review_screen.dart', 'ListenableBuilder('),
+        ..._sites('lib/picker_screen.dart', 'ListenableBuilder('),
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
-      ['lib/review_screen.dart:231', 'lib/walk_screen.dart:192'],
+      [
+        'lib/review_screen.dart:231',
+        'lib/picker_screen.dart:305',
+        'lib/walk_screen.dart:192',
+      ],
     );
   });
 
@@ -60,7 +61,7 @@ void main() {
     ];
     expect(
       [for (final path in paths) ..._sites(path, 'Timer(')],
-      ['lib/picker_screen.dart:1313'],
+      ['lib/picker_screen.dart:599'],
     );
     expect([
       for (final path in paths) ..._sites(path, 'StreamSubscription'),
