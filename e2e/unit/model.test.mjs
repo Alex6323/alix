@@ -9,9 +9,11 @@ import {
 } from "../../assets/web/review/model.js";
 
 test("applying a new card resets only card scoped client state", () => {
+  const walk = { kind: "walk", phase: "reveal", current: 2 };
   const model = {
     ...createModel({ getItem: () => "1" }),
     state: { kind: "review", study_revision: 4 },
+    walk,
     revealed: 3,
     citationView: true,
     feedback: { passed: false },
@@ -26,6 +28,7 @@ test("applying a new card resets only card scoped client state", () => {
 
   assert.notEqual(next, model);
   assert.equal(next.state, dto);
+  assert.equal(next.walk, walk);
   assert.equal(next.revealed, 0);
   assert.equal(next.citationView, false);
   assert.equal(next.feedback, null);

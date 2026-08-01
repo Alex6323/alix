@@ -30,7 +30,6 @@ export function applyStudyState(model, state) {
   return {
     ...model,
     state,
-    walk: state?.kind === "walk" ? state : null,
     revealed: 0,
     citationView: false,
     answerConcealed: false,
