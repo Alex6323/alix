@@ -5,6 +5,7 @@ test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
   await page.setViewportSize({ width: 390, height: 844 });
   await openApp(page);
+  await expect(page.locator(".deckrow").first()).toBeVisible();
 });
 
 test("adult card surfaces render shared math SVGs safely", async ({ page, request }, testInfo) => {
