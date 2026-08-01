@@ -58,6 +58,70 @@ async function answerCurrentWildCard(page: Parameters<typeof openApp>[0]) {
   ]);
 }
 
+function longContentState({
+  answerLines,
+  choices = null,
+  note = [],
+  citations = [],
+  front = "What should remain visible when an authored answer is long?",
+  studyRevision = 1,
+}: {
+  answerLines: string[];
+  choices?: string[] | null;
+  note?: Array<{ kind: string; text: string }>;
+  citations?: Array<{
+    locator: string;
+    excerpt: { path: string; lines: Array<{ n: number; text: string }>; truncated: boolean };
+    error: null;
+  }>;
+  front?: string;
+  studyRevision?: number;
+}) {
+  return {
+    kind: "review",
+    study_revision: studyRevision,
+    phase: "review",
+    card: {
+      front,
+      front_runs: [{ text: front }],
+      front_units: null,
+      context: [],
+      context_runs: [],
+      back: answerLines,
+      back_runs: answerLines.map((text) => [{ text }]),
+      back_units: answerLines.map((text) => ({ kind: "sentence", text })),
+      reshaped: false,
+      note,
+      images: [],
+      images_back: [],
+      citations,
+      crumb: null,
+    },
+    choices,
+    choice_runs: choices?.map((text) => [{ text }]) ?? null,
+    keypoints: null,
+    keypoint_runs: null,
+    acquire: false,
+    mode: choices ? "choice" : "flip",
+    depth: "recall",
+    input: "type",
+    remaining: 1,
+    initial: 1,
+    reviews: 0,
+    passed: 0,
+    failed: 0,
+    acquired: 0,
+    exam_due: [],
+    can_restart: false,
+    promotable: false,
+    next_due_ms: null,
+    due_left: 0,
+    new_left: 0,
+    label: "long-content.md",
+    save_error: null,
+  };
+}
+
 test("the picker lists the fixture workspace and its decks", async ({ page }) => {
   const animals = adultDeckRow(page, "Animals");
   await expect(animals).toBeVisible();
@@ -182,6 +246,110 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
   await expect(answer).toHaveText("Cheetah");
 });
 
+test("long answer variants start at the first line and show scroll hints", async ({ page }) => {
+  const answerLines = Array.from(
+    { length: 36 },
+    (_, index) => `Answer line ${index + 1} stays reachable in authored study material.`,
+  );
+  const sourceLines = Array.from(
+    { length: 48 },
+    (_, index) => ({ n: index + 1, text: `source line ${index + 1}: reachable evidence` }),
+  );
+  const longAnswerState = longContentState({
+    answerLines,
+    front: "This long card follows a short card.",
+    studyRevision: 2,
+  });
+  const variants = [
+    {
+      name: "long answer after a short card",
+      state: longContentState({
+        answerLines: ["Short answer."],
+        front: "This short card comes first.",
+      }),
+      firstContent: ".reveal .answer",
+      open: async () => {
+        await page.getByRole("button", { name: "Reveal" }).click();
+        await expect(page.locator(".region.a")).toHaveClass(/balanced/);
+        await page.route("**/api/grade", (route) => route.fulfill({ json: longAnswerState }));
+        await page.getByRole("button", { name: "Got it" }).click();
+        await expect(page.locator(".front-text")).toHaveText("This long card follows a short card.");
+        await page.getByRole("button", { name: "Reveal" }).click();
+      },
+    },
+    {
+      name: "authored choices",
+      state: longContentState({
+        answerLines: ["The first choice is correct."],
+        choices: Array.from(
+          { length: 18 },
+          (_, index) => `Choice ${index + 1} is a deliberately substantial authored option.`,
+        ),
+      }),
+      firstContent: ".option",
+      open: async () => {},
+    },
+    {
+      name: "answer with note",
+      state: longContentState({
+        answerLines,
+        note: [{ kind: "sentence", text: "The note remains pinned below the scrollable answer." }],
+      }),
+      firstContent: ".reveal .answer",
+      open: async () => page.getByRole("button", { name: "Reveal" }).click(),
+    },
+    {
+      name: "source panel",
+      state: longContentState({
+        answerLines: ["A short answer that starts centered."],
+        citations: [{
+          locator: "source.txt:1-48",
+          excerpt: { path: "source.txt", lines: sourceLines, truncated: false },
+          error: null,
+        }],
+      }),
+      firstContent: ".source-line",
+      open: async () => {
+        await page.getByRole("button", { name: "Reveal" }).click();
+        await expect(page.locator(".region.a")).toHaveClass(/balanced/);
+        await page.keyboard.press("s");
+      },
+    },
+  ];
+
+  for (const variant of variants) {
+    await page.unroute("**/api/state");
+    await page.unroute("**/api/grade");
+    await page.route("**/api/state", (route) => route.fulfill({ json: variant.state }));
+    await openApp(page);
+    await variant.open();
+
+    const answer = page.locator(".region.a");
+    const below = page.locator(".more-hint:not(.top)");
+    const above = page.locator(".more-hint.top");
+    await expect(answer, variant.name).toHaveClass(/filled/);
+    expect(await answer.evaluate((element) => ({
+      scrollTop: element.scrollTop,
+      overflows: element.scrollHeight > element.clientHeight + 2,
+    })), variant.name).toEqual({ scrollTop: 0, overflows: true });
+    const answerBox = await answer.boundingBox();
+    const firstContentBox = await answer.locator(variant.firstContent).first().boundingBox();
+    expect(answerBox, variant.name).not.toBeNull();
+    expect(firstContentBox, variant.name).not.toBeNull();
+    expect(firstContentBox?.y ?? -1, variant.name).toBeGreaterThanOrEqual((answerBox?.y ?? 0) - 1);
+    await expect(below, variant.name).toHaveClass(/show/);
+    await expect(above, variant.name).not.toHaveClass(/show/);
+    await expect(page.locator(".region.q"), variant.name).toBeVisible();
+    await expect(page.locator(".legend"), variant.name).toBeVisible();
+
+    await answer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect(above, variant.name).toHaveClass(/show/);
+  }
+});
+
 // The empty "Nothing due." summary (nothing reviewed or introduced) shows one
 // quiet line saying when the next scheduled card comes due. The server-side
 // production of `next_due_ms` on the done payload is covered by tests/api.rs;
@@ -270,7 +438,7 @@ test("leaving an unsaved tutor returns to its originating card without pulling s
   await expect(page.locator(".front-text")).toHaveText(originFront ?? "");
 });
 
-test("a revealed note matches its choice column width and text size", async ({ page }) => {
+test("a revealed note matches its choice column width and text size", async ({ page }, testInfo) => {
   await openWildCram(page, "Recognize");
   await answerCurrentWildCard(page);
 
@@ -279,7 +447,7 @@ test("a revealed note matches its choice column width and text size", async ({ p
   await expect(note).toBeVisible();
   const choicesBox = await choices.boundingBox();
   const noteBox = await note.boundingBox();
-  await page.screenshot({ path: "/tmp/alix-note-layout.png", fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("note-layout.png"), fullPage: true });
   expect(choicesBox).not.toBeNull();
   expect(noteBox).not.toBeNull();
   expect(Math.abs((choicesBox?.width ?? 0) - (noteBox?.width ?? 0))).toBeLessThanOrEqual(1);
@@ -289,7 +457,7 @@ test("a revealed note matches its choice column width and text size", async ({ p
   expect(noteFontSize).toBe(choicesFontSize);
 });
 
-test("focusing a deck opens the drawer with its preamble, size and heatmap, no due count", async ({ page }) => {
+test("focusing a deck opens the drawer with its preamble, size and heatmap, no due count", async ({ page }, testInfo) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click(); // focuses the row → opens the drawer
 
@@ -310,7 +478,7 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(0);
   await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(0);
   await expect(page.locator(".drawer-due")).toHaveCount(0); // the old due count is gone
-  await drawer.screenshot({ path: "/tmp/claude-1000/-home-me-dev-developer-alex6323-projects-flashcard2-claude-agent-2/ea6ad9c5-47cc-4ff1-9a0d-b19dd66cad08/scratchpad/drawer.png" });
+  await drawer.screenshot({ path: testInfo.outputPath("drawer.png") });
 });
 
 test("jumping to the last deck with G reveals its drawer, not just opens it", async ({ page }) => {
