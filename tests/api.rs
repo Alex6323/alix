@@ -2424,6 +2424,42 @@ fn a_reveal_keeps_the_current_card_current_and_new_within_the_sitting() {
     }
 }
 
+/// The reveal must not flip the acquire question away mid-card: the store now
+/// sees the card engaged, but the recognition pick the client rendered must
+/// stay buildable and answerable this sitting.
+#[test]
+fn a_reveal_keeps_the_acquire_choice_answerable() {
+    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-revealpick\"\n---\n\
+        ## pick me <!-- id: card-rp1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n";
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| std::fs::write(dir.join("reveal-pick.md"), MIXED).unwrap(),
+        |_opts| {},
+    );
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"reveal-pick.md","depth":"recall"}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["acquire"], "body: {body}");
+    assert!(body["choices"].is_array(), "body: {body}");
+
+    let resp = post_gated(&base, "/api/reveal", "{}");
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(200, resp.status);
+    assert!(
+        body["choices"].is_array(),
+        "the recognition question survives the reveal: {body}"
+    );
+
+    let resp = post_choice(&base, 0);
+    assert_eq!(
+        200, resp.status,
+        "the pick stays answerable after the reveal"
+    );
+}
+
 #[test]
 fn post_api_choose_with_a_malformed_body_yields_400() {
     let (base, _guard) = spawn_test_server();

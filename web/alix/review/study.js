@@ -1215,7 +1215,7 @@ export function createStudy({
       }, "enter");
     }
     if (gap && gap.unaugmented > 0 && deck && openAugment) {
-      chip("Augment", "", () => openAugment(deck), "a");
+      chip("Augment", "ask", () => openAugment(deck), "a");
     }
     const restartLabel = dueLeft > 0 ? "Continue"
       : newLeft > 0 ? "Start new"

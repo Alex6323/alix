@@ -36,6 +36,8 @@ test("fact citations use the editor-style source panel", async ({ page }) => {
 });
 
 test("visible source scrollbars use the active theme", async ({ page }) => {
+  const resetResponse = await page.request.post("/api/reset", { data: { deck: "animals/source-fact.md" } });
+  expect(resetResponse.ok(), "the isolation reset must land").toBeTruthy();
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "Source Fact").click();
   await page.getByTitle("choose a depth").click();

@@ -50,8 +50,19 @@ async function answerCurrentWildCard(page: Parameters<typeof openApp>[0]) {
     return;
   }
 
-  const front = await page.locator(".front-text").textContent();
-  const answer = front?.includes("tallest") ? "Giraffe" : "Cheetah";
+  // The front and its options render together, but a caller arriving right
+  // after a transition response can read the OLD front while the new card is
+  // being painted (the answer for the stale front then never appears, and the
+  // click retries forever on a detached button). Wait until the front and the
+  // visible options agree before answering.
+  let answer = "";
+  await expect(async () => {
+    const front = await page.locator(".front-text").textContent();
+    answer = front?.includes("tallest") ? "Giraffe" : "Cheetah";
+    await expect(page.getByRole("button", { name: new RegExp(answer) })).toBeVisible({
+      visible: true,
+    });
+  }).toPass({ timeout: 10_000 });
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/choose")),
     page.getByRole("button", { name: new RegExp(answer) }).click(),
@@ -189,6 +200,10 @@ test("locking in a choice redraws only the answer, not the question", async ({ p
 });
 
 test("revealed inline formatting renders as safe DOM elements", async ({ page }) => {
+  // Revealing now records engagement, so an earlier test's reveal would
+  // reshape this session: start from a clean wild.
+  const resetResponse = await page.request.post("/api/reset", { data: { deck: "animals/wild.md" } });
+  expect(resetResponse.ok(), "the isolation reset must land").toBeTruthy();
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click();
   await page.getByTitle("choose a depth").click();
@@ -415,10 +430,14 @@ test("the tutor leave prompt keeps Enter for composing and Escape stays", async 
 test("leaving an unsaved tutor returns to its originating card without pulling state", async ({ page }) => {
   await openWildCram(page, "Recall");
   const firstState = await (await page.request.get("/api/state")).json();
+  const beforeSkip = await page.locator(".front-text").textContent();
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/skip")),
     page.getByRole("button", { name: /^Skip/ }).click(),
   ]);
+  // The response arriving is not the render: wait for the card to change
+  // before reading the origin front (a two-card session always swaps on skip).
+  await expect(page.locator(".front-text")).not.toHaveText(beforeSkip ?? "");
   const originFront = await page.locator(".front-text").textContent();
   await answerCurrentWildCard(page);
   await mockCompletedTutor(page);
@@ -439,6 +458,10 @@ test("leaving an unsaved tutor returns to its originating card without pulling s
 });
 
 test("a revealed note matches its choice column width and text size", async ({ page }, testInfo) => {
+  // Fresh deck: queue order is deck order, so the giraffe card (the only one
+  // with a note) serves first regardless of what earlier tests engaged.
+  const resetResponse = await page.request.post("/api/reset", { data: { deck: "animals/wild.md" } });
+  expect(resetResponse.ok(), "the isolation reset must land").toBeTruthy();
   await openWildCram(page, "Recognize");
   await answerCurrentWildCard(page);
 
@@ -467,16 +490,15 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   const drawer = page.locator(".drawer").filter({ hasText: "2 cards" });
   await expect(drawer).toHaveCount(1);
   await expect(drawer.locator(".drawer-preamble")).toHaveText(/wild animals/i);
-  // The progress funnel, top-right: both wild cards counted lib-side, and an
-  // earlier test met (acquired) both, so the "seen" component appears while
-  // "learned"/"retired" stay hidden at zero.
-  await expect(drawer.locator(".drawer-size")).toHaveText("2 cards · 2 seen");
+  // The progress funnel, top-right: both wild cards counted lib-side. The
+  // note-layout test above reset wild and answered exactly one card (the
+  // giraffe, engaged by its reveal), so one cell reads as the white acquired
+  // tier and the other stays empty; "learned"/"retired" stay hidden at zero.
+  await expect(drawer.locator(".drawer-size")).toHaveText("2 cards · 1 seen");
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2); // one per stamped card
-  // Earlier tests acknowledged ("Seen") both wild cards, so each cell reads as
-  // the white acquired tier (above grey seen, below the learned bands).
-  await expect(drawer.locator(".crumb-cell.acquired")).toHaveCount(2);
+  await expect(drawer.locator(".crumb-cell.acquired")).toHaveCount(1);
   await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(0);
-  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(0);
+  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(1);
   await expect(page.locator(".drawer-due")).toHaveCount(0); // the old due count is gone
   await drawer.screenshot({ path: testInfo.outputPath("drawer.png") });
 });

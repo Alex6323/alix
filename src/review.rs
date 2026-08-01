@@ -317,7 +317,9 @@ pub fn current_question(
         let ai = augment.distractors(&id, card.content_fingerprint)?;
         return choice::build(card, seed, ai);
     }
-    if store.progress(&id).is_none() {
+    // `current_fresh`, not a bare store check: a card revealed this sitting
+    // is already engaged in the store but keeps its acquire question.
+    if session.current_fresh(store) {
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
         }
