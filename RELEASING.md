@@ -4,6 +4,12 @@ alix is solo-built and pre-1.0. Releases are **driven by what's ready, not by a
 calendar** — there is no fixed release train. The pipeline is automated, so
 cutting a release is cheap; a version communicates *what changed*, not *when*.
 
+Every desktop release asset uploads with a `.sha256` beside it; verify a
+download with `sha256sum -c alix-<target>.tar.gz.sha256`. Before tagging,
+`make audit` must pass clean: it scans both lockfiles against the RustSec
+advisory database (the nightly advisory-drift workflow backstops this
+between releases, but the tag-time run is the blocking one).
+
 ## Pinned build environment
 
 Production CI and releases use the exact Rust version in

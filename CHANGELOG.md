@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Desktop release downloads are now verifiable: every release asset uploads
+  with a `.sha256` checksum beside it, and releases are gated on a clean
+  RustSec advisory scan of both lockfiles (`make audit`, backstopped by a
+  nightly advisory-drift workflow between releases).
+
 ### Fixed
 
 - The blank first load. A connection burst against a fresh or idle server

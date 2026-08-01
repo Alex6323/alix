@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
+.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
 
 # Compile the workspace.
 build:
@@ -39,6 +39,16 @@ lint:
 # boundary instead of after it becomes load-bearing.
 deps-check:
 	@sh scripts/deps-check.sh
+
+# RustSec advisory scan over both lockfiles (the crate's and the mobile
+# bridge's). A blocking step at release time (RELEASING.md); the nightly
+# advisory-drift workflow backstops it between releases.
+audit:
+	@if command -v cargo-audit >/dev/null 2>&1; then \
+		cargo audit && cargo audit --file mobile/alix/rust/Cargo.lock; \
+	else \
+		echo "audit: cargo-audit not found; install with: cargo install cargo-audit --locked"; exit 1; \
+	fi
 
 # Syntax-check inline scripts, standalone adult modules, and the exact composed
 # module served to the browser. Needs node; a no-op when node isn't installed,

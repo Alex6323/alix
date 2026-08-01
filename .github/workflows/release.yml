@@ -54,4 +54,7 @@ jobs:
           locked: true
           archive: alix-$target
           include: LICENSE-MIT,LICENSE-APACHE,README.md
+          # A .sha256 beside every archive, so a download is verifiable with
+          # `sha256sum -c` (RELEASING.md documents the check).
+          checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -193,7 +193,7 @@ safe or accurate.
 | A numeric source range slides onto unrelated text | Every complete citation fingerprints the normalized excerpt and source consumers fail closed on a mismatch. | Review doctor findings before using explicit locator repair; fingerprints detect drift but do not prove semantic support. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
 | Malformed or hostile input exhausts resources | Excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
-| A release or dependency is compromised | CI tests source changes; production toolchains are exact and direct Action references use immutable SHAs. | Hosted runner images, operating-system packages, transitive Action behavior, signed artifacts, checksums, SBOMs, and full provenance are not yet a complete release guarantee. |
+| A release or dependency is compromised | CI tests source changes; production toolchains are exact and direct Action references use immutable SHAs. Desktop release assets upload with per-asset SHA-256 checksums, and RustSec advisories are scanned nightly (advisory-drift) plus as a blocking `make audit` step at tag time, over both lockfiles. | Hosted runner images, operating-system packages, transitive Action behavior, signed artifacts, SBOMs, and full provenance are not yet a complete release guarantee. |
 
 ## Known security gaps
 

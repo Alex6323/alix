@@ -104,6 +104,7 @@ stray=$(
         case "$workflow" in
             .github/workflows/backend-drift.yml) continue ;;
             .github/workflows/mobile-drift.yml) continue ;;
+            .github/workflows/advisory-drift.yml) continue ;;
         esac
         awk -v file="$workflow" -v rust="$rust" -v nightly="$nightly" '
             /^[[:space:]]*toolchain:[[:space:]]*/ {

@@ -1,0 +1,34 @@
+name: Advisory drift
+
+# Nightly RustSec advisory scan over the exact lockfile. Advisories change
+# while the code stands still, so this is a scheduled drift probe rather than
+# a push gate: a red run here means the WORLD moved (a dependency gained an
+# advisory), not that a commit broke something. RELEASING.md makes a clean
+# run a blocking release step, which is where the policy bites.
+on:
+  schedule:
+    # 03:47 UTC, staggered clear of the other drift jobs.
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: stable
+
+      - uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
+        with:
+          tool: cargo-audit
+
+      # Both lockfiles: the published crate's and the mobile bridge's.
+      - run: cargo audit
+      - run: cargo audit --file mobile/alix/rust/Cargo.lock
