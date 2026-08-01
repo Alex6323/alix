@@ -1,0 +1,46 @@
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: grid; place-items: center; z-index: 60; }
+  .sheet[hidden] { display: none; }
+  /* Sheets float over the scrim, unlike the borderless content cards, so
+     they legitimately keep a subtle panel border + shadow; background is
+     --menu-bg (the same floating-surface tone as .menu/.theme-panel), not
+     --void, so the sheet reads as a raised layer above the page behind it. */
+  .sheet-panel { background: var(--menu-bg); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; max-width: min(440px, 90vw); color: var(--ink); box-shadow: 0 12px 44px rgba(0,0,0,0.45); animation: deal 0.2s both; }
+  .sheet-panel h2 { margin: 0 0 14px; font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
+  .sheet-keys { display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; align-items: center; font-size: 0.9rem; }
+  .sheet-keys kbd { justify-self: start; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px; }
+  .sheet-about p { margin: 0 0 10px; font-size: 0.92rem; }
+  .sheet-about .about-name { font-size: 1.05rem; }
+  .sheet-about .about-tag { color: var(--dim); }
+  .sheet-about .about-support { color: var(--dim); font-size: 0.85rem; }
+  .sheet-about a { color: var(--bolt); text-decoration: none; }
+  .sheet-about a:hover { text-decoration: underline; }
+
+  .sheet-add { display: grid; gap: 12px; min-width: 300px; }
+  .sheet-add label { display: grid; gap: 6px; font-size: 0.85rem; color: var(--dim); }
+  .add-sec { display: grid; gap: 6px; }
+  .add-sec h3 { margin: 0; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+  .sheet-err { color: var(--again); }
+  .share-code { font-family: var(--mono); font-size: 1.4rem; user-select: all; }
+  /* Armed (name matches) reset button borrows the app's danger hue, the same
+     one the overflow menu's own destructive items use (see `.menu button.danger`). */
+  #resetGo:not(:disabled) { border-color: var(--again); color: var(--again); }
+  .sheet-doctor { display: grid; gap: 8px; min-width: 320px; }
+  .doc-row { display: flex; gap: 8px; }
+  .doc-glyph { width: 1em; flex: none; color: var(--dim); } /* unknown status: dim default */
+  .doc-ok .doc-glyph { color: var(--good); }
+  .doc-warn .doc-glyph { color: var(--warn); }
+  .doc-fail .doc-glyph { color: var(--again); }
+  .doc-detail { color: var(--dim); }
+  .doc-remedy { display: block; color: var(--dim); font-size: 0.8rem; }
+  .sheet-pair { display: grid; gap: 10px; justify-items: center; min-width: 260px; }
+  .pair-qr svg { display: block; width: 200px; height: 200px; }
+  .pair-url { font-family: var(--mono); font-size: 0.8rem; user-select: all; word-break: break-all; }
+  .sheet-hint { color: var(--dim); font-size: 0.9rem; }
+
+  /* Pairing-token gate (shown on a 401 under `serve --lan`). */
+  #tokengate[hidden] { display: none; }
+  #tokengate .sheet-panel { display: grid; gap: 13px; }
+  #tokengate p { margin: 0; color: var(--dim); font-size: 0.85rem; line-height: 1.5; }
+  #tokengate code { font-family: var(--mono); color: var(--ink); }
+  #tokengate .bar-filter { width: 100%; box-sizing: border-box; }
+  #tokengate .bar-chip { justify-self: end; }

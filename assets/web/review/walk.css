@@ -44,11 +44,3 @@
   .summary .compression p { margin: 0; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
   /* leave-confirmation message, colored for the walk context */
   .leave-walk-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }
-
-  /* Pairing-token gate (shown on a 401 under `serve --lan`). */
-  #tokengate[hidden] { display: none; }
-  #tokengate .sheet-panel { display: grid; gap: 13px; }
-  #tokengate p { margin: 0; color: var(--dim); font-size: 0.85rem; line-height: 1.5; }
-  #tokengate code { font-family: var(--mono); color: var(--ink); }
-  #tokengate .bar-filter { width: 100%; box-sizing: border-box; }
-  #tokengate .bar-chip { justify-self: end; }

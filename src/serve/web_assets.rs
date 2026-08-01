@@ -10,17 +10,25 @@ pub(super) const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.j
 const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
 const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
 
-const REVIEW_CSS: &str = concat!(
-    include_str!("../../assets/web/review/shell.css"),
-    "\n",
-    include_str!("../../assets/web/review/study.css"),
-    "\n",
-    include_str!("../../assets/web/review/picker.css"),
-    "\n",
-    include_str!("../../assets/web/review/ai.css"),
-    "\n",
-    include_str!("../../assets/web/review/walk.css"),
-    "\n",
+macro_rules! review_css_sources {
+    ($($name:literal => $path:literal),+ $(,)?) => {
+        const REVIEW_CSS: &str = concat!($(include_str!($path), "\n",)+);
+
+        #[cfg(test)]
+        pub(super) const REVIEW_CSS_SOURCES: &[&str] = &[$($name),+];
+    };
+}
+
+review_css_sources!(
+    "shell.css" => "../../assets/web/review/shell.css",
+    "dom.css" => "../../assets/web/review/dom.css",
+    "sheets.css" => "../../assets/web/review/sheets.css",
+    "study.css" => "../../assets/web/review/study.css",
+    "picker.css" => "../../assets/web/review/picker.css",
+    "tutor.css" => "../../assets/web/review/tutor.css",
+    "exam.css" => "../../assets/web/review/exam.css",
+    "augment.css" => "../../assets/web/review/augment.css",
+    "walk.css" => "../../assets/web/review/walk.css",
 );
 const REVIEW_JS: &str = concat!(
     include_str!("../../assets/web/review/contracts.js"),
@@ -52,9 +60,6 @@ const REVIEW_JS: &str = concat!(
 #[cfg(test)]
 pub(super) const REVIEW_ASSET_MANIFEST: &str =
     include_str!("../../assets/web/review/manifest.json");
-#[cfg(test)]
-pub(super) const REVIEW_CSS_SOURCES: &[&str] =
-    &["shell.css", "study.css", "picker.css", "ai.css", "walk.css"];
 #[cfg(test)]
 pub(super) const REVIEW_JS_SOURCES: &[&str] = &[
     "contracts.js",

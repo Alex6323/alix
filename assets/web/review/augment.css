@@ -1,0 +1,80 @@
+  /* ── AI augment screen ── one card per target, a plain description, and a
+     BEFORE -> AFTER preview so a user sees what the augmentation does before
+     spending tokens on it (assets/ignore/design_handoff_alix_adult/Alix
+     Augment.dc.html was the visual reference; content comes from AUG_INFO,
+     not that mock's Dart text). A gap-fill card with an actual gap also carries
+     a batch-select checkbox, kept in the augment module's selection set and
+     submitted together via the footer's "Generate selected". */
+  .aug { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 0; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; scrollbar-width: none; }
+  .aug::-webkit-scrollbar { width: 0; }
+  .aug-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+  .aug-card:last-of-type { margin-bottom: 0; }
+  .aug-card.done { border-color: var(--good); }
+  /* head row: title + description (left, truncates), coverage + action (right, fixed). */
+  .aug-card-head { display: flex; align-items: flex-start; gap: 16px; }
+  .aug-card-info { flex: 1 1 auto; min-width: 0; }
+  .aug-card-title { color: var(--ink); font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-card-desc { color: var(--dim); font-size: 0.83rem; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-count { flex: 0 0 auto; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .aug-count.full { color: var(--good); }
+  .aug-actions { flex: 0 0 auto; display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; max-width: 58%; }
+  .aug-btn { background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; font-family: var(--sans); font-size: 0.8rem; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+  .aug-btn:hover:not(:disabled) { border-color: var(--bolt); color: var(--bolt-hi); }
+  .aug-btn:disabled { opacity: 0.35; cursor: default; }
+  .aug-btn.ghost { color: var(--dim); }
+  .aug-btn.ghost:hover:not(:disabled) { border-color: var(--again); color: var(--again); }
+  .aug-topos { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .aug-topo { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: 2px 5px 2px 10px; font-size: 0.76rem; color: var(--ink); }
+  .aug-topo > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aug-x { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 0.74rem; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+  .aug-x:hover { color: var(--again); }
+  .aug-none { color: var(--dim); font-size: 0.8rem; font-style: italic; }
+  /* the before/after preview: two bordered boxes + an arrow between them. */
+  .aug-ba { display: flex; align-items: stretch; gap: 12px; margin-top: 14px; }
+  .aug-before, .aug-after { flex: 1 1 0; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .aug-after { border-color: var(--bolt); }
+  .aug-arrow { flex: 0 0 auto; display: flex; align-items: center; color: var(--dim); font-size: 1.1rem; }
+  .aug-ba-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .aug-ba-label { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+  .aug-ba-label.accent { color: var(--bolt); }
+  .aug-ba-badge { font-family: var(--mono); font-size: 0.62rem; color: var(--dim); white-space: nowrap; }
+  .aug-ba-q { color: var(--ink); font-size: 0.86rem; margin-top: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-ba-a { color: var(--dim); font-size: 0.8rem; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* longer prose (the raw "before" text a formatting/key-points pass reshapes)
+     clamps to 3 lines instead of truncating mid-sentence on one. */
+  .aug-ba-prose { color: var(--ink); font-size: 0.82rem; line-height: 1.45; margin-top: 7px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .aug-ba-note { border-left: 2px solid var(--bolt); padding: 3px 0 3px 10px; margin-top: 9px; font-size: 0.78rem; color: var(--dim); }
+  .aug-ba-list { margin: 7px 0 0; padding-left: 16px; font-size: 0.8rem; color: var(--ink); }
+  .aug-ba-list li { margin-bottom: 2px; }
+  .aug-ba-list li:last-child { margin-bottom: 0; }
+  .aug-ba-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+  .aug-ba-chip { font-family: var(--mono); font-size: 0.74rem; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .aug-ba-chip.good { border-color: var(--good); color: var(--good); }
+  .aug-ba-arrow-sm { color: var(--dim); font-size: 0.8rem; }
+  .aug-ba-code { font-family: var(--mono); font-size: 0.78rem; color: var(--ink); background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px 10px; margin-top: 7px; }
+  .aug-ba-meta { color: var(--dim); font-size: 0.7rem; font-style: italic; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-tools { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+  .aug-foot { display: flex; flex-direction: column; gap: 8px; padding: 16px 4px 2px; }
+  .aug-guide-input { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.8rem; padding: 6px 12px; margin: 10px 0 12px; }
+  .aug-guide-input::placeholder { color: var(--dim); }
+  .aug-guide-input:focus { outline: none; border-color: var(--bolt); }
+  .aug-cost { color: var(--dim); font-size: 0.74rem; }
+  .aug-check { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; accent-color: var(--bolt); cursor: pointer; }
+  .aug-check:disabled { cursor: default; opacity: 0.5; }
+  /* A card's derived poll status (queued/failed/done), sized to sit beside the
+     Generate/Remove buttons without stretching the card; long text (a failed
+     target's error) truncates rather than wrapping the action row. */
+  .aug-status { flex: 0 1 auto; min-width: 0; max-width: 180px; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-status.queued { color: var(--dim); font-style: italic; }
+  .aug-status.failed { color: var(--again); }
+  .aug-status.done { color: var(--good); }
+  /* The batch work estimate, next to "Generate selected" in the footer keys row. */
+  .aug-work { color: var(--dim); font-family: var(--mono); font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* Reduce, not remove: keep the soft opacity fade for everyone; drop only the
+       movement (rise/scale). The transition still "kicks in", just without motion.
+       .stack is already opacity-only (cardIn), so it needs no override here. */
+    .reveal, .summary, .select, .ask-panel, .exam, .aug, .sheet-panel { animation-name: cardIn; }
+    .exam-elapsed .dot { animation-name: dotFade; }
+  }

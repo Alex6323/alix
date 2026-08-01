@@ -278,6 +278,20 @@ fn app_page_dispatches_the_kids_page_for_kids_and_review_for_adult() {
 #[test]
 fn adult_asset_manifest_matches_the_exact_composition_order() {
     let manifest: serde_json::Value = serde_json::from_str(REVIEW_ASSET_MANIFEST).unwrap();
+    assert_eq!(
+        REVIEW_CSS_SOURCES,
+        &[
+            "shell.css",
+            "dom.css",
+            "sheets.css",
+            "study.css",
+            "picker.css",
+            "tutor.css",
+            "exam.css",
+            "augment.css",
+            "walk.css",
+        ]
+    );
     assert_eq!(serde_json::json!(REVIEW_CSS_SOURCES), manifest["css"]);
     assert_eq!(serde_json::json!(REVIEW_JS_SOURCES), manifest["javascript"]);
     assert_eq!(Some(&"app.js"), REVIEW_JS_SOURCES.last());

@@ -1,9 +1,13 @@
 {
   "css": [
     "shell.css",
+    "dom.css",
+    "sheets.css",
     "study.css",
     "picker.css",
-    "ai.css",
+    "tutor.css",
+    "exam.css",
+    "augment.css",
     "walk.css"
   ],
   "javascript": [

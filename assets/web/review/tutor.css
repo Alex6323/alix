@@ -1,0 +1,42 @@
+  /* ── ask tutor ── */
+  .ask-panel { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
+  /* mono eyebrow header ("ASK TUTOR · card-scoped"), same idiom as the exam's
+     "QUESTION n/N" and the walk's "checkpoint n/N"; model/effort readout
+     shares the row, right-aligned, since it's secondary to the scope label. */
+  .ask-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .ask-eyebrow { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bolt); }
+  .ask-scope { font-family: var(--mono); font-size: 0.72rem; color: var(--faint); margin-left: 3px; }
+  .ask-model { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; color: var(--dim); }
+  /* card + conversation share one scroll region so the card can stick to its top */
+  .ask-scroll { display: flex; flex-direction: column; gap: 12px; max-height: 64vh; overflow-y: auto; padding-right: 4px; }
+  .ask-log { display: flex; flex-direction: column; gap: 10px; }
+  .ask-q { align-self: flex-end; max-width: 85%; background: color-mix(in srgb, var(--bolt) 10%, transparent); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
+  .ask-a { align-self: flex-start; max-width: 92%; white-space: pre-wrap; line-height: 1.5; border-left: 3px solid var(--bolt); padding: 4px 0 4px 12px; }
+  /* matches the exam's .exam-wait busy idiom (italic, --dim) rather than the
+     tutor mock's own style, so every "waiting on the backend" indicator in the app
+     reads the same. */
+  .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; display: flex; align-items: center; gap: 8px; }
+  .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
+  .ask-error { align-self: flex-start; color: var(--again); font-size: 0.85rem; }
+  .ask-hint { color: var(--dim); }
+  /* the card under discussion, stuck to the top of the scroll region so it stays
+     in view as the conversation scrolls under it (needs a solid bg to occlude) */
+  .ask-card { position: sticky; top: 0; z-index: 2; border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; background: var(--panel-bot); max-height: 30vh; overflow-y: auto; box-shadow: 0 10px 18px -14px var(--void); }
+  .ask-card-q { color: var(--dim); margin-bottom: 5px; }
+  .ask-card-ctx { color: var(--dim); font-family: var(--mono); font-size: 0.85em; margin-bottom: 4px; }
+  .ask-card-a { color: var(--ink); line-height: 1.45; white-space: pre-wrap; }
+  .ask-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  .ask-input:focus { outline: none; border-color: var(--bolt); }
+  .ask-input:disabled { opacity: 0.6; }
+  /* the tutor's "make this a card" draft: an editable front/back pair above the
+     question box. A secondary, occasional action, so it stays quiet (no border
+     glow, no persistent chrome) until a draft actually lands. */
+  .draft-box { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; background: var(--panel-bot); }
+  .draft-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+  .draft-front, .draft-back { width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  /* a long front never wraps or grows the box: it truncates, like every other
+     hand-crafted label in the app. */
+  .draft-front { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .draft-back { resize: vertical; line-height: 1.4; }
+  .draft-front:focus, .draft-back:focus { outline: none; border-color: var(--bolt); }
+  .draft-actions { display: flex; gap: 8px; }

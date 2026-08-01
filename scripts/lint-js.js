@@ -76,6 +76,16 @@ for (const file of htmlFiles) {
 }
 
 const cssSources = checkedSources("css", ".css");
+const discoveredCss = readdirSync(reviewDir)
+  .filter((source) => source.endsWith(".css"))
+  .sort();
+const declaredCss = [...cssSources].sort();
+if (JSON.stringify(discoveredCss) !== JSON.stringify(declaredCss)) {
+  fail(
+    `assets/web/review/manifest.json: CSS sources differ from the directory ` +
+    `(declared ${JSON.stringify(declaredCss)}, found ${JSON.stringify(discoveredCss)})`,
+  );
+}
 for (const source of cssSources) {
   const path = join(reviewDir, source);
   const css = readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -83,6 +93,16 @@ for (const source of cssSources) {
 }
 
 const javascriptSources = checkedSources("javascript", ".js");
+const javascriptOwners = new Set(
+  javascriptSources.map((source) => source.replace(/\.js$/, "")),
+);
+for (const source of cssSources) {
+  const stem = source.replace(/\.css$/, "");
+  const owner = stem === "shell" ? "app" : stem;
+  if (!javascriptOwners.has(owner)) {
+    fail(`${source}: no JavaScript owner ${owner}.js`);
+  }
+}
 if (javascriptSources.at(-1) !== "app.js") {
   fail("assets/web/review/manifest.json: app.js must be the last JavaScript source");
 }

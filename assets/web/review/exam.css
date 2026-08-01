@@ -1,0 +1,32 @@
+  /* ── AI exam ── */
+  .exam { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; scrollbar-width: none; }
+  .exam::-webkit-scrollbar { width: 0; }
+  .exam-wait { color: var(--dim); font-style: italic; }
+  .exam-elapsed { color: var(--dim); font-size: 0.8rem; }
+  .exam-elapsed .dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--bolt); animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+  @keyframes dotFade { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }  /* reduced-motion: opacity pulse, no scale */
+  .exam-error { border: 1px solid var(--again); border-left-width: 3px; border-radius: 10px; padding: 9px 12px; color: var(--again); font-size: 0.88rem; background: color-mix(in srgb, var(--again) 8%, transparent); }
+  /* the "QUESTION n / N" progress line reads as a cyan mono eyebrow (matches the walk's checkpoint eyebrow). */
+  .exam-progress { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); }
+  .exam-q { font-size: clamp(1.1rem, 3.4vw, 1.4rem); line-height: 1.4; color: var(--ink); }
+  .exam-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 120px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  .exam-input:focus { outline: none; border-color: var(--bolt); }
+  /* results headline: a mono verdict banner (green pass / red fail), also reused for the remediated confirmation. */
+  .exam-pass { color: var(--good); font-family: var(--mono); font-weight: 700; font-size: 1.15rem; }
+  .exam-fail { color: var(--again); font-family: var(--mono); font-weight: 700; font-size: 1.15rem; }
+  .exam-unlocks { color: var(--good); font-size: 0.9rem; }
+  .exam-result { border-left: 3px solid var(--line); padding: 2px 0 4px 12px; }
+  .exam-rq { color: var(--ink); margin-bottom: 2px; }
+  /* per-question verdict: a bordered-mono PASS/PARTIAL/FAIL pill + neutral feedback text. */
+  .exam-verdict { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; font-size: 0.92rem; }
+  .exam-verdict .vfb { color: var(--text); line-height: 1.45; }
+  .v-pill { flex: none; font-family: var(--mono); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+  .v-pill.v-pass { color: var(--good); border-color: color-mix(in srgb, var(--good) 42%, transparent); }
+  .v-pill.v-partial { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 42%, transparent); }
+  .v-pill.v-fail { color: var(--again); border-color: color-mix(in srgb, var(--again) 42%, transparent); }
+  .exam-label { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); margin: 6px 0 2px; }
+  .exam-points, .exam-missed { margin: 0 0 4px; padding-left: 18px; }
+  .exam-points li { color: var(--ink); opacity: 0.85; }
+  .exam-missed li { color: var(--again); opacity: 0.8; }
+  .exam-ready { color: var(--warn); margin-top: 8px; }

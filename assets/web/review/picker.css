@@ -144,3 +144,42 @@
      lesser of the two options next to the primary "Next". */
   .chip.quiet { border-color: transparent; background: none; color: var(--dim); font-weight: 400; }
   .chip.quiet:hover { border-color: transparent; color: var(--bolt-hi); }
+
+  /* The picker's focus drawer: opens under any selected deck. It shows the
+     deck's preamble (the prose under its H1, if any) and a per-card tier
+     heatmap (see paintHeatCell for the five tiers). A deck with a topology
+     augmentation splits that heatmap into named regions you can pick to
+     drill; a deck without one shows a single whole-deck bar. The reveal is a
+     single `height` transition on the clipping wrapper: the drawer's content
+     is laid out once and `overflow: hidden` just moves the clip line, so
+     opening and closing stay smooth, and it always animates to height 0
+     *before* it's removed (never a snap). */
+  .drawer-wrap { margin-left: 22px; overflow: hidden; flex: 0 0 auto; }
+                 /* height animated via the Web Animations API; flex:0 0 auto stops the
+                    flex column shrinking it to 0 (overflow:hidden ⇒ min-height:0) */
+  .drawer { margin: 2px 0 8px; display: flex; flex-direction: column; gap: 10px;
+            padding: 11px 13px; border: 1px solid var(--line); border-left: 2px solid var(--bolt);
+            border-radius: 9px; background: rgba(255,255,255,0.025); }
+  .drawer-head { display: flex; align-items: center; gap: 8px; }
+  .drawer-label { font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); }
+  /* The deck's static size, top-right of the drawer (the slot the old "X due"
+     readout used to hold, now size-only so it informs without backlog shock). */
+  .drawer-top { display: flex; align-items: center; justify-content: flex-end; }
+  .drawer-size { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .drawer-topo { font-family: var(--sans); font-size: 0.82rem; color: var(--ink);
+                 background: var(--menu-bg); border: 1px solid var(--line); border-radius: 7px;
+                 padding: 3px 7px; cursor: pointer; }
+  .drawer-body { display: flex; align-items: center; gap: 16px; }
+  .drawer-regions { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
+  .drawer-region { display: flex; flex-direction: column; gap: 3px; min-width: 52px;
+                   padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+                   background: transparent; cursor: pointer; transition: border-color 0.12s; }
+  .drawer-region:hover { border-color: var(--dim); }
+  .drawer-region.sel { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 8%, transparent); }
+  .drawer-region .crumb-name { font-size: 0.68rem; opacity: 0.8; }
+  .drawer-region.sel .crumb-name { opacity: 1; font-weight: 600; }
+  .drawer-region.all { justify-content: center; min-width: 0; }
+  .drawer-preamble { font-size: 0.8rem; color: var(--dim); line-height: 1.45; max-width: 640px;
+                     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .drawer-flat { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }

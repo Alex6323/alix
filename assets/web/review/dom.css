@@ -1,0 +1,113 @@
+  .front-text { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
+  /* A multi-line front (a reversed card's alternatives) reads as centred lines
+     rather than one run-on where the browser collapsed the newlines. */
+  .front-text.multi { display: flex; flex-direction: column; gap: 0.4em; }
+  .front-text .checklist { display: grid; gap: 6px; margin: 4px auto 0; text-align: left; }
+  .front-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+  .front-text .checklist-box { flex: none; font-family: var(--mono); }
+  .front-text pre { margin: 4px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.25); border-radius: 8px; font: 0.82rem/1.45 var(--mono); }
+
+  .front-text.topic { font-size: clamp(0.95rem, 2vw, 1.1rem); font-weight: 500; color: var(--dim); letter-spacing: 0.01em; }
+  .context { color: var(--bolt); font-family: var(--mono); white-space: pre-wrap;
+    font-size: clamp(1.15rem, 3vw, 1.45rem); line-height: 1.5; margin-top: 10px; }
+  /* Both holes render as chips with their glyphs hidden: the text still sizes
+     the chip and still copies, but `____` draws as four separated glyphs and
+     `[…]` is noise. Only the answerable gap gets the rule, which is drawn on
+     the content box so the padding insets it and it lands on the baseline. */
+  .context .hole { color: transparent; font-weight: 700;
+    background-color: color-mix(in srgb, var(--bolt-hi) 14%, transparent);
+    background-image: linear-gradient(var(--bolt-hi), var(--bolt-hi));
+    background-repeat: no-repeat;
+    background-origin: content-box;
+    background-size: 100% 2px;
+    background-position: center bottom 0.28em;
+    border-radius: 4px; padding: 0.06em 0.42em; }
+  .context .muted-hole { color: transparent;
+    background-color: color-mix(in srgb, var(--dim) 13%, transparent);
+    border-radius: 4px; padding: 0.06em 0.42em; }
+  /* bound the image by its region (flex shrink + min-height:0), so it scales
+     down to fit instead of scrolling; flex-grow 0 keeps small images at their
+     natural size rather than ballooning. */
+  .card-img { flex: 0 1 auto; min-height: 0; align-self: center; max-width: 100%; object-fit: contain; margin: 12px auto 0; border-radius: 8px; }
+
+  .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
+  /* A reshaped list reveals as a left-aligned block, centered as a whole; its lines
+     are an enumeration, so their left edge must line up. */
+  .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
+  /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
+  .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
+  code { font-family: var(--mono); color: var(--code); }
+  pre code { color: inherit; font-family: inherit; }
+  .math-run { color: inherit; background: none; }
+  .math-run[role="img"] { outline: none; }
+  .math-inline { display: inline-flex; align-items: baseline; max-width: 100%; line-height: 1; vertical-align: -0.16em; }
+  .math-inline svg { display: inline-block; width: auto; height: 1.12em; max-width: 100%; overflow: visible; }
+  .math-inline.math-standalone svg { height: 1.45em; }
+  .math-display { display: flex; justify-content: center; width: 100%; max-width: 100%; margin: 0.35em auto; overflow: hidden; }
+  .math-display svg { display: block; width: auto; height: auto; max-width: 100%; }
+  .math-run svg :where([fill]:not([fill="none"])) { fill: currentColor; }
+  .math-run svg :where([stroke]:not([stroke="none"])) { stroke: currentColor; }
+  .math-error { display: inline-flex; align-items: baseline; gap: 0.5em; max-width: 100%; color: var(--again); }
+  .math-error.math-display { justify-content: center; }
+  .math-error-source { overflow-wrap: anywhere; font-family: var(--mono); color: inherit; }
+  .math-error-label { font: 0.7em/1.2 var(--sans); color: var(--dim); white-space: nowrap; }
+  @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* revealed answer: neutral ink in Plex Mono (green is reserved for a genuinely
+     correct check: a passed typed line, a correct option, a ✓ key point). */
+  .answer { color: var(--ink); font-family: var(--mono); font-weight: 500; font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 0 0 4px; white-space: pre-wrap; }
+  .answer.pass { color: var(--good); }
+  .answer.pending { color: var(--dim); }
+  .acquire-hint { color: var(--dim); font-size: 0.85rem; margin-top: 12px; font-style: italic; }
+  /* a wrong typed line recedes (dim + small) so the correct answer leads */
+  .answer.miss { color: var(--again); opacity: 0.5; font-size: clamp(0.92rem, 2.6vw, 1.08rem); }
+  .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
+  .expected { color: var(--good); font-family: var(--mono); font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 2px 0 8px; }
+
+
+  /* notes: a warm, clearly-separated block (yellow, like the TUI), sharing the
+     answer/choice content column and its text scale */
+  .note {
+    box-sizing: border-box; width: 100%; max-width: min(96vw, 1040px);
+    text-align: left; margin: 18px auto 0;
+    background: var(--note-bg); border: 1px solid var(--note-line);
+    border-radius: 10px;
+    padding: 12px 15px; color: var(--note-ink);
+    font-size: clamp(1.02rem, 2.9vw, 1.22rem);
+  }
+  .card:has(.region.a.choices) .note { font-size: 1.05rem; }
+  .note p { margin: 0 0 10px; } .note p:last-child { margin-bottom: 0; }
+  .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: var(--note-code); }
+  .note .checklist { display: grid; gap: 6px; margin: 8px 0; }
+  .note .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
+  .note .checklist-box { flex: none; font-family: var(--mono); }
+
+  /* multiple-choice options */
+  .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: min(96vw, 1040px); margin: 0 auto; }
+  .option {
+    display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--text);
+    border-radius: 12px; padding: 13px 16px; min-height: 52px;
+    font-family: var(--mono); font-size: 1.05rem; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .option .num { font-family: var(--mono); font-size: 0.85rem; color: var(--faint); }
+  .option .opt { white-space: pre-wrap; }
+  .option.focused { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 10%, transparent); }
+  button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
+  .option.correct { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
+  .option.correct .num { color: var(--good); }
+  .option.wrong { border-color: var(--again); background: color-mix(in srgb, var(--again) 13%, transparent); color: var(--again); }
+  .option.wrong .num { color: var(--again); }
+  .option.dim { opacity: 0.45; }
+
+
+  /* explain key-point checklist, mirroring the trace walk's key-points list
+     (green ▸ bullets), with a per-point yes/no the cursor walks top to bottom. */
+  .kp-list { margin: 0; padding: 0; list-style: none; text-align: left; }
+  .kp-list .lbl { display: block; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--good); margin-bottom: 6px; }
+  .kp-list li.pt { position: relative; padding: 5px 8px 5px 22px; color: var(--ink); line-height: 1.45; border-radius: 7px; cursor: pointer; }
+  .kp-list li.pt::before { content: "▸"; position: absolute; left: 6px; color: var(--good); }
+  .kp-list li.pt.cur { background: rgba(255,255,255,0.05); box-shadow: inset 2px 0 0 var(--bolt); }
+  .kp-list li.pt.yes::before { content: "✓"; color: var(--good); }
+  .kp-list li.pt.no { color: var(--dim); }
+  .kp-list li.pt.no::before { content: "✗"; color: var(--again); }
