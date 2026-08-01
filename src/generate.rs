@@ -564,6 +564,29 @@ mod tests {
     }
 
     #[test]
+    fn run_config_prefers_the_generate_model_and_falls_back_to_the_ask_model() {
+        let ask = AskConfig {
+            model: Some("ask-model".to_string()),
+            ..AskConfig::default()
+        };
+
+        let mut generate = cfg(10);
+        generate.model = Some("deck-model".to_string());
+        assert_eq!(
+            Some("deck-model".to_string()),
+            run_config(&generate, &ask, true, None).model,
+            "the generate-scoped model must win over the ask model"
+        );
+
+        generate.model = None;
+        assert_eq!(
+            Some("ask-model".to_string()),
+            run_config(&generate, &ask, true, None).model,
+            "without a generate model the ask model applies"
+        );
+    }
+
+    #[test]
     fn prompt_substitutes_url_and_card_count() {
         let p = build_prompt("https://example.org/page", true, &cfg(12), &spec());
         assert!(p.contains("https://example.org/page"));

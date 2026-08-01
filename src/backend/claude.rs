@@ -418,6 +418,16 @@ mod tests {
                 r#"{"type":"result","subtype":"success","model":"claude-sonnet-5"}"#,
                 None,
             ),
+            // Being a system event is not enough without the init subtype...
+            (
+                r#"{"type":"system","subtype":"status","model":"claude-sonnet-5"}"#,
+                None,
+            ),
+            // ...and an init subtype is not enough on a non-system event.
+            (
+                r#"{"type":"user","subtype":"init","model":"claude-sonnet-5"}"#,
+                None,
+            ),
         ] {
             assert_eq!(
                 expected.map(str::to_string),

@@ -528,3 +528,60 @@ fn generate_trace_walk(
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::*;
+
+    fn generate_args(force: bool) -> GenerateArgs {
+        GenerateArgs {
+            source: "notes.md".to_string(),
+            source_url: None,
+            goal: None,
+            language: None,
+            audience: None,
+            card_style: None,
+            plan: false,
+            trace: false,
+            deck: false,
+            workspace: None,
+            output: None,
+            cards: None,
+            review: false,
+            print: false,
+            force,
+            title: None,
+            icon: None,
+            yes: false,
+            config: None,
+        }
+    }
+
+    #[test]
+    fn a_fresh_destination_resolves_and_an_existing_one_demands_force() {
+        let dir = TempDir::new().unwrap();
+        let config = Config {
+            decks_dir: Some(dir.path().to_path_buf()),
+            ..Config::default()
+        };
+
+        let (out_dir, target) =
+            resolve_destination(&generate_args(false), &config, "d.md").unwrap();
+        assert_eq!(dir.path(), out_dir, "the decks dir is the destination");
+        assert_eq!(dir.path().join("d.md"), target);
+
+        std::fs::write(&target, "existing deck").unwrap();
+        let err = resolve_destination(&generate_args(false), &config, "d.md").unwrap_err();
+        assert!(
+            format!("{err:#}").contains("already exists"),
+            "an existing target without --force must refuse: {err:#}"
+        );
+
+        assert!(
+            resolve_destination(&generate_args(true), &config, "d.md").is_ok(),
+            "--force must allow overwriting the existing target"
+        );
+    }
+}
