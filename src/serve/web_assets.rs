@@ -10,16 +10,16 @@ pub(super) const ALIX_LOGO_JS: &str = include_str!("../../web/shared/alix-logo.j
 const HEAD_HTML: &str = include_str!("../../web/shared/_head.html");
 const BRAND_HTML: &str = include_str!("../../web/shared/_brand.html");
 
-macro_rules! review_css_sources {
-    ($($name:literal => $path:literal),+ $(,)?) => {
-        const REVIEW_CSS: &str = concat!($(include_str!($path), "\n",)+);
+macro_rules! composed_asset_sources {
+    ($body:ident, $sources:ident, $($name:literal => $path:literal),+ $(,)?) => {
+        const $body: &str = concat!($(include_str!($path), "\n",)+);
 
         #[cfg(test)]
-        pub(super) const REVIEW_CSS_SOURCES: &[&str] = &[$($name),+];
+        pub(super) const $sources: &[&str] = &[$($name),+];
     };
 }
 
-review_css_sources!(
+composed_asset_sources!(REVIEW_CSS, REVIEW_CSS_SOURCES,
     "shell.css" => "../../web/alix/review/shell.css",
     "dom.css" => "../../web/alix/review/dom.css",
     "sheets.css" => "../../web/alix/review/sheets.css",
@@ -30,50 +30,36 @@ review_css_sources!(
     "augment.css" => "../../web/alix/review/augment.css",
     "walk.css" => "../../web/alix/review/walk.css",
 );
-const REVIEW_JS: &str = concat!(
-    include_str!("../../web/alix/review/contracts.js"),
-    "\n",
-    include_str!("../../web/alix/review/api.js"),
-    "\n",
-    include_str!("../../web/alix/review/model.js"),
-    "\n",
-    include_str!("../../web/alix/review/dom.js"),
-    "\n",
-    include_str!("../../web/alix/review/picker.js"),
-    "\n",
-    include_str!("../../web/alix/review/study.js"),
-    "\n",
-    include_str!("../../web/alix/review/tutor.js"),
-    "\n",
-    include_str!("../../web/alix/review/exam.js"),
-    "\n",
-    include_str!("../../web/alix/review/walk.js"),
-    "\n",
-    include_str!("../../web/alix/review/augment.js"),
-    "\n",
-    include_str!("../../web/alix/review/sheets.js"),
-    "\n",
-    include_str!("../../web/alix/review/app.js"),
-    "\n",
+composed_asset_sources!(REVIEW_JS, REVIEW_JS_SOURCES,
+    "contracts.js" => "../../web/alix/review/contracts.js",
+    "api.js" => "../../web/alix/review/api.js",
+    "model.js" => "../../web/alix/review/model.js",
+    "dom.js" => "../../web/alix/review/dom.js",
+    "picker.js" => "../../web/alix/review/picker.js",
+    "study.js" => "../../web/alix/review/study.js",
+    "tutor.js" => "../../web/alix/review/tutor.js",
+    "exam.js" => "../../web/alix/review/exam.js",
+    "walk.js" => "../../web/alix/review/walk.js",
+    "augment.js" => "../../web/alix/review/augment.js",
+    "sheets.js" => "../../web/alix/review/sheets.js",
+    "app.js" => "../../web/alix/review/app.js",
+);
+
+composed_asset_sources!(KIDS_CSS, KIDS_CSS_SOURCES,
+    "shell.css" => "../../web/alix-kids/kids/shell.css",
+    "dom.css" => "../../web/alix-kids/kids/dom.css",
+);
+composed_asset_sources!(KIDS_JS, KIDS_JS_SOURCES,
+    "api.js" => "../../web/alix-kids/kids/api.js",
+    "model.js" => "../../web/alix-kids/kids/model.js",
+    "dom.js" => "../../web/alix-kids/kids/dom.js",
+    "app.js" => "../../web/alix-kids/kids/app.js",
 );
 
 #[cfg(test)]
 pub(super) const REVIEW_ASSET_MANIFEST: &str = include_str!("../../web/alix/review/manifest.json");
 #[cfg(test)]
-pub(super) const REVIEW_JS_SOURCES: &[&str] = &[
-    "contracts.js",
-    "api.js",
-    "model.js",
-    "dom.js",
-    "picker.js",
-    "study.js",
-    "tutor.js",
-    "exam.js",
-    "walk.js",
-    "augment.js",
-    "sheets.js",
-    "app.js",
-];
+pub(super) const KIDS_ASSET_MANIFEST: &str = include_str!("../../web/alix-kids/kids/manifest.json");
 
 const PLEX_SANS_400: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-sans-400.woff2");
 const PLEX_SANS_500: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-sans-500.woff2");
@@ -93,10 +79,12 @@ const BALOO2_800: &[u8] = include_bytes!("../../web/alix-kids/fonts/baloo2-800.w
 static REVIEW_PAGE: LazyLock<String> = LazyLock::new(|| compose_page(REVIEW_HTML));
 static KIDS_PAGE: LazyLock<String> = LazyLock::new(|| compose_page(KIDS_HTML));
 
-pub(super) fn adult_asset(path: &str) -> Option<(&'static str, &'static str)> {
+pub(super) fn web_asset(path: &str) -> Option<(&'static str, &'static str)> {
     match path {
         "/review.css" => Some((REVIEW_CSS, "text/css; charset=utf-8")),
         "/review.js" => Some((REVIEW_JS, "application/javascript; charset=utf-8")),
+        "/kids.css" => Some((KIDS_CSS, "text/css; charset=utf-8")),
+        "/kids.js" => Some((KIDS_JS, "application/javascript; charset=utf-8")),
         _ => None,
     }
 }

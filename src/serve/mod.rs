@@ -321,7 +321,7 @@ pub fn run_review(
                     continue;
                 }
                 if method == Method::Get
-                    && let Some((body, content_type)) = adult_asset(&path)
+                    && let Some((body, content_type)) = web_asset(&path)
                 {
                     respond_asset(request, body, content_type);
                     continue;

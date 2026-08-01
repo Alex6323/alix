@@ -1621,6 +1621,41 @@ fn adult_assets_are_public_no_cache_and_allowlisted() {
 }
 
 #[test]
+fn kids_assets_are_public_no_cache_and_allowlisted() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    for (path, content_type, marker) in [
+        ("/kids.css", "text/css; charset=utf-8", ":root"),
+        (
+            "/kids.js",
+            "application/javascript; charset=utf-8",
+            "loadDecks()",
+        ),
+    ] {
+        let resp = http(&base, "GET", path, &[], &[]);
+        assert_eq!(200, resp.status, "path: {path}");
+        assert_eq!(
+            Some(content_type),
+            resp.header("Content-Type"),
+            "path: {path}"
+        );
+        assert_eq!(
+            Some("no-cache"),
+            resp.header("Cache-Control"),
+            "path: {path}"
+        );
+        assert!(
+            String::from_utf8_lossy(&resp.body).contains(marker),
+            "path: {path}"
+        );
+    }
+
+    let resp = http(&base, "GET", "/kids/nope.js", &[], &[]);
+    assert_eq!(404, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
 fn get_img_with_an_unknown_key_yields_404() {
     let (base, _guard) = spawn_test_server();
 

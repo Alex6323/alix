@@ -272,7 +272,12 @@ fn app_page_dispatches_the_kids_page_for_kids_and_review_for_adult() {
     assert!(app_page(Audience::Adult).contains("href=\"/review.css\""));
     assert!(app_page(Audience::Adult).contains("src=\"/review.js\""));
     assert!(!app_page(Audience::Adult).contains("<style>"));
-    assert!(app_page(Audience::Kids).contains("alix kids"));
+    let kids = app_page(Audience::Kids);
+    assert!(kids.contains("alix kids"));
+    assert!(kids.contains("href=\"/kids.css\""));
+    assert!(kids.contains("src=\"/kids.js\""));
+    assert!(!kids.contains("<style>"));
+    assert!(!kids.contains("<script>"));
 }
 
 #[test]
@@ -296,10 +301,10 @@ fn adult_asset_manifest_matches_the_exact_composition_order() {
     assert_eq!(serde_json::json!(REVIEW_JS_SOURCES), manifest["javascript"]);
     assert_eq!(Some(&"app.js"), REVIEW_JS_SOURCES.last());
 
-    let (css, css_type) = adult_asset("/review.css").unwrap();
+    let (css, css_type) = web_asset("/review.css").unwrap();
     assert_eq!("text/css; charset=utf-8", css_type);
     assert!(css.contains(":root"));
-    let (javascript, javascript_type) = adult_asset("/review.js").unwrap();
+    let (javascript, javascript_type) = web_asset("/review.js").unwrap();
     assert_eq!("application/javascript; charset=utf-8", javascript_type);
     assert!(javascript.contains("boot()"));
 
@@ -309,7 +314,36 @@ fn adult_asset_manifest_matches_the_exact_composition_order() {
         "/review.css/extra",
         "/review.js/extra",
     ] {
-        assert!(adult_asset(path).is_none(), "path: {path}");
+        assert!(web_asset(path).is_none(), "path: {path}");
+    }
+}
+
+#[test]
+fn kids_asset_manifest_matches_the_exact_composition_order() {
+    let manifest: serde_json::Value = serde_json::from_str(KIDS_ASSET_MANIFEST).unwrap();
+    assert_eq!(KIDS_CSS_SOURCES, &["shell.css", "dom.css"]);
+    assert_eq!(
+        KIDS_JS_SOURCES,
+        &["api.js", "model.js", "dom.js", "app.js"]
+    );
+    assert_eq!(serde_json::json!(KIDS_CSS_SOURCES), manifest["css"]);
+    assert_eq!(serde_json::json!(KIDS_JS_SOURCES), manifest["javascript"]);
+    assert_eq!(Some(&"app.js"), KIDS_JS_SOURCES.last());
+
+    let (css, css_type) = web_asset("/kids.css").unwrap();
+    assert_eq!("text/css; charset=utf-8", css_type);
+    assert!(css.contains(":root"));
+    let (javascript, javascript_type) = web_asset("/kids.js").unwrap();
+    assert_eq!("application/javascript; charset=utf-8", javascript_type);
+    assert!(javascript.contains("loadDecks()"));
+
+    for path in [
+        "/kids/shell.css",
+        "/kids/app.js",
+        "/kids.css/extra",
+        "/kids.js/extra",
+    ] {
+        assert!(web_asset(path).is_none(), "path: {path}");
     }
 }
 

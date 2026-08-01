@@ -4,8 +4,10 @@ const { spawnSync } = require("child_process");
 const { Script } = require("vm");
 
 const webDir = "web";
-const reviewDir = join(webDir, "alix", "review");
-const manifest = JSON.parse(readFileSync(join(reviewDir, "manifest.json"), "utf8"));
+const clients = [
+  { directory: join(webDir, "alix", "review"), served: "/review.js" },
+  { directory: join(webDir, "alix-kids", "kids"), served: "/kids.js" },
+];
 let blocks = 0;
 let modules = 0;
 let errors = 0;
@@ -15,15 +17,15 @@ function fail(message) {
   console.error(message);
 }
 
-function checkedSources(kind, extension) {
+function checkedSources(manifest, manifestPath, kind, extension) {
   const sources = manifest[kind];
   if (!Array.isArray(sources) || sources.length === 0) {
-    fail(`web/alix/review/manifest.json: ${kind} must be a non-empty array`);
+    fail(`${manifestPath}: ${kind} must be a non-empty array`);
     return [];
   }
   for (const source of sources) {
     if (typeof source !== "string" || !/^[A-Za-z0-9._-]+$/.test(source) || !source.endsWith(extension)) {
-      fail(`web/alix/review/manifest.json: invalid ${kind} source ${JSON.stringify(source)}`);
+      fail(`${manifestPath}: invalid ${kind} source ${JSON.stringify(source)}`);
     }
   }
   return sources;
@@ -34,7 +36,9 @@ function checkModule(code, label) {
     input: code,
     encoding: "utf8",
   });
-  if (result.status !== 0) {
+  if (result.error) {
+    fail(`${label}: module syntax check could not run: ${result.error.message}`);
+  } else if (result.status !== 0) {
     fail(`${label}: ${result.stderr.trim() || "module syntax check failed"}`);
   }
 }
@@ -80,63 +84,69 @@ for (const file of htmlFiles) {
   }
 }
 
-const cssSources = checkedSources("css", ".css");
-const discoveredCss = readdirSync(reviewDir)
-  .filter((source) => source.endsWith(".css"))
-  .sort();
-const declaredCss = [...cssSources].sort();
-if (JSON.stringify(discoveredCss) !== JSON.stringify(declaredCss)) {
-  fail(
-    `web/alix/review/manifest.json: CSS sources differ from the directory ` +
-    `(declared ${JSON.stringify(declaredCss)}, found ${JSON.stringify(discoveredCss)})`,
-  );
-}
-for (const source of cssSources) {
-  const path = join(reviewDir, source);
-  const css = readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  if (/@import\b/i.test(css)) fail(`${path}: @import is forbidden in composed CSS`);
-}
-
-const javascriptSources = checkedSources("javascript", ".js");
-const javascriptOwners = new Set(
-  javascriptSources.map((source) => source.replace(/\.js$/, "")),
-);
-for (const source of cssSources) {
-  const stem = source.replace(/\.css$/, "");
-  const owner = stem === "shell" ? "app" : stem;
-  if (!javascriptOwners.has(owner)) {
-    fail(`${source}: no JavaScript owner ${owner}.js`);
+function checkClient({ directory, served }) {
+  const manifestPath = join(directory, "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const cssSources = checkedSources(manifest, manifestPath, "css", ".css");
+  const discoveredCss = readdirSync(directory)
+    .filter((source) => source.endsWith(".css"))
+    .sort();
+  const declaredCss = [...cssSources].sort();
+  if (JSON.stringify(discoveredCss) !== JSON.stringify(declaredCss)) {
+    fail(
+      `${manifestPath}: CSS sources differ from the directory ` +
+      `(declared ${JSON.stringify(declaredCss)}, found ${JSON.stringify(discoveredCss)})`,
+    );
   }
-}
-if (javascriptSources.at(-1) !== "app.js") {
-  fail("web/alix/review/manifest.json: app.js must be the last JavaScript source");
-}
+  for (const source of cssSources) {
+    const path = join(directory, source);
+    const css = readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    if (/@import\b/i.test(css)) fail(`${path}: @import is forbidden in composed CSS`);
+  }
 
-const declarations = new Map();
-const javascriptParts = [];
-for (const source of javascriptSources) {
-  const path = join(reviewDir, source);
-  const code = readFileSync(path, "utf8");
-  javascriptParts.push(code);
-  modules++;
-  if (/^\s*import\b/m.test(code)) fail(`${path}: import declarations are forbidden`);
-  checkModule(code, path);
-  for (const name of topLevelNames(code)) {
-    const first = declarations.get(name);
-    if (first && first !== path) {
-      fail(`duplicate top-level declaration ${name}: ${first} and ${path}`);
-    } else {
-      declarations.set(name, path);
+  const javascriptSources = checkedSources(manifest, manifestPath, "javascript", ".js");
+  const javascriptOwners = new Set(
+    javascriptSources.map((source) => source.replace(/\.js$/, "")),
+  );
+  for (const source of cssSources) {
+    const stem = source.replace(/\.css$/, "");
+    const owner = stem === "shell" ? "app" : stem;
+    if (!javascriptOwners.has(owner)) {
+      fail(`${source}: no JavaScript owner ${owner}.js`);
     }
   }
+  if (javascriptSources.at(-1) !== "app.js") {
+    fail(`${manifestPath}: app.js must be the last JavaScript source`);
+  }
+
+  const declarations = new Map();
+  const javascriptParts = [];
+  for (const source of javascriptSources) {
+    const path = join(directory, source);
+    const code = readFileSync(path, "utf8");
+    javascriptParts.push(code);
+    modules++;
+    if (/^\s*import\b/m.test(code)) fail(`${path}: import declarations are forbidden`);
+    checkModule(code, path);
+    for (const name of topLevelNames(code)) {
+      const first = declarations.get(name);
+      if (first && first !== path) {
+        fail(`duplicate top-level declaration ${name}: ${first} and ${path}`);
+      } else {
+        declarations.set(name, path);
+      }
+    }
+  }
+
+  checkModule(`${javascriptParts.join("\n")}\n`, `composed ${served}`);
 }
 
-checkModule(`${javascriptParts.join("\n")}\n`, "composed /review.js");
+for (const client of clients) checkClient(client);
 
 if (errors) {
   console.error(`lint-js: ${errors} error(s)`);
   process.exit(1);
 }
 console.log(
-  `lint-js: ${blocks} inline block(s), ${modules} standalone module(s), and composed /review.js OK`,
+  `lint-js: ${blocks} inline block(s), ${modules} standalone module(s), and ${clients.length} composed bundle(s) OK`,
 );

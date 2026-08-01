@@ -1,0 +1,12 @@
+{
+  "css": [
+    "shell.css",
+    "dom.css"
+  ],
+  "javascript": [
+    "api.js",
+    "model.js",
+    "dom.js",
+    "app.js"
+  ]
+}
