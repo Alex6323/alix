@@ -1366,7 +1366,7 @@ function reveal() {
 // A pick is evidence only (ChooseFeedbackDto, discloses the correct index); the
 // grade is separate, via the rate bar / /api/grade. Same card stays on screen.
 function choose(i) {
-  api("/api/choose", post({ index: i })).then((f) => { chosen = f; render(); }).catch(resyncState);
+  api("/api/choose", post({ index: i, card: state.card.id })).then((f) => { chosen = f; render(); }).catch(resyncState);
 }
 // The rate bar. Try again → failed, Almost → partly, Got it → passed. /api/grade
 // is authoritative: it records and returns the next card (or the done state).

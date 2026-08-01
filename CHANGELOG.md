@@ -140,6 +140,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   grade whose reply was lost cannot grade the next card. Both web clients
   echo it and refetch the state on a 409.
 
+- Breaking: `POST /api/choose` now takes `{index, card}`, where `card` is the
+  `card.id` of the card the pick was made on. A pick naming any other card is
+  refused with 409 and grades nothing. The revision header proves the client
+  saw a transition; the id proves it is answering the card it rendered, which
+  the revision alone cannot. Both web clients send it.
+
 - Session pacing is now two `[review]` keys: `max_session` (cards a single
   sitting serves, default 10) and `new_cards_percent` (the new-card share of
   that cap, default 30). The old `max_new` / `limit` keys and the `--new` /

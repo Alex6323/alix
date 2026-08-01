@@ -162,6 +162,7 @@ pub(super) enum StudyCommand {
     },
     Choose {
         index: usize,
+        card: String,
         expected: u64,
         reply: Reply<Feedback<review::ChoiceFeedback>>,
     },
@@ -323,10 +324,12 @@ impl StudyHandle {
     pub(super) fn choose(
         &self,
         index: usize,
+        card: String,
         expected: u64,
     ) -> Option<Feedback<review::ChoiceFeedback>> {
         self.call(|reply| StudyCommand::Choose {
             index,
+            card,
             expected,
             reply,
         })
@@ -703,12 +706,16 @@ impl StudyState {
             }
             StudyCommand::Choose {
                 index,
+                card,
                 expected,
                 reply,
             } => {
                 let out = match self.reviewing.as_ref() {
                     _ if self.revision != expected => Feedback::NoSession,
                     None => Feedback::NoSession,
+                    Some(r) if r.session.current_id().as_deref() != Some(card.as_str()) => {
+                        Feedback::NoSession
+                    }
                     Some(r) => match review::choose(&r.session, &self.store, &r.augment, index) {
                         Some(f) => Feedback::Ok(f),
                         None => Feedback::Bad,

@@ -842,9 +842,9 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match read_index(&mut request) {
+                match read_choice(&mut request) {
                     None => respond_status(request, 400),
-                    Some(chosen) => match study.choose(chosen, expected) {
+                    Some((chosen, card)) => match study.choose(chosen, card, expected) {
                         None => respond_status(request, 503),
                         Some(Feedback::NoSession) => respond_status(request, 409),
                         Some(Feedback::Bad) => respond_status(request, 400),

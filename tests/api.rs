@@ -659,6 +659,26 @@ fn post_gated(base: &str, path: &str, json: &str) -> HttpResp {
     )
 }
 
+/// Posts a multiple-choice pick the way both web clients do: the revision
+/// echoed in the header and the id of the card on screen in the body. Tests
+/// that probe a missing or mismatched card id build the body themselves.
+fn post_choice(base: &str, index: usize) -> HttpResp {
+    let state = http(base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap_or_default();
+    let revision = body["study_revision"].as_u64().unwrap_or(0).to_string();
+    let card = body["card"]["id"].as_str().unwrap_or_default();
+    http(
+        base,
+        "POST",
+        "/api/choose",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision),
+        ],
+        format!(r#"{{"index":{index},"card":"{card}"}}"#).as_bytes(),
+    )
+}
+
 /// Selects [`FIXTURE_DECK`] (by its fixed file name, `sample.md`) and returns
 /// the resulting `StateDto` response — the common first step of every
 /// review-loop test below.
@@ -2011,11 +2031,7 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
         .position(|c| c.as_str() == Some(expected))
         .unwrap_or_else(|| panic!("the correct answer {expected:?} is among {choices:?}"));
 
-    let resp = post_gated(
-        &base,
-        "/api/choose",
-        &format!(r#"{{"index":{correct_index}}}"#),
-    );
+    let resp = post_choice(&base, correct_index);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -2040,7 +2056,7 @@ fn choices_keep_their_order_across_state_pulls_while_the_card_is_on_screen() {
     let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     let before = first["choices"].clone();
 
-    post_gated(&base, "/api/choose", r#"{"index":0}"#);
+    post_choice(&base, 0);
     let resp = http(&base, "GET", "/api/state", &[], &[]);
     let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
 
@@ -2073,7 +2089,7 @@ fn choices_keep_their_order_across_a_full_tutor_round_trip() {
     let before = first["choices"].clone();
     assert!(before.is_array(), "body: {first}");
 
-    post_gated(&base, "/api/choose", r#"{"index":0}"#);
+    post_choice(&base, 0);
     post_gated(
         &base,
         "/api/ask",
@@ -2187,7 +2203,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
             "expected a choice question (seed_store={seed_store}): {first}"
         );
 
-        post_gated(&base, "/api/choose", r#"{"index":0}"#);
+        post_choice(&base, 0);
         let resp = http(&base, "GET", "/api/state", &[], &[]);
         let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
         assert_eq!(
@@ -2215,9 +2231,63 @@ fn post_api_choose_with_a_malformed_body_yields_400() {
 fn post_api_choose_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_gated(&base, "/api/choose", r#"{"index":0}"#);
+    let resp = post_gated(&base, "/api/choose", r#"{"index":0,"card":"whatever"}"#);
 
     assert_eq!(409, resp.status);
+}
+
+#[test]
+fn post_api_choose_without_a_card_id_yields_400() {
+    let (base, _guard) = spawn_full_server(None);
+    post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice-armed.md","depth":"recognize"}"#,
+    );
+
+    let resp = post_gated(&base, "/api/choose", r#"{"index":0}"#);
+
+    assert_eq!(400, resp.status);
+}
+
+/// The revision proves the client saw *a* transition, not that it is looking
+/// at the card it is answering: a transition that forgot to bump the revision
+/// would let a pick be graded against whatever card the server moved on to
+/// (the wrong-answer grading bug of 2026-07-31). Naming the card closes that
+/// by construction, so no future transition can reopen it.
+#[test]
+fn post_api_choose_naming_another_card_yields_409() {
+    let (base, _guard) = spawn_full_server(None);
+    post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice-armed.md","depth":"recognize"}"#,
+    );
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    let revision = body["study_revision"]
+        .as_u64()
+        .expect("revision on state")
+        .to_string();
+    let current = body["card"]["id"]
+        .as_str()
+        .expect("the served card carries its id");
+
+    let resp = http(
+        &base,
+        "POST",
+        "/api/choose",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision),
+        ],
+        br#"{"index":0,"card":"0000000000000000000000000"}"#,
+    );
+
+    assert_eq!(
+        409, resp.status,
+        "a pick naming a card other than {current} must be refused"
+    );
 }
 
 // ── Skip / acquire / promote / restart / deselect ────────────────────────
@@ -3278,7 +3348,7 @@ fn every_gated_route_rejects_a_stale_revision_and_mutates_nothing() {
         ("/api/skip", "{}"),
         ("/api/acquire", "{}"),
         ("/api/check", r#"{"lines":["x"]}"#),
-        ("/api/choose", r#"{"index":0}"#),
+        ("/api/choose", r#"{"index":0,"card":"CURRENT"}"#),
         ("/api/remove", "{}"),
         ("/api/promote", "{}"),
         ("/api/restart", "{}"),
@@ -3294,6 +3364,9 @@ fn every_gated_route_rejects_a_stale_revision_and_mutates_nothing() {
             .as_u64()
             .expect("revision on state");
         let stale = fresh.wrapping_sub(1).to_string();
+        // The bodies are fixed but the card id is minted per run: `CURRENT`
+        // stands in for it, so the stale revision is the only thing wrong.
+        let body = body.replace("CURRENT", before["card"]["id"].as_str().unwrap_or_default());
 
         let resp = http(
             &base,
@@ -5512,7 +5585,7 @@ fn a_tutor_note_leaves_the_learner_on_the_same_card() {
 
     // The reported sequence answers the card first, so the client sits in its
     // feedback state with the tutor opened over it.
-    let resp = post_gated(&base, "/api/choose", r#"{"index":0}"#);
+    let resp = post_choice(&base, 0);
     assert_eq!(200, resp.status, "answering the multiple-choice card");
     let resp = http(&base, "GET", "/api/state", &[], &[]);
     let graded: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();

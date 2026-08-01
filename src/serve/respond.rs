@@ -102,13 +102,14 @@ pub(super) fn read_grade(request: &mut Request) -> Option<Grade> {
     }
 }
 
-pub(super) fn read_index(request: &mut Request) -> Option<usize> {
+pub(super) fn read_choice(request: &mut Request) -> Option<(usize, String)> {
     #[derive(Deserialize)]
     struct Body {
         index: usize,
+        card: String,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
-    Some(body.index)
+    Some((body.index, body.card))
 }
 
 // `take(cap + 1)` lets an oversized body read one byte past the cap, so an

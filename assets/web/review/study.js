@@ -235,7 +235,7 @@ export function createStudy({
   // override when correct, a plain "Continue" (grades failed) when wrong — so a
   // miss shows the right answer before the card moves on, same as any other check.
   function choose(i) {
-    api("/api/choose", post({ index: i })).catch(() => { load(); return Promise.reject(); }).then(f => {
+    api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
       feedback = f;
       // Only the answer changed. A full rerender() rebuilds the question too, which
       // reads as a flicker (and re-rasterises any math in it).

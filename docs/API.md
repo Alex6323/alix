@@ -77,7 +77,9 @@ so is every client.
   per-endpoint meaning in §5). `409` = "no active session/exam/walk of the
   kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
   endpoint (§4.5) called while `[serve] audience = "kids"`. `404` = unknown
-  route or image. Clients should not assume bodies stay empty forever — a JSON
+  route or image. `503` = a background owner thread is gone and the server is
+  draining; the request was fine, so it is the one error worth retrying as-is.
+  Clients should not assume bodies stay empty forever — a JSON
   `{"error": ...}` body may be added pre-1.0.
 - **A bare deck name that occurs in more than one container is a 400**
   (ambiguous) — use the qualified `<workspace>/<file>` key instead, which
@@ -121,7 +123,10 @@ so is every client.
    For typed checks call `POST /api/check {lines}`; whether the lines pair
    by position (`typeline`) or match in any order is derived server-side
    from the card's mode, never sent by the client. For a multiple-choice
-   pick call `POST /api/choose {index}`. **Both are evidence only**: they
+   pick call `POST /api/choose {index, card}`, where `card` is the `card.id`
+   of the card the pick was made on: the revision proves the client saw a
+   transition, the id proves it is answering the card it rendered, and a pick
+   naming any other card is a 409. **Both are evidence only**: they
    report input-vs-expected and leave the session on the same card. Nothing
    is recorded yet.
 4. `POST /api/grade` is **authoritative**: `{grade: "failed"|"partly"|"passed"}`
@@ -386,7 +391,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/skip` | – | `StateDto` | 409 |
 | POST | `/api/acquire` | – | `StateDto` | 409 |
 | POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
-| POST | `/api/choose` | `{index}` | `ChooseFeedbackDto` | 400 bad body / no question; 409 |
+| POST | `/api/choose` | `{index, card}` (`card`: the current `card.id`, required) | `ChooseFeedbackDto` | 400 bad body / no question; 409 no session / another card |
 | POST | `/api/remove` | – | `StateDto` | 409 |
 | POST | `/api/promote` | – | `StateDto` | 400 not a virtual card / promote failed; 409 |
 | POST | `/api/restart` | – | `StateDto` | 409 |
@@ -555,7 +560,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 
 | Key | Type | Meaning |
 |---|---|---|
-| `id` | string? | The card's prefixed id (`card-<token>`, `card-<token>-N` for a cloze hole, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed; it is stable across edits to the card's text. |
+| `id` | string? | The card's prefixed id (`card-<token>`, `card-<token>-N` for a cloze hole, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed, and send it back on `POST /api/choose`; it is stable across edits to the card's text. |
 | `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
 | `front_units` | [NoteUnitDto]? | Present when the front contains a task list, fenced code, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
