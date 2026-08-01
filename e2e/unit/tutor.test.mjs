@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createTutor } from "../../assets/web/review/tutor.js";
+import { createTutor } from "../../web/alix/review/tutor.js";
 
 test("tutor owns its transcript and chooses the walk endpoint explicitly", async () => {
   const calls = [];

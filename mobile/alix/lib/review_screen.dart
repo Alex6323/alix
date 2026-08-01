@@ -21,7 +21,7 @@ const _sans = 'IBM Plex Sans';
 /// The review screen: renders the core's ReviewState and feeds the learner's
 /// actions back. All review logic lives in Rust; this widget switches on
 /// `acquire` and `mode` and forwards taps. The surface mirrors the web
-/// client (assets/web/review.html): a mono mode-tag, a bold question over a
+/// client (web/alix/review.html): a mono mode-tag, a bold question over a
 /// faded divider, mode-specific answer bodies, a warm boxed note, and the
 /// web's chip legend.
 class ReviewScreen extends StatefulWidget {
@@ -422,7 +422,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   // ── crumb strip (region breadcrumb) ──────────────────────────────────────
 
   /// The "where am I" region breadcrumb, mirroring the web's `.crumb-strip`
-  /// (assets/web/review.html): shown only when this session is
+  /// (web/alix/review.html): shown only when this session is
   /// topology-ordered and the current card sits in a region (`crumb()`
   /// returns `null` otherwise, e.g. every plain fact deck). Hidden means
   /// hidden: no reserved space, no divider. Recomputed on every build so

@@ -1,8 +1,8 @@
 # e2e
 
 A Playwright smoke suite that drives the real `alix` binary through a
-browser, covering both web clients: the adult app (`assets/web/review.html`)
-and the kids app (`assets/web/kids/kids.html`). `npx playwright test --list`
+browser, covering both web clients: the adult app (`web/alix/review.html`)
+and the kids app (`web/alix-kids/kids.html`). `npx playwright test --list`
 already prints what each test checks (the names are full sentences), and the
 project instructions require the two docs (book + README) to describe
 *behavior*, not this suite — so this file only covers what the test list

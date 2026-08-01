@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createWalk } from "../../assets/web/review/walk.js";
+import { createWalk } from "../../web/alix/review/walk.js";
 
 test("walk owns prediction grade and leave transitions", async () => {
   const calls = [];

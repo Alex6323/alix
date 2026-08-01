@@ -1,4 +1,4 @@
-// The ThemeData port carries the web tokens (assets/web/theme.css) exactly:
+// The ThemeData port carries the web tokens (web/shared/theme.css) exactly:
 // the brand primary, the palette surfaces, and the AlixTokens extension.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,9 +55,9 @@ void main() {
   // explicitly, and `:root` applies regardless of the active `data-theme`,
   // so an omitting theme's --text resolves to dark's #c9cdd8, never its
   // own --ink; verified empirically in Chromium against the real
-  // assets/web/theme.css - see ThemeVars's doc comment in theme.dart).
+  // web/shared/theme.css - see ThemeVars's doc comment in theme.dart).
   // None of the 4 shipped themes (dark/light/nord/solarized-light)
-  // actually omit any of the 3 in assets/web/theme.css today, so this is
+  // actually omit any of the 3 in web/shared/theme.css today, so this is
   // exercised here with a synthetic ThemeVars, not via the CSS drift guard
   // (test/theme_gallery_test.dart).
   const probe = ThemeVars(

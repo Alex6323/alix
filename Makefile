@@ -203,7 +203,7 @@ preflight:
 # Guard the crate package. Cargo.toml uses an `include` allowlist, which makes
 # cargo walk the filesystem rather than list files via git -- so it does NOT
 # honor .gitignore. A stray build artifact or a forgotten untracked file under
-# an included path (src/**, assets/web/**) would ship to crates.io. This asserts
+# an included path (src/**, web/**) would ship to crates.io. This asserts
 # every file `cargo package` would publish is git-tracked (cargo's two
 # synthesized entries, Cargo.toml.orig and .cargo_vcs_info.json, excepted). Runs
 # inside `preflight`, so it fires before every push/tag; run it standalone

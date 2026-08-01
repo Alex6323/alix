@@ -6,7 +6,7 @@ import {
   createModel,
   currentScreen,
   enterPicker,
-} from "../../assets/web/review/model.js";
+} from "../../web/alix/review/model.js";
 
 test("applying a new card resets only card scoped client state", () => {
   const walk = { kind: "walk", phase: "reveal", current: 2 };

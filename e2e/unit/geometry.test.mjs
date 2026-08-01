@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { overflowHints } from "../../assets/web/review/dom.js";
+import { overflowHints } from "../../web/alix/review/dom.js";
 
 test("overflow hints follow scroll edges", () => {
   assert.deepEqual(

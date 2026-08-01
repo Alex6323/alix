@@ -11,7 +11,7 @@ case "$version" in
 esac
 
 pattern='legacy|compat|deprecated|sentinel|adopt|coexist|migrat(e|es|ed|ing|ion|ions|or|ors)|older[[:space:]_-]+clients|graceful[[:space:]_-]+upgrade|(^|[^[:alnum:]])shim([^[:alnum:]]|$)'
-roots='src assets/web mobile/alix/rust/src mobile/alix/lib'
+roots='src web mobile/alix/rust/src mobile/alix/lib'
 report=$(mktemp)
 trap 'rm -f "$report"' EXIT HUP INT TERM
 

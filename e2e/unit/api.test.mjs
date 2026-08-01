@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ApiError, createApiClient } from "../../assets/web/review/api.js";
+import { ApiError, createApiClient } from "../../web/alix/review/api.js";
 
 function storage(initial = {}) {
   const values = new Map(Object.entries(initial));

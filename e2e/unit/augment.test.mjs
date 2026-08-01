@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createAugment } from "../../assets/web/review/augment.js";
+import { createAugment } from "../../web/alix/review/augment.js";
 
 function harness(responses) {
   const calls = [];

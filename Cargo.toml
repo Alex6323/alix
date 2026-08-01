@@ -12,14 +12,14 @@ readme = "README.md"
 categories = ["command-line-utilities"]
 # Allowlist (not a denylist): only what a crates.io consumer needs to build and
 # read. Everything a build touches is `src/**` plus the `include_*!`d web assets
-# (assets/web/**); README/CHANGELOG/licenses/NOTICE round out the published page.
+# (web/**); README/CHANGELOG/licenses/NOTICE round out the published page.
 # Dev-only dirs (tests/, e2e/, scripts/, docs/, site/, mobile/, .github/, .claude/)
 # and root dev files stay out by omission. Cargo.toml + Cargo.lock are implicit.
 include = [
     "src/**",
     "assets/decks/**",
     "assets/licenses/**",
-    "assets/web/**",
+    "web/**",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE-MIT",

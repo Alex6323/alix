@@ -2,13 +2,13 @@ use std::sync::LazyLock;
 
 use crate::config::Audience;
 
-const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
-const KIDS_HTML: &str = include_str!("../../assets/web/kids/kids.html");
-pub(super) const THEME_CSS: &str = include_str!("../../assets/web/theme.css");
-pub(super) const THEME_JS: &str = include_str!("../../assets/web/theme.js");
-pub(super) const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.js");
-const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
-const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
+const REVIEW_HTML: &str = include_str!("../../web/alix/review.html");
+const KIDS_HTML: &str = include_str!("../../web/alix-kids/kids.html");
+pub(super) const THEME_CSS: &str = include_str!("../../web/shared/theme.css");
+pub(super) const THEME_JS: &str = include_str!("../../web/shared/theme.js");
+pub(super) const ALIX_LOGO_JS: &str = include_str!("../../web/shared/alix-logo.js");
+const HEAD_HTML: &str = include_str!("../../web/shared/_head.html");
+const BRAND_HTML: &str = include_str!("../../web/shared/_brand.html");
 
 macro_rules! review_css_sources {
     ($($name:literal => $path:literal),+ $(,)?) => {
@@ -20,46 +20,45 @@ macro_rules! review_css_sources {
 }
 
 review_css_sources!(
-    "shell.css" => "../../assets/web/review/shell.css",
-    "dom.css" => "../../assets/web/review/dom.css",
-    "sheets.css" => "../../assets/web/review/sheets.css",
-    "study.css" => "../../assets/web/review/study.css",
-    "picker.css" => "../../assets/web/review/picker.css",
-    "tutor.css" => "../../assets/web/review/tutor.css",
-    "exam.css" => "../../assets/web/review/exam.css",
-    "augment.css" => "../../assets/web/review/augment.css",
-    "walk.css" => "../../assets/web/review/walk.css",
+    "shell.css" => "../../web/alix/review/shell.css",
+    "dom.css" => "../../web/alix/review/dom.css",
+    "sheets.css" => "../../web/alix/review/sheets.css",
+    "study.css" => "../../web/alix/review/study.css",
+    "picker.css" => "../../web/alix/review/picker.css",
+    "tutor.css" => "../../web/alix/review/tutor.css",
+    "exam.css" => "../../web/alix/review/exam.css",
+    "augment.css" => "../../web/alix/review/augment.css",
+    "walk.css" => "../../web/alix/review/walk.css",
 );
 const REVIEW_JS: &str = concat!(
-    include_str!("../../assets/web/review/contracts.js"),
+    include_str!("../../web/alix/review/contracts.js"),
     "\n",
-    include_str!("../../assets/web/review/api.js"),
+    include_str!("../../web/alix/review/api.js"),
     "\n",
-    include_str!("../../assets/web/review/model.js"),
+    include_str!("../../web/alix/review/model.js"),
     "\n",
-    include_str!("../../assets/web/review/dom.js"),
+    include_str!("../../web/alix/review/dom.js"),
     "\n",
-    include_str!("../../assets/web/review/picker.js"),
+    include_str!("../../web/alix/review/picker.js"),
     "\n",
-    include_str!("../../assets/web/review/study.js"),
+    include_str!("../../web/alix/review/study.js"),
     "\n",
-    include_str!("../../assets/web/review/tutor.js"),
+    include_str!("../../web/alix/review/tutor.js"),
     "\n",
-    include_str!("../../assets/web/review/exam.js"),
+    include_str!("../../web/alix/review/exam.js"),
     "\n",
-    include_str!("../../assets/web/review/walk.js"),
+    include_str!("../../web/alix/review/walk.js"),
     "\n",
-    include_str!("../../assets/web/review/augment.js"),
+    include_str!("../../web/alix/review/augment.js"),
     "\n",
-    include_str!("../../assets/web/review/sheets.js"),
+    include_str!("../../web/alix/review/sheets.js"),
     "\n",
-    include_str!("../../assets/web/review/app.js"),
+    include_str!("../../web/alix/review/app.js"),
     "\n",
 );
 
 #[cfg(test)]
-pub(super) const REVIEW_ASSET_MANIFEST: &str =
-    include_str!("../../assets/web/review/manifest.json");
+pub(super) const REVIEW_ASSET_MANIFEST: &str = include_str!("../../web/alix/review/manifest.json");
 #[cfg(test)]
 pub(super) const REVIEW_JS_SOURCES: &[&str] = &[
     "contracts.js",
@@ -76,20 +75,20 @@ pub(super) const REVIEW_JS_SOURCES: &[&str] = &[
     "app.js",
 ];
 
-const PLEX_SANS_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-400.woff2");
-const PLEX_SANS_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-500.woff2");
-const PLEX_SANS_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-600.woff2");
-const PLEX_SANS_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-700.woff2");
-const PLEX_MONO_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-400.woff2");
-const PLEX_MONO_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-500.woff2");
-const PLEX_MONO_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-600.woff2");
-const PLEX_MONO_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-700.woff2");
+const PLEX_SANS_400: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-sans-400.woff2");
+const PLEX_SANS_500: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-sans-500.woff2");
+const PLEX_SANS_600: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-sans-600.woff2");
+const PLEX_SANS_700: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-sans-700.woff2");
+const PLEX_MONO_400: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-mono-400.woff2");
+const PLEX_MONO_500: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-mono-500.woff2");
+const PLEX_MONO_600: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-mono-600.woff2");
+const PLEX_MONO_700: &[u8] = include_bytes!("../../web/shared/fonts/ibm-plex-mono-700.woff2");
 
-const BALOO2_400: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-400.woff2");
-const BALOO2_500: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-500.woff2");
-const BALOO2_600: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-600.woff2");
-const BALOO2_700: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-700.woff2");
-const BALOO2_800: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-800.woff2");
+const BALOO2_400: &[u8] = include_bytes!("../../web/alix-kids/fonts/baloo2-400.woff2");
+const BALOO2_500: &[u8] = include_bytes!("../../web/alix-kids/fonts/baloo2-500.woff2");
+const BALOO2_600: &[u8] = include_bytes!("../../web/alix-kids/fonts/baloo2-600.woff2");
+const BALOO2_700: &[u8] = include_bytes!("../../web/alix-kids/fonts/baloo2-700.woff2");
+const BALOO2_800: &[u8] = include_bytes!("../../web/alix-kids/fonts/baloo2-800.woff2");
 
 static REVIEW_PAGE: LazyLock<String> = LazyLock::new(|| compose_page(REVIEW_HTML));
 static KIDS_PAGE: LazyLock<String> = LazyLock::new(|| compose_page(KIDS_HTML));

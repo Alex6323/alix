@@ -6,8 +6,8 @@ import {
   createModel,
   currentScreen,
   enterPicker,
-} from "../../assets/web/review/model.js";
-import { createStudy } from "../../assets/web/review/study.js";
+} from "../../web/alix/review/model.js";
+import { createStudy } from "../../web/alix/review/study.js";
 
 function harness() {
   const walks = [];

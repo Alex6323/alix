@@ -55,7 +55,7 @@ const TRACE_DECK = "rust-book/02-how-let-s2-s1-moves-a.md";
 const TOPOLOGY_NAME = "auto";
 
 // User ruling 2026-07-11: one theme across every shot (the house default —
-// see assets/web/theme.js's `DEFAULT`/THEMES[0], id "dark", name "alix") —
+// see web/shared/theme.js's `DEFAULT`/THEMES[0], id "dark", name "alix") —
 // not the spec's original per-shot variety. Shot 9 is the one place theme
 // variety still shows (the popover's own swatch grid), so it's the only shot
 // that touches the theme mechanism beyond this default.
@@ -289,7 +289,7 @@ async function setTheme(page, base, id) {
   await page.waitForTimeout(350);
 }
 
-// The header <alix-logo> (assets/web/alix-logo.js) is a custom element that
+// The header <alix-logo> (web/shared/alix-logo.js) is a custom element that
 // plays a ~2.62s one-shot "birth" animation on every connect/reset (page
 // load, theme reload, and — see review.html's updateBusy()/replayLogo() — it
 // also replays after any AI call finishes, since the ask/exam poll loops

@@ -13,7 +13,7 @@
 
 /* ── IBM Plex — self-hosted webfonts (served from `/fonts/`, see src/serve.rs)
  * so the app works fully offline. Latin + Latin-Ext subset for now (see
- * assets/web/fonts/OFL.txt); Cyrillic/Greek can drop in later as extra
+ * web/shared/fonts/OFL.txt); Cyrillic/Greek can drop in later as extra
  * @font-face rules + files. One rule per weight per family. ────────────── */
 @font-face {
   font-family: 'IBM Plex Sans';
@@ -185,7 +185,7 @@
 
 /* ── Sunrise / Ocean / Berry — the kids app's own three themes, carried into
  * the adult gallery so a kid moving up keeps the look they grew attached to.
- * Grounded in the kids app's `THEMES` tuple (assets/web/kids/kids.html) —
+ * Grounded in the kids app's `THEMES` tuple (web/alix-kids/kids.html) —
  * bgTop/bgBot become --void/--panel-bot, the kid accent/shade become
  * --bolt-hi/--bolt — but re-derived, not transcribed: the kids app only ever
  * puts its accent on big buttons or large headings, while the adult UI uses

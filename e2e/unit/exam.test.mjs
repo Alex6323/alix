@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createExam } from "../../assets/web/review/exam.js";
+import { createExam } from "../../web/alix/review/exam.js";
 
 function harness(responses) {
   const calls = [];

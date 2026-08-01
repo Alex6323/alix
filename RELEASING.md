@@ -107,7 +107,7 @@ at. **crates.io is not automated.**
    release commit. The workflow creates the GitHub Release and attaches the
    binaries.
 8. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
-   `Cargo.toml`'s `include` allowlist: only `src/**`, `assets/web/**`, and the
+   `Cargo.toml`'s `include` allowlist: only `src/**`, `web/**`, and the
    root README/CHANGELOG/licenses ship). `make package-check` (also run inside
    `preflight`) asserts nothing untracked leaks into the tarball; eyeball
    `cargo package --list` too if unsure. Publish is irreversible.

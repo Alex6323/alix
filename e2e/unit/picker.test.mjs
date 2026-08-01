@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPicker } from "../../assets/web/review/picker.js";
+import { createPicker } from "../../web/alix/review/picker.js";
 
 function harness(responses) {
   const calls = [];

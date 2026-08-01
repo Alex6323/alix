@@ -1,4 +1,4 @@
-// End-to-end smoke suite for the ADULT web client (assets/web/review.html),
+// End-to-end smoke suite for the ADULT web client (web/alix/review.html),
 // run against the real `alix` binary (see ../playwright.config.ts) over the
 // same frozen fixture workspace the kids suite uses
 // (../fixtures/decks/animals/). See kids-review.spec.ts for the bug class

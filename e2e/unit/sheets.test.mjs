@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSheets } from "../../assets/web/review/sheets.js";
+import { createSheets } from "../../web/alix/review/sheets.js";
 
 function harness() {
   const calls = [];

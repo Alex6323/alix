@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// The alix look, ported from the web app's theme gallery. The token values
-/// and their names mirror the CSS custom properties in assets/web/theme.css
+/// and their names mirror the CSS custom properties in web/shared/theme.css
 /// (the reference for both surfaces): grep a hex here and you find it there.
 /// A theme is a var-map (`ThemeVars`) fed through `themeFromVars`, mirrors
 /// the CSS's `[data-theme="id"]` blocks; `test/theme_gallery_test.dart`
@@ -166,7 +166,7 @@ AppBar alixAppBar(
 const _brand = Color(0xFFF0883C);
 const _brandInk = Color(0xFF1A1206);
 
-/// One theme's CSS-var vocabulary (an assets/web/theme.css `[data-theme]`
+/// One theme's CSS-var vocabulary (an web/shared/theme.css `[data-theme]`
 /// block), ported to Color literals. `text`/`faint`/`accentInk` are the 3
 /// of the CSS's 4 optional extras this port consumes (the 4th, --brand-text,
 /// has no Dart consumer yet - AlixWordmark's brand color is constant). When
@@ -531,7 +531,7 @@ class AlixTheme {
   final ThemeData data;
 }
 
-/// The theme gallery. Ported from assets/web/theme.css / theme.js's
+/// The theme gallery. Ported from web/shared/theme.css / theme.js's
 /// non-kids THEMES entries; test/theme_gallery_test.dart parses those files
 /// at test time and asserts these hexes match. All 18 non-kids ids are
 /// shipped here (order mirrors theme.js's THEMES tuple).

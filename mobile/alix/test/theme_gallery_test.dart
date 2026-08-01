@@ -1,5 +1,5 @@
 // The drift guard: at test time this reads the WEB gallery's source of
-// truth (assets/web/theme.css + theme.js) and asserts the Dart registry
+// truth (web/shared/theme.css + theme.js) and asserts the Dart registry
 // (lib/theme.dart's alixThemes) carries the same hexes. A wrong ported hex
 // fails a test here, not just a code review - and the parser is general
 // (all 18 non-kids ids, not just the 4 shipped so far), so a future task
@@ -15,8 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/theme.dart';
 
-const _cssPath = '../../assets/web/theme.css';
-const _jsPath = '../../assets/web/theme.js';
+const _cssPath = '../../web/shared/theme.css';
+const _jsPath = '../../web/shared/theme.js';
 
 /// Parses theme.js's `THEMES` array for {id, mode}, excluding `mode:
 /// "kids"` (the kids app's own trio isn't part of this adult gallery).
@@ -104,7 +104,7 @@ void main() {
   });
 
   for (final theme in alixThemes) {
-    group('${theme.id}: registry matches assets/web/theme.css', () {
+    group('${theme.id}: registry matches web/shared/theme.css', () {
       final raw = cssBlocks[theme.id];
 
       test('theme.css has a [data-theme="${theme.id}"] block', () {

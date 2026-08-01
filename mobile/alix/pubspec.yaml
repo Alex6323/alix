@@ -93,7 +93,7 @@ flutter:
     - assets/icon/alix-192.png
 
   # IBM Plex (OFL, assets/fonts/OFL.txt): the web app's identity faces,
-  # converted from the woff2 files vendored in assets/web/fonts.
+  # converted from the woff2 files vendored in web/shared/fonts.
   fonts:
     - family: IBM Plex Sans
       fonts:

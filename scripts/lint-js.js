@@ -3,8 +3,8 @@ const { join } = require("path");
 const { spawnSync } = require("child_process");
 const { Script } = require("vm");
 
-const webDir = "assets/web";
-const reviewDir = join(webDir, "review");
+const webDir = "web";
+const reviewDir = join(webDir, "alix", "review");
 const manifest = JSON.parse(readFileSync(join(reviewDir, "manifest.json"), "utf8"));
 let blocks = 0;
 let modules = 0;
@@ -18,12 +18,12 @@ function fail(message) {
 function checkedSources(kind, extension) {
   const sources = manifest[kind];
   if (!Array.isArray(sources) || sources.length === 0) {
-    fail(`assets/web/review/manifest.json: ${kind} must be a non-empty array`);
+    fail(`web/alix/review/manifest.json: ${kind} must be a non-empty array`);
     return [];
   }
   for (const source of sources) {
     if (typeof source !== "string" || !/^[A-Za-z0-9._-]+$/.test(source) || !source.endsWith(extension)) {
-      fail(`assets/web/review/manifest.json: invalid ${kind} source ${JSON.stringify(source)}`);
+      fail(`web/alix/review/manifest.json: invalid ${kind} source ${JSON.stringify(source)}`);
     }
   }
   return sources;
@@ -52,11 +52,16 @@ function topLevelNames(code) {
   return names;
 }
 
+// Every page and fragment under web/, one directory level per client plus
+// shared/ (the old flat root was a single readdir).
 const htmlFiles = readdirSync(webDir)
-  .filter((file) => file.endsWith(".html"))
   .sort()
-  .map((file) => join(webDir, file));
-htmlFiles.push(join(webDir, "kids", "kids.html"));
+  .flatMap((dir) =>
+    readdirSync(join(webDir, dir))
+      .filter((file) => file.endsWith(".html"))
+      .sort()
+      .map((file) => join(webDir, dir, file)),
+  );
 
 for (const file of htmlFiles) {
   const html = readFileSync(file, "utf8");
@@ -82,7 +87,7 @@ const discoveredCss = readdirSync(reviewDir)
 const declaredCss = [...cssSources].sort();
 if (JSON.stringify(discoveredCss) !== JSON.stringify(declaredCss)) {
   fail(
-    `assets/web/review/manifest.json: CSS sources differ from the directory ` +
+    `web/alix/review/manifest.json: CSS sources differ from the directory ` +
     `(declared ${JSON.stringify(declaredCss)}, found ${JSON.stringify(discoveredCss)})`,
   );
 }
@@ -104,7 +109,7 @@ for (const source of cssSources) {
   }
 }
 if (javascriptSources.at(-1) !== "app.js") {
-  fail("assets/web/review/manifest.json: app.js must be the last JavaScript source");
+  fail("web/alix/review/manifest.json: app.js must be the last JavaScript source");
 }
 
 const declarations = new Map();
