@@ -4908,7 +4908,7 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 // `/api/remote/*` ever touches the server's own store
 // (`remote_endpoints_never_write_the_server_store`).
 
-/// A source-backed fact deck (`% source:` at a local file) alongside
+/// A source-backed fact deck (`source:` at a local file) alongside
 /// `spawn_full_server`'s other fixtures: enough for the AI exam's
 /// generate → answer → grade → remediate walk. One card is enough; the exam
 /// grades the source, never the deck's own cards.
@@ -5478,7 +5478,7 @@ fn remote_exam_start_accepts_a_trace_deck_and_opens_answering() {
     assert_eq!(false, body["can_remediate"], "body: {body}");
 }
 
-/// A non-trace deck with no `% source:` still has nothing to examine, so it
+/// A non-trace deck with no `source:` still has nothing to examine, so it
 /// still 409s at start (the refusal `deck.is_trace() || deck.sources.is_empty()`
 /// narrowed to `!deck.is_trace() && deck.sources.is_empty()`, not dropped).
 #[test]

@@ -1176,7 +1176,7 @@ pub fn default_config_toml() -> &'static str {
 # retry_cooldown_secs = 3600    # wait this long before re-sitting a FAILED trace exam (0 = off)
 # extra = ""                    # extra guidance appended to question generation
 
-# Trace building (`alix generate <trace-stub>` / `--trace`). Explores the `% source:`
+# Trace building (`alix generate <trace-stub>` / `--trace`). Explores the `source:`
 # to discover the path and writes the checkpoints back. Reuses the [ask] command,
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.

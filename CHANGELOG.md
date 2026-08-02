@@ -34,7 +34,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dedicated errors for a `" + "`-joined `source:` value (deck frontmatter
   and workspace manifest) and the stray-aggregate-state-file warning are
   gone on the same ruling; a joined source is an ordinary path that fails
-  to resolve.
+  to resolve. The retired `%`-prefixed directive spelling is likewise gone
+  from the config template `alix config --init` writes and from the
+  backend source-reachability errors, which now say plain `source:`.
 
 - `generate`'s `max_cards` is now a soft ceiling with a default of 100
   (was a hard-worded 30): the prompt aims for the configured count, and a
