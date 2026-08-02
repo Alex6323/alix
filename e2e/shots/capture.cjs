@@ -113,7 +113,7 @@ function snapshotStoreFiles(root) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(p);
-      else if (/^(progress|recent)\.json/.test(entry.name)) {
+      else if (/(^|\/)progress\/[^/]+\.json$/.test(p) || entry.name === "recent.json") {
         const st = fs.statSync(p);
         out[p] = `${st.mtimeMs}:${st.size}`;
       }
@@ -178,8 +178,8 @@ function heroAugmentState() {
 
 function deckId(file) {
   const text = fs.readFileSync(file, "utf8");
-  const match = text.match(/^alix-id:\s*"?([^"\r\n]+)"?\s*$/m);
-  if (!match) throw new Error(`no alix-id in ${file}`);
+  const match = text.match(/^id:\s*"?(deck-[^"\r\n]+)"?\s*$/m);
+  if (!match) throw new Error(`no id in ${file}`);
   return match[1];
 }
 

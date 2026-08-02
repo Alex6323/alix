@@ -46,7 +46,7 @@ so is every client.
 - Several instances can serve side by side: `alix <dir>` scopes an instance to
   one decks folder with its own state (`--lan --port <p>` per instance). Each
   instance is its own host/port/token triple to pair against.
-- `GET /api/version` → `{"version": "0.3.0"}` is the cheap "am I talking to
+- `GET /api/version` → `{"version": "0.7.0"}` is the cheap "am I talking to
   alix, and which one" check.
 
 ## 2. Authentication
@@ -213,7 +213,7 @@ trimming, or not exactly one well-formed card) is `422`.
 
 `POST /api/import {name, text, dest?}` → `ImportDto`, synchronous. `name`'s
 extension picks the path: `.tsv` converts (Anki export, via
-`import::tsv_to_deck`), `.txt` lands as a deck as-is; anything else is 400.
+`import::tsv_to_deck`), `.md` lands as a deck as-is; anything else is 400.
 `dest` names a workspace/folder row (absent/empty → the served root) — the
 same resolution map `/api/select` uses, never a client-supplied path. Unlike
 `generate`'s lenient save, an upload that doesn't parse is rejected outright:
@@ -808,7 +808,7 @@ The result of `POST /api/reset`: what got wiped.
 
 A `deck` naming a workspace/folder row resets every member deck it lists, not
 just one file. Example (from the pinned test):
-`{"deck":"rust.txt","cards_cleared":17}`.
+`{"deck":"rust.md","cards_cleared":17}`.
 
 ### ImportDto
 
@@ -816,10 +816,10 @@ The result of `POST /api/import`: the placed file's name and its card count.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `deck` | string | The written file's name (its `name` after sanitizing to a bare file-name and forcing a `.txt` extension). |
+| `deck` | string | The written file's name (its `name` after sanitizing to a bare file-name and forcing a `.md` extension). |
 | `cards` | number | How many cards it parsed to. |
 
-Example (from the pinned test): `{"deck":"kanji.txt","cards":40}`.
+Example (from the pinned test): `{"deck":"kanji.md","cards":40}`.
 
 ### GenerateDto
 
@@ -834,7 +834,7 @@ The result of `POST`/`GET /api/generate`, polled per §3's pattern (§4.7).
 | `error` | string? | Set on `error` — including a parse failure on a deck that was still saved. |
 
 Example (from the pinned test):
-`{"phase":"done","deck":"rust-ownership.txt","cards":12,"elapsed":41,"error":null}`.
+`{"phase":"done","deck":"---\nlink: https://example.org\n---\n## Q\nA\n","filename":"example-org.md","cards":1,"elapsed":null,"error":null}`.
 
 ### ShareDto
 
@@ -965,7 +965,7 @@ kept as its own type so the name matches its own endpoint).
 
 Example `RemoteAskReq` body (a real request from `tests/api.rs`'s remote
 round-trip suite):
-`{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},"history":[],"question":"why does this matter?"}`.
+`{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},"history":[],"question":"why does this matter?"}`.
 
 ### RemoteAskDto
 
@@ -1017,10 +1017,10 @@ deck, distinguished by `is_trace` (since 0.6.0).
 | `error` | string? | |
 
 Example, remediated (from the pinned test):
-`{"phase":"remediated","deck":"rust.txt","strictness":"balanced","questions":["Why does Rust use ownership?"],"passed":false,"grades":[{"question":"Why does Rust use ownership?","points":["memory safety without a GC"],"answer":"it has a garbage collector","verdict":"FAIL","feedback":"Rust has no GC","missed":["memory safety without a GC"]}],"gaps":["ownership and the GC-free memory model"],"can_remediate":false,"cards":"# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed","is_trace":false,"thinking":false,"elapsed":null,"error":null}`.
+`{"phase":"remediated","deck":"rust.md","strictness":"balanced","questions":["Why does Rust use ownership?"],"passed":false,"grades":[{"question":"Why does Rust use ownership?","points":["memory safety without a GC"],"answer":"it has a garbage collector","verdict":"FAIL","feedback":"Rust has no GC","missed":["memory safety without a GC"]}],"gaps":["ownership and the GC-free memory model"],"can_remediate":false,"cards":"## Why does Rust use ownership?\nso drops are deterministic, no GC needed","is_trace":false,"thinking":false,"elapsed":null,"error":null}`.
 
 Example, a trace sitting's failed result (from the pinned test):
-`{"phase":"results","deck":"trace.txt","strictness":"balanced","questions":["how it works"],"passed":false,"grades":[{"question":"how it works","points":["it reads the first line"],"answer":"it reads the file","verdict":"FAIL","feedback":"missed the second hop","missed":["it reads the second line"]}],"gaps":["it reads the second line"],"can_remediate":false,"cards":null,"is_trace":true,"thinking":false,"elapsed":null,"error":null}`.
+`{"phase":"results","deck":"trace.md","strictness":"balanced","questions":["how it works"],"passed":false,"grades":[{"question":"how it works","points":["it reads the first line"],"answer":"it reads the file","verdict":"FAIL","feedback":"missed the second hop","missed":["it reads the second line"]}],"gaps":["it reads the second line"],"can_remediate":false,"cards":null,"is_trace":true,"thinking":false,"elapsed":null,"error":null}`.
 
 ### RemoteGenerateDto (since 0.6.0)
 
@@ -1033,13 +1033,13 @@ under.
 |---|---|---|
 | `phase` | string | `generating` \| `done` \| `error` (open set). |
 | `deck` | string? | The full generated deck text, set only in `done`. |
-| `filename` | string? | A suggested file name (`generate::deck_name`, normalized to a `.txt` stem), set only in `done`; the client decides where and under what name to save it. |
+| `filename` | string? | A suggested file name (`generate::deck_name`, normalized to a `.md` stem), set only in `done`; the client decides where and under what name to save it. |
 | `cards` | number? | The finished text's own parsed card count, best-effort: `null` if it doesn't parse. Unlike `GenerateDto`, a parse failure does not flip `phase` to `error`, since the server never saves the file either way; the client parses and validates its own copy. |
 | `elapsed` | number? | Seconds the in-flight call has run. |
 | `error` | string? | |
 
 Example, done (from the pinned test):
-`{"phase":"done","deck":"% link: https://example.org\n# Q\n\tA\n","filename":"example-org.txt","cards":1,"elapsed":null,"error":null}`.
+`{"phase":"done","deck":"---\nlink: https://example.org\n---\n## Q\nA\n","filename":"example-org.md","cards":1,"elapsed":null,"error":null}`.
 
 ## 7. Web-page-private surface
 
@@ -1056,7 +1056,7 @@ they may change without notice and native clients must not depend on them:
   (`passed`/`partly`/`failed`, lowercase — grades, walk deltas and verdicts)
   and AI-exam verdicts (`PASS`/`PARTIAL`/`FAIL`, uppercase). Distinct
   domains, both closed sets.
-- **`/api/deck-topology` never errors** (empty DTO on any failure) and an
+- **`/api/deck-drawer` never errors** (empty DTO on any failure) and an
   empty `POST /api/ask` silently does nothing — clients cannot distinguish
   "none" from "bad request" there.
 - **Request bodies are documented here but not snapshot-tested** (responses
