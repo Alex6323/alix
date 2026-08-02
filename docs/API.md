@@ -834,7 +834,7 @@ The result of `POST`/`GET /api/generate`, polled per §3's pattern (§4.7).
 | `error` | string? | Set on `error` — including a parse failure on a deck that was still saved. |
 
 Example (from the pinned test):
-`{"phase":"done","deck":"---\nlink: https://example.org\n---\n## Q\nA\n","filename":"example-org.md","cards":1,"elapsed":null,"error":null}`.
+`{"cards":12,"deck":"rust-ownership.md","elapsed":41,"error":null,"phase":"done"}`.
 
 ### ShareDto
 

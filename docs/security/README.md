@@ -191,11 +191,11 @@ safe or accurate.
 | --- | --- | --- |
 | Another LAN device discovers Alix | Loopback default; LAN is explicit; `/api/*` needs a random token. | Use only a trusted LAN or put Alix behind a VPN/TLS reverse proxy. Replace a disclosed configured token and restart. |
 | Pairing token leaks through a URL | API accepts a bearer header after bootstrap. | Treat the URL as a credential; do not publish screenshots, history, logs, or bookmarks containing it. |
-| A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require `origin`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
-| A broad `origin` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `origin` as narrow as practical and inspect inherited workspace defaults. |
+| A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require a declared `source`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
+| A broad `source` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `source` as narrow as practical and inspect inherited workspace defaults. |
 | Syncthing or another tool creates concurrent same-deck progress writes | Per-deck atomic replacement, revision checks, writer warnings, and conflict-file detection. | Different decks are independent; for one deck, keep one active writer, resolve conflict copies manually, and back up before recovery. |
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
-| Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `alix-id`; a generic `id` grants no write authority, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
+| Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `id` (`deck-<token>`); the retired `alix-id` is a parse error and grants nothing, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
 | A numeric source range slides onto unrelated text | Every complete citation fingerprints the normalized excerpt and source consumers fail closed on a mismatch. | Review doctor findings before using explicit locator repair; fingerprints detect drift but do not prove semantic support. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
 | Malformed or hostile input exhausts resources | JSON bodies share one central cap, and excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
@@ -227,7 +227,7 @@ The most relevant deterministic checks currently live beside their controls:
 
 - `src/serve/tests.rs`: token scope and authorization behavior;
 - `src/serve/respond.rs`: constant-time token comparison and capped reads;
-- `src/deck.rs`: explicit-origin precedence and no origin-root inference;
+- `src/deck.rs`: explicit-source precedence and no origin-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and

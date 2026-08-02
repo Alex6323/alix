@@ -84,7 +84,7 @@ schedule it.
 
 FSRS decides *when* a card is due; the **session depth** decides *how deeply*
 it's asked when it comes up. A session runs at one of three independent
-depths, picked when you start it (the web picker's Learn ▾
+depths, picked when you start it (the web picker's Depth…
 menu). See [Reveal & session depths](04-review-modes.md) for the full check
 matrix. In short:
 
@@ -161,7 +161,7 @@ dependencies chapter covers it in full.
 
 Need to review everything now, schedule be damned, the night before an exam?
 **Cram** ignores due times and shows every card that isn't retired. It's a
-per-launch tick-box in the picker's Learn ▾ menu (key `c` while the menu is
+per-launch tick-box in the picker's Depth… menu (key `c` while the menu is
 open); plain **Learn** never crams. At Recognize, cram is the repeatable quiz:
 it serves every card you have met, including the already-recognized ones a
 normal Recognize session would skip (the sitting stays bounded by

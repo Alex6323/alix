@@ -109,7 +109,7 @@ on the [AI exam](12-the-ai-exam.md)'s sampled questions, not a check of every
 card. Treat ready% as evidence toward readiness, not proof of it.
 
 How deeply you drill is never configuration: it's the **session depth** you
-pick per review (the picker's Learn ▾ menu). See
+pick per review (the picker's Depth… menu). See
 [Reveal & session depths](04-review-modes.md). The old `[review] depth` config
 key (and the per-deck `[review.deck."<file>"]` override), a *dial* that fixed
 the drilling depth from config, is gone, not renamed; a config that still

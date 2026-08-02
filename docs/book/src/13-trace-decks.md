@@ -113,8 +113,8 @@ choose a subject with a real sequence instead.
 
 Pick the trace in the [web picker](15-the-web-app.md), or on the
 [mobile app](18-the-mobile-app.md) (the walk runs fully offline there too):
-a trace opens as a **walk**: a **path rail** you descend (nodes coloring in by Missed it / Partly /
-Got it) with each checkpoint's source shown in a line-numbered excerpt. It goes
+a trace opens as a **walk**: a checkpoint-by-checkpoint
+descent (the hop list rides the wire but is not yet rendered as a rail) with each checkpoint's source shown in a line-numbered excerpt. It goes
 hop by hop:
 
 1. **Predict** — type a guess before anything reveals (committing is the point).
