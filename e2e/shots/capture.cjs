@@ -45,9 +45,9 @@ const KIDS_BASE = `http://127.0.0.1:${KIDS_PORT}`;
 // The one demo source (spec: "one demo deck for every shot"): the rust-book
 // workspace. The hero fact deck (01) is the entry point of its `requires:`
 // chain, pre-augmented (choices/notes/keypoints/topology) by ensureAugmented().
-const HERO_DECK = "rust-book/01-the-stack-the-heap-and-the.md";
-const HERO_FILE = path.join(DEMO_DIR, "rust-book", "01-the-stack-the-heap-and-the.md");
-const TRACE_DECK = "rust-book/02-how-let-s2-s1-moves-a.md";
+const HERO_DECK = "what-is-ownership.md";
+const HERO_FILE = path.join(DEMO_DIR, "what-is-ownership.md");
+const TRACE_DECK = "rust-book/02-how-let-s2-s1-moves-a.md"; // gone with the old demo; shot 6 SKIPs until a trace is regenerated
 // runAugment("topology") passes no `--with`, so `alix deck augment` auto-names
 // the generated topology "auto" (see AugmentTarget::Topology's default when
 // no guidance is given) — this must match, or shot 8's topology-scoped
@@ -154,12 +154,7 @@ function parseDeck(file) {
 // ---- augment cache (choices/notes/keypoints/topology on the hero deck) ----
 
 function heroAugmentState() {
-  const augPath = path.join(
-    DEMO_DIR,
-    "rust-book",
-    "augment",
-    `${deckId(HERO_FILE)}.json`,
-  );
+  const augPath = path.join(DEMO_DIR, "augment", `${deckId(HERO_FILE)}.json`);
   if (!fs.existsSync(augPath)) return { distractors: 0, note: 0, keypoints: 0, topology: false };
   const data = JSON.parse(fs.readFileSync(augPath, "utf8"));
   const cards = parseDeck(HERO_FILE);
@@ -200,7 +195,7 @@ function ensureAugmented() {
   if (state.distractors < 5) runAugment("choices");
   if (state.note < 5) runAugment("notes");
   if (state.keypoints < 5) runAugment("keypoints");
-  if (!state.topology) runAugment("topology");
+  if (!state.topology) runAugment("order"); // the target that computes the topology
 }
 
 // ---- server lifecycle -------------------------------------------------
@@ -492,6 +487,9 @@ async function shot1(page) {
 async function shot2(page) {
   log("== shot 2: ask-tutor ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
+  // A graduated scratch store serves review cards immediately (cram), instead
+  // of trapping the fresh hero in its acquire loop.
+  fabricateGraduation();
   // cram:true: on a re-run against a reused scratch copy, every Recall card
   // may already be graded and not due again for days — without it, /api/select
   // can come back with nothing current to review (a disabled/absent primary
@@ -606,70 +604,125 @@ function pollExam(page) {
   });
 }
 
+// The exam's picker chip needs a graduated deck. Fabricate that
+// PRECONDITION in the scratch store (never the real demo dirs), template
+// matching the store's persisted document schema; the exam itself then runs
+// for real through the page. `alix stats --store` is the loud schema check:
+// the real binary must parse the fabricated document before any shot uses it.
+function fabricateGraduation() {
+  const text = fs.readFileSync(HERO_FILE, "utf8");
+  const hero = deckId(HERO_FILE);
+  // Session cards for a cloze are the per-hole sub-ids (`token-n`), not the
+  // base token; cover every hole (and both numbering conventions; the store
+  // tolerates unmatched extras as orphans).
+  const ids = [];
+  for (const block of text.split(/\n## /).slice(1)) {
+    const m = block.match(/<!-- id: (card-[a-z0-9]+) -->/);
+    if (!m) continue;
+    ids.push(m[1]);
+    const holes = (block.match(/blank\{/g) || []).length;
+    for (let h = 0; h <= holes && holes > 0; h++) ids.push(`${m[1]}-${h}`);
+  }
+  if (!ids.length) throw new Error(`no card ids in ${HERO_FILE}`);
+  const now = Date.now();
+  const day = 86_400_000;
+  const doc = {
+    version: 1,
+    deck_id: hero,
+    subject: path.basename(HERO_FILE),
+    revision: 1,
+    cards: Object.fromEntries(
+      ids.map((id) => [
+        id,
+        {
+          acquired_ms: now - 30 * day,
+          presented_ms: now - 30 * day,
+          recall: {
+            stability: 30.0,
+            difficulty: 5.0,
+            reps: 6,
+            lapses: 0,
+            state: 2,
+            scheduled_days: 30,
+            last_review_ms: now - day,
+            due_ms: now + 29 * day,
+            learning_goods: 3,
+          },
+          total_reviews: 6,
+          total_passes: 6,
+          streak: 6,
+        },
+      ]),
+    ),
+    records: {},
+    deck: { last_depth: "recall" },
+    writer: { device: "shots", at_ms: now },
+  };
+  const progressDir = path.join(DEMO_DIR, "progress");
+  fs.mkdirSync(progressDir, { recursive: true });
+  fs.writeFileSync(path.join(progressDir, `${hero}.json`), JSON.stringify(doc, null, 2));
+  execFileSync("alix", ["stats", HERO_FILE, "--store", DEMO_DIR], { stdio: "pipe" });
+  log("fabricated a graduated store for", hero);
+}
+
 async function shot4(page) {
   log("== shot 4: AI exam ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   const corpus = parseDeck(HERO_FILE);
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
+  fabricateGraduation();
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(400);
-  await page.evaluate((deck) => {
-    // eslint-disable-next-line no-undef
-    startExam(deck);
-  }, HERO_DECK);
+  await page.waitForTimeout(600);
 
-  // Generous timeouts (per the brief): generating 5 questions from a 10-file
-  // concatenated source is genuinely slow — a first attempt at this shot gave
-  // up at 60s while the server was still legitimately "generating" (confirmed
-  // by polling past that point directly against the running server), so this
-  // errs long rather than false-negative.
-  const GENERATING_TIMEOUT_S = 240;
-  const THINKING_TIMEOUT_S = 240;
-  let e = await pollExam(page);
-  let guard = 0;
-  while ((!e || e.thinking) && guard++ < GENERATING_TIMEOUT_S) {
-    await sleep(1000);
-    e = await pollExam(page);
-  }
-  if (!e || e.phase === "cooldown" || e.error) {
-    log("SKIP shot 4: exam unavailable (phase=", e && e.phase, "error=", e && e.error, ")");
+  // Drive the page the way a user reaches an exam: focus the graduated deck's
+  // row; its primary chip reads "Take exam" (picker.js examPrimary).
+  const row = page.locator(".deckrow", { hasText: "what-is-ownership" });
+  if (!(await row.count())) {
+    log("SKIP shot 4: hero row not listed");
     return false;
   }
-  guard = 0;
-  while (e && e.phase === "answering" && guard++ < 20) {
-    const answer = bestAnswer(corpus, e.question || "");
-    log(`exam Q${e.current}/${e.total}: ${e.question}`);
-    log(`  -> answering with: ${answer.slice(0, 100)}`);
-    if (e.on_last) {
-      await page.evaluate((text) => {
-        const ta = document.querySelector(".exam-input");
-        if (ta) ta.value = text;
-        // eslint-disable-next-line no-undef
-        examSubmit();
-      }, answer);
-    } else {
-      await page.evaluate(
-        ({ text, dest }) => {
-          const ta = document.querySelector(".exam-input");
-          if (ta) ta.value = text;
-          // eslint-disable-next-line no-undef
-          examNav(dest);
-        },
-        { text: answer, dest: e.current + 1 },
-      );
-    }
-    let waitGuard = 0;
-    e = await pollExam(page);
-    while (e && e.thinking && waitGuard++ < THINKING_TIMEOUT_S) {
-      await sleep(1000);
-      e = await pollExam(page);
-    }
-  }
-  if (!e || e.phase !== "results") {
-    log("SKIP shot 4: exam did not reach results (phase=", e && e.phase, ")");
+  await row.first().click();
+  await page.waitForTimeout(300);
+  const chip = page.locator(".chip.primary", { hasText: "Take exam" });
+  if (!(await chip.count())) {
+    log("SKIP shot 4: no Take exam chip (deck not exam-due?)");
     return false;
   }
-  log("exam verdict: passed =", e.passed);
+  await chip.first().click();
+
+  // Question generation is genuinely slow (a real model call); err long.
+  log("waiting for the exam's first question (up to 240s)…");
+  await page.locator(".exam-input").waitFor({ state: "visible", timeout: 240_000 });
+
+  for (let guard = 0; guard < 20; guard++) {
+    const progress = (await page.locator(".exam-progress").textContent()) || "";
+    const question = (await page.locator(".exam-q").textContent()) || "";
+    const [, at, total] = progress.match(/(\d+)\s*\/\s*(\d+)/) || [];
+    const answer = bestAnswer(corpus, question);
+    log(`exam Q${at}/${total}: ${question.slice(0, 90)}`);
+    await page.locator(".exam-input").fill(answer);
+    await page.locator(".exam-input").press("Shift+Enter");
+    if (at === total) {
+      // Last answer submits the whole exam; real grading takes a while.
+      log("submitted — waiting for grading (up to 240s)…");
+      break;
+    }
+    // Otherwise Shift+Enter advanced to the next question.
+    await page
+      .locator(".exam-progress", { hasText: `Question ${Number(at) + 1}` })
+      .waitFor({ state: "visible", timeout: 30_000 });
+  }
+
+  const verdict = page.locator(".exam-pass, .exam-fail");
+  const arrived = await verdict
+    .waitFor({ state: "visible", timeout: 240_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!arrived) {
+    log("SKIP shot 4: exam did not reach results");
+    return false;
+  }
+  await page.waitForTimeout(400);
   await shot(page, "shot-4-exam.webp", ".exam-pass, .exam-fail");
   return true;
 }
@@ -869,6 +922,10 @@ async function main() {
 
   copyOnce(DEMO_SRC, DEMO_DIR, "alix-demo");
   copyOnce(KIDS_SRC, KIDS_DIR, "alix-kids");
+  // The scratch never inherits the source's progress (the real demo dir may
+  // carry stale-format documents; shots fabricate the state they need).
+  fs.rmSync(path.join(DEMO_DIR, "progress"), { recursive: true, force: true });
+  fs.rmSync(path.join(DEMO_DIR, "recent.json"), { force: true });
 
   if (wants(1) || wants(2) || wants(3) || wants(8)) ensureAugmented();
 
