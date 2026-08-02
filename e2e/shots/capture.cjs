@@ -735,7 +735,7 @@ async function shot5(page) {
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
-  const workspaceRow = page.locator(".deckrow").filter({ hasText: "Rust" }).first();
+  const workspaceRow = page.locator(".deckrow").filter({ hasText: "Rust book" }).first();
   await workspaceRow.click();
   await page.waitForTimeout(400);
   const heroRow = page.locator(".deckrow").filter({ hasText: "Stack" }).first();
