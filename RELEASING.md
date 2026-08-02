@@ -13,7 +13,11 @@ release gates find, the costed gates (`make docs-audit`, `make calibrate`,
 branch. Delete the branch after tagging; the tag preserves the commit. The
 nightly mutation jobs base on main, so a cherry-pick that exists only on a
 release branch is never mutated there — keep fixes on main first,
-cherry-pick second, so nothing ships mutation-blind.
+cherry-pick second, so nothing ships mutation-blind. Cherry-pick with
+`git cherry-pick -x <commit>`: the copied commit then records its main-side
+original in its own message, so the released history carries the
+provenance after the branch is deleted, instead of leaving it to
+patch-equivalence archaeology.
 
 Every desktop release asset uploads with a `.sha256` beside it; verify a
 download with `sha256sum -c alix-<target>.tar.gz.sha256`. Before tagging,
