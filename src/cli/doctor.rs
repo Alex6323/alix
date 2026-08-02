@@ -812,8 +812,34 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     {
         repair_source_locators(&alix::workspace::deck_files(&decks_dir))?;
     }
+    if args.remove_backup_files {
+        let baks = doctor::backup_files(&decks_dir);
+        if baks.is_empty() {
+            println!("No backup files under {}.", decks_dir.display());
+        } else {
+            println!("{} backup file(s):", baks.len());
+            for bak in &baks {
+                println!("  {}", bak.display());
+            }
+            if crate::common::confirm(
+                "Delete them? `alix deck restore` will then have nothing to swap in.",
+                args.yes,
+            )? {
+                for bak in &baks {
+                    std::fs::remove_file(bak)
+                        .with_context(|| format!("cannot remove {}", bak.display()))?;
+                }
+                println!("Deleted {} backup file(s).", baks.len());
+            } else {
+                println!("Kept them.");
+            }
+        }
+    }
     findings.push(doctor::check_store(Some(store_path)));
     findings.push(doctor::check_decks(&decks_dir));
+    if let Some(finding) = doctor::check_backups(&decks_dir) {
+        findings.push(finding);
+    }
     findings.push(doctor::check_binary(
         "backend",
         &config.ask.command,

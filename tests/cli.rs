@@ -3498,6 +3498,74 @@ fn deck_restore_round_trips_a_forced_import() {
 }
 
 #[test]
+fn doctor_reports_backup_files_and_the_flag_deletes_them_after_confirmation() {
+    let dir = TempDir::new().unwrap();
+    let (ws, _deck) = imported_workspace_deck(dir.path());
+    let tsv2 = write(dir.path(), "cards2.tsv", "Q2\tA2\n");
+    let replaced = alix(&[
+        "deck",
+        "import",
+        &tsv2,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "geo",
+        "--force",
+    ]);
+    assert!(replaced.status.success(), "stderr: {}", stderr(&replaced));
+    let bak = ws.join("decks/geo.md.bak");
+    assert!(bak.exists(), "fixture: a backup exists");
+
+    // The report: a warning-grade finding naming both remedies, exit still 0.
+    let report = alix(&["doctor", ws.to_str().unwrap()]);
+    assert!(
+        report.status.success(),
+        "backups warn, never fail: stderr: {}",
+        stderr(&report)
+    );
+    let out = stdout(&report);
+    assert!(out.contains("backup file(s)"), "stdout: {out}");
+    assert!(out.contains("deck restore"), "stdout: {out}");
+    assert!(out.contains("--remove-backup-files"), "stdout: {out}");
+
+    // The flag without --yes refuses headless and deletes nothing.
+    let refused = alix(&["doctor", ws.to_str().unwrap(), "--remove-backup-files"]);
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("refusing without a terminal"),
+        "stderr: {}",
+        stderr(&refused)
+    );
+    assert!(bak.exists(), "nothing deleted without confirmation");
+
+    // With --yes it deletes and says so; a rerun reports a clean tree.
+    let cleaned = alix(&[
+        "doctor",
+        ws.to_str().unwrap(),
+        "--remove-backup-files",
+        "--yes",
+    ]);
+    assert!(cleaned.status.success(), "stderr: {}", stderr(&cleaned));
+    assert!(
+        stdout(&cleaned).contains("Deleted 1 backup file(s)."),
+        "stdout: {}",
+        stdout(&cleaned)
+    );
+    assert!(!bak.exists(), "the backup is gone");
+    let again = alix(&[
+        "doctor",
+        ws.to_str().unwrap(),
+        "--remove-backup-files",
+        "--yes",
+    ]);
+    assert!(
+        stdout(&again).contains("No backup files"),
+        "stdout: {}",
+        stdout(&again)
+    );
+}
+
+#[test]
 fn deck_remove_then_restore_is_a_clean_error() {
     let dir = TempDir::new().unwrap();
     let (_ws, deck) = imported_workspace_deck(dir.path());

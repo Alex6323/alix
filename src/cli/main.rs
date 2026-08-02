@@ -215,6 +215,15 @@ struct DoctorArgs {
     #[arg(long)]
     repair_source_locators: bool,
 
+    /// Delete every backup (`*.bak`) file under the checked folder, after one
+    /// confirmation. The backups are what `alix deck restore` swaps in.
+    #[arg(long)]
+    remove_backup_files: bool,
+
+    /// Skip the backup-removal confirmation.
+    #[arg(long, requires = "remove_backup_files")]
+    yes: bool,
+
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,

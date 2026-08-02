@@ -1,4 +1,6 @@
-//! `alix doctor`: report-only, never fixes anything.
+//! `alix doctor`'s checks: report-only by default; mutations exist only
+//! behind explicit CLI flags (`--repair-source-locators`,
+//! `--remove-backup-files`), never in these functions.
 
 use std::{
     path::{Path, PathBuf},
@@ -265,9 +267,94 @@ pub fn check_binary(name: &'static str, cmd: &str, purpose: &str, remedy: &str) 
     }
 }
 
+/// Every `*.bak` under `root`, recursively: the backups `alix deck restore`
+/// swaps in, left behind by overwrites (`deck import --force`, deck
+/// regeneration). Dot-directories are skipped.
+pub fn backup_files(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if path.is_dir() {
+                if !name.starts_with('.') {
+                    stack.push(path);
+                }
+            } else if name.ends_with(".bak") {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// A finding only when backups exist: their absence is the healthy state
+/// and prints nothing.
+pub fn check_backups(root: &Path) -> Option<Finding> {
+    let files = backup_files(root);
+    if files.is_empty() {
+        return None;
+    }
+    let bytes: u64 = files
+        .iter()
+        .filter_map(|f| std::fs::metadata(f).ok())
+        .map(|m| m.len())
+        .sum();
+    Some(Finding {
+        name: "backups",
+        status: Status::Warn,
+        detail: format!(
+            "{} backup file(s), {} KiB, from overwrites",
+            files.len(),
+            bytes.div_ceil(1024)
+        ),
+        remedy: Some(
+            "swap one back: `alix deck restore <deck>` — or delete all: \
+             `alix doctor <dir> --remove-backup-files`"
+                .into(),
+        ),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_scanning_finds_nested_baks_and_stays_silent_when_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            check_backups(dir.path()).is_none(),
+            "a clean tree produces no finding"
+        );
+
+        std::fs::create_dir_all(dir.path().join("progress")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join("a.md"), "live").unwrap();
+        std::fs::write(dir.path().join("a.md.bak"), "bak").unwrap();
+        std::fs::write(dir.path().join("progress/d.json.bak"), "bak").unwrap();
+        std::fs::write(dir.path().join(".git/ref.bak"), "hidden").unwrap();
+
+        let files = backup_files(dir.path());
+        assert_eq!(2, files.len(), "dot-dirs are skipped: {files:?}");
+
+        let finding = check_backups(dir.path()).unwrap();
+        assert_eq!(Status::Warn, finding.status, "advice, never a failure");
+        assert!(
+            finding.detail.contains("2 backup file(s)"),
+            "{}",
+            finding.detail
+        );
+        let remedy = finding.remedy.as_deref().unwrap_or_default();
+        assert!(remedy.contains("deck restore"), "{remedy}");
+        assert!(remedy.contains("--remove-backup-files"), "{remedy}");
+    }
 
     #[test]
     fn a_config_typo_reports_fail_with_a_remedy() {
