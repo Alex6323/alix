@@ -20,6 +20,9 @@
   "passed": 0,
   "phase": "select",
   "promotable": false,
+  "recognize_missed": 0,
+  "recognize_partly": 0,
+  "recognized": 0,
   "remaining": 0,
   "reviews": 0,
   "study_revision": 7

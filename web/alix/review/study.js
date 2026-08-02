@@ -1148,10 +1148,16 @@ export function createStudy({
     // never print a zero-valued row (a done screen must not read as "you did
     // nothing"; user rule).
     const acquired = state.acquired || 0;
-    const didSomething = state.reviews > 0 || acquired > 0;
+    // Recognize answers are work too (the invariant: work done means the
+    // summary shows it), even though they never count as FSRS reviews.
+    const recognized = state.recognized || 0;
+    const recognizePartly = state.recognize_partly || 0;
+    const recognizeMissed = state.recognize_missed || 0;
+    const recognizeWork = recognized + recognizePartly + recognizeMissed;
+    const didSomething = state.reviews > 0 || acquired > 0 || recognizeWork > 0;
     wrap.appendChild(el("div", "lede", didSomething ? "session complete" : "nothing to do here"));
     const gap = state.recognize_gap;
-    const headline = state.reviews > 0 ? "Nicely charged."
+    const headline = state.reviews > 0 || recognizeWork > 0 ? "Nicely charged."
       : acquired > 0 ? "New cards planted."
       : gap ? "Recognize is drained."
       : "Nothing due.";
@@ -1168,6 +1174,9 @@ export function createStudy({
       row("passed / failed", `${state.passed} / ${state.failed}`);
       row("accuracy", acc);
     }
+    if (recognized > 0) row("recognized", `${recognized}`);
+    if (recognizePartly > 0) row("almost", `${recognizePartly}`);
+    if (recognizeMissed > 0) row("missed", `${recognizeMissed}`);
     const dueLeft = state.due_left || 0;
     const newLeft = state.new_left || 0;
     const nextDue = !didSomething && !gap ? nextDueNote(state.next_due_ms) : null;

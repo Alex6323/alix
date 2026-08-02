@@ -24,6 +24,9 @@
     "recall": 13,
     "unaugmented": 13
   },
+  "recognize_missed": 2,
+  "recognize_partly": 1,
+  "recognized": 5,
   "remaining": 0,
   "reviews": 0,
   "study_revision": 7

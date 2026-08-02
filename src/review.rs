@@ -173,6 +173,10 @@ pub struct ReviewState {
     // Distinguishes an acquire-only sitting: without it, a first pass over a
     // fresh deck reads as "reviewed 0".
     pub acquired: u32,
+    // Recognize work is not an FSRS review, but a summary must still show it.
+    pub recognized: u32,
+    pub recognize_partly: u32,
+    pub recognize_missed: u32,
     pub can_restart: bool,
     pub promotable: bool,
     pub next_due_ms: Option<u64>,
@@ -281,6 +285,9 @@ pub fn state(
         passed: session.stats.passed as u32,
         failed: session.stats.failed as u32,
         acquired: session.stats.acquired as u32,
+        recognized: session.stats.recognized as u32,
+        recognize_partly: session.stats.recognize_partly as u32,
+        recognize_missed: session.stats.recognize_missed as u32,
         can_restart: session.has_due_now(store, now),
         promotable: session.current_is_virtual(store),
         next_due_ms: finished

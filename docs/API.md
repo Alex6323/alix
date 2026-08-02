@@ -551,6 +551,7 @@ The review-session payload; returned by every review action.
 | `depth` | string | `recognize` \| `recall` \| `reconstruct` *(closed)*. |
 | `input` | string | `type` \| `draw`. |
 | `remaining` / `initial` / `reviews` / `passed` / `failed` / `acquired` | number | Session counters; `acquired` counts new cards introduced this sitting (a first pass is acquire-only, so `reviews` alone reads 0). |
+| `recognized` / `recognize_partly` / `recognize_missed` | number | Recognize-depth tallies for this sitting (right / almost / missed). Recognize work never increments `reviews` (it is not an FSRS review), so a done screen must read these too; work done means the summary shows it. |
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything servable right now (would a restart build a non-empty sitting). |
 | `promotable` | bool | Current card is a virtual (remediation) card. |

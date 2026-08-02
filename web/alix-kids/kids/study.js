@@ -359,16 +359,31 @@ function renderNotReady() {
 }
 
 // The retrospective Done screen: a bobbing Alix (bob gated by reduced-motion
-// via the shared .mascot/kidsBreathe pattern), the honest review count, and
+// via the shared .mascot/kidsBreathe pattern), the honest work tallies, and
 // two exits. No score/streak/XP -- orientation lives only here, once the
 // session is over (the no-counter rule is about DURING review).
+// The invariant: work done means this screen shows it. Recognize answers
+// (MC taps) never count as FSRS reviews, so they arrive in their own
+// fields; a zero-valued line is never printed, and a session with no work
+// at all does not celebrate.
 function renderDone() {
   const wrap = el("div", "done");
   wrap.appendChild(mascotEl("mascot-lg"));
-  wrap.appendChild(el("div", "done-title", "Nice work! 🎉"));
-  const n = (state && typeof state.reviews === "number") ? state.reviews : 0;
-  wrap.appendChild(el("div", "done-count", "You reviewed " + n + (n === 1 ? " card." : " cards.")));
-  wrap.appendChild(el("div", "done-sub", "Come back tomorrow to keep them fresh 🌱"));
+  const reviews = (state && state.reviews) || 0;
+  const met = (state && state.acquired) || 0;
+  const right = (state && state.recognized) || 0;
+  const almost = (state && state.recognize_partly) || 0;
+  const tryAgain = (state && state.recognize_missed) || 0;
+  const didSomething = reviews + met + right + almost + tryAgain > 0;
+  wrap.appendChild(el("div", "done-title", didSomething ? "Nice work! 🎉" : "All done for now 🌱"));
+  const line = (text) => wrap.appendChild(el("div", "done-count", text));
+  if (reviews > 0) line("You reviewed " + reviews + (reviews === 1 ? " card." : " cards."));
+  if (right > 0) line("You got " + right + (right === 1 ? " card" : " cards") + " right! 👀");
+  if (almost > 0) line("So close on " + almost + (almost === 1 ? " card." : " cards."));
+  if (tryAgain > 0) line((tryAgain === 1 ? "1 card is" : tryAgain + " cards are") + " waiting for another try.");
+  if (met > 0) line("You met " + met + " new " + (met === 1 ? "card." : "cards."));
+  if (!didSomething) line("Nothing to review right now.");
+  wrap.appendChild(el("div", "done-sub", didSomething ? "Come back tomorrow to keep them fresh 🌱" : "Come back later!"));
   stage.appendChild(wrap);
 
   const actions = el("div", "done-actions");

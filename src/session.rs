@@ -84,6 +84,9 @@ pub struct SessionStats {
     pub passed: usize,
     pub failed: usize,
     pub acquired: usize,
+    pub recognized: usize,
+    pub recognize_partly: usize,
+    pub recognize_missed: usize,
 }
 
 pub struct Session {
@@ -405,6 +408,11 @@ impl Session {
 
         if depth == Depth::Recognize {
             state.record_review(now_ms, grade, Depth::Recognize, false);
+            match grade {
+                Grade::Pass => self.stats.recognized += 1,
+                Grade::Partial => self.stats.recognize_partly += 1,
+                Grade::Fail => self.stats.recognize_missed += 1,
+            }
             if grade == Grade::Pass {
                 self.roster
                     .retain(|&i| self.cards[i].id().as_deref() != Some(id.as_str()));
@@ -3682,6 +3690,37 @@ mod tests {
                 .recognized_ms
                 .is_none(),
             "a partial never marks recognized"
+        );
+    }
+
+    #[test]
+    fn a_recognize_session_tallies_every_grade_kind_without_fsrs_reviews() {
+        let (mut store, _dir) = empty_store();
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let all = cards(3);
+        for card in &all {
+            store.get_or_insert(&card.id().unwrap(), 0);
+        }
+        let mut session = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            now,
+        );
+        session.grade(&mut store, Grade::Pass, now);
+        session.grade(&mut store, Grade::Partial, now);
+        session.grade(&mut store, Grade::Fail, now);
+
+        assert_eq!(1, session.stats.recognized, "one correct recognition");
+        assert_eq!(1, session.stats.recognize_partly, "one almost");
+        assert_eq!(1, session.stats.recognize_missed, "one miss");
+        assert_eq!(
+            0, session.stats.reviews,
+            "recognize work is never an FSRS review"
         );
     }
 
