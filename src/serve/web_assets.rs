@@ -128,3 +128,67 @@ fn compose_page(html: &str) -> String {
     html.replace("<!--%head%-->", HEAD_HTML)
         .replace("<!--%brand%-->", BRAND_HTML)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::THEME_CSS;
+
+    // (block name, its custom-property names), one entry per `[data-theme=...]`
+    // selector list; a block shared with `:root` is the fallback provider and
+    // is skipped (it may define global tokens like fonts).
+    fn pure_theme_blocks(css: &str) -> Vec<(String, Vec<String>)> {
+        let mut blocks = Vec::new();
+        let mut rest = css;
+        while let Some(open) = rest.find('{') {
+            let (selector, body_on) = rest.split_at(open);
+            let close = body_on.find('}').expect("balanced css");
+            let body = &body_on[1..close];
+            let selector = selector.rsplit('}').next().unwrap_or(selector).trim();
+            if selector.contains("[data-theme=") && !selector.contains(":root") {
+                let name = selector.split('"').nth(1).unwrap_or(selector).to_string();
+                let tokens = body
+                    .split(';')
+                    .filter_map(|declaration| {
+                        let declaration = declaration.trim_start();
+                        declaration.starts_with("--").then(|| {
+                            declaration
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .trim()
+                                .to_string()
+                        })
+                    })
+                    .collect();
+                blocks.push((name, tokens));
+            }
+            rest = &body_on[close + 1..];
+        }
+        blocks
+    }
+
+    #[test]
+    fn every_theme_defines_every_token_any_theme_defines() {
+        let blocks = pure_theme_blocks(THEME_CSS);
+        assert!(blocks.len() > 10, "theme parsing broke: {}", blocks.len());
+        let mut union: Vec<&str> = Vec::new();
+        for (_, tokens) in &blocks {
+            for token in tokens {
+                if !union.contains(&token.as_str()) {
+                    union.push(token);
+                }
+            }
+        }
+        for (name, tokens) in &blocks {
+            let missing: Vec<&&str> = union
+                .iter()
+                .filter(|token| !tokens.iter().any(|t| t == **token))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "theme `{name}` omits {missing:?}; an omitted token silently \
+                 inherits the dark default (light-gray text on a light theme)"
+            );
+        }
+    }
+}

@@ -522,12 +522,14 @@ export function createAugment({
       legend.appendChild(el("span", "aug-work",
         `will run ~${work} generation${work === 1 ? "" : "s"} across ${tickedCount} target${tickedCount === 1 ? "" : "s"}`));
     }
-    const genSel = chip(`Generate selected (${tickedCount})`, "primary", augmentGenerateSelected);
-    genSel.disabled = tickedCount === 0 || !!d.busy;
+    // Destructive first and Close last (the dialog convention), so the
+    // most-clicked chip never neighbors "Remove all".
     const rmAll = chip("Remove all", "", () => {
       if (confirmUser("Remove every augmentation for this deck?")) augmentRemove("all");
     });
     rmAll.disabled = !!d.busy;
+    const genSel = chip(`Generate selected (${tickedCount})`, "primary", augmentGenerateSelected);
+    genSel.disabled = tickedCount === 0 || !!d.busy;
     chip("Close", "", close, "esc");
   }
 

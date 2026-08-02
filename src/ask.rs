@@ -745,7 +745,7 @@ fn drain_pipe<R: Read + Send + 'static>(
     })
 }
 
-fn backend_label(name: &str) -> &str {
+pub fn backend_label(name: &str) -> &str {
     match name {
         "claude" => "Claude",
         "codex" => "Codex",

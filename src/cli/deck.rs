@@ -220,7 +220,7 @@ fn print_transfer_report(action: &str, report: &alix::deck_transfer::TransferRep
     }
 }
 
-/// Foreground: any Claude error surfaces here, not mid-review.
+/// Foreground: any backend error surfaces here, not mid-review.
 pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     // Must stamp before the cache is keyed by `Card::id`: unstamped cards all
@@ -251,8 +251,9 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
         .as_deref()
         .or(config.ask.model.as_deref())
         .unwrap_or("the default model");
+    let backend = alix::ask::backend_label(ask_cfg.backend.name());
     eprintln!(
-        "Generating {what} for \"{}\" with Claude ({model}) — one batched call, \
+        "Generating {what} for \"{}\" with {backend} ({model}) — one batched call, \
          this can take a moment…",
         deck.subject
     );

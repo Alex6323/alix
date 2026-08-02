@@ -45,7 +45,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every kind of work done (introduced, recognized, reviewed). A sitting
   with no work at all no longer celebrates.
 - The `alix generate --review` and `alix deck augment` help texts name
-  the AI backend neutrally instead of hardcoding Claude.
+  the AI backend neutrally instead of hardcoding Claude, the augment
+  progress line names the configured backend, and `alix receive`'s help
+  mentions workspaces alongside decks and folders.
+- Multiple-choice option text was near-invisible on the gruvbox-light and
+  catppuccin-latte themes: ten themes omitted the text/faint/accent-ink/
+  brand-text tokens and silently inherited the dark default's light gray.
+  Every theme now defines the full token set (dark themes keep their
+  current rendering), pinned by a token-parity test.
+- The augment dialog's footer no longer places the destructive "Remove
+  all" between "Generate selected" and "Close"; it now sits first, so a
+  reach for Close cannot land on it.
 
 ## [0.7.0] - 2026-08-02
 

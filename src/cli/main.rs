@@ -123,7 +123,7 @@ enum Command {
     /// `wormhole` binary. Tell the receiver the code it prints; `--zip`
     /// writes an archive to pass along however you like instead.
     Share(ShareArgs),
-    /// Receive a shared deck or folder: by wormhole code, or from a .zip.
+    /// Receive a shared deck, folder, or workspace: by wormhole code, or from a .zip.
     ///
     /// A received deck lands in the decks directory (or `--workspace <dir>`);
     /// a received folder lands beside your other decks under its own name.

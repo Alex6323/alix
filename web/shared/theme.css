@@ -287,6 +287,7 @@
   --note-border: #d29922; --note-ink: #e6edf3; --note-code: #e6edf3;
   --code: #58a6ff;
   --excerpt-bg: #161b22;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── GitHub Light — aligned to the Alix Adult palette ── */
@@ -338,6 +339,7 @@
   --note-border: #e6db74; --note-ink: #f8f8f2; --note-code: #f8f8f2;
   --code: #66d9ef;
   --excerpt-bg: #1e1f1c;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── Catppuccin Mocha ── */
@@ -350,6 +352,7 @@
   --note-border: #f9e2af; --note-ink: #cdd6f4; --note-code: #cdd6f4;
   --code: #89b4fa;
   --excerpt-bg: #181825;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── Catppuccin Latte ── */
@@ -362,6 +365,7 @@
   --note-border: #df8e1d; --note-ink: #4c4f69; --note-code: #4c4f69;
   --code: #1e66f5;
   --excerpt-bg: #e6e9ef;
+  --text: #5c5f77; --faint: #8c8fa1; --accent-ink: #ffffff; --brand-text: #c2410c;
 }
 
 /* ── Tokyo Night ── */
@@ -374,6 +378,7 @@
   --note-border: #e0af68; --note-ink: #c0caf5; --note-code: #c0caf5;
   --code: #7aa2f7;
   --excerpt-bg: #16161e;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── Solarized Dark ── */
@@ -386,6 +391,7 @@
   --note-border: #b58900; --note-ink: #839496; --note-code: #839496;
   --code: #268bd2;
   --excerpt-bg: #073642;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── Solarized Light — aligned to the Alix Adult palette ── */
@@ -424,6 +430,7 @@
   --note-border: #d79921; --note-ink: #3c3836; --note-code: #3c3836;
   --code: #076678;
   --excerpt-bg: #ebdbb2;
+  --text: #504945; --faint: #7c6f64; --accent-ink: #ffffff; --brand-text: #c2410c;
 }
 
 /* ── Nord — aligned to the Alix Adult palette ── */
@@ -449,6 +456,7 @@
   --note-border: #ffb454; --note-ink: #bfbdb6; --note-code: #bfbdb6;
   --code: #59c2ff;
   --excerpt-bg: #10141c;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── Rosé Pine ── */
@@ -461,6 +469,7 @@
   --note-border: #f6c177; --note-ink: #e0def4; --note-code: #e0def4;
   --code: #9ccfd8;
   --excerpt-bg: #1f1d2e;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── Everforest Dark ── */
@@ -473,6 +482,7 @@
   --note-border: #dbbc7f; --note-ink: #d3c6aa; --note-code: #d3c6aa;
   --code: #7fbbb3;
   --excerpt-bg: #343f44;
+  --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
 }
 
 /* ── theme picker (popover gallery, built by theme.js) ─────────────────
