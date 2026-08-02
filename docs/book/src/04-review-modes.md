@@ -135,11 +135,13 @@ Retrieval just before forgetting strengthens memory the most.
 Spacing forces effortful recall; cramming lets you coast on short-term memory.
 ```
 
-Augment the deck with **key points** (`alix deck augment <deck> --target
-keypoints`) and the reveal becomes a **checklist**: you tick each cached point you
-covered and the grade is *derived* from the coverage (all covered → got it, some →
-partly, none → missed it), a per-claim check rather than a gut call. Atomic-answer
-cards get no key points and keep the plain reveal.
+The reveal is a **checklist** by default: every multi-line explain card ticks
+against its own answer lines as the rubric, and the grade is *derived* from the
+coverage (all covered → got it, some → partly, none → missed it), a per-claim
+check rather than a gut call. `alix deck augment <deck> --target keypoints`
+replaces that rubric with model-written claims distilled from the card, which
+usually tick more cleanly than prose lines. Atomic-answer cards get no key
+points and keep the plain reveal.
 
 A different augment target, `alix deck augment <deck> --target format`, instead
 *reshapes* a badly-shaped card (a list crammed into one prose answer, say) into

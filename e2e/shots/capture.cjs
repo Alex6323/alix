@@ -47,7 +47,7 @@ const KIDS_BASE = `http://127.0.0.1:${KIDS_PORT}`;
 // chain, pre-augmented (choices/notes/keypoints/topology) by ensureAugmented().
 const HERO_DECK = "what-is-ownership.md";
 const HERO_FILE = path.join(DEMO_DIR, "what-is-ownership.md");
-const TRACE_DECK = "rust-book/02-how-let-s2-s1-moves-a.md"; // gone with the old demo; shot 6 SKIPs until a trace is regenerated
+const TRACE_DECK = "workspace-showcase/ownership-move.md"; // the shipped example trace (docs/examples), copied into the demo dir
 // runAugment("topology") passes no `--with`, so `alix deck augment` auto-names
 // the generated topology "auto" (see AugmentTarget::Topology's default when
 // no guidance is given) — this must match, or shot 8's topology-scoped
@@ -763,10 +763,10 @@ async function shot6(page) {
   // picker click flow instead, same as a user would.
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
-  const workspaceRow = page.locator(".deckrow").filter({ hasText: "THE Rust book" }).first();
+  const workspaceRow = page.locator(".deckrow").filter({ hasText: "Workspace Showcase" }).first();
   await workspaceRow.click();
   await page.waitForTimeout(400);
-  const traceRow = page.locator(".deckrow").filter({ hasText: "Moves a String" }).first();
+  const traceRow = page.locator(".deckrow").filter({ hasText: "Rust ownership moves" }).first();
   if (!(await traceRow.count())) {
     log("SKIP shot 6: trace deck row not found in the drilled workspace");
     return false;
@@ -783,11 +783,11 @@ async function shot6(page) {
     await field.press("Shift+Enter");
     await page.waitForTimeout(400);
   }
-  if (!(await page.locator(".wexcerpt").count())) {
-    log("SKIP shot 6: no .wexcerpt rendered — walk did not reach the reveal phase");
+  if (!(await page.locator(".source-excerpt").count())) {
+    log("SKIP shot 6: no .source-excerpt rendered — walk did not reach the reveal phase");
     return false;
   }
-  await shot(page, "shot-6-trace.webp", ".wexcerpt");
+  await shot(page, "shot-6-trace.webp", ".source-excerpt");
   return true;
 }
 

@@ -109,8 +109,9 @@ Once you're satisfied, click **Add** to land it as a new card on the current dec
 The card is **virtual** until you promote it to the deck file; it lives in the
 review progress store but doesn't yet appear in the `.md` deck. You drill it like
 any other card, building up history. When you're ready to make it permanent, the
-**Promote** button (or `p` key, visible on the card's review screen) writes it to
-the deck file at the end of the session, so future runs see it.
+**Promote to deck** entry in the ☰ menu (offered only while the current card
+is a virtual one) appends it to the deck file immediately, carrying its
+progress over, so future runs see it.
 
 This is an **adult-review feature only**; it's not available in the kids interface.
 If the tutor's draft can't be parsed as a valid front/back pair, `alix` reports the
