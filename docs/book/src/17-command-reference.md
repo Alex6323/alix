@@ -71,7 +71,7 @@ relevant documents in memory without creating an authoritative combined file.
   virtual cards in the workspace's own store, after one confirmation.
 - `alix reset --orphans [target]` clears only **orphaned** progress: store
   keys that match no card or deck in the scanned decks (a stripped
-  `<!-- id: … -->` comment, a hand-deleted deck, a pre-1.0 numeric id).
+  `<!-- id: … -->` comment, a hand-deleted deck, a double-mint).
   Orphans are never removed automatically (they are evidence and a reclaim
   pool), so this is the explicit opt-in. It scopes to a named folder/workspace
   store, else the decks-dir root store, and reads every progress document under

@@ -154,7 +154,7 @@ deck file or how it's graded.
 ## The check badge
 
 In the web frontend a small badge above the answer names the check you're doing
-right now (`flip`, `line`, `typing`, `choice`, or `explain`), so how you'll
+right now (`flip`, `line`, `typing`, `typeline`, `choice`, or `explain`), so how you'll
 interact is clear before you commit. It badges the *present* interaction, not the
 depth: a brand-new card, or a Recognize pick, shows `choice` even on a card whose
 Recall/Reconstruct schedule will use something else once it's acquired.
