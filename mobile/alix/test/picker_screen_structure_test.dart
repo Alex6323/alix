@@ -29,11 +29,6 @@ void main() {
     return dir;
   }
 
-  String ymd(DateTime value) =>
-      '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
-
   Future<void> pumpPicker(
     WidgetTester tester, {
     required Directory root,
@@ -186,8 +181,11 @@ void main() {
     final workspace = Directory('${root.path}/workspace')..createSync();
     final decks = Directory('${workspace.path}/decks')..createSync();
     File('${workspace.path}/alix.toml').writeAsStringSync('title = "Path"\n');
+    // A fixed far-future deadline: a computed now-relative date bakes the
+    // capture day's rendering into the committed baseline (it went red the
+    // day after recording).
     File('${workspace.path}/alix.local.toml').writeAsStringSync(
-      '[review]\ndeadline = "${ymd(DateTime.now().add(const Duration(days: 5)))}"\n',
+      '[review]\ndeadline = "2100-01-05"\n',
     );
     writeTestDeck(
       '${decks.path}/base.md',

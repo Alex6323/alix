@@ -6,7 +6,7 @@ Scaffold
           Padding(EdgeInsets(2.0, 0.0, 2.0, 16.0))
             Text("PATH")
           Padding(EdgeInsets(2.0, 0.0, 2.0, 16.0))
-            Text("🎯 2026-08-07 · 0/3 mastered")
+            Text("🎯 2100-01-05 · 0/3 mastered")
           Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
             Opacity(1.00)
               Material
