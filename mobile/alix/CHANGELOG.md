@@ -26,6 +26,10 @@ Release notes, so a release without its section fails loud.
   longer exists; it now says Settings → Connected devices, where pairing
   actually lives.
 
+- The bundled starter deck taught a grade called "Pass" that no client
+  shows; the card now answers with the real labels (Partly or Got it,
+  only Missed it brings the card back).
+
 ### Added
 
 - The empty "Nothing due." session summary now shows one quiet line saying when

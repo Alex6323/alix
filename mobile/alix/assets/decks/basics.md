@@ -12,7 +12,7 @@ a stronger memory fades more slowly
 in a plain text file
 
 ## What grade ends a card for the session?
-Pass
+Partly or Got it (only Missed it brings it back)
 
 ## Which folder holds per-deck review progress?
 progress/
