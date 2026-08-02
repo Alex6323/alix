@@ -2347,6 +2347,41 @@ fn generate_single_deck_writes_a_deck_file() {
 }
 
 #[test]
+fn generate_keeps_and_warns_about_a_deck_over_max_cards() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Q1\nA1\n\n## Q2\nA2\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n\n[generate]\nmax_cards = 1\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("above the configured max_cards = 1"),
+        "soft-ceiling warning missing: {}",
+        stderr(&out)
+    );
+    assert!(
+        stdout(&out).contains("Wrote 2 cards to"),
+        "all cards must be kept: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn generate_over_an_existing_deck_replaces_it_instead_of_writing_a_new_one() {
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");

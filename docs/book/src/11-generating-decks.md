@@ -83,7 +83,7 @@ audience, and card style. It costs an extra call, but it's worth it when the
 source is repetitive. The prompt and defaults (`model`, `timeout_secs`
 (default 3600), `idle_timeout_secs` (default 300; structured inactivity or an
 unstructured absolute fallback, and `0` disables),
-`max_cards` (default 30), `language`, `audience`, `card_style`, and an `extra`
+`max_cards` (default 100, a soft ceiling: an overshoot is kept and warned about), `language`, `audience`, `card_style`, and an `extra`
 instruction field) live in the `[generate]` section of the config.
 
 ## Generate, then own it

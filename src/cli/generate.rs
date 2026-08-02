@@ -310,7 +310,10 @@ fn generate_single_deck(
             println!();
         }
         match parser::parse_str(&name, &text) {
-            Ok(cards) => eprintln!("({} cards, not written; --print)", cards.len()),
+            Ok(cards) => {
+                warn_over_max(cards.len(), gen_cfg.max_cards);
+                eprintln!("({} cards, not written; --print)", cards.len());
+            }
             Err(e) => eprintln!("(warning: does not parse yet: {e})"),
         }
         if let Ok(deck) = &parsed
@@ -334,6 +337,7 @@ fn generate_single_deck(
         if Path::new(&source).exists() {
             alix::source::stamp_citations(&target)?;
         }
+        warn_over_max(report.minted, gen_cfg.max_cards);
         println!(
             "Replaced {}: {} cards, wiped progress for {} card(s).",
             target.display(),
@@ -348,6 +352,7 @@ fn generate_single_deck(
             if Path::new(&source).exists() {
                 alix::source::stamp_citations(&placed.path)?;
             }
+            warn_over_max(placed.cards, gen_cfg.max_cards);
             println!("Wrote {} cards to {}", placed.cards, placed.path.display());
             Ok(())
         }
@@ -363,6 +368,16 @@ fn generate_single_deck(
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
+
+/// max_cards is a soft ceiling: an overshoot is kept and reported, never cut.
+fn warn_over_max(cards: usize, max_cards: usize) {
+    if cards > max_cards {
+        eprintln!(
+            "warning: generated {cards} cards, above the configured max_cards = {max_cards} \
+             (a soft ceiling; all cards kept)"
+        );
+    }
+}
 
 fn trace_build(
     deck_path: &Path,

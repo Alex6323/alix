@@ -36,6 +36,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gone on the same ruling; a joined source is an ordinary path that fails
   to resolve.
 
+- `generate`'s `max_cards` is now a soft ceiling with a default of 100
+  (was a hard-worded 30): the prompt aims for the configured count, and a
+  generation that comes back larger is kept in full with a warning
+  instead of being constrained.
+
 ### Fixed
 
 - A Recognize sitting no longer ends in "you reviewed 0 cards": the

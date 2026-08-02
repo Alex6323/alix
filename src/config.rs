@@ -254,7 +254,7 @@ impl Default for GenerateDeckConfig {
             model: None,
             timeout_secs: 3600,
             idle_timeout_secs: 300,
-            max_cards: 30,
+            max_cards: 100,
             language: None,
             audience: None,
             card_style: GenerateCardStyle::default(),
@@ -1154,7 +1154,7 @@ pub fn default_config_toml() -> &'static str {
 # model = ""                    # --model override; empty = use [ask] / CLI default
 # timeout_secs = 3600           # maximum absolute limit for one generation call
 # idle_timeout_secs = 300       # structured idle / unstructured absolute fallback; 0 disables
-# max_cards = 30                # upper bound on cards per deck
+# max_cards = 100               # soft ceiling on cards per deck (exceeding warns, never truncates)
 # language = ""                 # output language; empty = follow the source
 # audience = ""                 # intended learner, e.g. "new Rust programmers"
 # card_style = "mixed"          # mixed | plain | cloze | authored-choices

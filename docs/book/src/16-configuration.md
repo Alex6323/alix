@@ -159,7 +159,7 @@ settings:
   `timeout_secs` (3600), and `idle_timeout_secs` (300, or `0` to disable).
   The latter is a resetting inactivity limit for structured-event backends and
   a nonrenewing absolute fallback for unstructured backends. Other controls are
-  `max_cards` (30), default `language` and `audience`, `card_style` (`mixed`,
+  `max_cards` (100, a soft ceiling: exceeding warns, never truncates), default `language` and `audience`, `card_style` (`mixed`,
   `plain`, `cloze`, or `authored-choices`), `extra`, a `prompt` override, and
   `review`. Per-run flags override the language, audience, and style defaults.
   The terminal shows calm live progress, but partial generated cards remain

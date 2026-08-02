@@ -127,7 +127,7 @@ link: {url}
 ---
 The `link:` key lets the learner ask follow-up questions against the source.
 
-PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
+PEDAGOGY — produce a balanced deck aiming for at most {max_cards} cards, spread across \
 four layers of understanding:
   1. Facts & terminology: definitions and key terms.
   2. Concepts & mechanisms: \"why\" and \"how\" questions.
@@ -199,7 +199,7 @@ source: {source}
 The `source:` key ties the deck to its source, so `alix exam` can later grade \
 your understanding against it.
 
-PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
+PEDAGOGY — produce a balanced deck aiming for at most {max_cards} cards, spread across \
 four layers of understanding:
   1. Facts & terminology: definitions and key terms.
   2. Concepts & mechanisms: \"why\" and \"how\" questions.
@@ -590,7 +590,7 @@ mod tests {
     fn prompt_substitutes_url_and_card_count() {
         let p = build_prompt("https://example.org/page", true, &cfg(12), &spec());
         assert!(p.contains("https://example.org/page"));
-        assert!(p.contains("AT MOST 12 cards"));
+        assert!(p.contains("aiming for at most 12 cards"));
         assert!(p.contains("link: https://example.org/page"));
         assert!(p.contains("## "));
         assert!(p.contains("four layers"));
@@ -863,7 +863,7 @@ mod tests {
         assert!(p.contains("src/scheduler.rs"));
         assert!(p.contains("Read, Glob and Grep"));
         assert!(p.contains("source: src/scheduler.rs"));
-        assert!(p.contains("AT MOST 8 cards"));
+        assert!(p.contains("aiming for at most 8 cards"));
         assert!(!p.contains("WebFetch"));
         assert!(!p.contains("{source}"));
         assert!(p.contains("<!-- at: file:start-end -->"));
