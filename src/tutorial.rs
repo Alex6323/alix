@@ -18,8 +18,8 @@ pub fn seed_new_decks_dir(dir: &Path) -> bool {
     if std::fs::write(&path, TUTORIAL_DECK).is_err() {
         return false;
     }
-    // Best-effort: a failed stamp leaves an unstamped but still-loadable
-    // tutorial; review-open stamps it later.
+    // Best-effort: a failed stamp leaves the file present but undiscovered
+    // (no id), recoverable with `alix deck init`.
     let _ = crate::stamp::stamp_deck(&path);
     true
 }

@@ -144,8 +144,9 @@ The rest of the AI-and-deck surface:
   back. There is nothing to restore after `deck remove`, which deletes the
   backups too.
 - `alix workspace init <dir>`: scaffold an empty
-  [workspace](08-workspaces.md): an `alix.toml` (`--title` names it) and an
-  empty `decks/` plus `assets/`. Grow it with the `--workspace` flags above.
+  [workspace](08-workspaces.md): an `alix.toml` (`--title` names it), an
+  `alix.local.toml` (personal pacing: deadline, retention), and an empty
+  `decks/` plus `assets/`. Grow it with the `--workspace` flags above.
 - `alix workspace update <dir>`: reconcile frozen source-backed members with
   their recorded local sources. The first run stages an exact sibling
   workspace for review; `--apply` publishes it without another model call and

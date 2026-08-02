@@ -21,6 +21,12 @@ direction = "both"
 reveal = "line"
 ```
 
+Besides `title`, `description`, `icon`, and a shared `source`, the manifest
+may set a top-level `source_access`, which overrides the global
+`[ask] source_access` for this workspace's decks in either direction (see
+[the tutor](10-tutor.md)). The manifest travels with the folder when
+shared, so review a received workspace's `alix.toml` before an AI call.
+
 Starting from nothing instead? `alix workspace init <dir>` (`--title` to name
 it) scaffolds an empty workspace: an `alix.toml`, an `alix.local.toml`, and an
 empty `decks/` plus `assets/`. Both TOML files come fully commented, each key

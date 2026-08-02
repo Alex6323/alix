@@ -48,7 +48,8 @@ they occur in its revealed source excerpt. Matching is exact and case-sensitive,
 so the author controls the emphasis by choosing which terms to put in backticks.
 
 The `<!-- at: -->` locator's `at:` field is a single contiguous range
-`file:start-end` (or just line numbers when `source:` is one file), never
+`file:start-end` (just line numbers when `source:` is one file; a range-less
+path or URL cites the whole source, the form frozen URL sources use), never
 comma-separated, since a stitched excerpt makes disjoint code look adjacent. Its
 `fingerprint: xxh64-...` field fingerprints the displayed lines. A live walk
 reveals the source only while that fingerprint matches, so a shifted numeric

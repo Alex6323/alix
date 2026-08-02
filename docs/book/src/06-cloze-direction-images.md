@@ -109,7 +109,9 @@ A `Vec<u8>` (its bytes).
 
 The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses. Its
 fields are named and ordered: `at:` is the source path and line range (e.g.
-`src/string.rs:1-3`, or just `lines` when `source:` is a single file), and
+`src/string.rs:1-3`, just `lines` when `source:` is a single file, or a
+range-less path or URL to cite the whole source, the form a frozen URL
+source uses), and
 `fingerprint:` is an `xxh64-<hex>` digest of the displayed source text. alix
 writes the fingerprint when it creates a cited card or when you explicitly
 repair a hand-authored citation. A fact card may repeat the whole directive when

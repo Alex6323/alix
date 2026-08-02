@@ -113,8 +113,8 @@ Each links to its chapter in the manual:
   → [The AI exam](docs/book/src/12-the-ai-exam.md)
 - **Traces**: predict-and-verify walks along one path through real source.
   → [Trace decks](docs/book/src/13-trace-decks.md)
-- **Workspaces and `explore`**: group decks with shared settings, or turn a
-  source (including a repo) into an ordered workspace of decks and traces.
+- **Workspaces and generated curricula**: group decks with shared settings, or
+  turn a source (including a repo) into an ordered workspace of decks and traces.
   → [Workspaces](docs/book/src/08-workspaces.md), [Explore](docs/book/src/14-explore.md)
 - **A local web app** for review and the exam, LAN-shareable, no accounts or
   database. → [The web app](docs/book/src/15-the-web-app.md)

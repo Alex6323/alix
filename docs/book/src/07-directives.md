@@ -27,7 +27,7 @@ taking precedence. Each links to the chapter that explains it in full.
 | `link` | deck | [tutor reference](10-tutor.md) URL, tutor-only (repeatable). |
 | `source` | deck | [Exam ground truth](12-the-ai-exam.md): a YAML list of URLs, files, or directories (one entry is the norm), also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. A workspace `alix.toml` may declare a `source` too, as supporting context for its members. |
 | `trace` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
-| `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
+| `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen; a range-less path or URL cites the whole source): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
 
 Media (images, and later audio/video) isn't a directive: write a standard

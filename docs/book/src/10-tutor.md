@@ -76,12 +76,17 @@ only when `[ask] source_access = true`. The tutor always receives the frozen
 excerpt first; current source context can explain the surrounding material or
 detect drift, but never silently replaces the captured evidence.
 
-Local file grounding is opt-in with `[ask] source_access = true`. An explicit
-deck or workspace `source` defines the readable root. Without one, alix does
-not grant the tutor filesystem access: a `source:` identifies the cited
-evidence, but it never implicitly authorizes the surrounding project. This keeps
-decks portable across profile-managed deck directories and makes every wider
-live-source grant deliberate and reviewable.
+Local file grounding is opt-in with `[ask] source_access = true`, and a
+workspace's `alix.toml` may carry its own top-level `source_access` key,
+which overrides the global setting in either direction for that workspace's
+decks. The manifest travels when a workspace is shared, so inspect a
+received workspace's `alix.toml` before making an AI call over it. An
+explicit deck or workspace `source` defines the readable root. Without one,
+alix does not grant the tutor filesystem access: a `source:` identifies the
+cited evidence, but it never implicitly authorizes the surrounding project.
+This keeps decks portable across profile-managed deck directories and keeps
+every wider live-source grant reviewable: globally in your config, or per
+workspace in a manifest you can read.
 
 When no usable source is available, the tutor still works from the frozen
 excerpt and card context. The Ask status warns that it lacks the full current
