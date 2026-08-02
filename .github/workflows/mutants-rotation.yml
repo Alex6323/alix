@@ -2,8 +2,8 @@ name: Mutation rotation
 
 # The nightly diff run only ever mutates what just merged, so everything older
 # than that job has never been mutated at all. This one grinds through the
-# whole tree instead: one seventh per night, advancing by date, so the
-# codebase is covered on a rolling one-week cycle and re-covered as it changes.
+# whole tree instead: one ninth per night, advancing by date, so the
+# codebase is covered on a rolling nine-day cycle and re-covered as it changes.
 #
 # The shard comes from the day of the year, so there is no state to keep and
 # nothing to drift. A missed night just means that slice waits a cycle.
@@ -19,14 +19,14 @@ on:
   workflow_dispatch:
     inputs:
       shard:
-        description: "Shard index to run instead of today's (0-6)"
+        description: "Shard index to run instead of today's (0-8)"
         required: false
 
 permissions:
   contents: read
 
 env:
-  SHARDS: 7
+  SHARDS: 9
 
 jobs:
   sweep:

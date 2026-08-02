@@ -389,7 +389,7 @@ to this codebase. When in doubt, mirror the surrounding code.
   day already exceeds GitHub's 6h ceiling in a single job. The nightly backstops
   a forgotten gate; it does not replace one, because it reports a miss the
   morning *after* the code landed. A second job, `mutants-rotation`, sweeps the
-  whole tree (`MUTANTS_ALL=1`) one seventh per night, the shard picked from
+  whole tree (`MUTANTS_ALL=1`) one ninth per night, the shard picked from
   the day of the year so no state is kept; it covers what predates the nightly
   and re-covers everything on a rolling week. It is deliberately not a gate:
   it reports into the job summary and stays green, because a nightly that is
