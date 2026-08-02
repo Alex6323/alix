@@ -22,6 +22,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts accumulated backups and `--remove-backup-files` deletes them
   after a confirmation.
 
+### Changed
+
+- Old deck formats are no longer recognized anywhere. The dedicated
+  retired-key errors (`alix-id:`, `origin:`), the doctor's "un-converted"
+  classification of decks and state documents, and the workspace manifest's
+  `origin` rejection are gone, along with every "deck conversion tool"
+  suggestion (no such tool ships). An old artifact now fails like any other
+  invalid input: unknown keys lint, ids and locators fail the current
+  grammar, unreadable documents error, and nothing suggests a remedy. The
+  dedicated errors for a `" + "`-joined `source:` value (deck frontmatter
+  and workspace manifest) and the stray-aggregate-state-file warning are
+  gone on the same ruling; a joined source is an ordinary path that fails
+  to resolve.
+
 ## [0.7.0] - 2026-08-02
 
 ### Added

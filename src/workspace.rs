@@ -103,7 +103,6 @@ pub struct Workspace {
 impl Workspace {
     pub fn load(dir: impl AsRef<Path>) -> io::Result<Workspace> {
         let path = dir.as_ref().to_path_buf();
-        ensure_manifest_reads(&path.join(MANIFEST))?;
         let members = match members(&path) {
             Ok(members) => members,
             Err(error) if error.kind() == io::ErrorKind::NotFound && has_manifest(&path) => {
@@ -133,47 +132,6 @@ impl Workspace {
                 .unwrap_or_default()
         })
     }
-}
-
-/// The loud manifest checks: `origin` (top-level or under `[defaults]`) is a
-/// recognized-obsolete key, not an ignorable unknown one, and a `source` entry
-/// is a single expression, never a " + " join.
-fn ensure_manifest_reads(path: &Path) -> io::Result<()> {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Ok(());
-    };
-    let Ok(value) = toml::from_str::<toml::Value>(&text) else {
-        return Ok(());
-    };
-    let top = value.get("origin").is_some();
-    let defaults = value
-        .get("defaults")
-        .and_then(|defaults| defaults.get("origin"))
-        .is_some();
-    if top || defaults {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "`origin` in {} is no longer read (a workspace declares its material with a \
-                 top-level `source`); run the deck conversion tool to rewrite it",
-                path.display()
-            ),
-        ));
-    }
-    if manifest_source(path.parent().unwrap_or(Path::new(".")))
-        .iter()
-        .any(|entry| entry.contains(" + "))
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "a `source` entry in {} holds a \" + \"-joined expression; write one source \
-                 per list entry, or run the deck conversion tool to split it",
-                path.display()
-            ),
-        ));
-    }
-    Ok(())
 }
 
 pub fn manifest_source(dir: &Path) -> Vec<String> {
@@ -533,38 +491,6 @@ mod tests {
 
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
         assert!(Workspace::load(dir.path()).unwrap().source.is_empty());
-    }
-
-    #[test]
-    fn a_plus_joined_manifest_source_entry_fails_the_workspace_load() {
-        let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join(MANIFEST), "source = \"a.md + b.md\"\n");
-        let error = Workspace::load(dir.path()).unwrap_err();
-        assert!(
-            error.to_string().contains("one source per list entry"),
-            "{error}"
-        );
-    }
-
-    #[test]
-    fn a_manifest_origin_key_fails_the_workspace_load_naming_the_conversion_tool() {
-        let dir = tempfile::tempdir().unwrap();
-        write(
-            &dir.path().join(MANIFEST),
-            "origin = \"https://x.example\"\n",
-        );
-        let error = Workspace::load(dir.path()).unwrap_err();
-        assert!(
-            error.to_string().contains("deck conversion tool"),
-            "{error}"
-        );
-
-        write(
-            &dir.path().join(MANIFEST),
-            "title = \"W\"\n\n[defaults]\norigin = \"../src\"\n",
-        );
-        let error = Workspace::load(dir.path()).unwrap_err();
-        assert!(error.to_string().contains("no longer read"), "{error}");
     }
 
     #[test]

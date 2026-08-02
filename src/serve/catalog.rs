@@ -27,7 +27,7 @@ use crate::{
     store::Store,
 };
 
-/// Per-deck IO routing, keyed by each deck's stable alix-id, not its filename.
+/// Per-deck IO routing, keyed by each deck's stable id, not its filename.
 pub(super) struct DeckFiles {
     pub(super) paths: HashMap<String, PathBuf>,
     /// Absent for a deck whose text couldn't be read (it can't have cards
@@ -96,14 +96,14 @@ mod tests {
         let path = dir.path().join("whatever-its-called.md");
         std::fs::write(&path, "## q\na\n").unwrap();
         let mut paths = HashMap::new();
-        paths.insert("stable-alix-id".to_string(), path.clone());
+        paths.insert("stable-deck-id".to_string(), path.clone());
         let mut files = DeckFiles::new(paths);
 
-        assert_eq!(Some(&path), files.paths.get("stable-alix-id"));
+        assert_eq!(Some(&path), files.paths.get("stable-deck-id"));
         assert_eq!(None, files.paths.get("whatever-its-called.md"));
 
         files
-            .append_note("stable-alix-id", 1, &["a note".to_string()])
+            .append_note("stable-deck-id", 1, &["a note".to_string()])
             .expect("routes to the file through its deck_id, not its filename");
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("a note"), "deck:\n{text}");

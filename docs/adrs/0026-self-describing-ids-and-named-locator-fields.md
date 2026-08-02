@@ -12,6 +12,12 @@ rule that production contains only the current design and does not branch on
 retired vocabulary. Those old-name-aware clauses are corrected below. The ID,
 source, locator, and asset grammar decisions are unchanged.
 
+2026-08-02: the user ruling that removed all old-format recognition also
+superseded the ` + ` hard-error clause (One source concept, below): a source
+value containing ` + ` receives no dedicated error or hint anywhere; it is an
+ordinary path that fails to resolve. The bare-token `requires:` hint stays,
+ruled current-grammar typo guidance rather than recognition.
+
 ## Context
 
 The deck-id rekey (ADR 0017 lineage) made deck-level state follow a deck's
@@ -160,8 +166,9 @@ There is one key for "where this deck's material lives": `source:`,
 multi-valued as a YAML list only, each entry a single expression: a URL, a
 file path, or a directory (ruled 2026-07-28). The `" + "` multi-expression
 string form is retired: its only producer was the deleted freeze machinery,
-and the list is the readable form. A source value containing ` + ` is a hard
-error hinting "one source per list entry". One entry is the norm; `doctor`
+and the list is the readable form. A source value containing ` + ` receives no
+dedicated error (superseded 2026-08-02, see Decision history): it is an
+ordinary path that fails to resolve. One entry is the norm; `doctor`
 nudges toward a common root above three. The separate `origin:` key
 (deck frontmatter and workspace manifest) is retired. The historical reason
 for two keys, freezing rewrote `source:` to the frozen snapshot while

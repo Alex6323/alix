@@ -289,8 +289,7 @@ impl SourceBase {
     }
 }
 
-/// A source value is one expression: a URL, a file, or a directory (ADR 0026;
-/// the " + " join is a parse error).
+/// A source value is one expression: a URL, a file, or a directory (ADR 0026).
 pub(crate) fn source_path(value: &str, base: Option<&Path>) -> Option<PathBuf> {
     let value = value.trim();
     if value.is_empty() {

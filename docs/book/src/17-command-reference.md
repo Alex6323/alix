@@ -193,9 +193,10 @@ notes it.
   in depth (syntax, named-field `at:` locators, and frozen cards that have
   drifted from their live source). It withholds stale excerpts and reports
   a unique exact relocation, changed content, ambiguity, or a missing
-  fingerprint. A deck still carrying pre-prefix ids, an old ` @ `/` from `
-  locator, or a retired `alix-id:`/`origin:` key is named as un-converted, with
-  the deck conversion tool as the remedy. Over a **folder or workspace** it also
+  fingerprint. alix does not recognize or rewrite old deck formats; a deck
+  written in one fails as ordinary invalid input (an unknown key, an id or
+  locator that fails the current grammar). Over a
+  **folder or workspace** it also
   reports identity problems across the decks as a set: duplicate deck or card
   tokens (naming which copy keeps the earned progress), store keys matching no
   live card or deck (orphans, clear them with `alix reset --orphans`), a
@@ -207,7 +208,8 @@ notes it.
   extension to mean the file), and an un-prefixed token it suggests writing as
   `deck-<token>`. It nudges a `source:` that lists more than a few entries
   toward their common directory, and flags a `source:` pointing into `assets/`
-  as un-converted. It also names deck-like Markdown ignored until explicitly
+  (a deck keeps its real source, never its frozen excerpt fragments). It also
+  names deck-like Markdown ignored until explicitly
   initialized, invalid or orphaned per-deck progress or augmentation documents,
   and synchronization conflict copies. Workspace checks also reject live source
   evidence, missing or cross-deck assets, local images outside the owning deck

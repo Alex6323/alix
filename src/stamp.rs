@@ -634,16 +634,24 @@ mod tests {
     }
 
     #[test]
-    fn an_old_format_deck_is_refused_before_any_mint_can_half_convert_it() {
+    fn a_bare_marker_deck_is_refused_before_any_mint_can_half_convert_it() {
         let dir = tempfile::tempdir().unwrap();
-        let with_old_key = "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n";
         let with_bare_marker = "## q <!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\na\n## fresh\nb\n";
-        for (name, original) in [("key.md", with_old_key), ("marker.md", with_bare_marker)] {
-            let path = write(&dir, name, original);
-            let result = stamp_deck(&path);
-            assert!(matches!(result, Err(StampError::Parse(_))), "{result:?}");
-            assert_eq!(original, fs::read_to_string(&path).unwrap());
-        }
+        let path = write(&dir, "marker.md", with_bare_marker);
+        let result = stamp_deck(&path);
+        assert!(matches!(result, Err(StampError::Parse(_))), "{result:?}");
+        assert_eq!(with_bare_marker, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn an_unknown_frontmatter_key_does_not_block_minting() {
+        let dir = tempfile::tempdir().unwrap();
+        let with_unknown_key = "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n";
+        let path = write(&dir, "key.md", with_unknown_key);
+        stamp_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("id: \"deck-"), "{text}");
+        assert!(text.contains("<!-- id: card-"), "{text}");
     }
 
     #[test]

@@ -118,7 +118,6 @@ fn load_frontmatter(
                     });
                 }
             },
-            "alix-id" => return Err(ParseError::ObsoleteAlixId(line)),
             "format-version" => match value {
                 Yaml::Integer(n) if *n == i64::from(DECK_FORMAT_VERSION) => {
                     frontmatter.format_version = Some(DECK_FORMAT_VERSION);
@@ -133,13 +132,7 @@ fn load_frontmatter(
                     });
                 }
             },
-            "source" => {
-                let entries = string_list(key, value, line, lints);
-                if entries.iter().any(|entry| entry.contains(" + ")) {
-                    return Err(ParseError::PlusJoinedSource(line));
-                }
-                frontmatter.source = entries;
-            }
+            "source" => frontmatter.source = string_list(key, value, line, lints),
             "requires" => frontmatter.requires = string_list(key, value, line, lints),
             "link" => frontmatter.link = string_list(key, value, line, lints),
             "trace" => match value {
@@ -162,7 +155,6 @@ fn load_frontmatter(
                 Some(direction) => frontmatter.direction = Some(direction),
                 None => lints.push(bad_value(line, key, describe(value))),
             },
-            "origin" => return Err(ParseError::ObsoleteOrigin(line)),
             "authors" => frontmatter.authors = string_list(key, value, line, lints),
             "tags" => frontmatter.tags = string_list(key, value, line, lints),
             "license" => match value {

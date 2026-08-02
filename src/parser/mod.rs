@@ -75,25 +75,11 @@ pub enum ParseError {
     FrontmatterSyntax { line: usize, message: String },
     #[error("line {line}: `id:` must be a quoted string (`id: \"deck-<token>\"`), got {found}")]
     NonStringId { line: usize, found: &'static str },
-    #[error(
-        "line {line}: `id:` must hold a `deck-<token>` id, got `{value}`; run the deck conversion tool if this deck predates prefixed ids"
-    )]
+    #[error("line {line}: `id:` must hold a `deck-<token>` id, got `{value}`")]
     InvalidDeckId { line: usize, value: String },
-    #[error(
-        "line {line}: a card `<!-- id: -->` must hold a base `card-<token>` id, got `{value}`; run the deck conversion tool if this deck predates prefixed ids"
-    )]
+    #[error("line {line}: a card `<!-- id: -->` must hold a base `card-<token>` id, got `{value}`")]
     InvalidCardId { line: usize, value: String },
-    #[error(
-        "line {0}: `alix-id:` is no longer read; run the deck conversion tool to rewrite this deck to the prefixed-id format"
-    )]
-    ObsoleteAlixId(usize),
-    #[error(
-        "line {0}: `origin:` is no longer read (it merged into the multi-valued `source:`); run the deck conversion tool to rewrite this deck"
-    )]
-    ObsoleteOrigin(usize),
-    #[error(
-        "line {0}: an initialized deck must declare `format-version: 1`; run the deck conversion tool if this deck predates deck-format versioning"
-    )]
+    #[error("line {0}: an initialized deck must declare `format-version: 1`")]
     MissingDeckVersion(usize),
     #[error(
         "line {line}: deck format version {version} is not supported; this deck was written by a newer alix, so upgrade alix rather than editing the deck"
@@ -101,10 +87,6 @@ pub enum ParseError {
     UnsupportedDeckVersion { line: usize, version: i64 },
     #[error("line {line}: `format-version:` must be an integer, got {found}")]
     NonIntegerVersion { line: usize, found: &'static str },
-    #[error(
-        "line {0}: a `source:` value holds a \" + \"-joined expression; write one source per list entry, or run the deck conversion tool to split it"
-    )]
-    PlusJoinedSource(usize),
     #[error("line {line}: control character {found} outside the whitespace set")]
     ControlChar { line: usize, found: String },
     #[error("line {0}: card front is empty")]
@@ -112,7 +94,7 @@ pub enum ParseError {
     #[error("line {0}: card front without an answer")]
     FrontWithoutAnswer(usize),
     #[error(
-        "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order; run the deck conversion tool if this deck predates named locator fields"
+        "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order"
     )]
     InvalidLocator { line: usize, message: String },
     #[error("line {0}: `\\blank[` is reserved for a future per-hole pin; write `\\blank{{...}}`")]
@@ -121,23 +103,6 @@ pub enum ParseError {
     UnclosedHole(usize),
     #[error("line {0}: empty cloze hole")]
     EmptyHole(usize),
-}
-
-impl ParseError {
-    /// The shapes whose message names the deck conversion tool; `doctor`
-    /// escalates every one of them to an error (ADR 0026).
-    pub fn names_conversion_tool(&self) -> bool {
-        matches!(
-            self,
-            ParseError::InvalidDeckId { .. }
-                | ParseError::InvalidCardId { .. }
-                | ParseError::ObsoleteAlixId(_)
-                | ParseError::ObsoleteOrigin(_)
-                | ParseError::PlusJoinedSource(_)
-                | ParseError::InvalidLocator { .. }
-                | ParseError::MissingDeckVersion(_)
-        )
-    }
 }
 
 pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
@@ -666,7 +631,6 @@ fn apply_directive(
                 line,
             });
         }
-        "origin" => return Err(ParseError::ObsoleteOrigin(line)),
         "given" => directives.givens.push(value),
         _ => lints.push(Lint {
             line,
@@ -1086,10 +1050,18 @@ mod tests {
     }
 
     #[test]
-    fn an_alix_id_key_is_a_hard_error_naming_the_conversion_tool() {
-        let e = err("---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n");
-        assert_eq!(ParseError::ObsoleteAlixId(2), e);
-        assert!(e.to_string().contains("conversion tool"), "{e}");
+    fn an_alix_id_key_is_an_ordinary_unknown_key() {
+        let deck = super::parse(
+            "deck.md",
+            "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n",
+        )
+        .unwrap();
+        assert_eq!(None, deck.deck_token);
+        assert!(
+            deck.lints.contains(&unknown(2, "alix-id")),
+            "{:?}",
+            deck.lints
+        );
     }
 
     #[test]
@@ -1228,7 +1200,7 @@ mod tests {
         ));
         assert!(matches!(
             deck_identity("---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n"),
-            Err(ParseError::ObsoleteAlixId(_))
+            Ok(None)
         ));
     }
 
@@ -1593,7 +1565,7 @@ mod tests {
             },
             e
         );
-        assert!(e.to_string().contains("conversion tool"), "{e}");
+        assert!(e.to_string().contains("must hold a base"), "{e}");
     }
 
     #[test]
@@ -1705,14 +1677,14 @@ mod tests {
     }
 
     #[test]
-    fn an_old_grammar_at_locator_is_a_hard_error_naming_the_conversion_tool() {
+    fn an_old_grammar_at_locator_is_a_hard_error() {
         let e = err("## q\n---\na\n\
              <!-- at: 29.rs @ xxh64:0123456789abcdef from src/caching.rs:46-66 -->\n");
         assert!(
             matches!(e, ParseError::InvalidLocator { line: 4, .. }),
             "{e:?}"
         );
-        assert!(e.to_string().contains("conversion tool"), "{e}");
+        assert!(e.to_string().contains("in that order"), "{e}");
 
         let e = err("## q\n---\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n");
         assert!(
@@ -1744,7 +1716,7 @@ mod tests {
             matches!(e, ParseError::InvalidLocator { line: 4, .. }),
             "{e:?}"
         );
-        assert!(e.to_string().contains("conversion tool"), "{e}");
+        assert!(e.to_string().contains("in that order"), "{e}");
     }
 
     #[test]
@@ -1811,34 +1783,23 @@ mod tests {
     }
 
     #[test]
-    fn a_frontmatter_origin_key_is_a_hard_error_naming_the_conversion_tool() {
-        let e = err("---\norigin: /crate\n---\n## q\na\n");
-        assert_eq!(ParseError::ObsoleteOrigin(2), e);
-        assert!(e.to_string().contains("deck conversion tool"), "{e}");
-
-        // The key itself is obsolete: the value's type never softens it.
-        let e = err("---\norigin: 5\n---\n## q\na\n");
-        assert_eq!(ParseError::ObsoleteOrigin(2), e);
+    fn a_frontmatter_origin_key_is_an_ordinary_unknown_key() {
+        let deck = super::parse("deck.md", "---\norigin: /crate\n---\n## q\na\n").unwrap();
+        assert!(
+            deck.lints.contains(&unknown(2, "origin")),
+            "{:?}",
+            deck.lints
+        );
     }
 
     #[test]
-    fn a_plus_joined_source_value_is_a_hard_error_hinting_one_per_entry() {
-        let e = err("---\nsource: a.md + b.md\n---\n## q\na\n");
-        assert_eq!(ParseError::PlusJoinedSource(2), e);
-        assert!(e.to_string().contains("one source per list entry"), "{e}");
-
-        let e = err("---\nsource:\n  - ok.md\n  - a.md + b.md\n---\n## q\na\n");
-        assert_eq!(ParseError::PlusJoinedSource(2), e);
-    }
-
-    #[test]
-    fn a_card_origin_directive_is_a_hard_error_naming_the_conversion_tool() {
-        let e = err("## q\na\n<!-- origin: /crate -->\n");
-        assert_eq!(ParseError::ObsoleteOrigin(3), e);
-        assert!(e.to_string().contains("deck conversion tool"), "{e}");
-
-        let e = err("## q\na\n<!-- origin: -->\n");
-        assert_eq!(ParseError::ObsoleteOrigin(3), e);
+    fn a_card_origin_directive_is_an_ordinary_unknown_key() {
+        let deck = super::parse("deck.md", "## q\na\n<!-- origin: /crate -->\n").unwrap();
+        assert!(
+            deck.lints.contains(&unknown(3, "origin")),
+            "{:?}",
+            deck.lints
+        );
     }
 
     #[test]

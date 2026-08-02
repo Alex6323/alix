@@ -9,7 +9,8 @@ decision 2026-08-01): when a cut is decided, branch `release/vX.Y.Z` at the
 chosen candidate commit and keep working on main freely. The branch is a pin,
 not a development line: it receives only cherry-picked fixes for defects the
 release gates find, the costed gates (`make docs-audit`, `make calibrate`,
-`make audit`) run against its checkout, and the version tag is pushed on the
+`make recognition-audit`, `make audit`) run against its checkout, and the
+version tag is pushed on the
 branch. Delete the branch after tagging; the tag preserves the commit and
 its whole ancestry, cherry-picks included. (Reaffirmed 2026-08-02: projects
 that keep release branches keep them as live maintenance lines for
@@ -120,24 +121,30 @@ at. **crates.io is not automated.**
    examples, site, slides, tutorials, images, and screenshots. It writes
    `target/docs-audit.md`. Resolve every finding and rerun until the report
    begins `DOCS AUDIT: PASS`; this is a deliberate release check, not CI.
-6. **Stage everything the bump touched, then commit.** The version bump
+6. **Old-format recognition audit.** Run `make recognition-audit` on this exact
+   release candidate: a costed read-only LLM sweep of production code for
+   anything that recognizes, names, or special-cases an old format (temporary
+   gate, user decision 2026-08-02). Resolve every finding and rerun until the
+   report begins `RECOGNITION AUDIT: PASS`. At version 1.0 the command blocks
+   and demands its own removal.
+7. **Stage everything the bump touched, then commit.** The version bump
    regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
    snapshot and the mobile `Cargo.lock` both pick up the new version once the
    suite runs. Run `make preflight` again: its clean-tree step lists anything
    still unstaged. Then `git add -A` (stage ALL of it, never a hand-picked
    list), commit `Release vX.Y.Z`, and confirm a final `make preflight` is green
    with a clean tree.
-7. **Tag & push:** push `main` first and let CI go green, then
+8. **Tag & push:** push `main` first and let CI go green, then
    `git tag vX.Y.Z && git push origin vX.Y.Z`. Tagging fires the release workflow
    immediately (it is not gated on CI), so tag only after CI is green on the
    release commit. The workflow creates the GitHub Release and attaches the
    binaries.
-8. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
+9. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
    `Cargo.toml`'s `include` allowlist: only `src/**`, `web/**`, and the
    root README/CHANGELOG/licenses ship). `make package-check` (also run inside
    `preflight`) asserts nothing untracked leaks into the tarball; eyeball
    `cargo package --list` too if unsure. Publish is irreversible.
-9. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
+10. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
 
@@ -173,9 +180,11 @@ To cut one:
    chance produces green.
 4. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
    release candidate and resolve every finding until it reports `PASS`.
-5. **Commit** as `Release mobile-vX.Y.Z`, then
+5. **Old-format recognition audit:** run `make recognition-audit`, same
+   resolve-and-rerun rule as the desktop gate.
+6. **Commit** as `Release mobile-vX.Y.Z`, then
    `git tag mobile-vX.Y.Z && git push origin main --tags`.
-6. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
+7. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
    (missing secrets), non-16KB-aligned native libs, or a missing changelog
    section.
 

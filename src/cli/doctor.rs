@@ -61,7 +61,7 @@ impl Report {
     }
 }
 
-fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
+fn deck_findings(path: &Path, report: &mut Report) {
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -76,11 +76,7 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
     let deck = match alix::parser::parse(name, &text) {
         Ok(deck) => deck,
         Err(e) => {
-            if strict || e.names_conversion_tool() {
-                report.error(format!("{}: {e}", path.display()));
-            } else {
-                report.warn(format!("{}: {e}", path.display()));
-            }
+            report.error(format!("{}: {e}", path.display()));
             return;
         }
     };
@@ -192,10 +188,9 @@ fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
     }
 }
 
-/// A pre-conversion frozen deck pointed `source:` at its own asset objects; the
-/// prefixed-id format keeps `source:` at the real material, so a value inside
-/// `assets/` is un-converted (a bare-fragment source an examiner would
-/// confidently fill gaps around).
+/// `source:` must point at real material, never into `assets/`: asset objects
+/// are excerpt fragments, and an examiner or tutor grounded on fragments would
+/// confidently fill the gaps around them.
 fn source_points_into_assets(source: &str) -> bool {
     if alix::deck::is_url(source) {
         return false;
@@ -205,22 +200,13 @@ fn source_points_into_assets(source: &str) -> bool {
     source.starts_with(&root) || source.contains(&format!("/{root}"))
 }
 
-/// The internal `deck_id` field of a state document, for spotting a bare token
-/// that survived only inside the JSON (the filename catches the rest).
-fn document_deck_id_field(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    value.get("deck_id")?.as_str().map(str::to_string)
-}
-
 fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     let managed = workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some();
     for source in &deck.sources {
         if source_points_into_assets(source) {
             report.warn(format!(
                 "{}: `source:` points into `assets/` (`{source}`); a frozen deck keeps its \
-                 real source, not its asset objects; back it up and run the deck conversion \
-                 tool to rewrite it",
+                 real source, not its asset objects",
                 deck.path.display()
             ));
         }
@@ -478,10 +464,10 @@ fn workspace_findings(dir: &Path) -> Report {
     let (deck_files, uninitialized) =
         alix::workspace::classified_deck_files(dir).unwrap_or_default();
     for path in &deck_files {
-        deck_findings(path, false, &mut report);
+        deck_findings(path, &mut report);
     }
     for path in uninitialized {
-        deck_findings(&path, false, &mut report);
+        deck_findings(&path, &mut report);
     }
 
     let map = alix::dedup::scan_dir(dir);
@@ -582,19 +568,6 @@ fn workspace_findings(dir: &Path) -> Report {
                 report.warn(format!("unrecognized {kind} document {}", path.display()));
                 continue;
             };
-            if alix::token::is_valid(deck_id)
-                || document_deck_id_field(&path)
-                    .as_deref()
-                    .is_some_and(alix::token::is_valid)
-            {
-                report.warn(format!(
-                    "{kind} document {} is un-converted: its id `{deck_id}` is a bare token \
-                     with no `deck-` prefix; back it up and run the deck conversion tool to \
-                     rewrite it to the prefixed-id format",
-                    path.display()
-                ));
-                continue;
-            }
             let document_error = match kind {
                 "progress" => alix::store::Store::open_deck(&path, deck_id, "")
                     .err()
@@ -614,16 +587,6 @@ fn workspace_findings(dir: &Path) -> Report {
                     dir.display()
                 ));
             }
-        }
-    }
-    for name in ["progress.json", "augment.json"] {
-        let stray = store_path.join(name);
-        if stray.is_file() {
-            report.warn(format!(
-                "{}: aggregate state file is never read (state lives in per-deck documents \
-                 under `progress/` and `augment/`); back it up and delete it",
-                stray.display()
-            ));
         }
     }
     for conflict in alix::store::sync_conflicts(&store_path) {
@@ -695,7 +658,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                 println!("  trace:    {desc}");
             }
         }
-        deck_findings(path, true, &mut report);
+        deck_findings(path, &mut report);
     }
     if report.render() {
         bail!("{} error(s) found", report.errors.len());
@@ -1079,13 +1042,13 @@ mod tests {
         w(dir.path(), "plain.md", "## Add two numbers\n2 + 3 + 4\n");
 
         let mut affected_report = Report::default();
-        deck_findings(&affected, true, &mut affected_report);
+        deck_findings(&affected, &mut affected_report);
         assert_eq!(affected_report.notes.len(), 1);
         assert!(affected_report.notes[0].contains("Multiply three numbers"));
         assert!(affected_report.notes[0].contains(": 3 "));
 
         let mut plain_report = Report::default();
-        deck_findings(&plain, true, &mut plain_report);
+        deck_findings(&plain, &mut plain_report);
         assert!(plain_report.notes.is_empty());
     }
 
@@ -1109,8 +1072,8 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&malformed, true, &mut report);
-        deck_findings(&valid, true, &mut report);
+        deck_findings(&malformed, &mut report);
+        deck_findings(&valid, &mut report);
 
         let math_warnings: Vec<&String> = report
             .warnings
@@ -1160,7 +1123,7 @@ mod tests {
         augment.save().unwrap();
 
         let mut report = Report::default();
-        deck_findings(&path, true, &mut report);
+        deck_findings(&path, &mut report);
 
         assert!(
             report
@@ -1194,8 +1157,8 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&dangling, true, &mut report);
-        deck_findings(&resolvable, true, &mut report);
+        deck_findings(&dangling, &mut report);
+        deck_findings(&resolvable, &mut report);
 
         let dangling_warnings: Vec<&String> = report
             .warnings
@@ -1237,8 +1200,8 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&by_name, true, &mut report);
-        deck_findings(&by_id, true, &mut report);
+        deck_findings(&by_name, &mut report);
+        deck_findings(&by_id, &mut report);
 
         let parse_warnings: Vec<&String> = report
             .warnings
@@ -1273,7 +1236,7 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&path, true, &mut report);
+        deck_findings(&path, &mut report);
 
         assert!(
             report.notes.iter().any(|note| {
@@ -1309,8 +1272,8 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&resolvable, true, &mut report);
-        deck_findings(&dangling, true, &mut report);
+        deck_findings(&resolvable, &mut report);
+        deck_findings(&dangling, &mut report);
 
         let dangling_warnings: Vec<&String> = report
             .warnings
@@ -1342,7 +1305,7 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&path, true, &mut report);
+        deck_findings(&path, &mut report);
 
         let errors = report.errors.join("\n");
         assert!(errors.contains("card id"), "{errors}");
@@ -1360,7 +1323,7 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&path, true, &mut report);
+        deck_findings(&path, &mut report);
 
         assert!(
             report
@@ -1403,7 +1366,7 @@ mod tests {
         );
 
         let mut report = Report::default();
-        deck_findings(&path, true, &mut report);
+        deck_findings(&path, &mut report);
 
         assert!(
             report
@@ -1624,31 +1587,7 @@ mod tests {
     }
 
     #[test]
-    fn doctor_flags_unread_aggregate_state_files() {
-        let dir = tempfile::tempdir().unwrap();
-        w(
-            dir.path(),
-            "deck.md",
-            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
-        );
-        w(dir.path(), "progress.json", r#"{"version":1,"cards":{}}"#);
-        w(dir.path(), "augment.json", r#"{"version":1,"cards":{}}"#);
-
-        let report = workspace_findings(dir.path());
-        let warnings = report.warnings.join("\n");
-
-        assert!(
-            warnings.contains("progress.json") && warnings.contains("never read"),
-            "aggregate progress warning: {warnings}"
-        );
-        assert!(
-            warnings.contains("augment.json"),
-            "aggregate augment warning: {warnings}"
-        );
-    }
-
-    #[test]
-    fn doctor_flags_an_unconverted_bare_token_state_document() {
+    fn a_bare_token_state_document_is_reported_generically() {
         let dir = tempfile::tempdir().unwrap();
         w(dir.path(), "alix.toml", "");
         std::fs::create_dir(dir.path().join("progress")).unwrap();
@@ -1664,10 +1603,22 @@ mod tests {
             report
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("un-converted")
-                    && warning.contains("deck conversion tool")),
-            "un-converted state document: {:#?}",
-            report.warnings
+                .chain(&report.errors)
+                .any(|finding| finding.contains("mathdeck.json")),
+            "the document must be reported: {:#?} {:#?}",
+            report.warnings,
+            report.errors
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .chain(&report.errors)
+                .chain(&report.notes)
+                .any(|finding| finding.contains("un-converted")),
+            "no retired-format vocabulary: {:#?} {:#?}",
+            report.warnings,
+            report.errors
         );
     }
 
@@ -1697,57 +1648,14 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|warning| warning.contains("points into `assets/`")
-                    && warning.contains("deck conversion tool")),
+                    && warning.contains("keeps its real source")),
             "source into assets: {:#?}",
             report.warnings
         );
     }
 
     #[test]
-    fn doctor_errors_on_every_un_converted_deck_shape_without_init_advice() {
-        let dir = tempfile::tempdir().unwrap();
-        let decks = dir.path().join(alix::workspace::DECKS);
-        std::fs::create_dir(&decks).unwrap();
-        w(dir.path(), alix::workspace::MANIFEST, "");
-        w(&decks, "origin.md", "---\norigin: ../src\n---\n## q\na\n");
-        w(
-            &decks,
-            "plus.md",
-            "---\nsource: \"a.md + b.md\"\n---\n## q\na\n",
-        );
-        w(
-            &decks,
-            "old-locator.md",
-            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n\
-             <!-- at: 29.rs @ xxh64:0123456789abcdef from src/x.rs:1-3 -->\n",
-        );
-
-        let report = workspace_findings(dir.path());
-
-        for name in ["origin.md", "plus.md", "old-locator.md"] {
-            assert!(
-                report
-                    .errors
-                    .iter()
-                    .any(|error| error.contains(name) && error.contains("deck conversion tool")),
-                "{name} must be an error naming the conversion tool: {:#?}",
-                report.errors
-            );
-        }
-        assert!(
-            !report
-                .warnings
-                .iter()
-                .chain(&report.errors)
-                .chain(&report.notes)
-                .any(|finding| finding.contains("deck init")),
-            "an un-converted deck must not be advised to init: {:#?}",
-            report.warnings
-        );
-    }
-
-    #[test]
-    fn doctor_clean_new_format_workspace_has_no_conversion_warnings() {
+    fn doctor_clean_workspace_has_no_warnings() {
         let dir = tempfile::tempdir().unwrap();
         let decks = dir.path().join(alix::workspace::DECKS);
         std::fs::create_dir(&decks).unwrap();
@@ -1812,7 +1720,7 @@ mod tests {
 
         let before = std::fs::read_to_string(&deck_path).unwrap();
         let mut report = Report::default();
-        deck_findings(&deck_path, true, &mut report);
+        deck_findings(&deck_path, &mut report);
         assert!(
             report
                 .warnings

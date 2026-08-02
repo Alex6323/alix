@@ -290,19 +290,6 @@ fn doctor_warns_about_a_malformed_deadline_without_failing() {
 }
 
 #[test]
-fn doctor_reports_an_obsolete_manifest_origin_key() {
-    let dir = TempDir::new().unwrap();
-    let ws = dir.path();
-    std::fs::write(ws.join("alix.toml"), "[defaults]\norigin = \"../src\"\n").unwrap();
-    std::fs::create_dir(ws.join("decks")).unwrap();
-    write(&ws.join("decks"), "cards.md", VALID_DECK);
-    let out = alix(&["doctor", ws.to_str().unwrap()]);
-    let err = stderr(&out);
-    assert!(err.contains("`origin`"), "stderr: {err}");
-    assert!(err.contains("deck conversion tool"), "stderr: {err}");
-}
-
-#[test]
 fn doctor_nudges_a_long_source_list_toward_its_common_root() {
     let dir = TempDir::new().unwrap();
     for name in ["a.rs", "b.rs", "c.rs", "d.rs"] {
