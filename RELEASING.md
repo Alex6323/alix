@@ -10,7 +10,12 @@ chosen candidate commit and keep working on main freely. The branch is a pin,
 not a development line: it receives only cherry-picked fixes for defects the
 release gates find, the costed gates (`make docs-audit`, `make calibrate`,
 `make audit`) run against its checkout, and the version tag is pushed on the
-branch. Delete the branch after tagging; the tag preserves the commit. The
+branch. Delete the branch after tagging; the tag preserves the commit and
+its whole ancestry, cherry-picks included. (Reaffirmed 2026-08-02: projects
+that keep release branches keep them as live maintenance lines for
+backports and point releases, a workflow pre-1.0 alix deliberately does not
+run; a dead branch is misleading state. Revisit at the first real point
+release: `git branch release/vX.Y.x vX.Y.0` resurrects one from its tag.) The
 nightly mutation jobs base on main, so a cherry-pick that exists only on a
 release branch is never mutated there — keep fixes on main first,
 cherry-pick second, so nothing ships mutation-blind. Cherry-pick with
