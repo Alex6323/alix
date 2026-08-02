@@ -36,7 +36,8 @@ command -v "$cli" >/dev/null 2>&1 || {
 
 mkdir -p "$(dirname -- "$report")"
 tmp_report="${report}.tmp"
-trap 'rm -f "$tmp_report"' EXIT HUP INT TERM
+tmp_json="${report}.json.tmp"
+trap 'rm -f "$tmp_report" "$tmp_json"' EXIT HUP INT TERM
 
 echo "old-format-audit: live read-only LLM audit (model=$model, effort=$effort)"
 echo "old-format-audit: report -> $report"
@@ -59,14 +60,41 @@ echo "old-format-audit: report -> $report"
 } | "$cli" \
     --safe-mode \
     --print \
-    --output-format text \
+    --output-format json \
     --no-session-persistence \
     --permission-mode dontAsk \
     --allowedTools Read Glob Grep \
     --model "$model" \
-    --effort "$effort" >"$tmp_report"
+    --effort "$effort" >"$tmp_json"
+
+# The json envelope carries the report text plus per-run usage; surface the
+# cost of every run instead of hiding it in a flag nobody passes.
+python3 - "$tmp_json" "$tmp_report" <<'PYEOF'
+import json, sys
+
+doc = json.load(open(sys.argv[1]))
+if isinstance(doc, list):
+    doc = next(item for item in reversed(doc) if item.get("type") == "result")
+with open(sys.argv[2], "w") as out:
+    out.write(doc["result"])
+u = doc.get("usage", {})
+parts = [
+    f"in={u.get('input_tokens', '?')}",
+    f"out={u.get('output_tokens', '?')}",
+    f"cache-read={u.get('cache_read_input_tokens', 0)}",
+    f"cache-write={u.get('cache_creation_input_tokens', 0)}",
+]
+cost = doc.get("total_cost_usd")
+if cost is not None:
+    parts.append(f"cost=${cost:.2f}")
+ms = doc.get("duration_ms")
+if ms is not None:
+    parts.append(f"took={ms / 60000:.1f}min")
+print("old-format-audit: tokens " + " ".join(parts))
+PYEOF
 
 mv "$tmp_report" "$report"
+rm -f "$tmp_json"
 trap - EXIT HUP INT TERM
 cat "$report"
 
