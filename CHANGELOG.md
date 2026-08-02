@@ -29,6 +29,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `POST /api/choose` read its request body straight off the socket with no
+  size cap, the one JSON route that bypassed the central 256 KiB body cap; a
+  client could grow the server's memory without bound. It now reads through
+  the same cap as every other JSON body.
+
 - Resetting a workspace deck over the API now reaches the deck listing
   immediately. Previously the listing could keep serving the pre-reset
   progress (deck "started", nothing startable) from a retained store

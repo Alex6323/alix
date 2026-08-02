@@ -102,16 +102,6 @@ pub(super) fn read_grade(request: &mut Request) -> Option<Grade> {
     }
 }
 
-pub(super) fn read_choice(request: &mut Request) -> Option<(usize, String)> {
-    #[derive(Deserialize)]
-    struct Body {
-        index: usize,
-        card: String,
-    }
-    let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
-    Some((body.index, body.card))
-}
-
 // `take(cap + 1)` lets an oversized body read one byte past the cap, so an
 // unbounded/lying reader is still capped by bytes actually read.
 pub(super) fn read_capped(reader: impl Read, cap: usize) -> Option<Vec<u8>> {
