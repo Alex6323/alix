@@ -57,8 +57,9 @@ then one key (**Seen**) records it *without a grade*. Usually: the front shows
 first, you try, then reveal. On the web you can then **hide and show the answer
 again** (`h`, or a tap on it) to self-test the fresh encoding before you press
 Seen; it flips only the answer's visibility, so the note, the buttons, and the
-layout stay put. If the deck has AI distractors (`alix deck augment
---target choices`) and the card is **atomic** (single-line answer), it instead
+layout stay put. If the card has authored choice options, or the deck has AI
+distractors (`alix deck augment --target choices`) and the card is **atomic**
+(single-line answer), it instead
 greets you as a **multiple-choice** question: pick one, see which was right.
 Either way a guess never marks it recognized or punishes it, and the first
 *graded* quiz then comes back **later in the same session** (once a settle

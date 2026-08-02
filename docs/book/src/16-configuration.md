@@ -174,6 +174,10 @@ settings:
   `timeout_secs`. `auto_grade` (default `false`) has the model grade your typed
   predictions during a [trace walk](13-trace-decks.md), a model call per hop,
   at the `[ask]` tier.
+- **`[ai]`**: [`alix deck augment`](15-the-web-app.md#augmenting-a-deck-from-the-picker)'s
+  generation targets: a `model` override, `distractor_count` (3),
+  `variant_count` (4), `keypoint_count` (5), and `timeout_secs` (300, sized
+  for a whole-deck batch).
 
 ## Decks directory and storage
 

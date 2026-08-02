@@ -119,7 +119,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make fmt-check` | Verify formatting without writing. |
 | `make fmt-changelog` | Normalize `CHANGELOG.md` (~80-column wrap, one blank line between entries; idempotent), then run `changelog-check`. |
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, standard subsection names under Unreleased, count never decreases vs HEAD); part of `make check`. |
-| `make check` | `fmt-check` + `lint` + `test`, cheap checks first; run before considering work done. A local pass now implies the same Rust gates CI runs. |
+| `make check` | The inner-loop gate bundle (`fmt-check`, `pre-1-0-check`, `deps-check`, `changelog-check`, `lint`, `test`, `site-media-check`, `docs-audit-manifest-check`, `toolchain-check`), cheap checks first; run before considering work done. Lenient on rustc warnings (no `-Dwarnings`); `make ci` / `make preflight` reproduce CI's strict gate. |
 | `make gate` | `check` + `mutants`. Run ONCE, right before requesting review; never inner-loop. Nightly CI mutates one day of merges (below), which backstops this and does not replace it. |
 | `make mutants` | `cargo mutants` alone over this branch's diff vs local main (`GATE_JOBS` sets parallelism, `MUTANTS_BASE` overrides the diff base, `MUTANTS_SHARD` runs one 0-indexed shard such as `0/6`). Refuses to start while another cargo-mutants runs anywhere on the machine. Use when `check` has already passed. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |

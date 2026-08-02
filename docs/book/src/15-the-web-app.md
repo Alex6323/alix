@@ -134,7 +134,7 @@ A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review or a trace walk it holds **Ask
 Tutor**; on the deck picker, the library actions above plus **keyboard
-shortcuts**, **refresh decks**, and **about**, with **Theme…** and **Draw
+shortcuts** and **about**, with **Theme…** and **Draw
 answers** (a per-device toggle, see below) in both. The ⟳ button (also key
 `r`) re-reads your config, so a changed `decks_dir` takes effect without
 restarting (scoped `alix <dir>` instances stay pinned to their folder), and
