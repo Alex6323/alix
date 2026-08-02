@@ -49,18 +49,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `recognize_partly`, and `recognize_missed`, and both web summaries show
   every kind of work done (introduced, recognized, reviewed). A sitting
   with no work at all no longer celebrates.
+
 - The `alix generate --review` and `alix deck augment` help texts name
   the AI backend neutrally instead of hardcoding Claude, the augment
   progress line names the configured backend, and `alix receive`'s help
   mentions workspaces alongside decks and folders.
+
 - Multiple-choice option text was near-invisible on the gruvbox-light and
   catppuccin-latte themes: ten themes omitted the text/faint/accent-ink/
   brand-text tokens and silently inherited the dark default's light gray.
   Every theme now defines the full token set (dark themes keep their
   current rendering), pinned by a token-parity test.
+
 - The augment dialog's footer no longer places the destructive "Remove
   all" between "Generate selected" and "Close"; it now sits first, so a
   reach for Close cannot land on it.
+
 - Saving a tutor note onto a stamped card appended it after the card's
   closing `<!-- id -->` marker, tripping doctor's misplaced-marker
   warning on every noted card. Notes now land before the card's trailing
@@ -74,7 +78,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a `.sha256` checksum beside it, and releases are gated on a clean
   RustSec advisory scan of both lockfiles (`make audit`, backstopped by a
   nightly advisory-drift workflow between releases).
-
 
 - Revealing a new card's answer now counts as the encounter: leave the
   session right there, without pressing Seen, and the card still will not
@@ -159,57 +162,71 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   additive `total`, `seen`, `graduated` (labelled "learned" in the drawer), and
   `retired` counts, which nest `retired <= graduated <= seen <= total`; the
   per-card `heatmap` lists only stamped cards and cannot stand in for them.
+
 - The empty "Nothing due." session screen now shows one quiet line saying when
   the next card is due (for example "Next due in 4 min." during an acquire
   cooldown), so an empty sitting explains itself instead of only reading
   "Nothing due." Adult web and mobile; the finished session payload
   (`StateDto` / `ReviewState`) gains an additive `next_due_ms` instant.
+
 - `alix deck copy <deck> <workspace>` and
   `alix deck move <deck> <workspace>` transfer one initialized workspace member
   with its owned frozen assets and augmentation. Both reuse the same public
   bundle boundary as wormhole sharing; copy excludes progress, while confirmed
   move carries progress between distinct user roots and removes the source only
   after the destination is complete.
+
 - `alix workspace update <dir>` reconciles frozen source-backed members with
   their live local sources. It stages an exact sibling workspace for
   review, then `--apply` publishes those same bytes without another model call
   or `--discard` removes them. Retained IDs require unchanged learning content;
   changed and obsolete cards retire with their IDs, while replacements receive
   fresh IDs during staging.
+
 - Plain fact cards can carry multiple `<!-- at: ... -->` citations. The adult
   source view resolves every locator and stacks the editor-style excerpts in
   authored order inside one scrollable answer region.
+
 - `alix doctor --repair-source-locators` explicitly fingerprints reviewed
   source citations and rebases a uniquely relocated exact excerpt while
   preserving deck and card IDs. Plain doctor remains read-only.
+
 - A private vulnerability-reporting policy and a tracked threat model covering
   local files, LAN pairing, AI providers, sharing, persistence, mobile, and
   release boundaries.
+
 - `alix profile`: define and launch a named alix instance per person (its own
   decks, port, and adult/kids frontend), reachable on your LAN with a stable
   token so phones can bookmark it. `alix profile add/list/remove`, `alix
   profile <name>` to launch, `alix profile default` to pick what bare `alix`
   launches, and `alix --launch-all` to boot every profile at once.
+
 - Multiple-choice cards you author directly: write the answer as a GitHub task
   list (`- [x]` correct, `- [ ]` distractors). It renders as a checklist in any
   Markdown previewer and drives the Recognize quiz from your own options, with
   no AI distractor pass needed. Task lists in notes and card fronts render as
   checkboxes too.
+
 - card text now renders inline Markdown: `**bold**`, `*italic*`/`_italic_`, and
   `` `code` ``.
+
 - LaTeX math in cards: `$...$` renders inline and a whole-line `$$...$$`
   renders as centered display math in adult web, kids web, and mobile. Formula
   clozes support `\blank{...}`, and RaTeX chemistry remains available through
   `\ce{...}`. The Rust core produces one self-contained SVG shared by every
   graphical client while decks, grading, fingerprints, and progress retain only
   the authored source.
+
 - Committed manual-QA examples for graphical math rendering and a
   self-contained workspace with a frozen Rust ownership trace.
+
 - the picker's focus drawer now shows a deck's preamble (the prose written
   under its `#` title), which was parsed but never surfaced before
+
 - `alix doctor` flags a dangling `requires:` (one naming a deck that does not
   exist), so a renamed or deleted prerequisite is reported instead of silently
   dropping the gating edge.
+
 - `alix doctor` warns when a card's `<!-- id: -->` marker is not the card's
   closing line (the position stamping mints at), so a hand-placed marker drifts
   back to the canonical shape instead of scattering through the deck.
@@ -252,18 +269,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   any commented `max_new` / `limit` lines from your config and `alix.local.toml`
   (a stale key is now a loud error naming the replacement, and `alix doctor`
   flags it in a local manifest).
+
 - "Seen" now means the card was shown to you at least once, right or wrong: the
   first time a card becomes the displayed card in any session, the store
   records a one-time presentation stamp (`presented_ms`), so a card you met
   and failed, or merely opened a session on, no longer looks untouched. The
   drawer funnel's `s seen` count follows this meaning. `acquired_ms` is now
   absent until a card is acknowledged or answered correctly at least once.
+
 - The drawer and breadcrumb heatmaps paint five tiers instead of a
   retrievability gradient: neutral untouched, grey seen, white acquired, a
   learned (graduated) card green/yellow/red banded by its current Recall
   retrievability (strong `>= 0.9`, weak `< 0.7`, fading between), and purple
   retired. On the wire, `DeckDrawerDto.heatmap`, its topology `cells`, and
   `CrumbDto.cells` carry tier names (strings) instead of numbers.
+
 - A picker row no longer prints a right-aligned status counter for a new or
   started deck: "new" duplicated the NEW chip, and a started deck's `k/N`
   graduated counter was cryptic and redundant beside it. New and started rows
@@ -271,6 +291,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   show the title and state chip only, so the chip is the row's single state
   signal; finished, mastered, and exam-due rows keep their status word. The
   graduated count moved to the focus drawer's progress funnel (as "learned").
+
 - **Breaking (pre-1.0):** deck ids are now self-describing and prefixed. A deck
   declares `id: "deck-<token>"` (the `id:` frontmatter key replaces `alix-id:`),
   and every card marker is `<!-- id: card-<token> -->` (`card-<token>-N` for a
@@ -294,21 +315,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   loudly and the deck conversion tool rewrites them; there is no runtime reader
   for the old shape. `alix doctor` flags an un-converted bare-token state
   document or a `source:` that points into `assets/`.
+
 - Progress and augmentation documents now reject an unrecognized field instead
   of ignoring it. Before, renaming or removing a field in a future build would
   let old documents load with that field silently dropped, losing that data on
   the next save; now such a document fails to load loudly and is left on disk
   for external conversion, with no format version bump.
+
 - Review progress now persists as it happens: every grade, acquire, exam
   flag, badge, and card mutation writes the deck's progress document before
   the response returns, so closing the browser or killing the server
   mid-session no longer loses the sitting. The former session-batched flush
   (one write per transition) is gone; transition flushes remain as backstops.
+
 - The server drains its workers, flushes any unsaved state, and exits cleanly
   on Ctrl-C or SIGTERM instead of dying mid-request.
+
 - Dependency changes now pass a reviewed duplicate-family gate through
   `make deps-check`, preventing an avoidable second compiled version from
   entering the graph unnoticed.
+
 - **Breaking (pre-1.0):** initializing a source-backed workspace member now
   freezes each cited source excerpt and every local card image before success.
   A citation's frozen object holds exactly its excerpt under
@@ -318,16 +344,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closed on live, cross-deck, missing, or corrupted assets. A URL-valued
   `source:` grounds the exam and tutor but holds no freezable bytes; citations
   must land in a local source.
+
 - Single-deck sharing now carries and validates the complete deck-owned asset
   directory plus matching augmentation while continuing to exclude progress.
   Generated workspaces freeze in hidden staging before publication, and merges
   add immutable objects without replacing unrelated decks' assets.
+
 - **Breaking (pre-1.0):** typed `WorkspaceFiles` and `UserFiles` owners now
   separate shareable deck material from private learning state. Assets and
   per-deck augmentation stay with the workspace content; `--store` and a
   workspace `store` setting relocate only progress and recent history. Sharing
   carries matching assets and augmentation while excluding progress and local
   configuration.
+
 - Tutor and exam grounding now combines frozen evidence with the live
   `source:` values, deck and workspace layered apart (deck sources are the
   primary grounding, the workspace source supporting context). URL sources are
@@ -336,17 +365,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a visible warning when the full current source is unavailable.
   `alix generate --source-url <URL>` records a portable public URL as an
   additional deck source or the generated workspace's `source`.
+
 - **Breaking (web/mobile APIs):** `CardDto` and the shared mobile `CardView`
   replace the single `at` citation with ordered `citations`; web citation
   entries carry their resolved excerpt or per-locator error. Both views also
   gain `back_units`, the core projection used to render ordinary answer prose
   independently of authored physical line wrapping.
+
 - **Breaking (pre-1.0):** every complete `<!-- at: ... -->` citation now carries
   a named `fingerprint: xxh64-...` field. Review, trace, tutor grounding, and
   grading fail closed when the addressed text does not match, showing a warning
   instead of unrelated source. Generated and frozen citations are stamped at
   creation; hand-authored citations remain incomplete until explicitly
   reviewed and stamped.
+
 - **Breaking (pre-1.0):** workspace member decks now live only under direct
   `decks/*.md` children. Manifests, assets, and augmentation remain at the
   workspace root; private progress is colocated there by default but may use a
@@ -355,6 +387,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   surface write the new shape, while `alix doctor` reports initialized root
   decks that are not discovered. Existing workspaces must move their deck files
   into `decks/` without changing its `id:` or card ids.
+
 - **Breaking (pre-1.0):** progress and AI augmentation now live in independently
   versioned documents per initialized deck:
   `progress/deck-<token>.json` and `augment/deck-<token>.json`. Renaming a deck
@@ -368,6 +401,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   synchronization conflicts.
   Sharing carries matching per-deck augmentation and recursively excludes all
   progress, temporary, backup, and conflict material.
+
 - **Breaking (pre-1.0):** a hand-authored Markdown file must be explicitly
   initialized with `alix deck init <file>` before it appears in the picker or
   can be reviewed or augmented. `alix deck init` stamps a fresh
@@ -375,55 +409,66 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   id is rejected rather than adopted. Opening an initialized deck still assigns
   ids to newly added cards, while ordinary `.md` prose with `##` headings is
   ignored and never modified.
+
 - Production CI and release workflows now select exact Rust, Flutter, Java,
   Node, Android NDK, FRB codegen, mdBook, and coverage-tool versions. Every
   directly referenced GitHub Action uses an immutable commit SHA, a blocking
   check prevents movable pins from returning, `make install` explicitly uses
   the repository's exact Rust pin and lockfile, and scheduled drift jobs remain
   the explicit non-publishing path for testing current upstream toolchains.
+
 - **Breaking (pre-1.0):** grounded tutor filesystem access now requires an
   explicitly declared deck or workspace `source`; its root is the deck's first
   local-path source (workspace source as fallback). A citation still supplies
   the card's evidence, but alix no longer guesses a wider project root from
   `Cargo.toml`, `.git`, or other markers. A public URL source can supply current
   context when `WebFetch` is available.
+
 - Trace source excerpts now highlight exact, case-sensitive terms that the
   checkpoint author marked as inline code in its key points.
+
 - **Additive (web API):** card display projection now comes from the shared
   Rust core. `InlineRun` gains optional `math`, `CardDto` gains `context_runs`,
   and `StateDto` gains `choice_runs` and `keypoint_runs`; every run list stays
   in index lockstep with its existing text field. `CardDto` continues to expose
   text fallback for clients that ignore the new fields.
+
 - **Additive (web/mobile APIs):** trace walk state now carries inline-run
   projections for its description, checkpoint prompt, givens, key points, and
   note alongside the existing raw strings.
+
 - Mobile review now consumes the core's shared inline runs for bold, italic,
   code, and LaTeX math instead of rendering raw card strings separately.
+
 - Android release builds now size-optimize the embedded Rust core with fat LTO,
   one codegen unit, and stripped symbols. `make aab` produces the Android App
   Bundle for Google Play while `make apk` remains the GitHub-release and
   phone-smoke artifact.
+
 - Inline code (`` `like this` ``) now renders with a distinct, theme-aware
   color for readability.
+
 - **Breaking (pre-1.0):** inline `*`/`_`/`**` in existing card text now renders
   as emphasis; a deck that used them literally (e.g. `2*3*4`) will render/grade
   with the markers stripped. Escape with a backslash (`\*`) or wrap in inline
   code (`` `2*3*4` ``) to keep them literal. Run `alix doctor <deck>` to find
   affected cards.
+
 - **Breaking (web API):** `CardDto.front` and `CardDto.back` now contain
   inline-marker-stripped content, while the new `front_runs` and `back_runs`
   fields carry display formatting. Sentence-shaped `NoteUnit` values also gain
   `runs`.
+
 - the picker's focus drawer now opens for every deck, not only decks with a
   topology augmentation, and shows a per-card retrievability heatmap: a single
   whole-deck bar for a plain deck, split into named regions when the deck has a
   topology. Cards you have never reviewed render as a neutral cell rather than
   red, so a fresh deck reads as unlearned instead of failing
+
 - **Breaking (web API):** the drawer no longer shows a raw due count. `POST
   /api/deck-topology` is renamed `POST /api/deck-drawer`; its response
   `DeckTopologyDto` becomes `DeckDrawerDto` (gains `preamble` and a flat
   `heatmap`, drops `deck_due`), and `RegionInfoDto` drops its `due` field
-
 
 - `alix profile list` now shows each profile's config file path, so an
   unexpected
@@ -456,7 +501,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   connection within about a second. Measured before/after: a
   restart-and-reload loop in a real browser stalled on the first cycle
   without the pump and completed 30 consecutive cycles with it.
-
 
 - `alix deck init` no longer writes a second `format-version:` into a deck that
   already declares one. The duplicate is an invalid YAML mapping key, so the
@@ -513,6 +557,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   already taken without `--force`, spent a full generation (minutes, and a paid
   call) before reporting a failure that was knowable up front. Both the deck
   and the `--trace` walk paths resolve the destination first.
+
 - `alix reset --orphans <folder>` now finds orphans when the folder holds
   exactly one live deck. It had opened only that deck's own progress document,
   so a leftover `progress/<id>.json` stayed invisible: the command reported "No
@@ -521,70 +566,86 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `doctor` reads; a deck-file target judges only its own document, so it cannot
   reach a sibling's progress. A folder whose last deck was deleted is a valid
   target.
+
 - `alix reset --orphans` now aborts when a deck-like file in the target cannot
   be parsed, instead of judging that deck's live progress orphaned and deleting
   it. Decks still awaiting an `id:` line count as live.
+
 - `alix reset --orphans` names a target that is neither a deck file nor a
   folder instead of reporting it as unlistable.
+
 - The picker no longer reopens an inactive workspace's progress from disk once
   that workspace has been studied this run: the progress owner retains a
   projection of every document it has owned, so a progress file briefly parked
   or replaced by an editor or sync tool cannot resurrect a mid-study deck as
   "new" in the listing.
+
 - A rejected augment open (for example over a duplicate card token) no longer
   swaps in the progress store it validated against: like exam start, select,
   and browse before it, validation runs on a candidate and the store installs
   only when the augment session actually opens, so subsequent grades keep
   saving through the still-active document.
+
 - Cancelling an AI call now kills the backend's whole process tree, not just
   the CLI itself: the child starts as its own process-group leader and cancel
   signals the group, so helpers the backend spawns (node, browsers, git) die
   with it instead of surviving with API quota and source access. On Windows
   only the direct child is killed, as before.
+
 - Shutting down while a paired client's tutor request is in flight now cancels
   that subprocess too: the remote ask path kept no cancellation handle, so the
   server could report shutdown complete while the AI process kept running.
+
 - A rejected exam start, deck selection, or browse no longer swaps in the
   progress store it validated against: validation runs on a candidate and the
   store is installed only when the transition actually happens, so an accepted
   grade after a refusal keeps saving through the still-active document instead
   of silently writing progress into the wrong one.
+
 - The picker no longer reopens progress from disk for the workspace that is
   actively being studied: the listing reads the study owner's own view, so a
   deck mid-review cannot resurface as "new" while an editor or sync tool
   briefly parks or replaces its progress file.
+
 - Shutting the server down now cancels an in-flight tutor call and reaps its
   subprocess (advancing past the card or replacing the question does the
   same), so a Ctrl-C while the AI is thinking no longer leaves an orphaned
   process burning quota with source access.
+
 - A catalog listing can no longer be served from a build whose inputs went
   stale while it ran: a refresh carrying newer progress leads its own build
   instead of joining the in-flight one, and changing the decks folder mid-build
   discards that build instead of publishing a listing of the old root.
+
 - A tutor exchange that finishes after the card has already advanced is now
   discarded: the late answer no longer appears under the next card's
   transcript, and a late note or draft is no longer applied (previously the
   note was written to the earlier card's file even though the screen had
   moved on).
+
 - Two imports of the same deck name no longer race each other (or a
   concurrent receive or generate landing) for the destination: every
   destination write now runs on one owner, so exactly one same-name import
   lands and the landed file is intact.
+
 - A passed or failed exam's progress write no longer saves silently outside
   the save-error accounting: a transient failure now shows the "progress
   isn't saving" state and the result is retried by the next flush instead of
   being lost when the session closes.
+
 - A progress save that keeps failing no longer lets a deck switch silently
   discard the unsaved session: select, browse, deselect, reset, exam start
   and close, walk leave, and augment open and close now answer 500 and keep
   the current session active while the store cannot be flushed. Repairing
   the disk and repeating the same request retries the flush; there is no
   force-discard path.
+
 - `GET /api/doctor` no longer holds the application state lock while it
   probes the backend and wormhole binaries for their versions: the lock is
   held only to snapshot the store path and decks root, so a slow or hung
   version probe cannot freeze every other request (grades, pickers, state
   polls) for its duration.
+
 - An unreadable decks folder (deleted, renamed, or pointing at a plain file)
   no longer masquerades as an empty catalog: `GET /api/decks` now answers 500
   and logs the cause instead of returning "no decks". The adult picker shows a
@@ -593,87 +654,111 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "couldn't find your boxes" notice now actually appears in this case (the
   empty-success response used to show "No boxes yet" instead). Selecting by
   name is unaffected: an unknown name still answers 400.
+
 - The server no longer dies when the consumer of its stdout goes away (for
   example `alix ~/decks | head`, or a supervisor closing the pipe after the
   URL line): the startup announcement lines now tolerate a closed stream
   instead of panicking mid-serve.
+
 - Picker rows (decks and workspaces alike) no longer light their frame on mouse
   hover; keyboard selection is the single frame highlight.
+
 - A multiple-choice card starts with its first option focused, so Enter or the
   nav keys act immediately instead of needing a first keypress to focus.
+
 - A Recognize session now paces first contact like every other depth: at most
   `max_new` never-met cards enter per session, and an explicit `--new` is
   honored there (it was silently ignored). Already-met cards still awaiting
   recognition all enter, uncapped, so the recognition sweep keeps its contract.
   Previously a fresh authored-choice deck, which defaults to Recognize, opened
   its whole deck in one session.
+
 - A cached review order (`alix deck augment --target order`) now applies at
   Recognize; the walk sorts the session before any `limit` truncation, so a
   limit keeps the topologically first cards.
+
 - The multiple-choice quiz no longer highlights a hovered option like the
   keyboard-focused one; keyboard focus is the single highlight and the mouse
   gives no visual state.
+
 - The picker's focus-drawer heatmap no longer renders a card met in an acquire
   pass (seen, not yet graded) the same as a card never touched. Such cards now
   show a dim "seen" cell instead of the neutral no-data cell, so first-pass work
   is visible. The `DeckDrawerDto` heatmap gains a `-2` value for it (the mobile
   crumb heatmap matches).
+
 - A malformed virtual card in a progress document no longer vanishes silently
   (it was decoded best-effort and dropped on failure); the whole document now
   fails to load loudly instead, so a corrupt or out-of-shape card is surfaced
   rather than quietly discarding that card and its progress.
+
 - Saving a document that first has to create its `progress/` or `augment/`
   directory now flushes the new directory entry to disk, closing a window where
   a power loss right after the save could drop the freshly created directory and
   the document inside it even though the save reported success.
+
 - `alix doctor` no longer tells you to "restore from a backup" that Alix does
   not
   make; it now points at moving the file aside or restoring the folder from your
   own backup (see the manual's Backing up section).
+
 - Hard-wrapped Markdown answer prose no longer renders each source line as a
   separate, widely spaced answer line. Ordinary flip and acquire views join
   soft wraps; line reveal, typing, fenced code, and generated lists retain
   their line structure.
+
 - State, deck, and manifest writes now sync the file's data before the atomic
   rename and the directory entry after it, so a power loss right after a save
   can no longer leave the only copy of a document empty; previously the bytes
   could still sit unflushed in the OS cache when the rename was already
   durable.
+
 - A review session whose progress document was replaced by another writer
   (for example a synced device) now reports it: the review state carries a
   `save_error` and the adult web client shows a persistent banner advising to
   reopen the deck, instead of failing every save silently into the server log.
+
 - Adult review notes now use the same content width and text size as the answer
   or choice column instead of shrinking into a narrower, smaller box.
+
 - The adult tutor's unsaved-conversation prompt no longer binds
   <kbd>Enter</kbd>, which remains available for composing a newline;
   <kbd>Escape</kbd> stays in the tutor, and leaving returns to the card that
   opened it without an unnecessary session-state refresh.
+
 - Visible adult-client scrollbars now use slim, theme-aware tracks and thumbs
   instead of the browser's bright native chrome.
+
 - Short fact-card source excerpts now keep the answer region's centered
   vertical alignment; excerpts still top-align when they overflow.
+
 - Fact-card citations and trace walks now share the same editor-style,
   path-labelled source excerpt instead of using two visually inconsistent
   renderers.
+
 - Trace walks now render authored inline Markdown in their description,
   checkpoint prompt, givens, key points, and note on adult web and mobile
   instead of showing raw markers such as backticks.
+
 - Multiple-choice options now receive a fresh shuffle seed for each study
   session, so a card's correct answer does not return to the same memorized
   position every time the app is reopened; repeated state polls still keep the
   current question stable.
+
 - `alix doctor` now reports malformed recognized LaTeX with its deck, card
   line, source snippet, and renderer error. CLI, desktop-server, and
   paired-mobile generation reject malformed math before placement without
   damaging an existing deck; generated text that does not parse as a deck keeps
   the previous lenient saved-draft behavior.
+
 - Authored checkbox answers and distractors now retain their inline formatting
   source for display while duplicate detection and typed grading continue to
   use delimiter-free content.
+
 - A formula that is the only inline run on its logical line now renders larger
   across adult web, kids web, and mobile, while math embedded in prose keeps
   its previous text-sized scale.
+
 - Editing a card's content now invalidates its cached AI augmentations
   (distractors, note, questions, key points, and the reshaped answer).
   Previously a cached output generated from the old content was served until
@@ -687,24 +772,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   promotion wrote the card into the deck file but the matching removal from the
   in-session store was not persisted, so the card could reappear as both a real
   and a virtual card; the store change is now saved with the rest of the session
+
 - the web listing no longer re-parses unchanged decks on every request: the
   server keeps a per-file cache keyed on (mtime, size) and re-reads only files
   that actually changed, so a warm `/api/decks` over a large collection stops
   re-reading every deck
+
 - starting a review or walk no longer re-parses the whole collection to resolve
   the deck name: name resolution (`/api/select`, `/api/browse`, `/api/generate`,
   share/receive, exam start, augment open, and more) now reuses the same warm
   deck cache the listing does, instead of rebuilding the catalog from scratch on
   every call
+
 - the picker no longer shows an empty page on the first (cold) load, needing a
   reload to appear: static assets (the page shell, fonts, css, js, and the key
   endpoints) are now served without waiting for the shared server state lock, so
   a slow cold deck listing can no longer stall the fonts the picker text is
   drawn with. The web server also handles connections with a worker pool now, so
   no single slow request blocks the accept loop
+
 - the deck listing was quadratic in collection size (each loose deck probed its
   parent folder as a workspace, and that probe read every sibling deck); a
   325-deck folder took seconds per listing, now milliseconds
+
 - **The session summary no longer reads all zeros after a first pass.** A
   fresh deck's first sitting is acquire-only (attempt-first exposure, no
   grades), but the summary said "Nothing due." with 0 reviews right after
@@ -721,6 +811,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   change starts fresh (it can't be told from a new gap), and a deleted gap's
   progress is discarded rather than inherited by a different word. Any cached
   choice-mode distractors and notes move with their gap.
+
 - **`alix doctor` now lints a decks folder for identity problems, and `alix
   reset --orphans` clears the leftovers it finds.** Over a folder, doctor
   reports duplicate deck and card tokens (naming which copy keeps the earned
@@ -730,9 +821,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   any stray `.txt`-era file that no longer parses. Orphans are never auto-pruned
   (they are evidence); `alix reset --orphans` is the explicit opt-in that clears
   them, scoped to a folder/workspace or the decks root.
+
 - **A quiet Support line in the About dialog, on both the web and mobile
   clients.** Leads with the free alternative (telling someone who studies),
   a sponsors link second; About only, never on a study surface.
+
 - **A paired phone can borrow the desktop's AI backend for the tutor and the
   exam, over `/api/remote/*`, including a trace deck's compression exam.**
   The client re-sends its own card, transcript, and answers with every call
@@ -742,16 +835,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   browser's own store, not the phone's (`RemoteExamDto.is_trace` tells a
   trace sitting apart from a fact deck's). This is the server side only:
   the phone app's own pairing screen ships in a later mobile release.
+
 - **A paired phone can also generate a deck from a URL through the desktop's
   AI backend, over `POST /api/remote/generate`.** The server returns the full
   deck text and a suggested file name; placing the file, and any collision
   handling, is the client's job, same iron rule as the tutor and exam. Server
   half only.
+
 - **A paired phone can also condense its tutor conversation into note lines,
   over `POST /api/remote/ask/note`.** The server condenses up to three lines
   the same way the web's own note-save does; appending them to the deck is
   the client's job, same iron rule as the rest of the remote surface. Server
   half only.
+
 - **A tutorial deck on first run.** A brand-new decks directory is seeded
   with "The alix tutorial": ten cards that teach alix by being reviewed —
   honest grading, spacing, depths, where decks come from, the AI features
@@ -773,6 +869,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directly (GitHub, Obsidian, a plain preview pane), not just alix's own web
   app. The retired `math:` directive is also removed (it never had any
   effect). `\blank{…}` text occlusion is unchanged.
+
 - **Breaking (web API): a card's images are now lists, not single fields.** The
   `CardDto` wire shape drops the scalar `img` / `img_back` strings and replaces
   them with `images` / `images_back`, each an ordered list of `{ src, alt }`
@@ -780,16 +877,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alt text or null). This lets a card carry several images per side, in
   source order, with alt text. Empty list when a side has no image. Both web
   clients render every image in the list.
+
 - Grading no longer rewrites the progress store on every answer: in-session
   progress stays in memory and is written once, when the session ends
   (leaving the deck, switching decks, or opening an exam or the augmenter).
   Administrative actions (reset, deadlines) still write immediately. If the
   server process dies mid-session, that session's unwritten grades are lost.
+
 - **Breaking: deck-level `strictness` removed: grading strictness is a learner
   setting (config or workspace defaults); a deck cannot ship grading rigor.**
   A `strictness:` key in a deck's frontmatter is now an ordinary unknown-key
   lint, not a recognized directive; only the global config default and a
   workspace `alix.toml`'s `[defaults]` feed `exam_strictness`.
+
 - **Breaking: decks are now Markdown files (`.md`), and a card's
   identity is a minted token, not a content hash.** A card front is `## `, its
   answer lines follow plainly, a note is `> `, deck metadata (`source:`,
@@ -817,6 +917,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or note line, before the next card or end of file), and every frontmatter
   block alix emits carries a blank line before its closing `---`; the old
   inline id, below-the-front id, and blank-less closer all stay valid input.
+
 - **A copied deck no longer silently shares one card's progress across two
   files.** When two decks in a folder claim the same identity token (a copied
   file, or a card copied with its `<!-- id: … -->` comment), the undecorated
@@ -825,6 +926,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files fall back to scan order. File-sync and backup copies
   (`*.sync-conflict-*`, `* (conflicted copy…)`, `*.bak`/`*.orig`/`*~`) are
   excluded from every deck scan, so they never list, stamp, or error.
+
 - **Breaking: a multiple-choice pick now requires a cached AI augmentation;
   options are never sampled from other cards.** Distractors were previously
   topped up by sampling the rest of the session's answers, which produced junk
@@ -832,6 +934,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now renders only from a deck's cached distractors (`alix deck augment --target
   choices`); without them there is no pick. Run the augment to keep
   multiple-choice on a deck that relied on sampling.
+
 - **Breaking: the Recognize depth is now pick-only.** A Recognize session
   schedules only *recognizable* cards (ones a cached pick can be built for); an
   un-augmented card is no longer served there as a plain flip, which had blurred
@@ -839,15 +942,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Recognize at all, so the picker greys the depth out (even under cram) — run
   `alix deck augment --target choices` to enable it. The deck-list API gains
   `can_recognize` (per row; group rows aggregate their members) for the gate.
+
 - **The web app names your configured AI backend instead of assuming
   Claude.** The tutor header and the "working…" progress lines during
   augment and the exam now show the `[ask] backend` you actually use, so a
   Gemini, Codex, or Copilot user no longer reads "Claude is working…"
   (`AskInfoDto` gained a `backend` field).
+
 - The CLI `--help` text is modernized to the Markdown deck wording: a trace
   stub now
   declares `trace:` in its frontmatter (no `% trace:`), replacing the stale
   old-format references.
+
 - **Breaking: the `alix deck augment --target` value `topology` is renamed to
   `order`** (matches the web app's "Order" card); pre-1.0, no alias. This is a
   user-facing rename only: the internal type/field names and the `/api/deck-
@@ -866,18 +972,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`alix doctor <dir>` now actually runs its workspace lints** (the
   missing-icon warning, the deadline-key check) for a directory target; a
   routing gap meant they never printed.
+
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled
   until the tutor has actually answered, instead of looking active and silently
   doing nothing on an empty conversation.
+
 - The formatting augmentation no longer strands already-clean cards as a
   permanent gap: a card the formatter checks and leaves as-is is now recorded as
   done, so coverage completes instead of a Generate that appears to do nothing.
+
 - The exam overlay now hides its scrollbar, matching the augment and review
   surfaces, instead of showing one and reserving a gutter for it.
+
 - Lenient exam grading no longer downgrades an incomplete-but-correct answer
   to partial: the grading criteria now say outright that covering only some
   key points still passes when what is said is right, reserving "partial" for
   an actual error (caught by the grader-calibration suite).
+
 - **The trace walk screen now shares the session chrome.** It still rendered
   pre-re-skin chrome: no ☰ menu in the header, and a footer that packed
   Missed it/Partly/Got it/Ask/Leave into one centered row with a dead
@@ -886,11 +997,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the ☰ menu (Ask Tutor only — Remove/Promote don't apply to a checkpoint),
   a zoned footer (Leave left, grade actions center, Ask tutor right, matching
   review), and the counter is gone.
+
 - A keypoint click on an Explain-mode card that also carries a `% at:`
   citation could silently swap the whole answer region to the cited source
   excerpt instead of marking the point — the click bubbled into the answer
   region's own answer/source toggle. The keypoint `<li>` now stops that
   propagation.
+
 - Opening the web app in the first moments after a server start could paint a
   blank page (the page booted before the server was ready to answer); the boot
   now retries briefly instead of giving up on the first failed fetch.
@@ -904,8 +1017,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   store. The mobile app surfaces both as banners; the web/CLI surfaces are
   a follow-up. The rule stays one device at a time; these make a slip
   visible instead of silent.
+
 - The library exposes its version as `alix::VERSION` (the mobile About
   screen shows it next to the app's own).
+
 - **Workspaces can carry a personal deadline.** Set `deadline = "YYYY-MM-DD"`
   and `deadline_ramp` in a workspace's `alix.local.toml` (CLI: `alix workspace
   deadline <dir> <date>`; also the API and the web picker's **Ready by…**
@@ -914,29 +1029,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   past the date, releasing back to normal once it passes. The picker shows a
   chip (date, days left, ready percent) on the workspace row and its drawer;
   `alix doctor` warns about a malformed deadline key.
+
 - The site gains an Impressum, a privacy note, a contact address and a
   sponsor link; personal details are injected at deploy time, not stored in
   the repo.
+
 - **A "What's new" page on the site**: an interactive timeline of releases
   and landed changes (dots with popovers, drawn from this changelog and the
   git history at build time) over the full text record, plus a short teaser
   on the landing page, so it can't go stale on its own the way a
   hand-maintained page would.
+
 - The legal notice and privacy pages are now in English (headings kept as
   "Legal notice (Impressum)" and "Privacy (Datenschutz)" for recognizability).
+
 - The landing page counts visits with GoatCounter, a cookie-less,
   privacy-friendly analytics service; the privacy page explains what it does
   and does not collect.
+
 - **The review header shows a dim "N left" count**: how many cards the session
   still holds, updated after every card. It can honestly tick up when a card
   you missed cools back in for its retry. (The card pile already hinted at
   this but flattens at 3, so a long backlog and a nearly-done session looked
   the same.)
+
 - **The adult theme gallery's Kids group now offers Sunrise, Ocean, and
   Berry** — the same three themes the kids app ships, re-derived as full adult
   palettes (every token the picker needs, contrast-checked for the adult UI's
   denser text), so a kid transitioning to the grown-up app can keep the look
   they learned to love.
+
 - **Tutor: make this a card.** In a review exchange, "Make this a card" asks the
   tutor to distill the conversation into a draft front/back; you edit it, then
   Add
@@ -944,9 +1066,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and
   promotable to the deck file. Adult review only; a non-parseable draft errors
   rather than inventing a card.
+
 - Your decks folder is self-contained: drop it in a cloud drive (Dropbox,
   iCloud,
   Syncthing) for roaming multi-device (one device at a time), no accounts.
+
 - **The Augment screen redesign: one card per target, not a row.** Each of the
   six targets (choices, notes, questions, key points, format, topology) shows
   a plain description of what it does and a small neutral before/after
@@ -956,19 +1080,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   front, then each ticked card tracks its own status, queued, generating,
   done, or failed, as the batch runs, and one target failing doesn't stop the
   rest.
+
 - **The Augment screen now opens on a workspace (or folder).** The same six
   target cards run across all member decks at once: Generate fills a target's
   gaps in every member, Remove clears it everywhere, and an Order generated
   here is one workspace-wide pedagogical path that a workspace review session
   picks up. A workspace also gets an **Icon** card that draws (or redraws) the
   emblem shown on its picker row, steered by the card's guidance input.
+
 - **A Select all button on the Augment screen** ticks every target that can
   run, so a full batch is two clicks.
+
 - **Every augment card carries its own guidance input.** Instead of one shared
   guidance box in the footer, each target card has a compact steer field with a
   kind-specific example as its placeholder (choices: "use common
   misconceptions", notes: "add a mnemonic", ...), so you can see per target
   what a steer is good for, and a batch sends each ticked card's own guidance.
+
 - **`alix doctor --grading`: is your model good enough to grade exams?** An
   opt-in spot-check (three real, costed calls) that runs six hand-labeled
   grading probes against the configured backend: wrong, empty, off-topic, and
@@ -976,16 +1104,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reports the two directions with different weight, since a model that passes
   a wrong answer makes "mastered" overstate understanding, while one that
   misses a correct answer is only harsher than intended.
+
 - **The review screen's up/down navigation is now rebindable.** The
   multiple-choice and key-point lists move with `k`/`j` by default (the arrow
   keys always work too); rebind them under `[keys.review]` as `up`/`down`, like
   any other review action.
+
 - **An experimental native app now lives in `apps/mobile`**: a Flutter shell
   embedding the lean Rust core to review decks offline on Android (and as a
   Linux desktop window). It has its own release track (`mobile-vX.Y.Z` tags,
   a signed APK on GitHub Releases) and its own changelog
   (`apps/mobile/CHANGELOG.md`); it is not part of the crate's released
   binaries.
+
 - **For library consumers: a `full` cargo feature** (on by default) now gates
   the AI backends and the web server. Depending on `alix` with
   `default-features = false` compiles just the lean core (decks, scheduling,
@@ -1006,6 +1137,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before. The stricter acquire-time bar already protected an unaugmented
   card from ever seeing a junk multiple-choice, so this only changes which
   depth a well-augmented deck opens at, never what it's allowed to ask.
+
 - **Picker UX pass: quieter refresh, a footer Back chip, a clearer depth
   button.** The window-focus re-scan now repaints only when the catalog
   actually changed, so alt-tabbing back no longer visibly flickers; the header
@@ -1013,12 +1145,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   button now reads **Depth…** instead of a bare triangle; and refreshing
   (`r`, or the header button) also re-fetches workspace icon images, so a
   regenerated emblem shows without a reload.
+
 - **Augment batches on the Claude backend now share one conversation**: the
   first target sends the cards once, each later target runs as a short
   follow-up that references them by index, cutting prompt cost and latency on
   multi-target (and workspace-wide) batches. Other backends and single-target
   runs keep their self-contained one-shot per call; a failed target starts a
   fresh conversation for the rest of the batch.
+
 - **The acquire cooldown is configurable and defaults to 5 minutes** (was a
   fixed 1 minute): `[review] acquire_cooldown` (`"90s"`, `"10m"`, `"1h"`; a
   bare number is minutes, `"0"` disables it), also overridable per workspace
@@ -1027,22 +1161,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   just-seen card (a miss, a wrong pick) may return. With the longer default
   a short session can now end while a missed card is still cooling; it slots
   back in on its own (the summary keeps polling), or next session.
+
 - **Breaking:** `POST /api/check` no longer reads the client-sent `ordered`
   flag; whether typed lines pair by position (`typeline`) or match in any
   order is derived server-side from the card's mode. Send `{lines}` only;
   an `ordered` field in the body is ignored.
+
 - **The tutor's "Save note" is now "Make this a note"**, matching "Make this a
   card", and both distill actions are rebindable: **Breaking:** the
   `[keys.review]` key `save_note` is renamed `make_note` (still `ctrl-n`), and
   the new `make_card` (default `ctrl-d`) triggers "Make this a card" from the
   keyboard.
+
 - **Leaving the tutor now asks first when the conversation is unsaved**, the
   same pause as leaving a session: the transcript survives on the current
   card, but moving on to the next one would drop it before it became a note
   or a card. Enter leaves, Esc stays.
+
 - While the tutor is thinking, the panel shows the looping alix logo next to
   "Thinking…" (the header logo already looped; this one sits where you're
   looking), and the transcript no longer rebuilds on every poll tick.
+
 - **The review tutor is now offered during a card's first encounter (acquire),
   once you reveal the answer.** It stays hidden during the blind attempt,
   matching the after-reveal rule the rest of review follows, so you can ask
@@ -1050,23 +1189,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a brand-new card (and make a card from it) without waiting for its first
   graded
   review.
+
 - **Breaking:** the progress store now lives with your decks
   (`<decks_dir>/progress.json`) instead of the platform data dir
   (`~/.local/share/alix/progress.json`); bare `alix` and `alix <decks_dir>`
   share
   one store. Move an existing store once:
   `mv ~/.local/share/alix/progress.json ~/decks/progress.json`.
+
 - **Breaking:** the `/api/augment/generate` request body now takes a
   `targets` list of `{target, with?}` entries (each with its own optional
   guidance) instead of a single `target`, and the augment poll response
   (`AugmentDto`) also reports `queued`, `done`, and `failed` targets for
   batch progress.
+
 - The topology augmentation now defaults to a pedagogical (foundations-first)
   order when you give no guidance, named `pedagogical order` rather than `auto`;
   a guidance steer still overrides it.
+
 - `alix generate` and its review pass now keep each card's answer to exactly
   what its front asks, moving extra context into the note instead of
   over-answering the question.
+
 - `alix generate` and its review pass now turn a mapping of pairs into one
   cloze card (one line per pair, the recalled half blanked) instead of a
   "match each X to its Y" card that asks to recall the whole table at once.
@@ -1084,18 +1228,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   traces stay adult-only for now. Self-hosts the Baloo 2 font (SIL OFL, see
   `NOTICE`). No API or contract change — it's a second frontend over the same
   `/api/*` endpoints documented in `docs/API.md`.
+
 - **`[serve] audience` config key** (`"adult"` default, or `"kids"`) — which
   frontend `/` serves, and which voice the tutor uses.
+
 - **Ask tutor on Recognize.** The tutor button now appears on a Recognize
   (multiple-choice) card's feedback, the same as Recall and Reconstruct. It's
   most useful after a wrong pick ("why is the highlighted option right, not the
   one I picked?"). The key already worked there; this makes it visible and
   tappable.
+
 - `/api/decks` rows now carry `selectable` — whether the row's `name` can be
   sent to
   `/api/select` (decks: yes; workspace/folder rows: no). Clients no longer have
   to infer
   it from `is_workspace`.
+
 - On a first-seen (acquire) card, `h` (or a tap on the answer) hides / un-hides
   the revealed answer in place, so you can self-test the fresh encoding (conceal
   it, try to recall, show it to check) before "Seen" moves on. It only flips the
@@ -1103,14 +1251,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reflows. Shown as a small corner cue like the source⟷answer swap on a cited
   card, not a separate button. A first-encounter aid only: an ordinary review
   drills a card by failing it, which brings it back spaced.
+
 - A multi-line front now renders as centred lines instead of one run-on line, so
   a dual-direction card's reverse side (its several alternatives, shown on the
   question side) reads clearly.
+
 - An end-to-end smoke suite for the alix web clients — both adult and kids
   (`make e2e`, Playwright): a click must produce the expected request,
   response, and screen, with no uncaught page errors, covering session
   select/grade, the picker, and a multi-line answer rendering as separate
   lines rather than one joined string.
+
 - **A live Codecov badge on the README**, backed by a real-server HTTP
   round-trip test suite (`tests/api.rs`) that drives `/api/*` over the wire
   rather than calling handlers in-process — the deterministic half of
@@ -1119,11 +1270,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   print-only QR output, a two-call AI workspace build) are marked
   `#[cfg_attr(coverage_nightly, coverage(off))]`, each excluded one function
   at a time with a stated reason, so the number stays honest.
+
 - **Web picker self-sufficiency: the ☰ menu gains Add deck… (generate from a
   URL, import .tsv/.txt, receive a wormhole code or .zip), Share… (wormhole
   code or .zip download), Reset… (typed-name confirm), Doctor, and Pair a
   device (QR)** — all additive `/api/*` endpoints, pinned in the contract
   suite and documented in `docs/API.md`.
+
 - **`docs/API.md` — the web JSON API is now a written, tested contract.**
   Endpoints, DTO field tables with nullability, the flows (select→state→grade,
   walk, exam, augment, ask), auth, and the stability rules clients may rely on
@@ -1131,6 +1284,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   marked closed). Every response shape is pinned by full-object snapshot tests
   (`mod contract`), which also emit `tests/contracts/*.json` — canonical
   examples and a codegen corpus for client models.
+
 - **Cram is back — as a tick-box in the picker's Learn ▾ menu** (key `c`,
   rebindable as `[keys.picker] cram`), combining with any depth; plain Learn
   never crams. Its semantics got honest and due-aware: cram only changes
@@ -1142,24 +1296,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wouldn't offer. `/api/select` accordingly takes `cram` plus optional
   `max_new`/`limit` overrides, closing the thin-client pacing gap. A failed
   session start now also shows a brief notice instead of failing silently.
+
 - **Scoped roots: `alix <dir>` serves that folder as a self-contained
   instance** — its own catalog plus its own `progress.json` and `recent.json`
   kept inside the folder, so several instances run side by side without
   sharing state (one per family member: `alix ~/decks-maria --lan --port
   7781`). A workspace folder opens the picker drilled into it, over its own
   store.
+
 - **`alix doctor` — one health command.** Checks the config parses, the
   progress store is readable, the decks folder scans (broken decks point at
   `alix deck check`), and the backend CLI is installed — each problem with a
   one-line fix. `--backends` adds a real end-to-end probe of the configured
   AI backend (`--all-backends`: all four).
+
 - **A scannable pairing QR in the `--lan` startup output**, alongside the
   pairing URL — which now shows the machine's actual IP instead of a
   placeholder. A phone or tablet pairs by pointing its camera at the
   terminal.
+
 - **`[review] max_new` and `limit` config keys** for session pacing, with
   per-instance `--new`/`--limit` overrides on bare `alix` (precedence:
   flag > config > built-in 10 / no cap).
+
 - **`alix share <path>` and `alix receive <code>` — send decks to someone
   over magic-wormhole** (shells out to the `wormhole` binary; install it
   separately). Share takes a deck, folder, or workspace and stages a copy
@@ -1172,16 +1331,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one. The open picker re-scans its catalog when the browser tab regains
   focus, so a deck received (or generated) from the terminal shows up when
   you switch back — no manual refresh.
+
 - **`alix workspace init <dir>`** scaffolds an empty workspace — an
   `alix.toml`, a personal `alix.local.toml`, and an `assets/` folder, no
   decks. Both TOML files are written fully commented, every key explained
   inline, so they document themselves. Grow the workspace with
   `alix generate … --workspace <dir>` or `alix deck import … --workspace
   <dir>`, which write their deck into the workspace.
+
 - **`stats`, `list`, and `reset` take a deck, a folder, or a workspace.**
   A folder or workspace expands to its member decks against the store that
   serving uses; `reset` on a workspace clears card progress, virtual cards,
   and mastered flags together, under one blast-radius confirmation.
+
 - **The web exam launch pre-flights the backend's ability to reach the
   deck's source**, failing at start instead of mid-exam.
 
@@ -1191,40 +1353,51 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   row now aggregates its members, and a deck that fails to parse reports nothing
   reviewable.
   (The kids app's box line and the adult picker's dim states are honest now.)
+
 - `docs/API.md` described `DeckItemDto.name` as a key you can always send to
   `/api/select`. Only deck rows are selectable: a workspace or folder row is
   a container and `/api/select` rejects it (400) — drill into its `members`.
   A group row's `reviewable_*` flags aggregate its members rather than
   inviting a select. (Found when the kids client believed the doc and shipped
   a button that did nothing.)
+
 - `docs/API.md` documented `/api/walk/grade`'s `delta` keys as `"g"|"p"|"m"`;
   the server and web client have always used `"n"|"p"|"f"`. The doc now
   matches the wire (caught by the new HTTP round-trip suite).
+
 - A wrong Recognize pick now shows which option was right before moving on
   (Continue grades it failed) — the silent instant-demote skipped the
   corrective moment.
+
 - A just-finished card can no longer come straight back: its re-serve clock
   now floors at the card transition, so time spent on the feedback screen or
   the next card never eats the gap.
+
 - The same-card floor now covers Recognize too: a failed pick used to
   resurface instantly (a deliberate exclusion at the time); with one card
   left, that meant an instant boomerang. It now re-queues but stays floored
   like every other depth.
+
 - Multiple-choice options now reshuffle on each appearance of a card, instead
   of sitting in the same positions every time — a retry could otherwise be
   solved by position memory rather than actually recalling the answer.
+
 - The picker's ⟳ now re-reads the config, so a changed `decks_dir` takes
   effect without a restart (scoped `alix <dir>` instances stay pinned to
   their folder).
+
 - A sequence card (`% reveal: line`) at Recognize is now quizzed as one whole
   answer among the cached distractors, instead of a meaningless pick-one-step
   choice built from the card's own lines (falls back to the self-report chips
   when no distractors are cached).
+
 - The acquire view's badge no longer names a check — a brand-new card shows
   just `NEW` (the attempt-first reveal is ungraded).
+
 - The tutor's "couldn't find the source" reply, for a frozen card whose live
   source root is gone, now comes back immediately instead of round-tripping
   through the model to have it echo the same fixed sentence.
+
 - `alix generate <dir>` (workspace build) no longer blocks on, or touches, a
   populated destination. The build always stages into a scratch dir first,
   then merges the new files in one by one: a name already present in the
@@ -1234,6 +1407,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dir from a previous conflicted build now asks for confirmation before it's
   wiped and rebuilt, and dot-prefixed folders are hidden from the picker's
   scan so a kept-around staging dir never shows up as a bogus workspace.
+
 - A taken port now errors immediately with a `try --port` hint — the server
   binds before printing its URL, so a clash no longer shows a
   success-looking line first.
@@ -1243,12 +1417,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   resolving.** The same file name occurring in two containers now fails
   with 400 from every name-taking endpoint instead of silently resolving to
   one of them; use the qualified `<workspace>/<file>` name.
+
 - **Breaking (API): three contract shapes normalized before the freeze.**
   `WalkDto.verdict` sends `passed`/`partly`/`failed` machine tokens instead
   of English display labels; `POST /api/walk/leave` returns the picker
   `StateDto` like every other closer (was a bare 204); a trace exam's re-sit
   cooldown is an `ExamDto` in a new `cooldown` phase with `cooldown_ms` set
   (was an untagged `{cooldown_ms}` object).
+
 - **Breaking: one `generate` verb for all AI authoring — `explore`, `trace`,
   `deck generate`, and `deck check` are removed.** `alix generate <source>`
   routes by the source: a URL/file becomes one deck; a directory is explored
@@ -1262,6 +1438,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   grading per hop, now available in the browser walk too). `alix doctor
   <deck>` lints a single deck (was `deck check`); `import` moves under
   `deck` (`alix deck import`).
+
 - **Breaking: the CLI collapses to `alix [dir]` plus task subcommands —
   every review starts from the picker.** Removed outright (pre-1.0, no
   aliases): `alix <deck>` direct-deck launch, the `review` and `workspace`
@@ -1272,6 +1449,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and region are picked in the web picker; order is the deck's `% order:`
   directive. Bare `alix` keeps only `--lan`, `--port`, `--token`,
   `--config`, `--new`, `--limit`.
+
 - Redesigned the web UI (IBM Plex typography, borderless/hairline dark theme).
 
 ## [0.3.0] - 2026-07-07
@@ -1293,6 +1471,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   there's material to build one, the same attempt-then-reveal a first
   encounter gets otherwise. A card no longer climbs or descends between
   depths on its own.
+
 - **A full Reconstruct pass credits a due Recall schedule — downward only,
   pass-only.** Getting a card fully right at Reconstruct (outside cram) now
   counts for its Recall schedule too: full credit if recall was due at that
@@ -1302,6 +1481,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Reconstruct never gains a recall schedule from this. Alongside it, any
   full pass at any depth — cram included — marks the card recognized if it
   wasn't yet.
+
 - **Two quiet overrides give the learner the final say.** A typed
   Reconstruct check normalizes both sides (case, whitespace, trailing
   punctuation) and compares exactly, then shows the diff — but *you* grade it,
@@ -1309,6 +1489,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tolerance guessing at "close enough"). A correct Recognize pick can be
   quietly walked back with an **"I guessed"** link, which un-marks the card
   and re-queues it.
+
 - **Per-deck badges for Recognize/Recall/Reconstruct**, shown in the picker.
   A deck earns a depth's badge once every card is currently solid at it
   (recognized; or at/past 21 days of FSRS stability) — solid while it still
@@ -1317,9 +1498,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gains cards after being badged gets a small "new" chip. Informational only:
   badges never gate anything — passing the AI exam is still the only thing
   that unlocks a dependent deck.
+
 - **`alix list`/`alix stats` report per depth.** `list` now shows each card's
   Recall and Reconstruct schedule state plus a ✓ once it's recognized;
   `stats` adds a per-depth due count.
+
 - **`% reveal:` — the authored presentation axis.** How a card is *presented*
   is now its own directive (deck or card, default `flip`): `flip`, `cloze`
   (`{{spans}}`), or `line` — while how deeply it's *checked* is the session
@@ -1327,34 +1510,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   small badge naming the check (`flip` / `line` / `typing` / `explain`) so how
   you'll interact is clear up front. See the **Changed** note for the
   `% mode:`/`#?` break.
+
 - **Remediation cards are now virtual cards in the store.** A failed source
   exam's remediation cards live in alix's store instead of being written into
   your deck file. They drill like normal cards and count toward a deck's *due*
   total (not its card count), dedupe on regeneration, archive when their FSRS
   interval reaches `retire_after`, and revive if the same gap fails again. See
   the **Changed** note below for the behavior break.
+
 - **Promote a virtual card into its deck.** A review-time action appends a
   remediation card to the deck file and drops the virtual copy — "Promote to
   deck" in the web review menu (rebindable `[keys.review]` `promote`, default
   `ctrl-p`). Offered only while reviewing a virtual card. The promoted card
   keeps its review schedule; it doesn't restart.
+
 - **Exam-fail remediation count, and a "remediation card" review label.** The
   post-remediation exam screen now reports how many remediation cards the
   failure created or revived. While drilling a still-virtual card,
   the review screen's existing mode badge reads "remediation card" in place of
   "new card" — it reverts once the card is promoted.
+
 - **`[review]` config section — FSRS pacing.** `retention` (target recall
   probability, 0.70–0.99, default 0.9; higher = shorter intervals) and
   `retire_after` (a duration `"1y"` / `"6m"` / `"2w"` / `"30d"`, or `"never"` to
   disable retirement; default `"1y"`).
+
 - **Per-workspace pacing via `alix.local.toml`.** A workspace can override the
   global `[review]` retention / retire_after in a personal `alix.local.toml`
   beside its `alix.toml` — kept separate from the shared manifest, so it never
   travels when you share the workspace.
+
 - **`alix deck check` warns on a non-gating prerequisite** — when a sourced deck
   `% requires:` a source-less deck, that edge can't gate its exam; the lint
   names
   it and suggests adding a `% source:`.
+
 - **Pairing token for `alix serve --lan`.** Serving to the network now
   auto-generates a token (printed at startup) and requires it on `/api/*`, so
   the
@@ -1363,19 +1553,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and
   native clients send it as a bearer token. Opening the web UI without a valid
   token shows a prompt to paste it (then reloads) instead of a blank page.
+
 - An `examples/gh-review-prep.rs` showing how to compose the library into an
   ephemeral, goal-scoped workspace for understanding a change you must read
   closely (a GitHub PR or issue) before acting on it. Read-only; a demonstration
   of composability, not a GitHub feature.
+
 - **`[ask] backend` selector.** All AI calls now route through a pluggable
   backend. Set `backend` in `[ask]` to choose among `claude` (default),
   `gemini`,
   `codex`, or `copilot`. Auth is each CLI's own login — alix stores no API keys.
+
 - **`alix backend check [--all]` health probe.** Sends a trivial tool-free
   request to the configured backend (or all four with `--all`) and reports
   whether each is installed, signed in, and responding. The only reliable way
   to confirm the whole path works end-to-end. Errors are the same actionable
   messages the rest of alix shows (rate limit, not signed in, not installed).
+
 - **Gemini backend (`[ask] backend = "gemini"`).** alix's AI calls can now run
   through the Google Gemini CLI (`gemini -p`, headless). Tool access maps to
   Gemini's read-only tools via an `--allowed-tools` allowlist (the standard
@@ -1385,6 +1579,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still defaults to `opus`; other backends inherit the CLI's default), so
   leaving
   `[trace] model` unset does the right thing per backend.
+
 - **Codex backend (`[ask] backend = "codex"`).** alix's AI calls can now run
   through the OpenAI Codex CLI (`codex exec`, headless). Codex takes the prompt
   as a command-line argument rather than on stdin, and its access is governed by
@@ -1392,8 +1587,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--ask-for-approval never`, which permits reading local source but blocks
   writes, shell escalation, and the network — so a fetch/search grant can't be
   honoured under this backend (source reading still works).
+
 - **Copilot backend (`[ask] backend = "copilot"`).** alix's AI calls can now
   run through the GitHub Copilot CLI, authenticated via `gh auth login`.
+
 - **Backends degrade gracefully.** An AI feature now checks the selected
   backend's capabilities *before* doing any work and refuses cleanly when they
   don't match — e.g. an exam or `deck generate` over a URL `% source:` under a
@@ -1403,11 +1600,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   way. A failed AI CLI now also leads with actionable guidance: a rate-limit or
   quota error suggests waiting or switching backend; an unauthenticated error
   suggests running the CLI's login once (the raw detail is still shown).
+
 - **Pre-flight source-size guard.** Before `deck generate`, `trace --build`,
   `trace --suggest`, and `explore` read a large source, alix measures the
   estimated size and asks for confirmation. Pass `--yes` to skip the prompt in
   non-interactive scripts. `exam` instead truncates the source to 100 KB and
   prints a notice so the exam can still run unattended.
+
 - **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace
   now
   shows its goal (the one-line description) under the title eyebrow, the same
@@ -1415,6 +1614,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   top-level list shows on the workspace row — so the context stays visible while
   you
   pick a member deck.
+
 - **Web picker: a drawer indicator.** A quiet `▾` at the bottom-centre of a
   picker
   row marks a deck that has a focus drawer (a cached topology), so you can see
@@ -1422,6 +1622,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   glance which rows expand on focus instead of discovering it only after
   selecting.
   The marker lights to the accent colour on the focused row.
+
 - **Draw input (web).** Answer a `flip`/`explain` card by drawing or
   handwriting on a canvas, then self-grade — either authored per card/deck with
   `% input: draw` (for answers that can't be typed, e.g. diagrams) or via a
@@ -1434,16 +1635,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `recognized` flag, instead of one shared FSRS state. Pre-1.0, no migration:
   an existing store loads fine, but every card starts with empty schedules at
   every depth — a one-off rewrite for anyone who wants to seed it otherwise.
+
 - **Breaking: `--max-typos` and the `fuzzy` check mode are gone.** A typed
   check now normalizes (case, whitespace, trailing punctuation) and compares
   exactly, then shows the diff and leaves the pass/fail call to you — no
   edit-distance tolerance guessing at "close enough" (it used to let "affect"
   pass for "effect" within tolerance).
+
 - **Breaking (store):** dropped the legacy Leitner `stage`/`stage_entered_ms`
   fields now that FSRS is the sole scheduler; `stage_entered_ms` is renamed
   `acquired_ms`. Pre-FSRS cards lose their stage-derived interval carry-over.
   Pre-1.0 — no migration path. `alix stats` no longer prints a per-stage
   histogram and `alix list` shows the FSRS state instead of a Leitner stage.
+
 - **Breaking: the terminal frontend is removed — alix is web-first.** Bare
   `alix` (or `alix <deck>`) now opens the local web app and prints its URL,
   instead of a `ratatui` TUI; `ratatui` and `crossterm` are dropped as
@@ -1456,6 +1660,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   non-interactive: name a deck, or pass `--card <id>`/`--all` to `reset`;
   edit `% requires:` lines by hand. `alix trace`'s walk is unaffected — it
   still runs in the terminal (a plain stdin loop, never a TUI).
+
 - **Breaking: `% mode:`, the `#?` cloze marker, and the `--mode` flag are
   removed** — replaced by `% reveal:` and the session depths above. A cloze card
   is now `% reveal: cloze` (was `#?`); a deck's presentation is
@@ -1472,16 +1677,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   where a reveal-method applies, dropping `typing`/`fuzzy`/`choice`/`explain`),
   or
   re-generate it — either way ids and history survive.
+
 - **Breaking: a failed exam no longer appends remediation cards to your deck
   file.** Remediation cards are now created as virtual cards in alix's store, so
   the deck `.txt` stays byte-for-byte unchanged. Drilling, due counts, and the
   exam re-sit are otherwise the same; use the new **promote** action to move a
   remediation card into the deck if you want it there permanently.
+
 - **A virtual (remediation) card's retirement is now fully derived**, matching a
   deck card: purely its FSRS interval vs. `retire_after`, no stored archive
   flag. Raising `retire_after` later un-retires a previously archived virtual
   card whose interval now sits below the new cap, the same as it would for a
   deck card.
+
 - **Breaking: a review session scores each card once per appearance.** A missed
   card is no longer re-drilled immediately in the same sitting; it keeps its
   short spaced step and re-appears once that step has elapsed, interleaved
@@ -1490,17 +1698,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing is due right now the session ends — a card still cooling is picked up
   the next session, or re-enters on its own if you keep the window open. Fixes
   cards graduating too early from same-session re-drills.
+
 - **Breaking: a card graduates only after two spaced correct recalls.** A single
   Good after a miss no longer promotes a card to the long-term review phase
   faster
   than two clean passes would; two full Goods graduate it, a miss resets that
   progress, and a *partly* is neutral. (A lapsed card still re-graduates on one
   Good.)
+
 - **A just-seen card starts drilling in the same session.** Acquiring a new card
   (the ungraded "Seen" first exposure) now settles for ~1 minute (was ~5) and
   the
   card stays in the sitting, so its first graded quiz comes back interleaved a
   minute later instead of waiting for a new session.
+
 - **Breaking: FSRS is now the only scheduler.** alix schedules with FSRS-5 (via
   the `rs-fsrs` crate) for every review; the Leitner and SM-2 schedulers are
   gone, along with the `% scheduler:` directive and the `--scheduler` flag that
@@ -1509,39 +1720,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ladder. The old per-card `stage` is kept only as a seed for a card's first
   FSRS
   review, so existing progress isn't reset. No compat shim, pre-1.0.
+
 - **Breaking: `% unlock-stage:` removed** (the directive, the `--unlock-stage`
   flag, and the `[defaults] unlock-stage` key). A deck's exam is now gated on
   **graduation**: it turns *exam due* once every card has reached FSRS's review
   phase (past the initial learning steps), rather than at a configurable stage
   bar.
+
 - **Retirement is now interval-based.** A card retires (rests until `alix
   reset`)
   once its FSRS interval reaches `retire_after` (default 1 year, configurable,
   `never` to disable) — previously it retired at the top Leitner stage.
+
 - **`--cram` refreshes without rewarding.** A correct answer under `--cram` now
   re-anchors the card's due date by its current interval — no FSRS update, no
   reward — so cramming keeps cards fresh without inflating their schedule; a
   cram
   miss still lapses normally. Previously `--cram` fully rescheduled every
   answer.
+
 - **`alix serve --lan` now requires the pairing token** on `/api/*`
   (auto-generated
   unless you set one). The HTML shell, theme assets, and images stay open — only
   the JSON API is guarded; localhost serving is unchanged (open).
+
 - **Breaking: `alix trace --serve` removed.** Trace walking in the browser now
   goes through `alix serve`'s deck picker (pick the trace) — the standalone
   single-trace web server is gone, so there's now exactly one web server. `alix
   trace <deck>` still walks in the terminal.
+
 - **The tutor is now backend-agnostic ("Ask Tutor" / "Tutor").** The in-session
   tutor was labelled "Ask Claude" in the UI and docs. It works with every
   supported backend (Claude, Gemini, Codex, Copilot), so it is now called
   "Tutor" throughout — in the ☰-menu button, the hint text, the README, and
   the book. The `[ask]` config section name is unchanged (it was already
   neutral).
+
 - **Breaking — `alix check` is now `alix deck check`.**  Deck validation moved
   under the `deck` noun-group for consistency with `alix deck generate`/`alix
   deck augment`. The command is identical; only the path changed: `alix check
   <deck>` → `alix deck check <deck>`. No compat shim, pre-1.0.
+
 - **Multi-turn tutoring works on every backend.** Claude keeps a running
   conversation with its session flags (`--session-id`/`--resume`); other CLIs
   don't have those, so alix drops them for a backend without a session
@@ -1550,6 +1769,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Q&A transcript into each prompt — a follow-up on a non-Claude backend carries
   the prior questions and answers, so the tutor no longer forgets what you just
   asked. Claude's efficient `--resume` path is unchanged.
+
 - **Breaking — config keybindings are namespaced under `[keys]`.** Every key
   table
   is now a `[keys.*]` subtable: `[keys]` → `[keys.review]`, `[picker]` →
@@ -1562,6 +1782,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bare `[keys]` section now error (no compat shim, pre-1.0). `alix config
   --init`
   writes the new layout.
+
 - **Review cards settle a short answer below the midline.** The answer region
   now
   grows to fill the space between the question and the note and centers its
@@ -1572,6 +1793,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers and cited excerpts still top-align and scroll (using the whole card),
   and
   the question never shifts when the answer is revealed. Applies in browse too.
+
 - **Web picker: cleaner dependency-tree lines.** The workspace drill-in's tree
   connectors (`├─` / `└─` / `│`) are now drawn as subtle dotted CSS guides in
   the row
@@ -1580,6 +1802,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than crossing the gaps between rows — instead of single-line
   box-drawing
   glyphs that broke into disconnected segments on the tall rows.
+
 - **Multi-line review answers left-align by default.** An answer with more than
   one
   line (a list, or several sentences) now renders as a left-aligned block,
@@ -1588,6 +1811,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ragged
   — especially for lists). Single-line answers stay centered, and reshaped-list
   bullets are unchanged.
+
 - **The web UI header shows an animated `alix` wordmark.** The lightning-bolt
   mark in
   the review/picker and trace-walk headers is now a self-contained `<alix-logo>`
@@ -1600,6 +1824,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   brand mark — is now single-sourced (`_head.html` / `_brand.html`, filled in by
   the
   server) so all pages stay consistent.
+
 - **Trace walk is now an in-page mode of the web review UI.** Picking a trace
   from
   the deck-selection screen no longer navigates to a separate `/walk` page — the
@@ -1613,6 +1838,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the previous version's page on the same address. The app shell and its
   assets now demand revalidation (`no-cache`) and live JSON state is never
   cached (`no-store`).
+
 - **Browse left-aligns multi-line answers like review.** The read-only browser
   decided the left-aligned-block layout from the reshaped-list flag alone, so an
   unaugmented multi-line answer rendered centered (ragged, each line on its own
@@ -1621,6 +1847,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multi-line answer is a left-aligned block centered as a whole; only reshaped
   lists
   get bullets.
+
 - **Web: Backspace leaves the augment view.** The augment screen accepted only
   `Esc`
   to return to the picker, while browse and the picker also honour `Backspace` —
@@ -1628,6 +1855,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Backspace` felt inconsistent across views. It now leaves the augment view
   too, while
   the guidance box still edits its own text with `Backspace`.
+
 - **Web picker: the header buttons are legible on light themes.** The ☰ menu and
   the
   ← / ⟳ nav buttons used the muted `--dim` colour, too low-contrast on some
@@ -1635,6 +1863,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themes (e.g. Solarized Light); they now use the main text colour, so they read
   on
   every theme.
+
 - **Web picker: clicking empty space keeps keyboard focus.** A click anywhere in
   the
   picker area that isn't a row or control — including the margins around the
@@ -1643,6 +1872,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   row-nav keys
   go dead); it re-homes to the current (or first) row so arrow-key navigation
   stays live.
+
 - **`alix explore --build` freezes cited excerpts more reliably.** When a
   generated
   `% at:` locator dropped (or added) a leading subdirectory — e.g. `chapter.md`
@@ -1654,6 +1884,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the excerpt, and the fill prompt pins every locator to one consistent root so
   the
   mix is less likely to arise.
+
 - **Workspace icons draw fast, without timing out.** The `explore --build` icon
   prompt now caps the emblem at a few compact primitive shapes instead of
   letting
@@ -1675,6 +1906,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   list (also bound to the new `r` key). Refresh moved out of the burger menu,
   and
   the drill-in's footer "Back" chip is gone — the header **←** replaces it.
+
 - `alix deck augment --target format` — a non-destructive pass that reshapes a
   badly-shaped card (e.g. a list crammed into one prose answer) into clean
   display lines, a tidier front/note, and a suggested answer mode, applied at
@@ -1683,6 +1915,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   web Augment screen. The reshaped output drops noisy inline backticks and puts
   a
   code snippet in a fenced block, rendered as a monospace code box on the card.
+
 - **Augment decks from the web picker — no CLI needed.** Press **`a`** on a deck
   (or its new **Augment** button) to open a screen of what its augmentation
   cache
@@ -1696,6 +1929,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   CLI
   does, so review reads it unchanged. Decks only; workspaces don't show it. (The
   terminal surface comes later — the library and server logic are shared.)
+
 - **New cards are introduced as an *attempt*, not a cold quiz (acquire).** A
   never-seen card no longer drops you into a quiz you can't pass — its first
   encounter is a low-stakes try, then the answer, then one key ("Seen") files it
@@ -1713,6 +1947,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Terminal and web. The **acquire** step of the acquire → explain → maintain
   card
   lifecycle (the explain step shipped below).
+
 - **Explain-mode key points — a checklist that derives the grade.** A new
   augmentation, `alix deck augment <deck> --target keypoints`, has Claude break
   each card's answer into the few load-bearing claims a reconstruction must hit
@@ -1728,11 +1963,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with `[ai] keypoint_count` (default 5). First step toward an acquire → explain
   →
   maintain card lifecycle.
+
 - **Web picker header.** The deck filter moved into the header — a compact box
   centered on the list — and a **burger menu (☰)** there holds **keyboard
   shortcuts**, **refresh decks**, **about** (the version, via a new
   `/api/version`
   endpoint), and **Theme…**. The **Mastered** jump moved to the header too.
+
 - **Workspace icons in the web picker.** A workspace can show a small emblem
   next
   to it in the picker for quick recognition. Generated as an abstract SVG by
@@ -1741,6 +1978,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix.toml` (else a conventional `assets/icon.*`). SVGs are tinted to the
   active
   theme; rasters show as-is.
+
 - **Topology-ordered review (experimental).** `alix deck augment <deck> --target
   topology` derives a graph of how a deck's cards relate — labeled edges, a
   suggested walk, and coarse named **regions** — cached beside your progress (a
@@ -1761,6 +1999,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with **← / →** — with the selection's **due/new count** shown at the right
   end,
   all before the session starts (the in-card breadcrumb stays read-only).
+
 - **The ask-Claude tutor grounds a frozen card in its live source.** For a card
   in a frozen workspace (`alix explore --into --build`), the tutor now reads the
   **original crate** for context — explaining how the cited code fits the
@@ -1774,11 +2013,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answer."* so you can update or drop the card. The **trace-walk tutor**, which
   had no grounding at all, gets the same treatment. Gated by the existing
   `[ask] source_access` opt-in.
+
 - **`% origin:` — the live source root a frozen deck's snapshots came from.**
   Written into a workspace's `alix.toml [defaults]` at build time and cascading
   **workspace → deck → card** like every other directive (a card may override it
   for a cross-repo source), it lets the tutor and drift detection find the real
   crate even though `% source:` points at the opaque `assets/`.
+
 - **`alix check` flags drifted frozen cards.** When a frozen card's snapshot no
   longer appears in its live source — the lines changed, or the file is gone —
   it
@@ -1786,6 +2027,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   you
   can refresh or remove that card. A snippet that merely *moved* within the file
   is not flagged.
+
 - **Ask Claude during a trace walk.** The web walk now has an **Ask** button on
   each reveal (and the `?` key) — the same tutor a card review offers, scoped to
   the current checkpoint (its question, key points and the live source excerpt).
@@ -1793,12 +2035,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   close. The ask machinery is now a shared component used by both the review and
   the walk, so one CLI conversation spans the session. Hosted walks only (the
   picker → walk flow); the standalone `alix trace --serve` is unaffected.
+
 - **A "⌵ N more" marker when a source excerpt overflows the card.** A reveal
   whose excerpt is taller than the card shows a small `⌵ N more lines` pill at
   the
   cut edge (counting the hidden lines), in both the trace walk and a fact card's
   `% at:` citation — and it appears immediately on an overflowing excerpt, not
   only after the first scroll. The subtle edge-fade stays underneath it.
+
 - **A trace's exam is its compression — AI-graded.** A trace's `% trace:` is a
   question ("how X becomes Y"); its **exam** is to answer it — retrace the whole
   path in a sentence or two from memory — and Claude grades that *holistically*
@@ -1818,6 +2062,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it). Built on the existing exam engine (`Sitting::start_trace` +
   `grade_compression`), so the TUI `ExamApp` and the web exam overlay drive it
   unchanged.
+
 - **Browse a deck straight from the web picker.** A deck row's primary action is
   now **Review** (Enter), with a new **Browse** button (the go-right key, `l`/→)
   that opens a read-only walk through its cards — the review server hosts the
@@ -1825,6 +2070,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server. A workspace/folder still opens (drills in) on `l`/→; leaving a browse
   returns to the picker (and re-opens the launching workspace). Browse-from-the-
   picker is view-only (card removal stays a feature of `alix browse --serve`).
+
 - **Web UI theme gallery — alix's own themes plus popular editor/slide
   palettes.**
   The web frontend (`--serve`) ships a gallery of colour themes: the alix
@@ -1840,6 +2086,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server-served `theme.css` so every screen themes together; the default stays
   the
   original dark, so nothing changes unless you choose.
+
 - **`alix deck augment` — deliberate AI deck augmentation.** A new command that
   enriches an existing deck with Claude and **caches the result** beside your
   progress (`augment.json`, keyed by card id); review reads the cache, so study
@@ -1856,6 +2103,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recognizing one fixed wording (plain, non-cloze cards). `--with "<guidance>"`
   steers how. Tuned under
   `[ai]` (`model`, `distractor_count`, `variant_count`, `timeout_secs`).
+
 - **`alix check` rejects a cloze whose entire answer is one hole.** A `#?` card
   whose only hole spans the whole answer (e.g. `` `{{IdentStr}}` ``, with
   nothing
@@ -1875,6 +2123,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   workspace). The intro prose and the "select decks" label are gone, and the
   list
   fills the space.
+
 - **Browse is now an in-page mode of the web app — no separate `/browse` page.**
   Hitting **Browse** in the web picker (or `alix browse <deck> --serve`) opens a
   read-only overlay right in the main app — step through every card with
@@ -1883,6 +2132,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `browse.html` page and the `/browse` route are gone; terminal `alix browse` is
   unchanged. **Breaking:** the web browse is read-only (card removal stays a
   terminal `alix browse` feature).
+
 - **Reshaped list answers show as a left-aligned bullet list.** When the
   `format`
   augment turns a crammed prose answer into a multi-item list, the web review
@@ -1891,27 +2141,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   centered as a whole). Single-line tidies and a card's own authored back lines
   (a
   poem, typing answers) are left as-is.
+
 - **Bigger cards in the web review and browse views.** The card was capped small
   (≤820/720px wide), so it sat in a sea of empty space on a normal screen at
   100%
   zoom and long questions/answers wrapped early. It now caps at ~1200px wide
   (94vw)
   and ~780px tall, filling far more of the viewport.
+
 - **Web picker: `←`/`→` (and `h`/`l`) now step the focus drawer's regions, and
   going back is `Esc`/`Backspace` only.** The drawer needs left/right to move
   between regions, so those keys no longer double as "back out"; with no drawer
   open, `→` still enters a workspace / launches a deck and `←` is inert.
+
 - Browse now shows the same display augmentations as review — the `format`
   reshape and `notes` trivia — so the two views render a card the same way
   instead of browse falling back to the raw deck.
+
 - `alix deck generate` now shapes cards better: it splits enumerations into
   one-idea cards (or uses `% mode: line` for ordered lists) and structures
   answers and notes instead of producing prose blobs — the same shaping now
   applies to `alix explore --build` decks.
+
 - **Breaking:** card identity is now whitespace-insensitive — an answer's id no
   longer depends on line breaks, indentation, or repeated spaces (only its
   words). Cards whose answers span multiple lines or use irregular spacing get a
   new id once and reset their review progress.
+
 - **Leitner stage 1 now has a ~5-minute relearn/settle cooldown** (was 0). A
   newly
   acquired or freshly failed card becomes due ~5 minutes out for the *next*
@@ -1919,6 +2175,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   just saw or just missed. In-session drilling is unchanged — a failed card
   still
   comes back the same run (the queue is served by position, not by due time).
+
 - **Web picker keys.** Clicking a deck now **selects** it (opening its focus
   drawer when it has a topology) rather than launching outright — **Review** or
   Enter launches. **Browse** moved to **`b`**, freeing **← / →**: they step the
@@ -1928,9 +2185,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   release,
   so only the Browse-key and click-to-select changes affect existing muscle
   memory.)
+
 - **`alix deck augment` says what it's doing.** It now prints which augmentation
   it's generating, for which deck, and with which model before the (foreground,
   possibly slow) Claude call, instead of hanging silently until the result.
+
 - **Breaking — one deck per session.** `alix review` and `alix browse` now take
   exactly one deck *file*: merging several loose decks into a combined session
   is
@@ -1939,6 +2198,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix workspace <dir>` opens that picker), and a member still inherits the
   workspace's directives and store. `stats`/`list`/`reset` still take multiple
   decks (they're per-deck operations, not a merged session).
+
 - **Breaking — review grades are now `failed` / `partly` / `passed`, replacing
   `again` / `good` / `easy`** (shown in the UI as **Missed it / Partly / Got
   it** —
@@ -1957,6 +2217,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   existing config with the old keys is rejected with an error naming the valid
   keys (`alix config --init` shows the new template). Pre-1.0, no shim. Progress
   files are unaffected — grades were never stored by name.
+
 - **Breaking — the freeze format records provenance on the `% at:` line, not a
   note.** Freezing a workspace now writes `% origin:` (the live crate root) and
   appends each card's original location to its locator
@@ -1967,25 +2228,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exam, but the tutor can't ground them until re-frozen** (re-run
   `alix explore … --build`). Pre-1.0, so no compatibility shim. Card identities
   are unaffected (`% at:`/`% origin:`/notes are not hashed).
+
 - **The review header no longer shows the stage ladder.** The always-on
   `new|s1|s2|…` stage histogram is gone from the review header (TUI and web) —
   it
   was noise; the per-stage breakdown stays in the end-of-session summary.
+
 - **Returning to the picker keeps your place.** After a review/browse/walk/exam,
   the deck picker re-lands the cursor on the deck you just launched (rather than
   jumping to the top), so you can step straight to the next — often dependent —
   deck. Both the terminal picker and the browser picker (the top list and a
   workspace drill-in).
+
 - **The Mastered window shows when a deck was mastered and how much is left to
   drill.** A mastered deck's badge now reads e.g. `mastered 🎉 · 3w ago · 8 to
   drill` — the time since it passed (the `deck_mastered` timestamp was already
   stored) and how many of its cards aren't yet retired (so a deck you *tested
   out* of without drilling shows the work remaining). Both TUI and web.
+
 - **Web picker draws the dependency tree like the TUI.** A workspace's members
   now show `├─`/`└─`/`│` branch lines (muted) instead of plain indentation, and
   the 🕒 "nothing due" glyph moved from the start of the row to the end (with the
   status), so the left gutter is just tree + title. (The server already computed
   the prefix for `depth`; it's now sent to the browser.)
+
 - **`alix explore` generates short, title-cased deck/trace titles.** The plan
   prompt asks for a terse title, but the model ignored it and appended the
   deck's
@@ -1998,17 +2264,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   …`, and stop truncating in the picker. The condensed title also drives the
   file
   name, so slugs no longer trail a stray word from the cut enumeration.
+
 - **Web trace walk: the leave button reads "Leave" and confirms an unfinished
   walk.** The hosted walk's return chip was "Decks"; it's now "Leave" (matching
   a
   fact-deck session), and leaving before the last checkpoint shows a "Leave the
   walk before finishing the path?" prompt (Enter leaves, Esc stays) — the same
   guard as review and exam. A finished walk still leaves immediately.
+
 - **Web exam: leaving mid-answer asks to confirm.** Pressing Esc (or Quit) while
   answering now shows a "Quit the exam? Your answers won't be graded" prompt —
   Enter abandons it, Esc keeps going — so a stray Esc no longer throws away an
   in-progress exam, matching the review-session leave guard. (Other phases close
   immediately; the typed answer is preserved if you keep going.)
+
 - **Reviewing a deck no longer pulls in its prerequisites' cards.** A review (in
   the TUI/CLI) now holds exactly the deck(s) you picked — `% requires:` decks
   are
@@ -2016,6 +2285,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Dependencies are about *order and gating* (the picker tree + the exam gate),
   not what a session contains. (Removed the `resolve_deck_order`/`dep_ranks`
   machinery; book + README updated.)
+
 - **Breaking — a trace masters by passing its exam, not by finishing the walk.**
   Walking a trace is now the *drill*: completing the walk no longer masters it
   (the earlier "mastered once every checkpoint retires" behavior is gone). A
@@ -2026,6 +2296,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   older alix now cleanly refuses a v2 store with an "upgrade alix" message
   rather
   than mis-reading the new deck-progress shape).
+
 - **`% requires:` now gates the exam, not drilling.** You can review/drill any
   deck at any time, in any order — a prerequisite-locked deck is no longer
   blocked in the picker (it stays bright and startable; the lock is named
@@ -2038,16 +2309,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   informational in the dependency tree, seen *through* to the nearest sourced
   ancestor. (`is_locked` counts only sourced prereqs; both pickers and the
   exam-due review shortcut respect the new gate.)
+
 - **`alix deck` is now a command group: `alix deck generate` + `alix deck
   augment`.** **Breaking:** `alix deck <source>` is now `alix deck generate
   <source>`.
+
 - **Choice-mode offline distractors are shape-aware.** Number-like answers now
   only compete with the same shape (a 4-digit year vs other years, not a `1,5`
   ratio or a 2-digit count), so an obviously-wrong option no longer slips in.
+
 - **Ask-Claude (web): Enter now inserts a newline and Shift+Enter sends.** The
   ask box is a multi-line textarea, so plain Enter composes freely and a
   deliberate Shift+Enter submits the question (the Send chip and placeholder
   show the hint). Previously Enter sent and Shift+Enter made the newline.
+
 - **Web exam: Shift+Enter advances** to the next question (or submits, on the
   last), matching the ask box — Enter still inserts a newline so multi-line
   answers compose freely, and the Next/Submit button now shows the binding.
@@ -2062,6 +2337,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   description (`How a Workout Starts, Logs a Set, and Advances to the Next`),
   condensed to a label-sized head so a long `--build`/hand-written path-question
   doesn't overrun the row. Plain decks (a `% title:` or neither) are unaffected.
+
 - **A trace `--grade` reply that isn't a real verdict now errors instead of
   being
   scored as a miss.** The per-hop grader expects the model to answer
@@ -2069,6 +2345,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instruction) used to silently fall through to a failing grade — fabricating a
   verdict the model never gave. It now surfaces an error and falls back to
   self-grading, so a correct prediction is never quietly marked wrong.
+
 - **`alix explore --into --build` now actually freezes its `assets/`.** The
   generated `% source:` paths were silently doubled: when `--source` is a
   subdirectory (a crate) but the plan writes a scope relative to the project
@@ -2081,11 +2358,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (the write-time twin of the `% at:` read fix), so the citations resolve and
   the
   excerpts freeze.
+
 - **A multi-file `% source:` (`a.rs + b.rs`) now freezes every cited file.**
   Snapshotting treated the whole ` + `-joined line as one literal path, so a
   multi-file source froze nothing; it now splits the source exactly as the
   review
   path does (shared `SourceBase`), so freeze and review can't disagree.
+
 - **A missing or stale `% source:` base fails with a clear message.** A
   directory
   `% source:` that no longer exists used to have the locator joined onto it,
@@ -2093,15 +2372,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the
   real cause — the source base doesn't exist (the path is likely stale or
   wrong).
+
 - **A cited deck that can't be frozen is reported, not swallowed.**
   `alix explore --build` now warns which deck's source couldn't be read instead
   of silently leaving an empty `assets/`.
+
 - **A `% at:` locator written relative to a project root above `% source:` now
   resolves.** When a deck scopes `% source:` to a subdirectory or file (e.g.
   `…/crate/src/executor`) but writes its `% at:` paths from the crate root
   (`src/executor/local_vm.rs`), joining them doubled the overlap
   (`…/src/executor/src/executor/local_vm.rs`, "no such file"). Resolution now
   walks up the base directory's ancestors until the cited file is found.
+
 - **Frozen-snapshot excerpts show the original file and line numbers.** A walk
   or
   fact card whose `% source:` is a frozen `assets/` snapshot showed the asset
@@ -2110,17 +2392,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to the original `caching.rs:106-120` (from the location recorded on its `%
   at:`
   line) — in the walk, the fact-card citation and the terminal walk.
+
 - **A long (hand-crafted) deck title no longer reflows the header.** The
   review/browse/walk headers truncate an over-long title with an ellipsis
   instead
   of wrapping to a second line and growing the header's height.
+
 - **No stray blinking caret across the web app.** The caret is suppressed on
   card/slide prose everywhere — review, browse, and the trace walk — appearing
   only inside a real text input or a source-code excerpt (e.g. with the
   browser's
   caret-browsing on).
+
 - **Ask-Claude (web): the input re-focuses when a reply lands**, so you can type
   a follow-up immediately instead of clicking back into the box.
+
 - **A trace/fact citation against a single-file `% source:` no longer doubles
   the
   path.** When `% source:` is one file, every `% at:` reads *that* file; a
@@ -2131,10 +2417,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `…/src/executor/src/executor/env.rs` ("no such file"). Both the walk reveal
   and
   `alix check` now share one `locator_path` resolver, so they can't disagree.
+
 - **Opening a deck with nothing due no longer bumps it to the top of the recent
   list.** A review now records the deck as "recent" only when the session
   actually has cards to review (`!session.is_finished()`), so merely entering a
   fully-drilled / all-on-cooldown deck leaves the recent order untouched.
+
 - **A fact card's `% at:` citation resolves against a multi-file `% source:`.**
   A
   deck whose `% source:` joins several files with ` + ` (the generator's format,
@@ -2171,6 +2459,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exams
   first). In the browser picker, a focused examable deck gets a **"Take exam"**
   button (and the `x` key); `alix exam <deck>` does the same from the terminal.
+
 - **The web deck-selection screen now mirrors the terminal picker.** It is
   **single-launch** (no checkboxes): click a deck to start it, or open a
   **Workspace** / **Folder** to drill into its **unlock dependency tree** (each
@@ -2192,22 +2481,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   consumed by both frontends. A **trace** picked from the in-browser picker now
   **walks** (predict → verify, just like the terminal), hosted by the review
   server at `/walk`; a **Back to decks** (or `Esc`) returns to the picker.
+
 - **A card that reaches the top Leitner stage now retires** (rests, no longer
   scheduled until `alix reset`) instead of recurring at the stage-5 weekly
   cooldown, so a *finished* deck stays finished.
+
 - The TUI's remaining-card count moved from the header to the bottom-right of
   the footer, shown as `N↓` after the pass/fail tally — matching the web
   frontend's score line (the header now carries only the stage histogram).
+
 - Typing mode grades multi-line answers **order-independently**: a card whose
   answer is several items can be typed in any order, each completed line matched
   to whichever expected line it best fits (TUI and web). Single-line answers are
   unchanged.
+
 - Typing feedback now keeps the typed text on screen and, on a wrong line, shows
   the correct answer underneath with a check mark (the TUI previously discarded
   the input and repainted only the answer; the web already did this).
+
 - "New session" on the summary is disabled when nothing is due: the TUI omits
   the hint and makes the key inert, the web disables the button and shows a
   "nothing due" note — instead of only reacting after the key is pressed.
+
 - **Breaking — cloze hole syntax is now `{{ }}`** (was `{ }`). A lone `{` or `}`
   is literal inside `#?` cards, so code with braces needs no escaping. Cloze
   identity is now hashed from the parsed structure (delimiters removed) rather
@@ -2215,19 +2510,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   but
   future markup changes won't cost progress again. Existing `#?` decks must be
   rewritten `{x}` → `{{x}}` or they fail to load (they'd have no holes).
+
 - Note rendering moved into a frontend-independent `render` module that emits a
   structured model (`NoteUnit`: sentence-split prose or verbatim code blocks);
   the TUI now only paints it. No change to how notes look — this lets a future
   frontend reuse the same note structuring instead of reimplementing it.
+
 - The answer mode is now resolved per card instead of once per session:
   CLI `--mode` > the card's `% mode:` > the deck's `% mode:` > the built-in
   default. `--mode` still forces every card.
+
 - Deck-level directives (`% mode/order/scheduler`) must now sit in the deck
   header, before the first card; a `% key: value` after a card front is treated
   as a per-card override.
+
 - `alix check` no longer fails on warnings: duplicate-answer warnings are
   advisory, so it exits non-zero only when a deck won't parse, and prints a
   `N error(s), M warning(s)` summary.
+
 - Web review now shows the expected answer whenever a typed line differed —
   including a fuzzy pass within tolerance — matching the TUI, so typos aren't
   reinforced.
@@ -2258,6 +2558,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   against
   them. (Snippet names are workspace-unique now, so multiple frozen decks no
   longer collide in `assets/`.)
+
 - **`% unlock-stage: N` — unlock a deck before its cards retire.** A `% source:`
   deck becomes *exam due* (its exam opens), and a source-less deck *finished*
   (its dependents unlock), once **every card reaches Leitner stage N** — without
@@ -2268,18 +2569,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stage. Settable per deck, in a workspace `alix.toml`
   `[defaults]`, or via `alix explore --into --unlock-stage <1–5>`. Generalizes
   the completion gate (`Deck::state`).
+
 - **Browse a deck from the session-end summary** (terminal). When a deck turns
   *exam due* at the end of a review, the summary now offers `b` to **browse** it
   (a read-only walk through its cards) right next to `x` to sit the exam —
   useful
   for a last skim before the exam. Both the offer line and the footer show the
   keys. (`App` returns an `AfterReview::{Exam,Browse}` for `main` to launch.)
+
 - **The progress store is now version-checked.** A `progress.json` written by a
   newer alix is refused on open with a clear "upgrade alix" message instead of
   being silently rewritten at the old version (which could drop data the newer
   format added); the file on disk is left untouched. A store with no `version`
   field still loads as the original format. This lays the groundwork for safe
   schema migrations.
+
 - **The ask-Claude tutor can read the card's source to verify its answer
   (opt-in).** A new `[ask] source_access` flag (off by default) lets the tutor
   run with `Read`/`Glob`/`Grep` and its working directory at the deck's
@@ -2293,6 +2597,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shows **which model and effort** are answering (`model: … · effort: …`) — a
   reminder that the tutor uses the CLI default unless `[ask]` pins a stronger
   one.
+
 - **`alix explore --title` shapes the scaffolded workspace; the goal becomes its
   description.** `alix explore --into <dir>` now takes an optional `--title` for
   the workspace's `alix.toml` `title` (omitted, the folder name is used). It
@@ -2302,6 +2607,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   workspace's `description` shows **dim under its row** in both pickers
   (terminal
   and web).
+
 - **Confirm before abandoning a review; commit the picker filter with Esc**
   (terminal) — quitting a review **mid-session** now asks to confirm (`Enter`
   leaves, any other key stays), so a stray `Esc` no longer drops a queued
@@ -2311,6 +2617,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   drops to the list focused on the first match (a second `Esc` clears it),
   instead
   of discarding what you typed.
+
 - **Picker disables decks with nothing to review** (terminal) — a deck with no
   card due right now (fully drilled, or all on cooldown) is dimmed and badged
   with a 🕒 clock, mirroring how a 🔒 locked (`% requires:`) deck looks, and
@@ -2320,6 +2627,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   startable ones. `--cram`, which ignores cooldowns, turns the gating off;
   browse
   never gates (any deck is browsable). New lib helper `session::has_reviewable`.
+
 - **Reworked deck picker + trace walking from the picker** (terminal) — the
   no-argument picker is a clean, **single-launch** list (no checkboxes): `Enter`
   opens the focused row. Its header is just `alix`; rows are grouped into
@@ -2369,6 +2677,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multi-select machinery is retained in the code but unused for now. The web
   picker
   follows in a later phase.
+
 - **Per-workspace progress store** — a deck inside a workspace (a folder with a
   `alix.toml`) now tracks its progress in a **`progress.json` inside that
   workspace**, not the one global `~/.local/share/alix/progress.json`. So a
@@ -2382,6 +2691,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `browse`, `stats`/`list`, `reset`, `alix workspace`); the web frontend follows
   with the picker revamp. (No migration — workspace decks start fresh in the
   workspace store; existing global progress for them is left in place.)
+
 - **Trace source snapshots** — creating a workspace by exploring a source
   (`alix explore --into <dir> --build`) now **freezes the cited excerpts** into
   the workspace as its final step: for each checkpoint it writes a small snippet
@@ -2398,6 +2708,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version-control assumption). It's automatic for explored workspaces, not a
   command; a loose trace over a live `% source:` is left as-is. Rationale in
   `docs/traces.md`.
+
 - **`alix import <file.tsv>`** — import an Anki "Notes in Plain Text" export
   (tab-separated `front<TAB>back`) into an alix deck, no Claude needed. It skips
   Anki's `#`-prefixed header lines, turns `<br>` tags into separate answer
@@ -2407,6 +2718,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`-o`/`--print`/
   `--force`, like `alix deck`). Conversion lives in the lib
   (`import::tsv_to_deck`).
+
 - **`alix check` now validates trace `% at:` locators.** A trace deck is linted
   like any other: `check` resolves each checkpoint's locator against its
   `% source:` and warns (advisory, non-fatal) about any that name a missing
@@ -2416,6 +2728,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check that catches a moved or trimmed source before a walk hits it. (Frozen
   snapshots are validated the same way.) It also prints the deck's `% trace:`
   description. Logic in the lib (`trace::Trace::lint_locators`).
+
 - **`alix deck <source>`** (renamed from `alix generate`, which no longer
   exists as an alias) — generates a facts deck with Claude from a **web page URL
   or a
@@ -2426,6 +2739,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stub
   from `alix explore --into` a manual fill path (point `alix deck` at its
   `% source:`).
+
 - **Traces (`alix trace`, experimental)** — a guided predict-and-verify walk
   along a *path* through a `% source:`, drilling the connections between facts
   (the edges) rather than isolated facts. A trace deck declares a `% trace:`
@@ -2471,6 +2785,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prints a ranked menu of candidate traces to author — a path-question, a spine
   sketch, and a suggested scope each, no checkpoints — closing the "what's worth
   tracing?" gap before `--build`.
+
 - **`alix explore <source>` (experimental)** — goal-driven exploration:
   prints an ordered **learning plan** toward a `--goal` (default
   "understand the whole source"), the fact **decks** and **traces** worth
@@ -2499,6 +2814,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file
   (`-o`, default `explore.txt`) and walked immediately, reusing the `alix trace`
   walk; re-walk later with `alix trace <file>`.
+
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   A folder is a **workspace** when it has an `alix.toml` manifest (a scoped
   `config.toml`) setting a `title` and a `[defaults]` table of directives that
@@ -2515,9 +2831,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck** → predict-verify walk — returning to the picker when done. Great for
   clusters like a vocabulary set that should all be `direction = "both"` without
   repeating it per file.
+
 - `% title:` deck directive (also usable in a `workspace.alix` manifest): a
   display name shown in the picker, session header, `alix list` and `alix stats`
   instead of the file name. Display-only and never part of card identity.
+
 - **`alix exam <deck>`** — the AI exam, which *verifies understanding* and
   gates progression (rung 3 of the AI-exam direction). A deck declares its
   ground truth with `% source: <url-or-file>` (repeatable); the exam asks Claude
@@ -2553,6 +2871,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the
   **session-end summary** when a deck you were drilling just became exam-due.
   Exam-due decks aren't tickable into a merged review (they have no due cards).
+
 - `% mode: explain` — **understanding cards**. The front is an open prompt and
   the back lines are the *key points* a good answer should cover (not a string
   to
@@ -2561,6 +2880,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   understanding over recall. The typing is optional and unchecked (a self-graded
   mode can't verify it); the web shows your answer beside the points. Works in
   both frontends and pairs with ask-Claude. (Daily tier of the planned AI exam.)
+
 - Ask-Claude in the **web frontend** (`--serve`): an "Ask" button / the `?` key
   on an answered card opens a chat panel (Send / Save note / Close), mirroring
   the TUI feature. The server runs `claude -p` on a background thread and the
@@ -2568,6 +2888,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conversation spans the session (`--session-id`/`--resume`), and Save note
   appends a condensed note to the deck file. Reachable wherever you serve,
   including `--lan`.
+
 - Deck completion states and unlocks. Each deck has a state derived from its
   cards' stages — not started / started / finished (all cards at the top stage)
   — shown in the deck picker (terminal and web) and `alix stats`. A deck is
@@ -2575,9 +2896,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (finishing a foundation unlocks what builds on it); locked decks are dimmed
   with a 🔒 but stay selectable (advisory). Derived live from progress, with no
   new directive or storage.
+
 - Repeated `TAB` in typing mode progressively reveals the answer: each press
   uncovers two more characters until the line is fully shown (still counts the
   card as failed); typing or deleting resets the reveal.
+
 - In-browser deck selection: `alix --serve` (and `alix browse --serve`) with no
   deck files now opens a deck-selection screen in the browser instead of the
   terminal picker — a checklist of the same decks (recent first), with a Start
@@ -2586,12 +2909,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (on the summary or the menu) to study a different deck without restarting.
   Selection only accepts deck names from the live catalog, so no path is built
   from request input.
+
 - Mark a card for removal during review or browse with the new `remove` key
   (default `Ctrl-X` in review, `x` in browse, `x`/Remove button in the web UI).
   It is dropped without being asked again (cloze siblings too); the marked
   cards are deleted from their deck files and their progress is pruned — at
   the end of the session in the TUI, immediately in the web UI (which has no
   end-of-session).
+
 - Local web frontend: add `--serve` to `review` or `browse` to run it in the
   browser instead of the terminal, reusing the same session logic and writing
   to the same progress store, so browser and CLI share one history. All answer
@@ -2600,19 +2925,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by default; `--lan` exposes it to the network (no auth), `--port`/`[serve]`
   set the port (both `--port` and `--lan` require `--serve`). Built on
   `tiny_http`.
+
 - Per-card answer mode: a `% mode:` directive placed after a card's front
   overrides the deck's `% mode:` for that card only, so one deck can mix modes
   (e.g. a `line` lyrics card among `flip` cards). Cloze sub-cards inherit their
   source card's mode.
+
 - A mode badge at the top of the answer section on every card, in both the TUI
   and the web app — `flip`, `typing exact`, `typing fuzzy`, `choice`,
   `line by line` — so typing vs fuzzy (otherwise identical input prompts) is
   clear at a glance.
+
 - Dual-direction cards: a `% direction:` directive (per card or deck-wide,
   `forward`/`reverse`/`both`) reviews a card both ways — `both` generates the
   card and its swap (e.g. `purported → angeblich` and back). The two get
   distinct progress, are kept apart in the queue, and are removed together;
   cloze cards are unaffected.
+
 - Image cards: `% img:` (question side) and `% img-back:` (answer side, revealed
   with the back) attach an image to a card; a deck-level `% img-dir:` sets the
   folder filenames resolve against (else the deck file's folder; absolute card
@@ -2623,6 +2952,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directive (per card or deck-wide) controls this explicitly; `alix check` warns
   about missing image files. `/img/<key>` URLs are opaque hashes of registered
   deck paths, so the server never joins request input to a filesystem path.
+
 - `alix reset` clears stored progress: for one or more decks, a single card
   (`--card <id-or-front-text>`), or everything (`--all`). With no decks it opens
   the same checkbox picker as `review`/`browse` to choose them; `--cards` opens
@@ -2638,6 +2968,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cards running together. The first card stays attached to its `%` header, and
   an
   already-separated deck is left untouched.
+
 - **A note saved from the ask tutor shows on the card right away.** Saving a
   note appended it to the deck file but left the in-memory card unchanged, so
   the
@@ -2650,6 +2981,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   updated the ask view's recap, not the card on return). On the web, closing the
   ask panel now re-pulls the card state (keeping the reveal position) so the
   saved note appears on return instead of only after a manual page reload.
+
 - **The web ask panel shows the card above the conversation, matching the
   terminal.** The card under discussion (its front + answer) now sits at the top
   as the reference, with Claude's conversation flowing below it (answer under
@@ -2659,6 +2991,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   used. The card and conversation now share one scroll region and the card
   **sticks to the top**, staying in view as a long conversation scrolls under
   it.
+
 - **The grounded tutor no longer breaks the conversation with "No conversation
   found with session ID".** Claude scopes its conversation history by working
   directory, but the grounded tutor (`[ask] source_access`) runs each card's
@@ -2672,6 +3005,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conversation there (a clean first prompt) instead of a doomed resume, and a
   card's condense uses the **same grounding** as its questions so the directory
   stays stable. Same-directory follow-ups still resume as before.
+
 - **Exam remediation is faster, can't fail silently, and shows progress.** Three
   problems when "Add remediation cards" was slow or produced nothing: (1) the
   remediation call inherited the tutor's `WebFetch`/`WebSearch` tools and could
@@ -2686,6 +3020,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scrolls it back into view), and every in-flight Claude call (generating,
   grading, remediating) shows a **live "Claude is working… Ns" counter** so a
   long call no longer looks frozen.
+
 - **A `% source:` that names several files no longer breaks the exam.** The deck
   generator sometimes writes a multi-file source as `<root>/README.md +
   src/lib.rs`
@@ -2695,10 +3030,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ` + `, each part resolved (relative parts anchored to the first file's
   directory) and read, with unreadable parts skipped rather than aborting the
   exam. The grounded tutor's project-root resolution handles the same format.
+
 - **You can start the AI exam on a deck inside a workspace from the browser.**
   `POST /api/exam/start` only resolved top-level deck names, so the "Take exam"
   action silently failed (a 400) for a workspace **member**; it now resolves
   members by their qualified `<workspace>/<file>` name too, like `/api/select`.
+
 - **The web ask-Claude panel now shows only the current card's exchanges.** It
   was rendering the whole session's conversation, so every former card's Q&A
   piled up on screen. The display is now scoped to the card you're on (and so is
@@ -2708,6 +3045,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the input, for easy reference while you type a question. (The terminal ask
   view
   already scoped per card.)
+
 - **The TUI reflows immediately on a terminal resize.** The event loops redrew
   from a size query that could be momentarily stale right after a resize, so the
   screen sometimes stayed unchanged until the next keypress refreshed it. They
@@ -2726,13 +3064,17 @@ cards, deck dependencies, an ask-Claude helper, and AI deck generation.
   (multiple `!` lines form one multi-line note), `% ` comments, `\` to escape
   a leading markup character. Indented `#` lines are answer content, not new
   cards.
+
 - **Cloze cards**: a `#?` front with `{holes}` in the answer expands into one
   sub-card per hole; sibling holes are masked and spaced apart in the queue.
+
 - **Directives** (`% key: value`): `mode`, `order`, `scheduler` set per-deck
   defaults; read from the requested deck(s) only, overridden by CLI flags.
+
 - **Dependencies** (`% requires: <deck>`): prerequisite decks are pulled in
   transitively and ordered foundations-first; cycles and missing prerequisites
   are reported. Prerequisites contribute cards only, not directives.
+
 - **Reference links** (`% link: <url>`) are offered to the ask-Claude feature.
 
 ### Review
@@ -2740,11 +3082,14 @@ cards, deck dependencies, an ask-Claude helper, and AI deck generation.
   **fuzzy** (whole-line, typo-tolerant), **choice** (multiple choice with
   distractors sampled from the session), and **line** (reveal the back one
   line at a time — for lyrics, poems, ordered lists).
+
 - Schedulers: **Leitner** (the original 6-stage boxes, compatibility-verified)
   and **SM-2** (per-card ease factors), interchangeable.
+
 - Session controls: `--new` (new-card cap), `--limit`, `--cram`,
   `--order sequential`, restart from the summary screen, failed cards requeued
   within the run.
+
 - Notes render as a quoted block, split into sentences, with fenced code shown
   verbatim (indentation preserved).
 
@@ -2765,9 +3110,12 @@ cards, deck dependencies, an ask-Claude helper, and AI deck generation.
 
 ### Other commands
 - `alix browse` — read-only walk through cards (no grading, no writes).
+
 - `alix deps` (alias `require`) — edit a deck's prerequisites with a checkbox
   picker.
+
 - `alix stats`, `alix list`, `alix check`, `alix config`.
+
 - Startup **deck picker** (recent decks + the decks directory) when run with no
   arguments.
 

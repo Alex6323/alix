@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Wrap over-long lines in CHANGELOG.md onto the ~80-column house width.
+"""Normalize CHANGELOG.md: wrap to the ~80-column house width, one blank line
+between entries.
 
-Wrap-only, deliberately conservative (the fmt-roadmap.py sibling): a line is
-touched ONLY if it exceeds the width, so short lines and hand-made breaks pass
-through byte-identical and running this never churns deliberate formatting.
+Deliberately conservative (the fmt-roadmap.py sibling): a line is wrapped ONLY
+if it exceeds the width, so short lines and hand-made breaks pass through
+byte-identical; the only other changes are blank-line normalization between
+entries, so running this never churns deliberate formatting.
 
   * bullet entries (``- `` at any indent) continue aligned under their text
   * already-indented continuation lines keep their own indent
+  * consecutive top-level entries are separated by exactly one blank line
+    (inserted when missing; runs of blank lines collapse to one)
   * headings, link-reference definitions, and fenced code blocks are never
     touched, and a long run without spaces (a URL, a hash) is left whole
 
@@ -54,7 +58,12 @@ def format_text(text: str) -> str:
             out.append(line)
         elif fenced:
             out.append(line)
+        elif not line:
+            if out and out[-1]:
+                out.append(line)
         else:
+            if line.startswith("- ") and out and out[-1] and not out[-1].startswith("#"):
+                out.append("")
             out.extend(wrap_line(line))
     return "\n".join(out)
 
@@ -68,8 +77,8 @@ def main() -> int:
         if formatted != text:
             path.write_text(formatted)
             changed += 1
-            print(f"wrapped {path}")
-    print(f"{changed} file(s) changed" if changed else "already within width")
+            print(f"formatted {path}")
+    print(f"{changed} file(s) changed" if changed else "already formatted")
     return 0
 
 

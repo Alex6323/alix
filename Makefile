@@ -125,14 +125,16 @@ fmt-check:
 fmt-roadmap:
 	python3 scripts/fmt-roadmap.py $(ARGS)
 
-# Wrap over-long CHANGELOG.md lines at the ~80-column house width. Wrap-only:
-# lines already within width pass through byte-identical.
+# Normalize CHANGELOG.md: wrap over-long lines at the ~80-column house width
+# and separate entries with one blank line; then run the structural guard.
 fmt-changelog:
 	python3 scripts/fmt-changelog.py $(ARGS)
+	@sh scripts/changelog-check.sh
 
 # Structural CHANGELOG guard: exactly one Unreleased heading first, no
-# duplicate release headings, and the heading count never decreases vs HEAD
-# (a decrease is a truncation, which nothing else gates).
+# duplicate release headings, only Keep-a-Changelog subsection names under
+# Unreleased, and the heading count never decreases vs HEAD (a decrease is
+# a truncation, which nothing else gates).
 changelog-check:
 	@sh scripts/changelog-check.sh
 

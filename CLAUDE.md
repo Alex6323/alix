@@ -117,8 +117,8 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make bump-rust RUST=… NIGHTLY=…` | Bump the Rust pins: rewrites `rust-toolchain.toml`, `.rust-nightly-version`, and every `toolchain:` literal in the three production workflows, then runs `toolchain-check`. Either variable alone works (`RUST=X.Y.Z`, `NIGHTLY=nightly-YYYY-MM-DD`); other shapes are rejected. Drift workflows keep their floating pins. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
-| `make fmt-changelog` | Wrap `CHANGELOG.md` at the ~80-column house width (wrap-only, idempotent). |
-| `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, count never decreases vs HEAD); part of `make check`. |
+| `make fmt-changelog` | Normalize `CHANGELOG.md` (~80-column wrap, one blank line between entries; idempotent), then run `changelog-check`. |
+| `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, standard subsection names under Unreleased, count never decreases vs HEAD); part of `make check`. |
 | `make check` | `fmt-check` + `lint` + `test`, cheap checks first; run before considering work done. A local pass now implies the same Rust gates CI runs. |
 | `make gate` | `check` + `mutants`. Run ONCE, right before requesting review; never inner-loop. Nightly CI mutates one day of merges (below), which backstops this and does not replace it. |
 | `make mutants` | `cargo mutants` alone over this branch's diff vs local main (`GATE_JOBS` sets parallelism, `MUTANTS_BASE` overrides the diff base, `MUTANTS_SHARD` runs one 0-indexed shard such as `0/6`). Refuses to start while another cargo-mutants runs anywhere on the machine. Use when `check` has already passed. |

@@ -32,6 +32,17 @@ section_dupes=$(awk '
 [ -z "$section_dupes" ] || fail "duplicate subsections:
 $section_dupes"
 
+# New entries land in [Unreleased], so a misnamed subsection is caught there
+# before it can ship into a release. Historical releases stay out of scope:
+# flash 0.1.0 deliberately uses feature-tour headings.
+bad_names=$(awk '
+    /^## \[Unreleased\]/ { unrel = 1; next }
+    /^## \[/ { unrel = 0 }
+    unrel && /^### / && !/^### (Added|Changed|Deprecated|Removed|Fixed|Security)$/ { print }
+' "$file")
+[ -z "$bad_names" ] || fail "non-standard subsection under [Unreleased]:
+$bad_names"
+
 # A dirty working tree must never lose release headings relative to HEAD:
 # releases only ever append headings, so a decrease is a truncation.
 if committed=$(git show "HEAD:$file" 2>/dev/null); then
