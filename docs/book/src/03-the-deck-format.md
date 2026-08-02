@@ -82,8 +82,7 @@ inline code or fenced code are always verbatim.
 Graphical clients render recognized math with the shared RaTeX renderer. If the
 delimiters are valid but the LaTeX is malformed, the card still loads and shows
 the source with a visible "math could not render" message. `alix doctor <deck>`
-reports the card line, formula snippet, and renderer error. The terminal
-interface continues to show the authored LaTeX source.
+reports the card line, formula snippet, and renderer error.
 
 Grading uses the content between the delimiters, so type `x^2`, not `$x^2$`.
 Adding or removing math delimiters does not change a card token or stale its

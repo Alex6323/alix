@@ -99,7 +99,7 @@ generated PRs without prior discussion are usually closed unread.
 | `make check` | The normal local gate: lint, tests, media/docs manifests, and toolchain-pin invariants. |
 | `make coverage` | Coverage report (`cargo-llvm-cov`, HTML). |
 | `make calibrate` | Real-Claude grader calibration (costed): before every desktop/mobile release and after touching `grade_*`. |
-| `make run ARGS="stats mydeck.txt"` | Run the binary. |
+| `make run ARGS="stats mydeck.md"` | Run the binary. |
 | `make web ARGS="~/decks-test --lan"` | Web frontend (a scoped root). |
 | `make book` | Serve the mdBook manual live. |
 | `make e2e` | Playwright smoke suite for the alix web clients (Node; needs a browser download the first time). |
@@ -156,14 +156,15 @@ surrounding code; when in doubt, mirror it. The essentials:
   guarantees the invariant. `.unwrap()` in `#[cfg(test)]` code is fine.
 - **Errors come in two layers.** Domain modules expose a `thiserror` enum;
   workflow code returns `anyhow::Result` with `bail!` + `.context(…)`. Messages
-  are **lowercase, no trailing period** — `bail!("the deck declares no \`%
-  source:\`")`.
-- **Don't break card identity.** A card's id is `XxHash64(deck file name + its
-  back lines)` — or, for cloze cards, its `hash_lines` with the `{{ }}`
-  delimiters stripped, plus a per-hole index (see `Card::id` in `src/card.rs`).
-  It ignores the front, notes, and comments on purpose. A careless change to the
-  parser, `hash_lines`, or deck rewriting silently **wipes users' review
-  progress** — preserve it.
+  are **lowercase, no trailing period** — `bail!("the deck declares no
+  \`source:\` to examine against")`.
+- **Don't break card identity.** A card's id is a minted 128-bit token,
+  written into the deck as an `<!-- id: … -->` line closing the card (see
+  `Card::id` in `src/card.rs` and `src/parser/`). It is minted once and never
+  changes, so editing a card's front, back, or notes keeps its review
+  history — that permanence is the point. A careless change to the parser,
+  stamping, or deck rewriting that drops or alters an id line silently
+  **severs a card from users' review progress** — preserve it.
 - **Keep the UI calm.** Both frontends must stay distraction-free: only what the
   user needs right now. Default to *less* — cut a readout before adding one,
   tuck rare controls behind a menu. A noisy UI diff is treated like a failing

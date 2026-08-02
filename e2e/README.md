@@ -99,14 +99,14 @@ where it is rather than fixed:
 - `fixtures/decks/animals/` is a tiny, deterministic workspace ("Animals"),
   shared by both clients:
   - `alix.toml` — makes the folder a workspace.
-  - `decks/wild.md`: an initialized 2-card L1 deck (a frontmatter `alix-id`, `## `
+  - `decks/wild.md`: an initialized 2-card L1 deck (a frontmatter `id`, `## `
     fronts with literal `<!-- id: -->` tokens, and `> ` notes). Both cards are
     always genuinely never-seen at the start of a run, so the suite exercises
     a real first session, acquire path included.
   - `decks/cats.md`: one card with a two-line answer ("Lion" / "Tiger"), in its
     own file so editing it can never disturb `wild.md`. Exists
     solely for the multi-line regression test (`tests/kids-multiline.spec.ts`).
-  - `augment/00000000000000000000000008.json`: the **frozen**, deck-owned
+  - `augment/deck-00000000000000000000000008.json`: the **frozen**, deck-owned
     multiple-choice distractor cache for `wild.md`, generated once with a real
     Claude call:
 

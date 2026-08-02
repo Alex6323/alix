@@ -2,16 +2,20 @@
 
 ## Install
 
-`alix` is a single Rust binary, built from source, so you need a Rust toolchain
-(install [`rustup`](https://rustup.rs) if you don't have one):
+`alix` is a single Rust binary. The shipped paths, no Rust toolchain
+required for the first:
 
 ```sh
-git clone <repo-url> alix
-cd alix
-make install
+curl -sSf https://alix.study/install.sh | sh   # prebuilt release binary
+cargo install alix                             # from crates.io (needs rustup.rs)
 ```
 
-That puts `alix` on your `PATH`. Check it:
+The installer fetches the release asset for your platform; every asset also
+has a `.sha256` beside it on the GitHub releases page to verify a manual
+download. Building from a checkout works too (`git clone`, then
+`make install`).
+
+Any of those puts `alix` on your `PATH`. Check it:
 
 ```sh
 alix --help

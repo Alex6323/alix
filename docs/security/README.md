@@ -39,7 +39,7 @@ Alix does not claim to provide:
 | Decks, notes, images, source citations, and frozen excerpts | Private learning or source material is disclosed or altered. |
 | `progress/<deck-id>.json`, `recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
 | Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
-| Explicit `origin` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
+| Explicit `source` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
 | AI CLI session and provider account | Prompts or local reads are disclosed; model-backed actions are performed as the user. |
 | Share-transfer process and received archive | An external transfer tool or hostile archive discloses data or writes unexpected files. |
 | Authored deck files versus generated output | Untrusted generated or received content is mistaken for reviewed authored material. |
@@ -59,9 +59,9 @@ synchronization-conflict detection warn about likely same-deck concurrency;
 none of these mechanisms authenticates a writer or merges concurrent changes.
 
 Deck stamping has a separate local write boundary. A valid deck ID under the
-namespaced `alix-id` key in opening YAML frontmatter marks a file as initialized
-and authorizes automatic maintenance of missing card IDs. A generic `id` key
-has no Alix meaning and never grants write authority. `alix deck init <file>` is
+`id` key in opening YAML frontmatter marks a file as initialized and
+authorizes automatic maintenance of missing card IDs. The retired `alix-id`
+key is rejected at parse time and grants nothing. `alix deck init <file>` is
 the explicit opt-in that may mint the initial deck ID. Discovery and automatic
 review or augmentation never grant that authority from `##` headings alone, so
 ordinary Markdown remains byte-identical. Generated, imported, received,
@@ -136,23 +136,24 @@ output, command output, and filesystem paths, so its external run directory
 should be protected like the target checkout (`orchestrator/`).
 
 Filesystem grounding is opt-in. `[ask] source_access = true` is effective only
-when the deck or workspace declares an explicit `origin`; `source` and `at`
-remain evidence locators and never infer a wider project root (`src/deck.rs`,
-`src/source.rs`). This is the boundary for Alix's built-in grant. A user can
+when the deck or workspace declares a `source:`, and the grant covers exactly
+that declared tree; `at:` locators remain evidence pointers and never infer a
+wider project root (`src/deck.rs`, `src/source.rs`). This is the boundary for Alix's built-in grant. A user can
 deliberately widen the provider CLI's permissions through `permission_mode`,
 `allowed_tools`, or provider-specific configuration, and then owns that wider
 trust decision.
 
-URL origins are current external context rather than captured evidence. Alix
-supplies frozen excerpts regardless; it fetches a URL origin only when the
-backend supports `WebFetch` and that tool is allowed. Without a usable origin,
+URL sources are current external context rather than captured evidence. Alix
+supplies frozen excerpts regardless; it fetches a URL source only when the
+backend supports `WebFetch` and that tool is allowed. Without a usable source,
 the tutor continues from frozen evidence and reports that it cannot verify the
 full current source.
 
 Received workspace manifests are untrusted configuration. Before using AI on a
-received workspace, inspect `source_access`, `origin`, links, citations, and
-frozen excerpts. A portable manifest can request source access, and an origin
-that exists on the receiving machine may expose more than the sender intended.
+received workspace, inspect `source_access`, `source`, links, citations, and
+frozen excerpts. A portable manifest can request source access, and a source
+path that exists on the receiving machine may expose more than the sender
+intended.
 
 ### Decks, generation, sharing, and receiving
 

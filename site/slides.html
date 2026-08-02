@@ -333,7 +333,7 @@
     <p class="lead">Cards hold the nodes of what you know. A trace walks a real path through a source — every step you <em>predict</em> what happens next, then the actual lines are revealed, and you judge your gap.</p>
     <ul class="pts">
       <li>predict &#8594; reveal &#8594; judge — the retrieval effect, applied to <em>connections</em></li>
-      <li>the excerpt is read live from the source; the source stays the oracle</li>
+      <li>the frozen excerpt is the evidence; the live source stays the oracle when reachable</li>
       <li>the AI can discover the path for you (<span class="dim" style="font-family:var(--mono)">alix generate --trace</span>)</li>
     </ul>
   </div>
@@ -391,7 +391,7 @@
     <h2>What you should <em class="k">know</em> before trying it.</h2>
     <ul class="pts">
       <li>Early software, pre-1.0 — rough edges, and breaking changes still happen.</li>
-      <li>Browser-based and local only. No mobile apps yet, no sync service.</li>
+      <li>Browser-based and local. A native Android app exists (sideload-only, no store listing yet); no sync service.</li>
       <li>The AI features need an AI CLI installed and signed in — Claude by default; Gemini, Codex, and Copilot work too. That usually means a paid account you already have.</li>
       <li>The flashcard core runs entirely without AI — offline, standalone.</li>
       <li>Privacy: everything stays on your machine, except the AI calls you explicitly make through your own account.</li>
@@ -456,14 +456,15 @@
   <div class="inner">
     <p class="eyebrow"><span class="k">A</span> · appendix — the deck format on one slide</p>
     <table class="tbl">
-      <tr><td># front</td><td>starts a card; indented lines below are the answer</td></tr>
-      <tr><td>#? front + {{hole}}</td><td>cloze card — each {{span}} in the answer becomes a blank</td></tr>
-      <tr><td>! note</td><td>shown after answering</td></tr>
-      <tr><td>% reveal: &#8230;</td><td>flip &#183; cloze &#183; line — how a card presents; how deeply you drill is a per-session choice</td></tr>
-      <tr><td>% direction: both</td><td>review a card in both directions</td></tr>
-      <tr><td>% requires: &lt;deck&gt;</td><td>prerequisite — builds the unlock tree</td></tr>
-      <tr><td>% source: &lt;url|path&gt;</td><td>the exam&#8217;s ground truth (and the tutor&#8217;s reference)</td></tr>
-      <tr><td>% at: file:lines</td><td>a citation — the card can reveal its source lines</td></tr>
+      <tr><td>## front</td><td>starts a card; the plain lines below are the answer</td></tr>
+      <tr><td>\blank{span}</td><td>cloze — each blanked span in the answer becomes its own sub-card</td></tr>
+      <tr><td>- [x] / - [ ]</td><td>a task-list answer is an authored multiple-choice card</td></tr>
+      <tr><td>&gt; note</td><td>shown after answering</td></tr>
+      <tr><td>&lt;!-- reveal: line --&gt;</td><td>flip &#183; line — how a card presents; how deeply you drill is a per-session choice</td></tr>
+      <tr><td>direction: both</td><td>review a card in both directions (frontmatter or per card)</td></tr>
+      <tr><td>requires: &lt;deck&gt;</td><td>frontmatter prerequisite — builds the unlock tree</td></tr>
+      <tr><td>source: &lt;url|path&gt;</td><td>frontmatter: the exam&#8217;s ground truth (and the tutor&#8217;s reference)</td></tr>
+      <tr><td>&lt;!-- at: file:lines --&gt;</td><td>a citation — the card can reveal its source lines</td></tr>
     </table>
     <p class="sub">The full reference lives in the book.</p>
   </div>
@@ -474,8 +475,8 @@
   <div class="inner">
     <p class="eyebrow"><span class="k">A</span> · appendix — the exam, precisely</p>
     <ul class="pts">
-      <li>Questions are written fresh from the <span style="font-family:var(--mono)">% source:</span>, favoring application and connections over card facts.</li>
-      <li>Grading strictness is a property of the material: <span style="font-family:var(--mono)">strict / balanced / lenient</span>, set per deck.</li>
+      <li>Questions are written fresh from the <span style="font-family:var(--mono)">source:</span>, favoring application and connections over card facts.</li>
+      <li>Grading strictness: <span style="font-family:var(--mono)">strict / balanced / lenient</span>, an exam setting in your config.</li>
       <li>Failing produces <em>remediation cards</em> from your actual gaps — re-drill, re-sit.</li>
       <li>A deck turns <em>exam due</em> once every card graduates to FSRS&#8217;s review phase — no separate unlock knob to set.</li>
       <li>Drilling is never locked — prerequisites gate only the <em>exam</em>.</li>
@@ -487,13 +488,16 @@
 <section class="slide" data-act="appendix" data-title="A · a real trace step">
   <div class="inner">
     <p class="eyebrow"><span class="k">A</span> · appendix — one checkpoint of a real trace</p>
-    <pre class="deck panel"><span class="cd">% trace: how pressing the Good key becomes a saved grade</span>
-<span class="cd">% source: ..</span>
+    <pre class="deck panel"><span class="cd">---
+trace: how pressing the Good key becomes a saved grade
+source: ..
+---</span>
 
-<span class="cf"># You press Good. What does the page send the server &#8212; and what not?</span>
-    grade(g) POSTs to /api/grade with just { grade: g } &#8212; no card id.
-    <span class="cd">% at: web/alix/review.html:906</span>
-    <span class="cn">! The page is a thin view; the server owns the session.</span></pre>
+<span class="cf">## You press Good. What does the page send the server &#8212; and what not?</span>
+grade(g) POSTs /api/grade with { grade: g } and the session revision
+echoed in a header &#8212; no card id; the server owns the seat.
+<span class="cd">&lt;!-- at: web/alix/review/study.js:100 --&gt;</span>
+<span class="cn">&gt; The page is a thin view; the server owns the session.</span></pre>
     <p class="sub">You answer the question <em>before</em> the cited lines are revealed — then judge your own gap. The next checkpoint picks up exactly where this one left off.</p>
   </div>
   <aside class="notes"><p>Taken from alix's own docs — a trace through alix's web review flow. Each checkpoint cites real lines; the walk reads them live so the source stays the oracle.</p></aside>
