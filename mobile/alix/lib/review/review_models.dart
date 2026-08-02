@@ -179,6 +179,9 @@ class ReviewStateModel {
     required this.passed,
     required this.failed,
     required this.acquired,
+    required this.recognized,
+    required this.recognizePartly,
+    required this.recognizeMissed,
     required this.canRestart,
     required this.promotable,
     this.nextDueMs,
@@ -206,6 +209,9 @@ class ReviewStateModel {
   final int passed;
   final int failed;
   final int acquired;
+  final int recognized;
+  final int recognizePartly;
+  final int recognizeMissed;
   final bool canRestart;
   final bool promotable;
   final int? nextDueMs;

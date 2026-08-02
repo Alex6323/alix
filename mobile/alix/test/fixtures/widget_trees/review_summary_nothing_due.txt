@@ -13,11 +13,6 @@ Scaffold
                   SizedBox(width=null, height=14.0)
                   Text("Nothing due.")
                   SizedBox(width=null, height=18.0)
-                  Container
-                    Padding(EdgeInsets(0.0, 9.0, 0.0, 10.0))
-                      Row
-                        Text("reviewed")
-                        Text("0")
                   SizedBox(width=null, height=18.0)
                   Container
                     ConstrainedBox

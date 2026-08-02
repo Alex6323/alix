@@ -1868,8 +1868,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 23)
-      throw Exception('unexpected arr length: expect 23 but see ${arr.length}');
+    if (arr.length != 26)
+      throw Exception('unexpected arr length: expect 26 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
@@ -1887,13 +1887,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       passed: dco_decode_u_32(arr[13]),
       failed: dco_decode_u_32(arr[14]),
       acquired: dco_decode_u_32(arr[15]),
-      canRestart: dco_decode_bool(arr[16]),
-      promotable: dco_decode_bool(arr[17]),
-      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[18]),
-      dueLeft: dco_decode_u_32(arr[19]),
-      newLeft: dco_decode_u_32(arr[20]),
-      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[21]),
-      saveError: dco_decode_opt_String(arr[22]),
+      recognized: dco_decode_u_32(arr[16]),
+      recognizePartly: dco_decode_u_32(arr[17]),
+      recognizeMissed: dco_decode_u_32(arr[18]),
+      canRestart: dco_decode_bool(arr[19]),
+      promotable: dco_decode_bool(arr[20]),
+      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[21]),
+      dueLeft: dco_decode_u_32(arr[22]),
+      newLeft: dco_decode_u_32(arr[23]),
+      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[24]),
+      saveError: dco_decode_opt_String(arr[25]),
     );
   }
 
@@ -2857,6 +2860,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_passed = sse_decode_u_32(deserializer);
     var var_failed = sse_decode_u_32(deserializer);
     var var_acquired = sse_decode_u_32(deserializer);
+    var var_recognized = sse_decode_u_32(deserializer);
+    var var_recognizePartly = sse_decode_u_32(deserializer);
+    var var_recognizeMissed = sse_decode_u_32(deserializer);
     var var_canRestart = sse_decode_bool(deserializer);
     var var_promotable = sse_decode_bool(deserializer);
     var var_nextDueMs = sse_decode_opt_box_autoadd_u_64(deserializer);
@@ -2883,6 +2889,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       passed: var_passed,
       failed: var_failed,
       acquired: var_acquired,
+      recognized: var_recognized,
+      recognizePartly: var_recognizePartly,
+      recognizeMissed: var_recognizeMissed,
       canRestart: var_canRestart,
       promotable: var_promotable,
       nextDueMs: var_nextDueMs,
@@ -3841,6 +3850,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.passed, serializer);
     sse_encode_u_32(self.failed, serializer);
     sse_encode_u_32(self.acquired, serializer);
+    sse_encode_u_32(self.recognized, serializer);
+    sse_encode_u_32(self.recognizePartly, serializer);
+    sse_encode_u_32(self.recognizeMissed, serializer);
     sse_encode_bool(self.canRestart, serializer);
     sse_encode_bool(self.promotable, serializer);
     sse_encode_opt_box_autoadd_u_64(self.nextDueMs, serializer);

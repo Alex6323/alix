@@ -404,6 +404,9 @@ const _catppuccinLatteVars = ThemeVars(
   again: Color(0xFFD20F39),
   noteBorder: Color(0xFFDF8E1D),
   noteInk: Color(0xFF4C4F69),
+  text: Color(0xFF5C5F77),
+  faint: Color(0xFF8C8FA1),
+  accentInk: Color(0xFFFFFFFF),
 );
 
 /// Tokyo Night, theme.css `[data-theme="tokyo-night"]`.
@@ -467,6 +470,9 @@ const _gruvboxLightVars = ThemeVars(
   again: Color(0xFFCC241D),
   noteBorder: Color(0xFFD79921),
   noteInk: Color(0xFF3C3836),
+  text: Color(0xFF504945),
+  faint: Color(0xFF7C6F64),
+  accentInk: Color(0xFFFFFFFF),
 );
 
 /// Ayu Dark, theme.css `[data-theme="ayu-dark"]`.

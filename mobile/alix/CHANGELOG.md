@@ -7,6 +7,13 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Fixed
+
+- A Recognize sitting's summary no longer reads "reviewed 0": the session
+  summary now shows every kind of work done (introduced, recognized,
+  almost, missed, reviewed), never prints a zero-valued row, and the
+  headline celebrates any work rather than only FSRS reviews.
+
 ### Added
 
 - The empty "Nothing due." session summary now shows one quiet line saying when
