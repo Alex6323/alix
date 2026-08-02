@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:alix_mobile/bridge/seed_bridge.dart';
 import 'package:alix_mobile/server_client.dart';
 
 /// The bundled sample decks, copied into a fresh decks dir on first run.
@@ -122,6 +124,7 @@ Future<String> _appPrivate(Directory support) async {
   if (fresh) {
     final content = await rootBundle.loadString('assets/decks/tutorial.md');
     await File('${root.path}/tutorial.md').writeAsString(content);
+    await _stampSeed('${root.path}/tutorial.md');
   }
   for (final sample in _samples) {
     final target = File('${support.path}/$sample');
@@ -129,9 +132,22 @@ Future<String> _appPrivate(Directory support) async {
       await target.parent.create(recursive: true);
       final content = await rootBundle.loadString('assets/$sample');
       await target.writeAsString(content);
+      if (sample.endsWith('.md')) await _stampSeed(target.path);
     }
   }
   return root.path;
+}
+
+// A seeded copy needs minted ids to be discovered (the bundled assets carry
+// none; the tutorial asset is pinned byte-identical to the desktop's, which
+// stamps at seed time too). Best-effort like the desktop seeder: a failed
+// stamp leaves the file present but undiscovered until `alix deck init`.
+Future<void> _stampSeed(String path) async {
+  try {
+    await stampSeededDeck(path);
+  } on Object catch (error) {
+    debugPrint('seed stamp failed for $path: $error');
+  }
 }
 
 /// Copies the bundled tutorial deck into [root] (the current decks folder)

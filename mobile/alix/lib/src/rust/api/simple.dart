@@ -7,3 +7,6 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 String coreVersion() => RustLib.instance.api.crateApiSimpleCoreVersion();
+
+Future<void> stampDeck({required String path}) =>
+    RustLib.instance.api.crateApiSimpleStampDeck(path: path);

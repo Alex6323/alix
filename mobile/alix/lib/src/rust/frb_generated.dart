@@ -69,7 +69,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1328582285;
+  int get rustContentHash => 226055941;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -221,6 +221,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   void crateApiListingSetWorkspaceDeadline({required String dir, String? date});
+
+  Future<void> crateApiSimpleStampDeck({required String path});
 
   List<String> crateApiListingSyncConflicts({required String root});
 
@@ -1213,13 +1215,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiSimpleStampDeck({required String path}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 31,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSimpleStampDeckConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleStampDeckConstMeta =>
+      const TaskConstMeta(debugName: "stamp_deck", argNames: ["path"]);
+
+  @override
   List<String> crateApiListingSyncConflicts({required String root}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(root, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -1248,7 +1278,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(root, serializer);
           sse_encode_String(dir, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_deadline,

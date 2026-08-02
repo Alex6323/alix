@@ -7,9 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/src/rust/frb_generated.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(RustLib.init);
 
   Directory temp(String prefix) {
     final dir = Directory.systemTemp.createTempSync(prefix);
@@ -42,6 +44,25 @@ void main() {
     final tutorial = File('${support.path}/decks/tutorial.md');
     expect(tutorial.existsSync(), isTrue);
     expect(tutorial.readAsStringSync(), contains('The alix tutorial'));
+  });
+
+  test('every seeded deck is stamped so a fresh install can review it',
+      () async {
+    final support = temp('alix-support-');
+    await prepare(support: support, env: '');
+    final seeded = [
+      '${support.path}/decks/tutorial.md',
+      '${support.path}/decks/basics.md',
+      '${support.path}/decks/sample-workspace/decks/capitals.md',
+      '${support.path}/decks/sample-workspace/decks/steps.md',
+    ];
+    for (final path in seeded) {
+      final text = File(path).readAsStringSync();
+      expect(text, contains('format-version: 1'),
+          reason: '$path must carry stamped frontmatter to be discovered');
+      expect(text, matches(RegExp(r'id: "deck-[0-9a-z]{26}"')),
+          reason: '$path must carry a minted deck id to be discovered');
+    }
   });
 
   test('a deleted tutorial stays deleted on the next launch', () async {

@@ -30,6 +30,10 @@ Release notes, so a release without its section fails loud.
   shows; the card now answers with the real labels (Partly or Got it,
   only Missed it brings the card back).
 
+- A fresh install's seeded decks (tutorial, basics, the sample workspace)
+  are stamped with minted ids at seed time, like the desktop seeder does;
+  without ids nothing listed, so a first launch showed an empty library.
+
 ### Added
 
 - The empty "Nothing due." session summary now shows one quiet line saying when
@@ -76,7 +80,7 @@ Release notes, so a release without its section fails loud.
   Once paired, review gains an Ask chip once you've attempted the current
   card, opening the same tutor conversation as the desktop (including
   "Make a card"), and the session summary gains a "Take the exam" chip for
-  any deck with a `% source:`. Both borrow the desktop's AI backend over
+  any deck with a `source:`. Both borrow the desktop's AI backend over
   your LAN; the phone keeps its own decks and progress, the desktop only
   computes answers. The same row reopens the sheet with an Unpair button.
 

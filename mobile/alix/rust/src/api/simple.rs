@@ -8,6 +8,11 @@ pub fn core_version() -> String {
     alix::VERSION.to_string()
 }
 
+pub fn stamp_deck(path: String) -> anyhow::Result<()> {
+    alix::stamp::stamp_deck(std::path::Path::new(&path))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
