@@ -117,28 +117,44 @@ pub fn replace_deck(
     }
 
     std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let backup = if path.exists() {
-        let bak = dir.join(format!("{file}.bak"));
-        std::fs::rename(&path, &bak)
-            .with_context(|| format!("cannot keep {} as {}", path.display(), bak.display()))?;
-        Some(bak)
-    } else {
-        None
-    };
-    write_body(&path, text)?;
+    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
+    let workspace_files = WorkspaceFiles::new(workspace_root);
+    let mut trio = TrioBackup::default();
+    trio.back_up(&path)
+        .with_context(|| format!("cannot keep {} as its backup", path.display()))?;
+    if old_deck_tokens.len() == 1
+        && let Some(deck_id) = old_deck_tokens.iter().next()
+    {
+        let progress = match crate::state::progress_document_for(store.path(), deck_id)
+            .context("locating the replaced deck's progress document")
+        {
+            Ok(progress) => progress,
+            Err(error) => {
+                trio.restore(&path)?;
+                return Err(error);
+            }
+        };
+        // Copied, not renamed: the store's save re-reads the on-disk
+        // revision, and a renamed-away document reads as a stale 0.
+        if let Err(error) = trio.back_up_copy(&progress) {
+            trio.restore(&path)?;
+            return Err(error);
+        }
+        if let Err(error) = trio.back_up(&workspace_files.augment_for(deck_id)) {
+            trio.restore(&path)?;
+            return Err(error);
+        }
+    }
+    if let Err(error) = write_body(&path, text) {
+        trio.restore(&path)?;
+        return Err(error);
+    }
 
     let minted = match assets::initialize(&path) {
         Ok(outcome) => outcome.stamp.minted_cards.len(),
         Err(error) => {
             let _ = std::fs::remove_file(&path);
-            if let Some(backup) = &backup {
-                std::fs::rename(backup, &path).with_context(|| {
-                    format!(
-                        "cannot restore {} after the replacement failed",
-                        path.display()
-                    )
-                })?;
-            }
+            trio.restore(&path)?;
             return Err(error.into());
         }
     };
@@ -151,45 +167,204 @@ pub fn replace_deck(
         .map(String::as_str)
         .unwrap_or_default();
     let wiped_cards = store.wipe_deck(&old_card_tokens, old_deck_id);
-    store
+    if let Err(error) = store
         .save()
-        .context("saving the store after replacing a deck")?;
-    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
-    let workspace_files = WorkspaceFiles::new(workspace_root);
+        .context("saving the store after replacing a deck")
+    {
+        trio.restore(&path)?;
+        return Err(error);
+    }
     let cache_path = workspace_files.augment();
     if cache_path.exists() {
-        let mut cache = AugmentCache::open_for_workspace(workspace_root)?;
-        if cache.wipe_tokens(&old_card_tokens, &old_deck_tokens) {
-            cache
+        let mut cache = match AugmentCache::open_for_workspace(workspace_root) {
+            Ok(cache) => cache,
+            Err(error) => {
+                trio.restore(&path)?;
+                return Err(error.into());
+            }
+        };
+        if cache.wipe_tokens(&old_card_tokens, &old_deck_tokens)
+            && let Err(error) = cache
                 .save()
-                .with_context(|| format!("cannot save {}", cache_path.display()))?;
+                .with_context(|| format!("cannot save {}", cache_path.display()))
+        {
+            trio.restore(&path)?;
+            return Err(error);
         }
     }
     if old_deck_tokens.len() == 1
         && let Some(deck_id) = old_deck_tokens.iter().next()
     {
-        if crate::state::retire_replaced_progress(store.path(), deck_id)
-            .context("retiring the replaced deck's progress")?
+        if let Err(error) = crate::state::retire_replaced_progress(store.path(), deck_id)
+            .context("retiring the replaced deck's progress")
         {
-            let augmentation = workspace_files.augment_for(deck_id);
-            if augmentation.is_file() {
-                let (_, data) = crate::augment::read_deck_data(&augmentation, deck_id)?;
-                if data.cards.is_empty() && data.topologies.is_empty() {
-                    std::fs::remove_file(&augmentation)
-                        .with_context(|| format!("cannot remove {}", augmentation.display()))?;
-                }
-            }
+            trio.restore(&path)?;
+            return Err(error);
         }
-        let replacement = Deck::load(&path).context("loading the stamped replacement deck")?;
-        store
+        let replacement = match Deck::load(&path).context("loading the stamped replacement deck") {
+            Ok(replacement) => replacement,
+            Err(error) => {
+                trio.restore(&path)?;
+                return Err(error);
+            }
+        };
+        if let Err(error) = store
             .rebind_replaced_deck(deck_id, &replacement)
-            .context("binding state to the replacement deck identity")?;
+            .context("binding state to the replacement deck identity")
+        {
+            trio.restore(&path)?;
+            return Err(error);
+        }
     }
 
     Ok(ReplaceReport {
         minted,
         wiped_cards,
     })
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct RestoreReport {
+    pub deck: bool,
+    pub progress: bool,
+    pub augment: bool,
+}
+
+/// Swaps the deck's live trio with its `.bak` trio (deck file, progress
+/// document, per-deck augment file). Self-inverse: running it twice is a
+/// byte-identical round trip. Members are paired per side's own deck token,
+/// because a replacement mints fresh tokens: the `.bak` deck's documents go
+/// live and the live deck's documents become the new `.bak`s.
+pub fn restore_deck(deck_path: &Path, store_root: &Path) -> Result<RestoreReport> {
+    let bak_deck = deck_path.with_file_name(format!(
+        "{}.bak",
+        deck_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("deck.md")
+    ));
+    if !bak_deck.exists() {
+        bail!("nothing to restore: {} does not exist", bak_deck.display());
+    }
+    let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
+    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
+    let workspace_files = WorkspaceFiles::new(workspace_root);
+    let progress_dir = store_root.join("progress");
+
+    // Lenient on both sides, like replace is on the old file: an
+    // unparseable side contributes no document pairs, never an abort.
+    let token_of = |path: &Path| -> Option<String> {
+        let text = std::fs::read_to_string(path).ok()?;
+        let name = path.file_name()?.to_str()?;
+        parser::parse(name, &text).ok()?.deck_token
+    };
+    let mut tokens: Vec<String> = Vec::new();
+    for side in [deck_path, &bak_deck] {
+        if let Some(token) = token_of(side)
+            && !tokens.contains(&token)
+        {
+            tokens.push(token);
+        }
+    }
+
+    swap_with_bak(deck_path)?;
+    let mut report = RestoreReport {
+        deck: true,
+        ..RestoreReport::default()
+    };
+    for token in &tokens {
+        if swap_with_bak(&progress_dir.join(format!("{token}.json")))? {
+            report.progress = true;
+        }
+        if swap_with_bak(&workspace_files.augment_for(token))? {
+            report.augment = true;
+        }
+    }
+    Ok(report)
+}
+
+/// Exchanges `live` and `live.bak`, tolerating an absent side: both present
+/// is a three-rename swap through a temp name, one present is a move.
+/// Returns whether anything moved.
+fn swap_with_bak(live: &Path) -> Result<bool> {
+    let name = live
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("member");
+    let bak = live.with_file_name(format!("{name}.bak"));
+    let io =
+        |from: &Path, to: &Path| format!("cannot swap {} with {}", from.display(), to.display());
+    match (live.exists(), bak.exists()) {
+        (true, true) => {
+            let tmp = live.with_file_name(format!(".{name}.swap.tmp"));
+            std::fs::rename(live, &tmp).with_context(|| io(live, &tmp))?;
+            std::fs::rename(&bak, live).with_context(|| io(&bak, live))?;
+            std::fs::rename(&tmp, &bak).with_context(|| io(&tmp, &bak))?;
+            Ok(true)
+        }
+        (true, false) => {
+            std::fs::rename(live, &bak).with_context(|| io(live, &bak))?;
+            Ok(true)
+        }
+        (false, true) => {
+            std::fs::rename(&bak, live).with_context(|| io(&bak, live))?;
+            Ok(true)
+        }
+        (false, false) => Ok(false),
+    }
+}
+
+/// The rename ledger behind replace's backup trio (deck file, progress
+/// document, per-deck augment file): every `live -> live.bak` rename is
+/// recorded so a failure after any of them can put all of them back.
+#[derive(Default)]
+struct TrioBackup {
+    renamed: Vec<(PathBuf, PathBuf)>,
+}
+
+impl TrioBackup {
+    fn back_up(&mut self, live: &Path) -> Result<()> {
+        let Some(bak) = Self::bak_path(live) else {
+            return Ok(());
+        };
+        std::fs::rename(live, &bak)
+            .with_context(|| format!("cannot keep {} as {}", live.display(), bak.display()))?;
+        self.renamed.push((live.to_path_buf(), bak));
+        Ok(())
+    }
+
+    /// The live file stays in place for writers that re-read it (the store's
+    /// revision guard); restore still renames the copy back over it.
+    fn back_up_copy(&mut self, live: &Path) -> Result<()> {
+        let Some(bak) = Self::bak_path(live) else {
+            return Ok(());
+        };
+        std::fs::copy(live, &bak)
+            .with_context(|| format!("cannot copy {} to {}", live.display(), bak.display()))?;
+        self.renamed.push((live.to_path_buf(), bak));
+        Ok(())
+    }
+
+    fn bak_path(live: &Path) -> Option<PathBuf> {
+        if !live.exists() {
+            return None;
+        }
+        let name = live.file_name().and_then(|n| n.to_str())?;
+        Some(live.with_file_name(format!("{name}.bak")))
+    }
+
+    fn restore(&mut self, subject: &Path) -> Result<()> {
+        while let Some((live, bak)) = self.renamed.pop() {
+            std::fs::rename(&bak, &live).with_context(|| {
+                format!(
+                    "cannot restore {} after replacing {} failed",
+                    live.display(),
+                    subject.display()
+                )
+            })?;
+        }
+        Ok(())
+    }
 }
 
 pub fn reset_decks<'a>(
@@ -393,6 +568,232 @@ mod tests {
         let decks = crate::workspace::deck_files(dir.path());
         assert_eq!(1, decks.len(), "{decks:?}");
         assert!(decks[0].ends_with("a.md"));
+    }
+
+    #[test]
+    fn a_replace_backs_up_the_full_trio_before_wiping() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        let orig_deck = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
+        store.get_or_insert("card-c1", 0);
+        store.ensure_records_raw("card-c1", &[]);
+        store.save().unwrap();
+        let progress = dir.path().join("progress/deck-da1.json");
+        let orig_progress = std::fs::read(&progress).unwrap();
+        let deck = Deck::load(dir.path().join("a.md")).unwrap();
+        let mut cache = AugmentCache::open_for_decks(dir.path(), &[deck]).unwrap();
+        cache.set_distractors("card-c1", vec!["x".into()], 1);
+        cache.save().unwrap();
+        let augment = WorkspaceFiles::new(dir.path()).augment_for("deck-da1");
+        let orig_augment = std::fs::read(&augment).unwrap();
+
+        replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
+
+        assert_eq!(
+            orig_deck,
+            std::fs::read_to_string(dir.path().join("a.md.bak")).unwrap(),
+            "the deck backup holds the pre-replace text"
+        );
+        assert_eq!(
+            orig_progress,
+            std::fs::read(dir.path().join("progress/deck-da1.json.bak")).unwrap(),
+            "the progress backup holds the pre-wipe document"
+        );
+        assert_eq!(
+            orig_augment,
+            std::fs::read(dir.path().join("augment/deck-da1.json.bak")).unwrap(),
+            "the augment backup holds the pre-wipe sidecar"
+        );
+        assert!(
+            !progress.exists(),
+            "the emptied live progress document is retired, not kept beside its backup"
+        );
+    }
+
+    #[test]
+    fn a_replace_that_fails_after_its_renames_restores_the_whole_trio() {
+        // A workspace member, because only members freeze their source and a
+        // missing `source:` is the portable post-rename failure injection.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write_deck(&members, "a.md", "da1", "c1");
+        let orig_deck = std::fs::read_to_string(members.join("a.md")).unwrap();
+        let mut store = crate::state::open_store(&members.join("a.md"), dir.path()).unwrap();
+        store.get_or_insert("card-c1", 0);
+        store.save().unwrap();
+        let progress = store.path().to_path_buf();
+        let orig_progress = std::fs::read(&progress).unwrap();
+        let deck = Deck::load(members.join("a.md")).unwrap();
+        let mut cache = AugmentCache::open_for_decks(&ws, &[deck]).unwrap();
+        cache.set_distractors("card-c1", vec!["x".into()], 1);
+        cache.save().unwrap();
+        let augment = WorkspaceFiles::new(&ws).augment_for("deck-da1");
+        let orig_augment = std::fs::read(&augment).unwrap();
+
+        let err = replace_deck(
+            &members,
+            "a",
+            "---\nsource: missing.md\n---\n## new q\nnew ans\n",
+            &mut store,
+        )
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("missing"), "{err:#}");
+        assert_eq!(
+            orig_deck,
+            std::fs::read_to_string(members.join("a.md")).unwrap(),
+            "the live deck is restored"
+        );
+        assert_eq!(
+            orig_progress,
+            std::fs::read(&progress).unwrap(),
+            "the live progress document is restored"
+        );
+        assert_eq!(
+            orig_augment,
+            std::fs::read(&augment).unwrap(),
+            "the live augment sidecar is restored"
+        );
+        for leftover in [
+            members.join("a.md.bak"),
+            progress.with_extension("json.bak"),
+            augment.with_extension("json.bak"),
+        ] {
+            assert!(
+                !leftover.exists(),
+                "no {} lingers after a restored failure",
+                leftover.display()
+            );
+        }
+    }
+
+    fn trio_fixture(dir: &Path) -> (Vec<u8>, Vec<u8>, String) {
+        write_deck(dir, "a.md", "da1", "c1");
+        let mut store = crate::state::open_store(&dir.join("a.md"), dir).unwrap();
+        store.get_or_insert("card-c1", 0);
+        store.ensure_records_raw("card-c1", &[]);
+        store.save().unwrap();
+        let deck = Deck::load(dir.join("a.md")).unwrap();
+        let mut cache = AugmentCache::open_for_decks(dir, &[deck]).unwrap();
+        cache.set_distractors("card-c1", vec!["x".into()], 1);
+        cache.save().unwrap();
+        let orig_deck = std::fs::read_to_string(dir.join("a.md")).unwrap();
+        let orig_progress = std::fs::read(dir.join("progress/deck-da1.json")).unwrap();
+        let orig_augment = std::fs::read(dir.join("augment/deck-da1.json")).unwrap();
+        replace_deck(dir, "a", "## new q\nnew ans\n", &mut store).unwrap();
+        (orig_progress, orig_augment, orig_deck)
+    }
+
+    #[test]
+    fn restore_swaps_the_replacement_away_and_brings_history_and_augment_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let (orig_progress, orig_augment, orig_deck) = trio_fixture(dir.path());
+        let replaced_deck = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+
+        let report = restore_deck(&dir.path().join("a.md"), dir.path()).unwrap();
+
+        assert_eq!(
+            RestoreReport {
+                deck: true,
+                progress: true,
+                augment: true,
+            },
+            report
+        );
+        assert_eq!(
+            orig_deck,
+            std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+            "the original deck text is live again"
+        );
+        assert_eq!(
+            orig_progress,
+            std::fs::read(dir.path().join("progress/deck-da1.json")).unwrap(),
+            "the review history is live again"
+        );
+        assert_eq!(
+            orig_augment,
+            std::fs::read(dir.path().join("augment/deck-da1.json")).unwrap(),
+            "the augmentations are live again"
+        );
+        assert_eq!(
+            replaced_deck,
+            std::fs::read_to_string(dir.path().join("a.md.bak")).unwrap(),
+            "the restored-away replacement is preserved as the new backup"
+        );
+    }
+
+    #[test]
+    fn restore_twice_is_a_byte_identical_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        trio_fixture(dir.path());
+        let snapshot = |root: &Path| -> Vec<(String, Vec<u8>)> {
+            let mut all = Vec::new();
+            let mut stack = vec![root.to_path_buf()];
+            while let Some(d) = stack.pop() {
+                for e in std::fs::read_dir(&d).unwrap() {
+                    let p = e.unwrap().path();
+                    if p.is_dir() {
+                        stack.push(p);
+                    } else {
+                        let rel = p.strip_prefix(root).unwrap().display().to_string();
+                        all.push((rel, std::fs::read(&p).unwrap()));
+                    }
+                }
+            }
+            all.sort();
+            all
+        };
+        let before = snapshot(dir.path());
+
+        restore_deck(&dir.path().join("a.md"), dir.path()).unwrap();
+        restore_deck(&dir.path().join("a.md"), dir.path()).unwrap();
+
+        assert_eq!(
+            before,
+            snapshot(dir.path()),
+            "a double restore must reproduce every file byte for byte"
+        );
+    }
+
+    #[test]
+    fn a_partial_trio_swaps_the_deck_and_reports_the_absent_members() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, _, orig_deck) = trio_fixture(dir.path());
+        std::fs::remove_file(dir.path().join("progress/deck-da1.json.bak")).unwrap();
+        std::fs::remove_file(dir.path().join("augment/deck-da1.json.bak")).unwrap();
+
+        let report = restore_deck(&dir.path().join("a.md"), dir.path()).unwrap();
+
+        assert_eq!(
+            RestoreReport {
+                deck: true,
+                progress: false,
+                augment: false,
+            },
+            report
+        );
+        assert_eq!(
+            orig_deck,
+            std::fs::read_to_string(dir.path().join("a.md")).unwrap()
+        );
+    }
+
+    #[test]
+    fn restore_without_any_backup_is_a_clean_error_naming_the_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+
+        let err = restore_deck(&dir.path().join("a.md"), dir.path()).unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("a.md.bak"),
+            "the error names what was looked for: {err:#}"
+        );
+        assert!(dir.path().join("a.md").exists(), "nothing was touched");
     }
 
     #[test]

@@ -129,7 +129,10 @@ fn require_deck_id<'a>(deck: &'a Deck, path: &Path) -> Result<&'a str, StateErro
         })
 }
 
-fn progress_document_for(store_path: &Path, deck_id: &str) -> Result<PathBuf, StateError> {
+pub(crate) fn progress_document_for(
+    store_path: &Path,
+    deck_id: &str,
+) -> Result<PathBuf, StateError> {
     if store_path
         .parent()
         .and_then(Path::file_name)
