@@ -56,6 +56,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The augment dialog's footer no longer places the destructive "Remove
   all" between "Generate selected" and "Close"; it now sits first, so a
   reach for Close cannot land on it.
+- Saving a tutor note onto a stamped card appended it after the card's
+  closing `<!-- id -->` marker, tripping doctor's misplaced-marker
+  warning on every noted card. Notes now land before the card's trailing
+  comment markers, keeping the id line last.
 
 ## [0.7.0] - 2026-08-02
 

@@ -930,10 +930,22 @@ fn insert_note_lines(text: &str, fronts: &[usize], front_line: usize, notes: &[S
             last_content = i;
         }
     }
+    // The card's trailing comment markers (`at:` locators, the closing `id:`)
+    // stay last: stamping mints at that position, and doctor flags a marker
+    // with content after it.
+    let mut insert_at = last_content + 1;
+    while insert_at > front_index + 1 {
+        let above = lines[insert_at - 1].trim();
+        if above.starts_with("<!--") && above.ends_with("-->") {
+            insert_at -= 1;
+        } else {
+            break;
+        }
+    }
 
     let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
     for (offset, note) in notes.iter().enumerate() {
-        out.insert(last_content + 1 + offset, format!("> {note}"));
+        out.insert(insert_at + offset, format!("> {note}"));
     }
 
     let mut result = out.join("\n");
@@ -1521,6 +1533,26 @@ mod tests {
 
         assert_eq!(Some("explained".to_string()), after.cards[0].note);
         assert_eq!(before.cards[0].id(), after.cards[0].id());
+    }
+
+    #[test]
+    fn append_note_lands_before_the_closing_comment_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "## front\nanswer\n> old note\n<!-- at: notes.md:1-2 -->\n<!-- id: card-q1 -->\n\n## next\nb\n<!-- id: card-q2 -->\n",
+        )
+        .unwrap();
+
+        append_note(&path, 1, &["fresh".to_string()]).unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            "## front\nanswer\n> old note\n> fresh\n<!-- at: notes.md:1-2 -->\n<!-- id: card-q1 -->\n\n## next\nb\n<!-- id: card-q2 -->\n",
+            text,
+            "the id marker must stay the card's last line"
+        );
     }
 
     #[test]
