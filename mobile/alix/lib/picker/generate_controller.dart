@@ -69,7 +69,7 @@ class GenerateController extends ChangeNotifier {
         guidance: trimmedGuidance.isEmpty ? null : trimmedGuidance,
       );
     } on PairingExpired {
-      _fail('Pairing expired. Pair again from the deck list menu.');
+      _fail('Pairing expired. Pair again from Settings → Connected devices.');
       return;
     }
     if (_disposed) return;
@@ -92,7 +92,7 @@ class GenerateController extends ChangeNotifier {
     try {
       result = await _client.generateGet();
     } on PairingExpired {
-      _fail('Pairing expired. Pair again from the deck list menu.');
+      _fail('Pairing expired. Pair again from Settings → Connected devices.');
       return;
     }
     if (_disposed) return;

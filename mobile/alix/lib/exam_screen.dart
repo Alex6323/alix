@@ -18,7 +18,7 @@ import 'package:alix_mobile/theme.dart';
 /// [PairingExpired]; every call site here catches it, shows exactly this
 /// line, and pops (there is nothing left to sit an exam against).
 const _pairingExpiredMessage =
-    'Pairing expired. Pair again from the deck list menu.';
+    'Pairing expired. Pair again from Settings → Connected devices.';
 
 /// Phases `GET /api/remote/exam` cycles through while doing async work: the
 /// screen keeps polling for as long as the last DTO reports one of these

@@ -31,7 +31,9 @@ android {
         applicationId = "study.alix.mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Android 7.0: the floor the book promises; pinned so a Flutter
+        // default bump cannot move it silently.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

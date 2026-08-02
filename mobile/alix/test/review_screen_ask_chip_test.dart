@@ -130,7 +130,7 @@ void main() {
 
     expect(find.text('Ask'), findsNothing);
     expect(
-      find.text('Pairing expired. Pair again from the deck list menu.'),
+      find.text('Pairing expired. Pair again from Settings → Connected devices.'),
       findsOneWidget,
     );
 

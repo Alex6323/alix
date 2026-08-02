@@ -530,7 +530,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Pairing expired. Pair again from the deck list menu.'),
+      find.text('Pairing expired. Pair again from Settings → Connected devices.'),
       findsOneWidget,
     );
     expect(find.byType(ExamScreen), findsNothing);

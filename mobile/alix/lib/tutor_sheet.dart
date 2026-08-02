@@ -17,7 +17,7 @@ import 'package:alix_mobile/server_client.dart';
 /// one). Every [ServerClient] call can throw [PairingExpired]; every call
 /// site here catches it and shows exactly this line.
 const _pairingExpiredMessage =
-    'Pairing expired. Pair again from the deck list menu.';
+    'Pairing expired. Pair again from Settings → Connected devices.';
 
 /// One card's tutor conversation. Opened over the current review card;
 /// closing it drops the transcript (nothing is persisted until "Make a

@@ -396,7 +396,7 @@ void main() {
         // SnackBar occupies the same footer area a reveal tap would need,
         // matching the pre-existing review test's own scope).
         expect(
-          find.text('Pairing expired. Pair again from the deck list menu.'),
+          find.text('Pairing expired. Pair again from Settings → Connected devices.'),
           findsOneWidget,
         );
 

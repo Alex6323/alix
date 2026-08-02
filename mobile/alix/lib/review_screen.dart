@@ -94,7 +94,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-            'Pairing expired. Pair again from the deck list menu.',
+            'Pairing expired. Pair again from Settings → Connected devices.',
           ),
           action: SnackBarAction(
             label: 'Re-pair',
