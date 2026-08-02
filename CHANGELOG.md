@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Deck lifecycle completes with removal and restore. `alix deck remove
+  <deck>` deletes a deck and everything that is its alone (file, review
+  history, frozen assets, augmentations, and any `.bak` backups) after one
+  confirmation that states the stakes: cards with progress, the
+  reviewed-since date, the exact file list. Total by design: nothing is
+  backed up and it cannot be undone. `alix deck restore <deck>` is the
+  counterpart for overwrites: it swaps a deck with its `.bak` backups and
+  is its own inverse, so restoring again swaps back. Overwrites (a forced
+  import, trace or workspace regeneration) now back up the full trio (deck
+  file, review history, augmentations), where they previously kept only
+  the deck text, so a restore brings the history back too. `alix doctor`
+  counts accumulated backups and `--remove-backup-files` deletes them
+  after a confirmation.
+
 - Desktop release downloads are now verifiable: every release asset uploads
   with a `.sha256` checksum beside it, and releases are gated on a clean
   RustSec advisory scan of both lockfiles (`make audit`, backstopped by a

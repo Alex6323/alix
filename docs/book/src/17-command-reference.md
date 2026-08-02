@@ -130,6 +130,19 @@ The rest of the AI-and-deck surface:
   source. Refuses missing prerequisites and source dependents.
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
+- `alix deck remove <deck> [--yes]`: remove a deck and everything that is
+  its alone: the file, its review history, its frozen assets, its
+  augmentations, and any `.bak` backups. Total by design: nothing is backed
+  up and it cannot be undone, which the confirmation states along with the
+  stakes (cards with progress, reviewed-since date, the exact file list).
+  A deck that others `require:` warns and names them; they unlock rather
+  than break.
+- `alix deck restore <deck>`: swap a deck with its `.bak` backups (file,
+  review history, augmentations), undoing the last overwrite (a forced
+  import, a trace or workspace regeneration). Nothing is destroyed: the
+  swapped-away state becomes the new backup, so running it again swaps
+  back. There is nothing to restore after `deck remove`, which deletes the
+  backups too.
 - `alix workspace init <dir>`: scaffold an empty
   [workspace](08-workspaces.md): an `alix.toml` (`--title` names it) and an
   empty `decks/` plus `assets/`. Grow it with the `--workspace` flags above.
@@ -213,4 +226,10 @@ notes it.
   reported citations, stamp fingerprints on currently addressed excerpts and
   apply unique exact locator rebases. Changed or multiply matching excerpts
   remain untouched and make the command fail. Deck and card IDs are preserved.
+- Folder and workspace runs also count accumulated `.bak` backup files
+  (overwrite leftovers) with their total size, naming both remedies:
+  `alix deck restore <deck>` swaps one back,
+  `alix doctor <dir> --remove-backup-files` lists and deletes them all after
+  one confirmation (`--yes` skips it). Backups warn, they never fail the
+  run.
 - `--config <path>`: use a different config file.
