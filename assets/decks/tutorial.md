@@ -57,8 +57,9 @@ you: plain files on your own device
 
 ## What should you do with this tutorial once it has nothing left to teach you?
 delete it
-> `alix deck remove tutorial.md` takes it and its review history away
-> in one confirmed step; deleting the plain file by hand works too.
+> On the desktop, `alix deck remove tutorial.md` takes it and its
+> review history away in one confirmed step; deleting the plain file
+> by hand works too.
 > Either way it will not come back (alix seeds it only for a brand-new
 > install).
 > If it taught you something, telling someone who studies is the best
