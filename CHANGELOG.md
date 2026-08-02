@@ -43,6 +43,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The kids app behaves on touch screens: a long-press no longer opens the
+  browser's context menu, page text cannot be selected or grow a blinking
+  insertion cursor, taps skip the double-tap-zoom delay, and the answer
+  and rating buttons grow to a child's finger size on coarse-pointer
+  devices (the tutor's text box keeps selection and its menu).
+
+- A kids card with a picture asks the question above it, matching the
+  authored front order and the adult app, instead of hoisting the image
+  over the question.
+
 - A Recognize sitting no longer ends in "you reviewed 0 cards": the
   session tallies recognize answers (right / almost / missed) separately
   from FSRS reviews, the review state (`StateDto`) carries `recognized`,

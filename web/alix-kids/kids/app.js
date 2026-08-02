@@ -38,6 +38,12 @@ menuBtn.addEventListener("click", settings.toggle);
 menuBackdrop.addEventListener("click", settings.close);
 document.addEventListener("keydown", settings.handleKey);
 
+// A kid's long-press must never open the browser's context menu over the
+// study surface; the tutor input keeps it for paste.
+document.addEventListener("contextmenu", (e) => {
+  if (!e.target.closest("input, textarea")) e.preventDefault();
+});
+
 const errorReporter = createKidsErrorReporter({
   console,
   timers: { setTimeout, clearTimeout },

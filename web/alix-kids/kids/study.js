@@ -82,11 +82,11 @@ function renderReview() {
   const cardEl = el("div", "rev-card");
 
   cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, acquire)));
-  appendImages(cardEl, card.images);
   cardEl.appendChild(frontPrompt(card));
   for (let i = 0; i < (card.context || []).length; i++) {
     cardEl.appendChild(contextLine(card.context[i], card.context_runs && card.context_runs[i]));
   }
+  appendImages(cardEl, card.images);
 
   if (choiceMode) {
     cardEl.appendChild(renderOptions());

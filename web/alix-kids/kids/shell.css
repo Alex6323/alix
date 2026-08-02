@@ -49,11 +49,25 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
+/* A kid's touch is slow and imprecise: no text selection, insertion carets,
+ * long-press callouts, or double-tap zoom anywhere on the chrome — the tutor's
+ * text input below is the one place typing happens. */
 body {
   font-family: 'Baloo 2', system-ui, sans-serif;
   color: var(--ink);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  caret-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: auto;
 }
 
 /* The fixed shell: header · stage · action bar, never scrolling as a whole. */
