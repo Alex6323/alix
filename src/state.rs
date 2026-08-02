@@ -329,4 +329,36 @@ mod tests {
         assert!(matches!(error, StateError::MissingDeckId { .. }));
         assert!(!dir.path().join("progress").exists());
     }
+
+    #[test]
+    fn progress_with_any_single_kind_of_state_is_never_retired() {
+        let filled = [
+            ("cards", r#""cards":{"card-r1":{}}"#),
+            (
+                "records",
+                r#""cards":{},"records":{"card-r1":{"version":1,"holes":[]}}"#,
+            ),
+            ("deck", r#""cards":{},"deck":{"last_depth":"recall"}"#),
+            (
+                "virtual_cards",
+                r###""cards":{},"virtual_cards":{"card-v1":{"id":"card-v1","kind":"Remediation","deck":"deck-r","text":"## q <!-- id: card-v1 -->\na\n","created_ms":0}}"###,
+            ),
+        ];
+        for (kind, body) in filled {
+            let dir = tempfile::tempdir().unwrap();
+            let progress = dir.path().join("progress");
+            std::fs::create_dir(&progress).unwrap();
+            let doc = progress.join("deck-r.json");
+            std::fs::write(
+                &doc,
+                format!(
+                    r#"{{"version":1,"deck_id":"deck-r","subject":"r.md","revision":1,{body}}}"#
+                ),
+            )
+            .unwrap();
+            let retired = retire_replaced_progress(&doc, "deck-r").unwrap();
+            assert!(!retired, "{kind}-bearing progress must be kept");
+            assert!(doc.is_file(), "{kind}: the document must stay in place");
+        }
+    }
 }

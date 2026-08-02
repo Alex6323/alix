@@ -3684,6 +3684,77 @@ mod tests {
             "a partial never marks recognized"
         );
     }
+
+    #[test]
+    fn the_session_reports_its_configured_retirement_cap() {
+        let (mut store, _dir) = empty_store();
+        let session = Session::new(
+            cards(1),
+            &mut store,
+            sched(),
+            SessionOptions {
+                retire_after_days: Some(7),
+                ..Default::default()
+            },
+            0,
+        );
+        assert_eq!(Some(7), session.retire_after_days());
+    }
+
+    #[test]
+    fn leftover_slots_flow_back_to_due_cards_when_new_runs_short() {
+        assert_eq!((9, 1), split_slots(20, 1, 10, 30));
+    }
+
+    #[test]
+    fn due_soon_counts_strictly_future_dues_inside_the_window_only() {
+        let (mut store, _dir) = empty_store();
+        let sched = sched();
+        let now = 1_000;
+        let window = 100;
+        let scheduled = |due_ms: u64| crate::store::FsrsState {
+            state: 2,
+            stability: 1.0,
+            due_ms,
+            ..Default::default()
+        };
+        for (back, due) in [
+            ("at now", 1_000),
+            ("in window", 1_001),
+            ("at edge", 1_100),
+            ("past edge", 1_101),
+            ("overdue", 999),
+        ] {
+            let card = insert_virtual(&mut store, "d.md", back, 0);
+            store.get_or_insert(&card.id().unwrap(), 0).recall = Some(scheduled(due));
+        }
+        let retired = insert_virtual(&mut store, "d.md", "retired but in window", 0);
+        let mut retired_state = retired_fsrs();
+        retired_state.state = 2;
+        retired_state.stability = 1.0;
+        retired_state.due_ms = 1_050;
+        store.get_or_insert(&retired.id().unwrap(), 0).recall = Some(retired_state);
+
+        let count = count_due_soon_virtual(
+            &store,
+            "d.md",
+            sched.as_ref(),
+            now,
+            window,
+            Some(DEFAULT_RETIRE_AFTER_DAYS),
+        );
+        assert_eq!(2, count, "exactly `in window` and `at edge`");
+    }
+
+    #[test]
+    fn no_cards_means_nothing_is_reviewable() {
+        let (store, _dir) = empty_store();
+        let sched = sched();
+        assert_eq!(
+            0,
+            count_reviewable(&[], &store, sched.as_ref(), Depth::Recall, 1_000, None)
+        );
+    }
 }
 
 #[cfg(all(test, feature = "full"))]

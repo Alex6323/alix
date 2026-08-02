@@ -3308,4 +3308,134 @@ mod tests {
         assert_eq!(Some(Reveal::Line), lined.reveal);
         assert_eq!(None, plain.reveal);
     }
+
+    #[test]
+    fn the_foreign_write_warn_window_is_one_hour() {
+        assert_eq!(3_600_000, FOREIGN_WRITE_WARN_WINDOW_MS);
+    }
+
+    #[test]
+    fn an_overfull_history_from_disk_trims_to_the_cap_on_the_next_review() {
+        let mut state = CardState::new(0);
+        for i in 0..(HISTORY_CAP + 5) {
+            state.history.push(Review {
+                ts_ms: i as u64,
+                grade: Grade::Pass,
+                depth: Depth::Recall,
+                propagated: false,
+            });
+        }
+        state.record_review(999_999, Grade::Pass, Depth::Recall, false);
+        assert_eq!(HISTORY_CAP, state.history.len());
+    }
+
+    #[test]
+    fn same_word_holes_on_different_lines_realign_by_line_not_first_come() {
+        let x = hf(1, 10);
+        let y = hf(1, 20);
+        let outcome = realign_holes(&[x, y], &[y, x]);
+        assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
+        assert!(outcome.fresh.is_empty(), "{:?}", outcome.fresh);
+        assert!(outcome.orphaned.is_empty(), "{:?}", outcome.orphaned);
+    }
+
+    #[test]
+    fn an_unowned_key_fails_the_save_guard() {
+        let mut values: HashMap<String, u32> = HashMap::new();
+        values.insert("card-stray".into(), 1);
+        let mut owners: HashMap<String, String> = HashMap::new();
+        assert!(reject_unowned(&values, &owners, "card").is_err());
+        owners.insert("card-stray".into(), "deck-a".into());
+        assert!(reject_unowned(&values, &owners, "card").is_ok());
+    }
+
+    #[test]
+    fn aggregate_open_skips_non_json_and_conflict_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("deck-a.json"),
+            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{"card-a1":{}}}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "not a store document").unwrap();
+        std::fs::write(
+            dir.path().join("deck-x.sync-conflict-20260802.json"),
+            "not json either",
+        )
+        .unwrap();
+
+        let store = Store::open(dir.path()).unwrap();
+        assert_eq!(1, store.len());
+    }
+
+    #[test]
+    fn the_latest_writer_wins_and_a_timestamp_tie_keeps_the_first_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = |deck: &str, device: &str, at_ms: u64| {
+            format!(
+                r#"{{"version":1,"deck_id":"{deck}","subject":"s.md","revision":1,"cards":{{}},"writer":{{"device":"{device}","at_ms":{at_ms}}}}}"#
+            )
+        };
+        std::fs::write(dir.path().join("deck-a.json"), doc("deck-a", "alpha", 100)).unwrap();
+        std::fs::write(dir.path().join("deck-b.json"), doc("deck-b", "beta", 200)).unwrap();
+        std::fs::write(dir.path().join("deck-c.json"), doc("deck-c", "gamma", 200)).unwrap();
+
+        let store = Store::open(dir.path()).unwrap();
+        assert_eq!(
+            Some(("beta".to_string(), 800)),
+            store.foreign_writer("me", 1_000)
+        );
+    }
+
+    #[test]
+    fn rebinding_one_deck_keeps_every_other_decks_ownership() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("deck-a.json"),
+            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("deck-b.json"),
+            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{"card-b1":{}},"records":{"card-b1":{"version":1,"holes":[]}},"deck":{"last_depth":"recall"}}"#,
+        )
+        .unwrap();
+        let replacement_path = dir.path().join("a2.md");
+        std::fs::write(
+            &replacement_path,
+            "---\nformat-version: 1\nid: \"deck-a2\"\n---\n## q\na\n<!-- id: card-a2c1 -->\n",
+        )
+        .unwrap();
+        let replacement = crate::deck::Deck::load(&replacement_path).unwrap();
+
+        let mut store = Store::open(dir.path()).unwrap();
+        store.insert_virtual(virtual_card("deck-b", "## v <!-- id: card-bv1 -->\nkept\n"));
+        store.rebind_replaced_deck("deck-a", &replacement).unwrap();
+        store.save().unwrap();
+
+        assert!(store.get("card-b1").is_some());
+        assert_eq!(Some(Depth::Recall), store.last_depth("deck-b"));
+        assert_eq!(1, store.virtual_cards_for("deck-b").len());
+    }
+
+    #[test]
+    fn removing_a_virtual_block_counts_only_that_decks_exact_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.insert_virtual(virtual_card("rust", "## f <!-- id: card-w1 -->\nshared\n"));
+        store.insert_virtual(virtual_card("rust", "## f <!-- id: card-w2 -->\nshared\n"));
+        store.insert_virtual(virtual_card("rust", "## g <!-- id: card-w3 -->\nother\n"));
+        store.insert_virtual(virtual_card("other", "## f <!-- id: card-w4 -->\nshared\n"));
+        let removed = store.remove_virtual_block("rust", "## f <!-- id: card-w1 -->\nshared\n");
+        assert_eq!(1, removed);
+        assert_eq!(3, store.virtual_len());
+    }
+
+    #[test]
+    fn a_stocked_store_is_not_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert("card-one", 0);
+        assert!(!store.is_empty());
+    }
 }

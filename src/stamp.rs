@@ -945,4 +945,17 @@ mod tests {
         assert!(parsed.cards.iter().all(|c| c.front == "Foo"));
         assert!(parsed.cards.iter().all(|c| c.token.is_some()));
     }
+
+    #[test]
+    fn the_id_token_span_lands_exactly_on_the_token() {
+        let text = "## q\na\n<!-- note -->\n<!-- id: card-q1 -->\n";
+        let range = first_id_token_span(text, "card-q1").unwrap();
+        assert_eq!("card-q1", &text[range]);
+
+        // The scan resumes exactly past a comment's terminator: a body whose
+        // tail bytes spell a fresh `<!--` must not swallow the next comment.
+        let overlapping = "## q\na\n<!-- x <!-->\n<!-- id: card-q1 -->\n";
+        let range = first_id_token_span(overlapping, "card-q1").unwrap();
+        assert_eq!("card-q1", &overlapping[range]);
+    }
 }

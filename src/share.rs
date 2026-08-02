@@ -1062,4 +1062,171 @@ mod tests {
         assert!(land_received(&tmp, &dest).is_err());
         assert_eq!("old", std::fs::read_to_string(dest.join("a.txt")).unwrap());
     }
+
+    #[test]
+    fn every_personal_shape_stays_home_on_its_own() {
+        for name in [
+            "progress",
+            "recent.json",
+            "alix.local.toml",
+            ".hidden",
+            "x.sync-conflict-20260802",
+            "x-bak",
+            "a.json.tmp",
+        ] {
+            assert!(stays_home(name), "{name} must stay home");
+        }
+        assert!(!stays_home("deck.md"));
+    }
+
+    #[test]
+    fn counting_files_walks_nested_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), "f1");
+        std::fs::create_dir_all(dir.path().join("sub/deep")).unwrap();
+        touch(&dir.path().join("sub"), "f2");
+        touch(&dir.path().join("sub/deep"), "f3");
+        assert_eq!(3, count_files(dir.path()).unwrap());
+    }
+
+    #[test]
+    fn workspace_material_with_owned_assets_validates() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::create_dir(root.join("decks")).unwrap();
+        std::fs::write(
+            root.join("decks/m.md"),
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        )
+        .unwrap();
+        crate::assets::write_object(root, "deck-m1", b"excerpt\n", "md").unwrap();
+        validate_workspace_material(root).unwrap();
+    }
+
+    #[test]
+    fn sanitizing_removes_a_backup_suffixed_entry_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), "x-bak");
+        touch(dir.path(), "keep.md");
+        let removed = sanitize_received(dir.path()).unwrap();
+        assert_eq!(vec!["x-bak".to_string()], removed);
+        assert!(dir.path().join("keep.md").exists());
+        assert!(!dir.path().join("x-bak").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_successful_wormhole_run_is_not_reported_as_failed() {
+        let _lock = crate::testutil::exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let fake = crate::testutil::fake_cli(dir.path(), "exit 0");
+        wormhole_with(&fake.to_string_lossy(), &["send", "x"], None).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dropping_a_job_kills_its_child_process() {
+        let _lock = crate::testutil::exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("pid");
+        let fake = crate::testutil::fake_cli(
+            dir.path(),
+            &format!("echo $$ > {}; exec sleep 30", pid_file.display()),
+        );
+        let job = spawn_job(&fake.to_string_lossy(), &["send", "x"], None).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let pid = loop {
+            if let Ok(text) = std::fs::read_to_string(&pid_file)
+                && let Ok(pid) = text.trim().parse::<u32>()
+            {
+                break pid;
+            }
+            assert!(std::time::Instant::now() < deadline, "fake never started");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        drop(job);
+        let dead = |pid: u32| {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"));
+            match stat {
+                Err(_) => true,
+                Ok(text) => text.split_whitespace().nth(2) == Some("Z"),
+            }
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !dead(pid) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "child {pid} still running after the job was dropped"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn landing_a_plain_folder_skips_workspace_validation() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("scratch");
+        std::fs::create_dir_all(tmp.join("plain/assets/deck-zzz")).unwrap();
+        std::fs::write(tmp.join("plain/a.txt"), "x").unwrap();
+        std::fs::write(tmp.join("plain/assets/deck-zzz/junk"), "x").unwrap();
+        let dest = dir.path().join("decks");
+        std::fs::create_dir_all(&dest).unwrap();
+        let (landed, _) = land_received(&tmp, &dest).unwrap();
+        assert_eq!("plain", landed);
+    }
+
+    fn bundle_fixture(dir: &Path) -> PathBuf {
+        let bundle = dir.join("bundle");
+        std::fs::create_dir_all(bundle.join("augment")).unwrap();
+        std::fs::write(
+            bundle.join(DECK_BUNDLE_MARKER),
+            r#"{"version":1,"deck":"x.md"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            bundle.join("x.md"),
+            "---\nformat-version: 1\nid: \"deck-x1\"\n---\n## q\na\n<!-- id: card-x1c1 -->\n",
+        )
+        .unwrap();
+        std::fs::write(
+            bundle.join("augment/deck-x1.json"),
+            r#"{"version":1,"deck_id":"deck-x1","revision":3,"cards":{"card-x1c1":{"distractors":["a","b","c"]}}}"#,
+        )
+        .unwrap();
+        bundle
+    }
+
+    #[test]
+    fn different_nonempty_destination_augmentation_blocks_an_unforced_landing() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = bundle_fixture(dir.path());
+        let dest = dir.path().join("dest");
+        std::fs::create_dir_all(dest.join("augment")).unwrap();
+        std::fs::write(
+            dest.join("augment/deck-x1.json"),
+            r#"{"version":1,"deck_id":"deck-x1","revision":1,"cards":{"card-x1c1":{"distractors":["their","own","set"]}}}"#,
+        )
+        .unwrap();
+        let error = land_deck_bundle_with_force(&bundle, &dest, false).unwrap_err();
+        assert!(
+            error.to_string().contains("different augmentation"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn an_empty_destination_augmentation_document_never_blocks_a_landing() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = bundle_fixture(dir.path());
+        let dest = dir.path().join("dest");
+        std::fs::create_dir_all(dest.join("augment")).unwrap();
+        std::fs::write(
+            dest.join("augment/deck-x1.json"),
+            r#"{"version":1,"deck_id":"deck-x1","revision":1,"cards":{}}"#,
+        )
+        .unwrap();
+        let (landed, _) = land_deck_bundle_with_force(&bundle, &dest, false).unwrap();
+        assert_eq!("x.md", landed);
+    }
 }

@@ -1369,4 +1369,109 @@ mod tests {
         assert_eq!(Some(one.clone()), source_path(&one.to_string_lossy(), None));
         assert_eq!(None, source_path("   ", None));
     }
+
+    #[test]
+    fn an_excerpt_at_exactly_the_display_cap_is_not_marked_truncated() {
+        let lines: Vec<(usize, String)> = (1..=MAX_EXCERPT_LINES)
+            .map(|n| (n, format!("line {n}")))
+            .collect();
+        let exact = Excerpt {
+            path: PathBuf::from("x.md"),
+            lines: lines.clone(),
+            truncated: false,
+        }
+        .capped_for_display();
+        assert!(!exact.truncated);
+        assert_eq!(MAX_EXCERPT_LINES, exact.lines.len());
+
+        let mut over_lines = lines;
+        over_lines.push((MAX_EXCERPT_LINES + 1, "one more".into()));
+        let over = Excerpt {
+            path: PathBuf::from("x.md"),
+            lines: over_lines,
+            truncated: false,
+        }
+        .capped_for_display();
+        assert!(over.truncated);
+        assert_eq!(MAX_EXCERPT_LINES, over.lines.len());
+    }
+
+    #[test]
+    fn a_citation_spanning_the_whole_file_is_current_and_a_shrunk_file_reads_changed() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "notes.txt", "a\nb\nc\n");
+        write(directory.path(), "short.txt", "a\nb\n");
+        let deck_path = write(
+            directory.path(),
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-src1\"\nsource: notes.txt\n---\n## q\na\n<!-- id: card-src1c1 -->\n",
+        );
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        let base = SourceBase::for_deck(&deck);
+
+        let excerpt = excerpt_at(directory.path(), None, "notes.txt:1-3").unwrap();
+        let whole_file = crate::card::SourceCitation {
+            locator: "notes.txt:1-3".into(),
+            fingerprint: Some(excerpt_fingerprint(&excerpt)),
+            asset: None,
+            line: 1,
+        };
+        assert!(matches!(
+            base.inspect_citation(&whole_file).unwrap(),
+            CitationIntegrity::Current(_)
+        ));
+
+        let shifted = crate::card::SourceCitation {
+            locator: "notes.txt:2-4".into(),
+            fingerprint: Some(excerpt_fingerprint(&excerpt)),
+            asset: None,
+            line: 1,
+        };
+        assert!(matches!(
+            base.inspect_citation(&shifted).unwrap(),
+            CitationIntegrity::Relocated { .. }
+        ));
+    }
+
+    #[test]
+    fn a_file_inside_a_hidden_directory_is_never_found() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(directory.path().join(".hidden")).unwrap();
+        write(&directory.path().join(".hidden"), "target.md", "x\n");
+        assert_eq!(
+            None,
+            find_under(directory.path(), std::ffi::OsStr::new("target.md"))
+        );
+        std::fs::create_dir_all(directory.path().join("sub")).unwrap();
+        write(&directory.path().join("sub"), "target.md", "x\n");
+        assert!(find_under(directory.path(), std::ffi::OsStr::new("target.md")).is_some());
+    }
+
+    #[test]
+    fn display_labels_use_the_single_line_form_for_one_line_excerpts() {
+        let single = Excerpt {
+            path: PathBuf::from("ignored"),
+            lines: vec![(5, "x".into())],
+            truncated: false,
+        };
+        let (_, label) = relabel_for_display(single, "notes.md:5");
+        assert_eq!(Some("notes.md:5".to_string()), label);
+
+        let multi = Excerpt {
+            path: PathBuf::from("ignored"),
+            lines: vec![(1, "a".into()), (2, "b".into()), (3, "c".into())],
+            truncated: false,
+        };
+        let (_, label) = relabel_for_display(multi, "notes.md:1-3");
+        assert_eq!(Some("notes.md:1-3".to_string()), label);
+    }
+
+    #[test]
+    fn a_single_source_file_resolves_even_when_the_base_directory_is_gone() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = write(directory.path(), "notes.md", "a\nb\nc\n");
+        let missing_base = directory.path().join("never-created");
+        let excerpt = excerpt_at(&missing_base, Some(&file), "notes.md:2").unwrap();
+        assert_eq!(vec![(2, "b".to_string())], excerpt.lines);
+    }
 }
