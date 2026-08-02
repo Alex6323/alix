@@ -92,9 +92,14 @@ in constant time (`src/cli/launch.rs`, `src/serve/respond.rs`).
 The server uses plain HTTP. The HTML/application shell and `/img/<key>` are
 intentionally unauthenticated so a browser can bootstrap; the token protects
 only `/api/*`. A token placed in a URL can appear in browser history, logs,
-screenshots, or copied links. Remote AI request bodies use a 256 KiB cap, and
-ZIP uploads use a 50 MiB cap; several other JSON routes do not yet share that
-central cap (`src/serve/mod.rs`).
+screenshots, or copied links. Every JSON request body reads through one
+central 256 KiB cap (`json_body`), remote AI request bodies use their own
+256 KiB cap, and ZIP uploads a 50 MiB cap (`src/serve/mod.rs`). Both cap
+directions are pinned by `tests/api.rs`: oversized bodies are refused, and a
+kilobytes-scale body must reach its handler rather than die at the cap
+(2026-08-02: `/api/choose` briefly read its body uncapped straight off the
+socket; fixed by routing it through `json_body`, regression in the same
+test).
 
 Remote tutor inputs are supplied by the client, remote exams resolve a selected
 desktop deck, and remote generation accepts web URLs rather than a
@@ -192,7 +197,7 @@ safe or accurate.
 | Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `alix-id`; a generic `id` grants no write authority, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
 | A numeric source range slides onto unrelated text | Every complete citation fingerprints the normalized excerpt and source consumers fail closed on a mismatch. | Review doctor findings before using explicit locator repair; fingerprints detect drift but do not prove semantic support. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
-| Malformed or hostile input exhausts resources | Excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
+| Malformed or hostile input exhausts resources | JSON bodies share one central cap, and excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
 | A release or dependency is compromised | CI tests source changes; production toolchains are exact and direct Action references use immutable SHAs. Desktop release assets upload with per-asset SHA-256 checksums, and RustSec advisories are scanned nightly (advisory-drift) plus as a blocking `make audit` step at tag time, over both lockfiles. | Hosted runner images, operating-system packages, transitive Action behavior, signed artifacts, SBOMs, and full provenance are not yet a complete release guarantee. |
 
 ## Known security gaps
@@ -200,8 +205,7 @@ safe or accurate.
 - LAN pairing has no TLS, accounts, roles, revocation list, rate limiting, or
   security audit log.
 - The public shell and image route are outside pairing-token authentication.
-- Several API request bodies lack a shared central size cap, and browser
-  security headers are not applied centrally.
+- Browser security headers are not applied centrally.
 - Profile tokens may be stable and URL bootstrap can expose them through normal
   browser tooling.
 - A received workspace can carry AI/source-access configuration that needs

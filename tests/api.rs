@@ -985,6 +985,53 @@ fn remote_ask_refuses_empty_questions_and_empty_cards_but_not_partial_cards() {
     );
 }
 
+/// The request-body caps are generous by design (256 KiB): a body of a few
+/// kilobytes must pass both cap gates and be served on its merits. This is
+/// the under-cap direction the oversize tests cannot see.
+#[test]
+fn the_body_caps_admit_a_kilobytes_scale_body_on_both_route_families() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "fine");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    let pad = "x".repeat(8 * 1024);
+
+    // json_body family (MAX_JSON_BODY): a parsed-but-mismatched choose is
+    // 409, a cap-rejected body 400, so the status discriminates the cap.
+    assert_eq!(
+        200,
+        post_json(&base, "/api/select", r#"{"deck":"sample.md"}"#).status
+    );
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let state: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    let revision = state["study_revision"].as_u64().unwrap_or(0).to_string();
+    let choose = format!(r#"{{"index":0,"card":"card-{pad}"}}"#);
+    let resp = http(
+        &base,
+        "POST",
+        "/api/choose",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision),
+        ],
+        choose.as_bytes(),
+    );
+    assert_eq!(
+        409, resp.status,
+        "an 8 KiB choose body must reach the card-identity check, not die at the cap"
+    );
+
+    // remote family (MAX_REMOTE_BODY): a long client-supplied card.
+    let body = format!(
+        r#"{{"card":{{"subject":"sample.md","front":" ","back":["4 {pad}"],"at":null}},"history":[],"question":"why?"}}"#
+    );
+    assert_eq!(
+        200,
+        post_json(&base, "/api/remote/ask", &body).status,
+        "an 8 KiB remote body sits far under the 256 KiB cap"
+    );
+}
+
 #[test]
 fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
     let (base, _guard) = spawn_test_server();

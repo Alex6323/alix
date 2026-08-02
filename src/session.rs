@@ -1201,7 +1201,13 @@ mod tests {
         }
         let now = 2 * 604_800_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+        let mut served = 0;
         while session.current().is_some() {
+            served += 1;
+            assert!(
+                served <= 16,
+                "the sitting must exhaust, never serve past the deck"
+            );
             if session.current_fresh(&store) {
                 session.acquire_current(&mut store, now);
             } else {
@@ -1636,6 +1642,44 @@ mod tests {
     }
 
     #[test]
+    fn a_recognize_gap_needs_both_the_recognize_depth_and_exclusions() {
+        let (mut store, _dir) = empty_store();
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+
+        // A Recall sitting never reports a gap, even with excluded cards.
+        let mut recall = Session::new(
+            cards(1),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
+        recall.set_depth_excluded(cards(2));
+        assert_eq!(
+            None,
+            recall.recognize_gap(&store, now),
+            "the gap is a Recognize concept; Recall must not report one"
+        );
+
+        // A Recognize sitting with nothing excluded has no gap to report.
+        let recognize = Session::new(
+            cards(1),
+            &mut store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(
+            None,
+            recognize.recognize_gap(&store, now),
+            "no exclusions means nothing was hidden"
+        );
+    }
+
+    #[test]
     fn the_cap_fixes_the_new_set_at_start() {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(
@@ -1652,6 +1696,10 @@ mod tests {
         while session.current().is_some() {
             session.acquire_current(&mut store, 1000);
             acquired += 1;
+            assert!(
+                acquired <= 5,
+                "the roster must exhaust, never serve past the deck"
+            );
         }
         assert_eq!(2, acquired, "the roster fixes the new set at start");
     }
