@@ -41,6 +41,10 @@ pub(super) enum RemoteGradeReply {
     WrongPhaseOrCount,
 }
 
+fn newly_succeeded<T, E>(was_settled: bool, outcome: &Option<Result<T, E>>) -> bool {
+    !was_settled && matches!(outcome, Some(Ok(_)))
+}
+
 type Reply<T> = mpsc::Sender<T>;
 
 pub(super) enum JobsCommand {
@@ -310,7 +314,7 @@ impl JobsState {
                 let out = self.generating.as_mut().map(|g| {
                     let was_settled = g.outcome.is_some();
                     g.poll();
-                    if !was_settled && matches!(g.outcome, Some(Ok(_))) {
+                    if newly_succeeded(was_settled, &g.outcome) {
                         self.catalog.invalidate_content();
                     }
                     g.dto()
@@ -344,7 +348,7 @@ impl JobsState {
                 let out = self.receiving.as_mut().map(|r| {
                     let was_settled = r.outcome.is_some();
                     r.poll();
-                    if !was_settled && matches!(r.outcome, Some(Ok(_))) {
+                    if newly_succeeded(was_settled, &r.outcome) {
                         self.catalog.invalidate_content();
                     }
                     r.dto()
@@ -596,7 +600,7 @@ impl JobsState {
         if let Some(g) = self.generating.as_mut() {
             let was_settled = g.outcome.is_some();
             g.poll();
-            if !was_settled && matches!(g.outcome, Some(Ok(_))) {
+            if newly_succeeded(was_settled, &g.outcome) {
                 self.catalog.invalidate_content();
             }
         }
@@ -678,7 +682,7 @@ impl JobsState {
         if let Some(r) = self.receiving.as_mut() {
             let was_settled = r.outcome.is_some();
             r.poll();
-            if !was_settled && matches!(r.outcome, Some(Ok(_))) {
+            if newly_succeeded(was_settled, &r.outcome) {
                 self.catalog.invalidate_content();
             }
         }
@@ -755,5 +759,68 @@ impl JobsState {
         let dto = ex.dto();
         self.remote_exam = Some(ex);
         Started::Dto(dto)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_poll_and_close_reports_owner_failure_when_the_command_channel_is_closed() {
+        let (tx, rx) = mpsc::channel();
+        let handle = JobsHandle { tx };
+        drop(rx);
+
+        let operations = [
+            ("generate_poll", handle.generate_poll().is_none()),
+            ("generate_close", handle.generate_close().is_none()),
+            ("share_poll", handle.share_poll().is_none()),
+            ("share_close", handle.share_close().is_none()),
+            ("receive_poll", handle.receive_poll().is_none()),
+            ("receive_close", handle.receive_close().is_none()),
+            ("remote_ask_poll", handle.remote_ask_poll().is_none()),
+            ("remote_exam_poll", handle.remote_exam_poll().is_none()),
+            (
+                "remote_exam_remediate",
+                handle.remote_exam_remediate().is_none(),
+            ),
+            ("remote_exam_close", handle.remote_exam_close().is_none()),
+            (
+                "remote_generate_poll",
+                handle.remote_generate_poll().is_none(),
+            ),
+            (
+                "remote_generate_close",
+                handle.remote_generate_close().is_none(),
+            ),
+        ];
+
+        for (operation, owner_failure) in operations {
+            assert!(
+                owner_failure,
+                "{operation}: expected owner_failure=true after receiver drop, got {owner_failure}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_an_unsettled_job_becoming_successful_is_a_new_success() {
+        let cases = [
+            ("unsettled_pending", false, None, false),
+            ("unsettled_success", false, Some(Ok(())), true),
+            ("unsettled_failure", false, Some(Err(())), false),
+            ("settled_pending", true, None, false),
+            ("settled_success", true, Some(Ok(())), false),
+            ("settled_failure", true, Some(Err(())), false),
+        ];
+
+        for (name, was_settled, outcome, expected) in cases {
+            let actual = newly_succeeded(was_settled, &outcome);
+            assert_eq!(
+                expected, actual,
+                "{name}: was_settled={was_settled}, outcome={outcome:?}, expected={expected}, actual={actual}"
+            );
+        }
     }
 }
