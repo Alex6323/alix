@@ -21,7 +21,9 @@ entries=$(awk '
 ' CHANGELOG.md)
 
 # Days since the most recent vX.Y.Z tag (GNU `date -d`; "?" if unavailable).
-last_tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+# Newest by tag date across ALL tags, not `git describe` from HEAD: release
+# tags live on release branches (RELEASING.md), outside main's ancestry.
+last_tag=$(git tag --list 'v*' --sort=-creatordate 2>/dev/null | head -n 1)
 days="?"
 if [ -n "${last_tag:-}" ]; then
   tag_date=$(git log -1 --format=%cd --date=short "$last_tag" 2>/dev/null || true)
