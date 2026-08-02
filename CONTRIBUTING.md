@@ -10,10 +10,12 @@ collaborator on this repo is instructed). The testing expectations are in the
 ## What `alix` is
 
 It's an AI-augmented spaced-repetition tool: a flashcard core — plain-text deck
-files, with image cards too — plus Claude woven in (an ask-Claude tutor, AI deck
-generation, and an AI exam that tries to gate progress on understanding, not just
-recall). The **library crate (`src/`) is the single source of logic**; the web
-server and the CLI are thin consumers.
+files, with image cards too — plus a pluggable AI backend woven in (a tutor on
+any card, AI deck generation, and an AI exam that tries to gate progress on
+understanding, not just recall). Claude Code is the default backend; Gemini,
+Codex, and Copilot are also supported via `[ask] backend`. The **library crate
+(`src/`) is the single source of logic**; the web server and the CLI are thin
+consumers.
 
 It's early and changing fast — expect rough edges and breaking changes (the
 README says it outright: don't trust it with serious learning yet). What it's

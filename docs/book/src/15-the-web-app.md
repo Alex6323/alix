@@ -29,7 +29,7 @@ once), green/yellow/red for a **learned** card by how well you'd recall it right
 now, purple once retired. When the deck has a [review order](05-scheduling.md) that
 heatmap splits into named regions you can pick to drill (click one or step
 through with **← / →**); otherwise it is a single whole-deck bar. On a workspace row instead,
-← / → enter and leave it. After a session, "Choose other decks" (on the summary)
+→ enters it, and Esc or Backspace backs out. After a session, "Choose other decks" (on the summary)
 or **Esc** (also the footer's **Back** chip while inside a drill-in) returns
 here, so you can switch decks without restarting. Every review starts from
 this screen; there's no direct deck launch. A focused deck's split
@@ -184,10 +184,10 @@ alix --config kids.toml ~/decks-family --lan --port 7781
 ```
 
 A **box** is a workspace: the home screen shows the boxes as a grid, tap one
-to see its decks and a ⭐ mastery indicator per deck (display-only, the row
-itself isn't tappable), then pick a depth for the whole box: **👆 Tap the
-answer** (Recognize) or **🗣️ Say it yourself** (Recall); a caught-up choice
-disables itself instead of starting an empty session. Review works the same
+to see its decks with a ⭐ mastery indicator per deck, tap a deck, then pick
+that deck's depth: **👆 Tap the answer** (Recognize) or **🗣️ Say it
+yourself** (Recall); a caught-up choice disables itself instead of starting
+an empty session. Review works the same
 way underneath as the regular app (reveal, then the mascot says a short
 "why" instead of a bare note, then self-rate) with a **💬 Ask Alix** button
 that opens a kid-safe tutor overlay scoped to the current card.

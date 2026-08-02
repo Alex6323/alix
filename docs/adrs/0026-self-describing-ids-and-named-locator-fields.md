@@ -16,7 +16,9 @@ source, locator, and asset grammar decisions are unchanged.
 superseded the ` + ` hard-error clause (One source concept, below): a source
 value containing ` + ` receives no dedicated error or hint anywhere; it is an
 ordinary path that fails to resolve. The bare-token `requires:` hint stays,
-ruled current-grammar typo guidance rather than recognition.
+ruled current-grammar typo guidance rather than recognition. The same ruling
+retired `doctor`'s "un-converted" classification; the conversion-tool bullet
+below now quotes the current warning wording.
 
 ## Context
 
@@ -289,7 +291,7 @@ Surfaces the migration must cover (enumerated so none is silent):
 - A deck whose `source:` points into `assets/` (the pre-ruling frozen shape):
   the tool rewrites it to the recorded origin (workspace or deck `origin:`
   metadata); with no recorded origin it lists the deck for manual repair, and
-  `doctor` flags a `source:` inside `assets/` as un-converted.
+  `doctor` warns that the `source:` points into `assets/`.
 - `origin:` merge: the tool appends a deck's `origin:` value into its
   `source:` list when distinct (creates the list when absent), drops it when
   duplicate, deletes the `origin:` line, and converts a manifest `origin` to
