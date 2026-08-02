@@ -223,6 +223,134 @@ pub fn replace_deck(
     })
 }
 
+#[derive(Debug, Default)]
+pub struct RemovalPreview {
+    pub files: Vec<PathBuf>,
+    pub directories: Vec<PathBuf>,
+    pub cards_with_progress: usize,
+    pub earliest_review_ms: Option<u64>,
+    pub dependents: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct RemovalReport {
+    pub removed: Vec<PathBuf>,
+    pub dependents: Vec<String>,
+}
+
+/// What `remove_deck` will destroy, computed for the confirmation prompt:
+/// the exact file set plus the stakes (how much earned history goes).
+pub fn removal_preview(deck_path: &Path, store: &Store) -> RemovalPreview {
+    let (files, directories, deck) = removal_set(deck_path, store);
+    let mut preview = RemovalPreview {
+        files,
+        directories,
+        dependents: crate::deck::dependents(deck_path),
+        ..RemovalPreview::default()
+    };
+    if let Some(deck) = deck {
+        let mut earliest: Option<u64> = None;
+        for card in &deck.cards {
+            let Some(state) = card.id().as_deref().and_then(|id| store.get(id)) else {
+                continue;
+            };
+            preview.cards_with_progress += 1;
+            if let Some(seen) = state.presented_ms.or(state.acquired_ms) {
+                earliest = Some(earliest.map_or(seen, |e| e.min(seen)));
+            }
+        }
+        preview.earliest_review_ms = earliest;
+    }
+    preview
+}
+
+/// Deletes the deck and every artifact that is its alone: the deck file,
+/// its progress document, its frozen assets, its augment sidecar file, and
+/// any `.bak` of those. Total by decision (2026-08-01): no backup is
+/// written and existing backups go too. Deletion is deck-file-first, so a
+/// mid-set failure leaves only the orphan class doctor already detects.
+pub fn remove_deck(deck_path: &Path, store: &Store) -> Result<RemovalReport> {
+    let dependents = crate::deck::dependents(deck_path);
+    let (files, directories, _) = removal_set(deck_path, store);
+    let mut removed = Vec::new();
+    for file in files {
+        std::fs::remove_file(&file).with_context(|| format!("cannot remove {}", file.display()))?;
+        removed.push(file);
+    }
+    for dir in directories {
+        std::fs::remove_dir_all(&dir)
+            .with_context(|| format!("cannot remove {}", dir.display()))?;
+        removed.push(dir);
+    }
+    Ok(RemovalReport {
+        removed,
+        dependents,
+    })
+}
+
+/// The deck's own artifact set, in deletion order. Lenient on a corrupt or
+/// tokenless deck: it is still removable, just with nothing derivable from
+/// a token (progress, assets, augment) in the set.
+fn removal_set(deck_path: &Path, store: &Store) -> (Vec<PathBuf>, Vec<PathBuf>, Option<Deck>) {
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+    if deck_path.exists() {
+        files.push(deck_path.to_path_buf());
+    }
+    let deck = Deck::load(deck_path).ok();
+    // Both sides' tokens: the deck's own .bak carries the pre-replace
+    // identity, whose progress/augment backups are not derivable from the
+    // live token.
+    let mut tokens: Vec<String> = Vec::new();
+    for side_token in [
+        deck.as_ref().and_then(|d| d.deck_token.clone()),
+        bak_sibling(deck_path)
+            .and_then(|bak| Deck::load(&bak).ok())
+            .and_then(|d| d.deck_token),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !tokens.contains(&side_token) {
+            tokens.push(side_token);
+        }
+    }
+    let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
+    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
+    let workspace_files = WorkspaceFiles::new(workspace_root);
+    for token in &tokens {
+        if let Ok(progress) = crate::state::progress_document_for(store.path(), token) {
+            files.extend(existing_with_bak(&progress));
+        }
+        files.extend(existing_with_bak(&workspace_files.augment_for(token)));
+        let assets = workspace_files.assets_for(token);
+        if assets.is_dir() {
+            directories.push(assets);
+        }
+    }
+    if let Some(bak) = bak_sibling(deck_path) {
+        files.push(bak);
+    }
+    (files, directories, deck)
+}
+
+fn existing_with_bak(live: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if live.exists() {
+        out.push(live.to_path_buf());
+    }
+    if let Some(bak) = bak_sibling(live) {
+        out.push(bak);
+    }
+    out
+}
+
+fn bak_sibling(live: &Path) -> Option<PathBuf> {
+    let name = live.file_name()?.to_str()?;
+    let bak = live.with_file_name(format!("{name}.bak"));
+    bak.exists().then_some(bak)
+}
+
 #[derive(Debug, Default, PartialEq)]
 pub struct RestoreReport {
     pub deck: bool,
@@ -779,6 +907,124 @@ mod tests {
         assert_eq!(
             orig_deck,
             std::fs::read_to_string(dir.path().join("a.md")).unwrap()
+        );
+    }
+
+    #[test]
+    fn removing_a_deck_deletes_file_progress_augment_and_every_bak() {
+        let dir = tempfile::tempdir().unwrap();
+        trio_fixture(dir.path());
+        // Post-replace state: live a.md plus the three .baks. Reopen a store
+        // on the live deck so progress for its fresh token exists too.
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
+        let live = Deck::load(dir.path().join("a.md")).unwrap();
+        store.get_or_insert(&live.cards[0].id().unwrap(), 0);
+        store.save().unwrap();
+
+        let report = remove_deck(&dir.path().join("a.md"), &store).unwrap();
+
+        assert!(report.removed.len() >= 4, "{:?}", report.removed);
+        assert!(!dir.path().join("a.md").exists(), "deck gone");
+        assert!(!dir.path().join("a.md.bak").exists(), "deck backup gone");
+        let leftovers: Vec<_> = ["progress", "augment"]
+            .iter()
+            .flat_map(|sub| {
+                std::fs::read_dir(dir.path().join(sub))
+                    .into_iter()
+                    .flatten()
+            })
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                let n = p.file_name().unwrap().to_string_lossy().to_string();
+                n.contains("da1")
+                    || n.ends_with(".bak")
+                    || n.contains(live.deck_token.as_deref().unwrap())
+            })
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    #[test]
+    fn removing_a_workspace_member_deletes_its_frozen_assets_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write_deck(&members, "a.md", "da1", "c1");
+        let assets = ws.join("assets/deck-da1");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::write(assets.join("img.png"), b"png").unwrap();
+        let store = crate::state::open_store(&members.join("a.md"), dir.path()).unwrap();
+
+        let preview = removal_preview(&members.join("a.md"), &store);
+        assert!(
+            preview.directories.contains(&assets),
+            "the preview names the assets dir: {preview:?}"
+        );
+
+        remove_deck(&members.join("a.md"), &store).unwrap();
+
+        assert!(!members.join("a.md").exists());
+        assert!(!assets.exists(), "the frozen assets directory is gone");
+    }
+
+    #[test]
+    fn the_removal_preview_names_the_stakes_and_the_dependents() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        std::fs::write(
+            dir.path().join("b.md"),
+            "---\nformat-version: 1\nid: \"deck-db1\"\nrequires: [\"a.md\"]\n---\n## qb <!-- id: card-cb1 -->\nb\n",
+        )
+        .unwrap();
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
+        store.get_or_insert("card-c1", 4_200);
+        store.save().unwrap();
+
+        let preview = removal_preview(&dir.path().join("a.md"), &store);
+
+        assert_eq!(1, preview.cards_with_progress);
+        assert!(
+            preview.files.contains(&dir.path().join("a.md")),
+            "{preview:?}"
+        );
+        assert!(
+            preview
+                .files
+                .iter()
+                .any(|p| p.ends_with("progress/deck-da1.json")),
+            "{preview:?}"
+        );
+        assert_eq!(vec!["b.md".to_string()], preview.dependents);
+    }
+
+    #[test]
+    fn a_removal_failure_mid_set_is_loud_and_leaves_a_detectable_state() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
+        store.get_or_insert("card-c1", 0);
+        store.save().unwrap();
+        // Make the progress document undeletable as a file by replacing it
+        // with a directory: deck-first ordering then fails on member two.
+        let progress = dir.path().join("progress/deck-da1.json");
+        std::fs::remove_file(&progress).unwrap();
+        std::fs::create_dir_all(progress.join("x")).unwrap();
+
+        let err = remove_deck(&dir.path().join("a.md"), &store).unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("deck-da1.json"),
+            "the error names the member that failed: {err:#}"
+        );
+        assert!(
+            !dir.path().join("a.md").exists(),
+            "the deck-first ordering already removed the deck"
+        );
+        assert!(
+            progress.exists(),
+            "the failed member is still there for doctor to flag"
         );
     }
 
