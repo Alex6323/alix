@@ -3382,6 +3382,141 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     );
 }
 
+// ── `alix deck remove` / `alix deck restore` ─────────────────────────────────
+
+fn imported_workspace_deck(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let tsv = write(dir, "cards.tsv", "Q1\tA1\n");
+    let ws = dir.join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let imported = alix(&[
+        "deck",
+        "import",
+        &tsv,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "geo",
+    ]);
+    assert!(imported.status.success(), "stderr: {}", stderr(&imported));
+    let deck = ws.join("decks/geo.md");
+    (ws, deck)
+}
+
+#[test]
+fn deck_remove_without_yes_refuses_headless_and_touches_nothing() {
+    let dir = TempDir::new().unwrap();
+    let (_ws, deck) = imported_workspace_deck(dir.path());
+
+    let out = alix(&["deck", "remove", deck.to_str().unwrap()]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("refusing without a terminal"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(deck.exists(), "nothing may be removed without confirmation");
+}
+
+#[test]
+fn deck_remove_with_yes_deletes_the_deck_and_its_backups() {
+    let dir = TempDir::new().unwrap();
+    let (ws, deck) = imported_workspace_deck(dir.path());
+    let tsv2 = write(dir.path(), "cards2.tsv", "Q2\tA2\n");
+    let replaced = alix(&[
+        "deck",
+        "import",
+        &tsv2,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "geo",
+        "--force",
+    ]);
+    assert!(replaced.status.success(), "stderr: {}", stderr(&replaced));
+    assert!(
+        ws.join("decks/geo.md.bak").exists(),
+        "fixture: a bak exists"
+    );
+
+    let out = alix(&["deck", "remove", deck.to_str().unwrap(), "--yes"]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("cannot be undone") || stdout(&out).contains("nothing was backed up"),
+        "the removal names its finality: {}",
+        stdout(&out)
+    );
+    assert!(!deck.exists(), "deck gone");
+    assert!(!ws.join("decks/geo.md.bak").exists(), "backup gone too");
+}
+
+#[test]
+fn deck_restore_round_trips_a_forced_import() {
+    let dir = TempDir::new().unwrap();
+    let (ws, deck) = imported_workspace_deck(dir.path());
+    let original = std::fs::read_to_string(&deck).unwrap();
+    let tsv2 = write(dir.path(), "cards2.tsv", "Q2\tA2\n");
+    let replaced = alix(&[
+        "deck",
+        "import",
+        &tsv2,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "geo",
+        "--force",
+    ]);
+    assert!(replaced.status.success(), "stderr: {}", stderr(&replaced));
+    let replacement = std::fs::read_to_string(&deck).unwrap();
+    assert_ne!(
+        original, replacement,
+        "fixture: the replace changed the deck"
+    );
+
+    let restored = alix(&["deck", "restore", deck.to_str().unwrap()]);
+    assert!(restored.status.success(), "stderr: {}", stderr(&restored));
+    assert_eq!(
+        original,
+        std::fs::read_to_string(&deck).unwrap(),
+        "the original deck text is live again"
+    );
+    assert_eq!(
+        replacement,
+        std::fs::read_to_string(ws.join("decks/geo.md.bak")).unwrap(),
+        "the replacement is preserved as the new backup"
+    );
+
+    let again = alix(&["deck", "restore", deck.to_str().unwrap()]);
+    assert!(again.status.success(), "stderr: {}", stderr(&again));
+    assert_eq!(
+        replacement,
+        std::fs::read_to_string(&deck).unwrap(),
+        "restore is its own inverse"
+    );
+}
+
+#[test]
+fn deck_remove_then_restore_is_a_clean_error() {
+    let dir = TempDir::new().unwrap();
+    let (_ws, deck) = imported_workspace_deck(dir.path());
+    let removed = alix(&["deck", "remove", deck.to_str().unwrap(), "--yes"]);
+    assert!(removed.status.success(), "stderr: {}", stderr(&removed));
+
+    let out = alix(&["deck", "restore", deck.to_str().unwrap()]);
+
+    assert!(
+        !out.status.success(),
+        "a removed deck has no backups to swap"
+    );
+    assert!(
+        stderr(&out).contains("geo.md.bak"),
+        "the error names the missing backup: {}",
+        stderr(&out)
+    );
+}
+
 // ── `alix workspace init` ────────────────────────────────────────────────────
 
 #[test]

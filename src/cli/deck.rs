@@ -12,10 +12,94 @@ use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 
 use crate::{
-    AugmentArgs, AugmentTarget, DeckInitArgs, DeckMoveArgs, DeckTransferArgs, ImportArgs,
-    WorkspaceDeadlineArgs, WorkspaceInitArgs, WorkspaceUpdateArgs,
+    AugmentArgs, AugmentTarget, DeckInitArgs, DeckMoveArgs, DeckRemoveArgs, DeckRestoreArgs,
+    DeckTransferArgs, ImportArgs, WorkspaceDeadlineArgs, WorkspaceInitArgs, WorkspaceUpdateArgs,
     common::{confirm, deck_out_dir, one_line, store_for, truncate},
 };
+
+pub(crate) fn remove_cmd(args: DeckRemoveArgs) -> Result<()> {
+    let deck = &args.deck;
+    if deck.is_dir() {
+        bail!(
+            "{} is a folder; deck remove takes a single deck file",
+            deck.display()
+        );
+    }
+    if !deck.is_file() {
+        bail!("no deck at {}", deck.display());
+    }
+    let root = removal_store_root(deck, args.store.as_deref())?;
+    let store = alix::state::open_store(deck, &root)?;
+    let preview = library::removal_preview(deck, &store);
+
+    println!("Removing {}:", deck.display());
+    let since = preview
+        .earliest_review_ms
+        .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms as i64))
+        .map(|t| format!(", reviewed since {}", t.format("%Y-%m-%d")))
+        .unwrap_or_default();
+    println!(
+        "  {} card(s) with recorded progress{since}",
+        preview.cards_with_progress
+    );
+    for file in &preview.files {
+        println!("  {}", file.display());
+    }
+    for dir in &preview.directories {
+        println!("  {}{}", dir.display(), std::path::MAIN_SEPARATOR);
+    }
+    if !preview.dependents.is_empty() {
+        println!(
+            "warning: required by {}; they will unlock, not break",
+            preview.dependents.join(", ")
+        );
+    }
+    if !confirm("Remove permanently? This cannot be undone.", args.yes)? {
+        println!("Removal cancelled.");
+        return Ok(());
+    }
+    let report = library::remove_deck(deck, &store)?;
+    println!("Removed {} file(s); nothing was backed up.", {
+        report.removed.len()
+    });
+    Ok(())
+}
+
+pub(crate) fn restore_cmd(args: DeckRestoreArgs) -> Result<()> {
+    let deck = &args.deck;
+    let root = removal_store_root(deck, args.store.as_deref())?;
+    let report = library::restore_deck(deck, &root)?;
+    let describe = |swapped: bool| {
+        if swapped {
+            "swapped"
+        } else {
+            "no backup found"
+        }
+    };
+    println!(
+        "Restored {} (review history: {}; augmentations: {}).",
+        deck.display(),
+        describe(report.progress),
+        describe(report.augment)
+    );
+    println!("The previous state is the new backup; restore again to swap back.");
+    Ok(())
+}
+
+fn removal_store_root(
+    deck: &std::path::Path,
+    cli_override: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf> {
+    assemble::store_path_for(std::slice::from_ref(&deck.to_path_buf()), cli_override)
+        .or_else(|| {
+            Config::load(None)
+                .ok()
+                .and_then(|config| config.decks_dir())
+                .map(|dir| workspace::root_store_path(&dir))
+        })
+        .or_else(alix::store::default_store_path)
+        .context("cannot determine the progress store for this deck")
+}
 
 pub(crate) fn workspace_update_cmd(args: WorkspaceUpdateArgs) -> Result<()> {
     if args.discard {

@@ -452,6 +452,41 @@ enum DeckAction {
     ///
     /// Expects tab-separated `front<TAB>back` lines.
     Import(ImportArgs),
+    /// Remove a deck and everything that is its alone: the file, its review
+    /// history, its frozen assets, its augmentations, and any backups.
+    ///
+    /// Total by design: nothing is backed up and this cannot be undone.
+    Remove(DeckRemoveArgs),
+    /// Swap a deck with its `.bak` backups (file, review history,
+    /// augmentations), undoing the last overwrite.
+    ///
+    /// Nothing is destroyed: the swapped-away state becomes the new backup,
+    /// so running it again swaps back.
+    Restore(DeckRestoreArgs),
+}
+
+#[derive(Args)]
+struct DeckRemoveArgs {
+    /// The deck file to remove.
+    deck: PathBuf,
+
+    /// Skip the confirmation prompt.
+    #[arg(short, long)]
+    yes: bool,
+
+    /// Progress store path override (default: resolved per deck).
+    #[arg(long)]
+    store: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct DeckRestoreArgs {
+    /// The deck file (or its former path) whose backups to swap in.
+    deck: PathBuf,
+
+    /// Progress store path override (default: resolved per deck).
+    #[arg(long)]
+    store: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -640,6 +675,8 @@ fn main() -> Result<()> {
             DeckAction::Move(args) => deck::move_cmd(args),
             DeckAction::Augment(args) => deck::augment_cmd(args),
             DeckAction::Import(args) => deck::import_cmd(args),
+            DeckAction::Remove(args) => deck::remove_cmd(args),
+            DeckAction::Restore(args) => deck::restore_cmd(args),
         },
         Some(Command::Workspace(action)) => match action {
             WorkspaceAction::Init(args) => deck::workspace_init_cmd(args),
