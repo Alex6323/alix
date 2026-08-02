@@ -890,15 +890,15 @@ async function shot10(page) {
     log("SKIP shot 10: no .opt-btn tap-the-answer options rendered");
     return false;
   }
-  // Pick the correct option so the "Got it!" + mascot state shows.
-  const correctText = await page.evaluate(() => {
-    try {
-      // eslint-disable-next-line no-undef
-      return state && state.card && state.card.back && state.card.back[0];
-    } catch {
-      return null;
-    }
-  });
+  // Pick the correct option so the "Got it!" + mascot state shows. The
+  // answer comes from the deck file itself (the module frontend exposes no
+  // page globals): the first authored `- [x]` line is the served card's
+  // correct choice.
+  const deckText = fs.readFileSync(
+    path.join(KIDS_DIR, "animals", "decks", "wild-animals.md"),
+    "utf8",
+  );
+  const correctText = (deckText.match(/^- \[x\] (.+)$/m) || [])[1]?.trim() || null;
   let target = opts.first();
   if (correctText) {
     const byText = page.locator(".opt-btn", { hasText: correctText });
