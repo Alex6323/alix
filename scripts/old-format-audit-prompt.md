@@ -1,11 +1,11 @@
-# Old-format recognition audit
+# Old-format audit
 
 You are auditing the alix repository for violations of its pre-1.0
 no-recognition rule. Print a verdict as the FIRST line of your reply,
 exactly one of:
 
-    RECOGNITION AUDIT: PASS
-    RECOGNITION AUDIT: FAIL
+    OLD-FORMAT AUDIT: PASS
+    OLD-FORMAT AUDIT: FAIL
 
 followed by your findings (empty on PASS).
 

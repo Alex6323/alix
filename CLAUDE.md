@@ -111,7 +111,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make lint` | `cargo clippy --all-targets -- -D warnings` (denies warnings, matching CI, so a warning fails locally instead of on the pushed main). |
 | `make deps-check` | Reject newly introduced incompatible dependency families against the reviewed baseline; run before and after changing dependencies. |
 | `make pre-1-0-check` | Reject backwards-compatibility vocabulary in production code while the package is `0.x`. |
-| `make recognition-audit` | TEMPORARY costed LLM release gate: semantic sweep of production code for old-format recognition; blocks at 1.0 demanding its own removal. |
+| `make old-format-audit` | TEMPORARY costed LLM release gate: semantic sweep of production code for old-format recognition; blocks at 1.0 demanding its own removal. |
 | `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |
 | `make toolchain-check` | Enforce exact production toolchains, full-SHA Action references pinned to one SHA repo-wide, and named drift-only exceptions. |
 | `make bump-rust RUST=… NIGHTLY=…` | Bump the Rust pins: rewrites `rust-toolchain.toml`, `.rust-nightly-version`, and every `toolchain:` literal in the three production workflows, then runs `toolchain-check`. Either variable alone works (`RUST=X.Y.Z`, `NIGHTLY=nightly-YYYY-MM-DD`); other shapes are rejected. Drift workflows keep their floating pins. |
@@ -416,8 +416,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   readers, old-data version fences, markers, old-path-derived addressing,
   aliases, or defenses for older clients. `make pre-1-0-check` rejects the
   vocabulary that usually signals such machinery; the temporary
-  `make recognition-audit` (costed LLM release gate) hunts recognition
-  semantically and, at 1.0, blocks demanding its own removal. If a diff introduces
+  `make old-format-audit` (costed LLM release gate) hunts old-format
+  handling semantically and, at 1.0, blocks demanding its own removal. If a diff introduces
   `legacy`, `compat`, `shim`, `deprecated`, `sentinel`, `adopt`, `coexist`,
   `migrate`, `older clients`, or `graceful upgrade` in a production identifier,
   filename, or comment, stop and ask rather than renaming around the gate. No

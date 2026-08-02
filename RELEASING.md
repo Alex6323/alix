@@ -9,7 +9,7 @@ decision 2026-08-01): when a cut is decided, branch `release/vX.Y.Z` at the
 chosen candidate commit and keep working on main freely. The branch is a pin,
 not a development line: it receives only cherry-picked fixes for defects the
 release gates find, the costed gates (`make docs-audit`, `make calibrate`,
-`make recognition-audit`, `make audit`) run against its checkout, and the
+`make old-format-audit`, `make audit`) run against its checkout, and the
 version tag is pushed on the
 branch. Delete the branch after tagging; the tag preserves the commit and
 its whole ancestry, cherry-picks included. (Reaffirmed 2026-08-02: projects
@@ -121,11 +121,11 @@ at. **crates.io is not automated.**
    examples, site, slides, tutorials, images, and screenshots. It writes
    `target/docs-audit.md`. Resolve every finding and rerun until the report
    begins `DOCS AUDIT: PASS`; this is a deliberate release check, not CI.
-6. **Old-format recognition audit.** Run `make recognition-audit` on this exact
+6. **Old-format recognition audit.** Run `make old-format-audit` on this exact
    release candidate: a costed read-only LLM sweep of production code for
    anything that recognizes, names, or special-cases an old format (temporary
    gate, user decision 2026-08-02). Resolve every finding and rerun until the
-   report begins `RECOGNITION AUDIT: PASS`. At version 1.0 the command blocks
+   report begins `OLD-FORMAT AUDIT: PASS`. At version 1.0 the command blocks
    and demands its own removal.
 7. **Stage everything the bump touched, then commit.** The version bump
    regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
@@ -180,7 +180,7 @@ To cut one:
    chance produces green.
 4. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
    release candidate and resolve every finding until it reports `PASS`.
-5. **Old-format recognition audit:** run `make recognition-audit`, same
+5. **Old-format recognition audit:** run `make old-format-audit`, same
    resolve-and-rerun rule as the desktop gate.
 6. **Commit** as `Release mobile-vX.Y.Z`, then
    `git tag mobile-vX.Y.Z && git push origin main --tags`.

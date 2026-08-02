@@ -36,6 +36,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gone on the same ruling; a joined source is an ordinary path that fails
   to resolve.
 
+### Fixed
+
+- The `alix generate --review` and `alix deck augment` help texts name
+  the AI backend neutrally instead of hardcoding Claude.
+
 ## [0.7.0] - 2026-08-02
 
 ### Added

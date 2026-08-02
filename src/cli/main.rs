@@ -422,7 +422,7 @@ struct GenerateDeckArgs {
     #[arg(long)]
     cards: Option<usize>,
 
-    /// Run a second Claude pass that reviews the draft and removes redundant
+    /// Run a second AI pass that reviews the draft and removes redundant
     /// cards (an extra call; can also be enabled with `generate.review`).
     #[arg(long)]
     review: bool,
@@ -453,7 +453,7 @@ enum DeckAction {
     Copy(DeckTransferArgs),
     /// Move a workspace deck, its shareable files, and its progress.
     Move(DeckMoveArgs),
-    /// Augment an existing deck with Claude: multiple-choice distractors, or
+    /// Augment an existing deck with AI: multiple-choice distractors, or
     /// trivia notes. Augmentations are deliberate and persisted, so review stays
     /// instant and fully offline.
     Augment(AugmentArgs),

@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check recognition-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
+.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
 
 # Compile the workspace.
 build:
@@ -99,11 +99,11 @@ pre-1-0-check:
 	@sh scripts/pre-1-0-check.sh
 
 # TEMPORARY release gate (Alex, 2026-08-02): a costed, read-only LLM audit
-# that hunts old-format RECOGNITION in production code, which the vocabulary
+# that hunts OLD-FORMAT handling in production code, which the vocabulary
 # grep above cannot judge semantically. At version 1.0 it blocks and demands
 # its own removal.
-recognition-audit:
-	@sh scripts/recognition-audit.sh
+old-format-audit:
+	@sh scripts/old-format-audit.sh
 
 # Deterministic supply-chain guard: production CI and release paths use exact
 # toolchains, every external Action is immutable, and only named drift jobs may
