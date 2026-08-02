@@ -110,7 +110,7 @@ claims around the current token.
   keeps remote handlers away from the desktop store.
 - `src/serve/tests.rs` covers guarded API and open bootstrap routes.
 - Remote API tests assert complete round trips and an unchanged server store.
-- `apps/mobile/rust/src/api/review.rs` tests applying outcomes to the phone's
+- `mobile/alix/rust/src/api/review.rs` tests applying outcomes to the phone's
   local store.
 - `docs/API.md` records the route and threat-model boundaries.
 

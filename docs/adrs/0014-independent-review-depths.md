@@ -3,6 +3,10 @@
 - Status: Accepted
 - Recorded: 2026-07-24
 - Retrospective: Yes
+- Details evolved: one pass-only downward credit ships — a full Reconstruct
+  pass also applies a Pass to the card's existing Recall schedule, recorded
+  in history as *propagated* (`src/scheduler.rs`); partials and fails never
+  propagate, and no other cross-crediting exists.
 
 ## Decision history
 

@@ -41,7 +41,7 @@ The useful build boundary is capability-based:
 - a Wormhole-capable mobile and library build; and
 - the complete desktop application.
 
-The separate `apps/alix-sync` application embeds Syncthing for continuous
+The separate `mobile/alix-sync` application embeds Syncthing for continuous
 workspace synchronization. It is a different product and does not depend on
 the Alix Rust library.
 
@@ -109,17 +109,17 @@ every lower feature must be appropriate for every consumer.
 
 ### Give each mobile application its actual capability set
 
-The current study application is renamed from `apps/mobile` to `apps/alix`.
+The current study application is renamed from `apps/mobile` to `mobile/alix`.
 It depends on the Alix library with default features disabled and the
 `wormhole` feature enabled. It receives the shared learning domain plus
 Wormhole transfer, without the desktop HTTP and AI stack.
 
-The new `apps/alix-sync` application embeds Syncthing and does not depend on
+The new `mobile/alix-sync` application embeds Syncthing and does not depend on
 the Alix Rust library merely to reuse paths, configuration, QR rendering, or
 domain types.
 
-Wormhole is an explicit user-initiated transfer in `apps/alix`. Syncthing is
-continuous file convergence in `apps/alix-sync`. Their feature and process
+Wormhole is an explicit user-initiated transfer in `mobile/alix`. Syncthing is
+continuous file convergence in `mobile/alix-sync`. Their feature and process
 boundaries remain separate.
 
 ### Hide asynchronous transport behind a transfer boundary
@@ -230,9 +230,9 @@ The protocol, cryptography, rendezvous behavior, and transit negotiation are
 correctness-critical commodity functionality. Reimplementation would create
 more security and interoperability risk than maintaining the dependency.
 
-### Merge Wormhole transfer into `apps/alix-sync`
+### Merge Wormhole transfer into `mobile/alix-sync`
 
-`apps/alix-sync` owns continuous Syncthing convergence. Requiring it for an
+`mobile/alix-sync` owns continuous Syncthing convergence. Requiring it for an
 explicit one-time share would couple independent products and make transfer
 availability depend on the companion application.
 
@@ -241,7 +241,7 @@ availability depend on the companion application.
 Deck, workspace, progress, augmentation, and public-bundle formats do not
 change.
 
-The feature graph is an in-repository build contract. `apps/alix` changes from
+The feature graph is an in-repository build contract. `mobile/alix` changes from
 domain-only to domain-plus-Wormhole. The completed tree contains no fallback
 subprocess path.
 
@@ -259,8 +259,8 @@ Pairing codes and protocol secrets are excluded from logs. Received bytes still
 pass through the existing bounded staging, archive, path, collision, and atomic
 landing rules before publication.
 
-The feature boundary does not grant `apps/alix-sync` access to Alix AI or
-learning internals, and does not grant `apps/alix` continuous synchronization
+The feature boundary does not grant `mobile/alix-sync` access to Alix AI or
+learning internals, and does not grant `mobile/alix` continuous synchronization
 authority.
 
 ## Verification

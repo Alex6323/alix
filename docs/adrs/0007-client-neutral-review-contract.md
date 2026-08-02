@@ -94,7 +94,7 @@ information boundaries.
 - `src/serve/contract.rs` pins complete JSON response shapes and emits
   `tests/contracts/*.json`.
 - `docs/API.md` defines evolution and unknown-field rules.
-- `apps/mobile/rust/src/api/review.rs` mirrors the core types and keeps opaque
+- `mobile/alix/rust/src/api/review.rs` mirrors the core types and keeps opaque
   Rust session handles.
 
 ## Reversal

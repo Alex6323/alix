@@ -41,8 +41,8 @@ with `requires:` so they unlock in dependency order, each `source:` pointing
 back at the real source. Writing the whole set from one understanding keeps the
 items **coherent** (each builds on its prerequisites instead of repeating them).
 Before the hidden staging workspace becomes visible, Alix initializes every
-complete member and [freezes its evidence](13-trace-decks.md). Explicit source
-files, bounded directory citations, and local card images land below each
+complete member and [freezes its evidence](13-trace-decks.md). Cited excerpts
+(from files and directories alike) and local card images land below each
 member's `assets/deck-<token>/` directory. A missing or changed required source
 aborts publication instead of leaving a live or partially frozen workspace.
 `--source-url <URL>` records a public source in the workspace defaults.

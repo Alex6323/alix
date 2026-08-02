@@ -22,7 +22,8 @@ passed = ["l"]
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
 rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
-`remove` (default `ctrl-x`), `continue`, `restart` (default `r`), `quit`, `up`/`down`
+`remove` (default `ctrl-x`), `ask` (default `?`), `promote` (default `ctrl-p`),
+`continue`, `restart` (default `r`), `quit`, `up`/`down`
 (defaults `k`/`j`) to move within a multiple-choice or key-point list (the arrow keys always work too),
 and the tutor's distill actions `make_note` (default `ctrl-n`) and `make_card` (default `ctrl-d`). While
 you're typing an answer (a reconstruct check), plain-character bindings are ignored so
@@ -166,8 +167,10 @@ settings:
   hidden until the result passes validation.
 - **`[exam]`**: the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
   `pass_threshold` (1.0), `strictness` (`balanced`), `extra`.
-- **`[trace]`**: `alix generate`'s trace and plan passes: defaults `model = "opus"`
-  and `effort = "high"` (the build is correctness-critical and amortized); also
+- **`[trace]`**: `alix generate`'s trace and plan passes: `model` defaults to
+  unset, which resolves to the backend's strong model where it defines one
+  (Claude: `opus`), and `effort` defaults to `"high"` (the build is
+  correctness-critical and amortized); also
   `timeout_secs`. `auto_grade` (default `false`) has the model grade your typed
   predictions during a [trace walk](13-trace-decks.md), a model call per hop,
   at the `[ask]` tier.
@@ -218,10 +221,13 @@ runtime compatibility branches or converters for superseded pre-1.0 layouts.
 
 Everything Alix stores is plain files in one folder, so a backup is a copy of
 that folder. Use whatever you already use for folders: a cloud drive, `git`,
-`rsync`, Time Machine, or `cp -r`. Alix deliberately has no `backup`/`restore`
-command of its own: it could only reproduce what those tools already do,
-losslessly, over the same plain files. Keep an independent copy of any study
-history you care about.
+`rsync`, Time Machine, or `cp -r`. Alix manages no backup archives or
+generations of its own: a general backup could only reproduce what those tools
+already do, losslessly, over the same plain files. What it does keep is one
+`.bak` safety net per overwrite: [`alix deck
+restore`](17-command-reference.md) swaps a deck (file, review history,
+augmentations) with the backups the last overwrite left behind. Keep an
+independent copy of any study history you care about.
 
 What Alix does guarantee is that its **own** writes cannot corrupt your files.
 Every state, deck, and manifest write goes to a sibling temporary file that is

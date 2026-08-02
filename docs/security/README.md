@@ -61,7 +61,8 @@ none of these mechanisms authenticates a writer or merges concurrent changes.
 Deck stamping has a separate local write boundary. A valid deck ID under the
 `id` key in opening YAML frontmatter marks a file as initialized and
 authorizes automatic maintenance of missing card IDs. The retired `alix-id`
-key is rejected at parse time and grants nothing. `alix deck init <file>` is
+key is an ordinary unknown frontmatter key: it lints and grants nothing,
+because only `id: deck-<token>` marks a file initialized. `alix deck init <file>` is
 the explicit opt-in that may mint the initial deck ID. Discovery and automatic
 review or augmentation never grant that authority from `##` headings alone, so
 ordinary Markdown remains byte-identical. Generated, imported, received,
@@ -195,7 +196,7 @@ safe or accurate.
 | A broad `source` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `source` as narrow as practical and inspect inherited workspace defaults. |
 | Syncthing or another tool creates concurrent same-deck progress writes | Per-deck atomic replacement, revision checks, writer warnings, and conflict-file detection. | Different decks are independent; for one deck, keep one active writer, resolve conflict copies manually, and back up before recovery. |
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
-| Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `id` (`deck-<token>`); the retired `alix-id` is a parse error and grants nothing, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
+| Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `id` (`deck-<token>`); the retired `alix-id` is an ordinary unknown key that lints and grants nothing, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
 | A numeric source range slides onto unrelated text | Every complete citation fingerprints the normalized excerpt and source consumers fail closed on a mismatch. | Review doctor findings before using explicit locator repair; fingerprints detect drift but do not prove semantic support. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
 | Malformed or hostile input exhausts resources | JSON bodies share one central cap, and excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
@@ -213,7 +214,10 @@ safe or accurate.
   human review.
 - Per-deck state has fsynced atomic replacement, owner and revision checks,
   and conflict warnings, but no general same-deck merge or multi-writer
-  transaction protocol; kill-point fault injection is still open.
+  transaction protocol; kill-point fault injection (`src/fsio.rs`'s fault
+  seam and matrix test) runs on every platform, while the Windows
+  directory-entry flush (`sync_dir` is a no-op there) and real power-loss
+  testing remain open.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
   that a provider CLI honored them.
 - Exact direct toolchain and Action pins now reduce release drift, but runner

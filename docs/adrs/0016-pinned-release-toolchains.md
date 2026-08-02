@@ -26,7 +26,7 @@ Blocking CI and release workflows use exact toolchain selections:
 - `rust-toolchain.toml` pins the default Rust release.
 - `.rust-nightly-version` pins the date-named nightly used for formatting and
   coverage.
-- `apps/mobile/.fvmrc` pins Flutter.
+- `mobile/alix/.fvmrc` pins Flutter.
 - the Android application pins its NDK in `build.gradle.kts`.
 - workflow inputs pin Java, Node, mdBook, `cargo-llvm-cov`, and FRB codegen.
 - release Cargo builds and codegen installation use locked dependency graphs.

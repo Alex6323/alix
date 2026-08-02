@@ -65,9 +65,12 @@ so is every client.
 ## 3. Conventions
 
 - JSON keys are the Rust field names verbatim; no renaming layer.
-- **Every documented key is always present.** Optional values serialize as
-  `null` — they are never omitted. ("nullable" in the tables means
-  null-possible, not sometimes-absent.)
+- **Documented keys are present by default.** Optional values serialize as
+  `null` rather than being dropped ("nullable" in the tables means
+  null-possible), with four exceptions that are omitted entirely when
+  absent: `CardDto.front_units`, and `StateDto`'s `next_due_ms`,
+  `recognize_gap`, and `save_error`. Each of their table rows states when
+  it appears; treat a missing key there as `null`.
 - Responses: `Content-Type: application/json; charset=utf-8` and
   `Cache-Control: no-store` on all JSON. No ETags, no conditional requests.
 - **No CORS headers.** A browser-based client must be served by alix itself
@@ -179,7 +182,7 @@ entry carrying its own optional guidance steer (poll `GET /api/augment` while
 `failed` as the targets run one at a time.
 `POST /api/augment/remove {target, topology?}` deletes cached content;
 `POST /api/augment/close` → `StateDto`. Target names are an open set
-(currently include `choices`, `notes`, `keypoints`, `format`, `icon`).
+(currently include `choices`, `notes`, `questions`, `keypoints`, `format`, `topology`, `icon`).
 
 ### 4.5 Ask (the tutor)
 
@@ -657,7 +660,7 @@ region per card; the same seven-value tier vocabulary as
 | `label` | string | Display title. |
 | `meta` | string? | Badge text for a completion state (`done ✓`, `exam due`, `mastered 🎉 · …`) or a group's `N decks`; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` for decks; `workspace` \| `folder` for groups (open set). |
-| `locked` | bool | A `% requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
+| `locked` | bool | A `requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
 | `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both unrecognized **and** recognizable (see `can_recognize`). |
 | `can_recognize` | bool | The deck has at least one recognizable card — cached choice distractors that build a pick (`alix deck augment --target choices`). Gate the **Recognize** depth on this: a deck without it can build no pick, so Recognize is unavailable (grey it out) even under cram. Group rows aggregate members. |

@@ -77,7 +77,8 @@ edit freely; re-run it to regenerate.
 
 Building is one-shot, correctness-critical, and **fails silently** when the model
 is weak — you still get parseable checkpoints, just a loose chain you then drill.
-So the `[trace]` config defaults the build to a strong model (`model = "opus"`)
+So the `[trace]` config defaults the build to the backend's strong model
+(for Claude, `opus`; set `model` to override)
 and high reasoning effort (`effort = "high"`): slower than the other AI features,
 but it runs once and is amortized over many reviews. The suggestions pass
 (`--trace --plan`, below) shares those settings; walk grading (`[trace]
@@ -160,9 +161,9 @@ fixed question (`[exam] retry_cooldown_secs`, default one hour; `0` disables it)
 
 Because `<!-- at: file:lines -->` reads the **live** source, editing a traced
 file could shift every excerpt to unrelated lines. Initializing any workspace
-member therefore freezes its evidence immediately. An explicitly named source
-file is copied in full. A source directory is reduced to the excerpts cited by
-its cards, so Alix does not export an entire repository.
+member therefore freezes its evidence immediately. Every source, an explicitly
+named file and a directory alike, is reduced to the excerpts cited by its
+cards, so Alix never exports a whole file or an entire repository.
 
 Every copied excerpt lives below `assets/deck-<token>/` and is named
 `sha256-<digest>.<ext>`, where the digest covers its exact stored bytes. Freezing

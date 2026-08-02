@@ -5,6 +5,13 @@
 - Retrospective: No
 - Refines: [ADR 0001](0001-local-first-files.md) and
   [ADR 0005](0005-progress-store-durability.md)
+- Details evolved (2026-08-02, deck-lifecycle work): overwrite-scoped `.bak`
+  backups and `alix deck restore` are now in scope — an overwrite (forced
+  import, trace or workspace regeneration) backs up the deck file, its
+  progress document, and its augmentations, and `restore` swaps them back;
+  `alix doctor --remove-backup-files` deletes accumulated backups. Backup
+  archives, generations, retention policy, and a general `backup` command
+  remain out of scope exactly as decided below.
 
 ## Context
 

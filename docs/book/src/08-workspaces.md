@@ -52,9 +52,9 @@ ignored by discovery. Root-level Markdown is never a workspace member, so
 README-style prose and notes can live beside `alix.toml` without becoming picker
 entries or being stamped.
 
-Initialization also makes the member portable. Explicit source files are copied
-in full, directory-backed citations are copied as bounded excerpts, and local
-card images are copied into `assets/deck-<token>/`. Every managed filename is the
+Initialization also makes the member portable. Cited excerpts are copied from
+explicit source files and source directories alike (never a whole file or
+repository), and local card images are copied into `assets/deck-<token>/`. Every managed filename is the
 SHA-256 address of its exact bytes. The deck is not initialized successfully if
 required evidence or an image cannot be copied.
 
@@ -122,10 +122,11 @@ alix ~/decks/spanish/
 
 ## Shared directives
 
-The `[defaults]` keys are exactly the deck-directive names from
-[the deck format](03-the-deck-format.md): `reveal`, `direction`, `order`, and
-the rest. They fill in only what a deck *doesn't* set for itself, so the
-precedence is one level deeper than before:
+The `[defaults]` keys are the deck-directive names `reveal`, `input`,
+`order`, and `direction` from [the deck format](03-the-deck-format.md),
+plus `strictness`: the learner-side [exam](12-the-ai-exam.md) rigor, which
+a deck itself cannot declare. They fill in only what a deck *doesn't* set
+for itself, so the precedence is one level deeper than before:
 
 > card `<!-- -->` > deck frontmatter > **workspace `[defaults]`** > built-in default
 

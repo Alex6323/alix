@@ -100,8 +100,8 @@ recorded in ADR 0010.
 
 ## Verification
 
-- `apps/mobile/rust/Cargo.toml` exactly pins `flutter_rust_bridge`.
-- `apps/mobile/rust/src/api/review.rs` mirrors core views and owns opaque
+- `mobile/alix/rust/Cargo.toml` exactly pins `flutter_rust_bridge`.
+- `mobile/alix/rust/src/api/review.rs` mirrors core views and owns opaque
   session wrappers.
 - `scripts/frb-check.sh` and `make frb-check` verify version and generation
   alignment.

@@ -54,7 +54,7 @@ it.
     can't, it's probably out.
 - **Be wary of "it'll bring users."** Almost any feature can claim it, so on its
   own it doesn't help us decide — show which step of the loop it deepens instead.
-- **Prefer extending an existing concept** (a `%` directive, an answer mode)
+- **Prefer extending an existing concept** (a directive, an answer mode)
   over adding a subsystem the user has to learn. Conceptual surface area is the
   real cost, not lines of code.
 
@@ -108,9 +108,12 @@ CI runs the same gates on every PR: `fmt` (nightly rustfmt), `check` (clippy +
 tests, with `-Dwarnings`), `core` (the lean no-default-features build),
 `bridge` (the mobile bridge crate's host tests), `mobile-e2e` (the mobile app's
 Dart tests plus a full-app integration run in a headless Linux window, against
-the real embedded core), `e2e` (Playwright, browser-driven, blocking), and an
-informational `coverage` job. Two scheduled drift detectors run off the PR
-path: the backend CLI flag-drift smoke test and a weekly mobile toolchain
+the real embedded core), `e2e` (Playwright, browser-driven, blocking),
+`orchestrator` (the Python orchestrator suite), `persistence-os` (the test
+suite on macOS and the lib tests on Windows), `web-lint` (the composed web
+JavaScript check), and an informational `coverage` job. Three scheduled drift detectors run off the PR
+path: the backend CLI flag-drift smoke test, a nightly RustSec advisory scan
+(`make audit` is the blocking tag-time run), and a weekly mobile toolchain
 build (`make frb-check` + an APK build against current stable Flutter).
 
 Production CI and release versions are repository inputs, not ambient machine

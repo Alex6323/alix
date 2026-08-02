@@ -41,7 +41,8 @@ for the wire contract if you're building against it.
 On your computer, run `alix --lan` and note the URL it prints (the same one
 `[serve] token` can pin, above). On the [mobile app](18-the-mobile-app.md):
 
-1. Open the deck list's overflow menu and choose **Pair with desktop…**.
+1. Open **Settings** (the ☰ button on the deck list) and tap
+   **Connected devices**.
 2. Paste the printed URL into the sheet and tap **Pair**.
 
 The app checks the server before saving anything, so a bad paste or an
@@ -57,9 +58,9 @@ naming what went wrong:
   `alix answered but refused this token. Copy a fresh pairing URL from the server.`
 
 On success the sheet closes with a note of which host you paired with. The
-same menu item reopens the sheet later, now showing the current
-`host:port` and an **Unpair** button; unpairing only clears the saved
-config, nothing else on the phone changes.
+same **Connected devices** row reopens the sheet later, now showing the
+current `host:port` and an **Unpair** button; unpairing only clears the
+saved config, nothing else on the phone changes.
 
 ## What's borrowed once paired
 
@@ -88,13 +89,13 @@ trace's compression question, graded on the desktop the same way a fact
 deck's exam is; a fail is re-walked rather than turned into remediation
 cards, since a trace is a path, not a card pile.
 
-The deck list's overflow menu also gains **Generate deck…**, shown once
-paired: give it a URL and optional guidance, the desktop generates the deck
-text the same way `alix generate` does, then the phone asks where to save it
-(the same folder browser the shared-decks setup uses) and writes it under a
-collision-free file name. Unlike the two chips above, this menu item is
-gated only on a saved pairing existing, not on a live reachability check; a
-dead or too-old desktop shows its refusal inline in the sheet instead.
+The Settings page also gains a **Generate deck** row: give it a URL and
+optional guidance, the desktop generates the deck text the same way
+`alix generate` does, then the phone asks where to save it (the same folder
+browser the shared-decks setup uses) and writes it under a collision-free
+file name. It follows the same liveness rule as the two chips: the row
+appears only while the phone has confirmed the paired desktop is reachable
+and new enough, and is simply absent otherwise.
 
 The Ask chip, the Take the exam chip, and the walk's own exam offer all
 depend on the phone having confirmed the paired desktop is reachable and
@@ -104,7 +105,7 @@ too-old server, the chip or offer simply is not there.
 If the desktop answers but rejects the token partway through a review, an
 exam, a note, or a generation (the restart case above, caught mid-session
 instead of at pairing time), the phone shows one SnackBar: "Pairing expired.
-Pair again from the deck list menu." On the review and exam screens it
+Pair again from Settings → Connected devices." On the review and exam screens it
 carries a **Re-pair** action that reopens the pairing sheet directly; the
 tutor sheet's own SnackBar sits under its own still-open modal and has no
 room for one, so there you follow the message's own instruction instead.

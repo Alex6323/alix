@@ -34,7 +34,7 @@ text_manifest() {
 }
 
 visual_manifest() {
-    git ls-files -- site docs/book docs/examples | while IFS= read -r path; do
+     git ls-files -- site docs/book docs/examples assets/alix.svg | while IFS= read -r path; do
         if is_visual "$path"; then
             printf '%s\n' "$path"
         fi

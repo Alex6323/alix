@@ -9,9 +9,9 @@ your network lends it the tutor, the AI exam (a trace's compression exam
 included), deck generation, and note-taking: see
 [Pairing a device](19-pairing.md).
 
-The overflow menu's **Theme…** picks from the same 18-theme gallery the web
-app ships (see [Themes](15-the-web-app.md#themes)); the app re-themes live,
-no restart.
+Settings (the ☰ button) → **Theme** picks from the web gallery’s 18 non-kids
+themes (the three Kids palettes are web-only; see
+[Themes](15-the-web-app.md#themes)); the app re-themes live, no restart.
 
 ## Install
 
@@ -21,9 +21,9 @@ installing outside a store; that is expected for now. The app works on
 Android 7+ and ships a few sample decks so a fresh install has something to
 review.
 
-The overflow menu's **About** shows two versions: the app's own and the
-embedded core's. The app has its own release stream; it does not track the
-CLI's version.
+Settings → **About** shows two versions: the app's own and the embedded
+core's. The app has its own release stream; it does not track the CLI's
+version.
 
 ## Your own decks: a shared folder
 
@@ -32,7 +32,7 @@ you actually maintain, point it at a real folder on the phone:
 
 1. Sync your decks folder to the phone with whatever you already use
    (Syncthing is the natural fit: local, no accounts).
-2. In the app: the overflow menu, **Decks folder…**, then **Choose shared
+2. In the app: Settings → **Decks folder**, then **Choose shared
    folder…**. Android 11 or newer.
 3. The first time, Android opens its **All files access** page: alix reads
    and writes plain files in a folder another app manages, which is exactly
