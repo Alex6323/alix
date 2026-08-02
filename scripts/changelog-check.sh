@@ -20,6 +20,18 @@ first=$(grep '^## \[' "$file" | head -n 1)
 dupes=$(grep '^## \[' "$file" | LC_ALL=C sort | LC_ALL=C uniq -d)
 [ -z "$dupes" ] || fail "duplicate release headings: $dupes"
 
+# One Added/Changed/Fixed per release: merge residue duplicates a subsection
+# instead of appending to it, and the split content reads as two half-lists.
+section_dupes=$(awk '
+    /^## \[/ { release = $0; delete seen }
+    /^### /  {
+        if ($0 in seen) { printf "%s repeats in %s\n", $0, release }
+        seen[$0] = 1
+    }
+' "$file")
+[ -z "$section_dupes" ] || fail "duplicate subsections:
+$section_dupes"
+
 # A dirty working tree must never lose release headings relative to HEAD:
 # releases only ever append headings, so a decrease is a truncation.
 if committed=$(git show "HEAD:$file" 2>/dev/null); then
