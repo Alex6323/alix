@@ -1,0 +1,3 @@
+# The demo server's config: exists so shots never inherit the capture
+# machine's real platform config (custom key bindings once shipped in a
+# published screenshot's grading-key hints). Defaults only.

@@ -35,6 +35,7 @@ const KIDS_SRC = path.join(os.homedir(), "alix-kids");
 const DEMO_DIR = path.join(WORK, "demo");
 const KIDS_DIR = path.join(WORK, "kids");
 const KIDS_CONFIG = path.join(SHOTS_DIR, "kids.toml");
+const DEMO_CONFIG = path.join(SHOTS_DIR, "demo.toml");
 const OUT_DIR = path.join(REPO_ROOT, "site", "img");
 
 const DEMO_PORT = 7801;
@@ -931,7 +932,7 @@ async function main() {
 
   freePort(DEMO_PORT);
   freePort(KIDS_PORT);
-  startServer(DEMO_DIR, DEMO_PORT);
+  startServer(DEMO_DIR, DEMO_PORT, ["--config", DEMO_CONFIG]);
   startServer(KIDS_DIR, KIDS_PORT, ["--config", KIDS_CONFIG]);
   await waitForServer(DEMO_BASE);
   await waitForServer(KIDS_BASE);
