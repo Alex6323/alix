@@ -128,8 +128,9 @@ hop by hop:
    judge your typed prediction against the key points and return a verdict plus a
    line of feedback (a model call per hop; a desktop/web setting, since the
    phone's walk is always self-judged). Either way, a failed or partly hop is
-   a **weak edge** that resurfaces sooner — a failed one resets, a partly steps
-   back one stage — while a passed hop advances and fades. Each checkpoint is an
+   a **weak edge** that resurfaces sooner — a failed one resets, a partly
+   shortens its next interval (FSRS *Hard*) — while a passed hop advances and
+   fades. Each checkpoint is an
    ordinary card underneath, so this is the normal per-card SRS.
 4. **Done** — after the last hop the walk is complete. That's the *drill*; the
    *verification* (what masters the trace) is its separate **exam**, below.
