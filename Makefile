@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends e2e shots stats gate gate-guard mutants bump-rust
+.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants bump-rust
 
 # Compile the workspace.
 build:
@@ -387,6 +387,11 @@ heartbeat:
 # CLI). Needs each CLI installed and the maintainer's own logins configured.
 check-backends:
 	cargo run --quiet -- doctor --all-backends
+
+# Triage mail forwarded from contact@alix.study (read-only IMAP; credentials
+# in ~/.config/alix-mail/credentials, never in the repo). Maintainer-only.
+check-mail:
+	python3 scripts/check-mail.py
 
 # Playwright end-to-end smoke suite for the alix web clients (e2e/): drives
 # real `alix` servers (Chromium only) and asserts a click reaches the server —

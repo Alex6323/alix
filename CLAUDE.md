@@ -139,6 +139,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make clean` | `cargo clean`. |
 | `make heartbeat` | Release heartbeat — is shipped work piling up unreleased? (see below). |
 | `make check-backends` | `alix doctor --all-backends` (real tiny request per backend; needs logins). Maintainer-only. |
+| `make check-mail` | Read-only IMAP triage of mail forwarded from contact@alix.study into SPAM / MARKETING / USEFUL by header evidence; credentials live in `~/.config/alix-mail/credentials`, never the repo. Maintainer-only. |
 
 **Release heartbeat — run `make heartbeat` at the start of a session.** It reports
 the `CHANGELOG.md [Unreleased]` entry count and days since the last `vX.Y.Z` tag;
