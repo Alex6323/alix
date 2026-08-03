@@ -1,0 +1,5 @@
+Decks are Markdown (.md) files now. Pair with your desktop's alix to
+borrow its AI: a tutor on any card, the AI exam, note-taking, and deck
+generation from a URL. Trace decks walk fully offline. A theme gallery,
+workspace deadlines, a region breadcrumb over ordered reviews, and a
+smarter deck picker round it out.

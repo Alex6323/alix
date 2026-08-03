@@ -1,0 +1,5 @@
+A fresh install lists its starter decks again, and adding the tutorial
+heals older stranded copies. Session summaries show every kind of work
+(recognized, almost, missed), light themes are readable, generating a
+deck twice lands beside the first, and a quiet "more" hint appears when
+a revealed card continues below the fold.

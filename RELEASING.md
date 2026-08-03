@@ -173,8 +173,11 @@ To cut one:
    (`adb install -r mobile/alix/build/app/outputs/flutter-apk/app-release.apk`)
    and run one review.
 2. **Finalize** `mobile/alix/CHANGELOG.md` (rename `## [Unreleased]` to
-   `## [X.Y.Z] - date`, fresh empty Unreleased above) and bump pubspec's
-   `version:` to `X.Y.Z+N`.
+   `## [X.Y.Z] - date`, fresh empty Unreleased above), bump pubspec's
+   `version:` to `X.Y.Z+N`, and write the matching store-listing summary
+   `mobile/alix/fastlane/metadata/android/en-US/changelogs/<N>.txt` (a few
+   plain sentences condensed from the release's section; every `+N` bump
+   gets its file).
 3. **Live grader calibration:** run `make calibrate` under the same failure rule
    as the desktop release: investigate any failure rather than rerunning until
    chance produces green.
