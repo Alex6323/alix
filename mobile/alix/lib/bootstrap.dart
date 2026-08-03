@@ -157,9 +157,13 @@ Future<void> _stampSeed(String path) async {
 /// picker's empty state.
 Future<void> addTutorialDeck(String root) async {
   final file = File('$root/tutorial.md');
-  if (await file.exists()) return;
-  final content = await rootBundle.loadString('assets/decks/tutorial.md');
-  await file.writeAsString(content);
+  if (!await file.exists()) {
+    final content = await rootBundle.loadString('assets/decks/tutorial.md');
+    await file.writeAsString(content);
+  }
+  // Stamp even when the file already existed: an unstamped copy (stranded by
+  // a pre-stamping build) never lists, and stamping a stamped deck is a no-op.
+  await _stampSeed(file.path);
 }
 
 File _settingsFile(Directory support) => File('${support.path}/settings.json');

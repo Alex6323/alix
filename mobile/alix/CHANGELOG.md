@@ -35,6 +35,8 @@ Release notes, so a release without its section fails loud.
 - A fresh install's seeded decks (tutorial, basics, the sample workspace)
   are stamped with minted ids at seed time, like the desktop seeder does;
   without ids nothing listed, so a first launch showed an empty library.
+  The picker's "Add the tutorial deck" button stamps too, and heals a
+  copy a pre-stamping build left stranded instead of skipping it.
 
 ### Added
 

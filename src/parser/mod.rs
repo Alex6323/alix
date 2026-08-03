@@ -1677,7 +1677,7 @@ mod tests {
     }
 
     #[test]
-    fn an_old_grammar_at_locator_is_a_hard_error() {
+    fn an_at_locator_with_unexpected_content_is_a_hard_error() {
         let e = err("## q\n---\na\n\
              <!-- at: 29.rs @ xxh64:0123456789abcdef from src/caching.rs:46-66 -->\n");
         assert!(
@@ -1694,7 +1694,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reordered_new_format_locator_error_carries_the_canonical_order_hint() {
+    fn a_reordered_locator_error_carries_the_canonical_order_hint() {
         let e = err("## q\n---\na\n\
              <!-- at: notes.md asset: sha256-abc123.rs fingerprint: xxh64-0123456789abcdef -->\n");
         assert!(
@@ -1709,7 +1709,7 @@ mod tests {
     }
 
     #[test]
-    fn an_old_colon_form_at_fingerprint_is_a_hard_error() {
+    fn a_fingerprint_without_the_xxh64_dash_prefix_is_a_hard_error() {
         let e =
             err("## q\n---\na\n<!-- at: src/lib.rs:1-3 fingerprint: xxh64:0123456789abcdef -->\n");
         assert!(

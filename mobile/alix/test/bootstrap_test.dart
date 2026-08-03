@@ -46,6 +46,21 @@ void main() {
     expect(tutorial.readAsStringSync(), contains('The alix tutorial'));
   });
 
+  test('adding the tutorial to a folder stamps it, healing a stranded copy',
+      () async {
+    final root = temp('alix-root-');
+    await addTutorialDeck(root.path);
+    final tutorial = File('${root.path}/tutorial.md');
+    expect(tutorial.readAsStringSync(), matches(RegExp(r'id: "deck-')),
+        reason: 'a fresh add must stamp, or the deck never lists');
+    final stranded = File('${root.path}/stranded/tutorial.md')
+      ..parent.createSync(recursive: true);
+    stranded.writeAsStringSync('# The alix tutorial\n\n## q\na\n');
+    await addTutorialDeck('${root.path}/stranded');
+    expect(stranded.readAsStringSync(), matches(RegExp(r'id: "deck-')),
+        reason: 'an existing unstamped copy must be healed, not skipped');
+  });
+
   test('every seeded deck is stamped so a fresh install can review it',
       () async {
     final support = temp('alix-support-');
