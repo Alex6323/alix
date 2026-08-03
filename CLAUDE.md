@@ -448,9 +448,10 @@ to this codebase. When in doubt, mirror the surrounding code.
   heavy *full package* (e.g. an ML optimizer) from its light *core* before rejecting a dep on
   weight.
 - **Don't break card identity.** A card's id is a minted 128-bit token, rendered as 26
-  lowercase Crockford base32 chars and written into the deck file as an `<!-- id: t -->`
-  line closing the card; `Card::id` returns that token verbatim (sub-ids: `t-N` per cloze
-  hole, `t-r` for the reversed half of a both-directions card). See `Card::id`
+  lowercase Crockford base32 chars and written into the deck file as an
+  `<!-- id: card-<token> -->` line closing the card; `Card::id` returns the prefixed id
+  (sub-ids: `card-<token>-N` per cloze hole, `card-<token>-r` for the reversed half of a
+  both-directions card). See `Card::id`
   (`src/card.rs`) and `src/parser/`. The token is minted once (on review-open,
   augment-open, or card creation) and never changes, so editing a card's front, back, or
   notes preserves its review history: that permanence is the point of the token model (it
