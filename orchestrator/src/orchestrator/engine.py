@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Iterator, cast
 
 from orchestrator.agents import Invoker
-from orchestrator.commands import Executor
+from orchestrator.commands import CommandResult, Executor
 from orchestrator.models import (
     AgentName,
     AgentState,
@@ -126,7 +126,7 @@ def initialize_run(options: RunOptions, run_id: str | None = None) -> RunState:
             )
             return state
         state.agents[property_author] = _create_property_worktree(
-            repo,
+            Path(state.agents[implementer].worktree),
             worktree_root,
             identifier,
             property_author,
@@ -389,6 +389,12 @@ def _adjudicate_property_claim(
     paths = patch_paths(patch)
     if any(not path.startswith("tests/") for path in paths):
         raise RuntimeError("property adjudication may change only tests/")
+    formatted = _format_property_suite(executor, property_worktree)
+    if formatted.returncode != 0:
+        raise RuntimeError(
+            "adjudicated property suite does not format: "
+            + _output(formatted.stdout, formatted.stderr)
+        )
     compiled = executor.run(["cargo", "test", "--no-run"], property_worktree)
     if compiled.returncode != 0:
         raise RuntimeError(
@@ -632,6 +638,7 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
                     state.agents[agent].last_sha,
                 ),
                 check_ok=check.returncode == 0,
+                mutants_run=mutants is not None,
             )
         )
     baseline_worktree = Path(state.agents[names[0]].worktree)
@@ -858,6 +865,7 @@ def _load_scores(path: Path) -> list[BranchScore]:
         if not isinstance(value, dict):
             raise ValueError("score must be an object")
         data = cast(dict[object, object], value)
+        check_ok = _score_bool(data, "check_ok")
         scores.append(
             BranchScore(
                 agent=_score_string(data, "agent"),
@@ -867,7 +875,12 @@ def _load_scores(path: Path) -> list[BranchScore]:
                 unresolved_defects=_score_int(data, "unresolved_defects"),
                 pedantic_warnings=_score_int(data, "pedantic_warnings"),
                 diff_loc=_score_int(data, "diff_loc"),
-                check_ok=_score_bool(data, "check_ok"),
+                check_ok=check_ok,
+                mutants_run=_score_optional_bool(
+                    data,
+                    "mutants_run",
+                    check_ok,
+                ),
                 base_pedantic_warnings=_score_optional_int(
                     data,
                     "base_pedantic_warnings",
@@ -1094,6 +1107,12 @@ def _run_property_change(
         reasons = list(validation.reasons)
         if not paths or any(not path.startswith("tests/") for path in paths):
             reasons.append("property author may change only files under tests/")
+        formatted = _format_property_suite(executor, worktree)
+        if formatted.returncode != 0:
+            reasons.append(
+                "property suite does not format: "
+                + _output(formatted.stdout, formatted.stderr)
+            )
         compiled = executor.run(["cargo", "test", "--no-run"], worktree)
         if compiled.returncode != 0:
             reasons.append(
@@ -1113,6 +1132,18 @@ def _run_property_change(
         agent_state.last_sha = _git(worktree, "rev-parse", "HEAD")
         return True
     raise AssertionError("unreachable retry loop")
+
+
+def _format_property_suite(
+    executor: Executor,
+    worktree: Path,
+) -> CommandResult:
+    command = ["cargo"]
+    nightly_file = worktree / ".rust-nightly-version"
+    if nightly_file.is_file():
+        command.append(f"+{nightly_file.read_text(encoding='utf-8').strip()}")
+    command.extend(["fmt", "--all"])
+    return executor.run(command, worktree)
 
 
 def _install_property_tests(
@@ -1782,7 +1813,7 @@ def _create_target_worktree(
 
 
 def _create_property_worktree(
-    repo: Path,
+    target: Path,
     worktree_root: Path,
     run_id: str,
     agent: AgentName,
@@ -1792,7 +1823,7 @@ def _create_property_worktree(
     worktree = worktree_root / agent
     worktree.mkdir()
     _git(worktree, "init", "-b", branch)
-    package_name = _package_name(repo)
+    package_name = _package_name(target)
     (worktree / "src").mkdir()
     (worktree / "tests").mkdir()
     (worktree / "src/lib.rs").write_text(api, encoding="utf-8")
@@ -1805,7 +1836,13 @@ def _create_property_worktree(
         'proptest = "1"\n',
         encoding="utf-8",
     )
-    _git(worktree, "add", "Cargo.toml", "src/lib.rs")
+    tracked = ["Cargo.toml", "src/lib.rs"]
+    for name in ("rustfmt.toml", ".rust-nightly-version"):
+        source = target / name
+        if source.is_file():
+            shutil.copyfile(source, worktree / name)
+            tracked.append(name)
+    _git(worktree, "add", *tracked)
     _git(
         worktree,
         "-c",

@@ -99,6 +99,8 @@ pub trait Counter {
 Without that section, the run reports a spec bug and stops. The property author
 never receives the implementation worktree path. Its test files are copied
 verbatim to the implementation branch and remain immutable during fix rounds.
+The stub inherits the target's `rustfmt.toml` and nightly pin when present, and
+the engine formats the property suite with that toolchain before the copy.
 
 ## Scoring and landing
 
@@ -121,6 +123,9 @@ eligible candidate stop for a human decision. Otherwise landing requires the
 base ref to remain at its frozen SHA and its checkout to be clean. The
 orchestrator commits the union of tests first, applies the winning
 implementation second, then fast-forwards the base.
+
+When `make check` fails, mutation testing does not run and the report renders
+the mutation result as `skipped`, never as zero missed mutants.
 
 Runs retain full agent worktrees, build outputs, neutral review exports, and
 evidence. The first full Alix run used about 7.6 GB. Budget at least 10 GB for a

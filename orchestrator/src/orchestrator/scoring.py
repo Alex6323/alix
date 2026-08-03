@@ -13,6 +13,7 @@ class BranchScore:
     pedantic_warnings: int
     diff_loc: int
     check_ok: bool
+    mutants_run: bool = True
     base_pedantic_warnings: int = 0
 
     @property

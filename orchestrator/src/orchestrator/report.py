@@ -94,9 +94,10 @@ def render_report(
             if score.eligible
             else "ineligible: " + ", ".join(score.ineligible_reasons)
         )
+        mutants = str(score.mutants_missed) if score.mutants_run else "skipped"
         lines.append(
             f"| {score.agent} | {score.cross_tests_passed}/{score.cross_tests_total} | "
-            f"{score.mutants_missed} | {score.unresolved_defects} | "
+            f"{mutants} | {score.unresolved_defects} | "
             f"{score.pedantic_warnings}/{score.pedantic_warnings_added} | "
             f"{score.diff_loc} | {'pass' if score.check_ok else 'fail'} | "
             f"{eligibility} | {score.penalty:.3f} |"

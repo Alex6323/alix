@@ -54,6 +54,22 @@ def target_repo(root: Path) -> Path:
     return repo
 
 
+def pin_formatting(repo: Path) -> None:
+    (repo / "rustfmt.toml").write_text(
+        'edition = "2024"\nstyle_edition = "2024"\n'
+    )
+    (repo / ".rust-nightly-version").write_text("nightly-2099-01-02\n")
+    git(repo, "add", "rustfmt.toml", ".rust-nightly-version")
+    git(
+        repo,
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "pin formatting",
+    )
+
+
 class InitializeRunTests(unittest.TestCase):
     def test_symmetric_setup_freezes_input_and_creates_independent_worktrees(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,6 +117,7 @@ class InitializeRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = target_repo(root)
+            pin_formatting(repo)
             spec = root / "input.md"
             spec.write_text(
                 """\
@@ -133,6 +150,14 @@ pub fn add(a: i32, b: i32) -> i32;
                 (property_worktree / "src/lib.rs").read_text(),
             )
             self.assertIn("proptest", (property_worktree / "Cargo.toml").read_text())
+            self.assertEqual(
+                (repo / "rustfmt.toml").read_bytes(),
+                (property_worktree / "rustfmt.toml").read_bytes(),
+            )
+            self.assertEqual(
+                (repo / ".rust-nightly-version").read_bytes(),
+                (property_worktree / ".rust-nightly-version").read_bytes(),
+            )
             self.assertEqual("IMPLEMENT_PROPERTIES", state.phase)
 
     def test_asymmetric_setup_records_a_missing_api_contract_as_a_spec_bug(self) -> None:
@@ -453,6 +478,22 @@ class GreenExecutor:
         return CommandResult(0, "passed", "", 0.1)
 
 
+class FormattingPropertyExecutor(GreenExecutor):
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, ...]] = []
+
+    def run(
+        self, args: list[str], cwd: Path, timeout: float | None = None
+    ) -> CommandResult:
+        del timeout
+        self.calls.append(tuple(args))
+        if args == ["cargo", "+nightly-2099-01-02", "fmt", "--all"]:
+            (cwd / "tests/property.rs").write_text(
+                "#[test]\nfn addition_is_commutative() {}\n"
+            )
+        return CommandResult(0, "passed", "", 0.1)
+
+
 class FailingPropertyExecutor:
     def run(
         self, args: list[str], cwd: Path, timeout: float | None = None
@@ -474,6 +515,17 @@ class FakeScoreExecutor:
             warning = "warning: pedantic example\n" if cwd.name == "codex" else ""
             return CommandResult(0, "", warning, 0.1)
         return CommandResult(0, "passed", "", 0.1)
+
+
+class FailingCheckScoreExecutor(FakeScoreExecutor):
+    def run(
+        self, args: list[str], cwd: Path, timeout: float | None = None
+    ) -> CommandResult:
+        if args == ["make", "check"]:
+            return CommandResult(1, "", "formatting failed", 0.1)
+        if args == ["make", "mutants"]:
+            raise AssertionError("mutants must not run after a failed check")
+        return super().run(args, cwd, timeout)
 
 
 class SerializedGateExecutor(FakeScoreExecutor):
@@ -504,9 +556,15 @@ class SerializedGateExecutor(FakeScoreExecutor):
 
 
 class FakeAsymmetricInvoker:
-    def __init__(self, run_dir: Path, implementer: str) -> None:
+    def __init__(
+        self,
+        run_dir: Path,
+        implementer: str,
+        property_source: str = "#[test]\nfn addition_is_commutative() {}\n",
+    ) -> None:
         self.run_dir = run_dir
         self.implementer = implementer
+        self.property_source = property_source
         self.prompts: dict[str, str] = {}
 
     def invoke(
@@ -518,9 +576,7 @@ class FakeAsymmetricInvoker:
             (cwd / "src/implementation.rs").write_text("pub fn fixed() {}\n")
         else:
             (cwd / "tests").mkdir(exist_ok=True)
-            (cwd / "tests/property.rs").write_text(
-                "#[test]\nfn addition_is_commutative() {}\n"
-            )
+            (cwd / "tests/property.rs").write_text(self.property_source)
         git(cwd, "add", "-N", ".")
         patch = self.run_dir / "patches" / f"asym-{agent}.patch"
         patch.write_text(git(cwd, "diff", "--binary", "HEAD") + "\n")
@@ -978,6 +1034,66 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
             )
             self.assertTrue(state.property_suite_passed)
 
+    def test_asymmetric_properties_are_formatted_with_the_target_nightly_before_copy(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = target_repo(root)
+            pin_formatting(repo)
+            spec = root / "input.md"
+            spec.write_text(
+                """\
+# Add
+## API
+```rust
+pub fn add(a: i32, b: i32) -> i32 { a + b }
+```
+"""
+            )
+            state = initialize_run(
+                RunOptions(
+                    mode="asymmetric",
+                    spec=spec,
+                    plan=None,
+                    repo=repo,
+                    base="main",
+                    run_root=root / "runs",
+                    max_fix_rounds=0,
+                    implementer="claude",
+                ),
+                run_id="format-properties",
+            )
+            invoker = FakeAsymmetricInvoker(
+                Path(state.run_dir),
+                "claude",
+                property_source="#[test]\nfn addition_is_commutative( ) { }\n",
+            )
+            executor = FormattingPropertyExecutor()
+
+            run_asymmetric_implementation_phase(state, invoker, executor)
+            run_asymmetric_test_phase(state, executor)
+
+            formatted = "#[test]\nfn addition_is_commutative() {}\n"
+            self.assertIn(
+                ("cargo", "+nightly-2099-01-02", "fmt", "--all"),
+                executor.calls,
+            )
+            self.assertEqual(
+                formatted,
+                (
+                    Path(state.agents["codex"].worktree)
+                    / "tests/property.rs"
+                ).read_text(),
+            )
+            self.assertEqual(
+                formatted,
+                (
+                    Path(state.agents["claude"].worktree)
+                    / "tests/property.rs"
+                ).read_text(),
+            )
+
     def test_asymmetric_fix_cannot_change_the_independent_property_suite(
         self,
     ) -> None:
@@ -1074,12 +1190,42 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
             self.assertEqual("LAND", state.phase)
             self.assertEqual(2, len(scores))
             self.assertEqual(0, scores[0]["mutants_missed"])
+            self.assertTrue(scores[0]["mutants_run"])
             self.assertEqual(0, scores[0]["pedantic_warnings"])
             self.assertEqual(0, scores[0]["pedantic_warnings_added"])
             self.assertEqual(1, scores[1]["pedantic_warnings_added"])
             self.assertEqual(1, executor.max_active_gates)
             self.assertEqual(2, executor.check_calls)
             self.assertIn("Merge `claude`.", (Path(state.run_dir) / "report.md").read_text())
+
+    def test_score_reports_mutants_as_skipped_after_a_failed_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = target_repo(root)
+            spec = root / "input.md"
+            spec.write_text("# Implement\n")
+            state = initialize_run(
+                RunOptions(
+                    mode="symmetric",
+                    spec=spec,
+                    plan=None,
+                    repo=repo,
+                    base="main",
+                    run_root=root / "runs",
+                    max_fix_rounds=0,
+                    implementer="claude",
+                ),
+                run_id="skipped-mutants",
+            )
+            run_implementation_phase(state, FakeInvoker(Path(state.run_dir)))
+            state.phase = "SCORE"
+
+            run_score_phase(state, FailingCheckScoreExecutor())
+
+            scores = json.loads((Path(state.run_dir) / "scores.json").read_text())
+            self.assertTrue(all(score["mutants_run"] is False for score in scores))
+            report = (Path(state.run_dir) / "report.md").read_text()
+            self.assertIn("| skipped |", report)
 
     def test_land_commits_union_tests_before_the_winning_implementation(
         self,
