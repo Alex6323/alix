@@ -77,11 +77,14 @@ class ReviewCardView extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: _face(context, card),
+          child: ScrollWithMoreHint(
+            child: SingleChildScrollView(
+              primary: true,
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: _face(context, card),
+              ),
             ),
           ),
         ),
@@ -1075,6 +1078,91 @@ class ReviewChip extends StatelessWidget {
               fontSize: 14,
               color: foreground,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Overlays a quiet "more" pill while its scrollable child extends below the
+/// viewport, mirroring the web client's "more below" hint. The pill reacts to
+/// content growth too (a reveal adding the note), via metrics notifications,
+/// and disappears once the reader reaches the bottom.
+class ScrollWithMoreHint extends StatefulWidget {
+  const ScrollWithMoreHint({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<ScrollWithMoreHint> createState() => _ScrollWithMoreHintState();
+}
+
+class _ScrollWithMoreHintState extends State<ScrollWithMoreHint> {
+  final ScrollController _controller = ScrollController();
+  bool _moreBelow = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _update(ScrollMetrics metrics) {
+    final more = metrics.hasContentDimensions &&
+        metrics.maxScrollExtent > 4 &&
+        metrics.pixels < metrics.maxScrollExtent - 4;
+    if (more != _moreBelow) setState(() => _moreBelow = more);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return PrimaryScrollController(
+      controller: _controller,
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (n) {
+          _update(n.metrics);
+          return false;
+        },
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            _update(n.metrics);
+            return false;
+          },
+          child: Stack(
+            children: [
+              widget.child,
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 6,
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _moreBelow ? 1 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: theme.dividerColor),
+                        ),
+                        child: Text(
+                          '⌵ more',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.alix.faint,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

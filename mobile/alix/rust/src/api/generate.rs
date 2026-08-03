@@ -10,7 +10,7 @@ pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("deck");
-    let stem = raw.strip_suffix(".txt").unwrap_or(raw);
+    let stem = raw.strip_suffix(".md").unwrap_or(raw);
 
     let mut candidate = stem.to_string();
     let mut n = 2;
@@ -48,7 +48,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let text = "## q1\na1\n\n## q2\na2\n";
         let name =
-            apply_generated_deck(dir_str(&dir), "topic.txt".to_string(), text.to_string()).unwrap();
+            apply_generated_deck(dir_str(&dir), "topic.md".to_string(), text.to_string()).unwrap();
 
         assert_eq!(name, "topic.md");
         let deck = alix::deck::Deck::load(dir.path().join("topic.md")).unwrap();
@@ -62,7 +62,7 @@ mod tests {
 
         let name = apply_generated_deck(
             dir_str(&dir),
-            "topic.txt".to_string(),
+            "topic.md".to_string(),
             "## q\na\n".to_string(),
         )
         .unwrap();
@@ -73,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn a_filename_without_the_txt_suffix_still_lands_on_stem_md() {
+    fn a_bare_stem_filename_still_lands_on_stem_md() {
         let dir = tempfile::tempdir().unwrap();
         let name =
             apply_generated_deck(dir_str(&dir), "topic".to_string(), "## q\na\n".to_string())
@@ -82,11 +82,28 @@ mod tests {
     }
 
     #[test]
+    fn a_second_generation_of_the_same_topic_lands_beside_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        apply_generated_deck(dir_str(&dir), "topic.md".to_string(), "## q\na\n".to_string())
+            .unwrap();
+        let second = apply_generated_deck(
+            dir_str(&dir),
+            "topic.md".to_string(),
+            "## q2\na2\n".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!("topic-2.md", second, "the promised collision-free name");
+        assert!(dir.path().join("topic.md").is_file());
+        assert!(dir.path().join("topic-2.md").is_file());
+    }
+
+    #[test]
     fn a_stem_containing_a_dot_is_not_double_stripped() {
         let dir = tempfile::tempdir().unwrap();
         let name = apply_generated_deck(
             dir_str(&dir),
-            "v2.1.txt".to_string(),
+            "v2.1.md".to_string(),
             "## q\na\n".to_string(),
         )
         .unwrap();
@@ -97,7 +114,7 @@ mod tests {
     fn text_without_a_trailing_newline_gets_one() {
         let dir = tempfile::tempdir().unwrap();
         let name =
-            apply_generated_deck(dir_str(&dir), "nolf.txt".to_string(), "## q\na".to_string())
+            apply_generated_deck(dir_str(&dir), "nolf.md".to_string(), "## q\na".to_string())
                 .unwrap();
         let written = std::fs::read_to_string(dir.path().join(&name)).unwrap();
         assert!(written.ends_with('\n'));
@@ -111,7 +128,7 @@ mod tests {
 
         let error = apply_generated_deck(
             dir_str(&dir),
-            "topic.txt".to_string(),
+            "topic.md".to_string(),
             "## q\n$\\frac{1$\n".to_string(),
         )
         .unwrap_err();
@@ -134,7 +151,7 @@ mod tests {
         assert!(
             apply_generated_deck(
                 dir_str(&dir),
-                "topic.txt".to_string(),
+                "topic.md".to_string(),
                 "## q\n$\\frac{1$\n".to_string(),
             )
             .is_err()
@@ -148,7 +165,7 @@ mod tests {
 
         let name = apply_generated_deck(
             dir_str(&dir),
-            "draft.txt".to_string(),
+            "draft.md".to_string(),
             "## missing answer\n".to_string(),
         )
         .unwrap();

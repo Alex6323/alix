@@ -172,8 +172,8 @@ class DraftCard {
 
 /// The reply to a remote tutor call (`POST`/`GET /api/remote/ask`,
 /// `POST /api/remote/ask/draft`). Mirrors `RemoteAskDto`; unknown wire
-/// fields are ignored and absent ones read as their default, so an older
-/// client survives a server that has grown new fields.
+/// fields are ignored and absent ones read as their default, so the reader
+/// tolerates fields it does not know.
 class RemoteAsk {
   const RemoteAsk({
     required this.thinking,

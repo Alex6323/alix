@@ -1050,7 +1050,7 @@ mod tests {
     }
 
     #[test]
-    fn an_alix_id_key_is_an_ordinary_unknown_key() {
+    fn an_unrecognized_id_spelling_is_an_ordinary_unknown_key() {
         let deck = super::parse(
             "deck.md",
             "---\nalix-id: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n",

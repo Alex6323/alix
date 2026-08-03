@@ -38,6 +38,15 @@ Release notes, so a release without its section fails loud.
   The picker's "Add the tutorial deck" button stamps too, and heals a
   copy a pre-stamping build left stranded instead of skipping it.
 
+- Generating a deck for a topic you already have lands it beside the
+  existing file (topic-2.md) as promised, instead of erroring with
+  "already exists": the bridge's collision check tested a filename shape
+  the server never sends.
+
+- After a reveal grows the card past the fold (a note especially), a
+  quiet "more" pill at the card's bottom edge says so, mirroring the web
+  client's hint; it fades once you reach the bottom.
+
 ### Added
 
 - The empty "Nothing due." session summary now shows one quiet line saying when
