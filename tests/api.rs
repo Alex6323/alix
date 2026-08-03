@@ -1755,6 +1755,21 @@ fn kids_assets_are_public_no_cache_and_allowlisted() {
 }
 
 #[test]
+fn font_route_returns_the_vendored_bytes_with_immutable_metadata() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    let resp = http(&base, "GET", "/fonts/ibm-plex-sans-400.woff2", &[], &[]);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(Some("font/woff2"), resp.header("Content-Type"));
+    assert_eq!(
+        Some("public, max-age=31536000, immutable"),
+        resp.header("Cache-Control")
+    );
+    assert_eq!(Some(&b"wOF2"[..]), resp.body.get(..4));
+}
+
+#[test]
 fn get_img_with_an_unknown_key_yields_404() {
     let (base, _guard) = spawn_test_server();
 
@@ -1762,6 +1777,32 @@ fn get_img_with_an_unknown_key_yields_404() {
 
     assert_eq!(404, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
+fn image_route_returns_the_registered_file_bytes_and_type() {
+    const GIF: &[u8] = b"GIF89a\x01\0\x01\0";
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(dir.join("pixel.gif"), GIF).unwrap();
+        std::fs::write(
+            dir.join("image.md"),
+            "---\nformat-version: 1\nid: \"deck-image\"\n---\n\
+             ## Pixel <!-- id: card-pixel -->\n![pixel](pixel.gif)\n",
+        )
+        .unwrap();
+    });
+
+    let browse = post_json(&base, "/api/browse", r#"{"deck":"image.md"}"#);
+    assert_eq!(200, browse.status);
+    let body: serde_json::Value = serde_json::from_slice(&browse.body).unwrap();
+    let src = body["cards"][0]["images_back"][0]["src"]
+        .as_str()
+        .expect("the image has a registered URL");
+
+    let image = http(&base, "GET", src, &[], &[]);
+    assert_eq!(200, image.status);
+    assert_eq!(Some("image/gif"), image.header("Content-Type"));
+    assert_eq!(GIF, image.body);
 }
 
 // ── Browse ──────────────────────────────────────────────────────────────

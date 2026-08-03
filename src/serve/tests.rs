@@ -164,6 +164,25 @@ fn token_guards_only_the_api() {
 }
 
 #[test]
+fn constant_time_token_equality_rejects_every_same_length_difference() {
+    let cases: &[(&[u8], &[u8], bool)] = &[
+        (b"", b"", true),
+        (b"same", b"same", true),
+        (b"same", b"sand", false),
+        (b"\0\0", b"\x01\x01", false),
+        (b"short", b"longer", false),
+    ];
+
+    for &(left, right, expected) in cases {
+        assert_eq!(
+            expected,
+            ct_eq(left, right),
+            "left={left:?}, right={right:?}"
+        );
+    }
+}
+
+#[test]
 fn icon_field_registers_an_svg_and_flags_it() {
     let mut icons = HashMap::new();
     let (url, is_svg) = icon_field(Some(Path::new("/ws/assets/icon.svg")), &mut icons);
@@ -195,6 +214,17 @@ fn quotes_and_backslashes_are_stripped_from_download_filenames() {
     let name = download_filename("weird\"na\\me.zip");
     assert!(!name.contains('"'));
     assert!(!name.contains('\\'));
+}
+
+#[test]
+fn each_forbidden_download_filename_character_is_removed_independently() {
+    for (input, expected) in [
+        ("quo\"te.zip", "quote.zip"),
+        ("back\\slash.zip", "backslash.zip"),
+        ("line\nbreak.zip", "linebreak.zip"),
+    ] {
+        assert_eq!(expected, download_filename(input), "input={input:?}");
+    }
 }
 
 #[test]
@@ -294,11 +324,17 @@ fn plain_card_has_no_image_urls() {
 
 #[test]
 fn content_type_by_extension() {
-    assert_eq!(content_type(Path::new("a.png")), "image/png");
-    assert_eq!(content_type(Path::new("a.JPG")), "image/jpeg");
-    assert_eq!(content_type(Path::new("a.jpeg")), "image/jpeg");
-    assert_eq!(content_type(Path::new("a.svg")), "image/svg+xml");
-    assert_eq!(content_type(Path::new("a.bin")), "application/octet-stream");
+    for (path, expected) in [
+        ("a.png", "image/png"),
+        ("a.JPG", "image/jpeg"),
+        ("a.jpeg", "image/jpeg"),
+        ("a.gif", "image/gif"),
+        ("a.WEBP", "image/webp"),
+        ("a.svg", "image/svg+xml"),
+        ("a.bin", "application/octet-stream"),
+    ] {
+        assert_eq!(expected, content_type(Path::new(path)), "path={path}");
+    }
 }
 
 #[test]
@@ -1565,6 +1601,32 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
 }
 
 #[test]
+fn rotating_question_variants_preserves_and_returns_to_the_authored_front() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut reviewing, card, _deck) = one_card_reviewing(dir.path());
+    let card_id = card.id().unwrap();
+    reviewing.augment.set_variants(
+        &card_id,
+        vec!["a different question".to_string()],
+        card.content_fingerprint,
+    );
+    reviewing.present_seq = 1;
+
+    reviewing.rotate_variant();
+    assert_eq!(
+        "a different question",
+        reviewing.session.current().unwrap().front
+    );
+    assert_eq!(
+        Some("front"),
+        reviewing.original_fronts.get(&card_id).map(String::as_str)
+    );
+
+    reviewing.rotate_variant();
+    assert_eq!("front", reviewing.session.current().unwrap().front);
+}
+
+#[test]
 fn poll_ask_records_answer_in_transcript() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
@@ -1732,6 +1794,64 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
         Some(ask::FROZEN_ONLY_WARNING.to_string()),
         r.ask_dto(None, None).status
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
+    let _lock = crate::testutil::exec_lock();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+    std::fs::create_dir(dir.path().join("decks")).unwrap();
+    std::fs::write(dir.path().join("source.rs"), "fn live() {}\n").unwrap();
+    let deck_path = dir.path().join("decks/d.md");
+    std::fs::write(
+        &deck_path,
+        "---\nformat-version: 1\nid: \"deck-livefrozen1\"\nsource: source.rs\n---\n\
+         ## q <!-- id: card-livefrozen1 -->\na\n<!-- at: source.rs:1 -->\n",
+    )
+    .unwrap();
+    crate::assets::freeze_member(&deck_path).unwrap();
+    crate::stamp::stamp_deck(&deck_path).unwrap();
+    let deck = Deck::load(&deck_path).unwrap();
+    let card = deck.cards[0].clone();
+    assert!(card.citations[0].asset.is_some());
+
+    let mut store = Store::open(dir.path().join("p.json")).unwrap();
+    let session = Session::new(
+        vec![card],
+        &mut store,
+        Box::new(Fsrs::default()),
+        crate::session::SessionOptions::default(),
+        now_ms(),
+    );
+    let deck_id = "deck-livefrozen1".to_string();
+    let mut decks = HashMap::new();
+    decks.insert(deck_id.clone(), deck_path);
+    let mut base_roots = HashMap::new();
+    base_roots.insert(deck_id.clone(), dir.path().to_path_buf());
+    let mut source_bases = HashMap::new();
+    source_bases.insert(deck_id, SourceBase::for_deck(&deck));
+    let mut reviewing = Reviewing::new(SessionBuild {
+        session,
+        label: "d.md".to_string(),
+        decks,
+        links: HashMap::new(),
+        source_layers: HashMap::new(),
+        base_roots,
+        source_bases,
+        topology_name: None,
+        augment: AugmentCache::open(dir.path().join("augment.json")),
+    });
+    let cli = crate::testutil::fake_reply(dir.path(), "answer");
+    let cfg = crate::testutil::ask_config(&cli);
+
+    assert!(reviewing.start_ask(
+        &cfg,
+        Audience::Adult,
+        AskAction::Question("why?".to_string())
+    ));
+    assert_eq!(None, reviewing.ask_dto(None, None).status);
 }
 
 #[test]
@@ -1914,6 +2034,10 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
     w.walk.predict("guess".to_string());
 
     let card = w.checkpoint_card().expect("a checkpoint card");
+    assert_eq!(
+        Some("Source excerpt:\n1: first\n\ncall `read`"),
+        card.note.as_deref()
+    );
     let (tx, rx) = std::sync::mpsc::channel();
     w.ask.subject = w.walk.checkpoint().map(|c| c.card_id.clone());
     w.ask.pending = Some(Pending {
@@ -1935,6 +2059,35 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
         text.contains("the read lock is released first"),
         "deck:\n{text}"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_frozen_walk_checkpoint_with_a_live_local_source_needs_no_fallback_warning() {
+    let _lock = crate::testutil::exec_lock();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+    let initial = walk_deck(dir.path());
+    std::fs::create_dir(dir.path().join("decks")).unwrap();
+    let deck_path = dir.path().join("decks/t.md");
+    std::fs::rename(&initial.deck_path, &deck_path).unwrap();
+    crate::stamp::stamp_deck(&deck_path).unwrap();
+    crate::assets::freeze_member(&deck_path).unwrap();
+    let trace = crate::trace::Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
+    assert!(trace.base_root.as_deref().is_some_and(Path::exists));
+    assert!(
+        trace
+            .checkpoints
+            .first()
+            .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
+    );
+    let mut walking = Walking::new(Walk::new(trace), None);
+    let cli = crate::testutil::fake_reply(dir.path(), "answer");
+    let mut cfg = crate::testutil::ask_config(&cli);
+    cfg.source_access = true;
+
+    assert!(walking.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
+    assert_eq!(None, walking.ask_dto(None, None).status);
 }
 
 fn aug_card(front: &str, back: &str) -> Card {

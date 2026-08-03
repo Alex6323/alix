@@ -1460,3 +1460,165 @@ impl Browsing {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use super::*;
+
+    #[test]
+    fn remote_job_elapsed_values_are_seconds_not_raw_milliseconds() {
+        let (_ask_tx, ask_rx) = mpsc::channel();
+        let ask = RemoteAsk {
+            rx: ask_rx,
+            purpose: RemoteAskPurpose::Question,
+            started_ms: now_ms().saturating_sub(2_500),
+            outcome: None,
+            job: ask::AskJob::default(),
+        };
+        let (_generate_tx, generate_rx) = mpsc::channel();
+        let generating = RemoteGenerating {
+            rx: generate_rx,
+            url: "https://example.org".to_string(),
+            started_ms: now_ms().saturating_sub(2_500),
+            outcome: None,
+        };
+
+        assert_eq!(Some(2), ask.dto().elapsed);
+        assert_eq!(Some(2), generating.dto().elapsed);
+    }
+
+    #[test]
+    fn every_augmentation_target_has_its_wire_label() {
+        for target in [
+            "choices",
+            "notes",
+            "questions",
+            "keypoints",
+            "format",
+            "topology",
+            "icon",
+        ] {
+            assert_eq!(Some(target), target_label(target), "target={target}");
+        }
+        assert_eq!(None, target_label("unknown"));
+    }
+
+    #[test]
+    fn augmentation_dto_marks_exactly_the_pending_target_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        for target in [
+            "choices",
+            "notes",
+            "questions",
+            "keypoints",
+            "format",
+            "topology",
+            "icon",
+        ] {
+            let mut augmenting = Augmenting::open(
+                "deck.md".to_string(),
+                Vec::new(),
+                Vec::new(),
+                AugmentCache::open(dir.path().join(format!("{target}.json"))),
+                Some(dir.path().to_path_buf()),
+            );
+            let (_tx, rx) = mpsc::channel();
+            augmenting.pending = Some(AugmentPending {
+                rx,
+                target,
+                started: Instant::now(),
+                sessionful: false,
+            });
+
+            let busy: Vec<_> = augmenting
+                .dto()
+                .rows
+                .into_iter()
+                .filter(|row| row.busy)
+                .map(|row| row.kind)
+                .collect();
+            assert_eq!(vec![target], busy, "target={target}");
+        }
+    }
+
+    #[test]
+    fn every_removable_augmentation_target_is_an_accepted_noop_when_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut augmenting = Augmenting::open(
+            "deck.md".to_string(),
+            Vec::new(),
+            Vec::new(),
+            AugmentCache::open(dir.path().join("augment.json")),
+            None,
+        );
+
+        for target in [
+            "choices",
+            "notes",
+            "questions",
+            "keypoints",
+            "format",
+            "topology",
+            "all",
+        ] {
+            let topology = (target == "topology").then_some("map");
+            assert!(augmenting.remove(target, topology), "target={target}");
+        }
+        assert!(!augmenting.remove("topology", None));
+        assert!(!augmenting.remove("unknown", None));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sharing_poll_drains_code_and_completion_events() {
+        let (tx, rx) = mpsc::channel();
+        let mut sharing = Sharing {
+            job: share::test_job(rx),
+            _stage: tempfile::tempdir().unwrap(),
+            code: None,
+            started: Instant::now(),
+            outcome: None,
+        };
+        tx.send(share::ShareEvent::Code("7-alpha-bravo".to_string()))
+            .unwrap();
+        tx.send(share::ShareEvent::Done).unwrap();
+
+        sharing.poll();
+
+        let dto = sharing.dto();
+        assert_eq!("sent", dto.phase);
+        assert_eq!(Some("7-alpha-bravo".to_string()), dto.code);
+        assert!(dto.error.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receiving_poll_lands_the_completed_transfer() {
+        let root = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = root.path().join("decks");
+        std::fs::create_dir(&dest).unwrap();
+        std::fs::write(tmp.path().join("received.md"), "## received\ncard\n").unwrap();
+        let (tx, rx) = mpsc::channel();
+        let mut receiving = Receiving {
+            job: share::test_job(rx),
+            tmp,
+            dest: dest.clone(),
+            started: Instant::now(),
+            outcome: None,
+        };
+        tx.send(share::ShareEvent::Done).unwrap();
+
+        receiving.poll();
+
+        let dto = receiving.dto();
+        assert_eq!("done", dto.phase);
+        assert_eq!(Some("received.md".to_string()), dto.landed);
+        assert_eq!(
+            "## received\ncard\n",
+            std::fs::read_to_string(dest.join("received.md")).unwrap()
+        );
+    }
+}
