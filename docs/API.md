@@ -54,7 +54,9 @@ so is every client.
 - With no token configured (the localhost default), everything is open.
 - With a token (`--token`, `[serve] token`, or `--lan` auto-generation), **only
   `/api/*` is guarded**. The page shell (`/`, `/theme.css`, `/theme.js`,
-  `/alix-logo.js`) and `/img/<key>` stay open — the browser must bootstrap from
+  `/alix-logo.js`, the composed `/review.css`, `/review.js`, `/kids.css`,
+  `/kids.js`, and `/fonts/<name>.woff2`) and `/img/<key>` stay open — the
+  browser must bootstrap from
   the `?token=` URL, and `<img>` tags cannot send headers. Treat `/img` URLs as
   unauthenticated on the LAN by design.
 - Present the token either way (checked in this order):
@@ -1055,7 +1057,9 @@ Example, done (from the pinned test):
 These exist to serve alix's built-in web page and are **out of contract** —
 they may change without notice and native clients must not depend on them:
 
-- `GET /` (the SPA shell), `/theme.css`, `/theme.js`, `/alix-logo.js`;
+- `GET /` (the SPA shell), `/theme.css`, `/theme.js`, `/alix-logo.js`, the
+  composed `/review.css`, `/review.js`, `/kids.css`, `/kids.js`, and
+  `/fonts/<name>.woff2`;
 - `GET /api/keys`, `/api/picker-keys`, `/api/browse-keys` — desktop keyboard
   binding maps (`KeyboardEvent.key` values) for the page's shortcut system.
 

@@ -217,8 +217,8 @@ the text, are what your review history hangs on. You don't type or manage them;
 alix adds and maintains them after you explicitly initialize the file.
 
 Because identity is the token and not the words, you can edit **anything** (reword
-the question, fix a typo in the answer, rewrite a note, reorder cards, even move a
-card to another deck) and its history follows. The only thing that starts a card's
+the question, fix a typo in the answer, rewrite a note, reorder cards) and its
+history follows. The only thing that starts a card's
 history over is deliberately replacing it. (`alix doctor` warns if an id line goes
 missing, for instance if an external tool stripped the HTML comments.)
 
