@@ -457,7 +457,7 @@ export function createStudy({
       else {
         if (drawSnapshot) a.appendChild(frozenDrawImg(drawSnapshot)); // your drawing, for comparison
         if (isExplain()) { renderExplain(a); setNote(true); }         // key-points checklist reveal
-        else { fillAnswer(a); setNote(true); }                        // flip reveal (back / img_back)
+        else { fillAnswer(a); setNote(true); }                        // flip reveal (back / images_back)
       }
     }
     else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
