@@ -3,8 +3,8 @@ use yaml_rust2::{Yaml, YamlLoader};
 use super::{LineSpan, Lint, LintKind, ParseError, WHITESPACE, trim_ws};
 use crate::{answer::Input, card::Direction, depth::Reveal, session::Order, token};
 
-/// Pinned at 1 pre-1.0: a break rewrites decks with the disposable conversion
-/// tool rather than bumping. Read to refuse a foreign document, never to adapt
+/// Pinned at 1 pre-1.0: a break rewrites old decks outside the repository
+/// rather than bumping. Read to refuse a foreign document, never to adapt
 /// to one.
 pub const DECK_FORMAT_VERSION: u32 = 1;
 

@@ -194,7 +194,7 @@ export function createPicker({
     if (!workspaces.length && !recent.length && !folders.length) {
       const wrap = el("div", "select");
       wrap.appendChild(el("div", "lede", "choose decks to study"));
-      wrap.appendChild(el("div", "msg", "No decks found. Add .txt decks to your decks folder."));
+      wrap.appendChild(el("div", "msg", "No decks found. Add .md decks to your decks folder."));
       stage.appendChild(wrap);
       return;
     }

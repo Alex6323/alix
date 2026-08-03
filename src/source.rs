@@ -355,8 +355,8 @@ fn take_locator_field(
 /// spaces into a strictly alternating `at:`/`fingerprint:`/`asset:` key and
 /// value stream, in that canonical order, each key at most once. Any unknown
 /// key, duplicate key, unpaired token, or leftover content is a hard error
-/// with no partial extraction, so an old ` @ `/` from ` locator can never
-/// parse as a partial new one.
+/// with no partial extraction: a locator parses whole against the current
+/// grammar or not at all.
 pub fn parse_locator_fields(value: &str) -> Result<LocatorFields> {
     let trimmed = value.trim();
     let tokens: Vec<&str> = trimmed.split(' ').collect();
