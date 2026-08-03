@@ -1783,7 +1783,7 @@ mod tests {
     }
 
     #[test]
-    fn a_frontmatter_origin_key_is_an_ordinary_unknown_key() {
+    fn an_unknown_frontmatter_key_is_linted_not_special_cased() {
         let deck = super::parse("deck.md", "---\norigin: /crate\n---\n## q\na\n").unwrap();
         assert!(
             deck.lints.contains(&unknown(2, "origin")),
@@ -1793,7 +1793,7 @@ mod tests {
     }
 
     #[test]
-    fn a_card_origin_directive_is_an_ordinary_unknown_key() {
+    fn an_unknown_card_directive_key_is_linted_not_special_cased() {
         let deck = super::parse("deck.md", "## q\na\n<!-- origin: /crate -->\n").unwrap();
         assert!(
             deck.lints.contains(&unknown(3, "origin")),
