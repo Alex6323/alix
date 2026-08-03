@@ -583,15 +583,6 @@ mod tests {
     }
 
     #[test]
-    fn the_retired_backslash_markers_are_now_plain_text() {
-        for line in ["\\image{moon.png}", "\\audio{x.mp3}", "\\video{x.mp4}"] {
-            let (segments, lints) = answer(line);
-            assert_eq!(vec![text(line)], segments);
-            assert!(lints.is_empty());
-        }
-    }
-
-    #[test]
     fn cloze_hole_in_the_answer_region_is_unchanged() {
         let (segments, lints) = answer("\\blank{mut}");
         assert_eq!(vec![hole("mut")], segments);

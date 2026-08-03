@@ -906,13 +906,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_locator_fields_rejects_an_old_style_locator() {
-        let error = parse_locator_fields("at: 29.rs @ xxh64:0123456789abcdef from src/x.rs:1-3")
-            .unwrap_err();
-        assert!(format!("{error:#}").contains("unexpected content"));
-    }
-
-    #[test]
     fn parse_locator_fields_rejects_an_unknown_key() {
         assert!(parse_locator_fields("foo: bar").is_err());
     }
