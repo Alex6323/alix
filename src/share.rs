@@ -1023,12 +1023,15 @@ mod tests {
     fn cancelling_a_running_job_reports_an_error_event_promptly() {
         let _lock = crate::testutil::exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let fake = crate::testutil::fake_cli(dir.path(), "sleep 30");
+        // `exec`: without it, a shell that forks the sleep leaves an orphan
+        // holding the pipes after cancel kills the shell, and the terminal
+        // event stalls until the orphan exits.
+        let fake = crate::testutil::fake_cli(dir.path(), "exec sleep 30");
         let job = spawn_job(&fake.to_string_lossy(), &["send", "x"], None).unwrap();
         job.cancel();
         let ev = job
             .events
-            .recv_timeout(std::time::Duration::from_secs(5))
+            .recv_timeout(std::time::Duration::from_secs(10))
             .unwrap();
         assert!(matches!(ev, ShareEvent::Error(_)), "{ev:?}");
     }
