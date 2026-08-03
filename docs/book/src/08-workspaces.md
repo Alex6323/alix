@@ -212,8 +212,9 @@ initialized `decks/*.md` members appears under **Workspaces**; one without a
 manifest is a plain **Folder** whose initialized decks are direct `*.md`
 children. Opening either drills in to its decks, drawn as a **dependency tree**:
 each deck nests under the prerequisite that gates it, foundations at the roots
-(the [next chapter](09-dependencies.md)). Each row is badged `· deck ·` or
-`· trace ·`, and the drill-in is a single-launch list: `Enter` on a facts deck
+(the [next chapter](09-dependencies.md)). A trace member carries a `trace`
+badge (facts decks are unbadged), and the drill-in is a single-launch list:
+`Enter` on a facts deck
 reviews it, `Enter` on a trace **walks** it. Typing a filter flattens the tree
 to a plain search.
 

@@ -29,7 +29,7 @@ once), green/yellow/red for a **learned** card by how well you'd recall it right
 now, purple once retired. When the deck has a [review order](05-scheduling.md) that
 heatmap splits into named regions you can pick to drill (click one or step
 through with **← / →**); otherwise it is a single whole-deck bar. On a workspace row instead,
-→ enters it, and Esc or Backspace backs out. After a session, "Choose other decks" (on the summary)
+→ enters it, and Esc or Backspace backs out. After a session, **Leave** (on the summary)
 or **Esc** (also the footer's **Back** chip while inside a drill-in) returns
 here, so you can switch decks without restarting. Every review starts from
 this screen; there's no direct deck launch. A focused deck's split
