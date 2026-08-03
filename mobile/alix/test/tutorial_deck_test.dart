@@ -34,18 +34,19 @@ void main() {
     expect(file.readAsStringSync().trim(), isNotEmpty);
   });
 
-  test('addTutorialDeck leaves an existing tutorial.md untouched', () async {
+  test('addTutorialDeck stamps an existing tutorial without replacing it',
+      () async {
     final root = temp('alix-tut-skip-');
     final file = File('${root.path}/tutorial.md');
     file.writeAsStringSync('## mine\nkeep\n');
 
     await addTutorialDeck(root.path);
 
-    expect(
-      file.readAsStringSync(),
-      '## mine\nkeep\n',
-      reason: 'never overwrites an existing tutorial deck',
-    );
+    final text = file.readAsStringSync();
+    expect(text, contains('## mine\nkeep\n'),
+        reason: 'the existing content is never replaced by the asset');
+    expect(text, matches(RegExp(r'id: "deck-')),
+        reason: 'the existing copy is stamped so it lists (the self-heal)');
   });
 
   testWidgets('an empty root offers to add the tutorial deck', (tester) async {

@@ -7,25 +7,30 @@ Scaffold
           Expanded
             Column
               Expanded
-                SingleChildScrollView
-                  Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
-                    SizedBox(width=Infinity, height=null)
-                      Column
-                        SizedBox(width=null, height=8.0)
-                        Container
-                          Padding(EdgeInsets(10.0, 4.0, 10.0, 4.0))
-                            Text("TYPING")
-                        SizedBox(width=null, height=12.0)
-                        Text("Atomic?")
-                        SizedBox(width=null, height=14.0)
-                        Container
-                          ConstrainedBox
-                            Padding(EdgeInsets.zero)
-                              ConstrainedBox
-                        SizedBox(width=null, height=22.0)
+                Stack
+                  SingleChildScrollView
+                    Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
+                      SizedBox(width=Infinity, height=null)
                         Column
-                          Padding(EdgeInsets(0.0, 3.0, 0.0, 3.0))
-                            Text("answer ✓")
+                          SizedBox(width=null, height=8.0)
+                          Container
+                            Padding(EdgeInsets(10.0, 4.0, 10.0, 4.0))
+                              Text("TYPING")
+                          SizedBox(width=null, height=12.0)
+                          Text("Atomic?")
+                          SizedBox(width=null, height=14.0)
+                          Container
+                            ConstrainedBox
+                              Padding(EdgeInsets.zero)
+                                ConstrainedBox
+                          SizedBox(width=null, height=22.0)
+                          Column
+                            Padding(EdgeInsets(0.0, 3.0, 0.0, 3.0))
+                              Text("answer ✓")
+                  Center
+                    Container
+                      Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                        Text("⌵ more")
               Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
                 Wrap
                   Material
