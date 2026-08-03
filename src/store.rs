@@ -205,7 +205,7 @@ pub struct Writer {
 
 // Store-internal, never card identity: freely bumpable; a stale version is
 // ignored and rewritten, not mismatched.
-pub const FP_VERSION: u8 = 1;
+pub const FP_VERSION: u8 = 2;
 
 // Store-internal matcher data, not card identity: freely changeable.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -1560,7 +1560,7 @@ pub fn store_remediation_cards(
         let Some(first) = cards.first() else {
             continue;
         };
-        // Fingerprint includes the literal `\cloze{}` markers, so a plain card
+        // Fingerprint includes the literal `\blank{}` markers, so a plain card
         // repeating a hole's hidden text can't collide with it.
         let fingerprint = first.content_fingerprint;
         if deck_fingerprints.contains(&fingerprint) {

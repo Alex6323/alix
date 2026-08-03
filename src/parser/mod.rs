@@ -827,7 +827,7 @@ fn build_card(
     }
     let token: Option<Arc<str>> = directives.token.as_deref().map(Arc::from);
     let structure: Vec<String> = parsed.iter().map(|segments| hash_repr(segments)).collect();
-    // Raw (unmasked) answer lines, so `\cloze{...}` markers count as literal
+    // Raw (unmasked) answer lines, so `\blank{...}` markers count as literal
     // text and this can't collide with a plain card repeating the hidden text.
     let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
     let block_fingerprint = content_fingerprint(&front, &raw_answer);

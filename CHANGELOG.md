@@ -36,7 +36,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gone on the same ruling; a joined source is an ordinary path that fails
   to resolve. The retired `%`-prefixed directive spelling is likewise gone
   from the config template `alix config --init` writes and from the
-  backend source-reachability errors, which now say plain `source:`.
+  backend source-reachability errors, which now say plain `source:`. The
+  dead `Reveal::Cloze` enum variant is deleted outright, and the cloze
+  image hash preimage now uses the current `![alt](src)` spelling (stored
+  hole fingerprints regenerate via a store-internal version bump; review
+  history is untouched).
 
 - The retired `reveal = "cloze"` value is rejected in a workspace
   manifest's `[defaults]` too, the one scope that still accepted it, and

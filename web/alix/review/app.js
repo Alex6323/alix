@@ -440,7 +440,7 @@ document.getElementById("mAbout").addEventListener("click", () => { menu.classLi
 // Load the key bindings first, then the session, and retry on a transient
 // failure. A just-started server, or the browser reusing a dead keep-alive
 // connection from a killed one, can fail the first request; the picker-keys
-// endpoint also falls back to the Vim defaults on an older server. Without the
+// fallback keeps the Vim defaults when that one request fails. Without the
 // retry a failed first request left a blank page until a manual refresh.
 // A request that never answers is not a rejection, so the retry below could not
 // see it: Promise.all simply never settled and the picker stayed blank until a

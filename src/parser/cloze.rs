@@ -270,17 +270,16 @@ fn scan_group(arg: &str, lineno: usize) -> Result<(String, &str), ParseError> {
     Err(ParseError::UnclosedHole(lineno))
 }
 
-// A stable hash preimage (feeds line_fp), not deck syntax; changing it would
-// churn stored hole fingerprints.
+// A hash preimage (feeds line_fp), not deck syntax; changing it requires a
+// store::FP_VERSION bump so stored records regenerate instead of matching.
 pub(super) fn push_image(out: &mut String, src: &str, alt: Option<&str>) {
-    out.push_str("\\image{");
-    out.push_str(src);
-    out.push('}');
+    out.push_str("![");
     if let Some(alt) = alt {
-        out.push_str("{alt: ");
         out.push_str(alt);
-        out.push('}');
     }
+    out.push_str("](");
+    out.push_str(src);
+    out.push(')');
 }
 
 pub(super) fn seg_display(segments: &[Seg]) -> String {

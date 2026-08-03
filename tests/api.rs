@@ -2093,9 +2093,9 @@ fn post_api_check_with_a_wrong_answer_reports_failure() {
 
 #[test]
 fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
-    // A `% reveal: line` deck at Reconstruct renders TypeLine: the check is
-    // position-sensitive by the server's own derivation. The request carries
-    // no ordering flag; the retired client `ordered` field is ignored.
+    // A `reveal: line` deck at Reconstruct renders TypeLine: the check is
+    // position-sensitive by the server's own derivation alone; the request
+    // carries no ordering flag.
     let (base, _guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(
             dir.join("steps.md"),

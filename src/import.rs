@@ -59,7 +59,7 @@ fn clean_field(field: &str) -> String {
 
 const STRUCTURAL: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
 
-// \cloze is escaped anywhere in the line (unlike the leading-only structural markers) since
+// \blank is escaped anywhere in the line (unlike the leading-only structural markers) since
 // imported prose is never a deliberate hole.
 fn escape_structure(line: &str) -> String {
     let line = line.replace("\\blank", "\\\\blank");

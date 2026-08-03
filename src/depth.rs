@@ -40,16 +40,10 @@ pub fn depth_name(depth: Depth) -> &'static str {
 pub enum Reveal {
     #[default]
     Flip,
-    // Retired as a value at every scope (holes are the trigger), so it is
-    // never advertised; the variant stays for the auto-detection.
-    #[cfg_attr(feature = "full", value(skip))]
-    Cloze,
     Line,
 }
 
 impl Reveal {
-    // "cloze" is retired as a value at every scope: `\blank{...}` holes are
-    // the trigger; the variant itself stays for the auto-detection.
     pub fn parse(value: &str) -> Option<Self> {
         match value.to_ascii_lowercase().as_str() {
             "flip" => Some(Self::Flip),
@@ -67,11 +61,10 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
     match depth {
         Depth::Recognize => Mode::Choice,
         Depth::Recall => match reveal {
-            Reveal::Flip | Reveal::Cloze => Mode::Flip,
+            Reveal::Flip => Mode::Flip,
             Reveal::Line => Mode::LineByLine,
         },
         Depth::Reconstruct => match reveal {
-            Reveal::Cloze => Mode::Typing,
             Reveal::Line => Mode::TypeLine,
             Reveal::Flip => {
                 if answer_is_atomic(card) {
@@ -175,7 +168,7 @@ mod tests {
 
     #[test]
     fn recognize_depth_always_renders_a_choice_check() {
-        for reveal in [Reveal::Flip, Reveal::Cloze, Reveal::Line] {
+        for reveal in [Reveal::Flip, Reveal::Line] {
             assert_eq!(
                 Mode::Choice,
                 check_for(reveal, Depth::Recognize, &card("a"))
@@ -188,10 +181,6 @@ mod tests {
         assert_eq!(
             Mode::Flip,
             check_for(Reveal::Flip, Depth::Recall, &card("a"))
-        );
-        assert_eq!(
-            Mode::Flip,
-            check_for(Reveal::Cloze, Depth::Recall, &card("a"))
         );
         assert_eq!(
             Mode::LineByLine,
@@ -208,10 +197,6 @@ mod tests {
         assert_eq!(
             Mode::Explain,
             check_for(Reveal::Flip, Depth::Reconstruct, &card("a\n    b"))
-        );
-        assert_eq!(
-            Mode::Typing,
-            check_for(Reveal::Cloze, Depth::Reconstruct, &card("a {{b}}"))
         );
         assert_eq!(
             Mode::TypeLine,

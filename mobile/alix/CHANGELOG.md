@@ -7,6 +7,8 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-03
+
 ### Fixed
 
 - A Recognize sitting's summary no longer reads "reviewed 0": the session
