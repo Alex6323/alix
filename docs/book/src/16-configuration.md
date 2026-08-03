@@ -156,7 +156,10 @@ settings:
 
 - **`[ask]`**: the tutor: `command` (how to invoke the CLI), `backend`,
   `permission_mode`, the tool allowlist, a `model` override, `timeout_secs`,
-  and an `effort`.
+  an `effort`, `source_access` (local source grounding; a workspace manifest
+  may override it, see [the tutor](10-tutor.md)), and `preflight_threshold`
+  (warn and confirm before spending a large model call on a local source tree
+  bigger than this many bytes; `0` proceeds silently).
 - **`[generate]`**: `alix generate`'s deck drafting: `model`, the absolute
   `timeout_secs` (3600), and `idle_timeout_secs` (300, or `0` to disable).
   The latter is a resetting inactivity limit for structured-event backends and

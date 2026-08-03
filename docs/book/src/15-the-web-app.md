@@ -92,7 +92,7 @@ augmentations regenerate on the next augment run.
 The action also works on a **workspace or folder row**: the same screen opens
 over all its decks at once, so a Generate fills a target's gaps across every
 member, Remove clears it across every member, and an Order generated here is
-one workspace-wide pedagogical path (a workspace review session picks it up).
+one workspace-wide pedagogical path.
 A workspace additionally gets an **Icon** card: Generate draws (or redraws)
 the small emblem shown on its picker row, steered by the card's guidance.
 

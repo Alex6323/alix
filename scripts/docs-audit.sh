@@ -25,6 +25,7 @@ text_manifest() {
         # a new tracked Markdown surface must enter the release audit without
         # someone remembering to extend an allowlist.
         git ls-files -- '*.md'
+        git ls-files -- 'docs/examples/*.toml' 'docs/examples/**/*.toml'
         git ls-files -- site | while IFS= read -r path; do
             if ! is_visual "$path"; then
                 printf '%s\n' "$path"
