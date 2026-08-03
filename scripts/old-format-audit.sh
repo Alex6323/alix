@@ -98,7 +98,9 @@ rm -f "$tmp_json"
 trap - EXIT HUP INT TERM
 cat "$report"
 
-verdict=$(sed -n '1p' "$report")
+# The prompt demands the verdict as the first line, but the model sometimes
+# prefixes a narration line; accept an exact verdict line within the head.
+verdict=$(head -n 5 "$report" | grep -m1 -x 'OLD-FORMAT AUDIT: \(PASS\|FAIL\)' || true)
 case "$verdict" in
     "OLD-FORMAT AUDIT: PASS")
         echo "old-format-audit: PASS"

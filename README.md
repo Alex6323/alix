@@ -84,6 +84,8 @@ grading and card identity keep using the source text.
 | `alix generate <source>` | Draft a deck, a trace (`--trace`), or a whole workspace |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix deck copy\|move <deck> <workspace>` | Transfer one deck and its owned files between workspaces |
+| `alix deck remove <deck>` | Delete a deck and everything that is its alone (cannot be undone) |
+| `alix deck restore <deck>` | Swap a deck with its `.bak` backups, undoing the last overwrite |
 | `alix workspace init <dir>` | Scaffold an empty workspace to grow into |
 | `alix workspace update <dir>` | Stage a source-aware card update; inspect it, then `--apply` |
 | `alix workspace deadline <dir> [<date>\|clear]` | Show, set, or clear a workspace's "ready by" date |
