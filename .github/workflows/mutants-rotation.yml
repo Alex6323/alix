@@ -8,11 +8,8 @@ name: Mutation rotation
 # The shard comes from the day of the year, so there is no state to keep and
 # nothing to drift. A missed night just means that slice waits a cycle.
 #
-# RED on findings (maintainer ruling 2026-08-03, reversing the earlier
-# stays-green design): a green run stopped being read at all, which is worse
-# than alarm fatigue. Misses, mutant timeouts, and an overrun all fail the
-# job; the summary and artifact still always upload. Expect red nights until
-# the backlog drains shard by shard.
+# Misses, mutant timeouts, and overruns fail the job; the summary and
+# artifact still upload either way.
 on:
   schedule:
     # 02:47 UTC, clear of the 03:17 drift job and the 04:23 diff nightly.
