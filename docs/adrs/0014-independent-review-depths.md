@@ -92,7 +92,7 @@ stored stability claim stronger than the learner's action.
 ## Compatibility
 
 `recognized_ms`, `recall`, and `reconstruct` in each card's progress are
-persisted state. Depth names also appear in configuration, CLI arguments,
+persisted state. Depth names also appear in configuration,
 mobile bindings, and the HTTP contract.
 
 Combining or renaming depths requires a policy for two potentially divergent

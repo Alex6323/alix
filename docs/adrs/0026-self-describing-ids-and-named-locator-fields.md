@@ -299,8 +299,9 @@ Surfaces the migration must cover (enumerated so none is silent):
 - A `" + "`-joined source value: the tool splits it into list entries (the
   known instances are the frozen assets lists, whose `source:` is replaced
   wholesale by the recorded origin anyway).
-- Progress: reset (deleted). Old `progress/<bareid>.json` that survives is
-  positively flagged by `doctor` as un-migrated.
+- Progress: reset (deleted). Old `progress/<bareid>.json` that survives fails
+  as an ordinary unreadable or orphaned document, with no dedicated
+  classification (per the 2026-08-02 correction above).
 - In-repo committed decks, test fixtures, and frozen example traces: rewritten
   by hand in the same change and their doctor-resolves guards re-pinned.
 - Mobile: on-device decks and progress are unreachable by the host tool; the
