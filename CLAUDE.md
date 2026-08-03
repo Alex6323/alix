@@ -391,9 +391,11 @@ to this codebase. When in doubt, mirror the surrounding code.
   morning *after* the code landed. A second job, `mutants-rotation`, sweeps the
   whole tree (`MUTANTS_ALL=1`) one ninth per night, the shard picked from
   the day of the year so no state is kept; it covers what predates the nightly
-  and re-covers everything on a rolling week. It is deliberately not a gate:
-  it reports into the job summary and stays green, because a nightly that is
-  always red stops being read. Retune the shard count from the SLOWEST slice,
+  and re-covers everything on a rolling week. Since 2026-08-03 it FAILS on
+  misses, mutant timeouts, and overruns (user ruling, reversing the earlier
+  stays-green design after a green run went unread): red means known debt
+  until the backlog drains, and the summary/artifact still always upload.
+  Retune the shard count from the SLOWEST slice,
   never the average, since slices are contiguous file ranges and a
   server-heavy one costs far more per mutant than a pure-function one.
 

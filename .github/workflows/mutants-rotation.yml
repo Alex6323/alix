@@ -8,10 +8,11 @@ name: Mutation rotation
 # The shard comes from the day of the year, so there is no state to keep and
 # nothing to drift. A missed night just means that slice waits a cycle.
 #
-# Deliberately NOT a gate. Most of this code has never been mutated, so the
-# first cycles will surface a large backlog; a job that goes red every night is
-# one you stop reading. Findings land in the summary and the artifact, and the
-# run itself stays green unless the tooling breaks.
+# RED on findings (maintainer ruling 2026-08-03, reversing the earlier
+# stays-green design): a green run stopped being read at all, which is worse
+# than alarm fatigue. Misses, mutant timeouts, and an overrun all fail the
+# job; the summary and artifact still always upload. Expect red nights until
+# the backlog drains shard by shard.
 on:
   schedule:
     # 02:47 UTC, clear of the 03:17 drift job and the 04:23 diff nightly.
@@ -60,7 +61,6 @@ jobs:
 
       - name: Mutate this slice of the tree
         id: sweep
-        continue-on-error: true
         run: |
           started=$(date -u +%s)
           set +e
@@ -109,3 +109,11 @@ jobs:
           path: mutants.out/
           retention-days: 14
           if-no-files-found: ignore
+
+      - name: Fail on findings
+        run: |
+          status="${{ steps.sweep.outputs.status }}"
+          if [ "$status" != "0" ]; then
+            echo "sweep exited $status (missed mutants, mutant timeouts, or a 124 step overrun): failing the run"
+            exit 1
+          fi
