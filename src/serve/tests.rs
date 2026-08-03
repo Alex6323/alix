@@ -931,6 +931,11 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
         entry.recall = Some(future);
         entry.reconstruct = Some(future);
     }
+    let one_token = Deck::load(ws.join("decks/one.md"))
+        .unwrap()
+        .deck_token
+        .unwrap();
+    ws_store.set_last_depth(&one_token, crate::depth::Depth::Reconstruct);
     ws_store.save().unwrap();
 
     let recent = RecentDecks::load(dir.path().join("recent.json"));
@@ -964,6 +969,24 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     for m in &animals.members {
         assert!(m.selectable, "member {} should stay selectable", m.name);
     }
+    let one = animals
+        .members
+        .iter()
+        .find(|m| m.name.contains("one"))
+        .expect("member one");
+    assert_eq!(
+        "reconstruct", one.last_depth,
+        "a member row reads the workspace store's recorded depth, not the default"
+    );
+    let two = animals
+        .members
+        .iter()
+        .find(|m| m.name.contains("two"))
+        .expect("member two");
+    assert_eq!(
+        "recall", two.last_depth,
+        "no recorded depth and nothing recognizable falls to the recall default"
+    );
 }
 
 #[test]
