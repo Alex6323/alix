@@ -813,11 +813,16 @@ async function shot8(page) {
   log("== shot 8: topology heatmap ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
+  // Cram: the sitting must open in review phase for the crumb strip to
+  // render, and after the graduation pass the due set depends on FSRS
+  // intervals racing the backdate spread; the heatmap tiers read the store
+  // either way.
   const s = await api(DEMO_BASE, "POST", "/api/select", {
     deck: HERO_DECK,
     topology: TOPOLOGY_NAME,
     depth: "recall",
     session: 20,
+    cram: true,
   });
   if (!s || s.kind !== "review") {
     log("SKIP shot 8: topology-scoped select did not return a review session");

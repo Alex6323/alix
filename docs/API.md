@@ -916,16 +916,21 @@ attempted and failed; one target's error doesn't stop the rest from running).
 | `kind` | string | Always `"walk"`. |
 | `phase` | string | `predict` \| `reveal` \| `done` *(closed)*. |
 | `description` / `source` | string / string? | |
+| `description_runs` | [InlineRun] | Display projection of `description`. |
 | `total` / `current` | number | `current` is **1-based**. |
 | `path` | [HopDto] | The rail. |
 | `prompt` | string? | |
+| `prompt_runs` | [InlineRun]? | Display projection of `prompt`; null with it. |
 | `givens` | [string] | |
+| `given_runs` | [[InlineRun]] | Display projection of `givens`, one run list per given. |
 | `locator` | string? | |
 | `prediction` | string? | Echoed on reveal. |
 | `excerpt` | ExcerptDto? | |
 | `excerpt_error` | string? | |
 | `points` | [string] | Key points to self-check against. |
+| `point_runs` | [[InlineRun]] | Display projection of `points`, one run list per point. |
 | `note` | string? | |
+| `note_runs` | [InlineRun]? | Display projection of `note`; null with it. |
 | `auto_grade` | bool | AI judges the prediction. |
 | `thinking` | bool | Poll while an auto-grade is in flight. |
 | `verdict` | string? | The auto-grade's verdict: `passed` \| `partly` \| `failed` *(closed — the same tokens as `HopDto.delta`)*. |

@@ -66,7 +66,9 @@ let \blank{mut} x = 0;
 The front is the `## ` line; the plain lines below are the answer. A `> ` line
 is a note shown after you answer, and a `<!-- -->` directive on a card tunes it
 (here `\blank{mut}` turns into a fill-in-the-blank, auto-detected as a cloze
-card). Full format and every directive:
+card). Run `alix deck init <file>` once on a hand-written deck: it mints the
+stable deck and card ids that make the file appear in the picker and carry
+review history. Full format and every directive:
 [the deck format](docs/book/src/03-the-deck-format.md),
 [directives](docs/book/src/07-directives.md).
 
@@ -82,6 +84,7 @@ grading and card identity keep using the source text.
 | `alix` | Open the web app to pick a deck or workspace |
 | `alix profile` | Define and launch a named instance per person (decks, port, kids/adult) |
 | `alix generate <source>` | Draft a deck, a trace (`--trace`), or a whole workspace |
+| `alix deck init <deck>` | Initialize a hand-written deck once (mints its stable ids) |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix deck copy\|move <deck> <workspace>` | Transfer one deck and its owned files between workspaces |
 | `alix deck remove <deck>` | Delete a deck and everything that is its alone (cannot be undone) |
