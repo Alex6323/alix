@@ -63,8 +63,10 @@ responsive while it thinks.
   cards it added.
 
 Those remediation cards are **virtual**: they live in alix's store rather than in
-the deck file. While drilling one, the review screen's mode badge reads
-"remediation card" in place of the "new card" badge. A virtual card drills like
+the deck file. While drilling one, the review screen's mode badge gains a
+`remediation · ` prefix ahead of its check (e.g. `remediation · flip`); its very
+first encounter still badges `new` like any unacquired card. A virtual card
+drills like
 any other (its first pass comes one acquire cooldown later, then FSRS schedules it)
 and it counts toward the deck's *due* total but not toward the deck's card
 count, and it never rewrites your `.md`.
