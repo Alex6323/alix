@@ -1,3 +1,5 @@
+pub mod sample;
+
 use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
