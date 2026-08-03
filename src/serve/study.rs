@@ -1717,3 +1717,79 @@ impl StudyState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_store_roots_cover_only_the_aggregate_and_its_direct_documents() {
+        let user = Path::new("user");
+        let progress = user.join("progress");
+
+        assert_eq!(Some(progress.clone()), progress_root_for_store(&progress));
+        assert_eq!(
+            Some(progress.clone()),
+            progress_root_for_store(&progress.join("deck-example.json"))
+        );
+        assert_eq!(
+            None,
+            progress_root_for_store(&user.join("snapshots/deck-example.json"))
+        );
+    }
+
+    #[test]
+    fn finishing_removal_drops_only_covered_snapshots_and_their_aggregate() {
+        let dir = tempfile::tempdir().unwrap();
+        let active_root = dir.path().join("active");
+        let removed_root = dir.path().join("removed/progress");
+        let covered = removed_root.join("deck-covered.json");
+        let unrelated = dir.path().join("other/progress/deck-unrelated.json");
+        let defaults = crate::config::Config::default();
+        let mut state = StudyState {
+            config: StudyConfig {
+                cfg: AssembleConfig {
+                    review: defaults.review,
+                    ask: defaults.ask,
+                    trace_auto_grade: false,
+                    pacing: assemble::Pacing {
+                        max_session: 10,
+                        new_cards_percent: 30,
+                    },
+                    instance_store: Some(active_root.clone()),
+                },
+                exam_cfg: defaults.exam,
+                review_cfg: defaults.review,
+                audience: defaults.serve.audience,
+            },
+            store: crate::state::open_aggregate_store(&active_root).unwrap(),
+            retained: HashMap::new(),
+            store_dirty: false,
+            save_error: None,
+            reviewing: None,
+            revision: 0,
+            writes: 0,
+            browsing: None,
+            examining: None,
+            walking: None,
+            augmenting: None,
+        };
+        let snapshot =
+            Arc::new(crate::state::open_aggregate_store(&dir.path().join("snapshot")).unwrap());
+        state
+            .retained
+            .insert(covered.clone(), Arc::clone(&snapshot));
+        state
+            .retained
+            .insert(removed_root.clone(), Arc::clone(&snapshot));
+        state
+            .retained
+            .insert(unrelated.clone(), Arc::clone(&snapshot));
+
+        state.finish_library_removal(std::slice::from_ref(&covered), &covered);
+
+        assert!(!state.retained.contains_key(&covered));
+        assert!(!state.retained.contains_key(&removed_root));
+        assert!(state.retained.contains_key(&unrelated));
+    }
+}

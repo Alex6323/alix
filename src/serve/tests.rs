@@ -496,6 +496,68 @@ fn resolve_row_keeps_a_manifest_only_workspace_addressable() {
 }
 
 #[test]
+fn library_targets_require_real_files_and_manifested_directories_in_every_resolution_shape() {
+    let dir = tempfile::tempdir().unwrap();
+    let deck = dir.path().join("deck.md");
+    std::fs::write(&deck, "deck\n").unwrap();
+    assert!(matches!(
+        library_target("deck.md".into(), Resolved::One(deck.clone())),
+        Some(LibraryTarget::Deck { path, .. }) if path == deck
+    ));
+    assert!(
+        library_target(
+            "missing.md".into(),
+            Resolved::One(dir.path().join("missing.md"))
+        )
+        .is_none()
+    );
+
+    let plain = dir.path().join("plain");
+    std::fs::create_dir(&plain).unwrap();
+    assert!(
+        library_target("plain".into(), Resolved::One(plain.clone())).is_none(),
+        "a directory is not a workspace without its manifest"
+    );
+
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join(crate::workspace::DECKS)).unwrap();
+    std::fs::write(
+        workspace.join(crate::workspace::MANIFEST),
+        "title = \"Workspace\"\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        library_target("workspace".into(), Resolved::One(workspace.clone())),
+        Some(LibraryTarget::Workspace { root, members, .. })
+            if root == workspace && members.is_empty()
+    ));
+
+    let supplied = vec![dir.path().join("supplied.md")];
+    assert!(
+        library_target(
+            "plain-many".into(),
+            Resolved::Many {
+                dir: plain,
+                files: supplied.clone(),
+            },
+        )
+        .is_none(),
+        "a many-row is not a workspace without its manifest"
+    );
+    assert!(matches!(
+        library_target(
+            "workspace-many".into(),
+            Resolved::Many {
+                dir: workspace.clone(),
+                files: supplied.clone(),
+            },
+        ),
+        Some(LibraryTarget::Workspace { root, members, .. })
+            if root == workspace && members == supplied
+    ));
+}
+
+#[test]
 fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
     let dir = tempfile::tempdir().unwrap();
     write_initialized(&dir.path().join("a.md"), "## f\nb\n");

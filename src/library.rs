@@ -1328,6 +1328,85 @@ mod tests {
     }
 
     #[test]
+    fn workspace_store_containment_accepts_its_boundary_and_rejects_every_outside_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("user");
+        let progress = user.join("progress");
+        let child = user.join("child");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::create_dir_all(&child).unwrap();
+
+        assert_eq!(Some(user.clone()), user_root_for_store(&progress));
+        assert_eq!(
+            Some(user.clone()),
+            user_root_for_store(&progress.join("deck-example.json"))
+        );
+        assert_eq!(
+            None,
+            user_root_for_store(&user.join("snapshots/deck-example.json"))
+        );
+
+        assert!(path_is_within(&user, &user), "the root owns its boundary");
+        assert!(path_is_within(&child, &user), "an existing child is owned");
+        assert!(
+            path_is_within(&child.join(".."), &user),
+            "canonical containment accepts a path that resolves to the boundary"
+        );
+        assert!(
+            path_is_within(&user.join("not-created-yet"), &user),
+            "a future direct child is owned without requiring it to exist"
+        );
+        assert!(
+            !path_is_within(&dir.path().join("user-sibling"), &user),
+            "a lexical prefix lookalike is outside"
+        );
+        assert!(
+            !path_is_within(&user.join("missing/../escape"), &user),
+            "a non-canonical path may not escape through a parent component"
+        );
+    }
+
+    #[test]
+    fn workspace_preview_lists_a_shared_dependent_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write_deck(&members, "a.md", "da1", "ca1");
+        write_deck(&members, "b.md", "db1", "cb1");
+        std::fs::write(
+            members.join("consumer.md"),
+            "---\nformat-version: 1\nid: \"deck-consumer\"\nrequires: [\"a.md\", \"b.md\"]\n---\n## q <!-- id: card-consumer -->\na\n",
+        )
+        .unwrap();
+        let paths = vec![
+            members.join("a.md"),
+            members.join("b.md"),
+            members.join("consumer.md"),
+        ];
+        let store = crate::state::open_stores(&paths, &ws).unwrap();
+
+        let preview = workspace_removal_preview(&ws, &store).unwrap();
+
+        assert_eq!(vec!["consumer.md".to_string()], preview.dependents);
+    }
+
+    #[test]
+    fn removing_a_non_directory_as_empty_is_a_loud_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-directory");
+        std::fs::write(&file, "keep\n").unwrap();
+        let mut removed = Vec::new();
+
+        let failure = remove_if_empty(&file, &mut removed).unwrap_err();
+
+        assert_eq!(file, failure.failed);
+        assert!(failure.removed.is_empty());
+        assert_eq!("keep\n", std::fs::read_to_string(&file).unwrap());
+    }
+
+    #[test]
     fn a_workspace_removal_failure_reports_completed_and_failed_artifacts() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("ws");
