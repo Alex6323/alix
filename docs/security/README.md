@@ -108,6 +108,16 @@ client-selected desktop path. The remote exam handlers deliberately avoid the
 poll path that writes progress. These controls do not turn pairing into a
 multi-user authorization system.
 
+A paired or localhost API client can invoke irreversible library removal with
+the server process's filesystem authority. Client input names only a catalog
+row; the Catalog owner resolves it to a validated loose deck, workspace member,
+or manifested workspace, and rejects ambiguous names and plain folders. The
+Study owner flushes progress first and refuses removal during an active session.
+Responses expose only semantic artifact labels; exact failing paths stay in the
+local server log. The adult web app's type-the-name step protects against an
+accidental click, not a malicious token holder. Treat a pairing token as
+authority to delete served decks and their progress.
+
 ### AI provider
 
 AI features execute a provider CLI as a subprocess under the local user's
@@ -192,6 +202,7 @@ safe or accurate.
 | --- | --- | --- |
 | Another LAN device discovers Alix | Loopback default; LAN is explicit; `/api/*` needs a random token. | Use only a trusted LAN or put Alix behind a VPN/TLS reverse proxy. Replace a disclosed configured token and restart. |
 | Pairing token leaks through a URL | API accepts a bearer header after bootstrap. | Treat the URL as a credential; do not publish screenshots, history, logs, or bookmarks containing it. |
+| A paired client removes the wrong library row | Removal resolves only catalog-owned names, refuses active sessions, previews the exact Alix-owned set, and reports partial failures without disclosing host paths. | The token authorizes irreversible deletion. Verify the typed name and preview, keep independent backups, and run `alix doctor` after a partial failure. |
 | A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require a declared `source`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
 | A broad `source` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `source` as narrow as practical and inspect inherited workspace defaults. |
 | Syncthing or another tool creates concurrent same-deck progress writes | Per-deck atomic replacement, revision checks, writer warnings, and conflict-file detection. | Different decks are independent; for one deck, keep one active writer, resolve conflict copies manually, and back up before recovery. |
@@ -231,6 +242,9 @@ The most relevant deterministic checks currently live beside their controls:
 
 - `src/serve/tests.rs`: token scope and authorization behavior;
 - `src/serve/respond.rs`: constant-time token comparison and capped reads;
+- `src/library.rs`, `src/serve/study.rs`, and `tests/api.rs`: catalog-resolved
+  irreversible removal, owner-serialized progress invalidation, display-safe
+  failures, and retained-snapshot regression coverage;
 - `src/deck.rs`: explicit-source precedence and no origin-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;

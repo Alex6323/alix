@@ -588,6 +588,7 @@ test("the ☰ menu opens without error", async ({ page }) => {
   await page.locator("#kebab").click();
   await expect(page.locator("#menu")).toHaveClass(/open/);
   await expect(page.locator("#mAdd")).toBeVisible(); // a picker-context item, since nothing is selected
+  await expect(page.locator("#mDelete")).toBeVisible();
   await page.locator("#kebab").click(); // close it again
 });
 
@@ -601,6 +602,38 @@ test("the shortcuts sheet opens and Escape closes it", async ({ page }) => {
   await page.keyboard.press("Escape");
 
   await expect(page.locator("#sheet")).toBeHidden();
+});
+
+test("library removal requires the exact focused name before posting", async ({ page }) => {
+  await expect(adultDeckRow(page, "Animals")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  const workspace = adultDeckRow(page, "Removal Target");
+  await expect(workspace).toBeFocused();
+  await page.locator("#kebab").click();
+  await page.locator("#mDelete").click();
+
+  await expect(page.locator("#sheetPanel")).toContainText("1 deck, 0 cards with progress");
+  const confirm = page.locator("#removeConfirm");
+  const remove = page.getByRole("button", { name: "Remove permanently" });
+  await confirm.fill("removal-targe");
+  await expect(remove).toBeDisabled();
+  await confirm.fill("removal-target");
+  await expect(remove).toBeEnabled();
+
+  const [response] = await Promise.all([
+    page.waitForResponse((res) =>
+      res.url().endsWith("/api/library/remove") && res.request().method() === "POST"
+    ),
+    remove.click(),
+  ]);
+
+  expect(response.status()).toBe(200);
+  expect(response.request().postDataJSON()).toEqual({ name: "removal-target" });
+  await expect(page.locator("#sheet")).toBeHidden();
+  await expect(page.locator("#notice")).toHaveText(
+    "removed workspace 'removal-target'; folder kept: it contains files Alix doesn't own"
+  );
+  await expect(adultDeckRow(page, "Removal Target")).toHaveCount(0);
 });
 
 // KNOWN GAP — reported as skipped on every run, deliberately.

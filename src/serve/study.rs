@@ -6,7 +6,7 @@
 
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
 };
@@ -97,6 +97,129 @@ pub(super) enum Transition<T> {
     FlushFailed,
 }
 
+#[derive(Clone)]
+pub(super) enum LibraryTarget {
+    Deck {
+        name: String,
+        path: PathBuf,
+    },
+    Workspace {
+        name: String,
+        root: PathBuf,
+        members: Vec<PathBuf>,
+    },
+}
+
+impl LibraryTarget {
+    pub(super) fn recent_paths(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Deck { path, .. } => vec![path.clone()],
+            Self::Workspace { root, members, .. } => {
+                let mut paths = members.clone();
+                paths.push(root.clone());
+                paths
+            }
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            Self::Deck { name, .. } | Self::Workspace { name, .. } => name,
+        }
+    }
+
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Deck { .. } => "deck",
+            Self::Workspace { .. } => "workspace",
+        }
+    }
+
+    fn display_root(&self) -> &Path {
+        match self {
+            Self::Deck { path, .. } => workspace::root_for_deck(path)
+                .or_else(|| path.parent())
+                .unwrap_or(path),
+            Self::Workspace { root, .. } => root,
+        }
+    }
+
+    fn label(&self, path: &Path) -> String {
+        if path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "progress")
+            && let Some(name) = path.file_name()
+        {
+            return format!("progress/{}", name.to_string_lossy());
+        }
+        if let Ok(relative) = path.strip_prefix(self.display_root()) {
+            if relative.as_os_str().is_empty() {
+                return self.name().to_string();
+            }
+            return relative.to_string_lossy().replace('\\', "/");
+        }
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| self.name().to_string())
+    }
+
+    fn labels(&self, paths: &[PathBuf]) -> Vec<String> {
+        paths.iter().map(|path| self.label(path)).collect()
+    }
+
+    fn covered_store_paths(&self, store_path: &Path) -> Vec<PathBuf> {
+        let mut paths = vec![store_path.to_path_buf()];
+        let Some(progress_root) = progress_root_for_store(store_path) else {
+            return paths;
+        };
+        let user_files = crate::state::UserFiles::new(
+            progress_root
+                .parent()
+                .unwrap_or_else(|| self.display_root()),
+        );
+        let deck_paths: Vec<&PathBuf> = match self {
+            Self::Deck { path, .. } => vec![path],
+            Self::Workspace { members, .. } => members.iter().collect(),
+        };
+        paths.extend(deck_paths.into_iter().filter_map(|path| {
+            Deck::load(path)
+                .ok()
+                .and_then(|deck| deck.deck_token)
+                .map(|deck_id| user_files.progress_for(&deck_id))
+        }));
+        paths
+    }
+}
+
+fn progress_root_for_store(store_path: &Path) -> Option<PathBuf> {
+    if store_path
+        .file_name()
+        .is_some_and(|name| name == "progress")
+    {
+        Some(store_path.to_path_buf())
+    } else if store_path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "progress")
+    {
+        store_path.parent().map(Path::to_path_buf)
+    } else {
+        None
+    }
+}
+
+pub(super) enum RemovalOutcome {
+    Done(RemovalDto),
+    Rejected,
+    Busy,
+    FlushFailed,
+    Failed {
+        dto: RemovalFailureDto,
+        target_removed: bool,
+    },
+}
+
 pub(super) enum WalkGradeReply {
     Dto(Box<WalkDto>),
     NoWalk,
@@ -136,6 +259,14 @@ pub(super) enum StudyCommand {
         name: String,
         paths: Vec<PathBuf>,
         reply: Reply<Transition<ResetDto>>,
+    },
+    RemovalPreview {
+        target: LibraryTarget,
+        reply: Reply<Transition<RemovalPreviewDto>>,
+    },
+    RemoveLibrary {
+        target: LibraryTarget,
+        reply: Reply<RemovalOutcome>,
     },
     Deselect(Reply<Transition<StateDto>>),
     Grade {
@@ -290,6 +421,15 @@ impl StudyHandle {
     }
     pub(super) fn reset(&self, name: String, paths: Vec<PathBuf>) -> Option<Transition<ResetDto>> {
         self.call(|reply| StudyCommand::Reset { name, paths, reply })
+    }
+    pub(super) fn removal_preview(
+        &self,
+        target: LibraryTarget,
+    ) -> Option<Transition<RemovalPreviewDto>> {
+        self.call(|reply| StudyCommand::RemovalPreview { target, reply })
+    }
+    pub(super) fn remove_library(&self, target: LibraryTarget) -> Option<RemovalOutcome> {
+        self.call(|reply| StudyCommand::RemoveLibrary { target, reply })
     }
     pub(super) fn deselect(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::Deselect)
@@ -605,6 +745,12 @@ impl StudyState {
             }
             StudyCommand::Reset { name, paths, reply } => {
                 let _ = reply.send(self.reset(name, paths));
+            }
+            StudyCommand::RemovalPreview { target, reply } => {
+                let _ = reply.send(self.removal_preview(target));
+            }
+            StudyCommand::RemoveLibrary { target, reply } => {
+                let _ = reply.send(self.remove_library(target));
             }
             StudyCommand::Deselect(reply) => {
                 let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
@@ -1198,6 +1344,153 @@ impl StudyState {
             }
             _ => DeckDrawerDto::default(),
         }
+    }
+
+    fn removal_preview(&mut self, target: LibraryTarget) -> Transition<RemovalPreviewDto> {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return Transition::FlushFailed;
+        }
+        let Ok(store) = self.library_store(&target) else {
+            return Transition::Rejected;
+        };
+        let dto = match &target {
+            LibraryTarget::Deck { path, .. } => {
+                let preview = crate::library::removal_preview(path, &store);
+                RemovalPreviewDto {
+                    target: target.name().to_string(),
+                    kind: target.kind(),
+                    decks: 1,
+                    cards_with_progress: preview.cards_with_progress,
+                    earliest_review_ms: preview.earliest_review_ms,
+                    files: target.labels(&preview.files),
+                    directories: target.labels(&preview.directories),
+                    dependents: preview.dependents,
+                }
+            }
+            LibraryTarget::Workspace { root, .. } => {
+                let Ok(preview) = crate::library::workspace_removal_preview(root, &store) else {
+                    return Transition::Rejected;
+                };
+                RemovalPreviewDto {
+                    target: target.name().to_string(),
+                    kind: target.kind(),
+                    decks: preview.decks,
+                    cards_with_progress: preview.cards_with_progress,
+                    earliest_review_ms: preview.earliest_review_ms,
+                    files: target.labels(&preview.files),
+                    directories: target.labels(&preview.directories),
+                    dependents: preview.dependents,
+                }
+            }
+        };
+        Transition::Done(dto)
+    }
+
+    fn remove_library(&mut self, target: LibraryTarget) -> RemovalOutcome {
+        if !self.idle() {
+            return RemovalOutcome::Busy;
+        }
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return RemovalOutcome::FlushFailed;
+        }
+        let Ok(store) = self.library_store(&target) else {
+            return RemovalOutcome::Rejected;
+        };
+        let store_path = store.path().to_path_buf();
+        let covered_stores = target.covered_store_paths(&store_path);
+        let result = match &target {
+            LibraryTarget::Deck { path, .. } => {
+                crate::library::remove_deck(path, &store).map(|report| RemovalDto {
+                    target: target.name().to_string(),
+                    kind: target.kind(),
+                    removed: target.labels(&report.removed),
+                    decks_removed: 1,
+                    directory_removed: false,
+                    dependents: report.dependents,
+                })
+            }
+            LibraryTarget::Workspace { root, .. } => crate::library::remove_workspace(root, &store)
+                .map(|report| RemovalDto {
+                    target: target.name().to_string(),
+                    kind: target.kind(),
+                    removed: target.labels(&report.removed),
+                    decks_removed: report.decks_removed,
+                    directory_removed: report.root_removed,
+                    dependents: report.dependents,
+                }),
+        };
+        match result {
+            Ok(dto) => {
+                self.finish_library_removal(&covered_stores, &store_path);
+                RemovalOutcome::Done(dto)
+            }
+            Err(error) => {
+                eprintln!("warning: library removal failed: {error:#}");
+                let Some(failure) = error.downcast_ref::<crate::library::RemovalFailure>() else {
+                    return RemovalOutcome::Rejected;
+                };
+                let dto = RemovalFailureDto {
+                    target: target.name().to_string(),
+                    error: "removal incomplete",
+                    completed: target.labels(&failure.removed),
+                    failed: target.label(&failure.failed),
+                    recovery: "Run alix doctor to inspect and repair the remaining artifacts.",
+                };
+                let target_removed = match &target {
+                    LibraryTarget::Deck { path, .. } => failure.removed.contains(path),
+                    LibraryTarget::Workspace { root, .. } => failure
+                        .removed
+                        .contains(&crate::workspace::WorkspaceFiles::new(root).manifest()),
+                };
+                self.finish_library_removal(&covered_stores, &store_path);
+                RemovalOutcome::Failed {
+                    dto,
+                    target_removed,
+                }
+            }
+        }
+    }
+
+    fn idle(&self) -> bool {
+        self.reviewing.is_none()
+            && self.browsing.is_none()
+            && self.examining.is_none()
+            && self.walking.is_none()
+            && self.augmenting.is_none()
+    }
+
+    fn library_store(&self, target: &LibraryTarget) -> anyhow::Result<Store> {
+        match target {
+            LibraryTarget::Deck { path, .. } => {
+                let active = crate::library::removal_preview(path, &self.store)
+                    .files
+                    .iter()
+                    .any(|artifact| artifact == self.store.path());
+                if active {
+                    Ok(self.store.clone())
+                } else {
+                    assemble::store_for(
+                        std::slice::from_ref(path),
+                        self.config.cfg.instance_store.as_deref(),
+                    )
+                }
+            }
+            LibraryTarget::Workspace { root, members, .. } => {
+                crate::state::open_stores(members, &workspace::store_path(root))
+                    .map_err(anyhow::Error::from)
+            }
+        }
+    }
+
+    fn finish_library_removal(&mut self, covered_stores: &[PathBuf], store_path: &Path) {
+        if let Ok(store) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
+            self.install_store(store);
+        }
+        let progress_root = progress_root_for_store(store_path);
+        self.retained.retain(|path, _| {
+            !covered_stores.contains(path) && progress_root.as_ref() != Some(path)
+        });
+        self.writes = self.writes.wrapping_add(1);
     }
 
     fn reset(&mut self, name: String, paths: Vec<PathBuf>) -> Transition<ResetDto> {

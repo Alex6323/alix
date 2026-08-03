@@ -1,9 +1,10 @@
 export class ApiError extends Error {
-  constructor(path, status) {
+  constructor(path, status, body) {
     super(`request to ${path} failed with status ${status}`);
     this.name = "ApiError";
     this.path = path;
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -38,7 +39,11 @@ export function createApiClient({ fetchImpl, sessionStorage, onUnauthorized, rev
         onUnauthorized();
       }
     }
-    if (!response.ok) throw new ApiError(path, response.status);
+    if (!response.ok) {
+      let body;
+      try { body = await response.json(); } catch { body = undefined; }
+      throw new ApiError(path, response.status, body);
+    }
     return response;
   }
 

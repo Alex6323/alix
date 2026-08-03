@@ -77,14 +77,17 @@ so is every client.
   `Cache-Control: no-store` on all JSON. No ETags, no conditional requests.
 - **No CORS headers.** A browser-based client must be served by alix itself
   (same origin). Native clients are unaffected.
-- **Errors are bare status codes with empty bodies.** There is no error DTO.
+- **Errors are bare status codes with empty bodies unless an endpoint names a
+  structured exception.** Library removal is the first exception: a partial
+  destructive result returns `RemovalFailureDto`, so a client can say what
+  completed and where recovery must begin without exposing a host path.
   `400` is overloaded (malformed body, unknown deck name, store failure —
   per-endpoint meaning in §5). `409` = "no active session/exam/walk of the
   kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
   endpoint (§4.5) called while `[serve] audience = "kids"`. `404` = unknown
   route or image. `503` = a background owner thread is gone and the server is
   draining; the request was fine, so it is the one error worth retrying as-is.
-  Clients should not assume bodies stay empty forever — a JSON
+  Clients should not assume other bodies stay empty forever; a JSON
   `{"error": ...}` body may be added pre-1.0.
 - **A bare deck name that occurs in more than one container is a 400**
   (ambiguous) — use the qualified `<workspace>/<file>` key instead, which
@@ -294,7 +297,37 @@ polling, it takes a `.zip` archive as the raw request body (§8) instead of a
 wormhole code, unpacks it, lands it the same way, and responds a `"done"`-
 phase `ReceiveDto` (`elapsed: 0`).
 
-### 4.10 The remote surface (paired thin clients)
+### 4.10 Library removal
+
+`POST /api/library/remove/preview {name}` resolves a loose deck, a workspace
+member, or a manifested workspace through the catalog and returns
+`RemovalPreviewDto`. Unknown and ambiguous names, plus plain grouping folders,
+are 400. The response states how many decks and cards with progress are at
+stake, the earliest review timestamp, dependents, and the exact Alix-owned
+artifact labels. Labels are semantic and display-safe, never absolute host
+paths. Preview flushes pending progress first and returns 500 if that flush
+fails.
+
+`POST /api/library/remove {name}` performs the previewed irreversible removal
+only while the Study owner is idle; an active review, browse, exam, walk,
+tutor, or augment session returns 409 without changing files. A loose deck or
+member loses its deck text, progress, frozen assets, augmentation, and `.bak`
+siblings. A workspace composes that rule across initialized members, then
+removes its Alix-owned workspace state and manifest. Ordinary source files and
+uninitialized Markdown remain, and the workspace and `decks/` directories are
+removed only when empty. An external workspace store loses only the matching
+member progress documents, never the store root or unrelated state.
+
+Success returns `RemovalDto`, drops matching recent entries, invalidates every
+in-memory progress projection that could cover the removed target, and refreshes
+the catalog. Deletion is deck-first and sequential. A mid-set failure returns
+500 with `RemovalFailureDto`; `completed` and `failed` let the client report the
+partial result, and `recovery` points to `alix doctor`. The server log retains
+the exact failing path while the response does not disclose it. Retrying is
+safe to attempt after following the recovery instruction, but removal has no
+undo and completed artifacts are not restored.
+
+### 4.11 The remote surface (paired thin clients)
 
 A paired phone, or any other native client, can borrow the desktop's AI
 backend for the tutor, the AI exam, and deck generation over
@@ -422,6 +455,13 @@ untouched. It responds with the same `DeckListDto` shape `GET /api/decks`
 returns, refreshed, so the picker re-renders the `deadline` readout (§6
 `DeckItemDto`/`DeadlineDto`) in one round trip instead of a follow-up fetch.
 
+### Library removal
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| POST | `/api/library/remove/preview` | `{name}` | `RemovalPreviewDto` | 400 bad body / unknown, ambiguous, or plain-folder target; 500 progress flush failure |
+| POST | `/api/library/remove` | `{name}` | `RemovalDto` | 400 bad body / unknown, ambiguous, or plain-folder target; 409 active session; 500 flush failure or `RemovalFailureDto` after a partial removal |
+
 ### Import
 
 | Method | Path | Body | Response | Errors |
@@ -500,7 +540,7 @@ returns, refreshed, so the picker re-renders the `deadline` readout (§6
 
 ### Remote (paired clients) (since 0.6.0)
 
-Every arm below is `/api/remote/*` (§4.10). `remote_ask` and `remote_exam`
+Every arm below is `/api/remote/*` (§4.11). `remote_ask` and `remote_exam`
 are single-flight slots kept separate from the browser's own `ask`/`exam`
 state: a second client pairing to the same instance collides with the
 first, same as a double `POST`.
@@ -816,6 +856,54 @@ A `deck` naming a workspace/folder row resets every member deck it lists, not
 just one file. Example (from the pinned test):
 `{"deck":"rust.md","cards_cleared":17}`.
 
+### RemovalPreviewDto
+
+The result of `POST /api/library/remove/preview`: the irreversible stakes and
+the Alix-owned artifact set, before any removal.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `target` | string | The resolved catalog name sent by the client. |
+| `kind` | string | `"deck"` or `"workspace"` *(closed)*. |
+| `decks` | number | Deck files covered by the target. |
+| `cards_with_progress` | number | Cards whose earned progress will be removed. |
+| `earliest_review_ms` | number? | Earliest review timestamp among that progress, as epoch milliseconds; null when no review timestamp exists. |
+| `files` | [string] | Display-safe labels for owned files that will be removed. |
+| `directories` | [string] | Display-safe labels for owned directories that will be removed. |
+| `dependents` | [string] | Decks whose `requires:` edge names a removed deck; removal still succeeds and unlocks them. |
+
+Example: `tests/contracts/RemovalPreviewDto.json`.
+
+### RemovalDto
+
+The result of a completed `POST /api/library/remove`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `target` | string | The removed catalog name. |
+| `kind` | string | `"deck"` or `"workspace"` *(closed)*. |
+| `removed` | [string] | Display-safe labels for every artifact actually removed. |
+| `decks_removed` | number | Number of deck files removed. |
+| `directory_removed` | bool | True only when an empty workspace root was removed too; always false for a deck. A false value for a workspace means unowned files kept the folder in place, which clients must explain to the user. |
+| `dependents` | [string] | Decks unlocked by the removal. |
+
+Example: `tests/contracts/RemovalDto.json`.
+
+### RemovalFailureDto
+
+The 500 response when removal completed only part of its ordered set. This is
+the structured exception to the bare-error convention in §3.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `target` | string | The catalog name removal attempted. |
+| `error` | string | `"removal incomplete"`. |
+| `completed` | [string] | Display-safe labels for artifacts already removed. |
+| `failed` | string | Display-safe label for the artifact that stopped removal. |
+| `recovery` | string | User-facing instruction to inspect and repair with `alix doctor`. |
+
+Example: `tests/contracts/RemovalFailureDto.json`.
+
 ### ImportDto
 
 The result of `POST /api/import`: the placed file's name and its card count.
@@ -952,7 +1040,7 @@ hop numbers).
 
 ### RemoteCard / RemoteTurn / RemoteAskReq / RemoteDraftReq / RemoteNoteReq
 
-Request bodies for the remote surface (§4.10). The server holds no card or
+Request bodies for the remote surface (§4.11). The server holds no card or
 session of its own for a remote call, so the client sends full context every
 time; these derive `Deserialize` only, so, like `CreateCardReq`, they are
 documented here but not snapshot-pinned (§8).
@@ -981,7 +1069,7 @@ round-trip suite):
 ### RemoteAskDto
 
 The reply to a remote tutor call (`POST`/`GET /api/remote/ask`, `POST
-/api/remote/ask/draft`, `POST /api/remote/ask/note`; §4.10). Unlike
+/api/remote/ask/draft`, `POST /api/remote/ask/note`; §4.11). Unlike
 `AskDto`, it carries no transcript of its own (the client already holds it),
 just the newest turn's outcome.
 
@@ -1002,7 +1090,7 @@ Example, settled with a note (from the pinned test):
 
 ### RemoteExamDto
 
-A paired phone's AI exam sitting (`/api/remote/exam/*`; §4.10). Unlike
+A paired phone's AI exam sitting (`/api/remote/exam/*`; §4.11). Unlike
 `ExamDto`, there is no server-side session: answering happens client-local
 as one batch, so there is no `total`/`current`/`question`/`answer`/`on_last`;
 the client counts its own remediation cards, so there is no
@@ -1035,7 +1123,7 @@ Example, a trace sitting's failed result (from the pinned test):
 
 ### RemoteGenerateDto (since 0.6.0)
 
-A paired phone's deck generation (`/api/remote/generate*`; §4.10). Mirrors
+A paired phone's deck generation (`/api/remote/generate*`; §4.11). Mirrors
 `GenerateDto` (§4.7), but the server places nothing: there is no saved file
 name, only the full deck text and a suggested one for the client to save
 under.

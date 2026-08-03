@@ -1,0 +1,1 @@
+This unowned source keeps the workspace folder after Alix removes its content.

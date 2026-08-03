@@ -23,7 +23,7 @@ function response(status, body, onJson = () => {}) {
   };
 }
 
-test("api rejects non success before decoding json", async () => {
+test("api errors retain a structured response body for recovery UI", async () => {
   let decodes = 0;
   const client = createApiClient({
     fetchImpl: async () => response(503, { phase: "error" }, () => decodes++),
@@ -35,9 +35,10 @@ test("api rejects non success before decoding json", async () => {
   await assert.rejects(client.get("/api/state"), (error) => {
     assert.ok(error instanceof ApiError);
     assert.equal(error.status, 503);
+    assert.deepEqual(error.body, { phase: "error" });
     return true;
   });
-  assert.equal(decodes, 0);
+  assert.equal(decodes, 1);
 });
 
 test("api rejects a response that fails its route validator", async () => {

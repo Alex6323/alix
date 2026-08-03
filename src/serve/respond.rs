@@ -120,6 +120,10 @@ pub(super) fn cache_header(policy: &'static [u8]) -> Header {
 }
 
 pub(super) fn respond_json<T: Serialize>(request: Request, value: &T) {
+    respond_json_status(request, 200, value);
+}
+
+pub(super) fn respond_json_status<T: Serialize>(request: Request, code: u16, value: &T) {
     let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
     let header = Header::from_bytes(
         &b"Content-Type"[..],
@@ -128,6 +132,7 @@ pub(super) fn respond_json<T: Serialize>(request: Request, value: &T) {
     .unwrap();
     let _ = request.respond(
         Response::from_string(body)
+            .with_status_code(code)
             .with_header(header)
             .with_header(cache_header(b"no-store")),
     );

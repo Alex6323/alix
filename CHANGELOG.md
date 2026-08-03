@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The adult web picker can remove a focused loose deck, workspace member, or
+  whole workspace from its secondary menu. A type-the-name sheet previews the
+  irreversible stakes and Alix-owned artifacts first; source files Alix does
+  not own remain in place, active sessions block removal, recent and retained
+  state are invalidated, and a partial failure names completed and failed
+  artifacts with an `alix doctor` recovery step. The JSON API exposes the same
+  preview and removal contract for other clients.
+
 - A deck can declare `shape: uniform-answers` in its frontmatter (or a
   workspace in `[defaults]`): the author's statement that every answer is
   the same kind of thing. On such a deck, Recognize builds its

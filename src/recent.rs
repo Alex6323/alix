@@ -45,6 +45,12 @@ impl RecentDecks {
         self.entries.truncate(CAP);
     }
 
+    pub fn remove_paths(&mut self, paths: &[PathBuf]) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|entry| !paths.contains(&entry.path));
+        self.entries.len() != before
+    }
+
     pub fn save(&self) -> std::io::Result<()> {
         if let Some(dir) = self.path.parent() {
             crate::fsio::create_dir_all(dir)?;
@@ -119,5 +125,34 @@ mod tests {
         let path = dir.path().join("recent.json");
         std::fs::write(&path, "not json").unwrap();
         assert!(RecentDecks::load(&path).entries().is_empty());
+    }
+
+    #[test]
+    fn removing_paths_drops_only_the_matching_recent_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recent.json");
+        let mut recent = RecentDecks::load(&path);
+        recent.record(
+            &[
+                PathBuf::from("keep.md"),
+                PathBuf::from("remove.md"),
+                PathBuf::from("workspace/decks/remove.md"),
+            ],
+            1,
+        );
+
+        let changed = recent.remove_paths(&[
+            PathBuf::from("remove.md"),
+            PathBuf::from("workspace/decks/remove.md"),
+        ]);
+
+        assert!(changed);
+        assert_eq!(
+            &[RecentEntry {
+                path: PathBuf::from("keep.md"),
+                last_used_ms: 1,
+            }],
+            recent.entries()
+        );
     }
 }

@@ -432,6 +432,7 @@ function setMenuContext(ctx) {
 document.getElementById("mShortcuts").addEventListener("click", () => { menu.classList.remove("open"); sheets.openShortcuts(); });
 document.getElementById("mAdd").addEventListener("click", () => { menu.classList.remove("open"); sheets.openAdd(); });
 document.getElementById("mShare").addEventListener("click", () => { menu.classList.remove("open"); sheets.openShare(); });
+document.getElementById("mDelete").addEventListener("click", () => { menu.classList.remove("open"); sheets.openLibraryRemoval(); });
 document.getElementById("mReset").addEventListener("click", () => { menu.classList.remove("open"); sheets.openReset(); });
 document.getElementById("mDoctor").addEventListener("click", () => { menu.classList.remove("open"); sheets.openDoctor(); });
 document.getElementById("mPair").addEventListener("click", () => { menu.classList.remove("open"); sheets.openPair(); });

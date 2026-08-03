@@ -1981,6 +1981,216 @@ fn post_api_reset_with_an_unknown_deck_yields_400() {
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
 }
 
+// ── Library removal ─────────────────────────────────────────────────────
+
+#[test]
+fn removal_preview_names_workspace_stakes_without_exposing_host_paths() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    assert_eq!(
+        200,
+        post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#).status
+    );
+    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_json(&base, "/api/deselect", "{}").status);
+
+    let resp = post_json(
+        &base,
+        "/api/library/remove/preview",
+        r#"{"name":"animals"}"#,
+    );
+
+    assert_eq!(
+        200,
+        resp.status,
+        "body: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("animals", body["target"]);
+    assert_eq!("workspace", body["kind"]);
+    assert_eq!(2, body["decks"]);
+    assert_eq!(1, body["cards_with_progress"]);
+    assert!(body["earliest_review_ms"].is_number(), "body: {body}");
+    assert!(
+        body["files"]
+            .as_array()
+            .is_some_and(|files| !files.is_empty()),
+        "body: {body}"
+    );
+    assert!(
+        !String::from_utf8_lossy(&resp.body).contains(&guard.dir().display().to_string()),
+        "the response must never expose absolute host paths: {body}"
+    );
+}
+
+#[test]
+fn removal_is_rejected_while_a_study_session_is_active() {
+    let (base, guard) = spawn_test_server();
+    assert_eq!(200, select_fixture(&base).status);
+    let preview = post_json(
+        &base,
+        "/api/library/remove/preview",
+        r#"{"name":"sample.md"}"#,
+    );
+    assert_eq!(200, preview.status);
+
+    let resp = post_json(&base, "/api/library/remove", r#"{"name":"sample.md"}"#);
+
+    assert_eq!(409, resp.status);
+    assert!(guard.dir().join("sample.md").is_file());
+}
+
+#[test]
+fn removing_a_workspace_preserves_unowned_source_files_and_refreshes_the_catalog() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        write_animals_workspace(dir);
+        std::fs::write(dir.join("animals/source.txt"), "keep\n").unwrap();
+        std::fs::write(dir.join("animals/decks/notes.md"), "keep\n").unwrap();
+    });
+
+    let resp = post_json(&base, "/api/library/remove", r#"{"name":"animals"}"#);
+
+    assert_eq!(
+        200,
+        resp.status,
+        "body: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("workspace", body["kind"]);
+    assert_eq!(2, body["decks_removed"]);
+    assert_eq!(false, body["directory_removed"]);
+    assert!(!guard.dir().join("animals/alix.toml").exists());
+    assert!(!guard.dir().join("animals/decks/one.md").exists());
+    assert!(!guard.dir().join("animals/decks/two.md").exists());
+    assert_eq!(
+        "keep\n",
+        std::fs::read_to_string(guard.dir().join("animals/source.txt")).unwrap()
+    );
+    assert_eq!(
+        "keep\n",
+        std::fs::read_to_string(guard.dir().join("animals/decks/notes.md")).unwrap()
+    );
+
+    let decks = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&decks.body).unwrap();
+    assert!(
+        body["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|workspace| workspace["name"] != "animals"),
+        "the removed workspace must leave the catalog: {body}"
+    );
+}
+
+#[test]
+fn removing_a_workspace_member_drops_the_retained_progress_snapshot() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let member = guard.dir().join("animals/decks/one.md");
+    let original = std::fs::read(&member).unwrap();
+    assert_eq!(
+        200,
+        post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#).status
+    );
+    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_json(&base, "/api/deselect", "{}").status);
+
+    let removed = post_json(&base, "/api/library/remove", r#"{"name":"animals/one.md"}"#);
+    assert_eq!(
+        200,
+        removed.status,
+        "body: {}",
+        String::from_utf8_lossy(&removed.body)
+    );
+    std::fs::write(&member, original).unwrap();
+
+    let decks = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&decks.body).unwrap();
+    let row = body["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["name"] == "animals")
+        .unwrap()["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["name"] == "animals/one.md")
+        .unwrap();
+    assert_eq!("new", row["state"], "row: {row}");
+    assert_eq!(true, row["reviewable_recall"], "row: {row}");
+}
+
+#[test]
+fn removing_a_loose_deck_drops_its_recent_entry() {
+    let (base, guard) = spawn_test_server();
+    assert_eq!(200, select_fixture(&base).status);
+    assert_eq!(200, post_json(&base, "/api/deselect", "{}").status);
+
+    let resp = post_json(&base, "/api/library/remove", r#"{"name":"sample.md"}"#);
+
+    assert_eq!(200, resp.status);
+    let recent: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(guard.dir().join("recent.json")).unwrap()).unwrap();
+    assert!(recent.as_array().unwrap().is_empty(), "recent: {recent}");
+}
+
+#[test]
+fn a_partial_removal_returns_safe_completed_and_failed_artifacts() {
+    let (base, guard) = spawn_test_server();
+    let progress = state_root(guard.dir()).join("progress/deck-sample.json");
+    std::fs::create_dir_all(progress.join("entry")).unwrap();
+
+    let resp = post_json(&base, "/api/library/remove", r#"{"name":"sample.md"}"#);
+
+    assert_eq!(
+        500,
+        resp.status,
+        "body: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("removal incomplete", body["error"]);
+    assert_eq!("progress/deck-sample.json", body["failed"]);
+    assert!(
+        body["completed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item == "sample.md"),
+        "body: {body}"
+    );
+    assert!(body["recovery"].as_str().unwrap().contains("alix doctor"));
+    assert!(
+        !String::from_utf8_lossy(&resp.body).contains(&guard.dir().display().to_string()),
+        "the response must never expose absolute host paths: {body}"
+    );
+}
+
+#[test]
+fn removal_rejects_unknown_and_plain_folder_targets() {
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        let folder = dir.join("plain");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("deck.md"), FIXTURE_DECK).unwrap();
+    });
+
+    for name in ["missing", "plain"] {
+        let body = serde_json::json!({ "name": name }).to_string();
+        assert_eq!(
+            400,
+            post_json(&base, "/api/library/remove/preview", &body).status,
+            "preview accepted {name}"
+        );
+        assert_eq!(
+            400,
+            post_json(&base, "/api/library/remove", &body).status,
+            "removal accepted {name}"
+        );
+    }
+}
+
 // ── Import ──────────────────────────────────────────────────────────────
 
 #[test]

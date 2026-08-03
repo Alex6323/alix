@@ -1411,6 +1411,84 @@ fn resetdto_wire_shape() {
 }
 
 #[test]
+fn removalpreviewdto_wire_shape() {
+    let dto = RemovalPreviewDto {
+        target: "rust".to_string(),
+        kind: "workspace",
+        decks: 2,
+        cards_with_progress: 17,
+        earliest_review_ms: Some(1_700_000_000_000),
+        files: vec![
+            "decks/basics.md".to_string(),
+            "progress/deck-basics.json".to_string(),
+            "alix.toml".to_string(),
+        ],
+        directories: vec!["assets".to_string()],
+        dependents: vec!["advanced.md".to_string()],
+    };
+    pin(
+        "RemovalPreviewDto",
+        &dto,
+        json!({
+            "target": "rust",
+            "kind": "workspace",
+            "decks": 2,
+            "cards_with_progress": 17,
+            "earliest_review_ms": 1_700_000_000_000_u64,
+            "files": ["decks/basics.md", "progress/deck-basics.json", "alix.toml"],
+            "directories": ["assets"],
+            "dependents": ["advanced.md"]
+        }),
+    );
+}
+
+#[test]
+fn removaldto_wire_shape() {
+    let dto = RemovalDto {
+        target: "rust".to_string(),
+        kind: "workspace",
+        removed: vec!["decks/basics.md".to_string(), "alix.toml".to_string()],
+        decks_removed: 2,
+        directory_removed: false,
+        dependents: vec!["advanced.md".to_string()],
+    };
+    pin(
+        "RemovalDto",
+        &dto,
+        json!({
+            "target": "rust",
+            "kind": "workspace",
+            "removed": ["decks/basics.md", "alix.toml"],
+            "decks_removed": 2,
+            "directory_removed": false,
+            "dependents": ["advanced.md"]
+        }),
+    );
+}
+
+#[test]
+fn removalfailuredto_wire_shape() {
+    let dto = RemovalFailureDto {
+        target: "rust".to_string(),
+        error: "removal incomplete",
+        completed: vec!["decks/basics.md".to_string()],
+        failed: "progress/deck-basics.json".to_string(),
+        recovery: "Run alix doctor to inspect and repair the remaining artifacts.",
+    };
+    pin(
+        "RemovalFailureDto",
+        &dto,
+        json!({
+            "target": "rust",
+            "error": "removal incomplete",
+            "completed": ["decks/basics.md"],
+            "failed": "progress/deck-basics.json",
+            "recovery": "Run alix doctor to inspect and repair the remaining artifacts."
+        }),
+    );
+}
+
+#[test]
 fn importdto_wire_shape() {
     let dto = ImportDto {
         deck: "kanji.md".to_string(),

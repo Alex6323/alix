@@ -1,0 +1,18 @@
+{
+  "cards_with_progress": 17,
+  "decks": 2,
+  "dependents": [
+    "advanced.md"
+  ],
+  "directories": [
+    "assets"
+  ],
+  "earliest_review_ms": 1700000000000,
+  "files": [
+    "decks/basics.md",
+    "progress/deck-basics.json",
+    "alix.toml"
+  ],
+  "kind": "workspace",
+  "target": "rust"
+}

@@ -21,9 +21,11 @@
   .add-sec h3 { margin: 0; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
   .sheet-err { color: var(--again); }
   .share-code { font-family: var(--mono); font-size: 1.4rem; user-select: all; }
-  /* Armed (name matches) reset button borrows the app's danger hue, the same
+  /* Armed (name matches) destructive buttons borrow the app's danger hue, the same
      one the overflow menu's own destructive items use (see `.menu button.danger`). */
-  #resetGo:not(:disabled) { border-color: var(--again); color: var(--again); }
+  #resetGo:not(:disabled), #removeGo:not(:disabled) { border-color: var(--again); color: var(--again); }
+  .sheet-add .bar-chip:disabled { opacity: 0.4; cursor: default; }
+  #removeStatus { color: var(--dim); }
   .sheet-doctor { display: grid; gap: 8px; min-width: 320px; }
   .doc-row { display: flex; gap: 8px; }
   .doc-glyph { width: 1em; flex: none; color: var(--dim); } /* unknown status: dim default */

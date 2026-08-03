@@ -59,6 +59,13 @@ clients (see `docs/API.md`):
   root if nothing's focused) device-to-device over a wormhole code, or
   **download as .zip** as the offline fallback. Personal state (progress,
   recent list, local pacing) stays home either way.
+- **Remove from library…**: permanently removes a focused loose deck,
+  workspace member, or whole workspace and its Alix-owned progress, frozen
+  assets, augmentations, and backup siblings. The sheet first lists the
+  stakes, then requires the exact row name. Removing a workspace preserves
+  ordinary source files and uninitialized Markdown, so its folder remains if
+  either is present. A partial failure stays visible with completed and failed
+  artifact labels plus the `alix doctor` recovery step. There is no undo.
 - **Reset…**: wipes a row's progress. Gated on typing the row's name back
   exactly, since this can't be undone; needs a focused row.
 - **Doctor**: the free environment checks (config, store, decks, backend,

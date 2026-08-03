@@ -163,6 +163,10 @@ pub(super) enum CatalogCommand {
     RecordRecent {
         paths: Vec<PathBuf>,
     },
+    ForgetRecent {
+        paths: Vec<PathBuf>,
+        reply: Reply<Result<(), String>>,
+    },
     InvalidateContent,
     LauncherIcon {
         key: String,
@@ -240,6 +244,9 @@ impl CatalogHandle {
     pub(super) fn record_recent(&self, paths: Vec<PathBuf>) {
         let _ = self.tx.send(CatalogCommand::RecordRecent { paths });
     }
+    pub(super) fn forget_recent(&self, paths: Vec<PathBuf>) -> Option<Result<(), String>> {
+        self.call(|reply| CatalogCommand::ForgetRecent { paths, reply })
+    }
     pub(super) fn invalidate_content(&self) {
         let _ = self.tx.send(CatalogCommand::InvalidateContent);
     }
@@ -298,6 +305,21 @@ impl CatalogState {
                 // the root); the mapping for unrelated names is unaffected
                 // because the rebuild re-derives every target from disk.
                 self.invalidate();
+            }
+            CatalogCommand::ForgetRecent { paths, reply } => {
+                let previous = self.recent.clone();
+                let out = if self.recent.remove_paths(&paths) {
+                    self.recent.save().map_err(|error| {
+                        self.recent = previous;
+                        error.to_string()
+                    })
+                } else {
+                    Ok(())
+                };
+                if out.is_ok() {
+                    self.invalidate();
+                }
+                let _ = reply.send(out);
             }
             CatalogCommand::InvalidateContent => {
                 self.invalidate();

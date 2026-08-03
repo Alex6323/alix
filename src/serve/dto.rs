@@ -302,6 +302,37 @@ pub(super) struct ResetDto {
     pub(super) cards_cleared: usize,
 }
 
+#[derive(Debug, Serialize)]
+pub(super) struct RemovalPreviewDto {
+    pub(super) target: String,
+    pub(super) kind: &'static str,
+    pub(super) decks: usize,
+    pub(super) cards_with_progress: usize,
+    pub(super) earliest_review_ms: Option<u64>,
+    pub(super) files: Vec<String>,
+    pub(super) directories: Vec<String>,
+    pub(super) dependents: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct RemovalDto {
+    pub(super) target: String,
+    pub(super) kind: &'static str,
+    pub(super) removed: Vec<String>,
+    pub(super) decks_removed: usize,
+    pub(super) directory_removed: bool,
+    pub(super) dependents: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct RemovalFailureDto {
+    pub(super) target: String,
+    pub(super) error: &'static str,
+    pub(super) completed: Vec<String>,
+    pub(super) failed: String,
+    pub(super) recovery: &'static str,
+}
+
 /// Unlike `generate`'s lenient save, a non-parsing upload is rejected outright.
 #[derive(Serialize)]
 pub(super) struct ImportDto {

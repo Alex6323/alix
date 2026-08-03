@@ -1,9 +1,11 @@
 use std::{
     collections::HashSet,
+    io,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail};
+use thiserror::Error;
 
 use crate::{
     assets,
@@ -238,6 +240,72 @@ pub struct RemovalReport {
     pub dependents: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct WorkspaceRemovalPreview {
+    pub files: Vec<PathBuf>,
+    pub directories: Vec<PathBuf>,
+    pub decks: usize,
+    pub cards_with_progress: usize,
+    pub earliest_review_ms: Option<u64>,
+    pub dependents: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct WorkspaceRemovalReport {
+    pub removed: Vec<PathBuf>,
+    pub decks_removed: usize,
+    pub root_removed: bool,
+    pub dependents: Vec<String>,
+}
+
+#[derive(Debug, Error)]
+#[error("cannot remove {failed}: {source}")]
+pub struct RemovalFailure {
+    pub removed: Vec<PathBuf>,
+    pub failed: PathBuf,
+    #[source]
+    source: io::Error,
+}
+
+#[derive(Debug)]
+enum RemovalItem {
+    File(PathBuf),
+    Directory(PathBuf),
+}
+
+impl RemovalItem {
+    fn path(&self) -> &Path {
+        match self {
+            Self::File(path) | Self::Directory(path) => path,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct RemovalPlan {
+    items: Vec<RemovalItem>,
+}
+
+impl RemovalPlan {
+    fn extend(&mut self, files: Vec<PathBuf>, directories: Vec<PathBuf>) {
+        self.items.extend(files.into_iter().map(RemovalItem::File));
+        self.items
+            .extend(directories.into_iter().map(RemovalItem::Directory));
+    }
+
+    fn file_if_present(&mut self, path: PathBuf) {
+        if path.is_file() {
+            self.items.push(RemovalItem::File(path));
+        }
+    }
+
+    fn directory_if_present(&mut self, path: PathBuf) {
+        if path.is_dir() {
+            self.items.push(RemovalItem::Directory(path));
+        }
+    }
+}
+
 /// What `remove_deck` will destroy, computed for the confirmation prompt:
 /// the exact file set plus the stakes (how much earned history goes).
 pub fn removal_preview(deck_path: &Path, store: &Store) -> RemovalPreview {
@@ -272,20 +340,213 @@ pub fn removal_preview(deck_path: &Path, store: &Store) -> RemovalPreview {
 pub fn remove_deck(deck_path: &Path, store: &Store) -> Result<RemovalReport> {
     let dependents = crate::deck::dependents(deck_path);
     let (files, directories, _) = removal_set(deck_path, store);
-    let mut removed = Vec::new();
-    for file in files {
-        std::fs::remove_file(&file).with_context(|| format!("cannot remove {}", file.display()))?;
-        removed.push(file);
-    }
-    for dir in directories {
-        std::fs::remove_dir_all(&dir)
-            .with_context(|| format!("cannot remove {}", dir.display()))?;
-        removed.push(dir);
-    }
+    let mut plan = RemovalPlan::default();
+    plan.extend(files, directories);
+    let removed = execute_removal_plan(plan)?;
     Ok(RemovalReport {
         removed,
         dependents,
     })
+}
+
+pub fn workspace_removal_preview(
+    workspace_root: &Path,
+    store: &Store,
+) -> Result<WorkspaceRemovalPreview> {
+    workspace_removal_plan(workspace_root, store).map(|(_, preview)| preview)
+}
+
+pub fn remove_workspace(workspace_root: &Path, store: &Store) -> Result<WorkspaceRemovalReport> {
+    let (plan, preview) = workspace_removal_plan(workspace_root, store)?;
+    let mut removed = execute_removal_plan(plan)?;
+    remove_if_empty(&workspace_root.join(workspace::DECKS), &mut removed)?;
+    remove_if_empty(workspace_root, &mut removed)?;
+    Ok(WorkspaceRemovalReport {
+        decks_removed: preview.decks,
+        root_removed: !workspace_root.exists(),
+        dependents: preview.dependents,
+        removed,
+    })
+}
+
+fn workspace_removal_plan(
+    workspace_root: &Path,
+    store: &Store,
+) -> Result<(RemovalPlan, WorkspaceRemovalPreview)> {
+    if !workspace::has_manifest(workspace_root) {
+        bail!("{} is not a workspace", workspace_root.display());
+    }
+    let members = workspace::classified_deck_files(workspace_root)
+        .with_context(|| format!("cannot read {}", workspace_root.display()))?
+        .0;
+    let mut plan = RemovalPlan::default();
+    let mut preview = WorkspaceRemovalPreview {
+        files: Vec::new(),
+        directories: Vec::new(),
+        decks: members.len(),
+        cards_with_progress: 0,
+        earliest_review_ms: None,
+        dependents: Vec::new(),
+    };
+    for member in members {
+        let member_preview = removal_preview(&member, store);
+        preview.cards_with_progress += member_preview.cards_with_progress;
+        if let Some(earliest) = member_preview.earliest_review_ms {
+            preview.earliest_review_ms = Some(
+                preview
+                    .earliest_review_ms
+                    .map_or(earliest, |current| current.min(earliest)),
+            );
+        }
+        for dependent in member_preview.dependents {
+            if !preview.dependents.contains(&dependent) {
+                preview.dependents.push(dependent);
+            }
+        }
+        preview.files.extend(member_preview.files.iter().cloned());
+        preview
+            .directories
+            .extend(member_preview.directories.iter().cloned());
+        plan.extend(member_preview.files, member_preview.directories);
+    }
+
+    let workspace_files = WorkspaceFiles::new(workspace_root);
+    for directory in [workspace_files.assets(), workspace_files.augment()] {
+        if directory.is_dir() {
+            preview.directories.push(directory.clone());
+            plan.directory_if_present(directory);
+        }
+    }
+    if let Some(user_root) = user_root_for_store(store.path())
+        && path_is_within(&user_root, workspace_root)
+    {
+        let files = crate::state::UserFiles::new(&user_root);
+        if files.progress().is_dir() {
+            preview.directories.push(files.progress());
+            plan.directory_if_present(files.progress());
+        }
+        if files.recent().is_file() {
+            preview.files.push(files.recent());
+            plan.file_if_present(files.recent());
+        }
+    }
+    let local = crate::state::UserFiles::new(workspace_root).local_manifest();
+    if local.is_file() {
+        preview.files.push(local.clone());
+        plan.file_if_present(local);
+    }
+    let manifest = workspace_files.manifest();
+    preview.files.push(manifest.clone());
+    plan.file_if_present(manifest);
+    Ok((plan, preview))
+}
+
+fn execute_removal_plan(plan: RemovalPlan) -> std::result::Result<Vec<PathBuf>, RemovalFailure> {
+    let mut removed = Vec::new();
+    for item in plan.items {
+        #[cfg(test)]
+        let result = if injected_removal_failure(item.path()) {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "injected removal failure",
+            ))
+        } else {
+            remove_item(&item)
+        };
+        #[cfg(not(test))]
+        let result = remove_item(&item);
+        if let Err(source) = result {
+            return Err(RemovalFailure {
+                removed,
+                failed: item.path().to_path_buf(),
+                source,
+            });
+        }
+        removed.push(item.path().to_path_buf());
+    }
+    Ok(removed)
+}
+
+fn remove_item(item: &RemovalItem) -> io::Result<()> {
+    match item {
+        RemovalItem::File(path) => std::fs::remove_file(path),
+        RemovalItem::Directory(path) => std::fs::remove_dir_all(path),
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static INJECTED_REMOVAL_FAILURE: std::cell::RefCell<Option<PathBuf>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+fn injected_removal_failure(path: &Path) -> bool {
+    INJECTED_REMOVAL_FAILURE.with(|failure| failure.borrow().as_deref() == Some(path))
+}
+
+#[cfg(test)]
+fn with_removal_failure_at<T>(path: &Path, run: impl FnOnce() -> T) -> T {
+    INJECTED_REMOVAL_FAILURE.with(|failure| {
+        *failure.borrow_mut() = Some(path.to_path_buf());
+    });
+    let output = run();
+    INJECTED_REMOVAL_FAILURE.with(|failure| {
+        *failure.borrow_mut() = None;
+    });
+    output
+}
+
+fn remove_if_empty(
+    path: &Path,
+    removed: &mut Vec<PathBuf>,
+) -> std::result::Result<(), RemovalFailure> {
+    match std::fs::remove_dir(path) {
+        Ok(()) => removed.push(path.to_path_buf()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::DirectoryNotEmpty
+            ) => {}
+        Err(source) => {
+            return Err(RemovalFailure {
+                removed: removed.clone(),
+                failed: path.to_path_buf(),
+                source,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn user_root_for_store(store_path: &Path) -> Option<PathBuf> {
+    if store_path
+        .file_name()
+        .is_some_and(|name| name == "progress")
+    {
+        return store_path.parent().map(Path::to_path_buf);
+    }
+    if store_path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "progress")
+    {
+        return store_path.parent()?.parent().map(Path::to_path_buf);
+    }
+    None
+}
+
+fn path_is_within(path: &Path, root: &Path) -> bool {
+    match (std::fs::canonicalize(path), std::fs::canonicalize(root)) {
+        (Ok(path), Ok(root)) => path.starts_with(root),
+        _ => {
+            path.starts_with(root)
+                && !path
+                    .components()
+                    .any(|component| component == std::path::Component::ParentDir)
+        }
+    }
 }
 
 /// The deck's own artifact set, in deletion order. Lenient on a corrupt or
@@ -970,6 +1231,163 @@ mod tests {
     }
 
     #[test]
+    fn removing_a_workspace_deletes_every_owned_artifact_and_preserves_other_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::write(ws.join("alix.local.toml"), "[review]\n").unwrap();
+        std::fs::write(ws.join("source.txt"), "keep me\n").unwrap();
+        std::fs::write(members.join("notes.md"), "ordinary markdown\n").unwrap();
+        write_deck(&members, "a.md", "da1", "ca1");
+        write_deck(&members, "b.md", "db1", "cb1");
+        std::fs::write(members.join("a.md.bak"), "backup").unwrap();
+
+        let paths = vec![members.join("a.md"), members.join("b.md")];
+        let mut store = crate::state::open_stores(&paths, &ws).unwrap();
+        store.get_or_insert("card-ca1", 100);
+        store.get_or_insert("card-cb1", 200);
+        store.save().unwrap();
+        std::fs::write(ws.join("recent.json"), "{}\n").unwrap();
+        for deck_id in ["deck-da1", "deck-db1"] {
+            let augment = WorkspaceFiles::new(&ws).augment_for(deck_id);
+            std::fs::create_dir_all(augment.parent().unwrap()).unwrap();
+            std::fs::write(&augment, "{}\n").unwrap();
+            let assets = WorkspaceFiles::new(&ws).assets_for(deck_id);
+            std::fs::create_dir_all(&assets).unwrap();
+            std::fs::write(assets.join("image.png"), b"png").unwrap();
+        }
+        std::fs::write(ws.join("assets/icon.svg"), "<svg/>").unwrap();
+
+        let preview = workspace_removal_preview(&ws, &store).unwrap();
+        assert_eq!(2, preview.decks);
+        assert_eq!(2, preview.cards_with_progress);
+        assert_eq!(Some(100), preview.earliest_review_ms);
+
+        let report = remove_workspace(&ws, &store).unwrap();
+
+        assert_eq!(2, report.decks_removed);
+        assert!(!report.root_removed, "the unrelated files keep the folder");
+        for removed in [
+            ws.join("alix.toml"),
+            ws.join("alix.local.toml"),
+            ws.join("recent.json"),
+            ws.join("assets"),
+            ws.join("augment"),
+            ws.join("progress"),
+            members.join("a.md"),
+            members.join("a.md.bak"),
+            members.join("b.md"),
+        ] {
+            assert!(!removed.exists(), "{} must be removed", removed.display());
+        }
+        assert_eq!(
+            "keep me\n",
+            std::fs::read_to_string(ws.join("source.txt")).unwrap()
+        );
+        assert_eq!(
+            "ordinary markdown\n",
+            std::fs::read_to_string(members.join("notes.md")).unwrap()
+        );
+    }
+
+    #[test]
+    fn removing_a_workspace_does_not_recursively_delete_an_external_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        let user = dir.path().join("user");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            ws.join("alix.toml"),
+            format!("title = \"W\"\nstore = {:?}\n", user.display().to_string()),
+        )
+        .unwrap();
+        write_deck(&members, "a.md", "da1", "ca1");
+        let paths = vec![members.join("a.md")];
+        let mut store = crate::state::open_stores(&paths, &user).unwrap();
+        store.get_or_insert("card-ca1", 100);
+        store.save().unwrap();
+        std::fs::write(user.join("progress/unrelated.json"), "keep\n").unwrap();
+        std::fs::write(user.join("recent.json"), "keep\n").unwrap();
+
+        let report = remove_workspace(&ws, &store).unwrap();
+
+        assert!(report.root_removed, "an empty workspace root is removed");
+        assert!(!ws.exists());
+        assert!(!user.join("progress/deck-da1.json").exists());
+        assert_eq!(
+            "keep\n",
+            std::fs::read_to_string(user.join("progress/unrelated.json")).unwrap()
+        );
+        assert_eq!(
+            "keep\n",
+            std::fs::read_to_string(user.join("recent.json")).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_workspace_removal_failure_reports_completed_and_failed_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        for (name, deck_id, card_id) in [
+            ("a.md", "da1", "ca1"),
+            ("b.md", "db1", "cb1"),
+            ("c.md", "dc1", "cc1"),
+        ] {
+            write_deck(&members, name, deck_id, card_id);
+        }
+        let paths = vec![
+            members.join("a.md"),
+            members.join("b.md"),
+            members.join("c.md"),
+        ];
+        let mut store = crate::state::open_stores(&paths, &ws).unwrap();
+        for card_id in ["card-ca1", "card-cb1", "card-cc1"] {
+            store.get_or_insert(card_id, 0);
+        }
+        store.save().unwrap();
+        let failed = ws.join("progress/deck-db1.json");
+
+        let error = with_removal_failure_at(&failed, || remove_workspace(&ws, &store)).unwrap_err();
+        let failure = error.downcast_ref::<RemovalFailure>().unwrap();
+
+        assert_eq!(&failed, &failure.failed);
+        assert!(
+            failure.removed.contains(&members.join("a.md")),
+            "the completed list names the first removed deck: {failure:?}"
+        );
+        assert!(
+            failure.removed.contains(&members.join("b.md")),
+            "deck-first ordering names the second deck too: {failure:?}"
+        );
+        assert!(
+            ws.join("alix.toml").exists(),
+            "the workspace marker remains"
+        );
+        assert!(members.join("c.md").exists(), "later members remain intact");
+
+        let remaining = crate::workspace::deck_files(&ws);
+        let mut known_cards = std::collections::HashSet::new();
+        let mut known_decks = std::collections::HashSet::new();
+        for path in remaining {
+            let deck = Deck::load(path).unwrap();
+            known_cards.extend(deck.cards.iter().filter_map(|card| card.id()));
+            known_decks.extend(deck.deck_token);
+        }
+        let aggregate = crate::state::open_aggregate_store(&ws).unwrap();
+        let orphans = aggregate.orphans(&known_cards, &known_decks);
+        assert!(
+            orphans.cards.contains(&"card-cb1".to_string()),
+            "the same predicate doctor consumes must report the failed member's valid progress: {orphans:?}"
+        );
+    }
+
+    #[test]
     fn the_removal_preview_names_the_stakes_and_the_dependents() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
@@ -1013,10 +1431,17 @@ mod tests {
         std::fs::create_dir_all(progress.join("x")).unwrap();
 
         let err = remove_deck(&dir.path().join("a.md"), &store).unwrap_err();
+        let failure = err.downcast_ref::<RemovalFailure>().unwrap();
 
         assert!(
             format!("{err:#}").contains("deck-da1.json"),
             "the error names the member that failed: {err:#}"
+        );
+        assert_eq!(&progress, &failure.failed);
+        assert_eq!(
+            &[dir.path().join("a.md")],
+            failure.removed.as_slice(),
+            "the report names the completed removal"
         );
         assert!(
             !dir.path().join("a.md").exists(),

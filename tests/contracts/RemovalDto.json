@@ -1,0 +1,13 @@
+{
+  "decks_removed": 2,
+  "dependents": [
+    "advanced.md"
+  ],
+  "directory_removed": false,
+  "kind": "workspace",
+  "removed": [
+    "decks/basics.md",
+    "alix.toml"
+  ],
+  "target": "rust"
+}

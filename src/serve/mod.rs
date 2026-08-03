@@ -38,6 +38,7 @@ use crate::{
     recent::RecentDecks,
     share,
     store::Store,
+    workspace,
 };
 
 const MAX_REMOTE_BODY: usize = 256 * 1024;
@@ -157,6 +158,28 @@ pub(super) fn supervised(
 /// is the client's error (400); staleness is decided by the Study owner.
 fn echoed_revision(request: &tiny_http::Request) -> Option<u64> {
     header_value(request, "X-Alix-Study-Revision")?.parse().ok()
+}
+
+fn library_target(name: String, resolved: Resolved) -> Option<LibraryTarget> {
+    match resolved {
+        Resolved::One(path) if path.is_file() => Some(LibraryTarget::Deck { name, path }),
+        Resolved::One(root) if root.is_dir() && workspace::has_manifest(&root) => {
+            let members = workspace::classified_deck_files(&root).ok()?.0;
+            Some(LibraryTarget::Workspace {
+                name,
+                root,
+                members,
+            })
+        }
+        Resolved::Many { dir, files } if workspace::has_manifest(&dir) => {
+            Some(LibraryTarget::Workspace {
+                name,
+                root: dir,
+                members: files,
+            })
+        }
+        Resolved::One(_) | Resolved::Many { .. } | Resolved::Ambiguous | Resolved::Unknown => None,
+    }
 }
 
 pub fn run_review(
@@ -561,6 +584,91 @@ pub fn run_review(
                     Some(Transition::Done(dto)) => respond_json(request, &dto),
                     Some(Transition::Rejected) => respond_status(request, 400),
                     Some(Transition::FlushFailed) => respond_status(request, 500),
+                }
+            }
+            (Method::Post, "/api/library/remove/preview") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    name: String,
+                }
+                let Some(body) = json_body::<Body>(&mut request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(resolved) = catalog.resolve(body.name.clone()) else {
+                    respond_status(request, 503);
+                    continue;
+                };
+                let Some(target) = library_target(body.name, resolved) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.removal_preview(target) {
+                    None => respond_status(request, 503),
+                    Some(Transition::Done(dto)) => respond_json(request, &dto),
+                    Some(Transition::Rejected) => respond_status(request, 400),
+                    Some(Transition::FlushFailed) => respond_status(request, 500),
+                }
+            }
+            (Method::Post, "/api/library/remove") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    name: String,
+                }
+                let Some(body) = json_body::<Body>(&mut request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(resolved) = catalog.resolve(body.name.clone()) else {
+                    respond_status(request, 503);
+                    continue;
+                };
+                let Some(target) = library_target(body.name, resolved) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let recent_paths = target.recent_paths();
+                match study.remove_library(target) {
+                    None => respond_status(request, 503),
+                    Some(RemovalOutcome::Rejected) => respond_status(request, 400),
+                    Some(RemovalOutcome::Busy) => respond_status(request, 409),
+                    Some(RemovalOutcome::FlushFailed) => respond_status(request, 500),
+                    Some(RemovalOutcome::Done(dto)) => match catalog.forget_recent(recent_paths) {
+                        None => respond_status(request, 503),
+                        Some(Ok(())) => respond_json(request, &dto),
+                        Some(Err(error)) => {
+                            eprintln!(
+                                "warning: could not update recent history after removing {}: {error}",
+                                dto.target
+                            );
+                            respond_json_status(
+                                request,
+                                500,
+                                &RemovalFailureDto {
+                                    target: dto.target,
+                                    error: "removal incomplete",
+                                    completed: dto.removed,
+                                    failed: "recent.json".to_string(),
+                                    recovery: "Run alix doctor to inspect and repair the remaining artifacts.",
+                                },
+                            );
+                        }
+                    },
+                    Some(RemovalOutcome::Failed {
+                        dto,
+                        target_removed,
+                    }) => {
+                        if target_removed {
+                            if let Some(Err(error)) = catalog.forget_recent(recent_paths) {
+                                eprintln!(
+                                    "warning: could not update recent history after partial removal: {error}"
+                                );
+                            }
+                        } else {
+                            catalog.invalidate_content();
+                        }
+                        respond_json_status(request, 500, &dto);
+                    }
                 }
             }
             (Method::Post, "/api/workspace/deadline") => {

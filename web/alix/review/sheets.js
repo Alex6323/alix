@@ -269,6 +269,99 @@ export function createSheets({
     });
   }
 
+  function removalError(error) {
+    if (error && error.status === 409) {
+      return "A study session is active. Leave it, then try again.";
+    }
+    const body = error && error.body;
+    if (body && body.error === "removal incomplete") {
+      const completed = Array.isArray(body.completed) && body.completed.length
+        ? "Removed: " + body.completed.join(", ") + ". "
+        : "";
+      const failed = body.failed ? "Stopped at: " + body.failed + ". " : "";
+      return completed + failed + (body.recovery || "Run alix doctor before retrying.");
+    }
+    return "Could not remove this item. The server log has details; try again.";
+  }
+
+  function openLibraryRemoval() {
+    const row = focusedRowName();
+    if (!row) { notice("focus a deck or workspace first"); return Promise.resolve(); }
+    show(
+      '<h2>Remove from library</h2><div class="sheet-add">' +
+      '<p id="removeLoading" role="status" aria-live="polite">Checking what Alix owns…</p>' +
+      '<button id="removePreviewRetry" class="bar-chip" hidden>Retry</button>' +
+      '<div id="removeDetails" hidden>' +
+      '<p>Permanently remove the <span id="removeKind"></span> <b id="removeTarget"></b>.</p>' +
+      '<p id="removeStakes"></p><p id="removeArtifacts"></p><p id="removeDependents"></p>' +
+      '<label for="removeConfirm">Type the exact name to confirm</label>' +
+      '<input id="removeConfirm" class="bar-filter" autocomplete="off" spellcheck="false" ' +
+      'aria-describedby="removeStatus" placeholder="type the name to confirm">' +
+      '<button id="removeGo" class="bar-chip danger" disabled>Remove permanently</button>' +
+      '<p id="removeStatus" role="status" aria-live="polite"></p></div></div>'
+    );
+    const loading = doc.getElementById("removeLoading");
+    const retry = doc.getElementById("removePreviewRetry");
+    const details = doc.getElementById("removeDetails");
+
+    const loadPreview = () => {
+      loading.textContent = "Checking what Alix owns…";
+      retry.hidden = true;
+      return api("/api/library/remove/preview", post({ name: row })).then((preview) => {
+        if (!loading.isConnected) return;
+        loading.hidden = true;
+        details.hidden = false;
+        doc.getElementById("removeTarget").textContent = preview.target;
+        doc.getElementById("removeKind").textContent = preview.kind;
+        const history = preview.cards_with_progress === 1
+          ? "1 card with progress"
+          : preview.cards_with_progress + " cards with progress";
+        const since = preview.earliest_review_ms
+          ? " since " + new Date(preview.earliest_review_ms).toLocaleDateString()
+          : "";
+        doc.getElementById("removeStakes").textContent =
+          preview.decks + (preview.decks === 1 ? " deck, " : " decks, ") + history + since + ".";
+        doc.getElementById("removeArtifacts").textContent =
+          "Alix will remove " + preview.files.length + " files and " + preview.directories.length +
+          " directories. Other source files stay.";
+        doc.getElementById("removeDependents").textContent = preview.dependents.length
+          ? "These decks depend on it and will unlock: " + preview.dependents.join(", ") + "."
+          : "No other decks depend on it.";
+        const input = doc.getElementById("removeConfirm");
+        const go = doc.getElementById("removeGo");
+        const status = doc.getElementById("removeStatus");
+        input.addEventListener("input", () => { go.disabled = input.value !== row; });
+        go.addEventListener("click", () => {
+          if (go.disabled) return Promise.resolve();
+          go.disabled = true;
+          go.textContent = "Removing…";
+          status.textContent = "Removing the selected " + preview.kind + "…";
+          return api("/api/library/remove", post({ name: row })).then((removed) => {
+            close();
+            const residue = removed.kind === "workspace" && !removed.directory_removed
+              ? "; folder kept: it contains files Alix doesn't own"
+              : "";
+            notice("removed " + removed.kind + " '" + removed.target + "'" + residue);
+            refreshPicker();
+          }).catch((error) => {
+            if (!status.isConnected) return;
+            status.textContent = removalError(error);
+            const partial = error && error.body && error.body.error === "removal incomplete";
+            go.textContent = partial ? "Removal stopped" : "Try again";
+            go.disabled = partial || input.value !== row;
+          });
+        });
+        input.focus();
+      }).catch(() => {
+        if (!loading.isConnected) return;
+        loading.textContent = "Could not inspect this item. Try again.";
+        retry.hidden = false;
+      });
+    };
+    retry.addEventListener("click", loadPreview);
+    return loadPreview();
+  }
+
   // The Doctor sheet: one row per environment/backend check from /api/doctor
   // (config, store, decks, backend, share, wormhole — an open set), each with a
   // status glyph and, when something needs fixing, a muted remedy line.
@@ -358,6 +451,7 @@ export function createSheets({
     openAbout,
     openAdd,
     openDoctor,
+    openLibraryRemoval,
     openPair,
     openReset,
     openShare,

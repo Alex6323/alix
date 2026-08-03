@@ -1,0 +1,9 @@
+{
+  "completed": [
+    "decks/basics.md"
+  ],
+  "error": "removal incomplete",
+  "failed": "progress/deck-basics.json",
+  "recovery": "Run alix doctor to inspect and repair the remaining artifacts.",
+  "target": "rust"
+}
