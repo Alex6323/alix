@@ -489,7 +489,7 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
          \n\
          [defaults]\n\
          \n\
-         # reveal = \"flip\"              # flip | cloze | line\n\
+         # reveal = \"flip\"              # flip | line\n\
          # order = \"scheduled\"          # scheduled | sequential\n"
     );
     let workspace_files = alix::workspace::WorkspaceFiles::new(&args.dir);

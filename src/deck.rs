@@ -961,6 +961,17 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn the_retired_cloze_reveal_value_is_rejected_in_workspace_defaults() {
+        let directives = [("reveal".to_string(), "cloze".to_string())];
+        assert_eq!(None, DeckSettings::from_directives(&directives).reveal);
+        let live = [("reveal".to_string(), "line".to_string())];
+        assert_eq!(
+            Some(Reveal::Line),
+            DeckSettings::from_directives(&live).reveal
+        );
+    }
+
     fn write_deck(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, body).unwrap();

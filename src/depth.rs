@@ -40,15 +40,19 @@ pub fn depth_name(depth: Depth) -> &'static str {
 pub enum Reveal {
     #[default]
     Flip,
+    // Retired as a value at every scope (holes are the trigger), so it is
+    // never advertised; the variant stays for the auto-detection.
+    #[cfg_attr(feature = "full", value(skip))]
     Cloze,
     Line,
 }
 
 impl Reveal {
+    // "cloze" is retired as a value at every scope: `\blank{...}` holes are
+    // the trigger; the variant itself stays for the auto-detection.
     pub fn parse(value: &str) -> Option<Self> {
         match value.to_ascii_lowercase().as_str() {
             "flip" => Some(Self::Flip),
-            "cloze" => Some(Self::Cloze),
             "line" => Some(Self::Line),
             _ => None,
         }

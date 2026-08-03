@@ -38,6 +38,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from the config template `alix config --init` writes and from the
   backend source-reachability errors, which now say plain `source:`.
 
+- The retired `reveal = "cloze"` value is rejected in a workspace
+  manifest's `[defaults]` too, the one scope that still accepted it, and
+  the `workspace init` template stops advertising it: `\blank{...}` holes
+  are the only cloze trigger, at every scope.
+
 - `generate`'s `max_cards` is now a soft ceiling with a default of 100
   (was a hard-worded 30): the prompt aims for the configured count, and a
   generation that comes back larger is kept in full with a warning
