@@ -310,8 +310,8 @@ class RemoteExam {
 
 /// A paired desktop's deck generation from a URL (`POST`/`GET
 /// /api/remote/generate`). Mirrors `RemoteGenerateDto`; unknown wire fields
-/// are ignored and absent ones read as their default, so an older client
-/// survives a server that has grown new fields. The iron rule: the finished
+/// are ignored and absent ones read as their default, so the reader tolerates
+/// fields it does not know. The iron rule: the finished
 /// [deck] text is only ever read back here, this app places the file, the
 /// server never does.
 class RemoteGenerate {

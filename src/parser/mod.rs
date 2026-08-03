@@ -1610,7 +1610,7 @@ mod tests {
     }
 
     #[test]
-    fn retired_content_directive_keys_are_now_unknown_and_yield_no_image() {
+    fn unknown_content_directive_keys_lint_and_yield_no_image() {
         let deck = parse(
             "## q\n---\na\n<!-- img: moon.png -->\n<!-- img-back: phase.png -->\n\
              <!-- math: latex -->\n",
@@ -1628,7 +1628,7 @@ mod tests {
     }
 
     #[test]
-    fn retired_reserved_directive_keys_are_now_unknown() {
+    fn unrecognized_directive_keys_lint_as_unknown() {
         let deck = parse(
             "## q\n---\na\n<!-- occlude: soon -->\n<!-- audio: a.mp3 -->\n\
              <!-- audio-back: b.mp3 -->\n<!-- img-alt: a moon -->\n",
@@ -1803,7 +1803,7 @@ mod tests {
     }
 
     #[test]
-    fn the_removed_image_folder_keys_are_now_unknown() {
+    fn image_folder_keys_are_ordinary_unknown_keys() {
         let deck = parse("---\nimg-dir: assets\n---\n## q\na\n");
         assert_eq!(vec![unknown(2, "img-dir")], deck.lints);
 
