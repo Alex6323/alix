@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn a_deck_with_a_retired_key_is_an_ordinary_uninitialized_candidate() {
+    fn a_deck_with_an_unknown_key_is_an_ordinary_uninitialized_candidate() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("old.md"),

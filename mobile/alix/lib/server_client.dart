@@ -283,7 +283,7 @@ class RemoteExam {
   final String? cards;
 
   /// A trace (compression) sitting vs a fact-deck sitting. Tolerant,
-  /// defaults to false when absent (an older server or the idle baseline).
+  /// defaults to false when absent (the idle baseline omits it).
   final bool isTrace;
   final bool thinking;
   final int? elapsed;

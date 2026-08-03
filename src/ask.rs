@@ -1162,7 +1162,7 @@ mod tests {
     }
 
     #[test]
-    fn draft_card_prompt_asks_for_l1_shape_and_no_old_syntax() {
+    fn draft_card_prompt_teaches_only_the_current_deck_shape() {
         let transcript = vec![("q".to_string(), "a".to_string())];
         let p = draft_card_prompt(&card(), &transcript);
         assert!(p.contains("## <the question>"));

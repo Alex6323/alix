@@ -38,6 +38,13 @@ code never recognizes an old format. Concretely, a violation is ANY of:
   rejection. A test becomes a violation only when it asserts
   retired-format-specific handling (a dedicated message or class for the
   old shape).
+- Negative regression guards: a test asserting retired vocabulary is
+  ABSENT from output (`!out.contains("un-converted")`,
+  `!p.contains("tab-indent")`, and the like) is the excision's tripwire,
+  not recognition, and stays by the maintainer's explicit ruling
+  (2026-08-03). The `contains()` strings such guards must quote are
+  sanctioned. Test identifiers should still describe the current
+  behavior rather than naming the old format.
 - Version pins and format-version checks of the current design
   (`format-version: 1` is current, not compat).
 - Prose history in ADRs and the changelog. The book and other user docs
