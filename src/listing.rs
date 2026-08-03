@@ -243,7 +243,7 @@ fn deck_summary(
         _ => false,
     };
     let can_recognize = match (&deck, augment) {
-        (Some(d), Some(a)) => depth::deck_recognizable(&d.cards, a),
+        (Some(d), Some(a)) => depth::deck_recognizable(&d.cards, a, d.settings.shape),
         _ => false,
     };
     let (mastered, exam_due, ready, locked) = match (&deck, store) {
@@ -262,7 +262,7 @@ fn deck_summary(
     let last_depth = match (&deck, store, augment) {
         (Some(d), Some(s), Some(a)) => s
             .last_depth(d.deck_token.as_deref().unwrap_or_default())
-            .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
+            .unwrap_or_else(|| depth::default_depth(&d.cards, a, d.settings.shape)),
         _ => Depth::default(),
     };
     let row = DeckSummary {
@@ -435,9 +435,9 @@ pub fn deck_status(
             Depth::Recognize,
             now,
             review.retire_after_days,
-        ) && depth::card_recognizable(card, augment)
+        ) && depth::card_recognizable_in(card, augment, deck.settings.shape, &deck.cards)
     });
-    let can_recognize = depth::deck_recognizable(&deck.cards, augment);
+    let can_recognize = depth::deck_recognizable(&deck.cards, augment, deck.settings.shape);
     let reviewable_recall = session::has_reviewable(
         &deck.cards,
         store,

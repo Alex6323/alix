@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A deck can declare `shape: uniform-answers` in its frontmatter (or a
+  workspace in `[defaults]`): the author's statement that every answer is
+  the same kind of thing. On such a deck, Recognize builds its
+  multiple-choice options by sampling the deck's own other answers,
+  fresh on every appearance, with no augment run and no AI backend
+  needed. Authored task-list options and cached AI distractors still
+  outrank sampling; any other `shape:` value is refused at parse rather
+  than silently ignored. Numeric answers compete only with same-length
+  numbers, and cloze siblings never leak into each other's options.
+
 - Deck lifecycle completes with removal and restore. `alix deck remove
   <deck>` deletes a deck and everything that is its alone (file, review
   history, frozen assets, augmentations, and any `.bak` backups) after one

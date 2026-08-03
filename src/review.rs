@@ -321,8 +321,13 @@ pub fn current_question(
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
         }
-        let ai = augment.distractors(&id, card.content_fingerprint)?;
-        return choice::build(card, seed, ai);
+        if let Some(question) = augment
+            .distractors(&id, card.content_fingerprint)
+            .and_then(|ai| choice::build(card, seed, ai))
+        {
+            return Some(question);
+        }
+        return sampled_question(session, card, seed);
     }
     // `current_fresh`, not a bare store check: a card revealed this sitting
     // is already engaged in the store but keeps its acquire question.
@@ -331,9 +336,22 @@ pub fn current_question(
             return choice::build_authored(card, seed, &card.authored_distractors);
         }
         let ai = augment.distractors(&id, card.content_fingerprint);
-        return choice::recognition_question(card, seed, ai);
+        if let Some(question) = choice::recognition_question(card, seed, ai, None) {
+            return Some(question);
+        }
+        return sampled_question(session, card, seed);
     }
     None
+}
+
+// The last arm of the option-source precedence (authored > AI cache >
+// sampled): only a deck-declared `shape: uniform-answers` licenses it.
+fn sampled_question(session: &Session, card: &Card, seed: u64) -> Option<ChoiceQuestion> {
+    if session.shape_of(&card.deck_id) != Some(crate::deck::Shape::UniformAnswers) {
+        return None;
+    }
+    let pool = choice::sampled_pool(card, session.cards());
+    choice::build_sampled(card, seed, &pool)
 }
 
 pub fn choose(
@@ -678,6 +696,70 @@ mod tests {
     }
 
     const FOUR: &str = "## q1\na1\n## q2\na2\n## q3\na3\n## q4\na4\n";
+
+    fn shaped_session(cards: Vec<Card>, store: &mut Store, depth: Depth, shaped: bool) -> Session {
+        let mut cards = cards;
+        for card in &mut cards {
+            card.deck_id = std::sync::Arc::from("deck-uni");
+        }
+        let mut session = session_at(cards, store, depth, NOW);
+        if shaped {
+            session.set_shapes(std::collections::HashMap::from([(
+                std::sync::Arc::from("deck-uni"),
+                crate::deck::Shape::UniformAnswers,
+            )]));
+        }
+        session
+    }
+
+    #[test]
+    fn the_option_source_precedence_is_authored_then_ai_cache_then_sampled() {
+        let (mut store, mut augment, _dir) = fixtures();
+        let cards = parse(FOUR);
+        seen(&mut store, &cards);
+
+        let unshaped = shaped_session(cards.clone(), &mut store, Depth::Recognize, false);
+        assert!(
+            current_question(&unshaped, &store, &augment).is_none(),
+            "no authored options, no cache, no shape: no pick"
+        );
+
+        let shaped = shaped_session(cards.clone(), &mut store, Depth::Recognize, true);
+        let sampled = current_question(&shaped, &store, &augment)
+            .expect("a uniform-answers deck samples its pick from the deck");
+        let answers = ["a1", "a2", "a3", "a4"];
+        assert!(
+            sampled
+                .options
+                .iter()
+                .all(|option| answers.contains(&option.as_str())),
+            "sampled options come from the deck's own answers, got {:?}",
+            sampled.options
+        );
+
+        arm(&mut augment, &cards);
+        let cached = shaped_session(cards.clone(), &mut store, Depth::Recognize, true);
+        let from_cache = current_question(&cached, &store, &augment)
+            .expect("an armed cache still builds a pick");
+        assert!(
+            from_cache.options.iter().any(|option| option == "w1"),
+            "the AI cache outranks sampling on a shaped deck, got {:?}",
+            from_cache.options
+        );
+
+        let mut authored = cards;
+        for card in &mut authored {
+            card.authored_distractors = vec!["x1".into(), "x2".into()];
+        }
+        let authored_session = shaped_session(authored, &mut store, Depth::Recognize, true);
+        let from_authored = current_question(&authored_session, &store, &augment)
+            .expect("authored options always build");
+        assert!(
+            from_authored.options.iter().any(|option| option == "x1"),
+            "authored options outrank both caches, got {:?}",
+            from_authored.options
+        );
+    }
 
     #[test]
     fn choices_appear_only_at_recognize_or_the_acquire_bar() {

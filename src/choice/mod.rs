@@ -96,16 +96,64 @@ pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
     distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
 }
 
+/// The card's same-deck sampling candidates: other base tokens only (a
+/// cloze sibling or reversed half must never leak its answer), single-line
+/// backs, deduplicated by plain content, the card's own answer excluded by
+/// content so a markup variant cannot slip past the sampler's exact
+/// equality.
+pub fn sampled_pool(card: &Card, cards: &[Card]) -> Vec<String> {
+    if card.deck_id.is_empty() {
+        return Vec::new();
+    }
+    let mut seen: HashSet<String> = HashSet::new();
+    seen.insert(content(&answer_text(card)));
+    let mut pool = Vec::new();
+    for other in cards {
+        if other.deck_id != card.deck_id || other.token == card.token || other.back.len() != 1 {
+            continue;
+        }
+        let text = answer_text(other).trim().to_string();
+        let plain = content(&text);
+        if !plain.is_empty() && seen.insert(plain) {
+            pool.push(text);
+        }
+    }
+    pool
+}
+
+pub fn can_build_sampled(card: &Card, cards: &[Card]) -> bool {
+    card.back.len() == 1 && sampled_pool(card, cards).len() >= NUM_OPTIONS - 1
+}
+
+pub fn build_sampled(card: &Card, seed: u64, pool: &[String]) -> Option<ChoiceQuestion> {
+    if card.back.len() != 1 {
+        return None;
+    }
+    let correct_text = answer_text(card);
+    let mut options = sample::sample_distractors(&correct_text, pool, seed, NUM_OPTIONS - 1)?;
+    options.push(correct_text.clone());
+    let mut rng = Rng::new(seed);
+    shuffle(&mut options, &mut rng);
+    let correct = options.iter().position(|t| *t == correct_text)?;
+    Some(ChoiceQuestion { options, correct })
+}
+
 pub fn recognition_question(
     card: &Card,
     seed: u64,
     ai_distractors: Option<&[String]>,
+    sampled: Option<&[String]>,
 ) -> Option<ChoiceQuestion> {
     if card.back.len() != 1 {
         return None;
     }
-    let ai = ai_distractors.filter(|d| d.len() >= NUM_OPTIONS - 1)?;
-    build(card, seed, ai)
+    if let Some(question) = ai_distractors
+        .filter(|d| d.len() >= NUM_OPTIONS - 1)
+        .and_then(|ai| build(card, seed, ai))
+    {
+        return Some(question);
+    }
+    build_sampled(card, seed, sampled?)
 }
 
 // SplitMix64: good enough for shuffling options, and avoids a dependency.
@@ -153,6 +201,81 @@ mod tests {
 
     fn ai(distractors: &[&str]) -> Vec<String> {
         distractors.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn stamped(line: usize, back: &str, deck: &str, tok: &str) -> Card {
+        let mut c = card(line, back);
+        c.deck_id = Arc::from(deck);
+        c.token = Some(Arc::from(tok));
+        c
+    }
+
+    #[test]
+    fn sampled_pool_scopes_to_the_deck_and_excludes_siblings_multiline_and_own_content() {
+        let target = stamped(1, "alpha", "deck-a", "t1");
+        let cards = vec![
+            target.clone(),
+            stamped(2, "beta", "deck-a", "t2"),
+            stamped(3, "gamma", "deck-a", "t1"),
+            stamped(4, "delta", "deck-b", "t3"),
+            stamped(5, "e\nf", "deck-a", "t4"),
+            stamped(6, "**alpha**", "deck-a", "t5"),
+            stamped(7, "beta", "deck-a", "t6"),
+            stamped(8, "epsilon", "deck-a", "t7"),
+        ];
+        assert_eq!(
+            vec!["beta".to_string(), "epsilon".to_string()],
+            sampled_pool(&target, &cards),
+            "same-deck other-token single-line answers only, deduped by content, \
+             own content excluded even in markup form"
+        );
+    }
+
+    #[test]
+    fn an_unstamped_deck_id_yields_no_pool() {
+        let target = card(1, "alpha");
+        let cards = vec![target.clone(), card(2, "beta")];
+        assert!(sampled_pool(&target, &cards).is_empty());
+    }
+
+    #[test]
+    fn build_sampled_puts_correct_exactly_once_among_four_and_is_deterministic() {
+        let target = stamped(1, "alpha", "deck-a", "t1");
+        let pool = ai(&["beta", "gamma", "delta", "epsilon"]);
+        let q = build_sampled(&target, 42, &pool).unwrap();
+        assert_eq!(NUM_OPTIONS, q.options.len());
+        assert_eq!(1, q.options.iter().filter(|o| *o == "alpha").count());
+        assert_eq!("alpha", q.options[q.correct]);
+        let again = build_sampled(&target, 42, &pool).unwrap();
+        assert_eq!(q.options, again.options, "equal seed, equal question");
+        assert!(
+            build_sampled(&target, 42, &ai(&["beta", "gamma"])).is_none(),
+            "a two-candidate pool cannot fill three distractor slots"
+        );
+    }
+
+    #[test]
+    fn recognition_question_falls_back_to_sampled_only_when_ai_cannot_build() {
+        let c = stamped(1, "alpha", "deck-a", "t1");
+        let pool = ai(&["beta", "gamma", "delta"]);
+        let from_sampled = recognition_question(&c, 1, None, Some(&pool)).unwrap();
+        assert_eq!("alpha", from_sampled.options[from_sampled.correct]);
+
+        let thin_ai = ai(&["w1", "w2"]);
+        assert!(
+            recognition_question(&c, 1, Some(&thin_ai), Some(&pool)).is_some(),
+            "a thin AI cache falls through to the sampled pool"
+        );
+
+        let fat_ai = ai(&["w1", "w2", "w3"]);
+        let from_ai = recognition_question(&c, 1, Some(&fat_ai), Some(&pool)).unwrap();
+        assert!(
+            from_ai.options.iter().any(|o| o == "w1"),
+            "a buildable AI cache outranks sampling, got {:?}",
+            from_ai.options
+        );
+
+        assert!(recognition_question(&c, 1, None, None).is_none());
     }
 
     #[test]
@@ -269,7 +392,7 @@ mod tests {
     fn recognition_question_needs_atomic_answer_and_full_ai_distractors() {
         let c = card(1, "alpha");
         let d = ai(&["w1", "w2", "w3"]);
-        let q = recognition_question(&c, 1, Some(&d)).unwrap();
+        let q = recognition_question(&c, 1, Some(&d), None).unwrap();
         assert_eq!(NUM_OPTIONS, q.options.len());
         assert_eq!("alpha", q.options[q.correct]);
     }
@@ -277,15 +400,15 @@ mod tests {
     #[test]
     fn recognition_question_rejects_too_few_ai_distractors() {
         let c = card(1, "alpha");
-        assert!(recognition_question(&c, 1, Some(&ai(&["w1", "w2"]))).is_none());
-        assert!(recognition_question(&c, 1, None).is_none());
+        assert!(recognition_question(&c, 1, Some(&ai(&["w1", "w2"])), None).is_none());
+        assert!(recognition_question(&c, 1, None, None).is_none());
     }
 
     #[test]
     fn recognition_question_rejects_multi_line_answers() {
         let c = card(1, "line a\nline b");
         let d = ai(&["w1", "w2", "w3"]);
-        assert!(recognition_question(&c, 1, Some(&d)).is_none());
+        assert!(recognition_question(&c, 1, Some(&d), None).is_none());
     }
 
     #[test]

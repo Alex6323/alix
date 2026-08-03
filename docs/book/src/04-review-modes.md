@@ -51,21 +51,27 @@ of the three (on the keyboard: `v`, then `1`/`2`/`3`; `Esc` cancels; rebindable 
 tick-box (`c`); see [Cramming](05-scheduling.md). Plain **Learn** reuses the
 deck's own last-used depth, remembered per deck. The first time you ever open a
 deck, that default is Recognize if a genuine multiple-choice pick is ready to
-go: authored `- [x]`/`- [ ]` options on a card, or AI-generated distractors
-(`alix deck augment --target choices`, or the web Augment screen); otherwise
-it's Recall.
+go: authored `- [x]`/`- [ ]` options on a card, AI-generated distractors
+(`alix deck augment --target choices`, or the web Augment screen), or a deck
+declaring `shape: uniform-answers` (below); otherwise it's Recall.
 
 - **Recognize**: unscheduled, boolean, and **pick-only**. There's no FSRS state
   for it at all, just a per-card *recognized* flag. It's a genuine multiple-choice
-  pick, built from a card's authored task-list options (`- [x]`/`- [ ]`) or the
-  deck's cached AI distractors (`alix deck augment --target
-  choices`): a cloze card asks you to pick its gap, a line card to pick the whole
-  sequence in the right order. Only recognizable cards (the ones with a buildable
-  pick) are scheduled, so a Recognize session never falls back to a plain reveal,
-  which would just be a Recall in disguise. Options are never sampled from other
-  cards' answers, so a deck with neither authored options nor cached distractors
-  has nothing to recognize: the picker greys the Recognize depth out until a
-  card carries options or you run the augment. A correct
+  pick, built from the first of three sources that can fill it: a card's
+  authored task-list options (`- [x]`/`- [ ]`), the deck's cached AI
+  distractors (`alix deck augment --target choices`), or, on a deck whose
+  frontmatter declares `shape: uniform-answers`, options sampled from the
+  deck's own other answers, fresh per appearance, no augment run and no
+  backend needed. The shape line is an author's statement that every answer
+  in the deck is the same kind of thing (any card's answer is a plausible
+  wrong answer to any other), which is exactly what makes sampling honest;
+  alix never samples without it, and refuses any other `shape:` value
+  rather than guessing. A cloze card asks you to pick its gap, a line card
+  to pick the whole sequence in the right order. Only recognizable cards
+  (the ones with a buildable pick) are scheduled, so a Recognize session
+  never falls back to a plain reveal, which would just be a Recall in
+  disguise: a deck with none of the three sources has nothing to recognize,
+  and the picker greys the Recognize depth out until one exists. A correct
   pick marks the card recognized; a quiet **"I guessed"** link right after lets
   you undo that, re-queuing it. A wrong pick shows which option was right, then
   **Continue** re-queues it too.
