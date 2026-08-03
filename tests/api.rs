@@ -1372,6 +1372,28 @@ fn post_api_grade_passed_returns_the_next_state_dto() {
 }
 
 #[test]
+fn every_documented_grade_shape_maps_to_a_review_grade() {
+    for (request, passed, failed) in [
+        (r#"{"grade":"failed"}"#, 0, 1),
+        (r#"{"grade":"partly"}"#, 1, 0),
+        (r#"{"grade":"passed"}"#, 1, 0),
+        (r#"{"covered":0,"total":2}"#, 0, 1),
+        (r#"{"covered":1,"total":2}"#, 1, 0),
+        (r#"{"covered":2,"total":2}"#, 1, 0),
+    ] {
+        let (base, _guard) = spawn_test_server();
+        select_fixture(&base);
+
+        let resp = post_gated(&base, "/api/grade", request);
+
+        assert_eq!(200, resp.status, "request: {request}");
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!(passed, body["passed"], "request: {request}, body: {body}");
+        assert_eq!(failed, body["failed"], "request: {request}, body: {body}");
+    }
+}
+
+#[test]
 fn a_grade_is_on_disk_before_its_response_returns() {
     let (base, guard) = spawn_test_server();
     select_fixture(&base);
@@ -1682,6 +1704,25 @@ fn get_api_nope_yields_404() {
 
     assert_eq!(404, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
+fn get_root_returns_the_html_shell_with_revalidation_metadata() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    let resp = http(&base, "GET", "/", &[], &[]);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("text/html; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    assert_eq!(Some("no-cache"), resp.header("Cache-Control"));
+    assert!(
+        String::from_utf8_lossy(&resp.body).contains("<title>alix</title>"),
+        "body: {:?}",
+        resp.body
+    );
 }
 
 #[test]

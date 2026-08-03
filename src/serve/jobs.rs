@@ -1467,6 +1467,19 @@ mod tests {
 
     use super::*;
 
+    fn augmentation_card() -> Card {
+        let mut card = Card::plain(
+            std::sync::Arc::from("deck.md"),
+            "question".to_string(),
+            vec!["answer".to_string()],
+            None,
+            1,
+        );
+        card.token = Some(std::sync::Arc::from("card-augmentation"));
+        card.deck_id = std::sync::Arc::from("deck-augmentation");
+        card
+    }
+
     #[test]
     fn remote_job_elapsed_values_are_seconds_not_raw_milliseconds() {
         let (_ask_tx, ask_rx) = mpsc::channel();
@@ -1503,6 +1516,62 @@ mod tests {
             assert_eq!(Some(target), target_label(target), "target={target}");
         }
         assert_eq!(None, target_label("unknown"));
+    }
+
+    #[test]
+    fn every_card_augmentation_target_has_a_gap_projection() {
+        let dir = tempfile::tempdir().unwrap();
+        let cards = vec![augmentation_card()];
+        let cache = AugmentCache::open(dir.path().join("augment.json"));
+
+        for target in [
+            "choices",
+            "notes",
+            "questions",
+            "keypoints",
+            "format",
+            "topology",
+        ] {
+            assert!(
+                gap_items(target, &cards, &cache).is_some(),
+                "target={target}"
+            );
+        }
+        assert!(gap_items("icon", &cards, &cache).is_none());
+        assert!(gap_items("unknown", &cards, &cache).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn isolated_format_and_topology_targets_start_non_sessionful_jobs() {
+        let _lock = crate::testutil::exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_reply(dir.path(), "{}");
+        let ask = crate::testutil::ask_config(&cli);
+        let ai = AiConfig::default();
+
+        for target in ["format", "topology"] {
+            let mut augmenting = Augmenting::open(
+                "deck.md".to_string(),
+                vec![augmentation_card()],
+                vec!["deck-augmentation".to_string()],
+                AugmentCache::open(dir.path().join(format!("{target}.json"))),
+                None,
+            );
+            augmenting.queue.push_back((target.to_string(), None));
+
+            assert!(augmenting.start_next(&ai, &ask), "target={target}");
+            let pending = augmenting.pending.take().expect("the target started");
+            assert_eq!(target, pending.target);
+            assert!(!pending.sessionful, "target={target}");
+            assert!(
+                pending
+                    .rx
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .is_ok(),
+                "target={target}"
+            );
+        }
     }
 
     #[test]
@@ -1568,6 +1637,28 @@ mod tests {
         }
         assert!(!augmenting.remove("topology", None));
         assert!(!augmenting.remove("unknown", None));
+    }
+
+    #[test]
+    fn share_staging_accepts_decks_and_deck_folders_but_rejects_empty_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let stage = tempfile::tempdir().unwrap();
+        let deck = root.path().join("deck.md");
+        std::fs::write(&deck, "## question\nanswer\n").unwrap();
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::write(
+            workspace.join("member.md"),
+            "---\nformat-version: 1\nid: deck-member1\n---\n\
+             ## member <!-- id: card-member1 -->\nanswer\n",
+        )
+        .unwrap();
+        let empty = root.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+
+        assert!(stage_for_share(&deck, &stage).is_ok());
+        assert!(stage_for_share(&workspace, &stage).is_ok());
+        assert!(stage_for_share(&empty, &stage).is_err());
     }
 
     #[cfg(unix)]

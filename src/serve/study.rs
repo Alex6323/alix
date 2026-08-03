@@ -1722,6 +1722,144 @@ impl StudyState {
 mod tests {
     use super::*;
 
+    fn review_fixture(
+        dir: &Path,
+        depth: crate::depth::Depth,
+    ) -> (Reviewing, Store, String, String) {
+        let deck_id = "deck-studytest".to_string();
+        let card_id = "card-studytest".to_string();
+        let deck = dir.join("study.md");
+        std::fs::write(&deck, "## question <!-- id: card-studytest -->\nanswer\n").unwrap();
+        let mut card = crate::card::Card::plain(
+            std::sync::Arc::from("study.md"),
+            "question".to_string(),
+            vec!["answer".to_string()],
+            None,
+            1,
+        );
+        card.token = Some(std::sync::Arc::from(card_id.as_str()));
+        card.deck_id = std::sync::Arc::from(deck_id.as_str());
+        let mut store = Store::open(dir.join("progress.json")).unwrap();
+        if depth == crate::depth::Depth::Recognize {
+            store.get_or_insert(&card_id, 0).acquired_ms = Some(0);
+        }
+        let session = crate::session::Session::new(
+            vec![card],
+            &mut store,
+            Box::new(crate::scheduler::Fsrs::default()),
+            crate::session::SessionOptions {
+                depth,
+                ..Default::default()
+            },
+            now_ms(),
+        );
+        let mut decks = HashMap::new();
+        decks.insert(deck_id.clone(), deck.clone());
+        let reviewing = Reviewing::new(super::super::SessionBuild {
+            session,
+            label: "study.md".to_string(),
+            decks,
+            links: HashMap::new(),
+            source_layers: HashMap::new(),
+            base_roots: HashMap::new(),
+            source_bases: HashMap::new(),
+            topology_name: None,
+            augment: AugmentCache::open(deck.with_extension("generated.json")),
+        });
+        (reviewing, store, card_id, deck_id)
+    }
+
+    fn study_state_with_review(dir: &Path, depth: crate::depth::Depth) -> (StudyState, String) {
+        let (reviewing, store, _card_id, deck_id) = review_fixture(dir, depth);
+        let defaults = crate::config::Config::default();
+        let store_path = store.path().to_path_buf();
+        (
+            StudyState {
+                config: StudyConfig {
+                    cfg: AssembleConfig {
+                        review: defaults.review,
+                        ask: defaults.ask,
+                        trace_auto_grade: false,
+                        pacing: assemble::Pacing {
+                            max_session: 10,
+                            new_cards_percent: 30,
+                        },
+                        instance_store: Some(store_path),
+                    },
+                    exam_cfg: defaults.exam,
+                    review_cfg: defaults.review,
+                    audience: defaults.serve.audience,
+                },
+                store,
+                retained: HashMap::new(),
+                store_dirty: false,
+                save_error: None,
+                reviewing: Some(reviewing),
+                revision: 0,
+                writes: 0,
+                browsing: None,
+                examining: None,
+                walking: None,
+                augmenting: None,
+            },
+            deck_id,
+        )
+    }
+
+    #[test]
+    fn a_closed_owner_returns_transport_failure_not_default_query_values() {
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+        let handle = StudyHandle { tx };
+
+        assert!(handle.store_path().is_none());
+        assert!(handle.exam_remediate().is_none());
+    }
+
+    #[test]
+    fn flushing_a_new_presentation_persists_it_and_clears_the_dirty_latch() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut reviewing, store, card_id, _deck_id) =
+            review_fixture(dir.path(), crate::depth::Depth::Recall);
+        let store_path = store.path().to_path_buf();
+        let mut dirty = false;
+        let mut save_error = None;
+
+        assert!(Store::open(&store_path).unwrap().get(&card_id).is_none());
+        flush_presented(&mut reviewing, &store, &mut dirty, &mut save_error);
+
+        assert!(!dirty);
+        assert!(save_error.is_none());
+        assert!(
+            Store::open(&store_path)
+                .unwrap()
+                .get(&card_id)
+                .is_some_and(|state| state.presented_ms.is_some())
+        );
+    }
+
+    #[test]
+    fn a_passing_recognition_grade_records_the_nonempty_deck_badge() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, deck_id) =
+            study_state_with_review(dir.path(), crate::depth::Depth::Recognize);
+        assert_eq!(
+            None,
+            state
+                .store
+                .badge_earned(&deck_id, crate::depth::Depth::Recognize)
+        );
+
+        assert!(state.grade(crate::scheduler::Grade::Pass).is_some());
+
+        assert!(
+            state
+                .store
+                .badge_earned(&deck_id, crate::depth::Depth::Recognize)
+                .is_some()
+        );
+    }
+
     #[test]
     fn progress_store_roots_cover_only_the_aggregate_and_its_direct_documents() {
         let user = Path::new("user");

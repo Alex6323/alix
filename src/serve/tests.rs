@@ -1671,7 +1671,7 @@ fn ask_transcript_resets_when_the_card_changes() {
 }
 
 #[test]
-fn poll_ask_condense_appends_note_to_deck() {
+fn poll_ask_condense_appends_note_to_deck_and_live_card() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, deck) = one_card_reviewing(dir.path());
     r.ask.transcript.push(("q".to_string(), "a".to_string()));
@@ -1690,6 +1690,12 @@ fn poll_ask_condense_appends_note_to_deck() {
     assert!(error.is_none());
     let text = std::fs::read_to_string(&deck).unwrap();
     assert!(text.contains("key insight to reread"), "deck:\n{text}");
+    assert!(
+        r.session
+            .current()
+            .and_then(|current| current.note.as_deref())
+            .is_some_and(|note| note.contains("key insight to reread"))
+    );
 }
 
 #[test]
@@ -2088,6 +2094,37 @@ fn a_frozen_walk_checkpoint_with_a_live_local_source_needs_no_fallback_warning()
 
     assert!(walking.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
     assert_eq!(None, walking.ask_dto(None, None).status);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_frozen_walk_checkpoint_without_reachable_source_warns_about_the_fallback() {
+    let _lock = crate::testutil::exec_lock();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+    let initial = walk_deck(dir.path());
+    std::fs::create_dir(dir.path().join("decks")).unwrap();
+    let deck_path = dir.path().join("decks/t.md");
+    std::fs::rename(&initial.deck_path, &deck_path).unwrap();
+    crate::stamp::stamp_deck(&deck_path).unwrap();
+    crate::assets::freeze_member(&deck_path).unwrap();
+    let mut trace = crate::trace::Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
+    trace.base_root = Some(dir.path().join("gone-source"));
+    assert!(
+        trace
+            .checkpoints
+            .first()
+            .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
+    );
+    let mut walking = Walking::new(Walk::new(trace), None);
+    let cli = crate::testutil::fake_reply(dir.path(), "answer");
+    let cfg = crate::testutil::ask_config(&cli);
+
+    assert!(walking.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
+    assert_eq!(
+        Some(ask::FROZEN_ONLY_WARNING.to_string()),
+        walking.ask_dto(None, None).status
+    );
 }
 
 fn aug_card(front: &str, back: &str) -> Card {
