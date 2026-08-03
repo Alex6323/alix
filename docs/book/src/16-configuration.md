@@ -1,8 +1,9 @@
 # 16 · Configuration
 
 `alix` works out of the box; the config file is for when you want to change key
-bindings, point at a different decks directory, or tune the AI features. It lives
-at `~/.config/alix/config.toml`, create it with `alix config --init`, and
+bindings, point at a different decks directory, or tune the AI features. It
+lives in the platform's config directory (on Linux
+`~/.config/alix/config.toml`); create it with `alix config --init`, and
 inspect the active key bindings with `alix config`.
 
 ## Key bindings

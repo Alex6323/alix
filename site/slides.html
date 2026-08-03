@@ -463,7 +463,7 @@ Consistency, Availability, Partition tolerance.
       <tr><td>direction: both</td><td>review a card in both directions (frontmatter or per card)</td></tr>
       <tr><td>requires: &lt;deck&gt;</td><td>frontmatter prerequisite — builds the unlock tree</td></tr>
       <tr><td>source: &lt;url|path&gt;</td><td>frontmatter: the exam&#8217;s ground truth (and the tutor&#8217;s reference)</td></tr>
-      <tr><td>&lt;!-- at: file:lines --&gt;</td><td>a citation — the card can reveal its source lines</td></tr>
+      <tr><td>&lt;!-- at: file:lines fingerprint: xxh64-… --&gt;</td><td>a citation — the card can reveal its source lines</td></tr>
     </table>
     <p class="sub">The full reference lives in the book.</p>
   </div>
@@ -495,7 +495,7 @@ source: ..
 <span class="cf">## You press Good. What does the page send the server &#8212; and what not?</span>
 grade(g) POSTs /api/grade with { grade: g } and the session revision
 echoed in a header &#8212; no card id; the server owns the seat.
-<span class="cd">&lt;!-- at: web/alix/review/study.js:100 --&gt;</span>
+<span class="cd">&lt;!-- at: web/alix/review/study.js:100 fingerprint: xxh64-9f21c07d3ab54e68 --&gt;</span>
 <span class="cn">&gt; The page is a thin view; the server owns the session.</span></pre>
     <p class="sub">You answer the question <em>before</em> the cited lines are revealed — then judge your own gap. The next checkpoint picks up exactly where this one left off.</p>
   </div>

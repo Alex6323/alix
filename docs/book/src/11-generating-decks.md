@@ -54,7 +54,7 @@ How the source is recorded depends on its kind, and it matters later:
 
 ```sh
 alix generate <source> -o ownership              # choose the output file name
-alix generate <source> --cards 15                # cap the number of cards
+alix generate <source> --cards 15                # aim for at most 15 cards (a soft ceiling)
 alix generate <source> --review                  # a 2nd pass that dedups and tightens
 alix generate <source> --print                   # print to stdout instead of writing a file
 alix generate <source> --workspace ~/decks/rust/ # write it under that workspace's decks/
