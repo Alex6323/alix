@@ -1,3 +1,7 @@
 # The demo server's config: exists so shots never inherit the capture
 # machine's real platform config (custom key bindings once shipped in a
-# published screenshot's grading-key hints). Defaults only.
+# published screenshot's grading-key hints). Defaults, except the zeroed
+# acquire cooldown the recipe needs to grade right after acquiring.
+
+[review]
+acquire_cooldown = "0"

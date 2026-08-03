@@ -49,11 +49,10 @@ const KIDS_BASE = `http://127.0.0.1:${KIDS_PORT}`;
 const HERO_DECK = "what-is-ownership.md";
 const HERO_FILE = path.join(DEMO_DIR, "what-is-ownership.md");
 const TRACE_DECK = "workspace-showcase/ownership-move.md"; // the shipped example trace (docs/examples), copied into the demo dir
-// runAugment("topology") passes no `--with`, so `alix deck augment` auto-names
-// the generated topology "auto" (see AugmentTarget::Topology's default when
-// no guidance is given) — this must match, or shot 8's topology-scoped
-// /api/select silently finds no such topology.
-const TOPOLOGY_NAME = "auto";
+// runAugment("topology") passes no `--with`, and the unguided auto-name is
+// pinned by the lib's generate_topology_names_it_pedagogical_order_when_unguided
+// test — this must match, or shot 8's topology-scoped /api/select refuses.
+const TOPOLOGY_NAME = "pedagogical order";
 
 // User ruling 2026-07-11: one theme across every shot (the house default —
 // see web/shared/theme.js's `DEFAULT`/THEMES[0], id "dark", name "alix") —
@@ -263,10 +262,13 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
 
 // ---- tiny JSON API client (talks straight to the running alix server) -----
 
-async function api(base, method, urlPath, body) {
+async function api(base, method, urlPath, body, revision) {
+  const headers = {};
+  if (body !== undefined) headers["content-type"] = "application/json";
+  if (revision !== undefined) headers["x-alix-study-revision"] = String(revision);
   const res = await fetch(`${base}${urlPath}`, {
     method,
-    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -362,24 +364,21 @@ async function shot(page, filename, ready) {
 }
 
 // ---- setup: establish real Recall schedules on the hero deck's 10 cards ---
-// This single batch feeds THREE shots: (1) explain/keypoints needs a card
-// established at Recall so Reconstruct is immediately due (skips the 60s
-// acquire cooldown — see src/scheduler.rs `Fsrs::due_at`'s cross-depth
-// immediacy rule); (8) the topology heatmap reads Recall retrievability.
+// This single batch feeds shots (1) explain/keypoints, which needs a card
+// established at Recall so Reconstruct is immediately due, and (8), whose
+// topology heatmap reads Recall retrievability. demo.toml zeroes the acquire
+// cooldown so phase 2 can grade right after acquiring.
 async function establishHeroSchedules(page) {
   log("acquiring all hero-deck cards (phase 1/2)…");
   let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20 });
   let guard = 0;
   while (s && s.kind === "review" && s.phase === "review" && guard++ < 20) {
     if (s.acquire) {
-      s = await api(DEMO_BASE, "POST", "/api/acquire", {});
+      s = await api(DEMO_BASE, "POST", "/api/acquire", {}, s.study_revision);
     } else {
       break;
     }
   }
-  log("waiting out the acquire cooldown (~65s, real wall-clock, no AI call)…");
-  await sleep(65_000);
-
   log("grading all hero-deck cards at Recall (phase 2/2)…");
   s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20 });
   guard = 0;
@@ -393,7 +392,7 @@ async function establishHeroSchedules(page) {
     const grade = pattern[idx % pattern.length];
     idx++;
     gradedIds.push({ id: s.card && s.card.id, front, grade });
-    s = await api(DEMO_BASE, "POST", "/api/grade", { grade });
+    s = await api(DEMO_BASE, "POST", "/api/grade", { grade }, s.study_revision);
   }
   log(
     "graded",
@@ -407,9 +406,8 @@ async function establishHeroSchedules(page) {
   // is ~1.0 right at last_review_ms regardless of grade). This edits ONLY the
   // scratch copy's per-deck progress document, never the real ~/alix-demo, and only the
   // `last_review_ms`/`due_ms` timestamps, not the grades or history just
-  // recorded for real above. CardDto has no `id` field on the wire (by
-  // design — see docs/API.md), so this reads the store file directly rather
-  // than trying to correlate API responses to card ids.
+  // recorded for real above. The wire DTO carries no schedule timestamps,
+  // so this reads the store file directly.
   backdateRecallReviews();
 
   return gradedIds;
@@ -418,7 +416,6 @@ async function establishHeroSchedules(page) {
 function backdateRecallReviews() {
   const storePath = path.join(
     DEMO_DIR,
-    "rust-book",
     "progress",
     `${deckId(HERO_FILE)}.json`,
   );
@@ -447,12 +444,13 @@ async function shot1(page) {
   let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "reconstruct", session: 20 });
   let guard = 0;
   // Skip cards without a cached keypoints list (a couple of atomic answers
-  // were deliberately skipped by `alix deck augment --target keypoints`).
-  while (s && s.kind === "review" && s.phase === "review" && guard++ < 15) {
+  // were deliberately skipped by `alix deck augment --target keypoints`);
+  // the guard covers acquire+grade for every card of the grown deck.
+  while (s && s.kind === "review" && s.phase === "review" && guard++ < 40) {
     const hasKp = Array.isArray(s.keypoints) && s.keypoints.length > 0;
     if (hasKp) break;
-    if (s.acquire) s = await api(DEMO_BASE, "POST", "/api/acquire", {});
-    else s = await api(DEMO_BASE, "POST", "/api/grade", { grade: "passed" });
+    if (s.acquire) s = await api(DEMO_BASE, "POST", "/api/acquire", {}, s.study_revision);
+    else s = await api(DEMO_BASE, "POST", "/api/grade", { grade: "passed" }, s.study_revision);
   }
   if (!s || !Array.isArray(s.keypoints) || s.keypoints.length === 0) {
     log("SKIP shot 1: no reconstruct-depth card with cached keypoints was reachable");
@@ -498,7 +496,7 @@ async function shot2(page) {
   let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20, cram: true });
   let guard = 0;
   while (s && s.kind === "review" && s.phase === "review" && s.acquire && guard++ < 15) {
-    s = await api(DEMO_BASE, "POST", "/api/acquire", {});
+    s = await api(DEMO_BASE, "POST", "/api/acquire", {}, s.study_revision);
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
@@ -552,7 +550,7 @@ async function shot3(page) {
   while (s && s.kind === "review" && s.phase === "review" && guard++ < 15) {
     const hasChoices = Array.isArray(s.choices) && s.choices.length > 1;
     if (hasChoices) break;
-    s = await api(DEMO_BASE, "POST", "/api/skip", {});
+    s = await api(DEMO_BASE, "POST", "/api/skip", {}, s.study_revision);
   }
   if (!s || !Array.isArray(s.choices) || s.choices.length < 2) {
     log("SKIP shot 3: no Recognize card with multiple choices was reachable");
