@@ -1355,6 +1355,26 @@ mod tests {
     }
 
     #[test]
+    fn a_roster_of_exactly_the_option_count_still_classifies() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let roster: Vec<WarmItem> = (0..4)
+            .map(|n| item(n, &format!("q{n}"), &format!("answer-{n}")))
+            .collect();
+        let cli = fake_two_replies(dir.path(), r#"{"groups": [[0, 1, 2, 3]]}"#, r#"{}"#);
+        let out = generate_choices(&roster, &roster, 3, None, &ask_config(&cli), None).unwrap();
+        assert_eq!(
+            4,
+            out.groups.len(),
+            "four cards are the smallest viable roster"
+        );
+        assert!(
+            out.distractors.is_empty(),
+            "a fully grouped roster generates nothing"
+        );
+    }
+
+    #[test]
     fn malformed_classification_json_is_an_error() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();

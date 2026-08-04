@@ -265,12 +265,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no cards to augment");
             }
             let total = items.len();
-            let roster: Vec<_> = deck
-                .cards
-                .iter()
-                .filter(|c| c.back.len() == 1 && c.id().is_some())
-                .map(alix::augment::WarmItem::from_card)
-                .collect();
+            let roster = alix::augment::choice_roster(&deck.cards);
             let outcome = augment_ai::generate_choices(
                 &items,
                 &roster,

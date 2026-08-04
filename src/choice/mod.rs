@@ -289,6 +289,43 @@ mod tests {
     }
 
     #[test]
+    fn grouped_pool_scopes_to_the_fresh_group_and_keeps_every_exclusion() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = crate::augment::AugmentCache::open(dir.path().join("a.json"));
+        let target = stamped(1, "alpha", "deck-a", "t1");
+        let mut sibling = stamped(3, "gamma", "deck-a", "t1");
+        sibling.hole = Some(1);
+        let cards = vec![
+            target.clone(),
+            stamped(2, "beta", "deck-a", "t2"),
+            sibling,
+            stamped(4, "delta", "deck-b", "t3"),
+            stamped(5, "e\nf", "deck-a", "t4"),
+            stamped(6, "beta", "deck-a", "t5"),
+            stamped(7, "epsilon", "deck-a", "t6"),
+            stamped(8, "zeta", "deck-a", "t7"),
+        ];
+        for card in &cards {
+            cache.set_group(&card.id().unwrap(), "g0".into(), card.content_fingerprint);
+        }
+        cache.set_group(
+            &cards[7].id().unwrap(),
+            "g1".into(),
+            cards[7].content_fingerprint,
+        );
+        assert_eq!(
+            vec!["beta".to_string(), "epsilon".to_string()],
+            grouped_pool(&target, &cards, &cache),
+            "same deck, other token, single line, same fresh group, deduped by content"
+        );
+        let ungrouped = stamped(9, "eta", "deck-a", "t8");
+        assert!(
+            grouped_pool(&ungrouped, &cards, &cache).is_empty(),
+            "no fresh own label, no pool"
+        );
+    }
+
+    #[test]
     fn build_sampled_puts_correct_exactly_once_among_four_and_is_deterministic() {
         let target = stamped(1, "alpha", "deck-a", "t1");
         let pool = ai(&["beta", "gamma", "delta", "epsilon"]);

@@ -1174,6 +1174,16 @@ pub struct WarmItem {
     pub note: Option<String>,
 }
 
+/// The classification roster: every stamped single-line-answer card. The
+/// filter is the law both the CLI and the web batch share.
+pub fn choice_roster(cards: &[Card]) -> Vec<WarmItem> {
+    cards
+        .iter()
+        .filter(|c| c.back.len() == 1 && c.id().is_some())
+        .map(WarmItem::from_card)
+        .collect()
+}
+
 impl WarmItem {
     pub fn from_card(card: &Card) -> Self {
         Self {
@@ -1755,6 +1765,24 @@ mod tests {
             .map(|w| w.id.clone())
             .collect();
         assert_eq!(mq, [cid(&cards[0]), cid(&cards[1])]);
+    }
+
+    #[test]
+    fn the_choice_roster_holds_exactly_the_stamped_single_line_cards() {
+        let mut multi = plain_card("m");
+        multi.back = vec!["one".into(), "two".into()];
+        let mut unstamped = plain_card("u");
+        unstamped.token = None;
+        let cards = vec![plain_card("a"), multi, unstamped, plain_card("b")];
+        let roster: Vec<String> = choice_roster(&cards)
+            .iter()
+            .map(|item| item.answer.clone())
+            .collect();
+        assert_eq!(
+            ["a", "b"],
+            roster.as_slice(),
+            "multi-line and unstamped cards never enter classification"
+        );
     }
 
     #[test]

@@ -887,12 +887,7 @@ impl Augmenting {
                         self.done.push("choices");
                         continue;
                     }
-                    let roster = self
-                        .cards
-                        .iter()
-                        .filter(|c| c.back.len() == 1 && c.id().is_some())
-                        .map(crate::augment::WarmItem::from_card)
-                        .collect();
+                    let roster = crate::augment::choice_roster(&self.cards);
                     (
                         augment_ai::Job::Choices {
                             items,
