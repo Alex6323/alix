@@ -50,6 +50,17 @@ fn alix_env(args: &[&str], home: &Path, extra_env: &[(&str, &str)]) -> Output {
     cmd.output().expect("failed to run the alix binary")
 }
 
+fn test_config_dir(home: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        home.join("Library/Application Support/alix")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        home.join("alix")
+    }
+}
+
 /// Writes `contents` to `dir/name` and returns its path as a string.
 fn write(dir: &Path, name: &str, contents: &str) -> String {
     let path = dir.join(name);
@@ -145,6 +156,97 @@ fn profile_add_list_and_remove_are_hermetic() {
         "stdout: {}",
         stdout(&listed)
     );
+}
+
+#[test]
+fn profile_default_cli_sets_shows_and_clears_the_marker() {
+    let home = TempDir::new().unwrap();
+    let decks = home.path().join("decks-x");
+    let decks = decks.to_str().unwrap();
+    let added = alix_env(&["profile", "add", "x", "--decks", decks], home.path(), &[]);
+    assert!(added.status.success(), "stderr: {}", stderr(&added));
+
+    let show_empty = alix_env(&["profile", "default"], home.path(), &[]);
+    assert!(
+        show_empty.status.success(),
+        "stderr: {}",
+        stderr(&show_empty)
+    );
+    assert_eq!("none\n", stdout(&show_empty));
+
+    let set = alix_env(&["profile", "default", "x"], home.path(), &[]);
+    assert!(set.status.success(), "stderr: {}", stderr(&set));
+    assert_eq!("default profile: x\n", stdout(&set));
+
+    let show = alix_env(&["profile", "default"], home.path(), &[]);
+    assert!(show.status.success(), "stderr: {}", stderr(&show));
+    assert_eq!("x\n", stdout(&show));
+
+    let clear = alix_env(&["profile", "default", "--clear"], home.path(), &[]);
+    assert!(clear.status.success(), "stderr: {}", stderr(&clear));
+    assert_eq!("default profile cleared\n", stdout(&clear));
+
+    let show_cleared = alix_env(&["profile", "default"], home.path(), &[]);
+    assert!(
+        show_cleared.status.success(),
+        "stderr: {}",
+        stderr(&show_cleared)
+    );
+    assert_eq!("none\n", stdout(&show_cleared));
+}
+
+#[test]
+fn profile_launch_reports_the_exact_missing_named_profile() {
+    let home = TempDir::new().unwrap();
+
+    let out = alix_env(&["profile", "missing"], home.path(), &[]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("no profile `missing`"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn launch_all_without_profiles_reports_the_creation_command() {
+    let home = TempDir::new().unwrap();
+
+    let out = alix_env(&["--launch-all"], home.path(), &[]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert_eq!(
+        "no profiles to launch; create one with `alix profile add <name>`\n",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn bare_launch_uses_the_named_default_profile_config() {
+    let home = TempDir::new().unwrap();
+    let config_dir = test_config_dir(home.path());
+    let profiles = config_dir.join("profiles");
+    std::fs::create_dir_all(&profiles).unwrap();
+    std::fs::write(
+        profiles.join("named.toml"),
+        "[review]\nnamed_profile_only = true\n",
+    )
+    .unwrap();
+    std::fs::write(profiles.join("default"), "named\n").unwrap();
+    std::fs::write(
+        config_dir.join("config.toml"),
+        "[review]\nglobal_config_only = true\n",
+    )
+    .unwrap();
+
+    let out = alix_env(&[], home.path(), &[]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    let error = stderr(&out);
+    assert!(error.contains("named.toml"), "stderr: {error}");
+    assert!(error.contains("named_profile_only"), "stderr: {error}");
+    assert!(!error.contains("global_config_only"), "stderr: {error}");
 }
 
 #[test]
@@ -480,6 +582,95 @@ fn stats_reports_a_fresh_deck_against_an_empty_store() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("not started"),
+        "stdout: {}",
+        stdout(&out)
+    );
+    assert!(
+        !stdout(&out).contains("reviews:"),
+        "an empty review total must not print a percentage: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn stats_aggregates_authored_and_virtual_due_windows_and_review_totals() {
+    let dir = TempDir::new().unwrap();
+    let deck_text = "---\nformat-version: 1\nid: deck-statsall\n---\n\
+## Q1 <!-- id: card-stats1 -->\nA1\n\n\
+## Q2 <!-- id: card-stats2 -->\nA2\n\n\
+## Q3 <!-- id: card-stats3 -->\nA3\n\n\
+## Q4 <!-- id: card-stats4 -->\nA4\n";
+    let deck = write(dir.path(), "all-stats.md", deck_text);
+    let parsed = alix::deck::Deck::load(&deck).unwrap();
+    let state_root = dir.path().join("state");
+    let mut store = deck_store(&deck, &state_root);
+    let now = alix::time::now_ms();
+    let due_times = [
+        now.saturating_sub(1_000),
+        now + 6 * 60 * 60 * 1_000,
+        now + 12 * 60 * 60 * 1_000,
+        now + 48 * 60 * 60 * 1_000,
+    ];
+    let review_totals = [(2, 1), (3, 2), (1, 0), (4, 4)];
+    for ((card, due_ms), (reviews, passes)) in parsed.cards.iter().zip(due_times).zip(review_totals)
+    {
+        let state = store.get_or_insert(&card.id().unwrap(), now);
+        state.recall = Some(alix::store::FsrsState {
+            state: 2,
+            due_ms,
+            scheduled_days: 1,
+            ..Default::default()
+        });
+        state.total_reviews = reviews;
+        state.total_passes = passes;
+    }
+
+    for (id, due_ms) in [
+        ("card-virtual-now", now.saturating_sub(1_000)),
+        ("card-virtual-soon", now + 6 * 60 * 60 * 1_000),
+    ] {
+        store.insert_virtual(alix::store::VirtualCard {
+            id: id.to_string(),
+            kind: alix::store::VirtualKind::Remediation,
+            deck: "deck-statsall".to_string(),
+            text: format!("## virtual <!-- id: {id} -->\nanswer\n"),
+            created_ms: now,
+        });
+        store.get_or_insert(id, now).recall = Some(alix::store::FsrsState {
+            state: 2,
+            due_ms,
+            scheduled_days: 1,
+            ..Default::default()
+        });
+    }
+    store.save().unwrap();
+
+    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let result = stdout(&out);
+    for exact in [
+        "  state:   finished ✓",
+        "  due:     2 now, 3 within 24h",
+        "  due now (recall):      2",
+        "  reviews: 10 total, 70% passed",
+    ] {
+        assert!(result.contains(exact), "missing {exact:?}: {result}");
+    }
+}
+
+#[test]
+fn stats_reserves_mastered_for_a_recorded_mastery_marker() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.md", VALID_DECK);
+    let state_root = dir.path().join("state");
+    let mut store = deck_store(&deck, &state_root);
+    store.set_deck_mastered("deck-mathdeck", alix::time::now_ms());
+    store.save().unwrap();
+
+    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("  state:   mastered ✓"),
         "stdout: {}",
         stdout(&out)
     );
@@ -994,6 +1185,63 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
 }
 
 #[test]
+fn deck_reset_clears_a_mastery_only_store() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.md", VALID_DECK);
+    let state_root = dir.path().join("state");
+    let mut store = deck_store(&deck, &state_root);
+    store.set_deck_mastered("deck-mathdeck", alix::time::now_ms());
+    store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        &deck,
+        "--yes",
+        "--store",
+        state_root.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset 0 card(s)."),
+        "stdout: {}",
+        stdout(&out)
+    );
+    assert!(
+        !deck_store(&deck, &state_root).deck_mastered("deck-mathdeck"),
+        "the mastery marker survived the reset"
+    );
+}
+
+#[test]
+fn targeted_reset_without_confirmation_names_the_card_and_preserves_it() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.md", VALID_DECK);
+    let state_root = dir.path().join("state");
+    let mut store = deck_store(&deck, &state_root);
+    store.get_or_insert("card-math1", alix::time::now_ms());
+    store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        &deck,
+        "--card",
+        "2 + 2",
+        "--store",
+        state_root.to_str().unwrap(),
+    ]);
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("Reset progress for What is 2 + 2?"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        deck_store(&deck, &state_root).get("card-math1").is_some(),
+        "the unconfirmed targeted reset removed the card"
+    );
+}
+
+#[test]
 fn confirmed_virtual_only_deck_reset_clears_virtual() {
     // A deck with ONLY a virtual card (no authored progress, not mastered) must
     // still have that virtual card cleared and persisted on a confirmed reset.
@@ -1075,6 +1323,33 @@ fn fake_claude(dir: &Path, reply: &str) -> String {
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     script.to_str().unwrap().to_string()
+}
+
+fn fake_reviewing_claude(dir: &Path) -> (String, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let draft = dir.join("draft-reply.txt");
+    let reviewed = dir.join("reviewed-reply.txt");
+    let marker = dir.join("review-marker");
+    let calls = dir.join("review-calls.txt");
+    std::fs::write(&draft, "## Draft question\nDraft answer\n").unwrap();
+    std::fs::write(&reviewed, "## Reviewed question\nReviewed answer\n").unwrap();
+    let script = dir.join("fake-reviewing-claude");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\nprintf 'x\\n' >> \"{calls}\"\n\
+             if test -e \"{marker}\"; then cat \"{reviewed}\"; \
+             else : > \"{marker}\"; cat \"{draft}\"; fi\n",
+            calls = calls.display(),
+            marker = marker.display(),
+            reviewed = reviewed.display(),
+            draft = draft.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (script.display().to_string(), calls)
 }
 
 #[test]
@@ -2313,6 +2588,39 @@ fn generate_trace_walk_refuses_to_clobber_an_existing_output() {
     );
 }
 
+#[test]
+fn ordinary_text_and_markdown_files_never_enter_trace_building() {
+    for (name, source_text) in [
+        (
+            "trace-shaped.txt",
+            "---\ntrace: how it works\nsource: .\n---\n",
+        ),
+        (
+            "ordinary.md",
+            "---\nformat-version: 1\nid: deck-source\n---\n## Source question <!-- id: card-source1 -->\nSource answer\n",
+        ),
+    ] {
+        let dir = TempDir::new().unwrap();
+        let source = write(dir.path(), name, source_text);
+        let cli = fake_claude(dir.path(), "## Generated question\nGenerated answer\n");
+        let config = write(
+            dir.path(),
+            "config.toml",
+            &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+        );
+
+        let out = alix(&["generate", &source, "--config", &config, "--print"]);
+
+        assert!(out.status.success(), "{name}: {}", stderr(&out));
+        assert_eq!(
+            "## Generated question\nGenerated answer\n",
+            stdout(&out),
+            "{name}"
+        );
+        assert_eq!(source_text, std::fs::read_to_string(source).unwrap());
+    }
+}
+
 // ── `alix generate`: a single deck from a URL/file source, fake backend ─────
 
 #[test]
@@ -2379,6 +2687,105 @@ fn generate_keeps_and_warns_about_a_deck_over_max_cards() {
         "all cards must be kept: {}",
         stdout(&out)
     );
+}
+
+#[test]
+fn generate_does_not_warn_when_card_count_equals_the_soft_maximum() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--cards",
+        "1",
+        "--print",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        !stderr(&out).contains("above the configured max_cards"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn either_review_switch_independently_runs_the_second_generation_pass() {
+    for (cli_review, config_review) in [(true, false), (false, true)] {
+        let dir = TempDir::new().unwrap();
+        let (cli, calls) = fake_reviewing_claude(dir.path());
+        let config = write(
+            dir.path(),
+            "config.toml",
+            &format!(
+                "[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n\
+                 [generate]\nreview = {config_review}\n"
+            ),
+        );
+        let mut args = vec![
+            "generate",
+            "https://example.org/page",
+            "--config",
+            &config,
+            "--print",
+        ];
+        if cli_review {
+            args.push("--review");
+        }
+
+        let out = alix(&args);
+
+        assert!(
+            out.status.success(),
+            "cli={cli_review}, config={config_review}: {}",
+            stderr(&out)
+        );
+        assert_eq!(
+            "## Reviewed question\nReviewed answer\n",
+            stdout(&out),
+            "cli={cli_review}, config={config_review}"
+        );
+        assert_eq!(
+            2,
+            std::fs::read_to_string(&calls).unwrap().lines().count(),
+            "cli={cli_review}, config={config_review}"
+        );
+    }
+}
+
+#[test]
+fn generate_print_normalizes_exactly_one_trailing_newline() {
+    for reply in [
+        "## Generated Q\nGenerated A",
+        "## Generated Q\nGenerated A\n",
+    ] {
+        let dir = TempDir::new().unwrap();
+        let cli = fake_claude(dir.path(), reply);
+        let config = write(
+            dir.path(),
+            "config.toml",
+            &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+        );
+
+        let out = alix(&[
+            "generate",
+            "https://example.org/page",
+            "--config",
+            &config,
+            "--print",
+        ]);
+
+        assert!(out.status.success(), "stderr: {}", stderr(&out));
+        assert_eq!("## Generated Q\nGenerated A\n", stdout(&out));
+    }
 }
 
 #[test]
@@ -2627,6 +3034,16 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
         "workspace generation should report wrapper activity: {}",
         stderr(&out)
     );
+    assert!(
+        stdout(&out).contains("2 filled, 0 stub(s) (0 traces, 2 decks)."),
+        "stdout: {}",
+        stdout(&out)
+    );
+    assert!(
+        stdout(&out).contains("source and image asset(s) for 2 deck(s)"),
+        "stdout: {}",
+        stdout(&out)
+    );
     let request = std::fs::read_to_string(request).unwrap();
     assert!(request.contains("recognize Germany's institutions"));
     assert!(request.contains("German"));
@@ -2641,6 +3058,87 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
             "{name} should contain only authored three-option cards"
         );
     }
+}
+
+#[test]
+fn generated_workspace_reports_one_stub_and_stays_silent_at_zero_frozen_assets() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir(&source).unwrap();
+    write(&source, "notes.md", "local exploration seed\n");
+    let plan = write(
+        dir.path(),
+        "plan.txt",
+        "Goal    learn two topics\n\
+         Source  public material\n\
+         Spine   first to second\n\n\
+         1. [deck] First\n\
+            requires: none\n\
+            @source: https://example.org/first\n\
+         2. [deck] Second\n\
+            requires: 1\n\
+            @source: https://example.org/second\n",
+    );
+    let filled = write(
+        dir.path(),
+        "filled.txt",
+        "=== item 1 ===\n## First question\nFirst answer\n",
+    );
+    let request = dir.path().join("request.txt");
+    let cli = dir.path().join("fake-claude");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\ncat > \"{request}\"\n\
+             if grep -q 'Now WRITE THE FULL CONTENT' \"{request}\"; then \
+             cat \"{filled}\"; else cat \"{plan}\"; fi\n",
+            request = request.display(),
+            filled = filled,
+            plan = plan,
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "[ask]\ncommand = \"{}\"\ntimeout_secs = 10\n",
+            cli.display()
+        ),
+    );
+    let icon = write(
+        dir.path(),
+        "icon.svg",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"></svg>\n",
+    );
+    let workspace = dir.path().join("workspace");
+
+    let out = alix(&[
+        "generate",
+        source.to_str().unwrap(),
+        "--config",
+        &config,
+        "--workspace",
+        workspace.to_str().unwrap(),
+        "--icon",
+        &icon,
+        "--yes",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("1 filled, 1 stub(s) (0 traces, 2 decks)."),
+        "stdout: {}",
+        stdout(&out)
+    );
+    assert!(
+        !stdout(&out).contains("Froze "),
+        "zero frozen assets must not print a summary: {}",
+        stdout(&out)
+    );
 }
 
 #[test]
