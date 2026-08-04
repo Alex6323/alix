@@ -299,7 +299,7 @@ fn deck_due(
     // over-reports as due.
     let recognize_due = deck.cards.iter().any(|c| {
         session::is_reviewable(c, store, &scheduler, Depth::Recognize, now_ms, retire)
-            && depth::card_recognizable(c, augment)
+            && depth::card_recognizable(c, augment, &deck.cards)
     });
     recognize_due
         || session::has_reviewable(
@@ -435,7 +435,7 @@ pub fn deck_status(
             Depth::Recognize,
             now,
             review.retire_after_days,
-        ) && depth::card_recognizable(card, augment)
+        ) && depth::card_recognizable(card, augment, &deck.cards)
     });
     let can_recognize = depth::deck_recognizable(&deck.cards, augment);
     let reviewable_recall = session::has_reviewable(

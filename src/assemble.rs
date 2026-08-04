@@ -519,10 +519,20 @@ pub fn select(
     // summary can report what waits beyond this depth.
     let mut depth_excluded = Vec::new();
     let cards = if depth == Depth::Recognize {
-        let (kept, excluded): (Vec<_>, Vec<_>) = cards
-            .into_iter()
-            .partition(|c| crate::depth::card_recognizable(c, &augment));
-        depth_excluded = excluded;
+        // The predicate needs the whole deck (a table card's pool is its
+        // sibling rows), so decide before partition consumes the vec.
+        let recognizable: Vec<bool> = cards
+            .iter()
+            .map(|c| crate::depth::card_recognizable(c, &augment, &cards))
+            .collect();
+        let mut kept = Vec::new();
+        for (card, keep) in cards.into_iter().zip(recognizable) {
+            if keep {
+                kept.push(card);
+            } else {
+                depth_excluded.push(card);
+            }
+        }
         kept
     } else {
         cards

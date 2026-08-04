@@ -321,8 +321,10 @@ pub fn current_question(
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
         }
-        let ai = augment.distractors(&id, card.content_fingerprint)?;
-        return choice::build(card, seed, ai);
+        if let Some(ai) = augment.distractors(&id, card.content_fingerprint) {
+            return choice::build(card, seed, ai);
+        }
+        return choice::build_sampled(card, seed, session.cards());
     }
     // `current_fresh`, not a bare store check: a card revealed this sitting
     // is already engaged in the store but keeps its acquire question.
@@ -715,6 +717,48 @@ mod tests {
         let s = state(&recognize, &store, &augment, Some(NOW));
         assert_eq!(s.choices, None, "no siblings, no pick");
         assert_eq!(s.mode, Mode::Flip, "a choiceless Recognize card is a flip");
+    }
+
+    const TABLE_DECK: &str = "| w | m |\n|---|---|\n| a <!-- r:aaaaaa --> | alpha |\n| b <!-- r:bbbbbb --> | beta |\n| c <!-- r:cccccc --> | gamma |\n| d <!-- r:dddddd --> | delta |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+
+    #[test]
+    fn a_table_card_samples_its_column_without_any_authored_or_cached_source() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parser::parse_str("deck.md", TABLE_DECK).unwrap();
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
+        let question = current_question(&session, &store, &augment).expect("a sampled pick");
+        assert_eq!(4, question.options.len());
+        let column = ["alpha", "beta", "gamma", "delta"];
+        assert!(
+            question
+                .options
+                .iter()
+                .all(|option| column.contains(&option.as_str())),
+            "every option comes from the meaning column: {:?}",
+            question.options
+        );
+        let distinct: std::collections::HashSet<&str> =
+            question.options.iter().map(String::as_str).collect();
+        assert_eq!(4, distinct.len(), "four distinct column values");
+    }
+
+    #[test]
+    fn a_cached_ai_source_outranks_column_sampling() {
+        let (mut store, mut augment, _dir) = fixtures();
+        let cards = parser::parse_str("deck.md", TABLE_DECK).unwrap();
+        seen(&mut store, &cards);
+        arm(&mut augment, &cards);
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
+        let question = current_question(&session, &store, &augment).expect("an AI pick");
+        for (index, option) in question.options.iter().enumerate() {
+            if index != question.correct {
+                assert!(
+                    option.starts_with('w'),
+                    "a cached distractor, not a column value: {option:?}"
+                );
+            }
+        }
     }
 
     #[test]

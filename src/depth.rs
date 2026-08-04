@@ -77,17 +77,22 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
     }
 }
 
-pub fn card_recognizable(card: &Card, cache: &AugmentCache) -> bool {
+pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card]) -> bool {
     if !card.authored_distractors.is_empty() {
         return true;
     }
-    card.id()
+    if card
+        .id()
         .and_then(|id| cache.distractors(&id, card.content_fingerprint))
         .is_some_and(|ai| crate::choice::can_build(card, ai))
+    {
+        return true;
+    }
+    crate::choice::can_sample(card, deck_cards)
 }
 
 pub fn deck_recognizable(cards: &[Card], cache: &AugmentCache) -> bool {
-    cards.iter().any(|c| card_recognizable(c, cache))
+    cards.iter().any(|c| card_recognizable(c, cache, cards))
 }
 
 pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
@@ -157,6 +162,36 @@ mod tests {
         let mut authored = card("a");
         authored.authored_distractors = vec!["b".into()];
         assert_eq!(Depth::Recognize, default_depth(&[authored], &cache));
+    }
+
+    #[test]
+    fn a_table_deck_is_recognizable_by_column_sampling_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let text = "| w | m |\n|---|---|\n| a <!-- r:aaaaaa --> | alpha |\n| b <!-- r:bbbbbb --> | beta |\n| c <!-- r:cccccc --> | gamma |\n| d <!-- r:dddddd --> | delta |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+        let cards = parser::parse_str("t.md", text).unwrap();
+        assert!(
+            cards
+                .iter()
+                .all(|card| card_recognizable(card, &cache, &cards)),
+            "four rows give every card a three-value pool"
+        );
+        assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
+    }
+
+    #[test]
+    fn a_three_row_table_cannot_fill_a_pick_and_stays_recall() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let text = "| w | m |\n|---|---|\n| a <!-- r:aaaaaa --> | alpha |\n| b <!-- r:bbbbbb --> | beta |\n| c <!-- r:cccccc --> | gamma |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+        let cards = parser::parse_str("t.md", text).unwrap();
+        assert!(
+            cards
+                .iter()
+                .all(|card| !card_recognizable(card, &cache, &cards)),
+            "two sibling values cannot fill three distractor slots"
+        );
+        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }
 
     #[test]

@@ -96,6 +96,34 @@ pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
     distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
 }
 
+/// A table row card's distractor pool: its own column, i.e. sibling rows of
+/// the same container in the same direction (a reversed sibling's answer IS
+/// the front column).
+pub fn column_pool(card: &Card, deck_cards: &[Card]) -> Vec<String> {
+    let (Some(token), Some(row)) = (card.token.as_deref(), card.row.as_deref()) else {
+        return Vec::new();
+    };
+    deck_cards
+        .iter()
+        .filter(|sibling| {
+            sibling.token.as_deref() == Some(token)
+                && sibling.reversed == card.reversed
+                && sibling.row.as_deref().is_some_and(|r| r != row)
+        })
+        .map(answer_text)
+        .collect()
+}
+
+pub fn build_sampled(card: &Card, seed: u64, deck_cards: &[Card]) -> Option<ChoiceQuestion> {
+    let pool = column_pool(card, deck_cards);
+    let sampled = sample::sample_distractors(&answer_text(card), &pool, seed, NUM_OPTIONS - 1)?;
+    build(card, seed, &sampled)
+}
+
+pub fn can_sample(card: &Card, deck_cards: &[Card]) -> bool {
+    build_sampled(card, 0, deck_cards).is_some()
+}
+
 pub fn recognition_question(
     card: &Card,
     seed: u64,
@@ -153,6 +181,68 @@ mod tests {
 
     fn ai(distractors: &[&str]) -> Vec<String> {
         distractors.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn table_card(token: &str, row: &str, back: &str, reversed: bool) -> Card {
+        let mut c = card(1, back);
+        c.token = Some(Arc::from(token));
+        c.row = Some(Arc::from(row));
+        c.reversed = reversed;
+        c
+    }
+
+    #[test]
+    fn the_column_pool_is_same_direction_sibling_rows_of_one_container() {
+        let deck = vec![
+            table_card("card-t0", "aaaaaa", "alpha", false),
+            table_card("card-t0", "bbbbbb", "beta", false),
+            table_card("card-t0", "cccccc", "gamma", false),
+            table_card("card-t0", "aaaaaa", "front-a", true),
+            table_card("card-t0", "bbbbbb", "front-b", true),
+            table_card("card-t1", "dddddd", "other-table", false),
+            card(9, "rowless"),
+        ];
+        assert_eq!(
+            vec!["beta", "gamma"],
+            column_pool(&deck[0], &deck),
+            "same container, same direction, other rows only"
+        );
+        assert_eq!(
+            vec!["front-b"],
+            column_pool(&deck[3], &deck),
+            "the reversed pool is the front column"
+        );
+        assert!(
+            column_pool(&deck[6], &deck).is_empty(),
+            "a rowless card never samples"
+        );
+        assert_eq!(
+            vec!["other-table"],
+            column_pool(&table_card("card-t1", "eeeeee", "x", false), &deck),
+            "pools never cross containers"
+        );
+    }
+
+    #[test]
+    fn build_sampled_needs_three_distinct_column_values() {
+        let deck = vec![
+            table_card("card-t0", "aaaaaa", "alpha", false),
+            table_card("card-t0", "bbbbbb", "beta", false),
+            table_card("card-t0", "cccccc", "beta", false),
+            table_card("card-t0", "dddddd", "gamma", false),
+        ];
+        assert!(
+            !can_sample(&deck[0], &deck),
+            "beta twice leaves a two-value pool"
+        );
+        assert!(build_sampled(&deck[0], 7, &deck).is_none());
+
+        let mut deck = deck;
+        deck.push(table_card("card-t0", "eeeeee", "delta", false));
+        assert!(can_sample(&deck[0], &deck));
+        let question = build_sampled(&deck[0], 7, &deck).expect("a full pick");
+        assert_eq!(NUM_OPTIONS, question.options.len());
+        assert_eq!("alpha", question.options[question.correct]);
     }
 
     #[test]
