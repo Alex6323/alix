@@ -1,7 +1,7 @@
 use yaml_rust2::{Yaml, YamlLoader};
 
 use super::{LineSpan, Lint, LintKind, ParseError, WHITESPACE, trim_ws};
-use crate::{answer::Input, card::Direction, deck::Shape, depth::Reveal, session::Order, token};
+use crate::{answer::Input, card::Direction, depth::Reveal, session::Order, token};
 
 /// Pinned at 1 pre-1.0: a break rewrites old decks outside the repository
 /// rather than bumping. Read to refuse a foreign document, never to adapt
@@ -24,7 +24,6 @@ pub struct Frontmatter {
     pub order: Option<Order>,
     pub input: Option<Input>,
     pub direction: Option<Direction>,
-    pub shape: Option<Shape>,
     pub unspliceable: bool,
 }
 
@@ -155,17 +154,6 @@ fn load_frontmatter(
             "direction" => match value.as_str().and_then(Direction::parse) {
                 Some(direction) => frontmatter.direction = Some(direction),
                 None => lints.push(bad_value(line, key, describe(value))),
-            },
-            // A silently dropped shape statement would silently change what
-            // Recognize serves, so a bad value is an error, not a lint.
-            "shape" => match value.as_str().and_then(Shape::parse) {
-                Some(shape) => frontmatter.shape = Some(shape),
-                None => {
-                    return Err(ParseError::UnknownShape {
-                        line,
-                        found: describe(value),
-                    });
-                }
             },
             "authors" => frontmatter.authors = string_list(key, value, line, lints),
             "tags" => frontmatter.tags = string_list(key, value, line, lints),

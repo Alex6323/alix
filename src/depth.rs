@@ -86,37 +86,12 @@ pub fn card_recognizable(card: &Card, cache: &AugmentCache) -> bool {
         .is_some_and(|ai| crate::choice::can_build(card, ai))
 }
 
-/// `card_recognizable` widened by the deck's shape statement: a
-/// `uniform-answers` deck recognizes any single-line card whose same-deck
-/// pool can supply a full option set, no augment cache needed.
-pub fn card_recognizable_in(
-    card: &Card,
-    cache: &AugmentCache,
-    shape: Option<crate::deck::Shape>,
-    cards: &[Card],
-) -> bool {
-    card_recognizable(card, cache)
-        || crate::choice::can_build_grouped(card, cards, cache)
-        || (shape == Some(crate::deck::Shape::UniformAnswers)
-            && crate::choice::can_build_sampled(card, cards))
+pub fn deck_recognizable(cards: &[Card], cache: &AugmentCache) -> bool {
+    cards.iter().any(|c| card_recognizable(c, cache))
 }
 
-pub fn deck_recognizable(
-    cards: &[Card],
-    cache: &AugmentCache,
-    shape: Option<crate::deck::Shape>,
-) -> bool {
-    cards
-        .iter()
-        .any(|c| card_recognizable_in(c, cache, shape, cards))
-}
-
-pub fn default_depth(
-    cards: &[Card],
-    cache: &AugmentCache,
-    shape: Option<crate::deck::Shape>,
-) -> Depth {
-    if deck_recognizable(cards, cache, shape) {
+pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
+    if deck_recognizable(cards, cache) {
         Depth::Recognize
     } else {
         Depth::default()
@@ -150,7 +125,7 @@ mod tests {
             covered.content_fingerprint,
         );
         let cards = vec![covered, uncovered];
-        assert_eq!(Depth::Recognize, default_depth(&cards, &cache, None));
+        assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
     }
 
     #[test]
@@ -164,7 +139,7 @@ mod tests {
             covered.content_fingerprint,
         );
         let cards = vec![covered];
-        assert_eq!(Depth::Recall, default_depth(&cards, &cache, None));
+        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }
 
     #[test]
@@ -172,7 +147,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let cards = vec![card("a"), card("b")];
-        assert_eq!(Depth::Recall, default_depth(&cards, &cache, None));
+        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }
 
     #[test]
@@ -181,81 +156,14 @@ mod tests {
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let mut authored = card("a");
         authored.authored_distractors = vec!["b".into()];
-        assert_eq!(Depth::Recognize, default_depth(&[authored], &cache, None));
+        assert_eq!(Depth::Recognize, default_depth(&[authored], &cache));
     }
 
     #[test]
     fn default_depth_stays_recall_for_an_empty_deck() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
-        assert_eq!(Depth::Recall, default_depth(&[], &cache, None));
-    }
-
-    #[test]
-    fn a_uniform_answers_deck_recognizes_uncached_cards_when_the_pool_suffices() {
-        use crate::deck::Shape;
-        let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let stamped = |n: usize, back: &str| {
-            let mut c = card(back);
-            c.deck_id = std::sync::Arc::from("deck-x");
-            c.token = Some(std::sync::Arc::from(format!("tok{n}").as_str()));
-            c
-        };
-        let four = vec![
-            stamped(1, "a"),
-            stamped(2, "b"),
-            stamped(3, "c"),
-            stamped(4, "d"),
-        ];
-        assert!(
-            card_recognizable_in(&four[0], &cache, Some(Shape::UniformAnswers), &four),
-            "four single-line answers give every card a full pool"
-        );
-        assert!(
-            !card_recognizable_in(&four[0], &cache, None, &four),
-            "without the shape statement nothing changes"
-        );
-        let three = four[..3].to_vec();
-        assert!(
-            !card_recognizable_in(&three[0], &cache, Some(Shape::UniformAnswers), &three),
-            "a two-candidate pool cannot fill three distractor slots"
-        );
-        assert_eq!(
-            Depth::Recognize,
-            default_depth(&four, &cache, Some(Shape::UniformAnswers))
-        );
-        assert!(deck_recognizable(
-            &four,
-            &cache,
-            Some(Shape::UniformAnswers)
-        ));
-    }
-
-    #[test]
-    fn a_fresh_viable_group_admits_uncached_cards_without_a_shape() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let stamped = |n: usize, back: &str| {
-            let mut c = card(back);
-            c.deck_id = std::sync::Arc::from("deck-x");
-            c.token = Some(std::sync::Arc::from(format!("tok{n}").as_str()));
-            c
-        };
-        let four = vec![
-            stamped(1, "a"),
-            stamped(2, "b"),
-            stamped(3, "c"),
-            stamped(4, "d"),
-        ];
-        assert!(!card_recognizable_in(&four[0], &cache, None, &four));
-        for c in &four {
-            cache.set_group(&c.id().unwrap(), "g0".into(), c.content_fingerprint);
-        }
-        assert!(
-            card_recognizable_in(&four[0], &cache, None, &four),
-            "a viable fresh group admits with no shape statement"
-        );
+        assert_eq!(Depth::Recall, default_depth(&[], &cache));
     }
 
     #[test]

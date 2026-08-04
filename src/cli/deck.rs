@@ -265,27 +265,14 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no cards to augment");
             }
             let total = items.len();
-            let roster = alix::augment::choice_roster(&deck.cards);
-            let outcome = augment_ai::generate_choices(
-                &items,
-                &roster,
-                config.ai.distractor_count,
-                guidance,
-                &ask_cfg,
-                None,
-            )?;
-            let made = outcome.groups.len() + outcome.distractors.len();
-            for (id, label) in &outcome.groups {
-                if let Some(&fingerprint) = fp_by_id.get(id) {
-                    cache.set_group(id, label.clone(), fingerprint);
-                }
-            }
-            for (id, distractors) in &outcome.distractors {
+            let map =
+                augment_ai::generate(&items, config.ai.distractor_count, guidance, &ask_cfg, None)?;
+            for (id, distractors) in &map {
                 if let Some(&fingerprint) = fp_by_id.get(id) {
                     cache.set_distractors(id, distractors.clone(), fingerprint);
                 }
             }
-            (made, total, "distractors")
+            (map.len(), total, "distractors")
         }
         AugmentTarget::Notes => {
             let items = warm_items(&deck.cards);

@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
-    sync::Arc,
 };
 
 use rs_fsrs::Parameters;
@@ -24,7 +23,6 @@ pub struct DeckInfo {
     pub base_root: Option<PathBuf>,
     pub source_access: bool,
     pub source_base: SourceBase,
-    pub shape: Option<crate::deck::Shape>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -115,9 +113,6 @@ pub struct Session {
     // schedules only pick-capable cards), so the done summary can say what
     // still waits beyond the depth instead of "nothing".
     depth_excluded: Vec<Card>,
-    // Per-deck shape statements; sampling is licensed per card by its own
-    // deck, never session-wide (a workspace sitting mixes decks).
-    shapes: HashMap<Arc<str>, crate::deck::Shape>,
     pub initial_size: usize,
     pub stats: SessionStats,
 }
@@ -158,7 +153,6 @@ impl Session {
             options,
             presented_stamped: false,
             depth_excluded: Vec::new(),
-            shapes: HashMap::new(),
             initial_size,
             stats: SessionStats::default(),
         };
@@ -168,14 +162,6 @@ impl Session {
 
     pub fn set_depth_excluded(&mut self, cards: Vec<Card>) {
         self.depth_excluded = cards;
-    }
-
-    pub fn set_shapes(&mut self, shapes: HashMap<Arc<str>, crate::deck::Shape>) {
-        self.shapes = shapes;
-    }
-
-    pub fn shape_of(&self, deck_id: &str) -> Option<crate::deck::Shape> {
-        self.shapes.get(deck_id).copied()
     }
 
     /// `None` unless this is a Recognize sitting that actually excluded cards.

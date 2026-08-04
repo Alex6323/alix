@@ -537,7 +537,6 @@ fn format_prompt(cards_block: &str, guidance: Option<&str>) -> String {
 pub enum Job {
     Choices {
         items: Vec<WarmItem>,
-        roster: Vec<WarmItem>,
         count: usize,
     },
     Notes {
@@ -564,7 +563,7 @@ pub enum Job {
 }
 
 pub enum Outcome {
-    Choices(ChoicesOutcome),
+    Choices(HashMap<String, Vec<String>>),
     Notes(HashMap<String, String>),
     Questions(HashMap<String, Vec<String>>),
     Keypoints(HashMap<String, Vec<String>>),
@@ -601,18 +600,9 @@ fn run_job(
     conversation: Option<&BatchConversation>,
 ) -> Result<Outcome> {
     Ok(match job {
-        Job::Choices {
-            items,
-            roster,
-            count,
-        } => Outcome::Choices(generate_choices(
-            &items,
-            &roster,
-            count,
-            guidance,
-            ask_cfg,
-            conversation,
-        )?),
+        Job::Choices { items, count } => {
+            Outcome::Choices(generate(&items, count, guidance, ask_cfg, conversation)?)
+        }
         Job::Notes { items } => {
             Outcome::Notes(generate_notes(&items, guidance, ask_cfg, conversation)?)
         }
@@ -662,97 +652,6 @@ pub fn run_config(ai: &AiConfig, ask: &AskConfig) -> AskConfig {
     cfg.timeout_secs = ai.timeout_secs;
     cfg.allowed_tools.clear();
     cfg
-}
-
-#[derive(Debug)]
-pub struct ChoicesOutcome {
-    /// Card id -> interchangeability group label, viable groups only.
-    pub groups: HashMap<String, String>,
-    pub distractors: HashMap<String, Vec<String>>,
-}
-
-/// The adaptive choices run: classify the whole roster once, then generate
-/// per-card distractors only for gap cards no viable group covers.
-pub fn generate_choices(
-    items: &[WarmItem],
-    roster: &[WarmItem],
-    count: usize,
-    guidance: Option<&str>,
-    ask_cfg: &AskConfig,
-    conversation: Option<&BatchConversation>,
-) -> Result<ChoicesOutcome> {
-    let groups = classify_groups(roster, guidance, ask_cfg)?;
-    let uncovered: Vec<WarmItem> = items
-        .iter()
-        .filter(|item| !groups.contains_key(&item.id))
-        .cloned()
-        .collect();
-    let distractors = generate(&uncovered, count, guidance, ask_cfg, conversation)?;
-    Ok(ChoicesOutcome {
-        groups,
-        distractors,
-    })
-}
-
-/// One classification call over every single-line answer; returns id -> label
-/// for groups whose distinct answers can fill a full option set. Stray or
-/// repeated indices from the model are skipped, malformed JSON is an error.
-fn classify_groups(
-    roster: &[WarmItem],
-    guidance: Option<&str>,
-    ask_cfg: &AskConfig,
-) -> Result<HashMap<String, String>> {
-    if roster.len() < crate::choice::NUM_OPTIONS {
-        return Ok(HashMap::new());
-    }
-    let listing: String = roster
-        .iter()
-        .enumerate()
-        .map(|(index, item)| format!("{index}. {}\n", item.answer.replace('\n', " ")))
-        .collect();
-    let raw = ask::run(
-        &tool_free(ask_cfg),
-        &classification_prompt(&listing, guidance),
-        &[],
-    )?;
-    #[derive(Deserialize)]
-    struct Grouping {
-        groups: Vec<Vec<usize>>,
-    }
-    let parsed: Grouping = parse_json(&raw).context("parsing the answer classification")?;
-    let mut out = HashMap::new();
-    let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    for (number, group) in parsed.groups.iter().enumerate() {
-        let members: Vec<&WarmItem> = group
-            .iter()
-            .filter(|&&index| index < roster.len() && used.insert(index))
-            .map(|&index| &roster[index])
-            .collect();
-        let distinct: std::collections::HashSet<&str> =
-            members.iter().map(|item| item.answer.as_str()).collect();
-        if distinct.len() < crate::choice::NUM_OPTIONS {
-            continue;
-        }
-        for member in members {
-            out.insert(member.id.clone(), format!("g{number}"));
-        }
-    }
-    Ok(out)
-}
-
-fn classification_prompt(answers_block: &str, guidance: Option<&str>) -> String {
-    let mut s = String::from(
-        "You are grouping flashcard answers by interchangeability for          multiple-choice generation. Two answers belong to one group ONLY          when each is a plausible (but wrong) answer wherever the other is          correct — the same kind of thing (all capital cities, all years,          all shell commands). Leave an answer out of every group when          nothing else is its kind. Never group by topic alone: a term and          its definition are related but NOT interchangeable.\n",
-    );
-    if let Some(g) = guidance {
-        s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
-    }
-    s.push_str("\nThe answers, one per line:\n");
-    s.push_str(answers_block);
-    s.push_str(
-        "\nOutput ONLY JSON in exactly this shape, no prose, no code fences          — each inner list holds the indices of one interchangeability          group:\n{\"groups\": [[0, 3, 5], [1, 2, 4]]}\n",
-    );
-    s
 }
 
 fn distractors_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> String {
@@ -1297,101 +1196,6 @@ mod tests {
         assert_eq!(Some("sonnet".to_string()), cfg.model);
     }
 
-    /// First call answers `first`, every later call answers `second`.
-    fn fake_two_replies(dir: &std::path::Path, first: &str, second: &str) -> std::path::PathBuf {
-        std::fs::write(dir.join("reply1"), first).unwrap();
-        std::fs::write(dir.join("reply2"), second).unwrap();
-        let d = dir.display();
-        fake_cli(
-            dir,
-            &format!(
-                "cat >/dev/null; if [ -f {d}/called ]; then cat {d}/reply2;                  else : > {d}/called; cat {d}/reply1; fi"
-            ),
-        )
-    }
-
-    #[test]
-    fn a_tiny_roster_skips_classification_and_generates_directly() {
-        let _g = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(dir.path(), r#"{"0": ["w1","w2","w3"]}"#);
-        let items = vec![item(10, "Capital of France?", "Paris")];
-        let out = generate_choices(&items, &items, 3, None, &ask_config(&cli), None).unwrap();
-        assert!(out.groups.is_empty(), "3-card rosters cannot fill a pick");
-        assert_eq!(vec!["w1", "w2", "w3"], out.distractors["10"]);
-    }
-
-    #[test]
-    fn a_viable_group_skips_generation_and_strays_are_dropped() {
-        let _g = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let roster: Vec<WarmItem> = (0..6)
-            .map(|n| item(n, &format!("q{n}"), &format!("answer-{n}")))
-            .collect();
-        let items = vec![roster[0].clone(), roster[4].clone()];
-        let cli = fake_two_replies(
-            dir.path(),
-            r#"{"groups": [[0, 1, 2, 3], [4, 99], [5, 6]]}"#,
-            r#"{"0": ["x1","x2","x3"]}"#,
-        );
-        let out = generate_choices(&items, &roster, 3, None, &ask_config(&cli), None).unwrap();
-        for id in ["0", "1", "2", "3"] {
-            assert_eq!(Some(&"g0".to_string()), out.groups.get(id), "id={id}");
-        }
-        for id in ["4", "5"] {
-            assert!(
-                !out.groups.contains_key(id),
-                "a two-member group (one stray or boundary index) cannot fill a pick: {:?}",
-                out.groups
-            );
-        }
-        assert_eq!(
-            vec!["x1", "x2", "x3"],
-            out.distractors["4"],
-            "only the ungrouped gap card gets a generated list"
-        );
-        assert!(
-            !out.distractors.contains_key("0"),
-            "a grouped card must not burn a generated list"
-        );
-    }
-
-    #[test]
-    fn a_roster_of_exactly_the_option_count_still_classifies() {
-        let _g = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let roster: Vec<WarmItem> = (0..4)
-            .map(|n| item(n, &format!("q{n}"), &format!("answer-{n}")))
-            .collect();
-        let cli = fake_two_replies(dir.path(), r#"{"groups": [[0, 1, 2, 3]]}"#, r#"{}"#);
-        let out = generate_choices(&roster, &roster, 3, None, &ask_config(&cli), None).unwrap();
-        assert_eq!(
-            4,
-            out.groups.len(),
-            "four cards are the smallest viable roster"
-        );
-        assert!(
-            out.distractors.is_empty(),
-            "a fully grouped roster generates nothing"
-        );
-    }
-
-    #[test]
-    fn malformed_classification_json_is_an_error() {
-        let _g = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let roster: Vec<WarmItem> = (0..4)
-            .map(|n| item(n, &format!("q{n}"), &format!("answer-{n}")))
-            .collect();
-        let cli = fake_reply(dir.path(), "not json at all");
-        let err = generate_choices(&roster, &roster, 3, None, &ask_config(&cli), None)
-            .expect_err("garbage classification must fail loudly");
-        assert!(
-            err.to_string().contains("classification"),
-            "error names the phase: {err:#}"
-        );
-    }
-
     #[test]
     fn spawn_delivers_an_outcome_on_the_channel() {
         let _g = exec_lock();
@@ -1399,12 +1203,11 @@ mod tests {
         let cli = fake_reply(dir.path(), r#"{"0": ["w1","w2","w3"]}"#);
         let job = Job::Choices {
             items: vec![item(10, "Capital of France?", "Paris")],
-            roster: vec![item(10, "Capital of France?", "Paris")],
             count: 3,
         };
         let rx = spawn(job, None, ask_config(&cli), None);
         match rx.recv().unwrap() {
-            Ok(Outcome::Choices(out)) => assert_eq!(vec!["w1", "w2", "w3"], out.distractors["10"]),
+            Ok(Outcome::Choices(map)) => assert_eq!(vec!["w1", "w2", "w3"], map["10"]),
             Ok(_) => panic!("expected a Choices outcome"),
             Err(e) => panic!("generation failed: {e}"),
         }

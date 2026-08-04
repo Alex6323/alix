@@ -16,24 +16,12 @@ use crate::{
     store::Store,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Shape {
-    UniformAnswers,
-}
-
-impl Shape {
-    pub fn parse(value: &str) -> Option<Self> {
-        (value == "uniform-answers").then_some(Self::UniformAnswers)
-    }
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct DeckSettings {
     pub reveal: Option<Reveal>,
     pub input: Option<Input>,
     pub order: Option<Order>,
     pub direction: Option<Direction>,
-    pub shape: Option<Shape>,
     pub exam_strictness: Option<Strictness>,
 }
 
@@ -46,7 +34,6 @@ impl DeckSettings {
                 "input" => settings.input = Input::parse(value),
                 "order" => settings.order = Order::parse(value),
                 "direction" => settings.direction = Direction::parse(value),
-                "shape" => settings.shape = Shape::parse(value),
                 "strictness" => settings.exam_strictness = Strictness::parse(value),
                 _ => {}
             }
@@ -60,7 +47,6 @@ impl DeckSettings {
             input: frontmatter.input,
             order: frontmatter.order,
             direction: frontmatter.direction,
-            shape: frontmatter.shape,
             // Learner setting: a deck never ships grading rigor.
             exam_strictness: None,
         }
@@ -71,7 +57,6 @@ impl DeckSettings {
         self.input = self.input.or(defaults.input);
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
-        self.shape = self.shape.or(defaults.shape);
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
     }
 }
@@ -985,24 +970,6 @@ mod tests {
             Some(Reveal::Line),
             DeckSettings::from_directives(&live).reveal
         );
-    }
-
-    #[test]
-    fn a_shape_default_reaches_deck_settings_and_a_bad_value_does_not() {
-        let live = [("shape".to_string(), "uniform-answers".to_string())];
-        assert_eq!(
-            Some(Shape::UniformAnswers),
-            DeckSettings::from_directives(&live).shape
-        );
-        let bad = [("shape".to_string(), "uniform".to_string())];
-        assert_eq!(None, DeckSettings::from_directives(&bad).shape);
-
-        let mut deck = DeckSettings::default();
-        deck.fill_from(&DeckSettings {
-            shape: Some(Shape::UniformAnswers),
-            ..Default::default()
-        });
-        assert_eq!(Some(Shape::UniformAnswers), deck.shape);
     }
 
     fn write_deck(dir: &Path, name: &str, body: &str) -> PathBuf {

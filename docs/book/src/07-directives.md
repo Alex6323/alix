@@ -18,7 +18,6 @@ taking precedence. Each links to the chapter that explains it in full.
 | `order` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
-| `shape` | deck | The author's statement about the deck's content. The one value, `uniform-answers`, declares every answer the same kind of thing, which licenses [sampled Recognize options](04-review-modes.md) from the deck's own answers. Any other value is refused rather than silently ignored. Workspace `[defaults]` may set it too; card scope is an unknown-key lint. |
 | `strictness` | workspace | [Exam](12-the-ai-exam.md) grading rigor for the members, in `alix.toml`'s `[defaults]` only: a learner setting, so a deck declaring it gets an unknown-key lint. |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `authors` | deck | Who made the deck: one value or a list. Holds people and any AI that helped, so there is no separate generated-by key. Yours to fill in; alix never rewrites it. |

@@ -13,7 +13,7 @@ use crate::{
     card::Card,
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings, SourceLayers},
-    depth::Depth,
+    depth::{Depth, default_depth},
     parser,
     scheduler::Fsrs,
     session::{self, DeckInfo, Order, Session, SessionOptions},
@@ -217,7 +217,6 @@ pub fn load_decks(
                 base_root: deck.base_root(),
                 source_access: false,
                 source_base: SourceBase::for_deck(&deck),
-                shape: deck.settings.shape,
             },
         );
         settings.push(deck.settings);
@@ -492,32 +491,9 @@ pub fn select(
         Order::default(),
     );
 
-    let shapes: HashMap<Arc<str>, crate::deck::Shape> = decks
-        .values()
-        .filter_map(|info| {
-            Some((
-                Arc::<str>::from(info.deck_token.clone()?.as_str()),
-                info.shape?,
-            ))
-        })
-        .collect();
     let depth = depth_sel
         .or_else(|| store.last_depth(deck_id.as_ref()))
-        .unwrap_or_else(|| {
-            let recognizable = cards.iter().any(|c| {
-                crate::depth::card_recognizable_in(
-                    c,
-                    &augment,
-                    shapes.get(c.deck_id.as_ref()).copied(),
-                    &cards,
-                )
-            });
-            if recognizable {
-                Depth::Recognize
-            } else {
-                Depth::default()
-            }
-        });
+        .unwrap_or_else(|| default_depth(&cards, &augment));
     let options = SessionOptions {
         max_session: opts.session.unwrap_or(cfg.pacing.max_session),
         new_cards_percent: cfg.pacing.new_cards_percent,
@@ -543,25 +519,10 @@ pub fn select(
     // summary can report what waits beyond this depth.
     let mut depth_excluded = Vec::new();
     let cards = if depth == Depth::Recognize {
-        let keep: Vec<bool> = cards
-            .iter()
-            .map(|c| {
-                crate::depth::card_recognizable_in(
-                    c,
-                    &augment,
-                    shapes.get(c.deck_id.as_ref()).copied(),
-                    &cards,
-                )
-            })
-            .collect();
-        let mut kept = Vec::new();
-        for (card, keep) in cards.into_iter().zip(keep) {
-            if keep {
-                kept.push(card);
-            } else {
-                depth_excluded.push(card);
-            }
-        }
+        let (kept, excluded): (Vec<_>, Vec<_>) = cards
+            .into_iter()
+            .partition(|c| crate::depth::card_recognizable(c, &augment));
+        depth_excluded = excluded;
         kept
     } else {
         cards
@@ -578,7 +539,6 @@ pub fn select(
         now,
     );
     session.set_depth_excluded(depth_excluded);
-    session.set_shapes(shapes);
 
     // Quirk: this write always fires even when the built session has nothing
     // due, so a restart still reopens at the last-chosen depth.

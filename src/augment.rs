@@ -61,16 +61,11 @@ pub struct Augmentation {
     pub keypoints_fp: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format_fp: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_fp: Option<u64>,
 }
 
 impl Augmentation {
     fn is_empty(&self) -> bool {
         self.distractors.is_empty()
-            && self.group.is_none()
             && self.note.is_none()
             && self.variants.is_empty()
             && self.keypoints.is_empty()
@@ -676,19 +671,6 @@ impl AugmentCache {
         self.cards.contains_key(card_id)
     }
 
-    pub fn group(&self, card_id: &str, fingerprint: u64) -> Option<&str> {
-        let aug = self.cards.get(card_id)?;
-        (aug.group_fp == Some(fingerprint))
-            .then_some(aug.group.as_deref())
-            .flatten()
-    }
-
-    pub fn set_group(&mut self, card_id: &str, group: String, fingerprint: u64) {
-        let aug = self.cards.entry(card_id.to_string()).or_default();
-        aug.group = Some(group);
-        aug.group_fp = Some(fingerprint);
-    }
-
     pub fn set_distractors(&mut self, card_id: &str, distractors: Vec<String>, fingerprint: u64) {
         let aug = self.cards.entry(card_id.to_string()).or_default();
         aug.distractors = distractors;
@@ -940,7 +922,6 @@ impl AugmentCache {
                 !c.authored_distractors.is_empty()
                     || c.id()
                         .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
-                    || crate::choice::can_build_grouped(c, cards, self)
             },
         )
     }
@@ -994,8 +975,6 @@ impl AugmentCache {
         for id in deck_ids {
             if let Some(aug) = self.cards.get_mut(id) {
                 aug.distractors.clear();
-                aug.group = None;
-                aug.group_fp = None;
             }
         }
         self.prune_empty(deck_ids);
@@ -1172,16 +1151,6 @@ pub struct WarmItem {
     pub question: String,
     pub answer: String,
     pub note: Option<String>,
-}
-
-/// The classification roster: every stamped single-line-answer card. The
-/// filter is the law both the CLI and the web batch share.
-pub fn choice_roster(cards: &[Card]) -> Vec<WarmItem> {
-    cards
-        .iter()
-        .filter(|c| c.back.len() == 1 && c.id().is_some())
-        .map(WarmItem::from_card)
-        .collect()
 }
 
 impl WarmItem {
@@ -1765,77 +1734,6 @@ mod tests {
             .map(|w| w.id.clone())
             .collect();
         assert_eq!(mq, [cid(&cards[0]), cid(&cards[1])]);
-    }
-
-    #[test]
-    fn the_choice_roster_holds_exactly_the_stamped_single_line_cards() {
-        let mut multi = plain_card("m");
-        multi.back = vec!["one".into(), "two".into()];
-        let mut unstamped = plain_card("u");
-        unstamped.token = None;
-        let cards = vec![plain_card("a"), multi, unstamped, plain_card("b")];
-        let roster: Vec<String> = choice_roster(&cards)
-            .iter()
-            .map(|item| item.answer.clone())
-            .collect();
-        assert_eq!(
-            ["a", "b"],
-            roster.as_slice(),
-            "multi-line and unstamped cards never enter classification"
-        );
-    }
-
-    #[test]
-    fn a_group_reads_only_at_its_own_fingerprint() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        cache.set_group("card-a", "g0".into(), FP);
-        assert_eq!(Some("g0"), cache.group("card-a", FP));
-        assert_eq!(
-            None,
-            cache.group("card-a", FP + 1),
-            "an edited card reads ungrouped"
-        );
-        assert_eq!(None, cache.group("card-b", FP));
-    }
-
-    #[test]
-    fn clearing_the_choices_target_drops_groups_with_the_lists() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        cache.set_group("card-a", "g0".into(), FP);
-        cache.set_distractors("card-a", vec!["x".into()], FP);
-        let ids: HashSet<String> = ["card-a".to_string()].into();
-        cache.clear_distractors(&ids);
-        assert_eq!(None, cache.group("card-a", FP));
-        assert_eq!(None, cache.distractors("card-a", FP));
-    }
-
-    #[test]
-    fn a_freshly_grouped_card_with_a_viable_pool_is_not_a_choices_gap() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let cards: Vec<Card> = ["a", "b", "c", "d", "e"]
-            .iter()
-            .map(|s| {
-                let mut c = plain_card(s);
-                c.deck_id = std::sync::Arc::from("deck-x");
-                c
-            })
-            .collect();
-        for card in &cards[..4] {
-            cache.set_group(&card.id().unwrap(), "g0".into(), card.content_fingerprint);
-        }
-        let missing: Vec<String> = cache
-            .missing_choices(&cards)
-            .iter()
-            .map(|item| item.answer.clone())
-            .collect();
-        assert_eq!(
-            ["e"],
-            missing.as_slice(),
-            "four grouped cards cover each other; the ungrouped fifth is the gap"
-        );
     }
 
     #[test]

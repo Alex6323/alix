@@ -87,8 +87,6 @@ pub enum ParseError {
     UnsupportedDeckVersion { line: usize, version: i64 },
     #[error("line {line}: `format-version:` must be an integer, got {found}")]
     NonIntegerVersion { line: usize, found: &'static str },
-    #[error("line {line}: `shape:` accepts only `uniform-answers`, got {found}")]
-    UnknownShape { line: usize, found: String },
     #[error("line {line}: control character {found} outside the whitespace set")]
     ControlChar { line: usize, found: String },
     #[error("line {0}: card front is empty")]
@@ -1009,38 +1007,6 @@ mod tests {
                 version: 2
             },
             err("---\nformat-version: 2\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n")
-        );
-    }
-
-    #[test]
-    fn a_shape_key_parses_its_one_value_and_refuses_every_other() {
-        let deck = parse("---\nshape: uniform-answers\n---\n## q\na\n");
-        assert_eq!(
-            Some(crate::deck::Shape::UniformAnswers),
-            deck.frontmatter.shape
-        );
-        assert!(deck.lints.is_empty(), "lints: {:?}", deck.lints);
-
-        assert_eq!(
-            ParseError::UnknownShape {
-                line: 2,
-                found: "uniform".to_string()
-            },
-            err("---\nshape: uniform\n---\n## q\na\n")
-        );
-    }
-
-    #[test]
-    fn a_card_scoped_shape_directive_is_an_unknown_key_lint() {
-        let deck = parse("## q\na\n<!-- shape: uniform-answers -->\n");
-        assert_eq!(None, deck.frontmatter.shape);
-        assert!(
-            deck.lints.iter().any(|lint| matches!(
-                &lint.kind,
-                LintKind::UnknownKey { key } if key == "shape"
-            )),
-            "expected an unknown-key lint for a card-scoped shape, got {:?}",
-            deck.lints
         );
     }
 
@@ -2064,7 +2030,6 @@ reveal: line
 order: sequential
 input: draw
 direction: both
-shape: uniform-answers
 tags: [a, b]
 license: MIT
 authors: someone
@@ -2102,7 +2067,6 @@ the answer
                 order: Some(Order::Sequential),
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
-                shape: Some(crate::deck::Shape::UniformAnswers),
                 unspliceable: false,
             },
             document.frontmatter
@@ -2113,14 +2077,14 @@ the answer
             CardDirectives {
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(30),
+                reveal_line: Some(29),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 citations: vec![crate::card::SourceCitation {
                     locator: "src/caching.rs:46-66".into(),
                     fingerprint: Some(0x0123456789abcdef),
                     asset: Some("sha256-abc123.rs".into()),
-                    line: 33,
+                    line: 32,
                 }],
                 givens: vec![
                     "state - the parser position".into(),
@@ -2145,7 +2109,7 @@ the answer
                 locator: "src/caching.rs:46-66".into(),
                 fingerprint: Some(0x0123456789abcdef),
                 asset: Some("sha256-abc123.rs".into()),
-                line: 33,
+                line: 32,
             }],
             card.citations
         );
