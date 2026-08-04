@@ -901,6 +901,525 @@ mod tests {
     use super::*;
 
     #[test]
+    fn value_names_are_the_documented_clap_spellings() {
+        assert_eq!("typeline", val_name(alix::answer::Mode::TypeLine));
+        assert_eq!("sequential", val_name(alix::session::Order::Sequential));
+    }
+
+    #[test]
+    fn report_render_child() {
+        if std::env::var_os("ALIX_DOCTOR_REPORT_RENDER_CHILD").is_none() {
+            return;
+        }
+
+        let mut errors = Report::default();
+        errors.error("broken");
+        assert!(errors.render());
+
+        let mut warnings = Report::default();
+        warnings.warn("risky");
+        assert!(!warnings.render());
+
+        let mut notes = Report::default();
+        notes.note("informational");
+        assert!(!notes.render());
+    }
+
+    #[test]
+    fn report_summaries_cover_errors_and_warnings_but_not_notes() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "doctor::tests::report_render_child",
+                "--nocapture",
+            ])
+            .env("ALIX_DOCTOR_REPORT_RENDER_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+
+        assert!(stderr.contains("1 error(s), 0 warning(s)"), "{stderr}");
+        assert!(stderr.contains("0 error(s), 1 warning(s)"), "{stderr}");
+        assert_eq!(2, stderr.matches("error(s),").count(), "{stderr}");
+    }
+
+    #[test]
+    fn initialized_deck_content_is_not_reported_as_uninitialized() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ready.md");
+        w(
+            dir.path(),
+            "ready.md",
+            "---\nformat-version: 1\nid: deck-ready\n---\n## q <!-- id: card-ready -->\na\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("deck-like Markdown is not initialized")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn unique_noncanonical_card_tokens_are_still_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tokens.md");
+        w(
+            dir.path(),
+            "tokens.md",
+            "---\nformat-version: 1\nid: deck-ready\n---\n## q <!-- id: card-short -->\na\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("id `card-short`")
+                    && warning.contains("not canonical")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn initialized_flow_frontmatter_is_not_reported_as_unspliceable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("flow.md");
+        w(
+            dir.path(),
+            "flow.md",
+            "---\n{format-version: 1, id: deck-ready}\n---\n## q <!-- id: card-ready -->\na\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("cannot stamp: frontmatter")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn initialized_fully_stamped_decks_have_no_unstamped_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stamped.md");
+        w(
+            dir.path(),
+            "stamped.md",
+            "---\nformat-version: 1\nid: deck-ready\n---\n## q <!-- id: card-ready -->\na\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("card content without ids")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn only_local_paths_inside_assets_are_asset_sources() {
+        assert!(source_points_into_assets("assets/deck-one/object.md"));
+        assert!(source_points_into_assets(
+            "workspace/assets/deck-one/object.md"
+        ));
+        assert!(!source_points_into_assets("notes/assets-overview.md"));
+        assert!(!source_points_into_assets(
+            "https://example.test/assets/deck-one/object.md"
+        ));
+    }
+
+    #[test]
+    fn trace_and_source_count_warnings_obey_their_exact_boundaries() {
+        let dir = tempfile::tempdir().unwrap();
+        let ordinary = dir.path().join("ordinary.md");
+        w(dir.path(), "ordinary.md", "## q\na\n");
+        let mut ordinary_report = Report::default();
+        deck_findings(&ordinary, &mut ordinary_report);
+        assert!(
+            ordinary_report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("not a trace")),
+            "{:#?}",
+            ordinary_report.warnings
+        );
+
+        let three = dir.path().join("three.md");
+        w(
+            dir.path(),
+            "three.md",
+            "---\nsource: [a, b, c]\n---\n## q\na\n",
+        );
+        let four = dir.path().join("four.md");
+        w(
+            dir.path(),
+            "four.md",
+            "---\nsource: [a, b, c, d]\n---\n## q\na\n",
+        );
+        let mut report = Report::default();
+        deck_findings(&three, &mut report);
+        deck_findings(&four, &mut report);
+        let common_root: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("point at their common root"))
+            .collect();
+        assert_eq!(1, common_root.len(), "{:#?}", report.warnings);
+        assert!(common_root[0].contains("four.md"), "{common_root:?}");
+    }
+
+    #[test]
+    fn coarse_restamp_warning_needs_both_orphans_and_fresh_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("facts.md");
+        w(
+            dir.path(),
+            "facts.md",
+            "---\nformat-version: 1\nid: deck-facts\n---\n## q <!-- id: card-live -->\na\n",
+        );
+        let mut store = alix::state::open_store(&deck, dir.path()).unwrap();
+        store.get_or_insert("card-live", 0);
+        store.get_or_insert("card-orphan", 0);
+        store.save().unwrap();
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("fresh tokens were minted")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn document_scan_skips_directories_non_json_files_and_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("progress/folder.json")).unwrap();
+        w(&dir.path().join("progress"), "notes.txt", "not a document");
+        w(
+            &dir.path().join("progress"),
+            "deck-x.sync-conflict-1.json",
+            "not json",
+        );
+
+        let report = workspace_findings(dir.path());
+        let findings = report
+            .warnings
+            .iter()
+            .chain(&report.errors)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(!findings.contains("folder.json"), "{findings}");
+        assert!(!findings.contains("notes.txt"), "{findings}");
+        assert!(
+            !findings.contains("unrecognized progress document"),
+            "{findings}"
+        );
+    }
+
+    #[test]
+    fn an_augmentation_document_in_progress_is_validated_as_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let progress = dir.path().join("progress/deck-orphan.json");
+        alix::augment::AugmentCache::open_deck(&progress, "deck-orphan")
+            .unwrap()
+            .save()
+            .unwrap();
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("progress document")),
+            "{:#?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn plain_nested_directories_are_not_recursed_as_workspaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("plain-folder");
+        std::fs::create_dir(&nested).unwrap();
+        w(&nested, "loose.md", "## q\na\n");
+
+        let report = workspace_findings(dir.path());
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("plain-folder")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn check_rejects_a_directory_without_a_workspace_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+
+        assert!(check(vec![dir.path().to_path_buf()]).is_err());
+    }
+
+    #[test]
+    fn check_output_child() {
+        if std::env::var_os("ALIX_DOCTOR_CHECK_OUTPUT_CHILD").is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let declared = dir.path().join("declared.md");
+        w(
+            dir.path(),
+            "declared.md",
+            "---\nformat-version: 1\nid: deck-declared\nreveal: line\norder: sequential\nrequires: ghost\nsource: https://example.test/source\n---\n## q <!-- id: card-q -->\na\n",
+        );
+        let plain = dir.path().join("plain.md");
+        w(dir.path(), "plain.md", "## q\na\n");
+        check(vec![declared, plain]).unwrap();
+
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        w(
+            &workspace,
+            alix::workspace::MANIFEST,
+            "icon = \"gone.svg\"\n",
+        );
+        check(vec![workspace]).unwrap();
+    }
+
+    #[test]
+    fn check_prints_only_declared_sections_and_warns_for_a_missing_icon() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "doctor::tests::check_output_child",
+                "--nocapture",
+            ])
+            .env("ALIX_DOCTOR_CHECK_OUTPUT_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+
+        assert_eq!(1, stdout.matches("  settings:").count(), "{stdout}");
+        assert!(
+            stdout.contains("reveal: line, order: sequential"),
+            "{stdout}"
+        );
+        assert_eq!(1, stdout.matches("  requires:").count(), "{stdout}");
+        assert_eq!(1, stdout.matches("  sources:").count(), "{stdout}");
+        assert!(stderr.contains("points at a missing file"), "{stderr}");
+    }
+
+    fn one_line_fingerprint(text: &str) -> String {
+        let excerpt = alix::source::Excerpt {
+            path: PathBuf::from("source.txt"),
+            lines: vec![(1, text.to_string())],
+            truncated: false,
+        };
+        alix::source::format_locator_fingerprint(alix::source::excerpt_fingerprint(&excerpt))
+    }
+
+    #[test]
+    fn repair_counts_a_changed_citation_as_one_unresolved_item() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "source.txt", "changed\n");
+        let deck = dir.path().join("changed.md");
+        w(
+            dir.path(),
+            "changed.md",
+            &format!(
+                "---\nformat-version: 1\nid: deck-changed\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                one_line_fingerprint("gone")
+            ),
+        );
+
+        let error = repair_source_locators(std::slice::from_ref(&deck)).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("1 source citation(s) need manual review"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn repair_counts_an_ambiguous_citation_as_one_unresolved_item() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "source.txt", "other\ntarget\nother\ntarget\n");
+        let deck = dir.path().join("ambiguous.md");
+        w(
+            dir.path(),
+            "ambiguous.md",
+            &format!(
+                "---\nformat-version: 1\nid: deck-ambiguous\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                one_line_fingerprint("target")
+            ),
+        );
+
+        let error = repair_source_locators(std::slice::from_ref(&deck)).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("1 source citation(s) need manual review"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn grading_spot_check_child() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let Some(mode) = std::env::var_os("ALIX_GRADING_SPOT_CHECK_CHILD") else {
+            return;
+        };
+        let mode = mode.to_string_lossy();
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fake-grader");
+        let body = format!(
+            r#"#!/bin/sh
+cat > "{dir}/prompt.$$"
+echo x >> "{dir}/calls.log"
+call=$(wc -l < "{dir}/calls.log")
+n=$(grep -c '^Question ' "{dir}/prompt.$$")
+printf '{{"grades":['
+i=1
+while [ "$i" -le "$n" ]; do
+  [ "$i" -gt 1 ] && printf ','
+  verdict="{mode}"
+  if [ "$verdict" = mixed ]; then
+    if [ "$n" -gt 1 ]; then
+      case "$i" in
+        4|5|6) verdict=pass ;;
+        *) verdict=partial ;;
+      esac
+    elif [ "$call" -eq 2 ]; then
+      verdict=partial
+    else
+      verdict=pass
+    fi
+  fi
+  printf '{{"verdict":"%s","feedback":"f","missed":[]}}' "$verdict"
+  i=$((i+1))
+done
+printf ']}}'
+"#,
+            dir = dir.path().display(),
+            mode = mode,
+        );
+        std::fs::write(&script, body).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut config = alix::config::Config::from_toml("").unwrap();
+        config.ask.command = script.display().to_string();
+        config.ask.timeout_secs = 10;
+
+        grading_spot_check(&config).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn grading_spot_check_counts_each_failure_kind_and_the_all_safe_case() {
+        let run = |mode: &str| {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "doctor::tests::grading_spot_check_child",
+                    "--nocapture",
+                ])
+                .env("ALIX_GRADING_SPOT_CHECK_CHILD", mode)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            String::from_utf8(output.stdout).unwrap()
+        };
+
+        let unsafe_output = run("pass");
+        assert!(
+            unsafe_output.contains("passed 7 answer(s) that must not pass"),
+            "{unsafe_output}"
+        );
+        let unfair_output = run("partial");
+        assert!(
+            unfair_output.contains("stricter than intended: 4 should-pass probe(s)"),
+            "{unfair_output}"
+        );
+        let safe_output = run("mixed");
+        assert!(
+            safe_output.contains("grading looks trustworthy"),
+            "{safe_output}"
+        );
+    }
+
+    #[test]
+    fn repair_flag_controls_plain_directory_repair_exactly_once() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "config.toml",
+            "[ask]\ncommand = \"/missing/alix-test-backend\"\n",
+        );
+        w(dir.path(), "source.txt", "evidence\n");
+        let deck = dir.path().join("facts.md");
+        w(
+            dir.path(),
+            "facts.md",
+            "---\nformat-version: 1\nid: deck-facts\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 -->\n<!-- id: card-q -->\n",
+        );
+        let before = std::fs::read_to_string(&deck).unwrap();
+        let args = |repair_source_locators| DoctorArgs {
+            dir: Some(dir.path().to_path_buf()),
+            backends: false,
+            all_backends: false,
+            grading: false,
+            repair_source_locators,
+            remove_backup_files: false,
+            yes: false,
+            config: Some(dir.path().join("config.toml")),
+        };
+
+        doctor_cmd(args(false)).unwrap();
+        assert_eq!(before, std::fs::read_to_string(&deck).unwrap());
+
+        doctor_cmd(args(true)).unwrap();
+        let repaired = std::fs::read_to_string(&deck).unwrap();
+        assert_ne!(before, repaired);
+        assert!(repaired.contains("fingerprint: xxh64-"), "{repaired}");
+    }
+
+    #[test]
     fn check_warns_on_a_missing_workspace_icon() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "icon = \"assets/gone.svg\"\n").unwrap();
