@@ -43,6 +43,8 @@ pub struct ParsedDeck {
 /// without re-deriving the table grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableStamping {
+    /// 1-based header line: the block boundary a preceding card ends at.
+    pub line: usize,
     pub rows: Vec<TableRowStamping>,
     pub token: Option<String>,
     /// 1-based last line of the block (rows and trailing directive
@@ -160,6 +162,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
             RawBlock::Card(raw) => build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?,
             RawBlock::Table(raw) => {
                 tables.push(TableStamping {
+                    line: raw.line,
                     rows: raw
                         .rows
                         .iter()
@@ -325,6 +328,7 @@ struct RawCard {
 }
 
 struct RawTable {
+    line: usize,
     columns: usize,
     header: Vec<String>,
     rows: Vec<RawRow>,
@@ -493,6 +497,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 });
             }
             table = Some(RawTable {
+                line: lineno,
                 columns: header.len(),
                 header,
                 rows: Vec::new(),
@@ -2711,6 +2716,7 @@ the answer
             ParseError::TableLineMalformed(3),
             err("| a | b |\n|---|---|\n| x | y\n")
         );
+        assert_eq!(ParseError::TableLineMalformed(1), err("|\n|---|\n"));
     }
 
     #[test]

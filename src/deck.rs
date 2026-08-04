@@ -556,7 +556,22 @@ pub fn append_note(path: &Path, front_line: usize, notes: &[String]) -> Result<(
             line: front_line,
         });
     }
-    let fronts = front_lines_of(path, &text)?;
+    // Block boundaries: plain card fronts plus each table's HEADER line; a
+    // row line as boundary would land the note inside the table block.
+    let row_lines: std::collections::HashSet<usize> = parsed
+        .tables
+        .iter()
+        .flat_map(|table| table.rows.iter().map(|row| row.line))
+        .collect();
+    let mut fronts: Vec<usize> = parsed
+        .cards
+        .iter()
+        .map(|card| card.line)
+        .filter(|line| !row_lines.contains(line))
+        .chain(parsed.tables.iter().map(|table| table.line))
+        .collect();
+    fronts.sort_unstable();
+    fronts.dedup();
     let new_text = insert_note_lines(&text, &fronts, front_line, notes);
     write_deck_text(path, &new_text)
 }
@@ -1583,6 +1598,22 @@ mod tests {
         );
         assert_eq!(before, std::fs::read_to_string(&path).unwrap());
         Deck::load(&path).expect("persisting a tutor note must not corrupt the table deck");
+    }
+
+    #[test]
+    fn a_plain_card_still_takes_notes_in_a_deck_that_also_holds_a_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "## q\na\n\n| word | meaning |\n|---|---|\n| one <!-- r:4k2x9w --> | eins |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+        )
+        .unwrap();
+
+        append_note(&path, 1, &["explained".to_string()]).unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some("explained"), deck.cards[0].note.as_deref());
     }
 
     #[test]

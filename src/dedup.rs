@@ -400,6 +400,15 @@ mod tests {
 
         assert_eq!(1, map.card_dupes.len(), "{map:#?}");
         assert_eq!(container, map.card_dupes[0].token);
+        assert_eq!(
+            5, map.card_dupes[0].keeper.1,
+            "the container anchors to the table's HEADER line, not a later row"
+        );
+        assert_eq!(vec![5], {
+            let mut lines: Vec<usize> = map.card_dupes[0].losers.iter().map(|l| l.1).collect();
+            lines.sort_unstable();
+            lines
+        });
     }
 
     #[test]
