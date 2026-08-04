@@ -1331,18 +1331,20 @@ mod tests {
         let items = vec![roster[0].clone(), roster[4].clone()];
         let cli = fake_two_replies(
             dir.path(),
-            r#"{"groups": [[0, 1, 2, 3], [4, 99]]}"#,
+            r#"{"groups": [[0, 1, 2, 3], [4, 99], [5, 6]]}"#,
             r#"{"0": ["x1","x2","x3"]}"#,
         );
         let out = generate_choices(&items, &roster, 3, None, &ask_config(&cli), None).unwrap();
         for id in ["0", "1", "2", "3"] {
             assert_eq!(Some(&"g0".to_string()), out.groups.get(id), "id={id}");
         }
-        assert!(
-            !out.groups.contains_key("4"),
-            "a two-member group (one stray) cannot fill a pick: {:?}",
-            out.groups
-        );
+        for id in ["4", "5"] {
+            assert!(
+                !out.groups.contains_key(id),
+                "a two-member group (one stray or boundary index) cannot fill a pick: {:?}",
+                out.groups
+            );
+        }
         assert_eq!(
             vec!["x1", "x2", "x3"],
             out.distractors["4"],
