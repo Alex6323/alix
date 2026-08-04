@@ -668,6 +668,56 @@ mod tests {
     }
 
     #[test]
+    fn resolve_empty_child() {
+        if std::env::var_os("ALIX_RESOLVE_EMPTY_CHILD").is_none() {
+            return;
+        }
+        assert_eq!(0, resolve("depth", None, std::iter::empty(), 0));
+    }
+
+    #[test]
+    fn an_empty_declaration_set_uses_the_default_without_a_disagreement_warning() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "assemble::tests::resolve_empty_child",
+                "--nocapture",
+            ])
+            .env("ALIX_RESOLVE_EMPTY_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            !stderr.contains("decks disagree"),
+            "no declarations cannot disagree: {stderr}"
+        );
+    }
+
+    #[test]
+    fn an_explicit_topology_name_selects_only_the_equal_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        for name in ["first", "wanted", "last"] {
+            cache.add_topology(Topology {
+                name: name.to_string(),
+                principle: name.to_string(),
+                edges: Vec::new(),
+                walk: Vec::new(),
+                regions: Vec::new(),
+                deck_token: "deck-owner".to_string(),
+            });
+        }
+        let deck_tokens = std::collections::HashSet::from(["deck-owner".to_string()]);
+
+        let selected = resolve_topology(Some("wanted"), &cache, &deck_tokens)
+            .unwrap()
+            .expect("the named topology exists");
+
+        assert_eq!("wanted", selected.name);
+    }
+
+    #[test]
     fn exclude_unstamped_warning_child() {
         if std::env::var_os("ALIX_EXCLUDE_UNSTAMPED_WARNING_CHILD").is_none() {
             return;

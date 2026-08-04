@@ -191,8 +191,6 @@ pub(crate) fn local_lan_ip() -> Option<std::net::IpAddr> {
 }
 
 /// Silently skipped when the text is too long; the printed URL above still works.
-// Print-only, two-line delegation to `qr::terminal_blocks`: nothing to
-// assert without a stdout-capture idiom, which this codebase doesn't have.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn print_qr(text: &str) {
     if let Some(q) = alix::qr::terminal_blocks(text) {
@@ -220,6 +218,42 @@ mod tests {
                 .unwrap()
                 .is_some_and(|t| !t.is_empty())
         );
+    }
+
+    #[test]
+    fn generated_tokens_are_distinct_128_bit_lowercase_hex() {
+        let first = generate_token().unwrap();
+        let second = generate_token().unwrap();
+        for token in [&first, &second] {
+            assert_eq!(32, token.len(), "{token}");
+            assert!(
+                token
+                    .chars()
+                    .all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch)),
+                "{token}"
+            );
+        }
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn qr_output_child() {
+        if std::env::var_os("ALIX_QR_OUTPUT_CHILD").is_none() {
+            return;
+        }
+        print_qr("http://127.0.0.1:4321/?token=0123456789abcdef");
+    }
+
+    #[test]
+    fn print_qr_emits_the_terminal_rendering() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "launch::tests::qr_output_child", "--nocapture"])
+            .env("ALIX_QR_OUTPUT_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains('█'), "{stdout}");
     }
 
     #[test]

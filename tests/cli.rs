@@ -250,6 +250,33 @@ fn bare_launch_uses_the_named_default_profile_config() {
 }
 
 #[test]
+fn an_explicit_config_bypasses_the_default_profile() {
+    let home = TempDir::new().unwrap();
+    let config_dir = test_config_dir(home.path());
+    let profiles = config_dir.join("profiles");
+    std::fs::create_dir_all(&profiles).unwrap();
+    std::fs::write(
+        profiles.join("named.toml"),
+        "[review]\ndefault_profile_only = true\n",
+    )
+    .unwrap();
+    std::fs::write(profiles.join("default"), "named\n").unwrap();
+    let explicit = write(
+        home.path(),
+        "explicit.toml",
+        "[review]\nexplicit_config_only = true\n",
+    );
+
+    let out = alix_env(&["--config", &explicit], home.path(), &[]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    let error = stderr(&out);
+    assert!(error.contains("explicit.toml"), "stderr: {error}");
+    assert!(error.contains("explicit_config_only"), "stderr: {error}");
+    assert!(!error.contains("default_profile_only"), "stderr: {error}");
+}
+
+#[test]
 fn check_accepts_a_valid_deck() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
@@ -469,6 +496,30 @@ fn workspace_deadline_shows_sets_and_clears() {
 
     let out = alix(&["workspace", "deadline", ws.to_str().unwrap(), "not-a-date"]);
     assert!(!out.status.success(), "stderr: {}", stderr(&out));
+}
+
+#[test]
+fn workspace_deadline_labels_today_and_past_day_boundaries_exactly() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Ws\"\n").unwrap();
+    let today = alix::time::local_date(alix::time::now_ms());
+    let yesterday = today.pred_opt().unwrap();
+
+    for (date, expected) in [(yesterday, "(was due 1 day ago)"), (today, "(0 days left)")] {
+        let date = date.format("%Y-%m-%d").to_string();
+        let set = alix(&["workspace", "deadline", ws.to_str().unwrap(), &date]);
+        assert!(set.status.success(), "{date}: {}", stderr(&set));
+
+        let show = alix(&["workspace", "deadline", ws.to_str().unwrap()]);
+        assert!(show.status.success(), "{date}: {}", stderr(&show));
+        assert!(
+            stdout(&show).contains(expected),
+            "{date}: expected {expected:?}, stdout: {}",
+            stdout(&show)
+        );
+    }
 }
 
 #[test]
@@ -2187,6 +2238,29 @@ fn share_zip_writes_an_archive_of_a_single_deck() {
 }
 
 #[test]
+fn share_zip_honors_an_explicit_output_file() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.md", VALID_DECK);
+    let output = dir.path().join("named-export.zip");
+
+    let out = alix(&[
+        "share",
+        &deck,
+        "--zip",
+        "--output",
+        output.to_str().unwrap(),
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(output.is_file(), "{} was not written", output.display());
+    assert!(
+        stdout(&out).contains(&output.display().to_string()),
+        "stdout: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_replaces_it() {
     let sender = TempDir::new().unwrap();
     let sender_decks = sender.path().join("decks");
@@ -2325,6 +2399,25 @@ fn receive_without_wormhole_installed_reports_the_install_hint() {
     assert!(
         stderr(&out).contains("is magic-wormhole installed?"),
         "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn a_missing_zip_named_code_still_uses_the_wormhole_receive_path() {
+    let dir = TempDir::new().unwrap();
+    let missing = dir.path().join("7-fake-code.zip");
+
+    let out = alix_env(
+        &["receive", missing.to_str().unwrap()],
+        dir.path(),
+        &[("PATH", "/nonexistent-empty-bin")],
+    );
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is magic-wormhole installed?"),
+        "a .zip suffix alone must not select local unzip: {}",
         stderr(&out)
     );
 }

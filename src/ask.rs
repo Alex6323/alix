@@ -1221,6 +1221,36 @@ mod tests {
     }
 
     #[test]
+    fn session_id_sequence_has_full_avalanche_and_no_collisions() {
+        let ids: Vec<[u8; 16]> = (0..4096)
+            .map(|_| {
+                let compact = CliSession::new().id.replace('-', "");
+                std::array::from_fn(|index| {
+                    u8::from_str_radix(&compact[index * 2..index * 2 + 2], 16).unwrap()
+                })
+            })
+            .collect();
+        let distinct: std::collections::HashSet<[u8; 16]> = ids.iter().copied().collect();
+        assert_eq!(ids.len(), distinct.len(), "session ids collided");
+
+        let changed_bits: u32 = ids
+            .windows(2)
+            .map(|pair| {
+                pair[0]
+                    .iter()
+                    .zip(pair[1])
+                    .map(|(left, right)| (left ^ right).count_ones())
+                    .sum::<u32>()
+            })
+            .sum();
+        let mean = changed_bits as f64 / (ids.len() - 1) as f64;
+        assert!(
+            (58.0..=66.0).contains(&mean),
+            "successive UUIDs changed {mean:.2} of 128 bits on average"
+        );
+    }
+
+    #[test]
     fn source_root_grounding_preserves_config_and_adds_each_read_tool_once() {
         let config = AskConfig {
             backend: crate::config::BackendKind::Codex,

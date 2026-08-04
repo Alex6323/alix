@@ -1204,7 +1204,13 @@ mod tests {
         );
         let plain = dir.path().join("plain.md");
         w(dir.path(), "plain.md", "## q\na\n");
-        check(vec![declared, plain]).unwrap();
+        let empty = dir.path().join("empty.md");
+        w(
+            dir.path(),
+            "empty.md",
+            "---\nformat-version: 1\nid: deck-empty\n---\n## q <!-- id: card-qempty -->\na\n",
+        );
+        check(vec![declared, empty, plain]).unwrap();
 
         let workspace = dir.path().join("workspace");
         std::fs::create_dir(&workspace).unwrap();

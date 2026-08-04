@@ -220,11 +220,85 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, io::Write, process::Stdio};
 
     use tempfile::TempDir;
 
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    fn run_terminal_child(test: &str, answer: &str, env: &[(&str, &str)]) {
+        let command = format!(
+            "{} --exact {test} --nocapture",
+            std::env::current_exe().unwrap().display()
+        );
+        let mut child = std::process::Command::new("script")
+            .args(["-q", "-e", "-c", &command, "/dev/null"])
+            .envs(env.iter().copied())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(format!("{answer}\n").as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "answer {answer:?}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn interactive_confirmation_child() {
+        let Ok(expected) = std::env::var("ALIX_CONFIRM_EXPECTED") else {
+            return;
+        };
+        assert_eq!(expected == "true", confirm("continue?", false).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn interactive_confirmation_accepts_exact_yes_aliases_and_rejects_other_text() {
+        for (answer, expected) in [("y", "true"), ("yes", "true"), ("no", "false")] {
+            run_terminal_child(
+                "common::tests::interactive_confirmation_child",
+                answer,
+                &[("ALIX_CONFIRM_EXPECTED", expected)],
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn interactive_preflight_child() {
+        let Ok(source) = std::env::var("ALIX_PREFLIGHT_SOURCE") else {
+            return;
+        };
+        preflight_source(&source, 1, false).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn interactive_preflight_accepts_each_exact_yes_alias() {
+        let dir = TempDir::new().unwrap();
+        make_file(dir.path(), "source.txt", 2);
+        let source = dir.path().to_str().unwrap();
+        for answer in ["y", "yes"] {
+            run_terminal_child(
+                "common::tests::interactive_preflight_child",
+                answer,
+                &[("ALIX_PREFLIGHT_SOURCE", source)],
+            );
+        }
+    }
 
     #[test]
     fn store_for_resolves_a_loose_deck_to_the_decks_dir_root_store() {

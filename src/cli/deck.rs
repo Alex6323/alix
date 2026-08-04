@@ -637,3 +637,71 @@ pub(crate) fn workspace_deadline_cmd(args: WorkspaceDeadlineArgs) -> Result<()> 
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removal_store_root_uses_the_owning_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks = workspace.join(alix::workspace::DECKS);
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::write(workspace.join(alix::workspace::MANIFEST), "").unwrap();
+        let deck = decks.join("facts.md");
+        std::fs::write(&deck, "## q\na\n").unwrap();
+
+        assert_eq!(workspace, removal_store_root(&deck, None).unwrap());
+    }
+
+    #[test]
+    fn topology_edge_output_child() {
+        if std::env::var_os("ALIX_TOPOLOGY_EDGE_OUTPUT_CHILD").is_none() {
+            return;
+        }
+        let topology = augment::Topology {
+            name: "order".to_string(),
+            principle: "test".to_string(),
+            edges: vec![
+                augment::TopologyEdge {
+                    from: "a".to_string(),
+                    to: "wrong".to_string(),
+                    label: "wrong target".to_string(),
+                },
+                augment::TopologyEdge {
+                    from: "wrong".to_string(),
+                    to: "b".to_string(),
+                    label: "wrong source".to_string(),
+                },
+                augment::TopologyEdge {
+                    from: "a".to_string(),
+                    to: "b".to_string(),
+                    label: "correct edge".to_string(),
+                },
+            ],
+            walk: vec!["a".to_string(), "b".to_string()],
+            regions: Vec::new(),
+            deck_token: "deck-owner".to_string(),
+        };
+        print_topology(&topology, &[]);
+    }
+
+    #[test]
+    fn topology_output_labels_only_an_edge_matching_both_endpoints() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "deck::tests::topology_edge_output_child",
+                "--nocapture",
+            ])
+            .env("ALIX_TOPOLOGY_EDGE_OUTPUT_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("[correct edge]"), "{stdout}");
+        assert!(!stdout.contains("[wrong target]"), "{stdout}");
+        assert!(!stdout.contains("[wrong source]"), "{stdout}");
+    }
+}
