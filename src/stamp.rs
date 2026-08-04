@@ -414,6 +414,14 @@ fn table_block_end(lines: &[&str], header: usize) -> usize {
     let mut last = header + 2;
     let mut index = header + 2;
     while let Some(raw) = lines.get(index) {
+        // An adjacent table's header opens its own block.
+        if raw.starts_with('|')
+            && lines
+                .get(index + 1)
+                .is_some_and(|next| next.starts_with('|') && parser::is_delimiter_row(next))
+        {
+            break;
+        }
         let trimmed = raw.trim_matches(&WS[..]);
         if raw.starts_with('|') || (trimmed.starts_with("<!--") && trimmed.ends_with("-->")) {
             last = index + 1;
@@ -438,7 +446,10 @@ fn line_terminator(text: &str, line: usize) -> &'static str {
     };
     match text[start..].find('\n') {
         Some(rel) if rel > 0 && text.as_bytes()[start + rel - 1] == b'\r' => "\r\n",
-        _ => "\n",
+        Some(_) => "\n",
+        // An unterminated final line follows the file's convention.
+        None if text.contains("\r\n") => "\r\n",
+        None => "\n",
     }
 }
 
@@ -1102,6 +1113,28 @@ mod tests {
 
         assert_eq!(StampOutcome::default(), outcome);
         assert_eq!(once, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn adjacent_table_container_ids_are_both_canonical() {
+        let text = "| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n| c | d |\n|---|---|\n| p <!-- r:7m3p5q --> | q |\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
+
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_crlf_table_at_eof_keeps_crlf_when_stamped() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\r\nformat-version: 1\r\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\r\n---\r\n| a | b |\r\n|---|---|\r\n| x | y |";
+        let path = write(&dir, "deck.md", original);
+
+        stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert!(
+            !stamped.replace("\r\n", "").contains('\n'),
+            "stamping introduced an LF-only line ending: {stamped:?}"
+        );
     }
 
     #[test]

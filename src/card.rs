@@ -127,6 +127,7 @@ impl Card {
         // The reversed half keeps the same token so id() can compose the "-r" suffix from it.
         card.token = self.token.clone();
         card.row = self.row.clone();
+        card.context = self.context.clone();
         card.reversed = true;
         // Reuses the forward card's fingerprint instead of recomputing over swapped sides: one
         // authored card is one content unit.

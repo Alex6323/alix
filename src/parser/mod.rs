@@ -2810,6 +2810,15 @@ the answer
     }
 
     #[test]
+    fn a_single_hyphen_delimiter_is_valid_gfm_and_accepted() {
+        // GFM defines a delimiter cell as `:?-+:?` with no minimum hyphen
+        // count, so `| - |` is a table in every GFM renderer.
+        let deck = parse("| front | back |\n| - | -- |\n| question | answer |\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("question", deck.cards[0].front);
+    }
+
+    #[test]
     fn alignment_colons_in_the_delimiter_are_accepted() {
         let deck = parse("| a | b |\n|:---|---:|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());

@@ -321,8 +321,10 @@ pub fn current_question(
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
         }
-        if let Some(ai) = augment.distractors(&id, card.content_fingerprint) {
-            return choice::build(card, seed, ai);
+        if let Some(ai) = augment.distractors(&id, card.content_fingerprint)
+            && let Some(question) = choice::build(card, seed, ai)
+        {
+            return Some(question);
         }
         return choice::build_sampled(card, seed, session.cards());
     }
@@ -759,6 +761,27 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn an_unbuildable_ai_cache_falls_back_to_table_column_sampling() {
+        let (mut store, mut augment, _dir) = fixtures();
+        let cards = parser::parse_str("deck.md", TABLE_DECK).unwrap();
+        seen(&mut store, &cards);
+        for card in &cards {
+            augment.set_distractors(
+                &card.id().unwrap(),
+                vec!["only one usable distractor".into()],
+                card.content_fingerprint,
+            );
+        }
+        assert!(crate::depth::deck_recognizable(&cards, &augment));
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
+
+        let question = current_question(&session, &store, &augment)
+            .expect("the buildable table column must backstop an incomplete AI cache");
+
+        assert_eq!(4, question.options.len());
     }
 
     #[test]

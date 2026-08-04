@@ -100,6 +100,8 @@ pub enum DeckError {
     },
     #[error("{path}: file name is not valid UTF-8")]
     InvalidFileName { path: PathBuf },
+    #[error("{path}: the card at line {line} is a table row; a note cannot attach to it")]
+    TableRowNote { path: PathBuf, line: usize },
 }
 
 impl Deck {
@@ -538,6 +540,22 @@ pub fn append_note(path: &Path, front_line: usize, notes: &[String]) -> Result<(
         source,
     };
     let text = std::fs::read_to_string(path).map_err(io_err)?;
+    // A `>` line after a table row is a parse error, so writing one would
+    // make the deck unloadable; refuse with the file untouched.
+    let parsed = parser::parse("deck.md", &text).map_err(|source| DeckError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if parsed
+        .tables
+        .iter()
+        .any(|table| table.rows.iter().any(|row| row.line == front_line))
+    {
+        return Err(DeckError::TableRowNote {
+            path: path.to_path_buf(),
+            line: front_line,
+        });
+    }
     let fronts = front_lines_of(path, &text)?;
     let new_text = insert_note_lines(&text, &fronts, front_line, notes);
     write_deck_text(path, &new_text)
@@ -1547,6 +1565,27 @@ mod tests {
     }
 
     #[test]
+    fn appending_a_note_to_a_table_row_refuses_loudly_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "| word | meaning | note |\n|---|---|---|\n| one <!-- r:4k2x9w --> | eins | old |\n| two <!-- r:7m3p5q --> | zwei | |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+        )
+        .unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let result = append_note(&path, 3, &["fresh".to_string()]);
+
+        assert!(
+            matches!(result, Err(DeckError::TableRowNote { line: 3, .. })),
+            "{result:?}"
+        );
+        assert_eq!(before, std::fs::read_to_string(&path).unwrap());
+        Deck::load(&path).expect("persisting a tutor note must not corrupt the table deck");
+    }
+
+    #[test]
     fn append_note_lands_before_the_closing_comment_markers() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
@@ -1912,6 +1951,24 @@ mod tests {
         assert_eq!(Some("card-q1".to_string()), deck.cards[0].id());
         assert_eq!(Some("card-q1-r".to_string()), deck.cards[1].id());
         assert_ne!(deck.cards[0].id(), deck.cards[1].id());
+    }
+
+    #[test]
+    fn both_directions_keep_a_table_header_as_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "| word | meaning |\n|---|---|\n| purported <!-- r:4k2x9w --> | angeblich |\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+        )
+        .unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+
+        assert_eq!(2, deck.cards.len());
+        for card in &deck.cards {
+            assert_eq!(vec!["word", "meaning"], card.context);
+        }
     }
 
     #[test]

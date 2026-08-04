@@ -78,6 +78,7 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
     let mut fence: Option<char> = None;
     let mut in_frontmatter = false;
     let mut heading_line = 0usize;
+    let mut prev_pipe = false;
     for (i, raw) in text.lines().enumerate() {
         let n = i + 1;
         let line = raw.strip_suffix('\r').unwrap_or(raw);
@@ -115,6 +116,12 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
         if line.starts_with("## ") {
             heading_line = n;
         }
+        // A table opens a block too: its first pipe line anchors the
+        // container id comment that follows the table.
+        if line.starts_with('|') && !prev_pipe {
+            heading_line = n;
+        }
+        prev_pipe = line.starts_with('|');
         let candidate = if line.trim().starts_with("<!--") {
             line.trim()
         } else if line.starts_with("## ")
@@ -170,8 +177,10 @@ pub fn scan(deck_paths: &[PathBuf]) -> DuplicateMap {
         };
         let mut cards: Vec<(String, usize)> = Vec::new();
         for card in &deck.cards {
-            if let Some(tok) = card.token.as_deref() {
-                let entry = (tok.to_string(), card.line);
+            // The composed id, not the bare token: sibling table rows share
+            // their container token by design and are never duplicates.
+            if let Some(id) = card.id() {
+                let entry = (id, card.line);
                 if !cards.contains(&entry) {
                     cards.push(entry);
                 }
@@ -347,6 +356,50 @@ mod tests {
         assert_eq!(full, fast);
         assert_eq!(1, fast.card_dupes.len());
         assert_eq!("card-shared1", fast.card_dupes[0].token);
+    }
+
+    fn table_deck(deck_id: &str, container: &str) -> String {
+        format!(
+            "---\nformat-version: 1\nid: \"{deck_id}\"\n---\n| word | meaning |\n|---|---|\n| one <!-- r:4k2x9w --> | eins |\n| two <!-- r:7m3p5q --> | zwei |\n<!-- id: {container} -->\n"
+        )
+    }
+
+    #[test]
+    fn sibling_rows_in_one_table_are_not_duplicate_card_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("table.md"),
+            table_deck(
+                "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f",
+                "card-4jkya9q3m8z0tw5v9y2b4n6d8f",
+            ),
+        )
+        .unwrap();
+
+        let map = scan_dir(dir.path());
+
+        assert!(map.card_dupes.is_empty(), "{:#?}", map.card_dupes);
+    }
+
+    #[test]
+    fn the_fast_scan_detects_a_copied_table_container() {
+        let dir = tempfile::tempdir().unwrap();
+        let container = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        std::fs::write(
+            dir.path().join("a.md"),
+            table_deck("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f", container),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("b.md"),
+            table_deck("deck-6v3c7x4k1m8q3z5t0b2n4d8f9w", container),
+        )
+        .unwrap();
+
+        let map = scan_dir_fast(dir.path());
+
+        assert_eq!(1, map.card_dupes.len(), "{map:#?}");
+        assert_eq!(container, map.card_dupes[0].token);
     }
 
     #[test]
