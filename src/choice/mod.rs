@@ -125,6 +125,56 @@ pub fn can_build_sampled(card: &Card, cards: &[Card]) -> bool {
     card.back.len() == 1 && sampled_pool(card, cards).len() >= NUM_OPTIONS - 1
 }
 
+/// `sampled_pool` narrowed to the card's fresh AI interchangeability group:
+/// only same-deck cards whose cached group label matches the card's own,
+/// both labels fingerprint-fresh.
+pub fn grouped_pool(
+    card: &Card,
+    cards: &[Card],
+    cache: &crate::augment::AugmentCache,
+) -> Vec<String> {
+    let Some(own_label) = card.id().and_then(|id| {
+        cache
+            .group(&id, card.content_fingerprint)
+            .map(str::to_string)
+    }) else {
+        return Vec::new();
+    };
+    let mut seen: HashSet<String> = HashSet::new();
+    seen.insert(content(&answer_text(card)));
+    let mut pool = Vec::new();
+    for other in cards {
+        if other.deck_id != card.deck_id || other.token == card.token || other.back.len() != 1 {
+            continue;
+        }
+        let same_group = other
+            .id()
+            .and_then(|id| {
+                cache
+                    .group(&id, other.content_fingerprint)
+                    .map(str::to_string)
+            })
+            .is_some_and(|label| label == own_label);
+        if !same_group {
+            continue;
+        }
+        let text = answer_text(other).trim().to_string();
+        let plain = content(&text);
+        if !plain.is_empty() && seen.insert(plain) {
+            pool.push(text);
+        }
+    }
+    pool
+}
+
+pub fn can_build_grouped(
+    card: &Card,
+    cards: &[Card],
+    cache: &crate::augment::AugmentCache,
+) -> bool {
+    card.back.len() == 1 && grouped_pool(card, cards, cache).len() >= NUM_OPTIONS - 1
+}
+
 pub fn build_sampled(card: &Card, seed: u64, pool: &[String]) -> Option<ChoiceQuestion> {
     if card.back.len() != 1 {
         return None;

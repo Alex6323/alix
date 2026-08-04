@@ -887,9 +887,16 @@ impl Augmenting {
                         self.done.push("choices");
                         continue;
                     }
+                    let roster = self
+                        .cards
+                        .iter()
+                        .filter(|c| c.back.len() == 1 && c.id().is_some())
+                        .map(crate::augment::WarmItem::from_card)
+                        .collect();
                     (
                         augment_ai::Job::Choices {
                             items,
+                            roster,
                             count: ai.distractor_count,
                         },
                         "choices",
@@ -1023,8 +1030,13 @@ impl Augmenting {
             .filter_map(|c| c.id().map(|id| (id, c.content_fingerprint)))
             .collect();
         match outcome {
-            augment_ai::Outcome::Choices(map) => {
-                for (id, v) in map {
+            augment_ai::Outcome::Choices(outcome) => {
+                for (id, label) in outcome.groups {
+                    if let Some(&fingerprint) = fp_by_id.get(&id) {
+                        self.cache.set_group(&id, label, fingerprint);
+                    }
+                }
+                for (id, v) in outcome.distractors {
                     if let Some(&fingerprint) = fp_by_id.get(&id) {
                         self.cache.set_distractors(&id, v, fingerprint);
                     }

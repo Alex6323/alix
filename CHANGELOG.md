@@ -16,6 +16,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   artifacts with an `alix doctor` recovery step. The JSON API exposes the same
   preview and removal contract for other clients.
 
+- The `choices` augment now classifies the deck's answers by
+  interchangeability before generating anything: cards whose group can
+  fill a pick sample their Recognize options from the group, fresh on
+  every appearance, and only ungrouped cards get individually generated
+  distractor lists. One classification call replaces most per-card
+  generation on homogeneous decks, editing a card only ungroups that
+  card, and clearing the choices augmentation clears its groups with it.
+
 - A deck can declare `shape: uniform-answers` in its frontmatter (or a
   workspace in `[defaults]`): the author's statement that every answer is
   the same kind of thing. On such a deck, Recognize builds its

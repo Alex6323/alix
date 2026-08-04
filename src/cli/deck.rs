@@ -265,14 +265,32 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no cards to augment");
             }
             let total = items.len();
-            let map =
-                augment_ai::generate(&items, config.ai.distractor_count, guidance, &ask_cfg, None)?;
-            for (id, distractors) in &map {
+            let roster: Vec<_> = deck
+                .cards
+                .iter()
+                .filter(|c| c.back.len() == 1 && c.id().is_some())
+                .map(alix::augment::WarmItem::from_card)
+                .collect();
+            let outcome = augment_ai::generate_choices(
+                &items,
+                &roster,
+                config.ai.distractor_count,
+                guidance,
+                &ask_cfg,
+                None,
+            )?;
+            let made = outcome.groups.len() + outcome.distractors.len();
+            for (id, label) in &outcome.groups {
+                if let Some(&fingerprint) = fp_by_id.get(id) {
+                    cache.set_group(id, label.clone(), fingerprint);
+                }
+            }
+            for (id, distractors) in &outcome.distractors {
                 if let Some(&fingerprint) = fp_by_id.get(id) {
                     cache.set_distractors(id, distractors.clone(), fingerprint);
                 }
             }
-            (map.len(), total, "distractors")
+            (made, total, "distractors")
         }
         AugmentTarget::Notes => {
             let items = warm_items(&deck.cards);

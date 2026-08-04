@@ -96,6 +96,7 @@ pub fn card_recognizable_in(
     cards: &[Card],
 ) -> bool {
     card_recognizable(card, cache)
+        || crate::choice::can_build_grouped(card, cards, cache)
         || (shape == Some(crate::deck::Shape::UniformAnswers)
             && crate::choice::can_build_sampled(card, cards))
 }
@@ -229,6 +230,32 @@ mod tests {
             &cache,
             Some(Shape::UniformAnswers)
         ));
+    }
+
+    #[test]
+    fn a_fresh_viable_group_admits_uncached_cards_without_a_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let stamped = |n: usize, back: &str| {
+            let mut c = card(back);
+            c.deck_id = std::sync::Arc::from("deck-x");
+            c.token = Some(std::sync::Arc::from(format!("tok{n}").as_str()));
+            c
+        };
+        let four = vec![
+            stamped(1, "a"),
+            stamped(2, "b"),
+            stamped(3, "c"),
+            stamped(4, "d"),
+        ];
+        assert!(!card_recognizable_in(&four[0], &cache, None, &four));
+        for c in &four {
+            cache.set_group(&c.id().unwrap(), "g0".into(), c.content_fingerprint);
+        }
+        assert!(
+            card_recognizable_in(&four[0], &cache, None, &four),
+            "a viable fresh group admits with no shape statement"
+        );
     }
 
     #[test]

@@ -59,14 +59,20 @@ declaring `shape: uniform-answers` (below); otherwise it's Recall.
   for it at all, just a per-card *recognized* flag. It's a genuine multiple-choice
   pick, built from the first of three sources that can fill it: a card's
   authored task-list options (`- [x]`/`- [ ]`), the deck's cached AI
-  distractors (`alix deck augment --target choices`), or, on a deck whose
-  frontmatter declares `shape: uniform-answers`, options sampled from the
-  deck's own other answers, fresh per appearance, no augment run and no
-  backend needed. The shape line is an author's statement that every answer
-  in the deck is the same kind of thing (any card's answer is a plausible
-  wrong answer to any other), which is exactly what makes sampling honest;
-  alix never samples without it, and refuses any other `shape:` value
-  rather than guessing. A cloze card asks you to pick its gap, a line card
+  distractors, or sampling from the deck's own other answers, fresh per
+  appearance. Sampling activates two ways. The `choices` augment
+  (`alix deck augment --target choices`, or the web Augment screen) first
+  asks the AI to group the deck's answers by interchangeability; a card
+  whose group can fill a pick then samples from that group, and only the
+  cards no group covers get individually generated distractor lists, so a
+  homogeneous deck's augment run is one classification instead of one call
+  per card. Alternatively, a deck whose frontmatter declares
+  `shape: uniform-answers` samples from the whole deck with no augment run
+  and no backend at all. The shape line is an author's statement that every
+  answer in the deck is the same kind of thing (any card's answer is a
+  plausible wrong answer to any other), which is exactly what makes
+  sampling honest; alix never samples without a fresh group or that
+  statement, and refuses any other `shape:` value rather than guessing. A cloze card asks you to pick its gap, a line card
   to pick the whole sequence in the right order. Only recognizable cards
   (the ones with a buildable pick) are scheduled, so a Recognize session
   never falls back to a plain reveal, which would just be a Recall in

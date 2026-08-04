@@ -327,7 +327,7 @@ pub fn current_question(
         {
             return Some(question);
         }
-        return sampled_question(session, card, seed);
+        return sampled_question(session, augment, card, seed);
     }
     // `current_fresh`, not a bare store check: a card revealed this sitting
     // is already engaged in the store but keeps its acquire question.
@@ -339,14 +339,25 @@ pub fn current_question(
         if let Some(question) = choice::recognition_question(card, seed, ai, None) {
             return Some(question);
         }
-        return sampled_question(session, card, seed);
+        return sampled_question(session, augment, card, seed);
     }
     None
 }
 
 // The last arm of the option-source precedence (authored > AI cache >
-// sampled): only a deck-declared `shape: uniform-answers` licenses it.
-fn sampled_question(session: &Session, card: &Card, seed: u64) -> Option<ChoiceQuestion> {
+// sampled). Within sampling, a fresh AI interchangeability group is the
+// pool when one is cached; otherwise a deck-declared `shape:
+// uniform-answers` licenses the whole-deck pool.
+fn sampled_question(
+    session: &Session,
+    augment: &AugmentCache,
+    card: &Card,
+    seed: u64,
+) -> Option<ChoiceQuestion> {
+    let grouped = choice::grouped_pool(card, session.cards(), augment);
+    if let Some(question) = choice::build_sampled(card, seed, &grouped) {
+        return Some(question);
+    }
     if session.shape_of(&card.deck_id) != Some(crate::deck::Shape::UniformAnswers) {
         return None;
     }
@@ -710,6 +721,49 @@ mod tests {
             )]));
         }
         session
+    }
+
+    #[test]
+    fn a_fresh_group_samples_without_any_shape_key_and_yields_to_the_ai_cache() {
+        let (mut store, mut augment, _dir) = fixtures();
+        let cards = parse(FOUR);
+        seen(&mut store, &cards);
+
+        let mut grouped = cards.clone();
+        for card in &mut grouped {
+            card.deck_id = std::sync::Arc::from("deck-uni");
+        }
+        let session = session_at(grouped.clone(), &mut store, Depth::Recognize, NOW);
+        assert!(
+            current_question(&session, &store, &augment).is_none(),
+            "ungrouped, unshaped: no pick"
+        );
+
+        for card in &grouped {
+            augment.set_group(&card.id().unwrap(), "g0".into(), card.content_fingerprint);
+        }
+        let session = session_at(grouped.clone(), &mut store, Depth::Recognize, NOW);
+        let picked = current_question(&session, &store, &augment)
+            .expect("a fresh viable group samples with no shape key");
+        let answers = ["a1", "a2", "a3", "a4"];
+        assert!(
+            picked
+                .options
+                .iter()
+                .all(|option| answers.contains(&option.as_str())),
+            "group options come from the deck's answers, got {:?}",
+            picked.options
+        );
+
+        arm(&mut augment, &grouped);
+        let session = session_at(grouped, &mut store, Depth::Recognize, NOW);
+        let from_cache = current_question(&session, &store, &augment)
+            .expect("an armed per-card cache still builds");
+        assert!(
+            from_cache.options.iter().any(|option| option == "w1"),
+            "per-card AI lists outrank group sampling, got {:?}",
+            from_cache.options
+        );
     }
 
     #[test]

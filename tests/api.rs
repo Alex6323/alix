@@ -3474,7 +3474,7 @@ fn a_batch_reuses_one_claude_session_across_targets() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let reply = r#"{"0": ["w1","w2","w3"]}"#;
-    let fake = fake_conversation_cli(&scripts, &[reply, reply]);
+    let fake = fake_conversation_cli(&scripts, &[r#"{"groups": []}"#, reply, reply]);
     let (base, _guard) = spawn_full_server(Some(&fake));
     post_json(&base, "/api/augment/open", r#"{"deck":"choice.md"}"#);
 
@@ -3490,17 +3490,26 @@ fn a_batch_reuses_one_claude_session_across_targets() {
 
     let args = std::fs::read_to_string(scripts.path().join("args.log")).unwrap();
     let calls: Vec<&str> = args.lines().collect();
-    assert_eq!(2, calls.len(), "{args}");
-    assert!(calls[0].contains("--session-id"), "{args}");
-    assert!(calls[1].contains("--resume"), "{args}");
-    let id = session_id_after(calls[0], "--session-id");
+    assert_eq!(3, calls.len(), "{args}");
     assert!(
-        calls[1].contains(&id),
+        !calls[0].contains("--session-id"),
+        "the choices classification is a deliberate stateless pre-pass: {args}"
+    );
+    assert!(calls[1].contains("--session-id"), "{args}");
+    assert!(calls[2].contains("--resume"), "{args}");
+    let id = session_id_after(calls[1], "--session-id");
+    assert!(
+        calls[2].contains(&id),
         "one conversation across the batch: {args}"
     );
 
-    let primer = std::fs::read_to_string(scripts.path().join("prompt-0.log")).unwrap();
-    let follow_up = std::fs::read_to_string(scripts.path().join("prompt-1.log")).unwrap();
+    let classify = std::fs::read_to_string(scripts.path().join("prompt-0.log")).unwrap();
+    assert!(
+        classify.contains("interchangeability"),
+        "the pre-pass is the classification: {classify}"
+    );
+    let primer = std::fs::read_to_string(scripts.path().join("prompt-1.log")).unwrap();
+    let follow_up = std::fs::read_to_string(scripts.path().join("prompt-2.log")).unwrap();
     assert!(
         primer.contains("3 + 3"),
         "the first call lists the cards: {primer}"
@@ -3520,10 +3529,11 @@ fn a_failed_target_starts_a_fresh_session_for_the_rest_of_the_batch() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let reply = r#"{"0": ["w1","w2","w3"]}"#;
-    let fake = fake_conversation_cli(&scripts, &[reply, reply, reply]);
-    // The second call (the questions target) dies; the batch must carry on
-    // with a FRESH session for keypoints rather than resuming a dead one.
-    std::fs::write(scripts.path().join("fail-1"), "").unwrap();
+    let fake = fake_conversation_cli(&scripts, &[r#"{"groups": []}"#, reply, reply, reply]);
+    // The questions target (the third call, after the stateless choices
+    // classification and the choices generation) dies; the batch must carry
+    // on with a FRESH session for keypoints rather than resuming a dead one.
+    std::fs::write(scripts.path().join("fail-2"), "").unwrap();
     let (base, _guard) = spawn_full_server(Some(&fake));
     post_json(&base, "/api/augment/open", r#"{"deck":"choice.md"}"#);
 
@@ -3541,12 +3551,12 @@ fn a_failed_target_starts_a_fresh_session_for_the_rest_of_the_batch() {
 
     let args = std::fs::read_to_string(scripts.path().join("args.log")).unwrap();
     let calls: Vec<&str> = args.lines().collect();
-    assert_eq!(3, calls.len(), "{args}");
-    let first = session_id_after(calls[0], "--session-id");
-    assert!(calls[1].contains("--resume"), "{args}");
-    let third = session_id_after(calls[2], "--session-id");
+    assert_eq!(4, calls.len(), "{args}");
+    let first = session_id_after(calls[1], "--session-id");
+    assert!(calls[2].contains("--resume"), "{args}");
+    let third = session_id_after(calls[3], "--session-id");
     assert_ne!(first, third, "a failed call must not be resumed: {args}");
-    let reprime = std::fs::read_to_string(scripts.path().join("prompt-2.log")).unwrap();
+    let reprime = std::fs::read_to_string(scripts.path().join("prompt-3.log")).unwrap();
     assert!(
         reprime.contains("3 + 3"),
         "the fresh session re-primes the roster: {reprime}"
