@@ -367,6 +367,22 @@ mod tests {
     }
 
     #[test]
+    fn url_detection_accepts_only_http_and_https_prefixes() {
+        assert!(is_url("http://example.test"));
+        assert!(is_url("https://example.test"));
+        assert!(!is_url("ftp://example.test"));
+        assert!(!is_url("notes/http://example.test"));
+    }
+
+    #[test]
+    fn a_zero_preflight_threshold_disables_the_guard_for_nonempty_sources() {
+        let dir = TempDir::new().unwrap();
+        make_file(dir.path(), "source.txt", 1);
+
+        preflight_source(dir.path().to_str().unwrap(), 0, false).unwrap();
+    }
+
+    #[test]
     fn human_bytes_formats_correctly() {
         assert_eq!(
             "512 B",
@@ -389,6 +405,14 @@ mod tests {
             TreeSize {
                 files: 1,
                 bytes: 1_024 * 1_024
+            }
+            .human_bytes()
+        );
+        assert_eq!(
+            "2.0 KB",
+            TreeSize {
+                files: 1,
+                bytes: 2_048
             }
             .human_bytes()
         );

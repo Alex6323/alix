@@ -987,6 +987,83 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_freeze_preserves_a_preexisting_empty_assets_root() {
+        let directory = workspace();
+        let assets = directory.path().join(ROOT);
+        std::fs::create_dir(&assets).unwrap();
+        let path = directory.path().join("decks/facts.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-deck4\"\n---\n## q\n![d](missing.png)\na\n",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            freeze_member(&path),
+            Err(AssetError::MissingImage(_))
+        ));
+        assert!(
+            assets.is_dir(),
+            "a preexisting assets root must survive cleanup"
+        );
+        assert!(!assets.join("deck-deck4").exists());
+    }
+
+    #[test]
+    fn a_failed_freeze_preserves_a_preexisting_owned_asset_directory() {
+        let directory = workspace();
+        let existing = write_object(
+            directory.path(),
+            "deck-deck4",
+            b"owned before this attempt",
+            "txt",
+        )
+        .unwrap();
+        let path = directory.path().join("decks/facts.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-deck4\"\n---\n## q\n![d](missing.png)\na\n",
+        )
+        .unwrap();
+
+        assert!(matches!(
+            freeze_member(&path),
+            Err(AssetError::MissingImage(_))
+        ));
+        assert_eq!(
+            b"owned before this attempt",
+            std::fs::read(existing).unwrap().as_slice()
+        );
+    }
+
+    #[test]
+    fn source_owner_finds_the_matching_input_instead_of_assuming_the_first() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("first.md");
+        let second = directory.path().join("second.md");
+        let outside = directory.path().join("outside.md");
+        for path in [&first, &second, &outside] {
+            std::fs::write(path, "line\n").unwrap();
+        }
+        let inputs = vec![
+            SourceInput::File {
+                path: first.canonicalize().unwrap(),
+            },
+            SourceInput::File {
+                path: second.canonicalize().unwrap(),
+            },
+        ];
+        let excerpt = |path: &Path| Excerpt {
+            path: path.to_path_buf(),
+            lines: vec![(1, "line".to_string())],
+            truncated: false,
+        };
+
+        assert_eq!(Some(1), source_owner(&inputs, &excerpt(&second)));
+        assert_eq!(None, source_owner(&inputs, &excerpt(&outside)));
+    }
+
+    #[test]
     fn failed_initialization_restores_the_exact_uninitialized_deck() {
         let directory = workspace();
         let path = directory.path().join("decks/remote.md");

@@ -323,6 +323,16 @@ mod tests {
     }
 
     #[test]
+    fn expected_text_and_hint_count_are_observable_across_repeated_hints() {
+        let mut v = TypingValidator::new("hello");
+
+        assert_eq!("hello", v.expected());
+        assert_eq!("he", v.hint());
+        assert_eq!("hell", v.hint());
+        assert_eq!(2, v.hints_used());
+    }
+
+    #[test]
     fn hint_clears_incorrect_tail_first() {
         let mut v = TypingValidator::new("hello");
         v.type_char('h');

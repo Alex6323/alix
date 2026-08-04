@@ -933,6 +933,43 @@ mod tests {
     }
 
     #[test]
+    fn first_prompt_offers_reference_material_when_any_one_layer_is_present() {
+        for (own, workspace, links, expected_heading) in [
+            (
+                vec!["own.md".to_string()],
+                Vec::new(),
+                Vec::new(),
+                "Deck sources (the primary grounding):",
+            ),
+            (
+                Vec::new(),
+                vec!["workspace.md".to_string()],
+                Vec::new(),
+                "Workspace source (supporting context):",
+            ),
+            (
+                Vec::new(),
+                Vec::new(),
+                vec!["https://example.test/related".to_string()],
+                "Related links:",
+            ),
+        ] {
+            let sources = crate::deck::SourceLayers { own, workspace };
+            let context = TutorContext {
+                links: &links,
+                sources: &sources,
+                root: None,
+                frozen: None,
+            };
+
+            let prompt = question_prompt(&card(), Audience::Adult, &context, "why?", true);
+
+            assert!(prompt.contains("Reference material"), "{prompt}");
+            assert!(prompt.contains(expected_heading), "{prompt}");
+        }
+    }
+
+    #[test]
     fn followup_prompt_is_short_but_carries_the_card() {
         let links = vec!["https://docs.rs/tokio".to_string()];
         let p = question_prompt(
@@ -1150,6 +1187,78 @@ mod tests {
             parts[3].chars().next(),
             Some('8' | '9' | 'a' | 'b')
         ));
+    }
+
+    #[test]
+    fn session_id_payload_bits_are_not_constant() {
+        let ids: Vec<Vec<u8>> = (0..512)
+            .map(|_| {
+                let compact = CliSession::new().id.replace('-', "");
+                (0..16)
+                    .map(|index| {
+                        u8::from_str_radix(&compact[index * 2..index * 2 + 2], 16).unwrap()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        for bit in 0..128 {
+            // UUID version and variant bits are fixed by the format.
+            if matches!(bit, 48..=51 | 64..=65) {
+                continue;
+            }
+            let mask = 1 << (7 - bit % 8);
+            let byte = bit / 8;
+            assert!(
+                ids.iter().any(|id| id[byte] & mask == 0),
+                "bit {bit} is always one"
+            );
+            assert!(
+                ids.iter().any(|id| id[byte] & mask != 0),
+                "bit {bit} is always zero"
+            );
+        }
+    }
+
+    #[test]
+    fn source_root_grounding_preserves_config_and_adds_each_read_tool_once() {
+        let config = AskConfig {
+            backend: crate::config::BackendKind::Codex,
+            command: "custom-agent".to_string(),
+            model: Some("model-x".to_string()),
+            effort: Some("high".to_string()),
+            timeout_secs: 37,
+            progress: true,
+            idle_timeout_secs: Some(11),
+            permission_mode: "custom-mode".to_string(),
+            allowed_tools: vec!["Read".to_string(), "WebFetch".to_string()],
+            cwd: Some(PathBuf::from("/old")),
+            source_access: true,
+            preflight_threshold: 123,
+        };
+
+        let grounded = with_source_root(&config, Path::new("/source"));
+
+        assert_eq!(Some(PathBuf::from("/source")), grounded.cwd);
+        assert_eq!(
+            ["Read", "WebFetch", "Glob", "Grep"],
+            grounded
+                .allowed_tools
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .as_slice()
+        );
+        assert_eq!(config.backend, grounded.backend);
+        assert_eq!(config.command, grounded.command);
+        assert_eq!(config.model, grounded.model);
+        assert_eq!(config.effort, grounded.effort);
+        assert_eq!(config.timeout_secs, grounded.timeout_secs);
+        assert_eq!(config.progress, grounded.progress);
+        assert_eq!(config.idle_timeout_secs, grounded.idle_timeout_secs);
+        assert_eq!(config.permission_mode, grounded.permission_mode);
+        assert_eq!(config.source_access, grounded.source_access);
+        assert_eq!(config.preflight_threshold, grounded.preflight_threshold);
     }
 
     #[test]
@@ -1633,6 +1742,11 @@ mod tests {
     fn parse_drafted_card_errors_on_an_empty_reply() {
         let reply = "```\n```";
         assert!(parse_drafted_card(reply).is_err());
+    }
+
+    #[test]
+    fn parse_drafted_card_errors_on_an_empty_back() {
+        assert!(parse_drafted_card("## question with no answer?\n").is_err());
     }
 
     #[test]

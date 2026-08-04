@@ -654,6 +654,78 @@ mod tests {
     }
 
     #[test]
+    fn resolve_uses_cli_then_consensus_then_default() {
+        assert_eq!(
+            3,
+            resolve("depth", Some(3), [Some(1), Some(2)].into_iter(), 0)
+        );
+        assert_eq!(
+            2,
+            resolve("depth", None, [Some(2), None, Some(2)].into_iter(), 0)
+        );
+        assert_eq!(0, resolve("depth", None, [None, None].into_iter(), 0));
+        assert_eq!(0, resolve("depth", None, [Some(1), Some(2)].into_iter(), 0));
+    }
+
+    #[test]
+    fn exclude_unstamped_warning_child() {
+        if std::env::var_os("ALIX_EXCLUDE_UNSTAMPED_WARNING_CHILD").is_none() {
+            return;
+        }
+        let mut stamped = Card::plain(
+            Arc::from("deck"),
+            "kept".to_string(),
+            vec!["answer".to_string()],
+            None,
+            1,
+        );
+        stamped.token = Some(Arc::from("card-kept"));
+        let unstamped = |front: &str| {
+            Card::plain(
+                Arc::from("deck"),
+                front.to_string(),
+                vec!["answer".to_string()],
+                None,
+                2,
+            )
+        };
+
+        assert_eq!(
+            1,
+            exclude_unstamped(
+                vec![stamped.clone(), unstamped("first"), unstamped("second")],
+                "fixture",
+            )
+            .len()
+        );
+        assert_eq!(
+            1,
+            exclude_unstamped(vec![stamped], "all-stamped fixture").len()
+        );
+    }
+
+    #[test]
+    fn exclude_unstamped_reports_the_exact_positive_count_and_stays_quiet_at_zero() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "assemble::tests::exclude_unstamped_warning_child",
+                "--nocapture",
+            ])
+            .env("ALIX_EXCLUDE_UNSTAMPED_WARNING_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+
+        assert!(
+            stderr.contains("warning: 2 unstamped card(s) in fixture are excluded"),
+            "{stderr}"
+        );
+        assert_eq!(1, stderr.matches("unstamped card(s)").count(), "{stderr}");
+    }
+
+    #[test]
     fn selectable_is_false_only_for_a_folder_that_contains_decks() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("d.md");
@@ -993,7 +1065,11 @@ it reads line two\n\
     }
 
     fn insert_virtual_card(store: &mut Store, deck_id: &str) {
-        let text = "## virtual front <!-- id: card-vq1 -->\nvirtual back\n".to_string();
+        insert_named_virtual_card(store, deck_id, "card-vq1", "virtual front");
+    }
+
+    fn insert_named_virtual_card(store: &mut Store, deck_id: &str, id: &str, front: &str) {
+        let text = format!("## {front} <!-- id: {id} -->\nvirtual back\n");
         let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
             .id()
             .unwrap();
@@ -1055,6 +1131,37 @@ it reads line two\n\
             panic!("a fact deck must review");
         };
         assert_eq!(2, build.session.initial_size);
+    }
+
+    #[test]
+    fn each_injected_virtual_card_gets_a_distinct_reserved_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.md");
+        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        let mut store =
+            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        insert_named_virtual_card(&mut store, "deck-rust", "card-vq1", "virtual one");
+        insert_named_virtual_card(&mut store, "deck-rust", "card-vq2", "virtual two");
+
+        let Selected::Review(build) = select(
+            vec![path],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap() else {
+            panic!("a fact deck must review");
+        };
+        let mut virtual_lines: Vec<usize> = build
+            .session
+            .cards()
+            .iter()
+            .filter(|card| card.line >= VIRTUAL_LINE_BASE)
+            .map(|card| card.line)
+            .collect();
+        virtual_lines.sort_unstable();
+
+        assert_eq!([VIRTUAL_LINE_BASE, VIRTUAL_LINE_BASE + 1], *virtual_lines);
     }
 
     #[test]
