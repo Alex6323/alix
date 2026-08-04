@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Card tables: a GitHub-flavored pipe table in a deck is a compact card
+  source, one card per row (front | back | optional note), with the header
+  shown as context. Rows carry minted six-character stamps inside the first
+  cell and the table one container id line, so sorting, inserting, and
+  editing rows preserves review history. At Recognize, a table card's
+  multiple-choice distractors are sampled from its own column (sibling
+  rows), no AI augmentation needed; authored options and cached AI
+  distractors still take precedence. Tables accept the card directives
+  (`direction`, `reveal`, `input`) between the table and its id line;
+  anything the format cannot hold (a fourth column, cloze or images in
+  cells, stray content after the table) is a loud parse error.
+
 - The adult web picker can remove a focused loose deck, workspace member, or
   whole workspace from its secondary menu. A type-the-name sheet previews the
   irreversible stakes and Alix-owned artifacts first; source files Alix does

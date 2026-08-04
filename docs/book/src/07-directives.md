@@ -13,7 +13,7 @@ taking precedence. Each links to the chapter that explains it in full.
 | `<!-- -->` | anywhere | A comment with no recognized key: ignored. |
 | `format-version` | deck | The deck **format's** version, not the deck's own. Written by `alix deck init` above `id`, stays `1`, and any other number is refused rather than guessed at. Mandatory once a deck has an `id`. [→ ch 3](03-the-deck-format.md) |
 | `id` | deck | The frontmatter deck ID (`deck-<token>`) marks an initialized deck and authorizes maintenance of missing card IDs. Its `deck-` prefix is what tells alix's decks apart. [→ ch 3](03-the-deck-format.md) |
-| `id` | card | The HTML-comment card ID (`card-<token>`) anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. [→ ch 3](03-the-deck-format.md) |
+| `id` | card | The HTML-comment card ID (`card-<token>`) anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. After a card table it is the table's container ID; each row's card composes it with the row stamp (`r:`) in the row's first cell. [→ ch 3](03-the-deck-format.md) |
 | `reveal` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default) or line. Cloze is triggered by `\blank{...}` markers, never by a `reveal:` value. |
 | `order` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |

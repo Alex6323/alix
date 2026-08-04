@@ -143,6 +143,51 @@ task list inside a fenced code block to keep it a plain card answer. Task lists
 inside notes or a card's front before the `---` divider render as static
 checkboxes rather than interactive choices.
 
+## Card tables
+
+Flat material at scale (a vocabulary list, countries and capitals, dates) can
+be one Markdown pipe table instead of a `##` block per fact. Each row is a
+card: first column front, second column back, optional third column note. The
+header row is shown as the card's context, never tested:
+
+```
+| word      | meaning   | note                 |
+|-----------|-----------|----------------------|
+| purported | angeblich | often in legal prose |
+| feasible  | machbar   |                      |
+```
+
+The table must start at column 0 with a header row and a delimiter row
+(alignment colons are fine), exactly like GitHub renders it; every line starts
+and ends with `|`. Inside cells, inline formatting and math work as in any
+card text. A table inside a fenced code block stays literal text.
+
+At Recognize, a table card's wrong options are drawn from its own column: the
+other rows' answers are the distractors, so a table needs no AI `choices`
+augmentation and no authored options (though both take precedence if
+present). A row only gets a pick when its column offers at least three other
+distinct values; smaller tables stay reviewable at the other depths.
+
+Identity works like card IDs, per row: `alix deck init` (or opening the deck
+for review) mints a short stamp into each row's first cell and one container
+ID line after the table. Both are machine-maintained, never hand-authored,
+and they travel with the row, so sorting, inserting, and editing rows
+preserves review history:
+
+```
+| purported <!-- r:4k2x9w --> | angeblich | often in legal prose |
+```
+
+Directive comments between the table and its ID line (`direction`, `reveal`,
+`input`) apply to every row; `direction: both` doubles each row into a
+reversed card, which samples its options from the front column.
+
+The format is deliberately narrow: two or three columns only, no cloze
+blanks or images inside cells, and nothing but directive comments between a
+table and the next card. Anything outside that shape is a parse error rather
+than a guess. And a table earns its place at dozens of rows; under roughly
+ten cards, plain `##` cards read better and can carry everything a card can.
+
 ## Notes
 
 A line beginning with `>` is a **note**: shown *after* you answer, never part of

@@ -51,21 +51,24 @@ of the three (on the keyboard: `v`, then `1`/`2`/`3`; `Esc` cancels; rebindable 
 tick-box (`c`); see [Cramming](05-scheduling.md). Plain **Learn** reuses the
 deck's own last-used depth, remembered per deck. The first time you ever open a
 deck, that default is Recognize if a genuine multiple-choice pick is ready to
-go: authored `- [x]`/`- [ ]` options on a card, or AI-generated distractors
-(`alix deck augment --target choices`, or the web Augment screen); otherwise
-it's Recall.
+go: authored `- [x]`/`- [ ]` options on a card, AI-generated distractors
+(`alix deck augment --target choices`, or the web Augment screen), or a
+[card table's](03-the-deck-format.md) own column; otherwise it's Recall.
 
 - **Recognize**: unscheduled, boolean, and **pick-only**. There's no FSRS state
   for it at all, just a per-card *recognized* flag. It's a genuine multiple-choice
-  pick, built from a card's authored task-list options (`- [x]`/`- [ ]`) or the
-  deck's cached AI distractors (`alix deck augment --target
-  choices`): a cloze card asks you to pick its gap, a line card to pick the whole
+  pick, built from a card's authored task-list options (`- [x]`/`- [ ]`), the
+  deck's cached AI distractors (`alix deck augment --target choices`), or, for
+  a [card table's](03-the-deck-format.md) rows, the other rows of the same
+  column: a cloze card asks you to pick its gap, a line card to pick the whole
   sequence in the right order. Only recognizable cards (the ones with a buildable
   pick) are scheduled, so a Recognize session never falls back to a plain reveal,
-  which would just be a Recall in disguise. Options are never sampled from other
-  cards' answers, so a deck with neither authored options nor cached distractors
-  has nothing to recognize: the picker greys the Recognize depth out until a
-  card carries options or you run the augment. A correct
+  which would just be a Recall in disguise. Options are never sampled across
+  unrelated cards; a table column is the one sanctioned pool, because its rows
+  answer the same question by construction. A deck with no authored options, no
+  cached distractors, and no table has nothing to recognize: the picker greys
+  the Recognize depth out until a card carries options or you run the augment.
+  A correct
   pick marks the card recognized; a quiet **"I guessed"** link right after lets
   you undo that, re-queuing it. A wrong pick shows which option was right, then
   **Continue** re-queues it too.
