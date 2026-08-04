@@ -36,6 +36,24 @@ pub struct ParsedDeck {
     pub cards: Vec<Card>,
     pub lints: Vec<Lint>,
     pub frontmatter_span: Option<LineSpan>,
+    pub tables: Vec<TableStamping>,
+}
+
+/// A card table's identity surface, so `stamp` can mint what is missing
+/// without re-deriving the table grammar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableStamping {
+    pub rows: Vec<TableRowStamping>,
+    pub token: Option<String>,
+    /// 1-based last line of the block (rows and trailing directive
+    /// comments): the container id line splices after it.
+    pub end_line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableRowStamping {
+    pub line: usize,
+    pub stamp: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +121,30 @@ pub enum ParseError {
     UnclosedHole(usize),
     #[error("line {0}: empty cloze hole")]
     EmptyHole(usize),
+    #[error("line {0}: a table line must start and end with `|`")]
+    TableLineMalformed(usize),
+    #[error(
+        "line {line}: a card table has 2 or 3 columns (front | back | note), this line has {found}"
+    )]
+    TableColumns { line: usize, found: usize },
+    #[error("line {line}: this table line has {found} cells but the header has {expected}")]
+    TableRowWidth {
+        line: usize,
+        found: usize,
+        expected: usize,
+    },
+    #[error(
+        "line {0}: `\\blank{{...}}` in a table cell is not supported; write that row as a `##` card"
+    )]
+    TableCellHole(usize),
+    #[error("line {0}: an image in a table cell is not supported; write that row as a `##` card")]
+    TableCellImage(usize),
+    #[error("line {line}: row stamp `{value}` is not 6 base32 chars")]
+    TableRowStamp { line: usize, value: String },
+    #[error("line {line}: row stamp `{value}` appears twice in one table")]
+    TableDuplicateStamp { line: usize, value: String },
+    #[error("line {0}: only directive comments may follow a card table before the next `## ` card")]
+    TableTrailing(usize),
 }
 
 pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
@@ -112,8 +154,26 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     let deck_id: Arc<str> = Arc::from(document.frontmatter.id.as_deref().unwrap_or(""));
     let mut lints = document.lints;
     let mut cards = Vec::new();
-    for raw in document.cards {
-        build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?;
+    let mut tables = Vec::new();
+    for block in document.blocks {
+        match block {
+            RawBlock::Card(raw) => build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?,
+            RawBlock::Table(raw) => {
+                tables.push(TableStamping {
+                    rows: raw
+                        .rows
+                        .iter()
+                        .map(|row| TableRowStamping {
+                            line: row.line,
+                            stamp: row.stamp.clone(),
+                        })
+                        .collect(),
+                    token: raw.directives.token.clone(),
+                    end_line: raw.end_line,
+                });
+                build_table_cards(&subject, &deck_id, raw, &mut cards)?;
+            }
+        }
     }
     Ok(ParsedDeck {
         deck_token: document.frontmatter.id.clone(),
@@ -123,6 +183,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
         cards,
         lints,
         frontmatter_span: document.frontmatter_span,
+        tables,
     })
 }
 
@@ -243,9 +304,14 @@ struct Document {
     frontmatter: Frontmatter,
     title: Option<String>,
     preamble: Option<String>,
-    cards: Vec<RawCard>,
+    blocks: Vec<RawBlock>,
     lints: Vec<Lint>,
     frontmatter_span: Option<LineSpan>,
+}
+
+enum RawBlock {
+    Card(RawCard),
+    Table(RawTable),
 }
 
 struct RawCard {
@@ -256,6 +322,21 @@ struct RawCard {
     divided: bool,
     note: Option<String>,
     directives: CardDirectives,
+}
+
+struct RawTable {
+    columns: usize,
+    header: Vec<String>,
+    rows: Vec<RawRow>,
+    directives: CardDirectives,
+    rows_done: bool,
+    end_line: usize,
+}
+
+struct RawRow {
+    line: usize,
+    cells: Vec<String>,
+    stamp: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -274,12 +355,12 @@ fn parse_document(text: &str) -> Result<Document, ParseError> {
     let lines = prepare(text)?;
     let mut lints = Vec::new();
     let (frontmatter, body_start, frontmatter_span) = parse_frontmatter(&lines, &mut lints)?;
-    let (title, preamble, cards) = scan(&lines, body_start, &mut lints)?;
+    let (title, preamble, blocks) = scan(&lines, body_start, &mut lints)?;
     Ok(Document {
         frontmatter,
         title,
         preamble,
-        cards,
+        blocks,
         lints,
         frontmatter_span,
     })
@@ -332,14 +413,16 @@ pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
 
 // ── The line scanner ──
 
-// `(title, preamble, cards)` from the body above the first card.
-type ScannedBody = (Option<String>, Option<String>, Vec<RawCard>);
+// `(title, preamble, blocks)` from the body above the first card.
+type ScannedBody = (Option<String>, Option<String>, Vec<RawBlock>);
 
 fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
     let mut title: Option<String> = None;
     let mut preamble_lines: Vec<String> = Vec::new();
-    let mut cards: Vec<RawCard> = Vec::new();
+    let mut blocks: Vec<RawBlock> = Vec::new();
     let mut current: Option<RawCard> = None;
+    let mut table: Option<RawTable> = None;
+    let mut skip_delimiter = false;
     let mut fence: Option<(char, usize)> = None;
     let mut prev_blank = false;
     let mut prev_heading = false;
@@ -347,6 +430,25 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     for (idx, raw) in lines.iter().enumerate().skip(start) {
         let lineno = idx + 1;
         let raw = *raw;
+
+        if skip_delimiter {
+            skip_delimiter = false;
+            continue;
+        }
+
+        // A fence never opens while a table is active (every non-table line
+        // inside a table's scope is either a flush or a loud error).
+        if let Some(tbl) = table.as_mut() {
+            let next = lines.get(idx + 1).copied();
+            if table_line(tbl, raw, lineno, next, lints)? {
+                prev_blank = trim_ws(raw).is_empty();
+                prev_heading = false;
+                continue;
+            }
+            if let Some(tbl) = table.take() {
+                blocks.push(RawBlock::Table(tbl));
+            }
+        }
 
         if let Some((ch, _)) = fence {
             if closes_fence(raw, ch) {
@@ -366,9 +468,47 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             continue;
         }
 
+        if raw.starts_with('|')
+            && let Some(next) = lines.get(idx + 1)
+            && next.starts_with('|')
+            && is_delimiter_row(next)
+        {
+            if let Some(card) = current.take() {
+                blocks.push(RawBlock::Card(card));
+            }
+            let header = split_cells(raw).ok_or(ParseError::TableLineMalformed(lineno))?;
+            if !(2..=3).contains(&header.len()) {
+                return Err(ParseError::TableColumns {
+                    line: lineno,
+                    found: header.len(),
+                });
+            }
+            check_cells(&header, lineno)?;
+            let delimiter = split_cells(next).ok_or(ParseError::TableLineMalformed(lineno + 1))?;
+            if delimiter.len() != header.len() {
+                return Err(ParseError::TableRowWidth {
+                    line: lineno + 1,
+                    found: delimiter.len(),
+                    expected: header.len(),
+                });
+            }
+            table = Some(RawTable {
+                columns: header.len(),
+                header,
+                rows: Vec::new(),
+                directives: CardDirectives::default(),
+                rows_done: false,
+                end_line: lineno + 1,
+            });
+            skip_delimiter = true;
+            prev_blank = false;
+            prev_heading = false;
+            continue;
+        }
+
         if let Some(rest) = raw.strip_prefix("## ") {
             if let Some(card) = current.take() {
-                cards.push(card);
+                blocks.push(RawBlock::Card(card));
             }
             let (front, directives) = heading(rest, lineno, lints)?;
             if front.is_empty() {
@@ -477,11 +617,199 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             kind: LintKind::UnclosedFence,
         });
     }
+    if let Some(tbl) = table.take() {
+        blocks.push(RawBlock::Table(tbl));
+    }
     if let Some(card) = current.take() {
-        cards.push(card);
+        blocks.push(RawBlock::Card(card));
     }
     let preamble = (!preamble_lines.is_empty()).then(|| preamble_lines.join(" "));
-    Ok((title, preamble, cards))
+    Ok((title, preamble, blocks))
+}
+
+// ── Table blocks ──
+
+// `Ok(true)` = the line was consumed by the table; `Ok(false)` = the table's
+// scope ends here and the line must be reprocessed (a `## ` front or the
+// header of a directly-adjacent table).
+fn table_line(
+    tbl: &mut RawTable,
+    raw: &str,
+    lineno: usize,
+    next: Option<&str>,
+    lints: &mut Vec<Lint>,
+) -> Result<bool, ParseError> {
+    let next_is_delimiter = next.is_some_and(|n| n.starts_with('|') && is_delimiter_row(n));
+    if raw.starts_with('|') && !next_is_delimiter {
+        if tbl.rows_done {
+            return Err(ParseError::TableTrailing(lineno));
+        }
+        let cells = split_cells(raw).ok_or(ParseError::TableLineMalformed(lineno))?;
+        if cells.len() != tbl.columns {
+            return Err(ParseError::TableRowWidth {
+                line: lineno,
+                found: cells.len(),
+                expected: tbl.columns,
+            });
+        }
+        check_cells(&cells, lineno)?;
+        let mut cells = cells;
+        let stamp = match extract_row_stamp(&cells[0]) {
+            Some((text, value)) => {
+                if !crate::token::is_valid_row(&value) {
+                    return Err(ParseError::TableRowStamp {
+                        line: lineno,
+                        value,
+                    });
+                }
+                if tbl
+                    .rows
+                    .iter()
+                    .any(|row| row.stamp.as_deref() == Some(&value))
+                {
+                    return Err(ParseError::TableDuplicateStamp {
+                        line: lineno,
+                        value,
+                    });
+                }
+                cells[0] = text;
+                Some(value)
+            }
+            None => None,
+        };
+        tbl.rows.push(RawRow {
+            line: lineno,
+            cells,
+            stamp,
+        });
+        tbl.end_line = lineno;
+        return Ok(true);
+    }
+    if raw.starts_with('|') {
+        return Ok(false);
+    }
+    let t = trim_ws(raw);
+    if t.is_empty() {
+        tbl.rows_done = true;
+        return Ok(true);
+    }
+    if raw.strip_prefix("## ").is_some() {
+        return Ok(false);
+    }
+    if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
+        tbl.rows_done = true;
+        tbl.end_line = lineno;
+        if let Some((key, value)) = directive(body) {
+            apply_directive(&mut tbl.directives, &key, value, lineno, lints)?;
+        }
+        return Ok(true);
+    }
+    Err(ParseError::TableTrailing(lineno))
+}
+
+fn split_cells(line: &str) -> Option<Vec<String>> {
+    let line = trim_ws(line);
+    let mut boundaries = Vec::new();
+    for (i, b) in line.bytes().enumerate() {
+        if b == b'|' && !escaped_marker(line, i) {
+            boundaries.push(i);
+        }
+    }
+    if boundaries.len() < 2 || boundaries[0] != 0 || *boundaries.last()? != line.len() - 1 {
+        return None;
+    }
+    Some(
+        boundaries
+            .windows(2)
+            .map(|pair| trim_ws(&line[pair[0] + 1..pair[1]]).replace("\\|", "|"))
+            .collect(),
+    )
+}
+
+pub(crate) fn is_delimiter_row(line: &str) -> bool {
+    let Some(cells) = split_cells(line) else {
+        return false;
+    };
+    !cells.is_empty()
+        && cells.iter().all(|cell| {
+            let cell = cell.strip_prefix(':').unwrap_or(cell);
+            let cell = cell.strip_suffix(':').unwrap_or(cell);
+            !cell.is_empty() && cell.bytes().all(|b| b == b'-')
+        })
+}
+
+fn check_cells(cells: &[String], lineno: usize) -> Result<(), ParseError> {
+    for cell in cells {
+        if cell.contains("\\blank{") || cell.contains("\\blank[") {
+            return Err(ParseError::TableCellHole(lineno));
+        }
+        let mut cursor = 0;
+        while let Some(relative) = cell[cursor..].find("![") {
+            let marker = cursor + relative;
+            if !escaped_marker(cell, marker) {
+                return Err(ParseError::TableCellImage(lineno));
+            }
+            cursor = marker + 2;
+        }
+    }
+    Ok(())
+}
+
+/// Byte offset inside a raw table row line where a minted `<!-- r:... -->`
+/// stamp lands: directly after cell 1's trimmed content.
+pub(crate) fn row_stamp_insert_offset(line: &str) -> Option<usize> {
+    let mut pipes = line
+        .bytes()
+        .enumerate()
+        .filter(|(i, b)| *b == b'|' && !escaped_marker(line, *i));
+    let first = pipes.next()?.0;
+    let second = pipes.next()?.0;
+    let content = &line[first + 1..second];
+    Some(first + 1 + content.trim_end_matches(&WHITESPACE[..]).len())
+}
+
+// `(front text, stamp value)` when the cell ends with a `<!-- r:... -->`.
+fn extract_row_stamp(cell: &str) -> Option<(String, String)> {
+    let prefix = cell.strip_suffix("-->")?;
+    let start = prefix.rfind("<!--")?;
+    let (key, value) = directive(&prefix[start + 4..])?;
+    (key == "r").then(|| (trim_ws(&prefix[..start]).to_string(), value))
+}
+
+fn build_table_cards(
+    subject: &Arc<str>,
+    deck_id: &Arc<str>,
+    raw: RawTable,
+    cards: &mut Vec<Card>,
+) -> Result<(), ParseError> {
+    let token: Option<Arc<str>> = raw.directives.token.as_deref().map(Arc::from);
+    for row in raw.rows {
+        let front = row.cells[0].clone();
+        if front.is_empty() {
+            return Err(ParseError::EmptyFront(row.line));
+        }
+        let back = row.cells[1].clone();
+        if back.is_empty() {
+            return Err(ParseError::FrontWithoutAnswer(row.line));
+        }
+        let note = row.cells.get(2).filter(|cell| !cell.is_empty()).cloned();
+        let mut card = Card::plain(Arc::clone(subject), front, vec![back], note, row.line);
+        card.deck_id = Arc::clone(deck_id);
+        card.context = raw.header.clone();
+        // An unstamped row is an unstamped card: composing an id from the
+        // container alone would collide every such row on the base id.
+        if let Some(stamp) = row.stamp {
+            card.token = token.clone();
+            card.row = Some(Arc::from(stamp.as_str()));
+        }
+        card.reveal = raw.directives.reveal;
+        card.input = raw.directives.input;
+        card.direction = raw.directives.direction;
+        card.citations = raw.directives.citations.clone();
+        card.givens = raw.directives.givens.clone();
+        cards.push(card);
+    }
+    Ok(())
 }
 
 fn push_content(current: &mut Option<RawCard>, lineno: usize, text: String) {
@@ -587,7 +915,7 @@ fn apply_directive(
             // Markers hold base ids only; a sub-id suffix (`-N`, `-r`) never appears here.
             if !matches!(
                 token::parse_prefixed_card_id(&value),
-                Some((_, None, false))
+                Some((_, None, None, false))
             ) {
                 return Err(ParseError::InvalidCardId { line, value });
             }
@@ -2072,7 +2400,10 @@ the answer
             document.frontmatter
         );
         assert_eq!(Some("The Title"), document.title.as_deref());
-        assert_eq!(1, document.cards.len());
+        assert_eq!(1, document.blocks.len());
+        let RawBlock::Card(raw_card) = &document.blocks[0] else {
+            panic!("expected a card block");
+        };
         assert_eq!(
             CardDirectives {
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
@@ -2091,7 +2422,7 @@ the answer
                     "partial - the card".into(),
                 ],
             },
-            document.cards[0].directives
+            raw_card.directives
         );
         assert!(document.lints.is_empty(), "{:?}", document.lints);
 
@@ -2273,5 +2604,235 @@ the answer
         assert_eq!(spaced, tabbed);
         assert_eq!(spaced, split);
         assert_ne!(spaced, reworded);
+    }
+
+    // ── Card tables ──
+
+    const CONTAINER: &str = "card-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+
+    #[test]
+    fn a_two_column_table_emits_one_card_per_row() {
+        let text = format!(
+            "| word | meaning |\n|---|---|\n| hund <!-- r:4k2x9w --> | dog |\n| katze <!-- r:7m3p5q --> | cat |\n<!-- id: {CONTAINER} -->\n"
+        );
+        let deck = parse(&text);
+        assert_eq!(2, deck.cards.len());
+        let first = &deck.cards[0];
+        assert_eq!("hund", first.front);
+        assert_eq!(vec!["dog"], first.back);
+        assert_eq!(None, first.note);
+        assert_eq!(vec!["word", "meaning"], first.context);
+        assert_eq!(Some(CONTAINER), first.token.as_deref());
+        assert_eq!(Some("4k2x9w"), first.row.as_deref());
+        assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), first.id());
+        assert_eq!(3, first.line);
+        let second = &deck.cards[1];
+        assert_eq!("katze", second.front);
+        assert_eq!(Some(format!("{CONTAINER}-t7m3p5q")), second.id());
+        assert_eq!(4, second.line);
+    }
+
+    #[test]
+    fn a_three_column_table_carries_the_note_and_context() {
+        let text = format!(
+            "| word | meaning | note |\n|---|---|---|\n| a <!-- r:4k2x9w --> | b | care |\n| c <!-- r:7m3p5q --> | d | |\n<!-- id: {CONTAINER} -->\n"
+        );
+        let deck = parse(&text);
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(Some("care"), deck.cards[0].note.as_deref());
+        assert_eq!(None, deck.cards[1].note);
+        assert_eq!(vec!["word", "meaning", "note"], deck.cards[0].context);
+    }
+
+    #[test]
+    fn an_unstamped_row_stays_id_less_even_under_a_container() {
+        let text = format!(
+            "| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p | q |\n<!-- id: {CONTAINER} -->\n"
+        );
+        let deck = parse(&text);
+        assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
+        assert_eq!(None, deck.cards[1].token);
+        assert_eq!(None, deck.cards[1].row);
+        assert_eq!(None, deck.cards[1].id());
+    }
+
+    #[test]
+    fn table_directives_apply_to_every_row_card() {
+        let text = format!(
+            "| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p <!-- r:7m3p5q --> | q |\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
+        );
+        let deck = parse(&text);
+        assert_eq!(2, deck.cards.len());
+        for card in &deck.cards {
+            assert_eq!(Some(Direction::Both), card.direction);
+        }
+    }
+
+    #[test]
+    fn a_pipe_line_without_a_delimiter_stays_answer_content() {
+        let deck = parse("## q\n---\n| a | b |\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["| a | b |"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn a_table_directly_after_a_card_front_leaves_the_card_answerless() {
+        assert_eq!(
+            ParseError::FrontWithoutAnswer(1),
+            err("## q\n| a | b |\n|---|---|\n| x | y |\n")
+        );
+    }
+
+    #[test]
+    fn a_table_after_a_complete_card_is_its_own_block() {
+        let deck = parse("## q\n---\nanswer\n\n| a | b |\n|---|---|\n| x | y |\n");
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(vec!["answer"], deck.cards[0].back);
+        assert_eq!("x", deck.cards[1].front);
+    }
+
+    #[test]
+    fn a_table_inside_a_fence_is_literal_content() {
+        let deck = parse("## q\n---\n```\n| a | b |\n|---|---|\n```\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(
+            vec!["```", "| a | b |", "|---|---|", "```"],
+            deck.cards[0].back
+        );
+    }
+
+    #[test]
+    fn a_table_line_without_a_closing_pipe_is_malformed() {
+        assert_eq!(
+            ParseError::TableLineMalformed(1),
+            err("| a | b\n|---|---|\n")
+        );
+        assert_eq!(
+            ParseError::TableLineMalformed(3),
+            err("| a | b |\n|---|---|\n| x | y\n")
+        );
+    }
+
+    #[test]
+    fn a_table_needs_two_or_three_columns() {
+        assert_eq!(
+            ParseError::TableColumns { line: 1, found: 1 },
+            err("| a |\n|---|\n| x |\n")
+        );
+        assert_eq!(
+            ParseError::TableColumns { line: 1, found: 4 },
+            err("| a | b | c | d |\n|---|---|---|---|\n")
+        );
+    }
+
+    #[test]
+    fn every_table_line_matches_the_header_width() {
+        assert_eq!(
+            ParseError::TableRowWidth {
+                line: 2,
+                found: 1,
+                expected: 2
+            },
+            err("| a | b |\n|---|\n")
+        );
+        assert_eq!(
+            ParseError::TableRowWidth {
+                line: 3,
+                found: 3,
+                expected: 2
+            },
+            err("| a | b |\n|---|---|\n| x | y | z |\n")
+        );
+    }
+
+    #[test]
+    fn a_blank_marker_or_image_in_a_cell_is_refused() {
+        assert_eq!(
+            ParseError::TableCellHole(3),
+            err("| a | b |\n|---|---|\n| x | \\blank{y} |\n")
+        );
+        assert_eq!(
+            ParseError::TableCellImage(3),
+            err("| a | b |\n|---|---|\n| ![alt](x.png) | y |\n")
+        );
+    }
+
+    #[test]
+    fn an_invalid_or_duplicate_row_stamp_is_refused() {
+        assert_eq!(
+            ParseError::TableRowStamp {
+                line: 3,
+                value: "xyz".into()
+            },
+            err("| a | b |\n|---|---|\n| x <!-- r:xyz --> | y |\n")
+        );
+        assert_eq!(
+            ParseError::TableDuplicateStamp {
+                line: 4,
+                value: "4k2x9w".into()
+            },
+            err("| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p <!-- r:4k2x9w --> | q |\n")
+        );
+    }
+
+    #[test]
+    fn only_directive_comments_may_follow_a_table() {
+        assert_eq!(
+            ParseError::TableTrailing(4),
+            err("| a | b |\n|---|---|\n| x | y |\nstray prose\n")
+        );
+        assert_eq!(
+            ParseError::TableTrailing(4),
+            err("| a | b |\n|---|---|\n| x | y |\n> a note\n")
+        );
+        assert_eq!(
+            ParseError::TableTrailing(5),
+            err("| a | b |\n|---|---|\n| x | y |\n\n| z | w |\n")
+        );
+    }
+
+    #[test]
+    fn an_empty_front_or_back_cell_is_refused() {
+        assert_eq!(
+            ParseError::EmptyFront(3),
+            err("| a | b |\n|---|---|\n| <!-- r:4k2x9w --> | y |\n")
+        );
+        assert_eq!(
+            ParseError::FrontWithoutAnswer(3),
+            err("| a | b |\n|---|---|\n| x | |\n")
+        );
+    }
+
+    #[test]
+    fn an_escaped_pipe_stays_in_the_cell() {
+        let deck = parse("| a | b |\n|---|---|\n| x \\| y | z |\n");
+        assert_eq!("x | y", deck.cards[0].front);
+    }
+
+    #[test]
+    fn alignment_colons_in_the_delimiter_are_accepted() {
+        let deck = parse("| a | b |\n|:---|---:|\n| x | y |\n");
+        assert_eq!(1, deck.cards.len());
+    }
+
+    #[test]
+    fn adjacent_tables_split_on_the_second_header() {
+        let deck = parse("| a | b |\n|---|---|\n| x | y |\n| c | d |\n|---|---|\n| z | w |\n");
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(vec!["a", "b"], deck.cards[0].context);
+        assert_eq!(vec!["c", "d"], deck.cards[1].context);
+    }
+
+    #[test]
+    fn a_table_id_line_must_hold_a_base_card_id() {
+        assert_eq!(
+            ParseError::InvalidCardId {
+                line: 4,
+                value: format!("{CONTAINER}-2"),
+            },
+            err(&format!(
+                "| a | b |\n|---|---|\n| x | y |\n<!-- id: {CONTAINER}-2 -->\n"
+            ))
+        );
     }
 }

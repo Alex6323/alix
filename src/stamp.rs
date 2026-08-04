@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     ops::Range,
     path::{Path, PathBuf},
@@ -18,6 +19,7 @@ const BOM: &str = "\u{feff}";
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct StampOutcome {
     pub minted_cards: Vec<String>,
+    pub minted_rows: Vec<String>,
     pub minted_deck: Option<String>,
 }
 
@@ -105,13 +107,44 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
 
     // Unstamped card front lines, deduped: a cloze card's holes expand to
     // several sub-cards sharing one `## ` line, but that line stamps once.
+    // Table rows stamp through their table below, never as `## ` blocks.
+    let table_row_lines: HashSet<usize> = deck
+        .tables
+        .iter()
+        .flat_map(|table| table.rows.iter().map(|row| row.line))
+        .collect();
     let mut card_lines: Vec<usize> = Vec::new();
     for card in &deck.cards {
-        if card.token.is_none() && !card_lines.contains(&card.line) {
+        if card.token.is_none()
+            && !table_row_lines.contains(&card.line)
+            && !card_lines.contains(&card.line)
+        {
             card_lines.push(card.line);
         }
     }
     card_lines.sort_unstable();
+
+    // (row line, minted stamp) and (block end line, minted container id),
+    // minted before any write like the card ids below.
+    let mut row_mints: Vec<(usize, String)> = Vec::new();
+    let mut container_mints: Vec<(usize, String)> = Vec::new();
+    for table in &deck.tables {
+        let mut taken: HashSet<String> = table
+            .rows
+            .iter()
+            .filter_map(|row| row.stamp.clone())
+            .collect();
+        for row in &table.rows {
+            if row.stamp.is_none() {
+                let stamp = mint_row_unique(&taken)?;
+                taken.insert(stamp.clone());
+                row_mints.push((row.line, stamp));
+            }
+        }
+        if table.token.is_none() && !table.rows.is_empty() {
+            container_mints.push((table.end_line, mint_card_id()?));
+        }
+    }
 
     let deck_action = if deck.deck_token.is_some() {
         DeckAction::None
@@ -128,7 +161,11 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     };
 
     // Nothing to write: a genuine byte no-op, so don't touch the file.
-    if card_lines.is_empty() && matches!(deck_action, DeckAction::None) {
+    if card_lines.is_empty()
+        && row_mints.is_empty()
+        && container_mints.is_empty()
+        && matches!(deck_action, DeckAction::None)
+    {
         return Ok(StampOutcome::default());
     }
 
@@ -156,6 +193,26 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         };
         inserts.push((offset, format!("{lead}<!-- id: {tok} -->{newline}")));
     }
+    for (line, stamp) in &row_mints {
+        let start = nth_line_start(body, *line).ok_or(StampError::MissingLine(*line))?;
+        let rest = &body[start..];
+        let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
+        // The parser only records rows it split on two or more pipes.
+        let within = parser::row_stamp_insert_offset(raw).ok_or(StampError::MissingLine(*line))?;
+        inserts.push((start + within, format!(" <!-- r:{stamp} -->")));
+    }
+    for (end_line, tok) in &container_mints {
+        let newline = line_terminator(body, *end_line);
+        let offset =
+            line_start_of_next(body, *end_line).ok_or(StampError::MissingLine(*end_line))?;
+        let lead = if offset == body.len() && !body.ends_with('\n') {
+            newline
+        } else {
+            ""
+        };
+        inserts.push((offset, format!("{lead}<!-- id: {tok} -->{newline}")));
+    }
+    minted_cards.extend(container_mints.iter().map(|(_, tok)| tok.clone()));
     let mut prepend = String::new();
     match (&deck_action, &deck_token) {
         (DeckAction::Splice(open), Some(tok)) => {
@@ -186,6 +243,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
 
     Ok(StampOutcome {
         minted_cards,
+        minted_rows: row_mints.into_iter().map(|(_, stamp)| stamp).collect(),
         minted_deck: deck_token,
     })
 }
@@ -220,8 +278,18 @@ fn mint_card_id() -> Result<String, StampError> {
     Ok(token::format_card_id(
         &token::mint().map_err(StampError::Mint)?,
         None,
+        None,
         false,
     ))
+}
+
+fn mint_row_unique(taken: &HashSet<String>) -> Result<String, StampError> {
+    loop {
+        let stamp = token::mint_row().map_err(StampError::Mint)?;
+        if !taken.contains(&stamp) {
+            return Ok(stamp);
+        }
+    }
 }
 
 /// Writes a sibling `.tmp` then renames over the original, so a failed write
@@ -272,6 +340,17 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
         if raw.starts_with("## ") {
             return last;
         }
+        // A table opens its own block: the card's id line must not land
+        // beyond it, where the parser would hand the marker to the table.
+        if raw.starts_with('|')
+            && let Some(next_start) = nth_line_start(text, line + 1)
+        {
+            let next_rest = &text[next_start..];
+            let next_raw = &next_rest[..next_rest.find('\n').unwrap_or(next_rest.len())];
+            if next_raw.starts_with('|') && parser::is_delimiter_row(next_raw) {
+                return last;
+            }
+        }
         if !raw.trim_matches(&WS[..]).is_empty() {
             last = line;
         }
@@ -283,10 +362,12 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
 /// Flags a marker trailing the `## ` front and a standalone marker with card
 /// content after it; both parse, so this is a `doctor` hygiene signal.
 pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
+    let lines: Vec<&str> = text.lines().collect();
     let mut found = Vec::new();
     let mut fence: Option<char> = None;
     let mut block_end: Option<usize> = None;
-    for (index, raw) in text.lines().enumerate() {
+    for (index, raw) in lines.iter().enumerate() {
+        let raw = *raw;
         let line = index + 1;
         if let Some(ch) = fence {
             if parser::closes_fence(raw, ch) {
@@ -296,6 +377,14 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
         }
         if let Some(ch) = parser::fence_opener(raw) {
             fence = Some(ch);
+            continue;
+        }
+        if raw.starts_with('|')
+            && lines
+                .get(index + 1)
+                .is_some_and(|next| next.starts_with('|') && parser::is_delimiter_row(next))
+        {
+            block_end = Some(table_block_end(&lines, index));
             continue;
         }
         if let Some(rest) = raw.strip_prefix("## ") {
@@ -317,6 +406,23 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
         }
     }
     found
+}
+
+/// 1-based last line of the table block whose header sits at 0-based index
+/// `header`: rows, then trailing comments; blanks neither extend nor end it.
+fn table_block_end(lines: &[&str], header: usize) -> usize {
+    let mut last = header + 2;
+    let mut index = header + 2;
+    while let Some(raw) = lines.get(index) {
+        let trimmed = raw.trim_matches(&WS[..]);
+        if raw.starts_with('|') || (trimmed.starts_with("<!--") && trimmed.ends_with("-->")) {
+            last = index + 1;
+        } else if !trimmed.is_empty() {
+            break;
+        }
+        index += 1;
+    }
+    last
 }
 
 fn heading_id_marker(rest: &str) -> bool {
@@ -943,6 +1049,152 @@ mod tests {
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert!(parsed.cards.iter().all(|c| c.front == "Foo"));
+        assert!(parsed.cards.iter().all(|c| c.token.is_some()));
+    }
+
+    #[test]
+    fn stamping_a_table_mints_the_container_and_row_stamps() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| word | meaning |\n|---|---|\n| hund | dog |\n| katze | cat |\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert_eq!(1, outcome.minted_cards.len(), "the container id");
+        assert_eq!(2, outcome.minted_rows.len());
+        let container = &outcome.minted_cards[0];
+        assert!(
+            stamped.ends_with(&format!(
+                "| hund <!-- r:{} --> | dog |\n| katze <!-- r:{} --> | cat |\n<!-- id: {container} -->\n",
+                outcome.minted_rows[0], outcome.minted_rows[1]
+            )),
+            "{stamped:?}"
+        );
+
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
+        assert_eq!(2, parsed.cards.len());
+        for (card, row) in parsed.cards.iter().zip(&outcome.minted_rows) {
+            assert_eq!(Some(container.as_str()), card.token.as_deref());
+            assert_eq!(Some(row.as_str()), card.row.as_deref());
+            assert_eq!(Some(format!("{container}-t{row}")), card.id());
+        }
+
+        let mut reconstructed = stamped.replacen(&format!("<!-- id: {container} -->\n"), "", 1);
+        for row in &outcome.minted_rows {
+            reconstructed = reconstructed.replacen(&format!(" <!-- r:{row} -->"), "", 1);
+        }
+        assert_eq!(original, reconstructed);
+    }
+
+    #[test]
+    fn table_stamping_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n",
+        );
+
+        stamp_deck(&path).unwrap();
+        let once = fs::read_to_string(&path).unwrap();
+        let outcome = stamp_deck(&path).unwrap();
+
+        assert_eq!(StampOutcome::default(), outcome);
+        assert_eq!(once, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn a_half_stamped_table_mints_only_the_missing_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let container = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let original = format!(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p | q |\n<!-- id: {container} -->\n"
+        );
+        let path = write(&dir, "deck.md", &original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert!(outcome.minted_cards.is_empty(), "{outcome:?}");
+        assert_eq!(1, outcome.minted_rows.len());
+        let fresh = &outcome.minted_rows[0];
+        assert_ne!("4k2x9w", fresh.as_str());
+        assert_eq!(1, stamped.matches("r:4k2x9w").count());
+        assert!(
+            stamped.contains(&format!("| p <!-- r:{fresh} --> | q |")),
+            "{stamped:?}"
+        );
+        assert_eq!(1, stamped.matches(&format!("id: {container}")).count());
+    }
+
+    #[test]
+    fn stamps_survive_a_row_sort() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n| p | q |\n| m | n |\n",
+        );
+        stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let ids_by_front = |text: &str| -> std::collections::BTreeMap<String, String> {
+            parser::parse("deck.md", text)
+                .unwrap()
+                .cards
+                .iter()
+                .map(|card| (card.front.clone(), card.id().unwrap()))
+                .collect()
+        };
+        let before = ids_by_front(&stamped);
+
+        let mut lines: Vec<&str> = stamped.lines().collect();
+        let first_row = lines
+            .iter()
+            .position(|l| l.starts_with("| x"))
+            .expect("the stamped x row exists");
+        lines.swap(first_row, first_row + 2);
+        let sorted = format!("{}\n", lines.join("\n"));
+
+        assert_eq!(before, ids_by_front(&sorted));
+    }
+
+    #[test]
+    fn the_container_id_splices_after_trailing_directive_comments() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n<!-- direction: both -->\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let container = &outcome.minted_cards[0];
+
+        assert!(
+            stamped.ends_with(&format!(
+                "<!-- direction: both -->\n<!-- id: {container} -->\n"
+            )),
+            "{stamped:?}"
+        );
+        parser::parse("deck.md", &stamped).expect("the stamped deck must still load");
+    }
+
+    #[test]
+    fn a_freshly_stamped_mixed_deck_has_no_misplaced_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "## q\na\n\n| a | b |\n|---|---|\n| x | y |\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        // The `## ` card's id line lands before the table, not beyond it.
+        assert!(
+            stamped.contains(&format!("a\n<!-- id: {} -->\n", outcome.minted_cards[0])),
+            "{stamped:?}"
+        );
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(&stamped));
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
+        assert_eq!(2, parsed.cards.len());
         assert!(parsed.cards.iter().all(|c| c.token.is_some()));
     }
 

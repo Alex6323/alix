@@ -1034,7 +1034,7 @@ impl Store {
             .keys()
             .filter(|key| key.starts_with(&prefix))
             .filter_map(|key| match crate::token::parse_prefixed_card_id(key) {
-                Some((_, Some(n), false)) => Some((n, key.clone())),
+                Some((_, None, Some(n), false)) => Some((n, key.clone())),
                 _ => None,
             })
             .collect();
@@ -1047,7 +1047,7 @@ impl Store {
         // Re-add only remapped entries; a stray token-N schedule must not be inherited.
         for (from, to) in &outcome.remap {
             if let Some(state) = old.remove(from) {
-                let key = crate::token::card_id(token, Some(*to), false);
+                let key = crate::token::card_id(token, None, Some(*to), false);
                 self.cards.insert(key, state);
             }
         }
@@ -1285,7 +1285,7 @@ impl Store {
         let pruned_tokens: HashSet<&str> = orphans
             .cards
             .iter()
-            .filter_map(|id| crate::token::parse_prefixed_card_id(id).map(|(token, _, _)| token))
+            .filter_map(|id| crate::token::parse_prefixed_card_id(id).map(|(token, _, _, _)| token))
             .collect();
         for token in pruned_tokens {
             let prefix = format!("{token}-");
@@ -1309,7 +1309,7 @@ impl Store {
             .keys()
             .filter(|id| {
                 crate::token::parse_prefixed_card_id(id)
-                    .is_some_and(|(token, _, _)| tokens.contains(token))
+                    .is_some_and(|(token, _, _, _)| tokens.contains(token))
             })
             .cloned()
             .collect();
@@ -1407,6 +1407,7 @@ pub fn mint_tutor_card(
     }
     let token = crate::token::format_card_id(
         &crate::token::mint().map_err(|e| MintError::Mint(e.to_string()))?,
+        None,
         None,
         false,
     );
@@ -1551,6 +1552,7 @@ pub fn store_remediation_cards(
         // The id rides the `## ` line so the stored text re-parses to the same id forever.
         let token = crate::token::format_card_id(
             &crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?,
+            None,
             None,
             false,
         );
@@ -3032,7 +3034,7 @@ mod tests {
             .unwrap()
             .id
             .clone();
-        let (base, _, _) = crate::token::parse_prefixed_card_id(&cloze_id).unwrap();
+        let (base, _, _, _) = crate::token::parse_prefixed_card_id(&cloze_id).unwrap();
         assert_eq!(
             2,
             store.records(base).unwrap().holes.len(),

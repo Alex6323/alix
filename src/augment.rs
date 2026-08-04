@@ -800,9 +800,9 @@ impl AugmentCache {
             .collect();
         let mut pulled: Vec<(u32, Augmentation)> = Vec::new();
         for n in &stored {
-            if let Some(aug) = self
-                .cards
-                .remove(&crate::token::card_id(token, Some(*n), false))
+            if let Some(aug) =
+                self.cards
+                    .remove(&crate::token::card_id(token, None, Some(*n), false))
             {
                 pulled.push((*n, aug));
             }
@@ -810,15 +810,15 @@ impl AugmentCache {
         for (from, aug) in pulled {
             if let Some(to) = moves.get(&from) {
                 self.cards
-                    .insert(crate::token::card_id(token, Some(*to), false), aug);
+                    .insert(crate::token::card_id(token, None, Some(*to), false), aug);
             }
         }
 
         let remap_id = |id: &str| -> Option<String> {
             match crate::token::parse_prefixed_card_id(id) {
-                Some((t, Some(n), false)) if t == token => moves
+                Some((t, None, Some(n), false)) if t == token => moves
                     .get(&n)
-                    .map(|to| crate::token::card_id(token, Some(*to), false)),
+                    .map(|to| crate::token::card_id(token, None, Some(*to), false)),
                 _ => Some(id.to_string()),
             }
         };
@@ -1101,7 +1101,7 @@ impl AugmentCache {
         let cards_before = self.cards.len();
         self.cards.retain(|id, _| {
             !crate::token::parse_prefixed_card_id(id)
-                .is_some_and(|(token, _, _)| card_tokens.contains(token))
+                .is_some_and(|(token, _, _, _)| card_tokens.contains(token))
         });
         let topos_before = self.topologies.len();
         self.topologies.retain(|t| !t.belongs_to(deck_tokens));

@@ -60,6 +60,7 @@ pub struct Card {
     pub givens: Vec<String>,
     pub display_back: Option<Vec<String>>,
     pub token: Option<Arc<str>>,
+    pub row: Option<Arc<str>>,
     pub hole: Option<u32>,
     pub block_holes: Vec<crate::store::HoleFingerprint>,
     pub reversed: bool,
@@ -96,6 +97,7 @@ impl Card {
             givens: Vec::new(),
             display_back: None,
             token: None,
+            row: None,
             hole: None,
             block_holes: Vec::new(),
             reversed: false,
@@ -124,6 +126,7 @@ impl Card {
         card.citations = self.citations.clone();
         // The reversed half keeps the same token so id() can compose the "-r" suffix from it.
         card.token = self.token.clone();
+        card.row = self.row.clone();
         card.reversed = true;
         // Reuses the forward card's fingerprint instead of recomputing over swapped sides: one
         // authored card is one content unit.
@@ -134,7 +137,7 @@ impl Card {
     pub fn id(&self) -> Option<String> {
         self.token
             .as_deref()
-            .map(|token| token::card_id(token, self.hole, self.reversed))
+            .map(|token| token::card_id(token, self.row.as_deref(), self.hole, self.reversed))
     }
 
     pub fn append_note(&mut self, notes: &[String]) {
