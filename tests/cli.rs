@@ -3921,7 +3921,7 @@ fn deck_import_print_flag_prints_without_writing() {
     let tsv = write(dir.path(), "cards.tsv", "Q1\tA1\n");
     let out = alix(&["deck", "import", &tsv, "--print"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(stdout(&out).contains("## Q1"), "{}", stdout(&out));
+    assert_eq!("## Q1\nA1\n\n", stdout(&out));
     assert!(
         stderr(&out).contains("cards, not written; --print"),
         "stderr: {}",
@@ -4028,6 +4028,11 @@ fn deck_remove_without_yes_refuses_headless_and_touches_nothing() {
         stderr(&out).contains("refusing without a terminal"),
         "stderr: {}",
         stderr(&out)
+    );
+    assert!(
+        !stdout(&out).contains("warning: required by"),
+        "stdout: {}",
+        stdout(&out)
     );
     assert!(deck.exists(), "nothing may be removed without confirmation");
 }
