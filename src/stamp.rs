@@ -1234,7 +1234,9 @@ mod tests {
     #[test]
     fn a_mid_file_table_takes_its_container_id_without_a_stray_blank_line() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n\n## q\nanswer\n";
+        // No trailing newline: the EOF lead applies only to the final card,
+        // never to the mid-file container insert.
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n\n## q\nanswer";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -1247,6 +1249,13 @@ mod tests {
                 outcome.minted_rows[0]
             )),
             "the container line follows the last row directly: {stamped:?}"
+        );
+        assert!(
+            stamped.ends_with(&format!(
+                "answer\n<!-- id: {} -->\n",
+                outcome.minted_cards[0]
+            )),
+            "the EOF card takes the lead newline instead: {stamped:?}"
         );
     }
 
@@ -1291,6 +1300,42 @@ mod tests {
     #[test]
     fn a_trailing_arrow_prose_line_does_not_extend_a_tables_block() {
         let text = "| a | b |\n|---|---|\n| x | y |\n<!-- id: card-t1 -->\nplain -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn consecutive_pipe_prose_answer_lines_all_stay_in_the_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n| p1 | x |\n| p2 | y |\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert!(
+            stamped.ends_with(&format!(
+                "| p2 | y |\n<!-- id: {} -->\n",
+                outcome.minted_cards[0]
+            )),
+            "the id line follows the last pipe prose line: {stamped:?}"
+        );
+    }
+
+    #[test]
+    fn an_id_after_a_broken_table_is_misplaced_at_the_blocks_true_end() {
+        let text = "## q\na\n<!-- id: card-q1 -->\n\n| a | b |\n|---|---|\nBOOM -->\n<!-- id: card-t2 -->\n";
+        assert_eq!(vec![8], misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn consecutive_pipe_prose_lines_are_no_table_to_the_hygiene_scan() {
+        let text = "## q\na\n| p1 |\n| p2 |\nmore\nlines\n<!-- id: card-q1 -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_two_row_tables_container_id_is_canonical() {
+        let text = "| a | b |\n|---|---|\n| x | y |\n| z | w |\n<!-- id: card-t1 -->\n";
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
     }
 
