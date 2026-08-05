@@ -227,7 +227,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             inserts.push((offset, format!("{version}id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
-            prepend = format!("---\nformat-version: {DECK_FORMAT_VERSION}\nid: \"{tok}\"\n\n---\n");
+            prepend = format!("---\nformat-version: {DECK_FORMAT_VERSION}\nid: \"{tok}\"\n---\n\n");
         }
         _ => {}
     }
@@ -606,7 +606,7 @@ mod tests {
 
         assert!(
             stamped.starts_with(&format!(
-                "---\nformat-version: 1\nid: \"{deck_tok}\"\n\n---\n"
+                "---\nformat-version: 1\nid: \"{deck_tok}\"\n---\n\n"
             )),
             "{stamped:?}"
         );
@@ -634,7 +634,7 @@ mod tests {
         assert!(stamped.starts_with(BOM));
         assert!(!stamped[BOM.len()..].starts_with(BOM));
         assert!(stamped.starts_with(&format!(
-            "{BOM}---\nformat-version: 1\nid: \"{deck_tok}\"\n\n---\n"
+            "{BOM}---\nformat-version: 1\nid: \"{deck_tok}\"\n---\n\n"
         )));
     }
 
@@ -888,7 +888,7 @@ mod tests {
         let stamped = fs::read_to_string(&path).unwrap();
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
-        let prefix = format!("---\nformat-version: 1\nid: \"{deck_tok}\"\n\n---\n");
+        let prefix = format!("---\nformat-version: 1\nid: \"{deck_tok}\"\n---\n\n");
         assert!(stamped.starts_with(&prefix), "{stamped:?}");
         let mut reconstructed = stamped[prefix.len()..].to_string();
         for tok in &outcome.minted_cards {

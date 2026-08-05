@@ -44,6 +44,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `alix deck init` writes the prepended frontmatter block closed
+  directly after the `id:` line, with the blank line following the
+  block instead of sitting inside it.
+
 - Old deck formats are no longer recognized anywhere. The dedicated
   retired-key errors (`alix-id:`, `origin:`), the doctor's "un-converted"
   classification of decks and state documents, and the workspace manifest's
