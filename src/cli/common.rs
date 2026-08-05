@@ -220,7 +220,9 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, io::Write, process::Stdio};
+    use std::fs;
+    #[cfg(target_os = "linux")]
+    use std::{io::Write, process::Stdio};
 
     use tempfile::TempDir;
 
