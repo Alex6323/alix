@@ -1,0 +1,83 @@
+# Mutation-miss allowlist. scripts/mutants_allowed.py reconciles
+# cargo-mutants misses against this file: a run stays red unless every
+# miss matches an entry here. Entries document argued residuals; the
+# mutants still run every sweep, so red means NEW information.
+#
+# Entry forms, both exactly as cargo-mutants prints the miss:
+#   <file>: <mutation description>          argued CLASS (any line)
+#   <file>:<line>: <mutation description>   single argued site (rots
+#                                           loudly via the stale note
+#                                           when the line moves)
+# Every entry group MUST carry its argument in the comment above it.
+# An entry without an argument, or whose code has changed since the
+# argument, does not belong here. Remove an entry the moment a
+# legitimate law kills its mutant; the "matched nothing" note on a
+# whole-tree sweep of its shard is the removal reminder.
+
+# random_uuid mixes private random bytes. The laws pin the observable
+# contract: RFC version and variant bits, format, uniqueness across
+# 4,096 draws, every payload bit reachable, and an avalanche lower
+# bound near 58 changed bits. These operator substitutions produce a
+# different but still contract-conforming byte stream; pinning the
+# exact mixer output would test the implementation, not the behavior,
+# and there is no seam to inject known bytes without adding one to
+# production. (Two former members of this class fell to the collision
+# and avalanche laws; these survive them by construction.)
+src/ask.rs: replace ^ with | in random_uuid
+src/ask.rs: replace ^ with & in random_uuid
+src/ask.rs: replace | with ^ in random_uuid
+src/ask.rs: replace << with >> in random_uuid
+src/ask.rs: replace >> with << in random_uuid
+
+# Defense in depth: parse_drafted_card rejects either empty side
+# before this condition, so no single-empty state can reach it and
+# the two operators are indistinguishable from any input.
+src/ask.rs: replace || with && in parse_drafted_card
+
+# Test-code equivalence: AskConfig::default().model is already None,
+# so deleting the explicit field from the helper's struct expression
+# builds the identical value.
+src/ask.rs: delete field model from struct AskConfig expression in tests::config
+
+# The mutated private counter is re-capped by the .take(remaining)
+# that follows and reset on every edit; no observable hint output or
+# state differs under the substitution.
+src/answer.rs: replace - with + in TypingValidator::hint
+
+# synthesize_virtual stores this line number only on the Card, and
+# WarmItem::from_card discards it before any output is generated; the
+# value has no consumer on this path.
+src/cli/deck.rs: replace + with - in augment_cmd
+src/cli/deck.rs: replace + with * in augment_cmd
+
+# Both sites require a live routing-table answer from the host. The
+# test-only scope offers no deterministic IP-injection seam, and a
+# law conditional on the machine's network would not be a law.
+src/cli/launch.rs: delete match arm (Some(t), Some(ip)) in announce
+src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
+
+# Observable only after a real child spawn, which tests must never
+# drive: launch_all's spawn re-enters the test binary and fork-bombs
+# (the {#profile-launch-test-fork-bomb} roadmap item owns the fix).
+# Killable only after that design decision lands.
+src/cli/profile.rs: delete match arm Err(error) in launch_all
+src/cli/profile.rs: replace match guard !status.success() with true in launch_all
+src/cli/profile.rs: replace match guard !status.success() with false in launch_all
+src/cli/profile.rs: delete ! in launch_all
+
+# The table end_line init is observable only for a table with no rows
+# and no directive comments, and such a table mints no container id;
+# every other table overwrites the init before any use. Line-pinned
+# because scan() holds many other additions.
+src/parser/mod.rs:507: replace + with - in scan
+src/parser/mod.rs:507: replace + with * in scan
+
+# The differing case needs an empty anchor line at file start; anchor
+# lines are non-empty content lines by construction. Line-pinned to
+# the rel > 0 comparison.
+src/stamp.rs:448: replace > with >= in line_terminator
+
+# Same class as the UUID mixer: random input, no injection seam, and
+# the output remains six valid, varying alphabet characters under the
+# substitution.
+src/token.rs: replace * with + in mint_row

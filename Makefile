@@ -182,6 +182,11 @@ mutants: gate-guard
 		mkdir -p target; \
 		git diff "$$base" > target/review.diff; \
 		cargo mutants --in-diff target/review.diff $$shard --jobs $(GATE_JOBS) --timeout-multiplier 12; \
+	fi; status=$$?; \
+	if [ $$status -eq 2 ]; then \
+		python3 scripts/mutants_allowed.py mutants.out/missed.txt docs/mutants-allowlist.txt || exit 2; \
+	elif [ $$status -ne 0 ]; then \
+		exit $$status; \
 	fi
 
 gate-guard:
