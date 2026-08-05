@@ -1238,6 +1238,47 @@ mod tests {
     }
 
     #[test]
+    fn hole_remap_rewrites_only_the_target_tokens_topology_slots() {
+        use crate::store::CascadeOutcome;
+        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
+        cache.add_topology(topology(
+            "auto",
+            "dA",
+            &["card-aa-0", "card-bb-0", "card-aa", "card-aa-1"],
+        ));
+        let outcome = CascadeOutcome {
+            remap: vec![(0, 2)],
+            orphaned: vec![1],
+            fresh: vec![],
+        };
+        cache.remap_holes("card-aa", &outcome);
+
+        assert_eq!(
+            vec!["card-aa-2", "card-bb-0", "card-aa"],
+            cache.topologies()[0].walk,
+            "the target's mapped hole moves, another token's hole and the base id stay, the orphaned hole drops"
+        );
+    }
+
+    #[test]
+    fn wipe_tokens_reports_whether_anything_was_wiped() {
+        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
+        cache.set_distractors("card-aa-0", vec!["x".into()], FP);
+        let mut wiped = HashSet::new();
+        wiped.insert("card-aa".to_string());
+
+        assert!(
+            cache.wipe_tokens(&wiped, &HashSet::new()),
+            "a wiped entry must report true so the caller saves"
+        );
+        assert!(cache.distractors("card-aa-0", FP).is_none());
+        assert!(
+            !cache.wipe_tokens(&wiped, &HashSet::new()),
+            "nothing left to wipe"
+        );
+    }
+
+    #[test]
     fn save_and_reload_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");

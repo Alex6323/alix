@@ -488,7 +488,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 });
             }
             check_cells(&header, lineno)?;
-            let delimiter = split_cells(next).ok_or(ParseError::TableLineMalformed(lineno + 1))?;
+            let delimiter =
+                split_cells(next).expect("is_delimiter_row only passes splittable lines");
             if delimiter.len() != header.len() {
                 return Err(ParseError::TableRowWidth {
                     line: lineno + 1,
@@ -2760,6 +2761,18 @@ the answer
         assert_eq!(
             ParseError::TableCellImage(3),
             err("| a | b |\n|---|---|\n| ![alt](x.png) | y |\n")
+        );
+    }
+
+    #[test]
+    fn escaped_images_in_cells_stay_legal_and_a_real_one_after_them_still_refuses() {
+        let deck = parse("| a | b |\n|---|---|\n| \\![x] \\![y] | z |\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("\\![x] \\![y]", deck.cards[0].front);
+
+        assert_eq!(
+            ParseError::TableCellImage(3),
+            err("| a | b |\n|---|---|\n| \\![x] ![y](p.png) | z |\n")
         );
     }
 

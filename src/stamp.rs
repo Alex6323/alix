@@ -1232,6 +1232,67 @@ mod tests {
     }
 
     #[test]
+    fn a_mid_file_table_takes_its_container_id_without_a_stray_blank_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n\n## q\nanswer\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let container = &outcome.minted_cards[1];
+
+        assert!(
+            stamped.contains(&format!(
+                "| x <!-- r:{} --> | y |\n<!-- id: {container} -->\n\n## q\n",
+                outcome.minted_rows[0]
+            )),
+            "the container line follows the last row directly: {stamped:?}"
+        );
+    }
+
+    #[test]
+    fn a_pipe_prose_answer_line_does_not_end_a_cards_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n| just | prose |\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert!(
+            stamped.ends_with(&format!(
+                "| just | prose |\n<!-- id: {} -->\n",
+                outcome.minted_cards[0]
+            )),
+            "the id line lands after the whole answer, pipe line included: {stamped:?}"
+        );
+    }
+
+    #[test]
+    fn a_pipe_prose_line_never_becomes_a_marker_hygiene_block() {
+        let text = "## q\na\n| p | q |\nmore\n<!-- id: card-q1 -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_card_block_before_a_table_keeps_both_ids_canonical() {
+        let text = "## q\na\n<!-- id: card-q1 -->\n\n| a | b |\n|---|---|\n| x | y |\n<!-- id: card-t1 -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_blank_line_inside_a_tables_directive_window_does_not_end_its_block() {
+        let text = "| a | b |\n|---|---|\n| x | y |\n\n<!-- id: card-t1 -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_trailing_arrow_prose_line_does_not_extend_a_tables_block() {
+        let text = "| a | b |\n|---|---|\n| x | y |\n<!-- id: card-t1 -->\nplain -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
     fn the_id_token_span_lands_exactly_on_the_token() {
         let text = "## q\na\n<!-- note -->\n<!-- id: card-q1 -->\n";
         let range = first_id_token_span(text, "card-q1").unwrap();
