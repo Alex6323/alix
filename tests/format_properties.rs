@@ -75,30 +75,68 @@ fn render_table(table: &GenTable) -> String {
 }
 
 #[derive(Debug, Clone)]
+enum CardShape {
+    Plain,
+    Cloze { holes: usize },
+    Choice { distractors: usize },
+}
+
+#[derive(Debug, Clone)]
 struct GenCard {
     front: String,
     answers: Vec<String>,
+    note: Option<String>,
+    shape: CardShape,
     token: Option<String>,
+}
+
+fn gen_shape() -> impl Strategy<Value = CardShape> {
+    prop_oneof![
+        3 => Just(CardShape::Plain),
+        1 => (1usize..=3).prop_map(|holes| CardShape::Cloze { holes }),
+        1 => (1usize..=3).prop_map(|distractors| CardShape::Choice { distractors }),
+    ]
 }
 
 fn gen_card() -> impl Strategy<Value = GenCard> {
     (
         safe_text(),
         proptest::collection::vec(safe_text(), 1..=2),
+        proptest::option::of(safe_text()),
+        gen_shape(),
         proptest::option::of(alphabet_string(26)),
     )
-        .prop_map(|(front, answers, token)| GenCard {
+        .prop_map(|(front, answers, note, shape, token)| GenCard {
             front,
             answers,
+            note,
+            shape,
             token: token.map(|t| format!("card-{t}")),
         })
 }
 
 fn render_card(card: &GenCard) -> String {
     let mut out = format!("## {}\n", card.front);
-    for answer in &card.answers {
-        out.push_str(answer);
-        out.push('\n');
+    match &card.shape {
+        CardShape::Plain => {
+            for answer in &card.answers {
+                out.push_str(answer);
+                out.push('\n');
+            }
+        }
+        CardShape::Cloze { holes } => {
+            let gaps: Vec<String> = (0..*holes).map(|i| format!("\\blank{{gap{i}}}")).collect();
+            out.push_str(&format!("{} {}\n", card.answers[0], gaps.join(" and ")));
+        }
+        CardShape::Choice { distractors } => {
+            out.push_str(&format!("- [x] {}\n", card.answers[0]));
+            for i in 0..*distractors {
+                out.push_str(&format!("- [ ] wrong option {i}\n"));
+            }
+        }
+    }
+    if let Some(note) = &card.note {
+        out.push_str(&format!("> {note}\n"));
     }
     if let Some(token) = &card.token {
         out.push_str(&format!("<!-- id: {token} -->\n"));
@@ -176,12 +214,48 @@ proptest! {
                 Just("```".to_string()),
                 Just(String::new()),
                 Just("| é\\|ü | \\![x] |".to_string()),
+                Just("- [x] yes".to_string()),
+                Just("- [ ] no".to_string()),
+                Just("the \\blank{gap} here".to_string()),
+                Just("\\## escaped heading".to_string()),
+                Just("\\> escaped note".to_string()),
+                Just("\\---".to_string()),
+                Just("<!-- at: src/lib.rs:1-2 fingerprint: xxh64-0011223344556677 -->".to_string()),
+                Just("<!-- direction: both -->".to_string()),
             ],
             0..14,
         )
     ) {
         let text = lines.join("\n");
         let _ = alix::parser::parse("deck.md", &text);
+    }
+
+    #[test]
+    fn generated_cards_parse_to_their_shape(
+        card in gen_card().prop_filter("correct must not collide with generated distractors",
+            |c| !c.answers[0].starts_with("wrong"))
+    ) {
+        let text = format!("{DECK_HEAD}\n{}", render_card(&card));
+        let deck = alix::parser::parse("deck.md", &text).expect("a generated card parses");
+        match &card.shape {
+            CardShape::Plain => {
+                prop_assert_eq!(1, deck.cards.len());
+                prop_assert_eq!(&card.answers, &deck.cards[0].back);
+            }
+            CardShape::Cloze { holes } => {
+                prop_assert_eq!(*holes, deck.cards.len(), "one sub-card per hole");
+                for (n, sub) in deck.cards.iter().enumerate() {
+                    prop_assert_eq!(Some(n as u32), sub.hole);
+                    prop_assert_eq!(format!("gap{n}"), sub.back[0].clone());
+                }
+            }
+            CardShape::Choice { distractors } => {
+                prop_assert_eq!(1, deck.cards.len());
+                prop_assert_eq!(*distractors, deck.cards[0].authored_distractors.len());
+                prop_assert_eq!(&card.answers[0], &deck.cards[0].back[0]);
+            }
+        }
+        prop_assert_eq!(card.note.as_deref(), deck.cards[0].note.as_deref());
     }
 
     #[test]
