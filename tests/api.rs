@@ -334,6 +334,29 @@ const CHOICE_ARMED_DECK: &str = "---\nformat-version: 1\nid: \"deck-choicearmed\
                                  ## 3 + 3 <!-- id: card-ca3 -->\n6\n\n## 4 + 4 <!-- id: card-ca4 -->\n8\n\n\
                                  ## 5 + 5 <!-- id: card-ca5 -->\n10\n";
 
+/// A stamped five-row card table, no augment cache: at Recognize its picks
+/// come from column sampling alone, and the header renders as context.
+const TABLE_DECK: &str = "---\nformat-version: 1\nid: \"deck-vocabtable\"\n---\n\
+| word | meaning |\n|---|---|\n\
+| eins <!-- r:aaaaa2 --> | one |\n\
+| zwei <!-- r:aaaaa3 --> | two |\n\
+| drei <!-- r:aaaaa4 --> | three |\n\
+| vier <!-- r:aaaaa5 --> | four |\n\
+| fünf <!-- r:aaaaa6 --> | five |\n\
+<!-- id: card-vt1 -->\n";
+
+/// [`TABLE_DECK`]'s front → back, mirroring [`choice_answer`].
+fn table_answer(front: &str) -> &'static str {
+    match front {
+        "eins" => "one",
+        "zwei" => "two",
+        "drei" => "three",
+        "vier" => "four",
+        "fünf" => "five",
+        other => panic!("not a TABLE_DECK front: {other}"),
+    }
+}
+
 /// [`CHOICE_DECK`]'s authored front → back, so a test can find which option is
 /// correct without hard-coding a queue order the shuffle doesn't guarantee.
 fn choice_answer(front: &str) -> &'static str {
@@ -391,6 +414,7 @@ fn spawn_full_server_fixture(
     std::fs::write(dir.path().join("sample.md"), FIXTURE_DECK).unwrap();
     std::fs::write(dir.path().join("choice.md"), CHOICE_DECK).unwrap();
     std::fs::write(dir.path().join("choice-armed.md"), CHOICE_ARMED_DECK).unwrap();
+    std::fs::write(dir.path().join("vocab-table.md"), TABLE_DECK).unwrap();
     std::fs::write(dir.path().join("trace.md"), TRACE_DECK).unwrap();
     std::fs::write(dir.path().join("source.txt"), TRACE_SOURCE).unwrap();
     extra(dir.path());
@@ -2463,6 +2487,59 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(correct_index, body["chosen"], "body: {body}");
     assert_eq!(correct_index, body["correct"], "body: {body}");
+    assert_eq!(true, body["passed"], "body: {body}");
+}
+
+#[test]
+fn a_table_deck_serves_sampled_choices_and_header_context_at_recognize() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"vocab-table.md","depth":"recognize"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("recognize", body["depth"], "body: {body}");
+    assert_eq!("choice", body["mode"], "body: {body}");
+
+    let context: Vec<&str> = body["card"]["context"]
+        .as_array()
+        .expect("a table card carries its header as context")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert_eq!(vec!["word", "meaning"], context, "body: {body}");
+    assert!(
+        !body["card"]["context_runs"]
+            .as_array()
+            .expect("context renders as runs")
+            .is_empty(),
+        "body: {body}"
+    );
+
+    let front = body["card"]["front"].as_str().unwrap();
+    let expected = table_answer(front);
+    let choices = body["choices"]
+        .as_array()
+        .expect("column sampling arms the pick with no augment cache");
+    assert_eq!(4, choices.len(), "body: {body}");
+    let column = ["one", "two", "three", "four", "five"];
+    assert!(
+        choices
+            .iter()
+            .all(|c| column.contains(&c.as_str().unwrap_or_default())),
+        "every option comes from the meaning column: {body}"
+    );
+    let correct_index = choices
+        .iter()
+        .position(|c| c.as_str() == Some(expected))
+        .unwrap_or_else(|| panic!("the correct answer {expected:?} is among {choices:?}"));
+
+    let resp = post_choice(&base, correct_index);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(true, body["passed"], "body: {body}");
 }
 
