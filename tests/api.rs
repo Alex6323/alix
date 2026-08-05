@@ -338,11 +338,11 @@ const CHOICE_ARMED_DECK: &str = "---\nformat-version: 1\nid: \"deck-choicearmed\
 /// come from column sampling alone, and the header renders as context.
 const TABLE_DECK: &str = "---\nformat-version: 1\nid: \"deck-vocabtable\"\n---\n\
 | word | meaning |\n|---|---|\n\
-| eins <!-- r:aaaaa2 --> | one |\n\
-| zwei <!-- r:aaaaa3 --> | two |\n\
-| drei <!-- r:aaaaa4 --> | three |\n\
-| vier <!-- r:aaaaa5 --> | four |\n\
-| fünf <!-- r:aaaaa6 --> | five |\n\
+| eins | one | <!-- r:aaaaa2 -->\n\
+| zwei | two | <!-- r:aaaaa3 -->\n\
+| drei | three | <!-- r:aaaaa4 -->\n\
+| vier | four | <!-- r:aaaaa5 -->\n\
+| fünf | five | <!-- r:aaaaa6 -->\n\
 <!-- id: card-vt1 -->\n";
 
 /// [`TABLE_DECK`]'s front → back, mirroring [`choice_answer`].

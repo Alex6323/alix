@@ -721,7 +721,7 @@ mod tests {
         assert_eq!(s.mode, Mode::Flip, "a choiceless Recognize card is a flip");
     }
 
-    const TABLE_DECK: &str = "| w | m |\n|---|---|\n| a <!-- r:aaaaaa --> | alpha |\n| b <!-- r:bbbbbb --> | beta |\n| c <!-- r:cccccc --> | gamma |\n| d <!-- r:dddddd --> | delta |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+    const TABLE_DECK: &str = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
 
     #[test]
     fn a_table_card_samples_its_column_without_any_authored_or_cached_source() {

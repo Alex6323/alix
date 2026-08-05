@@ -360,7 +360,7 @@ mod tests {
 
     fn table_deck(deck_id: &str, container: &str) -> String {
         format!(
-            "---\nformat-version: 1\nid: \"{deck_id}\"\n---\n| word | meaning |\n|---|---|\n| one <!-- r:4k2x9w --> | eins |\n| two <!-- r:7m3p5q --> | zwei |\n<!-- id: {container} -->\n"
+            "---\nformat-version: 1\nid: \"{deck_id}\"\n---\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:4k2x9w -->\n| two | zwei | <!-- r:7m3p5q -->\n<!-- id: {container} -->\n"
         )
     }
 

@@ -650,17 +650,7 @@ fn table_line(
         if tbl.rows_done {
             return Err(ParseError::TableTrailing(lineno));
         }
-        let cells = split_cells(raw).ok_or(ParseError::TableLineMalformed(lineno))?;
-        if cells.len() != tbl.columns {
-            return Err(ParseError::TableRowWidth {
-                line: lineno,
-                found: cells.len(),
-                expected: tbl.columns,
-            });
-        }
-        check_cells(&cells, lineno)?;
-        let mut cells = cells;
-        let stamp = match extract_row_stamp(&cells[0]) {
+        let (cell_text, stamp) = match extract_row_stamp(raw) {
             Some((text, value)) => {
                 if !crate::token::is_valid_row(&value) {
                     return Err(ParseError::TableRowStamp {
@@ -678,11 +668,19 @@ fn table_line(
                         value,
                     });
                 }
-                cells[0] = text;
-                Some(value)
+                (text, Some(value))
             }
-            None => None,
+            None => (raw.to_string(), None),
         };
+        let cells = split_cells(&cell_text).ok_or(ParseError::TableLineMalformed(lineno))?;
+        if cells.len() != tbl.columns {
+            return Err(ParseError::TableRowWidth {
+                line: lineno,
+                found: cells.len(),
+                expected: tbl.columns,
+            });
+        }
+        check_cells(&cells, lineno)?;
         tbl.rows.push(RawRow {
             line: lineno,
             cells,
@@ -761,22 +759,11 @@ fn check_cells(cells: &[String], lineno: usize) -> Result<(), ParseError> {
     Ok(())
 }
 
-/// Byte offset inside a raw table row line where a minted `<!-- r:... -->`
-/// stamp lands: directly after cell 1's trimmed content.
-pub(crate) fn row_stamp_insert_offset(line: &str) -> Option<usize> {
-    let mut pipes = line
-        .bytes()
-        .enumerate()
-        .filter(|(i, b)| *b == b'|' && !escaped_marker(line, *i));
-    let first = pipes.next()?.0;
-    let second = pipes.next()?.0;
-    let content = &line[first + 1..second];
-    Some(first + 1 + content.trim_end_matches(&WHITESPACE[..]).len())
-}
-
-// `(front text, stamp value)` when the cell ends with a `<!-- r:... -->`.
-fn extract_row_stamp(cell: &str) -> Option<(String, String)> {
-    let prefix = cell.strip_suffix("-->")?;
+// `(line without the stamp, stamp value)` when the row line's tail after
+// the closing pipe is a `<!-- r:... -->` comment.
+fn extract_row_stamp(line: &str) -> Option<(String, String)> {
+    let trimmed = trim_ws(line);
+    let prefix = trimmed.strip_suffix("-->")?;
     let start = prefix.rfind("<!--")?;
     let (key, value) = directive(&prefix[start + 4..])?;
     (key == "r").then(|| (trim_ws(&prefix[..start]).to_string(), value))
@@ -2619,7 +2606,7 @@ the answer
     #[test]
     fn a_two_column_table_emits_one_card_per_row() {
         let text = format!(
-            "| word | meaning |\n|---|---|\n| hund <!-- r:4k2x9w --> | dog |\n| katze <!-- r:7m3p5q --> | cat |\n<!-- id: {CONTAINER} -->\n"
+            "| word | meaning |\n|---|---|\n| hund | dog | <!-- r:4k2x9w -->\n| katze | cat | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -2641,7 +2628,7 @@ the answer
     #[test]
     fn a_three_column_table_carries_the_note_and_context() {
         let text = format!(
-            "| word | meaning | note |\n|---|---|---|\n| a <!-- r:4k2x9w --> | b | care |\n| c <!-- r:7m3p5q --> | d | |\n<!-- id: {CONTAINER} -->\n"
+            "| word | meaning | note |\n|---|---|---|\n| a | b | care | <!-- r:4k2x9w -->\n| c | d | | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -2653,7 +2640,7 @@ the answer
     #[test]
     fn an_unstamped_row_stays_id_less_even_under_a_container() {
         let text = format!(
-            "| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p | q |\n<!-- id: {CONTAINER} -->\n"
+            "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
@@ -2665,7 +2652,7 @@ the answer
     #[test]
     fn table_directives_apply_to_every_row_card() {
         let text = format!(
-            "| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p <!-- r:7m3p5q --> | q |\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
+            "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:7m3p5q -->\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -2783,14 +2770,14 @@ the answer
                 line: 3,
                 value: "xyz".into()
             },
-            err("| a | b |\n|---|---|\n| x <!-- r:xyz --> | y |\n")
+            err("| a | b |\n|---|---|\n| x | y | <!-- r:xyz -->\n")
         );
         assert_eq!(
             ParseError::TableDuplicateStamp {
                 line: 4,
                 value: "4k2x9w".into()
             },
-            err("| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p <!-- r:4k2x9w --> | q |\n")
+            err("| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:4k2x9w -->\n")
         );
     }
 
@@ -2814,7 +2801,7 @@ the answer
     fn an_empty_front_or_back_cell_is_refused() {
         assert_eq!(
             ParseError::EmptyFront(3),
-            err("| a | b |\n|---|---|\n| <!-- r:4k2x9w --> | y |\n")
+            err("| a | b |\n|---|---|\n| | y | <!-- r:4k2x9w -->\n")
         );
         assert_eq!(
             ParseError::FrontWithoutAnswer(3),

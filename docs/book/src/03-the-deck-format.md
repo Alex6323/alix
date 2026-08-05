@@ -169,13 +169,13 @@ present). A row only gets a pick when its column offers at least three other
 distinct values; smaller tables stay reviewable at the other depths.
 
 Identity works like card IDs, per row: `alix deck init` (or opening the deck
-for review) mints a short stamp into each row's first cell and one container
+for review) mints a short stamp onto each row's end, after the closing pipe (GFM renderers ignore cells beyond the header, so rendered views stay clean) and one container
 ID line after the table. Both are machine-maintained, never hand-authored,
 and they travel with the row, so sorting, inserting, and editing rows
 preserves review history:
 
 ```
-| purported <!-- r:4k2x9w --> | angeblich | often in legal prose |
+| purported | angeblich | often in legal prose | <!-- r:4k2x9w -->
 ```
 
 Directive comments between the table and its ID line (`direction`, `reveal`,

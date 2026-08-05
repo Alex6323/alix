@@ -197,9 +197,8 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         let start = nth_line_start(body, *line).ok_or(StampError::MissingLine(*line))?;
         let rest = &body[start..];
         let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
-        // The parser only records rows it split on two or more pipes.
-        let within = parser::row_stamp_insert_offset(raw).ok_or(StampError::MissingLine(*line))?;
-        inserts.push((start + within, format!(" <!-- r:{stamp} -->")));
+        let end = raw.trim_end_matches(&WS[..]).len();
+        inserts.push((start + end, format!(" <!-- r:{stamp} -->")));
     }
     for (end_line, tok) in &container_mints {
         let newline = line_terminator(body, *end_line);
@@ -1077,7 +1076,7 @@ mod tests {
         let container = &outcome.minted_cards[0];
         assert!(
             stamped.ends_with(&format!(
-                "| hund <!-- r:{} --> | dog |\n| katze <!-- r:{} --> | cat |\n<!-- id: {container} -->\n",
+                "| hund | dog | <!-- r:{} -->\n| katze | cat | <!-- r:{} -->\n<!-- id: {container} -->\n",
                 outcome.minted_rows[0], outcome.minted_rows[1]
             )),
             "{stamped:?}"
@@ -1117,7 +1116,7 @@ mod tests {
 
     #[test]
     fn adjacent_table_container_ids_are_both_canonical() {
-        let text = "| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n| c | d |\n|---|---|\n| p <!-- r:7m3p5q --> | q |\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
+        let text = "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n| c | d |\n|---|---|\n| p | q | <!-- r:7m3p5q -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
 
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
     }
@@ -1142,7 +1141,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let container = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
         let original = format!(
-            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x <!-- r:4k2x9w --> | y |\n| p | q |\n<!-- id: {container} -->\n"
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- id: {container} -->\n"
         );
         let path = write(&dir, "deck.md", &original);
 
@@ -1155,7 +1154,7 @@ mod tests {
         assert_ne!("4k2x9w", fresh.as_str());
         assert_eq!(1, stamped.matches("r:4k2x9w").count());
         assert!(
-            stamped.contains(&format!("| p <!-- r:{fresh} --> | q |")),
+            stamped.contains(&format!("| p | q | <!-- r:{fresh} -->")),
             "{stamped:?}"
         );
         assert_eq!(1, stamped.matches(&format!("id: {container}")).count());
@@ -1245,7 +1244,7 @@ mod tests {
 
         assert!(
             stamped.contains(&format!(
-                "| x <!-- r:{} --> | y |\n<!-- id: {container} -->\n\n## q\n",
+                "| x | y | <!-- r:{} -->\n<!-- id: {container} -->\n\n## q\n",
                 outcome.minted_rows[0]
             )),
             "the container line follows the last row directly: {stamped:?}"

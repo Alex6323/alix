@@ -62,11 +62,12 @@ fn render_table(table: &GenTable) -> String {
         table.header.iter().map(|_| "---|").collect::<String>()
     ));
     for row in &table.rows {
-        let mut cells = row.cells.clone();
+        let mut line = format!("| {} |", row.cells.join(" | "));
         if let Some(stamp) = &row.stamp {
-            cells[0] = format!("{} <!-- r:{stamp} -->", cells[0]);
+            line.push_str(&format!(" <!-- r:{stamp} -->"));
         }
-        out.push_str(&format!("| {} |\n", cells.join(" | ")));
+        out.push_str(&line);
+        out.push('\n');
     }
     if let Some(container) = &table.container {
         out.push_str(&format!("<!-- id: {container} -->\n"));

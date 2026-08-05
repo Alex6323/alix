@@ -1585,7 +1585,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "| word | meaning | note |\n|---|---|---|\n| one <!-- r:4k2x9w --> | eins | old |\n| two <!-- r:7m3p5q --> | zwei | |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+            "| word | meaning | note |\n|---|---|---|\n| one | eins | old | <!-- r:4k2x9w -->\n| two | zwei | | <!-- r:7m3p5q -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
         )
         .unwrap();
         let before = std::fs::read_to_string(&path).unwrap();
@@ -1606,7 +1606,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "## q\na\n\n| word | meaning |\n|---|---|\n| one <!-- r:4k2x9w --> | eins |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+            "## q\na\n\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:4k2x9w -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
         )
         .unwrap();
 
@@ -1990,7 +1990,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "| word | meaning |\n|---|---|\n| purported <!-- r:4k2x9w --> | angeblich |\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+            "| word | meaning |\n|---|---|\n| purported | angeblich | <!-- r:4k2x9w -->\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
         )
         .unwrap();
 
