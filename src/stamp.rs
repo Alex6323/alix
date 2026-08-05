@@ -1270,7 +1270,9 @@ mod tests {
 
     #[test]
     fn a_pipe_prose_line_never_becomes_a_marker_hygiene_block() {
-        let text = "## q\na\n| p | q |\nmore\n<!-- id: card-q1 -->\n";
+        // Two non-pipe lines before the id: the table walk skips the
+        // assumed-delimiter position, so one line cannot discriminate.
+        let text = "## q\na\n| p | q |\nmore\nlines\n<!-- id: card-q1 -->\n";
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
     }
 
