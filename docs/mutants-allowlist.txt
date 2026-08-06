@@ -11,6 +11,22 @@
 # open ruling; until he rules, no timeout entry is written here and the
 # shards that have them stay red on purpose.
 #
+# Every group states its CLASS, because "residual" must never be read as
+# "impossible". Four classes, only the first of which is truly unfixable:
+#
+#   EQUIVALENT   no test can distinguish the mutant: output is identical
+#                for every input. Genuinely unkillable.
+#   DELIBERATE   unreachable code kept on purpose (defence in depth). The
+#                mutant is the price of the safety net; killing it means
+#                deleting the net.
+#   DEAD-PATH    the mutated value has no consumer on this path, but the
+#                code is shared with paths where it matters, so it cannot
+#                be removed here.
+#   NEEDS-SEAM   killable, but only by adding a testing seam to production
+#                code (injectable randomness, an injectable host lookup, a
+#                spawn indirection). NOT a wall: an open decision, and one
+#                Alex can overturn at any time.
+#
 # Entry forms, both exactly as cargo-mutants prints the survivor:
 #   <file>: <mutation description>          argued CLASS (any line)
 #   <file>:<line>: <mutation description>   single argued site (rots
@@ -22,7 +38,7 @@
 # legitimate law kills its mutant; the "matched nothing" note on a
 # whole-tree sweep of its shard is the removal reminder.
 
-# random_uuid mixes private random bytes. The laws pin the observable
+# NEEDS-SEAM. random_uuid mixes private random bytes. The laws pin the observable
 # contract: RFC version and variant bits, format, uniqueness across
 # 4,096 draws, every payload bit reachable, and an avalanche lower
 # bound near 58 changed bits. These operator substitutions produce a
@@ -37,34 +53,34 @@ src/ask.rs: replace | with ^ in random_uuid
 src/ask.rs: replace << with >> in random_uuid
 src/ask.rs: replace >> with << in random_uuid
 
-# Defense in depth: parse_drafted_card rejects either empty side
+# DELIBERATE. parse_drafted_card rejects either empty side
 # before this condition, so no single-empty state can reach it and
 # the two operators are indistinguishable from any input.
 src/ask.rs: replace || with && in parse_drafted_card
 
-# Test-code equivalence: AskConfig::default().model is already None,
+# EQUIVALENT. AskConfig::default().model is already None,
 # so deleting the explicit field from the helper's struct expression
 # builds the identical value.
 src/ask.rs: delete field model from struct AskConfig expression in tests::config
 
-# The mutated private counter is re-capped by the .take(remaining)
+# EQUIVALENT. The mutated private counter is re-capped by the .take(remaining)
 # that follows and reset on every edit; no observable hint output or
 # state differs under the substitution.
 src/answer.rs: replace - with + in TypingValidator::hint
 
-# synthesize_virtual stores this line number only on the Card, and
+# DEAD-PATH. synthesize_virtual stores this line number only on the Card, and
 # WarmItem::from_card discards it before any output is generated; the
 # value has no consumer on this path.
 src/cli/deck.rs: replace + with - in augment_cmd
 src/cli/deck.rs: replace + with * in augment_cmd
 
-# Both sites require a live routing-table answer from the host. The
+# NEEDS-SEAM. Both sites require a live routing-table answer from the host. The
 # test-only scope offers no deterministic IP-injection seam, and a
 # law conditional on the machine's network would not be a law.
 src/cli/launch.rs: delete match arm (Some(t), Some(ip)) in announce
 src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 
-# Observable only after a real child spawn, which tests must never
+# NEEDS-SEAM. Observable only after a real child spawn, which tests must never
 # drive: launch_all's spawn re-enters the test binary and fork-bombs
 # (the {#profile-launch-test-fork-bomb} roadmap item owns the fix).
 # Killable only after that design decision lands.
