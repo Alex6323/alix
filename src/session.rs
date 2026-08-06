@@ -1749,6 +1749,48 @@ mod tests {
     }
 
     #[test]
+    fn next_servable_preserves_the_future_schedule_outside_cram() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let now = 1_000_000;
+        let due = now + 60_000;
+        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(due));
+        let mut session = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                new_cards_percent: 0,
+                ..Default::default()
+            },
+            now,
+        );
+        // A future card is outside the initial due roster. Put it in the
+        // unserved roster directly to isolate the projection this method owns.
+        session.roster = vec![0];
+
+        assert_eq!(
+            Some(due),
+            session.next_servable_at(&store, now),
+            "Recall uses the stored schedule unless this is explicitly a cram sitting"
+        );
+    }
+
+    #[test]
+    fn a_card_without_stable_identity_is_never_servable() {
+        let (mut store, _dir) = empty_store();
+        let mut all = cards(1);
+        all[0].token = None;
+        let session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1_000);
+
+        assert!(
+            !session.servable(0, &store, 1_000),
+            "progress and review state cannot be attached without a stable card ID"
+        );
+    }
+
+    #[test]
     fn the_cap_fixes_the_new_set_at_start() {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(

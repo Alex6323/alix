@@ -1203,6 +1203,33 @@ mod tests {
     }
 
     #[test]
+    fn a_due_instant_equal_to_now_is_not_a_future_wakeup() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## q1\na1\n");
+        let id = cards[0].id().unwrap();
+        store.get_or_insert(&id, T0).acquired_ms = Some(T0);
+        let now = T0 + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        let session = Session::new(
+            cards,
+            &mut store,
+            Box::new(Fsrs::default()),
+            SessionOptions {
+                max_session: 0,
+                new_cards_percent: 0,
+                ..Default::default()
+            },
+            now,
+        );
+        assert!(session.is_finished());
+
+        assert_eq!(
+            None,
+            state(&session, &store, &augment, Some(now)).next_due_ms,
+            "an opening at the present instant is due now, not a future countdown"
+        );
+    }
+
+    #[test]
     fn an_active_session_carries_no_next_due() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse(FOUR);

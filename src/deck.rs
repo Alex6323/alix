@@ -972,15 +972,15 @@ fn insert_note_lines(text: &str, fronts: &[usize], front_line: usize, notes: &[S
     // The card's trailing comment markers (`at:` locators, the closing `id:`)
     // stay last: stamping mints at that position, and doctor flags a marker
     // with content after it.
-    let mut insert_at = last_content + 1;
-    while insert_at > front_index + 1 {
-        let above = lines[insert_at - 1].trim();
-        if above.starts_with("<!--") && above.ends_with("-->") {
-            insert_at -= 1;
-        } else {
-            break;
-        }
-    }
+    let content_start = front_index.saturating_add(1);
+    let insert_at = (content_start..=last_content)
+        .rev()
+        .find(|&i| {
+            let line = lines[i].trim();
+            !(line.starts_with("<!--") && line.ends_with("-->"))
+        })
+        .map(|i| i.saturating_add(1))
+        .unwrap_or(content_start);
 
     let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
     for (offset, note) in notes.iter().enumerate() {
