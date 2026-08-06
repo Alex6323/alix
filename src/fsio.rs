@@ -1,15 +1,49 @@
 use std::{
     fs::File,
-    io::{Result, Write},
+    io::{Error, Result, Write},
     path::Path,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Operation {
+    CreateTemp,
+    WriteTemp,
+    SyncTemp,
+    Rename,
+    CreateDirectory,
+    OpenDirectory,
+    SyncDirectory,
+}
+
+fn operation<T>(_operation: Operation, run: impl FnOnce() -> Result<T>) -> Result<T> {
+    #[cfg(test)]
+    fault::trip_operation(_operation)?;
+    run()
+}
+
+#[derive(Debug)]
+pub(crate) struct ReplaceError {
+    source: Error,
+    replaced: bool,
+}
+
+impl ReplaceError {
+    pub(crate) fn replaced(&self) -> bool {
+        self.replaced
+    }
+
+    pub(crate) fn into_source(self) -> Error {
+        self.source
+    }
+}
 
 #[cfg(unix)]
 fn sync_dir(dir: &Path) -> Result<()> {
     if dir.as_os_str().is_empty() {
         return Ok(());
     }
-    File::open(dir)?.sync_all()
+    let file = operation(Operation::OpenDirectory, || File::open(dir))?;
+    operation(Operation::SyncDirectory, || file.sync_all())
 }
 
 #[cfg(not(unix))]
@@ -22,18 +56,34 @@ fn sync_dir(_dir: &Path) -> Result<()> {
 // persist the rename while dropping the data, leaving the only copy empty.
 // Sync the file before the rename and the directory entry after it.
 pub(crate) fn replace_file(tmp: &Path, path: &Path, contents: &[u8]) -> Result<()> {
-    let mut file = File::create(tmp)?;
-    file.write_all(contents)?;
+    replace_file_report(tmp, path, contents).map_err(ReplaceError::into_source)
+}
+
+pub(crate) fn replace_file_report(
+    tmp: &Path,
+    path: &Path,
+    contents: &[u8],
+) -> std::result::Result<(), ReplaceError> {
+    let before = |source| ReplaceError {
+        source,
+        replaced: false,
+    };
+    let mut file = operation(Operation::CreateTemp, || File::create(tmp)).map_err(before)?;
+    operation(Operation::WriteTemp, || file.write_all(contents)).map_err(before)?;
     #[cfg(test)]
-    fault::trip(fault::After::TmpWrite)?;
-    file.sync_all()?;
+    fault::trip(fault::After::TmpWrite).map_err(before)?;
+    operation(Operation::SyncTemp, || file.sync_all()).map_err(before)?;
     #[cfg(test)]
-    fault::trip(fault::After::Sync)?;
-    std::fs::rename(tmp, path)?;
+    fault::trip(fault::After::Sync).map_err(before)?;
+    operation(Operation::Rename, || std::fs::rename(tmp, path)).map_err(before)?;
+    let after = |source| ReplaceError {
+        source,
+        replaced: true,
+    };
     #[cfg(test)]
-    fault::trip(fault::After::Rename)?;
+    fault::trip(fault::After::Rename).map_err(after)?;
     if let Some(dir) = path.parent() {
-        sync_dir(dir)?;
+        sync_dir(dir).map_err(after)?;
     }
     Ok(())
 }
@@ -56,7 +106,9 @@ pub(crate) fn create_dir_all(dir: &Path) -> Result<()> {
         cursor = component.parent();
     }
     for component in missing.iter().rev() {
-        match std::fs::create_dir(component) {
+        match operation(Operation::CreateDirectory, || {
+            std::fs::create_dir(component)
+        }) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e),
@@ -68,12 +120,16 @@ pub(crate) fn create_dir_all(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// Test-only fault seam: deterministically fail `replace_file` right after a
-// named step, to prove the atomic-rename contract holds at every kill point.
-// Compiled out of production builds entirely.
+// Test-only named kill points plus fail-on-Nth filesystem operations.
 #[cfg(test)]
 pub(crate) mod fault {
-    use std::cell::Cell;
+    use std::{
+        cell::{Cell, RefCell},
+        marker::PhantomData,
+        rc::Rc,
+    };
+
+    pub(crate) use super::Operation;
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub(crate) enum After {
@@ -83,6 +139,48 @@ pub(crate) mod fault {
     }
 
     thread_local!(static POINT: Cell<Option<After>> = const { Cell::new(None) });
+    thread_local!(static FAILURE: RefCell<Failure> = RefCell::new(Failure::default()));
+
+    #[derive(Default)]
+    struct Failure {
+        nth: Option<usize>,
+        seen: usize,
+        triggered: Option<Operation>,
+    }
+
+    pub(crate) struct FaultGuard {
+        not_send: PhantomData<Rc<()>>,
+    }
+
+    pub(crate) fn fail_on_nth_operation(nth: usize) -> FaultGuard {
+        assert!(nth > 0, "fault operation index is one-based");
+        FAILURE.with(|failure| {
+            let mut failure = failure.borrow_mut();
+            assert!(
+                failure.nth.is_none(),
+                "nested filesystem faults are unsupported"
+            );
+            *failure = Failure {
+                nth: Some(nth),
+                ..Failure::default()
+            };
+        });
+        FaultGuard {
+            not_send: PhantomData,
+        }
+    }
+
+    impl FaultGuard {
+        pub(crate) fn triggered_operation(&self) -> Option<Operation> {
+            FAILURE.with(|failure| failure.borrow().triggered)
+        }
+    }
+
+    impl Drop for FaultGuard {
+        fn drop(&mut self) {
+            FAILURE.with(|failure| *failure.borrow_mut() = Failure::default());
+        }
+    }
 
     pub(crate) fn fail_after(point: After) {
         POINT.with(|cell| cell.set(Some(point)));
@@ -100,6 +198,24 @@ pub(crate) mod fault {
             } else {
                 Ok(())
             }
+        })
+    }
+
+    pub(super) fn trip_operation(operation: Operation) -> std::io::Result<()> {
+        FAILURE.with(|failure| {
+            let mut failure = failure.borrow_mut();
+            let Some(nth) = failure.nth else {
+                return Ok(());
+            };
+            failure.seen += 1;
+            if failure.seen != nth {
+                return Ok(());
+            }
+            failure.nth = None;
+            failure.triggered = Some(operation);
+            Err(std::io::Error::other(format!(
+                "injected fault at filesystem operation {nth} ({operation:?})"
+            )))
         })
     }
 }
@@ -156,6 +272,70 @@ mod tests {
                 "before the rename the target stays old; after it, new — never partial"
             );
         }
+    }
+
+    #[test]
+    fn failing_each_filesystem_operation_keeps_atomic_replacement_retryable() {
+        let mut covered = Vec::new();
+        for nth in 1..=7 {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("state.json");
+            let tmp = dir.path().join("state.json.tmp");
+            std::fs::write(&path, "old").unwrap();
+
+            let fault = fault::fail_on_nth_operation(nth);
+            let result = replace_file(&tmp, &path, b"new");
+            let operation = fault.triggered_operation();
+            drop(fault);
+
+            let Some(operation) = operation else {
+                assert!(
+                    result.is_ok(),
+                    "operation {nth}: an uninjected replacement failed"
+                );
+                break;
+            };
+            covered.push(operation);
+            assert!(
+                result.is_err(),
+                "operation {nth} ({operation:?}): the fault was swallowed"
+            );
+            let expected = if matches!(
+                operation,
+                fault::Operation::OpenDirectory | fault::Operation::SyncDirectory
+            ) {
+                "new"
+            } else {
+                "old"
+            };
+            assert_eq!(
+                expected,
+                std::fs::read_to_string(&path).unwrap(),
+                "operation {nth} ({operation:?}): target is neither the last committed state"
+            );
+
+            replace_file(&tmp, &path, b"new").unwrap();
+            assert_eq!("new", std::fs::read_to_string(&path).unwrap());
+            assert!(
+                !tmp.exists(),
+                "operation {nth} ({operation:?}): retry left a temp file"
+            );
+        }
+        let mut expected = vec![
+            fault::Operation::CreateTemp,
+            fault::Operation::WriteTemp,
+            fault::Operation::SyncTemp,
+            fault::Operation::Rename,
+        ];
+        #[cfg(unix)]
+        expected.extend([
+            fault::Operation::OpenDirectory,
+            fault::Operation::SyncDirectory,
+        ]);
+        assert_eq!(
+            expected, covered,
+            "the law must visit every operation in one replacement"
+        );
     }
 
     #[cfg(unix)]

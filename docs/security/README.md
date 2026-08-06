@@ -57,6 +57,11 @@ checks its loaded revision against the canonical file, then renames the
 replacement into place (`src/store.rs`). A writer marker and
 synchronization-conflict detection warn about likely same-deck concurrency;
 none of these mechanisms authenticates a writer or merges concurrent changes.
+An error after the rename remains visible, but progress and augmentation
+bookkeeping advances to the revision that already committed, keeping later
+saves retryable. Virtual-card promotion likewise recognizes its stable ID when
+recovering after the deck write but before progress cleanup, so recovery does
+not append the card twice.
 
 Deck stamping has a separate local write boundary. A valid deck ID under the
 `id` key in opening YAML frontmatter marks a file as initialized and
@@ -225,8 +230,9 @@ safe or accurate.
   human review.
 - Per-deck state has fsynced atomic replacement, owner and revision checks,
   and conflict warnings, but no general same-deck merge or multi-writer
-  transaction protocol; kill-point fault injection (`src/fsio.rs`'s fault
-  seam and matrix test) runs on every platform, while the Windows
+  transaction protocol; fail-on-Nth fault injection (`src/fsio.rs`'s fault
+  seam and the progress/augmentation/promotion laws) runs on every platform,
+  while the Windows
   directory-entry flush (`sync_dir` is a no-op there) and real power-loss
   testing remain open.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
@@ -255,10 +261,13 @@ The most relevant deterministic checks currently live beside their controls:
   destination-first publication, and source-deletion rollback;
 - `src/state.rs` and `src/workspace.rs`: typed user-file and workspace-file
   routing by stable deck ID;
-- `src/store.rs`: per-deck atomic replacement, revisions, writer markers, and
-  sync conflicts;
+- `src/store.rs` and `src/augment.rs`: per-deck atomic replacement, committed
+  revision tracking, retryable partial aggregate saves, promotion recovery,
+  writer markers, and sync conflicts;
 - `src/fsio.rs`: durable file replacement (data and directory-entry sync
-  around the rename) shared by every state, deck, and manifest writer;
+  around the rename), committed-error reporting, and deterministic
+  fail-on-Nth operation injection shared by every state, deck, and manifest
+  writer;
 - `src/ask.rs`, `src/backend/claude.rs`, and `src/backend/codex.rs`: bounded
   generation diagnostics, partial-output redaction, event-driven inactivity,
   and provider process-group termination;

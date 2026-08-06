@@ -440,30 +440,53 @@ fn deck_revision(path: &Path, expected_deck_id: &str) -> Result<u64, StoreError>
     Ok(file.revision)
 }
 
-fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), StoreError> {
+struct WriteFailure {
+    error: StoreError,
+    replaced: bool,
+}
+
+impl WriteFailure {
+    fn into_error(self) -> StoreError {
+        self.error
+    }
+}
+
+fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), WriteFailure> {
     let io_err = |source| StoreError::Io {
         path: path.to_path_buf(),
         source,
     };
-    let json = serde_json::to_string_pretty(value).map_err(|source| StoreError::Format {
-        path: path.to_path_buf(),
-        source,
+    let json = serde_json::to_string_pretty(value).map_err(|source| WriteFailure {
+        error: StoreError::Format {
+            path: path.to_path_buf(),
+            source,
+        },
+        replaced: false,
     })?;
     let tmp = path.with_extension("json.tmp");
-    crate::fsio::replace_file(&tmp, path, json.as_bytes()).map_err(io_err)
+    crate::fsio::replace_file_report(&tmp, path, json.as_bytes()).map_err(|failure| {
+        let replaced = failure.replaced();
+        WriteFailure {
+            error: io_err(failure.into_source()),
+            replaced,
+        }
+    })
 }
 
-pub(crate) fn write_deck_data(
+fn write_deck_data(
     path: &Path,
     deck_id: &str,
     subject: &str,
     revision: u64,
     data: &StoreDocumentData,
-) -> Result<(), StoreError> {
+) -> Result<(), WriteFailure> {
     if let Some(dir) = path.parent() {
-        crate::fsio::create_dir_all(dir).map_err(|source| StoreError::Io {
-            path: path.to_path_buf(),
-            source,
+        crate::fsio::create_dir_all(dir).map_err(|source| WriteFailure {
+            error: StoreError::Io {
+                path: path.to_path_buf(),
+                source,
+            },
+            replaced: false,
         })?;
     }
     let file = DeckStoreFile {
@@ -846,9 +869,18 @@ impl Store {
             virtual_cards: self.virtual_cards.clone(),
             writer: self.writer_for_save(),
         };
-        write_json_atomic(&self.path, &file)?;
-        revision.store(next, Ordering::Relaxed);
-        Ok(())
+        match write_json_atomic(&self.path, &file) {
+            Ok(()) => {
+                revision.store(next, Ordering::Relaxed);
+                Ok(())
+            }
+            Err(failure) => {
+                if failure.replaced {
+                    revision.store(next, Ordering::Relaxed);
+                }
+                Err(failure.into_error())
+            }
+        }
     }
 
     fn writer_for_save(&self) -> Option<Writer> {
@@ -907,15 +939,25 @@ impl Store {
             let document = &mut documents[index];
             data.writer = self.writer_for_save();
             let next = document.revision.saturating_add(1);
-            write_deck_data(
+            match write_deck_data(
                 &document.path,
                 &document.deck_id,
                 &document.subject,
                 next,
                 &data,
-            )?;
-            document.revision = next;
-            document.original = data;
+            ) {
+                Ok(()) => {
+                    document.revision = next;
+                    document.original = data;
+                }
+                Err(failure) => {
+                    if failure.replaced {
+                        document.revision = next;
+                        document.original = data;
+                    }
+                    return Err(failure.into_error());
+                }
+            }
         }
         Ok(())
     }
@@ -1481,8 +1523,7 @@ pub fn note_badges(store: &mut Store, deck_id: &str, cards: &[Card], now_ms: u64
     }
 }
 
-/// No schedule transfer needed: the id was unified at mint time. Appends
-/// before removing the sidecar, so a crash duplicates, never loses, the card.
+/// No schedule transfer needed: the id was unified at mint time.
 pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResult<()> {
     let Some(vc) = store.get_virtual(id) else {
         bail!("no virtual card with id {id} to promote");
@@ -1490,8 +1531,15 @@ pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResu
     let text = vc.text.clone();
     let parent = vc.deck.clone();
 
-    deck::append_cards(deck_path, &text)
-        .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
+    let already_appended = deck::Deck::load(deck_path)
+        .with_context(|| format!("reading the promotion target {}", deck_path.display()))?
+        .cards
+        .iter()
+        .any(|card| card.id().as_deref() == Some(id));
+    if !already_appended {
+        deck::append_cards(deck_path, &text)
+            .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
+    }
 
     store.remove_virtual_block(&parent, &text);
     store
@@ -2604,6 +2652,83 @@ mod tests {
     }
 
     #[test]
+    fn every_promotion_fault_recovers_once_without_losing_review_history() {
+        let mut completed_without_a_fault = false;
+        for nth in 1..=24 {
+            let dir = tempfile::tempdir().unwrap();
+            let deck_path = write_deck(
+                dir.path(),
+                "rust.md",
+                "## existing <!-- id: card-ex1 -->\nanswer\n",
+            );
+            let store_path = dir.path().join("deck1.json");
+            let mut store = Store::open(&store_path).unwrap();
+            let vc = virtual_card("rust.md", BORROW_TEXT);
+            let id = vc.id.clone();
+            store.insert_virtual(vc);
+            store
+                .get_or_insert(&id, 1_000)
+                .record_review(2_000, Grade::Pass, Depth::Recall, false);
+            store.save().unwrap();
+
+            let fault = crate::fsio::fault::fail_on_nth_operation(nth);
+            let result = promote_virtual(&mut store, &id, &deck_path);
+            let operation = fault.triggered_operation();
+            drop(fault);
+
+            let Some(operation) = operation else {
+                assert!(
+                    result.is_ok(),
+                    "operation {nth}: an uninjected promotion failed"
+                );
+                completed_without_a_fault = true;
+                break;
+            };
+            assert!(
+                result.is_err(),
+                "operation {nth} ({operation:?}): the injected promotion fault was swallowed"
+            );
+            let intermediate = std::fs::read_to_string(&deck_path).unwrap();
+            crate::parser::parse_str("rust.md", &intermediate).unwrap_or_else(|error| {
+                panic!("operation {nth} ({operation:?}): deck became partial: {error}")
+            });
+
+            let mut recovered = Store::open(&store_path).unwrap();
+            if recovered.get_virtual(&id).is_some() {
+                promote_virtual(&mut recovered, &id, &deck_path).unwrap_or_else(|error| {
+                    panic!("operation {nth} ({operation:?}): recovery failed: {error}")
+                });
+            }
+            let final_text = std::fs::read_to_string(&deck_path).unwrap();
+            let matching = crate::parser::parse_str("rust.md", &final_text)
+                .unwrap()
+                .into_iter()
+                .filter(|card| card.id().as_deref() == Some(id.as_str()))
+                .count();
+            assert_eq!(
+                1, matching,
+                "operation {nth} ({operation:?}): recovery duplicated the promoted card"
+            );
+            let reopened = Store::open(&store_path).unwrap();
+            assert!(
+                reopened.get_virtual(&id).is_none(),
+                "operation {nth} ({operation:?}): recovery left the promoted sidecar"
+            );
+            let history = &reopened.get(&id).unwrap().history;
+            assert_eq!(
+                1,
+                history.len(),
+                "operation {nth} ({operation:?}): review history was lost"
+            );
+            assert_eq!(Grade::Pass, history[0].grade);
+        }
+        assert!(
+            completed_without_a_fault,
+            "the fail-on-Nth sweep never reached the successful promotion"
+        );
+    }
+
+    #[test]
     fn promote_leaves_existing_deck_card_ids_untouched() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_deck(
@@ -3368,6 +3493,82 @@ mod tests {
 
         let store = Store::open(dir.path()).unwrap();
         assert_eq!(1, store.len());
+    }
+
+    #[test]
+    fn every_partial_aggregate_save_is_valid_and_retryable() {
+        let mut completed_without_a_fault = false;
+        for nth in 1..=32 {
+            let dir = tempfile::tempdir().unwrap();
+            let paths = [
+                dir.path().join("deck-a.json"),
+                dir.path().join("deck-b.json"),
+            ];
+            for (path, deck_id) in paths.iter().zip(["deck-a", "deck-b"]) {
+                std::fs::write(
+                    path,
+                    format!(
+                        r#"{{"version":1,"deck_id":"{deck_id}","subject":"{deck_id}.md","revision":1,"cards":{{}}}}"#
+                    ),
+                )
+                .unwrap();
+            }
+            let mut store = Store::open(dir.path()).unwrap();
+            store.set_last_depth("deck-a", Depth::Recall);
+            store.set_last_depth("deck-b", Depth::Reconstruct);
+
+            let fault = crate::fsio::fault::fail_on_nth_operation(nth);
+            let result = store.save();
+            let operation = fault.triggered_operation();
+            drop(fault);
+
+            let Some(operation) = operation else {
+                assert!(
+                    result.is_ok(),
+                    "operation {nth}: an uninjected aggregate save failed"
+                );
+                completed_without_a_fault = true;
+                break;
+            };
+            assert!(
+                result.is_err(),
+                "operation {nth} ({operation:?}): the injected aggregate fault was swallowed"
+            );
+            for path in &paths {
+                let text = std::fs::read_to_string(path).unwrap();
+                let document: DeckStoreFile = serde_json::from_str(&text).unwrap_or_else(|error| {
+                    panic!(
+                        "operation {nth} ({operation:?}): {} became partial JSON: {error}",
+                        path.display()
+                    )
+                });
+                assert!(
+                    matches!(document.revision, 1 | 2),
+                    "operation {nth} ({operation:?}): {} has revision {}",
+                    path.display(),
+                    document.revision
+                );
+            }
+
+            store.save().unwrap_or_else(|error| {
+                panic!("operation {nth} ({operation:?}): retry failed: {error}")
+            });
+            let reopened = Store::open(dir.path()).unwrap();
+            assert_eq!(
+                Some(Depth::Recall),
+                reopened.last_depth("deck-a"),
+                "operation {nth} ({operation:?}): deck-a change was lost"
+            );
+            assert_eq!(
+                Some(Depth::Reconstruct),
+                reopened.last_depth("deck-b"),
+                "operation {nth} ({operation:?}): deck-b change was lost"
+            );
+        }
+        assert!(
+            completed_without_a_fault,
+            "the fail-on-Nth sweep never reached the successful aggregate save"
+        );
     }
 
     #[test]

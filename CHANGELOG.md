@@ -86,6 +86,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A filesystem error after an atomic rename no longer strands progress or
+  augmentation behind a stale in-memory revision: the error still surfaces,
+  while retry bookkeeping follows the replacement that already committed.
+  Retrying a virtual-card promotion after its deck write also recognizes the
+  stable card ID instead of appending a duplicate, preserving its review
+  history across the deck/progress failure boundary.
+
 - The kids app behaves on touch screens: a long-press no longer opens the
   browser's context menu, page text cannot be selected or grow a blinking
   insertion cursor, taps skip the double-tap-zoom delay, and the answer

@@ -259,17 +259,37 @@ fn deck_revision(path: &Path, expected_deck_id: &str) -> Result<u64, AugmentErro
     Ok(file.revision)
 }
 
-fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), AugmentError> {
+struct WriteFailure {
+    error: AugmentError,
+    replaced: bool,
+}
+
+impl WriteFailure {
+    fn into_error(self) -> AugmentError {
+        self.error
+    }
+}
+
+fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), WriteFailure> {
     let io_err = |source| AugmentError::Io {
         path: path.to_path_buf(),
         source,
     };
-    let json = serde_json::to_string_pretty(value).map_err(|source| AugmentError::Format {
-        path: path.to_path_buf(),
-        source,
+    let json = serde_json::to_string_pretty(value).map_err(|source| WriteFailure {
+        error: AugmentError::Format {
+            path: path.to_path_buf(),
+            source,
+        },
+        replaced: false,
     })?;
     let tmp = path.with_extension("json.tmp");
-    crate::fsio::replace_file(&tmp, path, json.as_bytes()).map_err(io_err)
+    crate::fsio::replace_file_report(&tmp, path, json.as_bytes()).map_err(|failure| {
+        let replaced = failure.replaced();
+        WriteFailure {
+            error: io_err(failure.into_source()),
+            replaced,
+        }
+    })
 }
 
 pub(crate) fn write_deck_data(
@@ -278,10 +298,22 @@ pub(crate) fn write_deck_data(
     revision: u64,
     data: &AugmentDocumentData,
 ) -> Result<(), AugmentError> {
+    write_deck_data_tracked(path, deck_id, revision, data).map_err(WriteFailure::into_error)
+}
+
+fn write_deck_data_tracked(
+    path: &Path,
+    deck_id: &str,
+    revision: u64,
+    data: &AugmentDocumentData,
+) -> Result<(), WriteFailure> {
     if let Some(dir) = path.parent() {
-        crate::fsio::create_dir_all(dir).map_err(|source| AugmentError::Io {
-            path: path.to_path_buf(),
-            source,
+        crate::fsio::create_dir_all(dir).map_err(|source| WriteFailure {
+            error: AugmentError::Io {
+                path: path.to_path_buf(),
+                source,
+            },
+            replaced: false,
         })?;
     }
     write_json_atomic(
@@ -576,9 +608,18 @@ impl AugmentCache {
             cards: self.cards.clone(),
             topologies: self.topologies.clone(),
         };
-        write_json_atomic(&self.path, &file)?;
-        revision.store(next, Ordering::Relaxed);
-        Ok(())
+        match write_json_atomic(&self.path, &file) {
+            Ok(()) => {
+                revision.store(next, Ordering::Relaxed);
+                Ok(())
+            }
+            Err(failure) => {
+                if failure.replaced {
+                    revision.store(next, Ordering::Relaxed);
+                }
+                Err(failure.into_error())
+            }
+        }
     }
 
     fn save_aggregate(
@@ -651,9 +692,19 @@ impl AugmentCache {
         for (index, data) in changed {
             let document = &mut documents[index];
             let next = document.revision.saturating_add(1);
-            write_deck_data(&document.path, &document.deck_id, next, &data)?;
-            document.revision = next;
-            document.original = data;
+            match write_deck_data_tracked(&document.path, &document.deck_id, next, &data) {
+                Ok(()) => {
+                    document.revision = next;
+                    document.original = data;
+                }
+                Err(failure) => {
+                    if failure.replaced {
+                        document.revision = next;
+                        document.original = data;
+                    }
+                    return Err(failure.into_error());
+                }
+            }
         }
         Ok(())
     }
@@ -1369,6 +1420,97 @@ mod tests {
             Err(error) => error,
         };
         assert!(matches!(error, AugmentError::Format { .. }));
+    }
+
+    #[test]
+    fn every_partial_aggregate_augmentation_save_is_valid_and_retryable() {
+        const DECK_A: &str = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        const DECK_B: &str = "deck-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        const CARD_A: &str = "card-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        const CARD_B: &str = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+
+        let mut completed_without_a_fault = false;
+        for nth in 1..=32 {
+            let dir = tempfile::tempdir().unwrap();
+            let deck_a_path = dir.path().join("a.md");
+            let deck_b_path = dir.path().join("b.md");
+            std::fs::write(
+                &deck_a_path,
+                format!(
+                    "---\nformat-version: 1\nid: \"{DECK_A}\"\n---\n## a\na\n<!-- id: {CARD_A} -->\n"
+                ),
+            )
+            .unwrap();
+            std::fs::write(
+                &deck_b_path,
+                format!(
+                    "---\nformat-version: 1\nid: \"{DECK_B}\"\n---\n## b\nb\n<!-- id: {CARD_B} -->\n"
+                ),
+            )
+            .unwrap();
+            let decks = [
+                Deck::load(&deck_a_path).unwrap(),
+                Deck::load(&deck_b_path).unwrap(),
+            ];
+            let mut cache = AugmentCache::open_for_decks(dir.path(), &decks).unwrap();
+            cache.set_note(CARD_A, "note a".to_string(), FP);
+            cache.set_note(CARD_B, "note b".to_string(), FP);
+
+            let fault = crate::fsio::fault::fail_on_nth_operation(nth);
+            let result = cache.save();
+            let operation = fault.triggered_operation();
+            drop(fault);
+
+            let Some(operation) = operation else {
+                assert!(
+                    result.is_ok(),
+                    "operation {nth}: an uninjected aggregate augmentation save failed"
+                );
+                completed_without_a_fault = true;
+                break;
+            };
+            assert!(
+                result.is_err(),
+                "operation {nth} ({operation:?}): the injected augmentation fault was swallowed"
+            );
+            let augment_dir = crate::workspace::WorkspaceFiles::new(dir.path()).augment();
+            if augment_dir.is_dir() {
+                for entry in std::fs::read_dir(&augment_dir).unwrap() {
+                    let path = entry.unwrap().path();
+                    if path
+                        .extension()
+                        .is_some_and(|extension| extension == "json")
+                    {
+                        let text = std::fs::read_to_string(&path).unwrap();
+                        serde_json::from_str::<serde_json::Value>(&text).unwrap_or_else(|error| {
+                            panic!(
+                                "operation {nth} ({operation:?}): {} became partial JSON: {error}",
+                                path.display()
+                            )
+                        });
+                    }
+                }
+            }
+
+            cache.save().unwrap_or_else(|error| {
+                panic!("operation {nth} ({operation:?}): retry failed: {error}")
+            });
+            let reopened = AugmentCache::open_for_decks(dir.path(), &decks).unwrap();
+            assert_eq!(
+                Some("note a"),
+                reopened.note(CARD_A, FP),
+                "operation {nth} ({operation:?}): deck-a augmentation was lost"
+            );
+            assert_eq!(
+                Some("note b"),
+                reopened.note(CARD_B, FP),
+                "operation {nth} ({operation:?}): deck-b augmentation was lost"
+            );
+        }
+        assert!(
+            completed_without_a_fault,
+            "the fail-on-Nth sweep never reached the successful aggregate augmentation save"
+        );
     }
 
     #[test]

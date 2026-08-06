@@ -216,6 +216,9 @@ Relative workspace `store` values are anchored to the workspace.
 Each document carries its owner ID, format version, and revision. Saves write a
 sibling `.json.tmp` and atomically rename it into place. A process that can see
 that its loaded revision is stale refuses to overwrite the newer document.
+If the replacement commits but the final directory flush fails, Alix reports
+the failure while retaining the committed revision in memory, so a later save
+can retry instead of remaining stale forever.
 This protects local overlapping writers; it cannot turn disconnected folder
 synchronization into a transaction.
 
@@ -242,8 +245,10 @@ Every state, deck, and manifest write goes to a sibling temporary file that is
 flushed to disk, atomically renamed over the target, and (on Linux and macOS)
 has its directory entry flushed. An interrupted save leaves the previous file
 intact, never a half-written one; a kill-point fault-injection suite checks that
-at each step. Surviving a hard power loss additionally relies on flushing before
-the rename, which the code does but a test cannot simulate. That protects
+at every filesystem operation, including partial multi-document saves and the
+deck/progress promotion boundary. Surviving a hard power loss additionally
+relies on flushing before the rename, which the code does but a test cannot
+simulate. That protects
 against Alix; your own folder backup protects against disk failure and
 accidental deletion.
 
