@@ -628,6 +628,21 @@ impl Drop for PathGuard {
 /// Runs `f` with `PATH` set to `dir` (a directory that deliberately has no
 /// `wormhole` executable) for the call's duration, restoring the original
 /// `PATH` — even if `f` panics — via [`PathGuard`]'s drop.
+/// Creates a fifo while holding [`PATH_LOCK`]: `with_empty_path` blanks the
+/// process `PATH` for its duration, and a bare `mkfifo` lookup racing that
+/// window fails with NotFound. Readers of `PATH` must serialize against its
+/// writers, which is the risk `PathGuard` documents but cannot remove.
+fn mkfifo_at(path: &Path) {
+    let _lock = PATH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .expect("mkfifo runs")
+            .success()
+    );
+}
+
 fn with_empty_path<R>(dir: &Path, f: impl FnOnce() -> R) -> R {
     let lock = PATH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original = std::env::var_os("PATH");
@@ -1490,13 +1505,7 @@ fn a_parked_doctor_binary_probe_does_not_block_state_requests() {
     let fake_dir = TempDir::new().unwrap();
     let started = fake_dir.path().join("started");
     let fifo = fake_dir.path().join("release.fifo");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo runs")
-            .success()
-    );
+    mkfifo_at(&fifo);
     let script = fake_dir.path().join("parked-backend");
     std::fs::write(
         &script,
@@ -4347,13 +4356,7 @@ fn a_tutor_answer_arriving_after_a_card_advance_is_dropped() {
     let scripts = TempDir::new().unwrap();
     let started = scripts.path().join("started");
     let fifo = scripts.path().join("release.fifo");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo runs")
-            .success()
-    );
+    mkfifo_at(&fifo);
     let fake = scripts.path().join("parked-tutor");
     std::fs::write(
         &fake,
@@ -4407,13 +4410,7 @@ fn server_shutdown_cancels_the_in_flight_tutor_worker() {
     let started = scripts.path().join("started");
     let pid_file = scripts.path().join("pid");
     let fifo = scripts.path().join("release.fifo");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo runs")
-            .success()
-    );
+    mkfifo_at(&fifo);
     let fake = scripts.path().join("parked-tutor");
     std::fs::write(
         &fake,
@@ -4480,13 +4477,7 @@ fn server_shutdown_cancels_tutor_descendant_processes() {
     let started = scripts.path().join("started");
     let pid_file = scripts.path().join("descendant-pid");
     let fifo = scripts.path().join("release.fifo");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo runs")
-            .success()
-    );
+    mkfifo_at(&fifo);
     let descendant = scripts.path().join("descendant");
     std::fs::write(
         &descendant,
@@ -4566,13 +4557,7 @@ fn server_shutdown_cancels_the_in_flight_remote_tutor_worker() {
     let started = scripts.path().join("started");
     let pid_file = scripts.path().join("pid");
     let fifo = scripts.path().join("release.fifo");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo runs")
-            .success()
-    );
+    mkfifo_at(&fifo);
     let fake = scripts.path().join("parked-remote-tutor");
     std::fs::write(
         &fake,
@@ -4636,13 +4621,7 @@ fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
     let scripts = TempDir::new().unwrap();
     let started = scripts.path().join("started");
     let fifo = scripts.path().join("release.fifo");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .expect("mkfifo runs")
-            .success()
-    );
+    mkfifo_at(&fifo);
     // First call answers immediately (builds the transcript); the second
     // (the condense) parks on the FIFO.
     let count = scripts.path().join("calls");
