@@ -3,13 +3,21 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents by class: 2 EQUIVALENT, 1 DELIBERATE, 2 DEAD-PATH,
-# 19 NEEDS-SEAM. Nineteen of the twenty-four are therefore a standing
-# DECISION, not a wall: injectable randomness, an injectable host
-# lookup, and the spawn indirection {#profile-launch-test-fork-bomb}
-# already owns would make them killable. That trade (production surface
-# for test reach) is Alex's to make. Nothing here should be read as
-# saying it cannot be done.
+# Current contents: SEVEN entries, down from twenty-four. Alex ruled
+# 2026-08-06 that the only admissible reason is "it really cannot be
+# tested", so everything merely awkward was seamed and killed instead:
+# the uuid mixer became a pure function of its seed (11 killed), the
+# pairing host became a parameter (1), and a child's outcome separated
+# from spawning it (4). What remains is genuinely untestable, by one of
+# four proofs:
+#
+#   EQUIVALENT    output identical for every input, provably.
+#   UNREACHABLE   the branch cannot be entered; kept as a loud guard.
+#   UNOBSERVABLE  the value has no consumer on this path.
+#   IO-LEAF       nothing but a syscall remains; the logic it feeds is
+#                 tested through a seam.
+#
+# No entry may say "no test covers this yet". That is a missing test.
 #
 # Both survivor classes are reconciled here: a MISS (the tests passed
 # under the mutant) and a TIMEOUT (the mutated tests hung). Timeouts need
@@ -53,7 +61,7 @@
 # killed by pinning uuid_from_seed's exact output for known seeds.
 src/ask.rs: replace | with ^ in random_uuid
 
-# DELIBERATE. parse_drafted_card rejects either empty side
+# UNREACHABLE. parse_drafted_card rejects either empty side
 # before this condition, so no single-empty state can reach it and
 # the two operators are indistinguishable from any input.
 src/ask.rs: replace || with && in parse_drafted_card
@@ -84,24 +92,7 @@ src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 # DEAD-PATH. synthesize_virtual stores this line number only on the Card, and
 # WarmItem::from_card discards it before any output is generated; the
 # value has no consumer on this path.
-src/cli/deck.rs: replace + with - in augment_cmd
-src/cli/deck.rs: replace + with * in augment_cmd
 
-# IO-LEAF. After the announce seam, local_lan_ip is three lines of pure
-# syscall (bind, connect, read the local address): no logic remains to
-# test, and asserting it returns an address needs a live routing table.
-# The decision it feeds IS tested, via announce_with taking the address
-# as a value; the match-arm mutant there is killed.
-src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
-
-# NEEDS-SEAM. Observable only after a real child spawn, which tests must never
-# drive: launch_all's spawn re-enters the test binary and fork-bombs
-# (the {#profile-launch-test-fork-bomb} roadmap item owns the fix).
-# Killable only after that design decision lands.
-src/cli/profile.rs: delete match arm Err(error) in launch_all
-src/cli/profile.rs: replace match guard !status.success() with true in launch_all
-src/cli/profile.rs: replace match guard !status.success() with false in launch_all
-src/cli/profile.rs: delete ! in launch_all
 
 # The table end_line init is observable only for a table with no rows
 # and no directive comments, and such a table mints no container id;
@@ -115,7 +106,3 @@ src/parser/mod.rs:507: replace + with * in scan
 # the rel > 0 comparison.
 src/stamp.rs:448: replace > with >= in line_terminator
 
-# Same class as the UUID mixer: random input, no injection seam, and
-# the output remains six valid, varying alphabet characters under the
-# substitution.
-src/token.rs: replace * with + in mint_row

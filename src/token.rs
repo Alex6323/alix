@@ -24,12 +24,16 @@ pub fn mint() -> Result<String, getrandom::Error> {
 pub fn mint_row() -> Result<String, getrandom::Error> {
     let mut buf = [0u8; 4];
     getrandom::getrandom(&mut buf)?;
+    Ok(row_from_bytes(buf))
+}
+
+/// Split from its caller so the packing is a pure function of its bytes.
+fn row_from_bytes(buf: [u8; 4]) -> String {
     let n = u32::from_be_bytes(buf);
-    let token: String = (0..ROW_TOKEN_LEN)
+    (0..ROW_TOKEN_LEN)
         .rev()
         .map(|i| TOKEN_ALPHABET[((n >> (5 * i)) & 31) as usize] as char)
-        .collect();
-    Ok(token)
+        .collect()
 }
 
 // Strict, unlike base tokens: every row stamp is machine-minted, so only
@@ -336,6 +340,19 @@ mod tests {
             seen.insert(row);
         }
         assert!(seen.len() > 1, "mint_row produced a constant");
+    }
+
+    #[test]
+    fn row_packing_is_pinned_for_known_bytes() {
+        // Exact output for fixed input: a changed shift or multiplier is
+        // visible rather than merely "still six valid characters".
+        for (buf, want) in [
+            ([0u8, 0, 0, 0], "000000"),
+            ([0xDE, 0xAD, 0xBE, 0xEF], "favfqf"),
+            ([0xFF, 0xFF, 0xFF, 0xFF], "zzzzzz"),
+        ] {
+            assert_eq!(want, row_from_bytes(buf), "bytes {buf:?}");
+        }
     }
 
     #[test]
