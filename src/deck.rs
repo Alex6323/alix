@@ -22,6 +22,7 @@ pub struct DeckSettings {
     pub input: Option<Input>,
     pub order: Option<Order>,
     pub direction: Option<Direction>,
+    pub sampling: Option<bool>,
     pub exam_strictness: Option<Strictness>,
 }
 
@@ -34,6 +35,7 @@ impl DeckSettings {
                 "input" => settings.input = Input::parse(value),
                 "order" => settings.order = Order::parse(value),
                 "direction" => settings.direction = Direction::parse(value),
+                "sampling" => settings.sampling = parser::parse_sampling(value),
                 "strictness" => settings.exam_strictness = Strictness::parse(value),
                 _ => {}
             }
@@ -47,6 +49,7 @@ impl DeckSettings {
             input: frontmatter.input,
             order: frontmatter.order,
             direction: frontmatter.direction,
+            sampling: frontmatter.sampling,
             // Learner setting: a deck never ships grading rigor.
             exam_strictness: None,
         }
@@ -57,6 +60,7 @@ impl DeckSettings {
         self.input = self.input.or(defaults.input);
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
+        self.sampling = self.sampling.or(defaults.sampling);
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
     }
 }
@@ -150,6 +154,8 @@ impl Deck {
         }
         let mut expanded = Vec::with_capacity(cards.len());
         for card in cards {
+            let mut card = card;
+            card.sampling = card.sampling.or(settings.sampling);
             let direction = card.direction.or(settings.direction).unwrap_or_default();
             // Keying on the hole (not direction) stops a deck-wide "both" from reversing cloze
             // cards.

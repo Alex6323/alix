@@ -18,7 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multiple-choice distractors are sampled from its own column (sibling
   rows), no AI augmentation needed; authored options and cached AI
   distractors still take precedence. Tables accept the card directives
-  (`direction`, `reveal`, `input`) between the table and its id line;
+  (`direction`, `reveal`, `input`, `sampling`) between the table and its
+  id line, and `sampling: on|off` switches column sampling deck-wide or per
+  table in either direction;
   anything the format cannot hold (a fourth column, cloze or images in
   cells, stray content after the table) is a loud parse error.
 

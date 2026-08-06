@@ -89,6 +89,23 @@ fn deck_findings(path: &Path, report: &mut Report) {
         ));
     }
 
+    if deck.frontmatter.sampling.is_some() && deck.tables.is_empty() {
+        report.warn(format!(
+            "{}: `sampling:` has no effect here; the deck holds no card table",
+            path.display()
+        ));
+    }
+    for card in &deck.cards {
+        if card.sampling.is_some() && card.row.is_none() {
+            report.warn(format!(
+                "{}: line {}: `sampling:` has no effect on a card that is not a table row",
+                path.display(),
+                card.line
+            ));
+            break;
+        }
+    }
+
     let augment = Deck::load(path)
         .ok()
         .and_then(|deck| alix::augment::AugmentCache::open_for_deck(&deck).ok());
@@ -2266,5 +2283,36 @@ printf ']}}'
             Some("card-card1".to_string()),
             Deck::load(&deck_path).unwrap().cards[0].id()
         );
+    }
+
+    #[test]
+    fn a_sampling_key_that_can_affect_nothing_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let head = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n";
+        let table = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
+        // (deck body, warning expected)
+        let cases = [
+            (
+                format!("{head}sampling: off\n---\n## q <!-- id: card-q1x -->\na\n"),
+                true,
+            ),
+            (format!("{head}sampling: off\n---\n{table}"), false),
+            (format!("{head}---\n## q <!-- id: card-q1x -->\na\n"), false),
+            (
+                format!("{head}---\n## q <!-- id: card-q1x --> <!-- sampling: off -->\na\n"),
+                true,
+            ),
+        ];
+        for (index, (text, expected)) in cases.iter().enumerate() {
+            let path = dir.path().join(format!("d{index}.md"));
+            std::fs::write(&path, text).unwrap();
+            let mut report = Report::default();
+            deck_findings(&path, &mut report);
+            let warned = report
+                .warnings
+                .iter()
+                .any(|w| w.contains("`sampling:` has no effect"));
+            assert_eq!(*expected, warned, "case {index}: {:?}", report.warnings);
+        }
     }
 }

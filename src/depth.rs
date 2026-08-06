@@ -195,6 +195,35 @@ mod tests {
     }
 
     #[test]
+    fn the_sampling_switch_resolves_table_over_deck_in_both_directions() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let rows = "| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n";
+        // (frontmatter, table directive, expected recognizable)
+        let cases = [
+            ("", "", true),
+            ("sampling: off\n", "", false),
+            ("sampling: on\n", "<!-- sampling: off -->\n", false),
+            ("sampling: off\n", "<!-- sampling: on -->\n", true),
+        ];
+        for (deck_key, table_directive, expected) in cases {
+            let text = format!(
+                "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n{deck_key}---\n| w | m |\n|---|---|\n{rows}{table_directive}<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n"
+            );
+            let path = dir.path().join("t.md");
+            std::fs::write(&path, &text).unwrap();
+            let cards = crate::deck::Deck::load(&path).unwrap().cards;
+            assert_eq!(
+                expected,
+                cards
+                    .iter()
+                    .all(|card| card_recognizable(card, &cache, &cards)),
+                "deck {deck_key:?} table {table_directive:?}"
+            );
+        }
+    }
+
+    #[test]
     fn default_depth_stays_recall_for_an_empty_deck() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));

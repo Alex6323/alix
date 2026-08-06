@@ -24,6 +24,7 @@ pub struct Frontmatter {
     pub order: Option<Order>,
     pub input: Option<Input>,
     pub direction: Option<Direction>,
+    pub sampling: Option<bool>,
     pub unspliceable: bool,
 }
 
@@ -155,6 +156,10 @@ fn load_frontmatter(
                 Some(direction) => frontmatter.direction = Some(direction),
                 None => lints.push(bad_value(line, key, describe(value))),
             },
+            "sampling" => match value.as_str().and_then(parse_sampling) {
+                Some(sampling) => frontmatter.sampling = Some(sampling),
+                None => lints.push(bad_value(line, key, describe(value))),
+            },
             "authors" => frontmatter.authors = string_list(key, value, line, lints),
             "tags" => frontmatter.tags = string_list(key, value, line, lints),
             "license" => match value {
@@ -181,6 +186,16 @@ fn load_frontmatter(
 
 pub(super) fn parse_reveal(value: &str) -> Option<Reveal> {
     Reveal::parse(value)
+}
+
+/// `on`/`off` only: the key governs automatic sampling, and a future mode
+/// would be a new value, never a truthy spelling.
+pub fn parse_sampling(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "on" => Some(true),
+        "off" => Some(false),
+        _ => None,
+    }
 }
 
 fn describe(value: &Yaml) -> String {

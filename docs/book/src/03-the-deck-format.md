@@ -194,8 +194,16 @@ preserves review history:
 | purported | angeblich | often in legal prose | <!-- r:4k2x9w -->
 ```
 
+Column sampling is on by default. Turn it off for a table whose rows are
+not interchangeable (a mixed list, a table of one-off facts) with
+`<!-- sampling: off -->` in its directive comments, or set `sampling: off`
+in the frontmatter to make that the deck's default and re-enable single
+tables with `<!-- sampling: on -->`. A table with sampling off and no other
+option source simply is not offered at Recognize. `alix doctor` reports a
+`sampling:` key that can affect nothing.
+
 Directive comments between the table and its ID line (`direction`, `reveal`,
-`input`) apply to every row; `direction: both` doubles each row into a
+`input`, `sampling`) apply to every row; `direction: both` doubles each row into a
 reversed card, which samples its options from the front column.
 
 The format is deliberately narrow: two or three columns only, no cloze

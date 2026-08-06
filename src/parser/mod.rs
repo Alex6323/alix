@@ -17,7 +17,7 @@ mod frontmatter;
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
-pub use frontmatter::{DECK_FORMAT_VERSION, Frontmatter, yaml_quote};
+pub use frontmatter::{DECK_FORMAT_VERSION, Frontmatter, parse_sampling, yaml_quote};
 use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
@@ -347,6 +347,7 @@ struct RawRow {
 #[derive(Debug, Default, PartialEq)]
 struct CardDirectives {
     token: Option<String>,
+    sampling: Option<bool>,
     reveal: Option<Reveal>,
     reveal_line: Option<usize>,
     input: Option<Input>,
@@ -818,6 +819,7 @@ fn build_table_cards(
         card.reveal = raw.directives.reveal;
         card.input = raw.directives.input;
         card.direction = raw.directives.direction;
+        card.sampling = raw.directives.sampling;
         card.citations = raw.directives.citations.clone();
         card.givens = raw.directives.givens.clone();
         cards.push(card);
@@ -903,7 +905,7 @@ pub(crate) fn directive(body: &str) -> Option<(String, String)> {
 fn is_known_card_key(key: &str) -> bool {
     matches!(
         key,
-        "id" | "reveal" | "input" | "direction" | "at" | "given"
+        "id" | "reveal" | "input" | "direction" | "at" | "given" | "sampling"
     )
 }
 
@@ -972,6 +974,10 @@ fn apply_directive(
                 line,
             });
         }
+        "sampling" => match parse_sampling(&value) {
+            Some(sampling) => directives.sampling = Some(sampling),
+            None => lints.push(bad_value(line, key, value)),
+        },
         "given" => directives.givens.push(value),
         _ => lints.push(Lint {
             line,
@@ -1151,6 +1157,7 @@ fn build_card(
         card.reveal = directives.reveal;
         card.input = directives.input;
         card.direction = directives.direction;
+        card.sampling = directives.sampling;
         card.images = images;
         card.images_back = images_back;
         card.citations = directives.citations;
@@ -2408,6 +2415,7 @@ the answer
                 order: Some(Order::Sequential),
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
+                sampling: None,
                 unspliceable: false,
             },
             document.frontmatter
@@ -2424,6 +2432,7 @@ the answer
                 reveal_line: Some(29),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
+                sampling: None,
                 citations: vec![crate::card::SourceCitation {
                     locator: "src/caching.rs:46-66".into(),
                     fingerprint: Some(0x0123456789abcdef),

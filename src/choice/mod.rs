@@ -115,6 +115,9 @@ pub fn column_pool(card: &Card, deck_cards: &[Card]) -> Vec<String> {
 }
 
 pub fn build_sampled(card: &Card, seed: u64, deck_cards: &[Card]) -> Option<ChoiceQuestion> {
+    if card.sampling == Some(false) {
+        return None;
+    }
     let pool = column_pool(card, deck_cards);
     let sampled = sample::sample_distractors(&answer_text(card), &pool, seed, NUM_OPTIONS - 1)?;
     build(card, seed, &sampled)

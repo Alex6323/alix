@@ -18,6 +18,7 @@ taking precedence. Each links to the chapter that explains it in full.
 | `order` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
+| `sampling` | deck · card | `on` (default) or `off`: whether a [card table](03-the-deck-format.md)'s rows may draw Recognize options from their own column. A table's value overrides the deck's in either direction. |
 | `strictness` | workspace | [Exam](12-the-ai-exam.md) grading rigor for the members, in `alix.toml`'s `[defaults]` only: a learner setting, so a deck declaring it gets an unknown-key lint. |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `authors` | deck | Who made the deck: one value or a list. Holds people and any AI that helped, so there is no separate generated-by key. Yours to fill in; alix never rewrites it. |

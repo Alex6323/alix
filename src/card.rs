@@ -61,6 +61,8 @@ pub struct Card {
     pub display_back: Option<Vec<String>>,
     pub token: Option<Arc<str>>,
     pub row: Option<Arc<str>>,
+    /// Resolved table-over-deck at parse time; None means the default (on).
+    pub sampling: Option<bool>,
     pub hole: Option<u32>,
     pub block_holes: Vec<crate::store::HoleFingerprint>,
     pub reversed: bool,
@@ -98,6 +100,7 @@ impl Card {
             display_back: None,
             token: None,
             row: None,
+            sampling: None,
             hole: None,
             block_holes: Vec::new(),
             reversed: false,
@@ -127,6 +130,7 @@ impl Card {
         // The reversed half keeps the same token so id() can compose the "-r" suffix from it.
         card.token = self.token.clone();
         card.row = self.row.clone();
+        card.sampling = self.sampling;
         card.context = self.context.clone();
         card.reversed = true;
         // Reuses the forward card's fingerprint instead of recomputing over swapped sides: one
