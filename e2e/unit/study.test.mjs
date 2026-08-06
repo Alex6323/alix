@@ -7,7 +7,7 @@ import {
   currentScreen,
   enterPicker,
 } from "../../web/alix/review/model.js";
-import { createStudy } from "../../web/alix/review/study.js";
+import { createStudy, modeTag } from "../../web/alix/review/study.js";
 
 function harness() {
   const walks = [];
@@ -172,4 +172,22 @@ test("study owns accepted state publication and screen selection", () => {
   assert.equal(run.study.state(), done);
   assert.equal(run.study.screen(), "summary");
   assert.equal(run.renders(), 2);
+});
+
+test("the badge names provenance and the interaction actually on screen", () => {
+  const cases = [
+    [{ mode: "flip" }, "flip"],
+    [{ mode: "typeline" }, "typing · line"],
+    [{ mode: "flip", choices: true }, "choice"],
+    [{ mode: "flip", promotable: true }, "remediation · flip"],
+    // An acquire card never runs the depth's check: it picks, draws, or reveals.
+    [{ mode: "flip", acquire: true }, "new · reveal"],
+    [{ mode: "typing", acquire: true }, "new · reveal"],
+    [{ mode: "flip", acquire: true, choices: true }, "new · choice"],
+    [{ mode: "flip", acquire: true, draw: true }, "new · draw"],
+    [{ mode: "flip", acquire: true, promotable: true }, "new · remediation · reveal"],
+  ];
+  for (const [state, want] of cases) {
+    assert.equal(modeTag(state), want, `badge for ${JSON.stringify(state)}`);
+  }
 });

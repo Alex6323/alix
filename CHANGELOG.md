@@ -57,6 +57,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A new card's badge now names its interaction too, not just "new":
+  `new · choice` when it offers options, `new · draw` on a sketch card,
+  `new · reveal` otherwise. It still never names the graded check the
+  card's schedule will use once the card has been met.
+
 - The session summary no longer starts the next card by itself. When a
   settle gap passes while the summary is open it says it is ready and arms
   Continue, leaving the choice to the learner instead of dropping them into

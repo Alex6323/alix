@@ -157,11 +157,15 @@ deck file or how it's graded.
 ## The check badge
 
 In the web frontend a small badge above the answer names the check you're doing
-right now (`new`, `flip`, `line`, `typing`, `typing · line`, `choice`, or
+right now (`flip`, `line`, `typing`, `typing · line`, `choice`, or
 `explain`, optionally prefixed `remediation · `), so how you'll
 interact is clear before you commit. It badges the *present* interaction, not
-the depth: a Recognize pick shows `choice`, while a brand-new (acquire) card
-shows `new`, since no check is happening yet on a card you're only meeting.
+the depth: a Recognize pick shows `choice` whatever the card's own mode is.
+
+A brand-new (acquire) card is prefixed `new · ` and names its on-ramp rather
+than a check, because no check is happening yet on a card you're only meeting:
+`new · choice` when it offers options, `new · draw` on a sketch card, and
+`new · reveal` otherwise.
 
 ## Draw instead of type: `input: draw` *(web only)*
 

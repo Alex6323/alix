@@ -1,3 +1,21 @@
+// The badge names what is on screen right now, provenance ("new",
+// "remediation") first, then the interaction. It never names the *scheduled*
+// check: choices on screen are a pick-one whatever the card's schedule will
+// use once acquired. An acquire card runs its own ungraded on-ramp, so it
+// names that on-ramp (pick one, draw, or reveal) rather than the depth's
+// check, which does not run until the card has been met.
+export function modeTag({ acquire, choices, promotable, mode, draw }) {
+  const parts = [];
+  if (acquire) parts.push("new");
+  if (promotable) parts.push("remediation");
+  if (acquire) {
+    parts.push(choices ? "choice" : draw ? "draw" : "reveal");
+  } else {
+    parts.push(choices ? "choice" : mode === "typeline" ? "typing · line" : mode);
+  }
+  return parts.join(" · ");
+}
+
 export function createStudy({
   api,
   post,
@@ -219,20 +237,14 @@ export function createStudy({
     if (state.mode !== "flip" && state.mode !== "explain") return false;
     return state.input === "draw" || drawToggle;
   }
-  // The badge names the check you're doing *right now* ("flip"/"line"/"typing"/
-  // "explain"/"choice") so how you interact is clear up front, prefixed with provenance
-  // ("new" / "remediation") when it applies. Crucially it badges the *present*
-  // interaction, not the scheduled one: whenever choices are on screen — a recognition
-  // MC on a first encounter, or choice mode — it's a pick-one, so show "choice", never
-  // the "flip" the card's schedule will use once acquired.
-  // Acquire is the exception: it's an ungraded attempt-first reveal, never a graded
-  // check (a recognition pick just leads to "Seen") — `state.mode` is the depth's
-  // check regardless, so naming it here would claim a check that isn't happening.
   function modeLabel() {
-    if (isAcquire()) return "new";
-    const kind = state.promotable ? "remediation" : "";
-    const check = state.choices ? "choice" : state.mode === "typeline" ? "typing · line" : state.mode;
-    return kind ? kind + " · " + check : check;
+    return modeTag({
+      acquire: isAcquire(),
+      choices: !!state.choices,
+      promotable: !!state.promotable,
+      mode: state.mode,
+      draw: effectiveDraw(),
+    });
   }
   // A pick's result is pure evidence (the grade is separate, via /api/grade).
   // Every pick shows its feedback screen (chosen + correct options highlighted).
