@@ -549,12 +549,18 @@ fn fake_reply(dir: &Path, reply: &str) -> PathBuf {
 /// background job (`thinking`/a phase change) rather than answering inline.
 /// Panics (failing the test) rather than looping forever if a job never
 /// settles.
+/// Ceiling for every condition wait here: it exists to stop a hang from
+/// wedging the suite, never to measure speed. Spawning subprocesses and
+/// round-tripping fifos takes far longer on a loaded machine, so a tight
+/// bound turns CPU contention into a red test.
+const HANG_BUDGET: Duration = Duration::from_secs(30);
+
 fn poll_until(
     base: &str,
     path: &str,
     done: impl Fn(&serde_json::Value) -> bool,
 ) -> serde_json::Value {
-    for _ in 0..250 {
+    for _ in 0..1500 {
         let resp = http(base, "GET", path, &[], &[]);
         let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
         if done(&body) {
@@ -1511,7 +1517,7 @@ fn a_parked_doctor_binary_probe_does_not_block_state_requests() {
     let probe_started = Instant::now();
     while !started.exists() {
         assert!(
-            probe_started.elapsed() < Duration::from_secs(5),
+            probe_started.elapsed() < HANG_BUDGET,
             "the doctor probe never spawned the fake backend"
         );
         thread::sleep(Duration::from_millis(5));
@@ -1522,7 +1528,7 @@ fn a_parked_doctor_binary_probe_does_not_block_state_requests() {
     thread::spawn(move || {
         let _ = tx.send(http(&state_base, "GET", "/api/state", &[], &[]));
     });
-    let state = rx.recv_timeout(Duration::from_secs(5));
+    let state = rx.recv_timeout(HANG_BUDGET);
     // Release the parked probe before asserting, so a regression fails this
     // test instead of wedging the suite on a never-finishing doctor.
     std::fs::write(&fifo, "go\n").unwrap();
@@ -4367,7 +4373,7 @@ fn a_tutor_answer_arriving_after_a_card_advance_is_dropped() {
     let probe_started = Instant::now();
     while !started.exists() {
         assert!(
-            probe_started.elapsed() < Duration::from_secs(5),
+            probe_started.elapsed() < HANG_BUDGET,
             "the tutor never spawned the fake backend"
         );
         thread::sleep(Duration::from_millis(5));
@@ -4427,7 +4433,7 @@ fn server_shutdown_cancels_the_in_flight_tutor_worker() {
         post_gated(&base, "/api/ask", r#"{"question":"why?"}"#).status
     );
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + HANG_BUDGET;
     while !started.exists() {
         assert!(Instant::now() < deadline, "the tutor worker never started");
         thread::yield_now();
@@ -4447,7 +4453,7 @@ fn server_shutdown_cancels_the_in_flight_tutor_worker() {
 
     if survived_shutdown {
         std::fs::write(&fifo, "go\n").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + HANG_BUDGET;
         while process_exists(pid) && Instant::now() < deadline {
             thread::yield_now();
         }
@@ -4510,7 +4516,7 @@ fn server_shutdown_cancels_tutor_descendant_processes() {
         post_gated(&base, "/api/ask", r#"{"question":"why?"}"#).status
     );
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + HANG_BUDGET;
     while !started.exists() {
         assert!(
             Instant::now() < deadline,
@@ -4533,7 +4539,7 @@ fn server_shutdown_cancels_tutor_descendant_processes() {
 
     if survived_shutdown {
         std::fs::write(&fifo, "go\n").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + HANG_BUDGET;
         while process_exists(pid) && Instant::now() < deadline {
             thread::yield_now();
         }
@@ -4588,7 +4594,7 @@ fn server_shutdown_cancels_the_in_flight_remote_tutor_worker() {
     );
     assert_eq!(200, response.status);
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + HANG_BUDGET;
     while !started.exists() {
         assert!(
             Instant::now() < deadline,
@@ -4611,7 +4617,7 @@ fn server_shutdown_cancels_the_in_flight_remote_tutor_worker() {
 
     if survived_shutdown {
         std::fs::write(&fifo, "go\n").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + HANG_BUDGET;
         while process_exists(pid) && Instant::now() < deadline {
             thread::yield_now();
         }
@@ -4662,7 +4668,7 @@ fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
     let probe_started = Instant::now();
     while !started.exists() {
         assert!(
-            probe_started.elapsed() < Duration::from_secs(5),
+            probe_started.elapsed() < HANG_BUDGET,
             "the condense never reached the fake backend"
         );
         thread::sleep(Duration::from_millis(5));
@@ -4989,8 +4995,8 @@ fn ask_card_draft_create_then_promote_round_trips_a_learner_card_into_the_deck()
     let resp = post_gated(&base, "/api/ask", r#"{"question":"why does this matter?"}"#);
     assert_eq!(200, resp.status);
     // The wait idiom this test reuses verbatim: `poll_until` (this file,
-    // defined above at the `fn poll_until` declaration), a bounded (up to
-    // 5s, 250 * 20ms) loop on the `thinking` condition, the same idiom
+    // defined above at the `fn poll_until` declaration), a loop on the
+    // `thinking` condition bounded by HANG_BUDGET, the same idiom
     // `exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend`
     // and `walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend`
     // already use to wait on this exact kind of background ask/exam job.
