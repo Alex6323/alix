@@ -1,0 +1,67 @@
+name: Mutation branch gate
+
+# Mutates a branch's own diff against main: hundreds of mutants, each a build
+# plus a test run.
+#
+# The nightly and rotation workflows cover merged work and the standing tree;
+# this covers a branch before it merges, so a miss surfaces while the change
+# is still in hand.
+on:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "How many shards to split the diff across"
+        required: false
+        default: "4"
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    name: mutants ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    # Under the 6h hard limit, so an unusually large branch fails cleanly on
+    # time instead of being killed mid-run with no summary.
+    timeout-minutes: 330
+    strategy:
+      # Every shard reports its own misses; stopping at the first red would
+      # hide the rest of the branch's.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `make mutants` diffs against the merge-base, which a shallow clone
+          # cannot resolve.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
+        with:
+          tool: cargo-mutants,cargo-nextest
+
+      - name: Mutate this shard of the branch diff
+        run: |
+          make mutants \
+            MUTANTS_BASE=$(git merge-base origin/main HEAD) \
+            MUTANTS_SHARD=${{ matrix.shard }}/4 \
+            GATE_JOBS=4
+
+      - name: Keep the outcome
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-branch-${{ github.ref_name }}-shard${{ matrix.shard }}
+          path: mutants.out/
+          retention-days: 14
+          if-no-files-found: ignore

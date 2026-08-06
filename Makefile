@@ -153,10 +153,10 @@ check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-c
 bump-rust:
 	@sh scripts/bump-rust.sh
 
-# Mutation-tests only this branch's diff against local main (no remotes, no
-# PRs here), with cargo-mutants' default cargo-test runner. Costed and slow:
-# run once, right before requesting review, never in the inner loop or CI.
-GATE_JOBS ?= 2
+# Mutation-tests a diff with cargo-mutants' default cargo-test runner. The CI
+# workflows own this; the default of one job keeps an accidental local run from
+# taking the machine, and CI raises it explicitly.
+GATE_JOBS ?= 1
 
 gate: gate-guard check mutants
 
