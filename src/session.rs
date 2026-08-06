@@ -222,6 +222,17 @@ impl Session {
         .is_empty()
     }
 
+    /// Deck-wide, not this sitting: `(met, total)` over every card the deck
+    /// holds, where met means the store already carries progress for it.
+    pub fn deck_progress(&self, store: &Store) -> (usize, usize) {
+        let met = self
+            .cards
+            .iter()
+            .filter(|card| card.id().is_some_and(|id| store.progress(&id).is_some()))
+            .count();
+        (met, self.cards.len())
+    }
+
     /// The uncapped backlog split `(due_left, new_left)` at `now_ms`: how many
     /// due (or, for Recognize, met-but-unrecognized) and never-met cards remain
     /// beyond what this sitting already drilled. Feeds the done-summary so a
@@ -1197,6 +1208,36 @@ mod tests {
             .count();
         assert_eq!(3, picked_new, "30% of 10 is 3 new");
         assert_eq!(7, session.roster.len() - picked_new, "the rest are due");
+    }
+
+    #[test]
+    fn deck_progress_counts_every_met_card_not_only_this_sitting() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(16);
+        for c in &all[..3] {
+            store.get_or_insert(&c.id().unwrap(), 0);
+        }
+        let now = 2 * 604_800_000;
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+        assert_eq!(
+            (3, 16),
+            session.deck_progress(&store),
+            "three carried in from earlier sittings"
+        );
+
+        while session.current().is_some() {
+            if session.current_fresh(&store) {
+                session.acquire_current(&mut store, now);
+            } else {
+                session.grade(&mut store, Grade::Pass, now);
+            }
+        }
+
+        assert_eq!(
+            (10, 16),
+            session.deck_progress(&store),
+            "the seven new cards this sitting planted join them"
+        );
     }
 
     #[test]

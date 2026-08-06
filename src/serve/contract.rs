@@ -55,6 +55,8 @@ fn statedto_select_phase_wire_shape() {
         next_due_ms: None,
         due_left: 0,
         new_left: 0,
+        met_total: 4,
+        deck_total: 9,
         recognize_gap: None,
         label: "select decks".to_string(),
         save_error: None,
@@ -89,6 +91,8 @@ fn statedto_select_phase_wire_shape() {
             "promotable": false,
             "due_left": 0,
             "new_left": 0,
+            "met_total": 4,
+            "deck_total": 9,
             "label": "select decks"
         }),
     );
@@ -196,6 +200,8 @@ fn statedto_review_phase_wire_shape() {
         next_due_ms: None,
         due_left: 0,
         new_left: 0,
+        met_total: 4,
+        deck_total: 9,
         recognize_gap: None,
         label: "rust.md".to_string(),
         save_error: Some(
@@ -295,6 +301,8 @@ fn statedto_review_phase_wire_shape() {
             "promotable": true,
             "due_left": 0,
             "new_left": 0,
+            "met_total": 4,
+            "deck_total": 9,
             "label": "rust.md",
             "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4"
         }),
@@ -331,6 +339,8 @@ fn statedto_done_phase_carries_the_next_due_instant() {
         next_due_ms: Some(1_700_000_100_000),
         due_left: 12,
         new_left: 3,
+        met_total: 4,
+        deck_total: 9,
         recognize_gap: None,
         label: "rust.md".to_string(),
         save_error: None,
@@ -366,6 +376,8 @@ fn statedto_done_phase_carries_the_next_due_instant() {
             "next_due_ms": 1_700_000_100_000_u64,
             "due_left": 12,
             "new_left": 3,
+            "met_total": 4,
+            "deck_total": 9,
             "label": "rust.md"
         }),
     );
@@ -403,6 +415,8 @@ fn statedto_done_phase_carries_the_recognize_gap() {
         next_due_ms: None,
         due_left: 0,
         new_left: 0,
+        met_total: 4,
+        deck_total: 9,
         recognize_gap: Some(crate::session::RecognizeGap {
             recall: 13,
             unaugmented: 13,
@@ -440,6 +454,8 @@ fn statedto_done_phase_carries_the_recognize_gap() {
             "promotable": false,
             "due_left": 0,
             "new_left": 0,
+            "met_total": 4,
+            "deck_total": 9,
             "recognize_gap": {"recall": 13, "unaugmented": 13},
             "label": "status-codes.md"
         }),

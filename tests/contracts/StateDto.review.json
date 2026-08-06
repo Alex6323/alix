@@ -158,6 +158,7 @@
     "owner",
     "borrower"
   ],
+  "deck_total": 9,
   "depth": "recall",
   "due_left": 0,
   "exam_due": [
@@ -178,6 +179,7 @@
   ],
   "kind": "review",
   "label": "rust.md",
+  "met_total": 4,
   "mode": "flip",
   "new_left": 0,
   "passed": 1,

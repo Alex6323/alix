@@ -188,6 +188,10 @@ pub struct ReviewState {
     // still find.
     pub due_left: u32,
     pub new_left: u32,
+    // Deck-wide lifetime standing, populated only at done: how many of the
+    // deck's cards have ever been met, out of how many it holds.
+    pub met_total: u32,
+    pub deck_total: u32,
     /// Present only on an exhausted Recognize done: what the depth filter hid,
     /// so the summary can point at Recall or at augmenting instead of at
     /// nothing.
@@ -271,6 +275,11 @@ pub fn state(
     } else {
         (0, 0)
     };
+    let (met_total, deck_total) = if finished {
+        session.deck_progress(store)
+    } else {
+        (0, 0)
+    };
     ReviewState {
         card: card_view,
         mode,
@@ -303,6 +312,8 @@ pub fn state(
             .flatten(),
         due_left: due_left as u32,
         new_left: new_left as u32,
+        met_total: met_total as u32,
+        deck_total: deck_total as u32,
         recognize_gap: finished
             .then(|| session.recognize_gap(store, now))
             .flatten(),
