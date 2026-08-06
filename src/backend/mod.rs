@@ -88,10 +88,6 @@ pub trait Backend: Send + Sync {
         }
     }
 
-    fn agentic(&self) -> bool {
-        true
-    }
-
     fn can_fetch_web(&self) -> bool {
         true
     }
