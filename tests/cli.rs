@@ -752,6 +752,53 @@ fn reset_all_clears_a_seeded_store() {
     assert!(reloaded.get("card-math1").is_none());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn reset_all_declined_in_a_terminal_preserves_the_seeded_store() {
+    use std::{io::Write, os::unix::fs::PermissionsExt, process::Stdio};
+
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.md", VALID_DECK);
+    let state_root = dir.path().join("state");
+    let mut store = deck_store(&deck, &state_root);
+    store.get_or_insert("card-math1", 0);
+    store.save().unwrap();
+
+    let runner = dir.path().join("reset.sh");
+    std::fs::write(
+        &runner,
+        "#!/bin/sh\nexec \"$ALIX_BIN\" reset --all --store \"$ALIX_STORE\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut child = Command::new("script")
+        .args(["-q", "-e", "-c", runner.to_str().unwrap(), "/dev/null"])
+        .env("ALIX_BIN", env!("CARGO_BIN_EXE_alix"))
+        .env("ALIX_STORE", &state_root)
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("XDG_DATA_HOME", dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"no\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Cancelled."),
+        "a declined reset must report cancellation: {}",
+        stdout(&out)
+    );
+    assert!(
+        deck_store(&deck, &state_root).get("card-math1").is_some(),
+        "a declined reset removed the stored card"
+    );
+}
+
 /// A minimal virtual card owned by `deck_id`, for seeding a store directly
 /// via the lib rather than hand-authoring its on-disk JSON shape. Its id is the
 /// `Card::id` of the card `parse(deck_id, text)` yields, identical to a deck
@@ -1987,7 +2034,9 @@ fn importing_into_a_nonexistent_workspace_errors() {
 fn a_nonexistent_launch_dir_errors_not_a_folder() {
     let dir = TempDir::new().unwrap();
     let ghost = dir.path().join("ghost");
-    let out = alix(&[ghost.to_str().unwrap()]);
+    let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = occupied.local_addr().unwrap().port().to_string();
+    let out = alix(&[ghost.to_str().unwrap(), "--port", &port]);
     assert!(!out.status.success());
     assert!(
         stderr(&out).contains("is not a folder"),
@@ -2210,7 +2259,11 @@ fn share_on_a_folder_with_no_decks_errors() {
     let dir = TempDir::new().unwrap();
     let empty = dir.path().join("empty");
     std::fs::create_dir(&empty).unwrap();
-    let out = alix(&["share", empty.to_str().unwrap()]);
+    let out = alix_env(
+        &["share", empty.to_str().unwrap()],
+        dir.path(),
+        &[("PATH", "/nonexistent-empty-bin")],
+    );
     assert!(!out.status.success());
     assert!(
         stderr(&out).contains("nothing to share"),
@@ -2715,6 +2768,34 @@ fn ordinary_text_and_markdown_files_never_enter_trace_building() {
 }
 
 // ── `alix generate`: a single deck from a URL/file source, fake backend ─────
+
+#[test]
+fn generate_rejects_an_invalid_public_source_url_before_the_backend() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--source-url",
+        "not-a-url",
+        "--config",
+        &config,
+        "--print",
+    ]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("`--source-url` must be an http or https URL"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
 
 #[test]
 fn generate_single_deck_writes_a_deck_file() {
