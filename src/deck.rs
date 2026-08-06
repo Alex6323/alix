@@ -1001,6 +1001,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn workspace_defaults_carry_the_sampling_switch_and_reject_junk() {
+        let off = [("sampling".to_string(), "off".to_string())];
+        assert_eq!(Some(false), DeckSettings::from_directives(&off).sampling);
+        let on = [("sampling".to_string(), "on".to_string())];
+        assert_eq!(Some(true), DeckSettings::from_directives(&on).sampling);
+        let junk = [("sampling".to_string(), "yes".to_string())];
+        assert_eq!(None, DeckSettings::from_directives(&junk).sampling);
+    }
+
+    #[test]
     fn an_unparseable_reveal_value_is_rejected_in_workspace_defaults() {
         let directives = [("reveal".to_string(), "cloze".to_string())];
         assert_eq!(None, DeckSettings::from_directives(&directives).reveal);
