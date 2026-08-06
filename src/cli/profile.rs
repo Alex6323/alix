@@ -315,6 +315,9 @@ pub(crate) fn launch_all() -> Result<()> {
     let mut children = Vec::new();
     for (name, port) in plan {
         println!("{name:<name_width$} -> http://{host}:{port}");
+        // Never drive this from a test: under a test harness `current_exe` is
+        // the test binary and `profile` reads as a name filter, so each child
+        // re-runs the spawning test and the machine forks until it dies.
         match Command::new(&executable).arg("profile").arg(&name).spawn() {
             Ok(child) => children.push((name, child)),
             Err(error) => eprintln!("profile `{name}` failed to launch: {error}"),
@@ -323,15 +326,21 @@ pub(crate) fn launch_all() -> Result<()> {
 
     // The children share the terminal's process group, so Ctrl-C reaches every server.
     for (name, mut child) in children {
-        match child.wait() {
-            Ok(status) if !status.success() => {
-                eprintln!("profile `{name}` exited with {status}");
-            }
-            Err(error) => eprintln!("could not wait for profile `{name}`: {error}"),
-            _ => {}
+        if let Some(message) = child_outcome(&name, child.wait()) {
+            eprintln!("{message}");
         }
     }
     Ok(())
+}
+
+/// What a finished child means for the operator, separated from the spawning
+/// so it can be exercised without one: `None` when nothing needs saying.
+fn child_outcome(name: &str, waited: std::io::Result<std::process::ExitStatus>) -> Option<String> {
+    match waited {
+        Ok(status) if !status.success() => Some(format!("profile `{name}` exited with {status}")),
+        Err(error) => Some(format!("could not wait for profile `{name}`: {error}")),
+        _ => None,
+    }
 }
 
 fn plan_launch_all(dir: &Path) -> Result<Vec<(String, u16)>> {
@@ -508,5 +517,27 @@ mod tests {
             vec![("anna".to_string(), 7001), ("timmy".to_string(), 7002)],
             plan_launch_all(&dir).unwrap()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_finished_child_reports_only_what_the_operator_needs() {
+        use std::os::unix::process::ExitStatusExt;
+
+        // A clean exit says nothing.
+        let ok = std::process::ExitStatus::from_raw(0);
+        assert_eq!(None, child_outcome("work", Ok(ok)));
+
+        // A failing exit names the profile and the status.
+        let bad = std::process::ExitStatus::from_raw(1 << 8);
+        let message = child_outcome("work", Ok(bad)).expect("a failed child is reported");
+        assert!(message.contains("work"), "{message}");
+        assert!(message.contains("exited with"), "{message}");
+
+        // A wait that itself failed is reported differently, never silently.
+        let broken = child_outcome("work", Err(std::io::Error::other("no child")))
+            .expect("a broken wait is reported");
+        assert!(broken.contains("could not wait"), "{broken}");
+        assert!(broken.contains("no child"), "{broken}");
     }
 }
