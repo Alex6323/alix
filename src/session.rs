@@ -475,6 +475,7 @@ impl Session {
         if state.acquired_ms.is_none() {
             state.acquired_ms = Some(now_ms);
         }
+        self.revealed.remove(&id);
         self.stats.acquired += 1;
         self.floor(&id, now_ms);
         self.advance(store, now_ms);
@@ -1317,20 +1318,39 @@ mod tests {
 
     #[test]
     fn an_acquired_card_returns_in_session_after_its_cooldown() {
-        let (mut store, _dir) = empty_store();
-        let mut session = Session::new(
-            cards(1),
-            &mut store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
-        let id = session.current().unwrap().id();
-        session.acquire_current(&mut store, 1000);
-        assert!(session.is_finished());
-        assert!(session.poll(&mut store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
-        assert_eq!(session.current().map(|c| c.id()), Some(id));
-        assert!(!session.current_fresh(&store));
+        for revealed_first in [false, true] {
+            let at = format!("revealed_first={revealed_first}");
+            let (mut store, _dir) = empty_store();
+            let mut session = Session::new(
+                cards(1),
+                &mut store,
+                sched(),
+                SessionOptions::default(),
+                1000,
+            );
+            let id = session.current().unwrap().id();
+            if revealed_first {
+                assert!(
+                    session.reveal_current(&mut store, 1000),
+                    "{at}: a fresh card reveals"
+                );
+            }
+            session.acquire_current(&mut store, 1000);
+            assert!(session.is_finished(), "{at}: the sitting empties");
+            assert!(
+                session.poll(&mut store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS),
+                "{at}: the card returns after its cooldown"
+            );
+            assert_eq!(
+                session.current().map(|c| c.id()),
+                Some(id),
+                "{at}: the same card returns"
+            );
+            assert!(
+                !session.current_fresh(&store),
+                "{at}: it returns as a graded review, never as another acquire"
+            );
+        }
     }
 
     #[test]
