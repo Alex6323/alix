@@ -3,7 +3,15 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Entry forms, both exactly as cargo-mutants prints the miss:
+# Both survivor classes are reconciled here: a MISS (the tests passed
+# under the mutant) and a TIMEOUT (the mutated tests hung). Timeouts need
+# entries too, because cargo-mutants reports a timeout in preference to a
+# miss, so one unargued timeout keeps a shard red no matter how well its
+# misses are argued. Whether a hang counts as detection at all is Alex's
+# open ruling; until he rules, no timeout entry is written here and the
+# shards that have them stay red on purpose.
+#
+# Entry forms, both exactly as cargo-mutants prints the survivor:
 #   <file>: <mutation description>          argued CLASS (any line)
 #   <file>:<line>: <mutation description>   single argued site (rots
 #                                           loudly via the stale note
