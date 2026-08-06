@@ -1615,6 +1615,8 @@ const _: fn() = || {
         let _: Option<u64> = ReviewState.next_due_ms;
         let _: u32 = ReviewState.due_left;
         let _: u32 = ReviewState.new_left;
+        let _: u32 = ReviewState.met_total;
+        let _: u32 = ReviewState.deck_total;
         let _: Option<crate::api::review::RecognizeGap> = ReviewState.recognize_gap;
         let _: Option<String> = ReviewState.save_error;
     }
@@ -2398,6 +2400,8 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_nextDueMs = <Option<u64>>::sse_decode(deserializer);
         let mut var_dueLeft = <u32>::sse_decode(deserializer);
         let mut var_newLeft = <u32>::sse_decode(deserializer);
+        let mut var_metTotal = <u32>::sse_decode(deserializer);
+        let mut var_deckTotal = <u32>::sse_decode(deserializer);
         let mut var_recognizeGap =
             <Option<crate::api::review::RecognizeGap>>::sse_decode(deserializer);
         let mut var_saveError = <Option<String>>::sse_decode(deserializer);
@@ -2426,6 +2430,8 @@ impl SseDecode for crate::api::review::ReviewState {
             next_due_ms: var_nextDueMs,
             due_left: var_dueLeft,
             new_left: var_newLeft,
+            met_total: var_metTotal,
+            deck_total: var_deckTotal,
             recognize_gap: var_recognizeGap,
             save_error: var_saveError,
         };
@@ -3167,6 +3173,8 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.next_due_ms.into_into_dart().into_dart(),
             self.0.due_left.into_into_dart().into_dart(),
             self.0.new_left.into_into_dart().into_dart(),
+            self.0.met_total.into_into_dart().into_dart(),
+            self.0.deck_total.into_into_dart().into_dart(),
             self.0.recognize_gap.into_into_dart().into_dart(),
             self.0.save_error.into_into_dart().into_dart(),
         ]
@@ -3994,6 +4002,8 @@ impl SseEncode for crate::api::review::ReviewState {
         <Option<u64>>::sse_encode(self.next_due_ms, serializer);
         <u32>::sse_encode(self.due_left, serializer);
         <u32>::sse_encode(self.new_left, serializer);
+        <u32>::sse_encode(self.met_total, serializer);
+        <u32>::sse_encode(self.deck_total, serializer);
         <Option<crate::api::review::RecognizeGap>>::sse_encode(self.recognize_gap, serializer);
         <Option<String>>::sse_encode(self.save_error, serializer);
     }

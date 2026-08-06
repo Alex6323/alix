@@ -122,6 +122,9 @@ pub struct _ReviewState {
     // regen carries them across).
     pub due_left: u32,
     pub new_left: u32,
+    // Done-only deck standing, likewise mirrored but not yet surfaced here.
+    pub met_total: u32,
+    pub deck_total: u32,
     // Done-only, Recognize-only: what the depth filter hid (mobile summary
     // does not surface it yet either).
     pub recognize_gap: Option<RecognizeGap>,

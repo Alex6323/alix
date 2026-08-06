@@ -416,6 +416,8 @@ class ReviewState {
   final BigInt? nextDueMs;
   final int dueLeft;
   final int newLeft;
+  final int metTotal;
+  final int deckTotal;
   final RecognizeGap? recognizeGap;
   final String? saveError;
 
@@ -444,6 +446,8 @@ class ReviewState {
     this.nextDueMs,
     required this.dueLeft,
     required this.newLeft,
+    required this.metTotal,
+    required this.deckTotal,
     this.recognizeGap,
     this.saveError,
   });
@@ -474,6 +478,8 @@ class ReviewState {
       nextDueMs.hashCode ^
       dueLeft.hashCode ^
       newLeft.hashCode ^
+      metTotal.hashCode ^
+      deckTotal.hashCode ^
       recognizeGap.hashCode ^
       saveError.hashCode;
 
@@ -506,6 +512,8 @@ class ReviewState {
           nextDueMs == other.nextDueMs &&
           dueLeft == other.dueLeft &&
           newLeft == other.newLeft &&
+          metTotal == other.metTotal &&
+          deckTotal == other.deckTotal &&
           recognizeGap == other.recognizeGap &&
           saveError == other.saveError;
 }

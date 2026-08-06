@@ -292,6 +292,7 @@ fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), WriteFai
     })
 }
 
+#[cfg(feature = "full")]
 pub(crate) fn write_deck_data(
     path: &Path,
     deck_id: &str,

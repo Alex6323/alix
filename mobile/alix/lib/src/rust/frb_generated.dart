@@ -1899,8 +1899,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 26)
-      throw Exception('unexpected arr length: expect 26 but see ${arr.length}');
+    if (arr.length != 28)
+      throw Exception('unexpected arr length: expect 28 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
@@ -1926,8 +1926,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[21]),
       dueLeft: dco_decode_u_32(arr[22]),
       newLeft: dco_decode_u_32(arr[23]),
-      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[24]),
-      saveError: dco_decode_opt_String(arr[25]),
+      metTotal: dco_decode_u_32(arr[24]),
+      deckTotal: dco_decode_u_32(arr[25]),
+      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[26]),
+      saveError: dco_decode_opt_String(arr[27]),
     );
   }
 
@@ -2901,6 +2903,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_nextDueMs = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_dueLeft = sse_decode_u_32(deserializer);
     var var_newLeft = sse_decode_u_32(deserializer);
+    var var_metTotal = sse_decode_u_32(deserializer);
+    var var_deckTotal = sse_decode_u_32(deserializer);
     var var_recognizeGap = sse_decode_opt_box_autoadd_recognize_gap(
       deserializer,
     );
@@ -2930,6 +2934,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       nextDueMs: var_nextDueMs,
       dueLeft: var_dueLeft,
       newLeft: var_newLeft,
+      metTotal: var_metTotal,
+      deckTotal: var_deckTotal,
       recognizeGap: var_recognizeGap,
       saveError: var_saveError,
     );
@@ -3892,6 +3898,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_64(self.nextDueMs, serializer);
     sse_encode_u_32(self.dueLeft, serializer);
     sse_encode_u_32(self.newLeft, serializer);
+    sse_encode_u_32(self.metTotal, serializer);
+    sse_encode_u_32(self.deckTotal, serializer);
     sse_encode_opt_box_autoadd_recognize_gap(self.recognizeGap, serializer);
     sse_encode_opt_String(self.saveError, serializer);
   }
