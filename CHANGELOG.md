@@ -10,7 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Card tables: a GitHub-flavored pipe table in a deck is a compact card
   source, one card per row (front | back | optional note), with the header
-  shown as context. Rows carry minted six-character stamps at the row's
+  shown as context and an optional `##` heading directly above the table
+  as its title, shown first in that context. Rows carry minted
+  six-character stamps at the row's
   end and the table one container id line, so sorting, inserting, and
   editing rows preserves review history. At Recognize, a table card's
   multiple-choice distractors are sampled from its own column (sibling

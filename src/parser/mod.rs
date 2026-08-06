@@ -329,6 +329,7 @@ struct RawCard {
 
 struct RawTable {
     line: usize,
+    title: Option<String>,
     columns: usize,
     header: Vec<String>,
     rows: Vec<RawRow>,
@@ -477,8 +478,23 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             && next.starts_with('|')
             && is_delimiter_row(next)
         {
+            // An empty-bodied heading directly above the table is its TITLE,
+            // not a card; any content or note keeps it a card.
+            let mut title = None;
+            let mut block_line = lineno;
+            let mut directives = CardDirectives::default();
             if let Some(card) = current.take() {
-                blocks.push(RawBlock::Card(card));
+                if card.front_extra.is_empty()
+                    && card.back.is_empty()
+                    && card.note.is_none()
+                    && !card.divided
+                {
+                    title = Some(card.front);
+                    block_line = card.line;
+                    directives = card.directives;
+                } else {
+                    blocks.push(RawBlock::Card(card));
+                }
             }
             let header = split_cells(raw).ok_or(ParseError::TableLineMalformed(lineno))?;
             if !(2..=3).contains(&header.len()) {
@@ -498,11 +514,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 });
             }
             table = Some(RawTable {
-                line: lineno,
+                line: block_line,
+                title,
                 columns: header.len(),
                 header,
                 rows: Vec::new(),
-                directives: CardDirectives::default(),
+                directives,
                 rows_done: false,
                 end_line: lineno + 1,
             });
@@ -789,6 +806,9 @@ fn build_table_cards(
         let mut card = Card::plain(Arc::clone(subject), front, vec![back], note, row.line);
         card.deck_id = Arc::clone(deck_id);
         card.context = raw.header.clone();
+        if let Some(title) = &raw.title {
+            card.context.insert(0, title.clone());
+        }
         // An unstamped row is an unstamped card: composing an id from the
         // container alone would collide every such row on the base id.
         if let Some(stamp) = row.stamp {
@@ -2669,11 +2689,10 @@ the answer
     }
 
     #[test]
-    fn a_table_directly_after_a_card_front_leaves_the_card_answerless() {
-        assert_eq!(
-            ParseError::FrontWithoutAnswer(1),
-            err("## q\n| a | b |\n|---|---|\n| x | y |\n")
-        );
+    fn a_bare_heading_directly_above_a_table_titles_it_instead_of_erroring() {
+        let deck = parse("## q\n| a | b |\n|---|---|\n| x | y |\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["q", "a", "b"], deck.cards[0].context);
     }
 
     #[test]
@@ -2836,6 +2855,70 @@ the answer
         assert_eq!(2, deck.cards.len());
         assert_eq!(vec!["a", "b"], deck.cards[0].context);
         assert_eq!(vec!["c", "d"], deck.cards[1].context);
+    }
+
+    #[test]
+    fn an_empty_heading_above_a_table_becomes_its_title() {
+        let text = format!(
+            "## Verbs of arguing\n| word | meaning |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: {CONTAINER} -->\n"
+        );
+        let deck = parse(&text);
+        assert_eq!(1, deck.cards.len(), "the heading is a title, not a card");
+        assert_eq!(
+            vec!["Verbs of arguing", "word", "meaning"],
+            deck.cards[0].context
+        );
+        assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
+    }
+
+    #[test]
+    fn a_heading_with_answer_content_before_a_table_stays_a_card() {
+        let deck = parse("## q\nanswer\n| a | b |\n|---|---|\n| x | y |\n");
+        assert_eq!(2, deck.cards.len());
+        assert_eq!("q", deck.cards[0].front);
+        assert_eq!(vec!["answer"], deck.cards[0].back);
+        assert_eq!(
+            vec!["a", "b"],
+            deck.cards[1].context,
+            "the table is untitled"
+        );
+    }
+
+    #[test]
+    fn a_heading_with_only_a_note_keeps_being_a_card_and_fails_loudly() {
+        assert_eq!(
+            ParseError::FrontWithoutAnswer(1),
+            err("## q\n> a note\n| a | b |\n|---|---|\n| x | y |\n")
+        );
+    }
+
+    #[test]
+    fn a_heading_id_becomes_the_tables_container_id() {
+        let text = format!(
+            "## Title <!-- id: {CONTAINER} -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n"
+        );
+        let deck = parse(&text);
+        assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
+    }
+
+    #[test]
+    fn heading_directives_apply_to_the_titled_tables_rows() {
+        let text = format!(
+            "## Title <!-- direction: both -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: {CONTAINER} -->\n"
+        );
+        let deck = parse(&text);
+        assert!(
+            deck.cards
+                .iter()
+                .all(|card| card.direction == Some(Direction::Both))
+        );
+    }
+
+    #[test]
+    fn a_blank_line_between_title_and_table_still_titles() {
+        let deck = parse("## Title\n\n| a | b |\n|---|---|\n| x | y |\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["Title", "a", "b"], deck.cards[0].context);
     }
 
     #[test]

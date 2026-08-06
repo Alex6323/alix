@@ -337,7 +337,7 @@ const CHOICE_ARMED_DECK: &str = "---\nformat-version: 1\nid: \"deck-choicearmed\
 /// A stamped five-row card table, no augment cache: at Recognize its picks
 /// come from column sampling alone, and the header renders as context.
 const TABLE_DECK: &str = "---\nformat-version: 1\nid: \"deck-vocabtable\"\n---\n\
-| word | meaning |\n|---|---|\n\
+## German numbers\n| word | meaning |\n|---|---|\n\
 | eins | one | <!-- r:aaaaa2 -->\n\
 | zwei | two | <!-- r:aaaaa3 -->\n\
 | drei | three | <!-- r:aaaaa4 -->\n\
@@ -2510,7 +2510,11 @@ fn a_table_deck_serves_sampled_choices_and_header_context_at_recognize() {
         .iter()
         .filter_map(|v| v.as_str())
         .collect();
-    assert_eq!(vec!["word", "meaning"], context, "body: {body}");
+    assert_eq!(
+        vec!["German numbers", "word", "meaning"],
+        context,
+        "the table title leads the header cells: {body}"
+    );
     assert!(
         !body["card"]["context_runs"]
             .as_array()

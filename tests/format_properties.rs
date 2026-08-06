@@ -25,6 +25,7 @@ struct GenRow {
 
 #[derive(Debug, Clone)]
 struct GenTable {
+    title: Option<String>,
     header: Vec<String>,
     rows: Vec<GenRow>,
     container: Option<String>,
@@ -36,26 +37,33 @@ fn gen_table() -> impl Strategy<Value = GenTable> {
         let rows = proptest::collection::vec(proptest::collection::vec(safe_text(), cols), nrows);
         let stamps = proptest::collection::btree_set(alphabet_string(6), nrows);
         let container = alphabet_string(26);
-        (header, rows, stamps, container).prop_map(move |(header, rows, stamps, container)| {
-            let stamps: Vec<String> = stamps.into_iter().collect();
-            GenTable {
-                header,
-                rows: rows
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, cells)| GenRow {
-                        cells,
-                        stamp: stamped.then(|| stamps[i].clone()),
-                    })
-                    .collect(),
-                container: stamped.then(|| format!("card-{container}")),
-            }
-        })
+        let title = proptest::option::of(safe_text());
+        (header, rows, stamps, container, title).prop_map(
+            move |(header, rows, stamps, container, title)| {
+                let stamps: Vec<String> = stamps.into_iter().collect();
+                GenTable {
+                    title,
+                    header,
+                    rows: rows
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, cells)| GenRow {
+                            cells,
+                            stamp: stamped.then(|| stamps[i].clone()),
+                        })
+                        .collect(),
+                    container: stamped.then(|| format!("card-{container}")),
+                }
+            },
+        )
     })
 }
 
 fn render_table(table: &GenTable) -> String {
     let mut out = String::new();
+    if let Some(title) = &table.title {
+        out.push_str(&format!("## {title}\n"));
+    }
     out.push_str(&format!("| {} |\n", table.header.join(" | ")));
     out.push_str(&format!(
         "|{}\n",
@@ -264,10 +272,14 @@ proptest! {
         let text = format!("{DECK_HEAD}\n{}", render_table(&table));
         let deck = alix::parser::parse("deck.md", &text).expect("a generated table parses");
         prop_assert_eq!(table.rows.len(), deck.cards.len());
+        let mut expected_context = table.header.clone();
+        if let Some(title) = &table.title {
+            expected_context.insert(0, title.clone());
+        }
         for (row, card) in table.rows.iter().zip(&deck.cards) {
             prop_assert_eq!(&row.cells[0], &card.front);
             prop_assert_eq!(&row.cells[1], &card.back[0]);
-            prop_assert_eq!(&table.header, &card.context);
+            prop_assert_eq!(&expected_context, &card.context);
             match (&row.stamp, &table.container) {
                 (Some(stamp), Some(container)) => {
                     prop_assert_eq!(Some(format!("{container}-t{stamp}")), card.id());

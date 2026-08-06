@@ -162,6 +162,22 @@ The table must start at column 0 with a header row and a delimiter row
 and ends with `|`. Inside cells, inline formatting and math work as in any
 card text. A table inside a fenced code block stays literal text.
 
+Give a table a title by putting a `##` heading directly above it, with
+nothing between them but blank lines:
+
+```
+## Verbs of arguing
+| English   | German      | usage                |
+|-----------|-------------|----------------------|
+| to refute | widerlegen  | eine These widerlegen |
+```
+
+The heading names the group and is shown as the card's first context line,
+above the column labels; it is a title only when its body is empty, so a
+heading with an answer under it is an ordinary card that happens to be
+followed by a table. Directives written on the title line (including the
+table's own ID) belong to the table.
+
 At Recognize, a table card's wrong options are drawn from its own column: the
 other rows' answers are the distractors, so a table needs no AI `choices`
 augmentation and no authored options (though both take precedence if
