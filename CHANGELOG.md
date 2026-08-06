@@ -9,20 +9,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Card tables: a GitHub-flavored pipe table in a deck is a compact card
-  source, one card per row (front | back | optional note), with the header
-  shown as context and an optional `##` heading directly above the table
-  as its title, shown first in that context. Rows carry minted
-  six-character stamps at the row's
-  end and the table one container id line, so sorting, inserting, and
-  editing rows preserves review history. At Recognize, a table card's
-  multiple-choice distractors are sampled from its own column (sibling
-  rows), no AI augmentation needed; authored options and cached AI
-  distractors still take precedence. Tables accept the card directives
-  (`direction`, `reveal`, `input`, `sampling`) between the table and its
-  id line, and `sampling: on|off` switches column sampling deck-wide or per
-  table in either direction;
-  anything the format cannot hold (a fourth column, cloze or images in
-  cells, stray content after the table) is a loud parse error.
+  source, one card per row (front | back | optional note). The header row
+  is shown as the card's context, and a `##` heading directly above the
+  table titles it and leads that context. Each row carries a minted
+  six-character stamp at its end and the table one container id line, so
+  sorting, inserting, and editing rows preserves review history.
+
+- Table cards draw their Recognize options from their own column, so a
+  vocabulary table needs no AI augmentation and no authored options
+  (both still take precedence where present). The new `sampling: on|off`
+  key turns that off or on again, in the frontmatter for a whole deck, in
+  a workspace's defaults, or in one table's directive comments, which win
+  over the deck in either direction. `alix doctor` reports a `sampling:`
+  key that can affect nothing.
+
+- Tables accept the card directives (`direction`, `reveal`, `input`,
+  `sampling`) between the table and its id line. Anything the format
+  cannot hold (a fourth column, cloze markers or images in cells, stray
+  content after the table) is a loud parse error rather than a guess.
 
 - The adult web picker can remove a focused loose deck, workspace member, or
   whole workspace from its secondary menu. A type-the-name sheet previews the
