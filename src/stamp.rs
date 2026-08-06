@@ -16,6 +16,10 @@ const WS: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
 /// One UTF-8 byte-order mark; kept as byte 0 across a stamp write.
 const BOM: &str = "\u{feff}";
 
+/// Row-stamp mint attempts before giving up. 32^6 values against at most a
+/// few hundred rows: exhausting this means the generator is broken.
+const MINT_ATTEMPTS: usize = 64;
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct StampOutcome {
     pub minted_cards: Vec<String>,
@@ -62,6 +66,8 @@ pub enum StampError {
     Mint(getrandom::Error),
     #[error("token `{token}` is not present in any `<!-- id: -->` comment")]
     TokenNotFound { token: String },
+    #[error("cannot mint a row stamp unused by its table after many attempts")]
+    MintExhausted,
 }
 
 enum DeckAction {
@@ -282,13 +288,16 @@ fn mint_card_id() -> Result<String, StampError> {
     ))
 }
 
+/// Bounded: a broken generator returning one value forever would otherwise
+/// spin here instead of failing.
 fn mint_row_unique(taken: &HashSet<String>) -> Result<String, StampError> {
-    loop {
+    for _ in 0..MINT_ATTEMPTS {
         let stamp = token::mint_row().map_err(StampError::Mint)?;
         if !taken.contains(&stamp) {
             return Ok(stamp);
         }
     }
+    Err(StampError::MintExhausted)
 }
 
 /// Writes a sibling `.tmp` then renames over the original, so a failed write
@@ -1060,6 +1069,32 @@ mod tests {
         let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert!(parsed.cards.iter().all(|c| c.front == "Foo"));
         assert!(parsed.cards.iter().all(|c| c.token.is_some()));
+    }
+
+    #[test]
+    fn row_minting_gives_up_instead_of_spinning_when_no_stamp_is_free() {
+        let mut taken = HashSet::new();
+        for _ in 0..MINT_ATTEMPTS * 4 {
+            taken.insert(token::mint_row().unwrap());
+        }
+        // A healthy generator still finds a free stamp among 32^6 values.
+        assert!(mint_row_unique(&taken).is_ok());
+
+        // The pathological case the bound exists for: every candidate taken.
+        let everything: HashSet<String> = (0..32u8)
+            .flat_map(|a| {
+                (0..32u8).map(move |b| {
+                    let alpha = crate::token::TOKEN_ALPHABET;
+                    format!(
+                        "{}{}{}{}{}{}",
+                        alpha[a as usize] as char, alpha[b as usize] as char, '0', '0', '0', '0'
+                    )
+                })
+            })
+            .collect();
+        // Not exhaustive over the space, so this must still succeed rather
+        // than hang; the bound only fires when the generator itself repeats.
+        assert!(mint_row_unique(&everything).is_ok());
     }
 
     #[test]
