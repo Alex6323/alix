@@ -11,7 +11,9 @@ pub(crate) enum Operation {
     SyncTemp,
     Rename,
     CreateDirectory,
+    #[cfg(unix)]
     OpenDirectory,
+    #[cfg(unix)]
     SyncDirectory,
 }
 
@@ -300,14 +302,14 @@ mod tests {
                 result.is_err(),
                 "operation {nth} ({operation:?}): the fault was swallowed"
             );
-            let expected = if matches!(
+            #[cfg(unix)]
+            let committed = matches!(
                 operation,
                 fault::Operation::OpenDirectory | fault::Operation::SyncDirectory
-            ) {
-                "new"
-            } else {
-                "old"
-            };
+            );
+            #[cfg(not(unix))]
+            let committed = false;
+            let expected = if committed { "new" } else { "old" };
             assert_eq!(
                 expected,
                 std::fs::read_to_string(&path).unwrap(),
@@ -321,17 +323,22 @@ mod tests {
                 "operation {nth} ({operation:?}): retry left a temp file"
             );
         }
-        let mut expected = vec![
+        #[cfg(unix)]
+        let expected = vec![
+            fault::Operation::CreateTemp,
+            fault::Operation::WriteTemp,
+            fault::Operation::SyncTemp,
+            fault::Operation::Rename,
+            fault::Operation::OpenDirectory,
+            fault::Operation::SyncDirectory,
+        ];
+        #[cfg(not(unix))]
+        let expected = vec![
             fault::Operation::CreateTemp,
             fault::Operation::WriteTemp,
             fault::Operation::SyncTemp,
             fault::Operation::Rename,
         ];
-        #[cfg(unix)]
-        expected.extend([
-            fault::Operation::OpenDirectory,
-            fault::Operation::SyncDirectory,
-        ]);
         assert_eq!(
             expected, covered,
             "the law must visit every operation in one replacement"
