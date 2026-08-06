@@ -3,6 +3,14 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
+# Current contents by class: 2 EQUIVALENT, 1 DELIBERATE, 2 DEAD-PATH,
+# 19 NEEDS-SEAM. Nineteen of the twenty-four are therefore a standing
+# DECISION, not a wall: injectable randomness, an injectable host
+# lookup, and the spawn indirection {#profile-launch-test-fork-bomb}
+# already owns would make them killable. That trade (production surface
+# for test reach) is Alex's to make. Nothing here should be read as
+# saying it cannot be done.
+#
 # Both survivor classes are reconciled here: a MISS (the tests passed
 # under the mutant) and a TIMEOUT (the mutated tests hung). Timeouts need
 # entries too, because cargo-mutants reports a timeout in preference to a
