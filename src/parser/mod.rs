@@ -1958,6 +1958,25 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_value_lints_as_empty_only_for_a_known_key() {
+        // A known key with no value is an authoring slip worth naming as such;
+        // an unknown key is unknown whether or not it carries a value.
+        let deck = parse("## q\n---\na\n<!-- reveal: -->\n");
+        assert_eq!(
+            vec![Lint {
+                line: 4,
+                kind: LintKind::EmptyValue {
+                    key: "reveal".into()
+                }
+            }],
+            deck.lints
+        );
+
+        let deck = parse("## q\n---\na\n<!-- flavor: -->\n");
+        assert_eq!(vec![unknown(4, "flavor")], deck.lints);
+    }
+
+    #[test]
     fn unknown_content_directive_keys_lint_and_yield_no_image() {
         let deck = parse(
             "## q\n---\na\n<!-- img: moon.png -->\n<!-- img-back: phase.png -->\n\
