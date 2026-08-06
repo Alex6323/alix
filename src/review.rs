@@ -302,12 +302,18 @@ pub fn state(
         recognize_missed: session.stats.recognize_missed as u32,
         can_restart: session.has_due_now(store, now),
         promotable: session.current_is_virtual(store),
+        // Both scopes, since a card met in an earlier sitting is not in this
+        // roster and can open well before anything this sitting cooled.
         next_due_ms: finished
             .then(|| {
-                session
-                    .next_servable_at(store, now)
-                    .filter(|&t| t > now)
-                    .or_else(|| session.next_due_at(store))
+                [
+                    session.next_servable_at(store, now),
+                    session.next_due_at(store),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|&t| t > now)
+                .min()
             })
             .flatten(),
         due_left: due_left as u32,
@@ -486,6 +492,34 @@ mod tests {
                 "{depth:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_next_opening_is_the_decks_earliest_not_this_sittings() {
+        let cooldown = crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        let (mut store, augment, _dir) = fixtures();
+        let both = parse("## a\n1\n\n## b\n2\n");
+        let earlier = both[0].id().unwrap();
+        let later = both[1].id().unwrap();
+        store.get_or_insert(&earlier, T0).acquired_ms = Some(T0);
+
+        // A sitting one minute on: the earlier card is still cooling, so only
+        // the never-met one is rostered, and it cools a minute behind it.
+        let now = T0 + 60_000;
+        let mut session = session_at(both, &mut store, Depth::Recall, now);
+        assert_eq!(
+            Some(later),
+            session.current().and_then(Card::id),
+            "the cooling card stays out of this sitting"
+        );
+        session.acquire_current(&mut store, now);
+        assert!(session.is_finished());
+
+        assert_eq!(
+            Some(T0 + cooldown),
+            state(&session, &store, &augment, Some(now)).next_due_ms,
+            "the summary counts down to the earliest card in the deck"
+        );
     }
 
     #[test]
