@@ -80,6 +80,7 @@ pub struct _CardView {
     pub front_runs: Vec<InlineRun>,
     pub front_units: Option<Vec<NoteUnit>>,
     pub context: Vec<String>,
+    pub context_leads: bool,
     pub context_runs: Vec<Vec<InlineRun>>,
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,

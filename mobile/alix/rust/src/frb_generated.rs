@@ -1525,6 +1525,7 @@ const _: fn() = || {
         let _: Vec<crate::api::review::InlineRun> = CardView.front_runs;
         let _: Option<Vec<crate::api::review::NoteUnit>> = CardView.front_units;
         let _: Vec<String> = CardView.context;
+        let _: bool = CardView.context_leads;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.context_runs;
         let _: Vec<String> = CardView.back;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.back_runs;
@@ -1707,6 +1708,7 @@ impl SseDecode for crate::api::review::CardView {
         let mut var_frontUnits =
             <Option<Vec<crate::api::review::NoteUnit>>>::sse_decode(deserializer);
         let mut var_context = <Vec<String>>::sse_decode(deserializer);
+        let mut var_contextLeads = <bool>::sse_decode(deserializer);
         let mut var_contextRuns =
             <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
@@ -1722,6 +1724,7 @@ impl SseDecode for crate::api::review::CardView {
             front_runs: var_frontRuns,
             front_units: var_frontUnits,
             context: var_context,
+            context_leads: var_contextLeads,
             context_runs: var_contextRuns,
             back: var_back,
             back_runs: var_backRuns,
@@ -2743,6 +2746,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
             self.0.front_runs.into_into_dart().into_dart(),
             self.0.front_units.into_into_dart().into_dart(),
             self.0.context.into_into_dart().into_dart(),
+            self.0.context_leads.into_into_dart().into_dart(),
             self.0.context_runs.into_into_dart().into_dart(),
             self.0.back.into_into_dart().into_dart(),
             self.0.back_runs.into_into_dart().into_dart(),
@@ -3429,6 +3433,7 @@ impl SseEncode for crate::api::review::CardView {
         <Vec<crate::api::review::InlineRun>>::sse_encode(self.front_runs, serializer);
         <Option<Vec<crate::api::review::NoteUnit>>>::sse_encode(self.front_units, serializer);
         <Vec<String>>::sse_encode(self.context, serializer);
+        <bool>::sse_encode(self.context_leads, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.context_runs, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.back_runs, serializer);

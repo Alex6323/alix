@@ -102,6 +102,7 @@ ReviewStateModel _state({int remaining = 2, bool finished = false}) {
       front: 'question',
       frontRuns: const [],
       context: const [],
+      contextLeads: false,
       contextRuns: const [],
       back: const ['answer'],
       backRuns: const [[]],

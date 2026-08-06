@@ -105,6 +105,7 @@ class CardView {
   final List<InlineRun> frontRuns;
   final List<NoteUnit>? frontUnits;
   final List<String> context;
+  final bool contextLeads;
   final List<List<InlineRun>> contextRuns;
   final List<String> back;
   final List<List<InlineRun>> backRuns;
@@ -120,6 +121,7 @@ class CardView {
     required this.frontRuns,
     this.frontUnits,
     required this.context,
+    required this.contextLeads,
     required this.contextRuns,
     required this.back,
     required this.backRuns,
@@ -137,6 +139,7 @@ class CardView {
       frontRuns.hashCode ^
       frontUnits.hashCode ^
       context.hashCode ^
+      contextLeads.hashCode ^
       contextRuns.hashCode ^
       back.hashCode ^
       backRuns.hashCode ^
@@ -156,6 +159,7 @@ class CardView {
           frontRuns == other.frontRuns &&
           frontUnits == other.frontUnits &&
           context == other.context &&
+          contextLeads == other.contextLeads &&
           contextRuns == other.contextRuns &&
           back == other.back &&
           backRuns == other.backRuns &&

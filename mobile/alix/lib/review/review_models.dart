@@ -58,6 +58,7 @@ class ReviewCardModel {
     required Iterable<InlineRunModel> frontRuns,
     Iterable<ReviewNoteUnitModel>? frontUnits,
     required Iterable<String> context,
+    required this.contextLeads,
     required Iterable<Iterable<InlineRunModel>> contextRuns,
     required Iterable<String> back,
     required Iterable<Iterable<InlineRunModel>> backRuns,
@@ -81,6 +82,9 @@ class ReviewCardModel {
   final List<InlineRunModel> frontRuns;
   final List<ReviewNoteUnitModel>? frontUnits;
   final List<String> context;
+  /// Whether `context` is the question (a cloze sentence) or a label for the
+  /// front (a card table's title).
+  final bool contextLeads;
   final List<List<InlineRunModel>> contextRuns;
   final List<String> back;
   final List<List<InlineRunModel>> backRuns;

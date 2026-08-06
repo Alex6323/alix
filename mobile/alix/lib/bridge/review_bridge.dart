@@ -198,6 +198,7 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
         ? null
         : [for (final unit in card.frontUnits!) _noteFromBridge(unit)],
     context: card.context,
+    contextLeads: card.contextLeads,
     contextRuns: [
       for (final runs in card.contextRuns) inlineRunsFromBridge(runs),
     ],

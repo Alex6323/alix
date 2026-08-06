@@ -119,22 +119,38 @@ class ReviewCardView extends StatelessWidget {
         const SizedBox(height: 8),
         _modeTag(_modeLabel(), tokens),
         const SizedBox(height: 12),
+        // A labelling context (a card table's title) sits above the prompt in
+        // a quieter style; a leading one (a cloze sentence) is the question
+        // itself and follows the front.
+        if (!card.contextLeads)
+          for (final (index, line) in card.context.indexed) ...[
+            _runsOrText(
+              index < card.contextRuns.length ? card.contextRuns[index] : null,
+              line,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
+              contextHoles: false,
+              tokens: tokens,
+            ),
+            const SizedBox(height: 8),
+          ],
         _front(context, card, tokens),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
           Image.file(File(image.src), height: 180, semanticLabel: image.alt),
         ],
-        for (final (index, line) in card.context.indexed) ...[
-          const SizedBox(height: 8),
-          _runsOrText(
-            index < card.contextRuns.length ? card.contextRuns[index] : null,
-            line,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
-            contextHoles: true,
-            tokens: tokens,
-          ),
-        ],
+        if (card.contextLeads)
+          for (final (index, line) in card.context.indexed) ...[
+            const SizedBox(height: 8),
+            _runsOrText(
+              index < card.contextRuns.length ? card.contextRuns[index] : null,
+              line,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
+              contextHoles: true,
+              tokens: tokens,
+            ),
+          ],
         const SizedBox(height: 14),
         _divider(tokens),
         const SizedBox(height: 22),
