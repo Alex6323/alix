@@ -1169,6 +1169,27 @@ mod tests {
     }
 
     #[test]
+    fn a_sitting_that_only_acquired_reports_when_those_cards_return() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(FOUR);
+        let mut session = session_at(cards, &mut store, Depth::Recall, NOW);
+        // Meet every card without grading any: the pure-acquire sitting a big
+        // new deck produces.
+        while !session.is_finished() {
+            session.acquire_current(&mut store, NOW);
+        }
+        let s = state(&session, &store, &augment, Some(NOW));
+
+        assert!(s.acquired > 0, "the sitting acquired cards");
+        assert_eq!(0, s.reviews, "and graded none");
+        assert_eq!(
+            Some(NOW + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS),
+            s.next_due_ms,
+            "the client cannot say when they come back without this"
+        );
+    }
+
+    #[test]
     fn promotable_flags_a_virtual_card_only() {
         let (mut store, augment, _dir) = fixtures();
         let text = "## virtual front <!-- id: card-vq1 -->\nvirtual back\n";

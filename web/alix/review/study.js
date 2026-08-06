@@ -1195,7 +1195,12 @@ export function createStudy({
     if (recognizeMissed > 0) row("missed", `${recognizeMissed}`);
     const dueLeft = state.due_left || 0;
     const newLeft = state.new_left || 0;
-    const nextDue = !didSomething && !gap ? nextDueNote(state.next_due_ms) : null;
+    // After a sitting that only acquired cards, "N new waiting" reads as an
+    // endless queue: it never says the cards just met come back shortly.
+    const nextDue = !gap ? nextDueNote(state.next_due_ms) : null;
+    const acquiredReturn = acquired > 0 && nextDue
+      ? `${acquired} card${acquired === 1 ? "" : "s"} met. ${nextDue}`
+      : null;
     // "N still due" beside a disabled Continue is a contradiction: when
     // nothing is servable the cards are cooling, so say when one opens.
     const cooling = dueLeft > 0 && !state.can_restart ? nextDueNote(state.next_due_ms) : null;
@@ -1209,7 +1214,10 @@ export function createStudy({
       if (gap.recall > 0) parts.push(`${gap.recall} card${gap.recall === 1 ? "" : "s"} wait at Recall`);
       if (gap.unaugmented > 0) parts.push(`${gap.unaugmented} need answer choices first (the Augment screen builds them)`);
       wrap.appendChild(el("div", "note", parts.join(" · ") + "."));
-    } else if (nextDue) {
+    } else if (acquiredReturn) {
+      const tail = newLeft > 0 ? ` ${newLeft} new waiting.` : "";
+      wrap.appendChild(el("div", "note", acquiredReturn + tail));
+    } else if (nextDue && !didSomething) {
       wrap.appendChild(el("div", "note", nextDue));
     } else if (dueSegment) {
       wrap.appendChild(el("div", "note", `${dueSegment}.`));
