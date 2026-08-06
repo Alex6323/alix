@@ -128,9 +128,20 @@ macro_rules! say {
 }
 
 fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> serve::PairInfo {
+    announce_with(addr, lan, lan.then(local_lan_ip).flatten(), token, root)
+}
+
+/// The host lookup is the caller's, so the pairing URL is decided by a value
+/// rather than by whatever the machine's routing table answers.
+fn announce_with(
+    addr: SocketAddr,
+    lan: bool,
+    lan_ip: Option<std::net::IpAddr>,
+    token: Option<&str>,
+    root: &Path,
+) -> serve::PairInfo {
     let root = abbreviate_home(root);
     let port = addr.port();
-    let lan_ip = if lan { local_lan_ip() } else { None };
     let pair = match (token, lan_ip) {
         (Some(t), Some(ip)) => serve::PairInfo {
             url: format!("http://{ip}:{port}/?token={t}"),
@@ -294,5 +305,28 @@ mod tests {
             return;
         }
         assert_eq!(abbreviate_home(&outside), outside.display().to_string());
+    }
+
+    #[test]
+    fn the_pairing_url_follows_the_supplied_host_address() {
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+        let addr = SocketAddr::from(([127, 0, 0, 1], 7780));
+        let root = std::path::Path::new("/tmp/decks");
+        let lan_ip = Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 42)));
+
+        // A token and a resolved address pair over the LAN.
+        let paired = announce_with(addr, true, lan_ip, Some("tok"), root);
+        assert_eq!("http://192.168.1.42:7780/?token=tok", paired.url);
+        assert!(paired.lan);
+
+        // No address resolved: fall back to loopback rather than inventing one.
+        let unresolved = announce_with(addr, true, None, Some("tok"), root);
+        assert_eq!("http://127.0.0.1:7780/", unresolved.url);
+        assert!(!unresolved.lan);
+
+        // An address without a token is not a pairing URL either.
+        let tokenless = announce_with(addr, true, lan_ip, None, root);
+        assert_eq!("http://127.0.0.1:7780/", tokenless.url);
+        assert!(!tokenless.lan);
     }
 }

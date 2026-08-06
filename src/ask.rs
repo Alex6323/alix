@@ -70,9 +70,13 @@ fn random_uuid() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
     let nonce = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let mut state = crate::time::now_ms()
-        ^ ((std::process::id() as u64) << 32)
-        ^ nonce.wrapping_mul(0xA076_1D64_78BD_642F);
+    uuid_from_seed(crate::time::now_ms(), std::process::id() as u64, nonce)
+}
+
+/// Split from its caller so the mixing is a pure function of known inputs:
+/// the process clock and pid enter only here.
+fn uuid_from_seed(now_ms: u64, pid: u64, nonce: u64) -> String {
+    let mut state = now_ms ^ (pid << 32) ^ nonce.wrapping_mul(0xA076_1D64_78BD_642F);
     let mut next = || {
         state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = state;
@@ -1756,6 +1760,28 @@ mod tests {
         let reply = "```\n## term?\ndefinition\n```";
         let card = parse_drafted_card(reply).unwrap();
         assert_eq!(card.front, "term?");
+    }
+
+    #[test]
+    fn the_uuid_mixer_is_pinned_for_known_seeds() {
+        // Exact output for fixed inputs: the mixing steps are frozen, so a
+        // changed shift or operator is visible rather than merely "still a
+        // valid uuid". Values produced by the current implementation.
+        for (now, pid, nonce, want) in [
+            (0u64, 0u64, 0u64, "afcd1d7b-39a8-40e2-b465-b9a16a9e786e"),
+            (
+                1_700_000_000_000u64,
+                4242u64,
+                7u64,
+                "ffef0cd2-dc69-4c2c-9511-be7978736743",
+            ),
+        ] {
+            assert_eq!(
+                want,
+                uuid_from_seed(now, pid, nonce),
+                "seed {now}/{pid}/{nonce}"
+            );
+        }
     }
 
     #[test]
