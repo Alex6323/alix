@@ -180,31 +180,34 @@ table's own ID) belong to the table.
 
 At Recognize, a table card's wrong options are drawn from its own column: the
 other rows' answers are the distractors, so a table needs no AI `choices`
-augmentation and no authored options (though both take precedence if
-present). A row only gets a pick when its column offers at least three other
-distinct values; smaller tables stay reviewable at the other depths.
+augmentation and no authored options (though both take precedence if present).
+A row only gets a pick when its column offers at least three other distinct
+values; smaller tables stay reviewable at the other depths.
 
-Identity works like card IDs, per row: `alix deck init` (or opening the deck
-for review) mints a short stamp onto each row's end, after the closing pipe (GFM renderers ignore cells beyond the header, so rendered views stay clean) and one container
-ID line after the table. Both are machine-maintained, never hand-authored,
-and they travel with the row, so sorting, inserting, and editing rows
-preserves review history:
+That column sampling is on by default. Turn it off for a table whose rows are
+not interchangeable (a mixed list, a table of one-off facts) with
+`<!-- sampling: off -->` among its directive comments, or set `sampling: off`
+in the frontmatter to make that the deck's default and re-enable single tables
+with `<!-- sampling: on -->`. A table with sampling off and no other option
+source is simply not offered at Recognize, and `alix doctor` reports a
+`sampling:` key that can affect nothing.
+
+Identity works like card IDs, per row. `alix deck init` (or opening the deck
+for review) mints one container ID line after the table, and a short stamp at
+the end of each row, after the closing pipe:
 
 ```
 | purported | angeblich | often in legal prose | <!-- r:4k2x9w -->
 ```
 
-Column sampling is on by default. Turn it off for a table whose rows are
-not interchangeable (a mixed list, a table of one-off facts) with
-`<!-- sampling: off -->` in its directive comments, or set `sampling: off`
-in the frontmatter to make that the deck's default and re-enable single
-tables with `<!-- sampling: on -->`. A table with sampling off and no other
-option source simply is not offered at Recognize. `alix doctor` reports a
-`sampling:` key that can affect nothing.
+Renderers drop cells beyond the header count, so the stamps stay invisible in
+a rendered view while keeping the source columns aligned. Both kinds of marker
+are machine-maintained, never hand-authored, and they travel with their row,
+so sorting, inserting, and editing rows preserves review history.
 
 Directive comments between the table and its ID line (`direction`, `reveal`,
-`input`, `sampling`) apply to every row; `direction: both` doubles each row into a
-reversed card, which samples its options from the front column.
+`input`, `sampling`) apply to every row. `direction: both` doubles each row
+into a reversed card, which samples its options from the front column.
 
 The format is deliberately narrow: two or three columns only, no cloze
 blanks or images inside cells, and nothing but directive comments between a
