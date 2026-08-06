@@ -61,6 +61,10 @@ export function createStudy({
   let drawCanvasEl = clientModel.drawCanvas;
   let drawToggle = clientModel.drawToggle;
   let duePoll = null;
+  // The open summary's countdown repaint, and whether the poll has found work
+  // waiting behind it.
+  let summaryPaint = null;
+  let summaryReady = false;
   let browsing = null;
   let keys = {};
   let browseKeys = {
@@ -276,11 +280,20 @@ export function createStudy({
   function backCount() { return state.card ? state.card.back.length : 0; }
   function fullyRevealed() { return backCount() === 0 || revealed >= backCount(); }
   function stopDuePoll() { if (duePoll) { timers.clearInterval(duePoll); duePoll = null; } }
+  // The summary is a stopping point: when the poll finds the cooldown spent it
+  // arms the Continue chip and repaints the countdown, and the learner decides
+  // when to face the next card. Navigating on a timer would drop someone into
+  // a graded card they never asked for.
   function startDuePoll() {
     if (duePoll) return;
     duePoll = timers.setInterval(() => {
+      if (summaryPaint) summaryPaint();
       api("/api/state").then(s => {
-        if (s.phase === "review" && s.card) { stopDuePoll(); apply(s); }
+        if (s.phase === "review" && s.card) {
+          stopDuePoll();
+          summaryReady = true;
+          if (summaryPaint) summaryPaint();
+        }
       }).catch(() => {});
     }, 3000);
   }
@@ -1184,7 +1197,11 @@ export function createStudy({
       r.appendChild(el("b", null, value));
       wrap.appendChild(r);
     };
-    if (acquired > 0) row("introduced", `${acquired}`);
+    // The sitting's count is the value; the deck's lifetime standing rides the
+    // label, so the numeric column stays one number per row.
+    const deckTotal = state.deck_total || 0;
+    const standing = deckTotal > 0 ? ` (${state.met_total || 0} of ${deckTotal} in the deck)` : "";
+    if (acquired > 0) row("introduced" + standing, `${acquired}`);
     if (state.reviews > 0) {
       row("reviewed", `${state.reviews}`);
       row("passed / failed", `${state.passed} / ${state.failed}`);
@@ -1195,37 +1212,40 @@ export function createStudy({
     if (recognizeMissed > 0) row("missed", `${recognizeMissed}`);
     const dueLeft = state.due_left || 0;
     const newLeft = state.new_left || 0;
-    // After a sitting that only acquired cards, "N new waiting" reads as an
-    // endless queue: it never says the cards just met come back shortly.
-    const nextDue = !gap ? nextDueNote(state.next_due_ms) : null;
-    const acquiredReturn = acquired > 0 && nextDue
-      ? `${acquired} card${acquired === 1 ? "" : "s"} met. ${nextDue}`
-      : null;
-    // "N still due" beside a disabled Continue is a contradiction: when
-    // nothing is servable the cards are cooling, so say when one opens.
-    const cooling = dueLeft > 0 && !state.can_restart ? nextDueNote(state.next_due_ms) : null;
-    const dueSegment = dueLeft > 0
-      ? `${dueLeft} still due${cooling ? ` (cooling, ${cooling.charAt(0).toLowerCase() + cooling.slice(1, -1)})` : ""}`
-      : null;
-    if (gap) {
-      // Point at the two real exits: the cards this depth can't serve.
-      const parts = [];
-      if (dueSegment) parts.push(dueSegment);
-      if (gap.recall > 0) parts.push(`${gap.recall} card${gap.recall === 1 ? "" : "s"} wait at Recall`);
-      if (gap.unaugmented > 0) parts.push(`${gap.unaugmented} need answer choices first (the Augment screen builds them)`);
-      wrap.appendChild(el("div", "note", parts.join(" · ") + "."));
-    } else if (acquiredReturn) {
-      const tail = newLeft > 0 ? ` ${newLeft} new waiting.` : "";
-      wrap.appendChild(el("div", "note", acquiredReturn + tail));
-    } else if (nextDue && !didSomething) {
-      wrap.appendChild(el("div", "note", nextDue));
-    } else if (dueSegment) {
-      wrap.appendChild(el("div", "note", `${dueSegment}.`));
-    } else if (newLeft > 0) {
-      wrap.appendChild(el("div", "note", `${newLeft} new waiting.`));
-    } else if (newLeft === 0 && !state.can_restart) {
-      wrap.appendChild(el("div", "note", "Nothing due right now. Come back later."));
-    }
+    // Every countdown here is read from the clock, so the note is a function of
+    // the moment, not of the render: the poll repaints it while the summary
+    // sits open, and a "4 min" printed once would be wrong a minute later.
+    const noteText = () => {
+      if (summaryReady) return "Ready when you are.";
+      // After a sitting that only acquired cards, "N new waiting" reads as an
+      // endless queue: it never says the cards just met come back shortly.
+      const nextDue = !gap ? nextDueNote(state.next_due_ms) : null;
+      const acquiredReturn = acquired > 0 && nextDue
+        ? `${acquired} card${acquired === 1 ? "" : "s"} met. ${nextDue}`
+        : null;
+      // "N still due" beside a disabled Continue is a contradiction: when
+      // nothing is servable the cards are cooling, so say when one opens.
+      const cooling = dueLeft > 0 && !state.can_restart ? nextDueNote(state.next_due_ms) : null;
+      const dueSegment = dueLeft > 0
+        ? `${dueLeft} still due${cooling ? ` (cooling, ${cooling.charAt(0).toLowerCase() + cooling.slice(1, -1)})` : ""}`
+        : null;
+      if (gap) {
+        // Point at the two real exits: the cards this depth can't serve.
+        const parts = [];
+        if (dueSegment) parts.push(dueSegment);
+        if (gap.recall > 0) parts.push(`${gap.recall} card${gap.recall === 1 ? "" : "s"} wait at Recall`);
+        if (gap.unaugmented > 0) parts.push(`${gap.unaugmented} need answer choices first (the Augment screen builds them)`);
+        return parts.join(" · ") + ".";
+      }
+      if (acquiredReturn) return acquiredReturn + (newLeft > 0 ? ` ${newLeft} new waiting.` : "");
+      if (nextDue && !didSomething) return nextDue;
+      if (dueSegment) return `${dueSegment}.`;
+      if (newLeft > 0) return `${newLeft} new waiting.`;
+      if (newLeft === 0 && !state.can_restart) return "Nothing due right now. Come back later.";
+      return null;
+    };
+    const noteEl = el("div", "note", "");
+    wrap.appendChild(noteEl);
     const examDue = state.exam_due || [];
     examDue.forEach(name => {
       wrap.appendChild(el("div", "exam-ready", `✦ ${name} is ready for its exam.`));
@@ -1254,7 +1274,13 @@ export function createStudy({
       : newLeft > 0 ? "Start new"
       : "New session";
     const newSession = chip(restartLabel, examDue.length || gap ? "" : "primary", restart, label(keys.restart));
-    newSession.disabled = !state.can_restart;
+    summaryPaint = () => {
+      const text = noteText();
+      noteEl.textContent = text || "";
+      noteEl.hidden = !text;
+      newSession.disabled = !state.can_restart && !summaryReady;
+    };
+    summaryPaint();
     chip("Leave", "", deselect, "esc");
   }
 
@@ -1301,6 +1327,8 @@ export function createStudy({
 
   function prepareRender() {
     stopDuePoll();
+    summaryPaint = null;
+    summaryReady = false;
     syncSaveAlert();
   }
 
@@ -1359,7 +1387,7 @@ export function createStudy({
           if (b && !b.disabled) { e.preventDefault(); b.click(); }
           return;
         }
-        if (state.can_restart && hit(e, keys.restart)) { e.preventDefault(); restart(); }
+        if ((state.can_restart || summaryReady) && hit(e, keys.restart)) { e.preventDefault(); restart(); }
         if (e.key === "a" && state.recognize_gap && lastDeck && lastDeck() && openAugment) {
           e.preventDefault(); openAugment(lastDeck());
         }

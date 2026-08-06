@@ -67,7 +67,9 @@ gap passes it resurfaces, interleaved behind the other cards you're seeing),
 so seeing a deck flows straight into drilling it. That gap is
 **`acquire_cooldown`** in the `[review]` config (default `"5m"`); it also
 sets the floor before *any* just-seen card (a miss, a wrong pick) may return,
-so nothing you moved off comes straight back. `"0"` disables both gaps. Each sitting serves up to `max_session` cards
+so nothing you moved off comes straight back. `"0"` disables both gaps. If the
+gap passes while you are sitting on the session summary, the summary says so
+and arms **Continue**; it never starts the next card for you. Each sitting serves up to `max_session` cards
 (default 10); its new-card share is `new_cards_percent` (default 30%, so three
 of ten) and the rest are due cards, with whichever pool runs short letting the
 other fill the cap (a fresh deck fills entirely with new, a deck with nothing

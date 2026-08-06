@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The session summary places the sitting against the whole deck: the
+  "introduced" row now also reads how many of the deck's cards have ever
+  been met, out of how many it holds. `met_total` and `deck_total` carry it
+  on the JSON API.
+
 - Card tables: a GitHub-flavored pipe table in a deck is a compact card
   source, one card per row (front | back | optional note). The header row
   is shown as the card's context, and a `##` heading directly above the
@@ -52,6 +57,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The session summary no longer starts the next card by itself. When a
+  settle gap passes while the summary is open it says it is ready and arms
+  Continue, leaving the choice to the learner instead of dropping them into
+  a graded card.
+
 - `alix deck init` writes the prepended frontmatter block closed
   directly after the `id:` line, with the blank line following the
   block instead of sitting inside it.
@@ -85,6 +95,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+
+- The summary's "Next due in N min" counts down while the page stays open
+  instead of freezing at the value it had when the sitting ended.
 
 - A new card whose answer was revealed before the "Seen" acknowledgment no
   longer returns as a new card for the rest of the sitting. It came back
