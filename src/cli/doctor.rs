@@ -2315,4 +2315,60 @@ printf ']}}'
             assert_eq!(*expected, warned, "case {index}: {:?}", report.warnings);
         }
     }
+
+    #[test]
+    fn unstamped_table_rows_are_reported_as_content_without_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let head = "---\nformat-version: 1\nid: deck-tbl\n---\n";
+        let rows = "| a | alpha | <!-- r:aaaaaa -->\n| b | beta |\n| c | gamma |\n";
+        let container = "<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
+
+        // With a container id, only the stamp-less rows lack identity.
+        let path = dir.path().join("partly.md");
+        std::fs::write(
+            &path,
+            format!("{head}| w | m |\n|---|---|\n{rows}{container}"),
+        )
+        .unwrap();
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("2 entries are card content without ids")),
+            "{:?}",
+            report.warnings
+        );
+
+        // Without one, no row can compose an id, so every row is reported.
+        let path = dir.path().join("none.md");
+        std::fs::write(&path, format!("{head}| w | m |\n|---|---|\n{rows}")).unwrap();
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("3 entries are card content without ids")),
+            "{:?}",
+            report.warnings
+        );
+
+        // Stamping resolves both: no unstamped warning survives an init.
+        for name in ["partly.md", "none.md"] {
+            let path = dir.path().join(name);
+            alix::stamp::stamp_deck(&path).unwrap();
+            let mut after = Report::default();
+            deck_findings(&path, &mut after);
+            assert!(
+                !after
+                    .warnings
+                    .iter()
+                    .any(|w| w.contains("content without ids")),
+                "{name}: {:?}",
+                after.warnings
+            );
+        }
+    }
 }
