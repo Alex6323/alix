@@ -2,17 +2,13 @@ name: Mutation nightly
 
 # Mutation-tests one day of merged work, not the whole repository. A full sweep
 # is 5,466 mutants, roughly 21 hours at 8 jobs, so it cannot be nightly and
-# cannot fit a GitHub job. Scoping to the last day keeps the economics of the
-# manual `make gate` while covering the case automation is good at: something
-# merged without the gate being run.
+# cannot fit a GitHub job.
 #
 # The day's mutants are split across shards because one day's diff already
 # exceeds a single job: a 1,064-line day measured 274 mutants in 79 minutes at
 # 4 jobs, and a normal day is several times that, past GitHub's 6h ceiling.
 #
-# This backstops `make gate`, it does not replace it. A red run here tells you
-# about a miss the morning after the code landed; the manual gate tells you
-# before you ask for review.
+# Covers what merged; `mutants-branch` covers a branch before it merges.
 on:
   schedule:
     # 04:23 UTC daily, off the top of the hour and clear of the 03:17 drift job.
