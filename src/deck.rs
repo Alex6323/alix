@@ -2006,7 +2006,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "| word | meaning |\n|---|---|\n| purported | angeblich | <!-- r:4k2x9w -->\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+            "## Vocabulary\n| word | meaning |\n|---|---|\n| purported | angeblich | <!-- r:4k2x9w -->\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
         )
         .unwrap();
 
@@ -2014,7 +2014,12 @@ mod tests {
 
         assert_eq!(2, deck.cards.len());
         for card in &deck.cards {
-            assert_eq!(vec!["word", "meaning"], card.context);
+            assert_eq!(
+                vec!["Vocabulary"],
+                card.context,
+                "the title reaches both halves"
+            );
+            assert!(!card.context_leads, "a table title labels the front");
         }
     }
 

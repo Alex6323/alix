@@ -106,6 +106,7 @@ fn statedto_review_phase_wire_shape() {
             front_runs: crate::inline::parse_inline("What is **ownership**?"),
             front_units: None,
             context: vec!["Chapter 4".to_string()],
+            context_leads: true,
             context_runs: vec![crate::inline::parse_inline("Chapter 4")],
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
@@ -216,6 +217,7 @@ fn statedto_review_phase_wire_shape() {
                     {"text": "?"}
                 ],
                 "context": ["Chapter 4"],
+                "context_leads": true,
                 "context_runs": [[{"text": "Chapter 4"}]],
                 "back": ["every value has one owner"],
                 "back_runs": [[{"text": "every value has one owner"}]],
@@ -711,6 +713,7 @@ fn carddto_wire_shape() {
             front_runs: crate::inline::parse_inline("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
             front_units: crate::render::front_units("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
             context: Vec::new(),
+            context_leads: false,
             context_runs: Vec::new(),
             back: vec!["Use **x**".to_string(), "France".to_string()],
             back_runs: vec![
@@ -766,6 +769,7 @@ fn carddto_wire_shape() {
                 }
             ],
             "context": [],
+            "context_leads": false,
             "context_runs": [],
             "back": ["Use **x**", "France"],
             "back_runs": [
@@ -831,6 +835,7 @@ fn carddto_math_wire_shape() {
         front_runs: vec![inline],
         front_units: None,
         context: vec!["$$y^2$$".to_string()],
+        context_leads: true,
         context_runs: vec![vec![display]],
         back: vec![r"\frac{1".to_string()],
         back_runs: vec![vec![error]],
@@ -867,6 +872,7 @@ fn carddto_math_wire_shape() {
                 }
             }],
             "context": ["$$y^2$$"],
+            "context_leads": true,
             "context_runs": [[{
                 "text": "y^2",
                 "math": {
@@ -1159,6 +1165,7 @@ fn browsedto_wire_shape() {
             front_runs: crate::inline::parse_inline("q"),
             front_units: None,
             context: Vec::new(),
+            context_leads: false,
             context_runs: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
@@ -1185,6 +1192,7 @@ fn browsedto_wire_shape() {
                 "front": "q",
                 "front_runs": [{"text": "q"}],
                 "context": [],
+                "context_leads": false,
                 "context_runs": [],
                 "back": ["a"],
                 "back_runs": [[{"text": "a"}]],

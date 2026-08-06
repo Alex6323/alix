@@ -2526,9 +2526,14 @@ fn a_table_deck_serves_sampled_choices_and_header_context_at_recognize() {
         .filter_map(|v| v.as_str())
         .collect();
     assert_eq!(
-        vec!["German numbers", "word", "meaning"],
+        vec!["German numbers"],
         context,
-        "the table title leads the header cells: {body}"
+        "the title is the whole context; column labels are not per-card: {body}"
+    );
+    assert_eq!(
+        Some(false),
+        body["card"]["context_leads"].as_bool(),
+        "a table title labels the front rather than leading it: {body}"
     );
     assert!(
         !body["card"]["context_runs"]

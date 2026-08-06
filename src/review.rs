@@ -27,6 +27,8 @@ pub struct CardView {
     pub front_units: Option<Vec<NoteUnit>>,
     pub context: Vec<String>,
     #[serde(default)]
+    pub context_leads: bool,
+    #[serde(default)]
     pub context_runs: Vec<Vec<InlineRun>>,
     pub back: Vec<String>,
     #[serde(default)]
@@ -73,6 +75,7 @@ impl CardView {
             front_runs,
             front_units,
             context: card.context.clone(),
+            context_leads: card.context_leads,
             context_runs,
             back,
             back_runs,

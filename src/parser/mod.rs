@@ -331,7 +331,6 @@ struct RawTable {
     line: usize,
     title: Option<String>,
     columns: usize,
-    header: Vec<String>,
     rows: Vec<RawRow>,
     directives: CardDirectives,
     rows_done: bool,
@@ -518,7 +517,6 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 line: block_line,
                 title,
                 columns: header.len(),
-                header,
                 rows: Vec::new(),
                 directives,
                 rows_done: false,
@@ -806,10 +804,7 @@ fn build_table_cards(
         let note = row.cells.get(2).filter(|cell| !cell.is_empty()).cloned();
         let mut card = Card::plain(Arc::clone(subject), front, vec![back], note, row.line);
         card.deck_id = Arc::clone(deck_id);
-        card.context = raw.header.clone();
-        if let Some(title) = &raw.title {
-            card.context.insert(0, title.clone());
-        }
+        card.context = raw.title.iter().cloned().collect();
         // An unstamped row is an unstamped card: composing an id from the
         // container alone would collide every such row on the base id.
         if let Some(stamp) = row.stamp {
@@ -1211,6 +1206,7 @@ fn build_card(
         );
         card.deck_id = Arc::clone(deck_id);
         card.context = context;
+        card.context_leads = true;
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
         card.hole = Some(n as u32);
@@ -2662,7 +2658,7 @@ the answer
         assert_eq!("hund", first.front);
         assert_eq!(vec!["dog"], first.back);
         assert_eq!(None, first.note);
-        assert_eq!(vec!["word", "meaning"], first.context);
+        assert!(first.context.is_empty(), "an untitled table has no context");
         assert_eq!(Some(CONTAINER), first.token.as_deref());
         assert_eq!(Some("4k2x9w"), first.row.as_deref());
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), first.id());
@@ -2682,7 +2678,7 @@ the answer
         assert_eq!(2, deck.cards.len());
         assert_eq!(Some("care"), deck.cards[0].note.as_deref());
         assert_eq!(None, deck.cards[1].note);
-        assert_eq!(vec!["word", "meaning", "note"], deck.cards[0].context);
+        assert!(deck.cards[0].context.is_empty());
     }
 
     #[test]
@@ -2720,7 +2716,7 @@ the answer
     fn a_bare_heading_directly_above_a_table_titles_it_instead_of_erroring() {
         let deck = parse("## q\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["q", "a", "b"], deck.cards[0].context);
+        assert_eq!(vec!["q"], deck.cards[0].context);
     }
 
     #[test]
@@ -2881,8 +2877,8 @@ the answer
     fn adjacent_tables_split_on_the_second_header() {
         let deck = parse("| a | b |\n|---|---|\n| x | y |\n| c | d |\n|---|---|\n| z | w |\n");
         assert_eq!(2, deck.cards.len());
-        assert_eq!(vec!["a", "b"], deck.cards[0].context);
-        assert_eq!(vec!["c", "d"], deck.cards[1].context);
+        assert!(deck.cards[0].context.is_empty());
+        assert!(deck.cards[1].context.is_empty());
     }
 
     #[test]
@@ -2892,10 +2888,7 @@ the answer
         );
         let deck = parse(&text);
         assert_eq!(1, deck.cards.len(), "the heading is a title, not a card");
-        assert_eq!(
-            vec!["Verbs of arguing", "word", "meaning"],
-            deck.cards[0].context
-        );
+        assert_eq!(vec!["Verbs of arguing"], deck.cards[0].context);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
     }
 
@@ -2905,11 +2898,7 @@ the answer
         assert_eq!(2, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(vec!["answer"], deck.cards[0].back);
-        assert_eq!(
-            vec!["a", "b"],
-            deck.cards[1].context,
-            "the table is untitled"
-        );
+        assert!(deck.cards[1].context.is_empty(), "the table is untitled");
     }
 
     #[test]
@@ -2946,7 +2935,7 @@ the answer
     fn a_blank_line_between_title_and_table_still_titles() {
         let deck = parse("## Title\n\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["Title", "a", "b"], deck.cards[0].context);
+        assert_eq!(vec!["Title"], deck.cards[0].context);
     }
 
     #[test]

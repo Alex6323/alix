@@ -47,6 +47,9 @@ pub struct Card {
     pub deck_id: Arc<str>,
     pub front: String,
     pub context: Vec<String>,
+    /// Whether `context` is the question (a cloze sentence, which leads) or a
+    /// label for the front (a table title, which steps back).
+    pub context_leads: bool,
     pub back: Vec<String>,
     pub note: Option<String>,
     pub line: usize,
@@ -86,6 +89,7 @@ impl Card {
             deck_id: Arc::from(""),
             front,
             context: Vec::new(),
+            context_leads: false,
             back,
             note,
             line,
@@ -132,6 +136,7 @@ impl Card {
         card.row = self.row.clone();
         card.sampling = self.sampling;
         card.context = self.context.clone();
+        card.context_leads = self.context_leads;
         card.reversed = true;
         // Reuses the forward card's fingerprint instead of recomputing over swapped sides: one
         // authored card is one content unit.

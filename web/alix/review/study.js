@@ -352,12 +352,20 @@ export function createStudy({
       crumbStrip.appendChild(bc);
     }
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
-    // On a cloze card the front is the topic and the gapped sentence below it is
-    // the actual question, so the sentence leads and the topic steps back.
-    if (c.context.length) frontNode.classList.add("topic");
+    // Where context is the question (a cloze sentence) it leads and the front
+    // steps back to a topic; where it only labels the front (a table title) the
+    // front keeps the lead and the label sits above it.
+    if (c.context.length && c.context_leads) frontNode.classList.add("topic");
+    if (!c.context_leads) {
+      for (let i = 0; i < c.context.length; i++) {
+        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i], "context label"));
+      }
+    }
     q.appendChild(frontNode);
-    for (let i = 0; i < c.context.length; i++) {
-      q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
+    if (c.context_leads) {
+      for (let i = 0; i < c.context.length; i++) {
+        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
+      }
     }
     appendImages(q, c.images);
 
@@ -388,12 +396,20 @@ export function createStudy({
     });
 
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
-    // On a cloze card the front is the topic and the gapped sentence below it is
-    // the actual question, so the sentence leads and the topic steps back.
-    if (c.context.length) frontNode.classList.add("topic");
+    // Where context is the question (a cloze sentence) it leads and the front
+    // steps back to a topic; where it only labels the front (a table title) the
+    // front keeps the lead and the label sits above it.
+    if (c.context.length && c.context_leads) frontNode.classList.add("topic");
+    if (!c.context_leads) {
+      for (let i = 0; i < c.context.length; i++) {
+        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i], "context label"));
+      }
+    }
     q.appendChild(frontNode);
-    for (let i = 0; i < c.context.length; i++) {
-      q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
+    if (c.context_leads) {
+      for (let i = 0; i < c.context.length; i++) {
+        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
+      }
     }
     appendImages(q, c.images);
 
