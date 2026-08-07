@@ -131,6 +131,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A draw card is answerable on the mobile client. It asked for typed text
+  before, including for a formula's piece, because the client dropped the
+  card's input kind on the way in from the core. Pen, eraser, undo, and
+  clear; a stylus locks out touch so a resting palm cannot draw; the
+  sketch survives a rotation and stays on screen beside the answer.
+
 - A cloze hole cut out of a formula is now sketched rather than typed,
   because the hole's content is the expected answer and a formula's piece
   has no keyboard spelling. An `input:` written on the card or the deck

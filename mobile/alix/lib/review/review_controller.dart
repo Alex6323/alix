@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_port.dart';
+import 'package:alix_mobile/review/sketch.dart';
 
 class ReviewController extends ChangeNotifier {
   factory ReviewController({
@@ -38,6 +40,7 @@ class ReviewController extends ChangeNotifier {
   ReviewChoiceFeedbackModel? _choice;
   ReviewCheckFeedbackModel? _checkFeedback;
   final Set<int> _tickedKeypoints = {};
+  final Sketch _sketch = Sketch();
   bool _attemptOpen = false;
   ReviewForeignWriterModel? _foreignWriter;
   bool _serverLive = false;
@@ -54,6 +57,8 @@ class ReviewController extends ChangeNotifier {
   ReviewChoiceFeedbackModel? get choice => _choice;
   ReviewCheckFeedbackModel? get checkFeedback => _checkFeedback;
   Set<int> get tickedKeypoints => Set.unmodifiable(_tickedKeypoints);
+  Sketch get sketch => _sketch;
+  bool get isDrawing => state.input == ReviewInput.draw;
   bool get attemptOpen => _attemptOpen;
   ReviewForeignWriterModel? get foreignWriter => _foreignWriter;
   bool get serverLive => _serverLive;
@@ -106,6 +111,36 @@ class ReviewController extends ChangeNotifier {
 
   void reveal() {
     _revealed = true;
+    notifyListeners();
+  }
+
+  void selectSketchTool(SketchTool tool) {
+    _sketch.selectTool(tool);
+    notifyListeners();
+  }
+
+  void sketchBegin(Offset point, PointerDeviceKind kind) {
+    _sketch.begin(point, kind);
+    notifyListeners();
+  }
+
+  void sketchExtend(Offset point) {
+    _sketch.extend(point);
+    notifyListeners();
+  }
+
+  void sketchEnd() {
+    _sketch.end();
+    notifyListeners();
+  }
+
+  void sketchUndo() {
+    _sketch.undo();
+    notifyListeners();
+  }
+
+  void sketchClear() {
+    _sketch.clear();
     notifyListeners();
   }
 
@@ -185,6 +220,7 @@ class ReviewController extends ChangeNotifier {
     _choice = null;
     _checkFeedback = null;
     _tickedKeypoints.clear();
+    _sketch.reset();
     _attemptOpen = false;
   }
 }

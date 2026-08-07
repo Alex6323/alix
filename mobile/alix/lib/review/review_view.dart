@@ -1,9 +1,11 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/review/crumb_strip.dart';
 import 'package:alix_mobile/review/review_card.dart';
 import 'package:alix_mobile/review/review_models.dart';
+import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/review/review_summary.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -65,6 +67,13 @@ class ReviewView extends StatelessWidget {
     required this.choice,
     required this.checkFeedback,
     required this.tickedKeypoints,
+    required this.sketch,
+    required this.onSketchBegin,
+    required this.onSketchExtend,
+    required this.onSketchEnd,
+    required this.onSketchTool,
+    required this.onSketchUndo,
+    required this.onSketchClear,
     required this.attemptOpen,
     required this.attemptController,
     required this.typedControllers,
@@ -96,6 +105,13 @@ class ReviewView extends StatelessWidget {
   final ReviewChoiceFeedbackModel? choice;
   final ReviewCheckFeedbackModel? checkFeedback;
   final Set<int> tickedKeypoints;
+  final Sketch sketch;
+  final void Function(Offset point, PointerDeviceKind kind) onSketchBegin;
+  final ValueChanged<Offset> onSketchExtend;
+  final VoidCallback onSketchEnd;
+  final ValueChanged<SketchTool> onSketchTool;
+  final VoidCallback onSketchUndo;
+  final VoidCallback onSketchClear;
   final bool attemptOpen;
   final TextEditingController attemptController;
   final List<TextEditingController> typedControllers;
@@ -174,6 +190,13 @@ class ReviewView extends StatelessWidget {
                         choice: choice,
                         checkFeedback: checkFeedback,
                         tickedKeypoints: tickedKeypoints,
+                        sketch: sketch,
+                        onSketchBegin: onSketchBegin,
+                        onSketchExtend: onSketchExtend,
+                        onSketchEnd: onSketchEnd,
+                        onSketchTool: onSketchTool,
+                        onSketchUndo: onSketchUndo,
+                        onSketchClear: onSketchClear,
                         attemptOpen: attemptOpen,
                         attemptController: attemptController,
                         typedControllers: typedControllers,

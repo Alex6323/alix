@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/review/review_models.dart';
+import 'package:alix_mobile/review/sketch.dart';
+import 'package:alix_mobile/review/sketch_canvas.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
@@ -19,6 +22,13 @@ class ReviewCardView extends StatelessWidget {
     required this.choice,
     required this.checkFeedback,
     required this.tickedKeypoints,
+    required this.sketch,
+    required this.onSketchBegin,
+    required this.onSketchExtend,
+    required this.onSketchEnd,
+    required this.onSketchTool,
+    required this.onSketchUndo,
+    required this.onSketchClear,
     required this.attemptOpen,
     required this.attemptController,
     required this.typedControllers,
@@ -42,6 +52,13 @@ class ReviewCardView extends StatelessWidget {
   final ReviewChoiceFeedbackModel? choice;
   final ReviewCheckFeedbackModel? checkFeedback;
   final Set<int> tickedKeypoints;
+  final Sketch sketch;
+  final void Function(Offset point, PointerDeviceKind kind) onSketchBegin;
+  final ValueChanged<Offset> onSketchExtend;
+  final VoidCallback onSketchEnd;
+  final ValueChanged<SketchTool> onSketchTool;
+  final VoidCallback onSketchUndo;
+  final VoidCallback onSketchClear;
   final bool attemptOpen;
   final TextEditingController attemptController;
   final List<TextEditingController> typedControllers;
@@ -338,8 +355,89 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
+  bool get _isDrawing => state.input == ReviewInput.draw;
+
+  /// Above `_isTyping`: a draw card would otherwise take the typing branch and
+  /// ask for the thing the deck says cannot be typed.
+  Widget _sketchBody(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
+    final ink = Theme.of(context).colorScheme.onSurface;
+    final canvas = DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SketchCanvas(
+          sketch: sketch,
+          ink: ink,
+          frozen: revealed,
+          onBegin: onSketchBegin,
+          onExtend: onSketchExtend,
+          onEnd: onSketchEnd,
+        ),
+      ),
+    );
+    // The answer region scrolls, so it hands down an unbounded height and the
+    // canvas must claim a definite one. A share of the viewport rather than a
+    // fixed number, so a tablet gets the room it has and a phone stays honest.
+    final box = SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.38,
+      child: canvas,
+    );
+    if (revealed) {
+      // The attempt stays on screen beside the answer: the sketch is not the
+      // answer, it is what the learner grades themselves against.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          box,
+          const SizedBox(height: 12),
+          _answerUnits(context, card.backUnits, tokens),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        box,
+        const SizedBox(height: 8),
+        _sketchTools(tokens),
+      ],
+    );
+  }
+
+  Widget _sketchTools(AlixTokens tokens) {
+    Widget tool(String label, VoidCallback onTap, {bool on = false}) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: OutlinedButton(
+          onPressed: onTap,
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: on ? tokens.bolt : tokens.line),
+            foregroundColor: on ? tokens.bolt : tokens.text,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            minimumSize: const Size(0, 36),
+          ),
+          child: Text(label, style: const TextStyle(fontFamily: _sans, fontSize: 13)),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        tool('Pen', () => onSketchTool(SketchTool.pen), on: sketch.tool == SketchTool.pen),
+        tool('Eraser', () => onSketchTool(SketchTool.eraser),
+            on: sketch.tool == SketchTool.eraser),
+        tool('Undo', onSketchUndo),
+        tool('Clear', onSketchClear),
+      ],
+    );
+  }
+
   Widget _body(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
     if (_hasChoices) return _options(tokens);
+    if (_isDrawing) return _sketchBody(context, card, tokens);
     if (state.mode == ReviewMode.lineByLine && (!state.acquire || revealed)) {
       final visible = state.acquire ? card.back.length : revealedLines;
       return _revealLines(

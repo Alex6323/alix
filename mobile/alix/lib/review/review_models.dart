@@ -167,11 +167,16 @@ class ReviewTutorCardModel {
   final int line;
 }
 
+/// How the learner answers: typed, or sketched on a canvas. Resolved in the
+/// lib (`review::state`), never inferred here.
+enum ReviewInput { type, draw }
+
 class ReviewStateModel {
   ReviewStateModel({
     this.card,
     required this.mode,
     required this.depth,
+    this.input = ReviewInput.type,
     required this.acquire,
     Iterable<String>? choices,
     Iterable<Iterable<InlineRunModel>>? choiceRuns,
@@ -202,6 +207,7 @@ class ReviewStateModel {
   final ReviewCardModel? card;
   final ReviewMode mode;
   final ReviewDepth depth;
+  final ReviewInput input;
   final bool acquire;
   final List<String>? choices;
   final List<List<InlineRunModel>>? choiceRuns;

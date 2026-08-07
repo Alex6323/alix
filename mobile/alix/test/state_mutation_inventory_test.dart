@@ -10,11 +10,13 @@ void main() {
         'lib/review/review_controller.dart',
         'notifyListeners();',
       ),
-      [79, 84, 89, 94, 99, 104, 109, 114, 119, 124],
+      [84, 89, 94, 99, 104, 109, 114, 119, 124, 129, 134, 139, 144, 149, 154, 159],
       reason:
           'setServerLive, install, choose, check, openAttempt, '
-          'toggleKeypoint, reveal, revealNextLine, dismissForeignWriter, '
-          'and restart own every ReviewController mutation',
+          'toggleKeypoint, reveal, the six sketch transitions '
+          '(tool, begin, extend, end, undo, clear), revealNextLine, '
+          'dismissForeignWriter, and restart own every ReviewController '
+          'mutation',
     );
     expect(_linesContaining('lib/picker_screen.dart', 'setState('), isEmpty);
     expect(
