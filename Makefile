@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants bump-rust
+.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants bump-rust
 
 # Compile the workspace.
 build:
@@ -147,7 +147,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-check docs-audit-manifest-check toolchain-check
+check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-check example-media-check docs-audit-manifest-check toolchain-check
 
 # Bump the Rust toolchain across the repo
 bump-rust:
@@ -428,6 +428,21 @@ shots:
 # quietly turn Git history into an image archive.
 site-media-check:
 	@python3 scripts/check-site-media.py
+
+# Every example deck has an image and every image belongs to one. This is
+# COMPLETENESS, not freshness: proving an image still matches what alix
+# renders needs a browser and cwebp, so that is `example-shots` and its diff.
+example-media-check:
+	@python3 scripts/check-example-media.py
+
+# Re-photograph the example decks. Manual, like `shots`: needs a browser and
+# cwebp. A clean `git diff` afterwards is what proves the images are current.
+example-shots:
+	@command -v cwebp >/dev/null 2>&1 || { echo "example-shots: cwebp required (apt install webp / brew install webp)"; exit 1; }
+	npm --prefix e2e ci
+	npx --prefix e2e playwright install chromium
+	node e2e/shots/examples.cjs $(if $(ONLY),--only=$(ONLY))
+	$(MAKE) example-media-check
 
 # Download numbers: GitHub release assets + crates.io, in a terminal table.
 # Read-only, no auth needed, stdlib python3. Run deliberately (network call),
