@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::mpsc::Receiver};
+use std::{borrow::Cow, path::PathBuf, sync::mpsc::Receiver};
 
 use anyhow::{Result, bail};
 
@@ -12,6 +12,7 @@ use crate::{
 };
 
 pub const DEFAULT_GOAL: &str = "understand the whole source";
+const CARD_SHAPE_GUIDE: &str = include_str!("../docs/card-shapes.md");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenerationSpec {
@@ -66,41 +67,53 @@ impl GenerationSpec {
     }
 }
 
-pub(crate) fn card_format(style: GenerateCardStyle) -> &'static str {
+pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
     match style {
-        GenerateCardStyle::Mixed => {
-            "- The plain lines BELOW a front are the answer/back. EVERY card MUST have at \
-             least one answer line; never write a front with no answer. Keep answers short \
-             and do not prefix them with bullets or dashes.\n\
-             - A fill-in-the-blank (cloze) card wraps each hidden answer span as \
-             `\\blank{...}`. Blanks belong in answer lines, NEVER on the front. Use cloze \
-             only when there is a natural word to hide; otherwise use a plain card. Example: \
-             `When the owner leaves scope, the value is \\blank{dropped}.`\n\
-             - For a mapping of pairs, make one cloze card with one pair per line and the \
-             recalled half in `\\blank{...}`, so every pair is drilled on its own."
-        }
-        GenerateCardStyle::Plain => {
+        GenerateCardStyle::Mixed => Cow::Owned(format!(
+            "- Choose each card's shape from the shared guide according to the material. Do \
+             not default every card to one shape.\n\n\
+             CARD SHAPE GUIDE:\n{CARD_SHAPE_GUIDE}\n\
+             CARD SHAPE SYNTAX:\n\
+             - A plain card puts short answer lines below its `## ` front. Do not prefix \
+             answers with bullets or dashes.\n\
+             - A cloze card wraps each hidden span in an answer line as `\\blank{{...}}`. \
+             Blanks belong in answer lines, NEVER on the front. Example: `When the owner \
+             leaves scope, the value is \\blank{{dropped}}.`\n\
+             - An authored-choice card puts 3-5 GitHub task-list options directly below its \
+             front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
+             distractors. Add a `> ` note explaining their mistaken premises.\n\
+             - A card table starts with `| front | back | note |`, then \
+             `| --- | --- | --- |`, then one row per pair. Omit the note column when it is \
+             unused.\n\
+             - For ordered steps, put `<!-- reveal: line -->` directly below the front and \
+             write one step per answer line.\n\
+             - For a card needed in both directions, put `<!-- direction: both -->` after \
+             its answer.\n\
+             - For an answer the learner must sketch, put `<!-- input: draw -->` after its \
+             answer."
+        )),
+        GenerateCardStyle::Plain => Cow::Borrowed(
             "- Write every card as a plain question and answer. The plain unindented lines \
              BELOW the front are the answer/back. EVERY card MUST have at least one short \
              answer line. Do not prefix answers with bullets or dashes. Do not use \
-             `\\blank{...}` or task-list choices. Split mappings into one card per pair."
-        }
-        GenerateCardStyle::Cloze => {
+             `\\blank{...}` or task-list choices. Split mappings into one card per pair.",
+        ),
+        GenerateCardStyle::Cloze => Cow::Borrowed(
             "- Write EVERY card as cloze. The answer lines must contain the full answer with \
              at least one hidden span wrapped as `\\blank{...}`. Blanks belong in answer \
              lines, NEVER on the front. Do not prefix answers with bullets or dashes. Do not \
              write plain answers or task-list choices. Put a mapping in one card with one \
-             pair per line and the recalled half in `\\blank{...}`."
-        }
-        GenerateCardStyle::AuthoredChoices => {
+             pair per line and the recalled half in `\\blank{...}`.",
+        ),
+        GenerateCardStyle::AuthoredChoices => Cow::Borrowed(
             "- Write EVERY card as authored multiple-choice. Directly below the `## ` front, \
              write 3-5 GitHub task-list options: exactly one checked `- [x]` correct answer \
              and at least two unchecked `- [ ]` plausible distractors. Do not add a separate \
              plain answer or use `\\blank{...}`. Keep options parallel in form and length. \
              Add a short `> ` note explaining the mistaken premise behind the distractors. \
              For a mapping, make one authored-choice card per pair and use plausible values \
-             from the same domain as distractors."
-        }
+             from the same domain as distractors.",
+        ),
     }
 }
 
@@ -110,7 +123,7 @@ at {url} — use the WebFetch tool to fetch it (once) — and turn its content \
 into a flashcard deck.
 
 OUTPUT FORMAT — a Markdown deck, one card after another:
-- A card starts with `## ` at column 0, followed by the question/front on the \
+- A block card starts with `## ` at column 0, followed by the question/front on the \
 same line. Never indent a card front.
 {card_format}
 - A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
@@ -133,7 +146,7 @@ four layers of understanding:
   2. Concepts & mechanisms: \"why\" and \"how\" questions.
   3. Application: \"given X, what happens / what would you do?\"
   4. Connections — how ideas relate, contrast, or build on each other.
-Use the required card style throughout all four layers.
+Apply the required card-style instructions throughout all four layers.
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
@@ -176,7 +189,7 @@ You are an expert at creating spaced-repetition flashcards. Explore the source a
 deck.
 
 OUTPUT FORMAT — a Markdown deck, one card after another:
-- A card starts with `## ` at column 0, followed by the question/front on the \
+- A block card starts with `## ` at column 0, followed by the question/front on the \
 same line. Never indent a card front.
 {card_format}
 - A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
@@ -205,7 +218,7 @@ four layers of understanding:
   2. Concepts & mechanisms: \"why\" and \"how\" questions.
   3. Application: \"given X, what happens / what would you do?\"
   4. Connections — how the pieces relate, contrast, or build on each other.
-Use the required card style throughout all four layers.
+Apply the required card-style instructions throughout all four layers.
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
@@ -249,10 +262,10 @@ the answer.
 answer to the question, move the extra fact to the `> ` note, or split it into \
 distinct cards. A front and its answer must ask and tell the same thing.
 {mapping_review}
-- Keep the EXACT same file format: the leading `---` frontmatter block, `## ` \
-card fronts at column 0, plain or task-list answers below each front, `> ` \
-notes, and any `<!-- key: value -->` directive lines. A cloze card keeps its \
-`\\blank{...}` holes in its answer lines.
+- Keep the EXACT same file format: the leading `---` frontmatter block, cards \
+written as `## ` blocks or card-table rows, plain or task-list answers below \
+block fronts, `> ` notes, and any `<!-- key: value -->` directive lines. A \
+cloze card keeps its `\\blank{...}` holes in its answer lines.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -337,16 +350,22 @@ fn run_config(
 
 fn build_review_prompt(deck: &str, spec: &GenerationSpec) -> String {
     let review = REVIEW_PROMPT.replace("{mapping_review}", review_mapping(spec.card_style));
+    let card_format = card_format(spec.card_style);
     format!(
         "{review}{}\n\n{}\n\nThe deck to review:\n\n{deck}",
         spec.requirements(),
-        card_format(spec.card_style)
+        card_format
     )
 }
 
 fn review_mapping(style: GenerateCardStyle) -> &'static str {
     match style {
-        GenerateCardStyle::Mixed | GenerateCardStyle::Cloze => {
+        GenerateCardStyle::Mixed => {
+            "- Rewrite any card that recalls a whole mapping of pairs at once \
+             (\"match each X to its Y\") as a card table with one row per pair. Ordered \
+             steps may stay a `<!-- reveal: line -->` card."
+        }
+        GenerateCardStyle::Cloze => {
             "- Rewrite any card that recalls a whole mapping or table of pairs at once \
              (\"match each X to its Y\") as one cloze card: one line per pair, the recalled \
              half in `\\blank{...}`. Ordered steps may stay a `<!-- reveal: line -->` card; \
@@ -377,12 +396,13 @@ fn build_prompt(
     } else {
         DEFAULT_SOURCE_PROMPT
     });
+    let card_format = card_format(spec.card_style);
     let has_card_format = template.contains("{card_format}");
     let mut prompt = template
         .replace("{url}", source)
         .replace("{source}", source)
         .replace("{max_cards}", &cfg.max_cards.to_string())
-        .replace("{card_format}", card_format(spec.card_style));
+        .replace("{card_format}", card_format.as_ref());
     if let Some(extra) = cfg
         .extra
         .as_deref()
@@ -397,7 +417,7 @@ fn build_prompt(
         prompt.push_str(&spec.requirements());
         if !has_card_format {
             prompt.push_str("\n\n");
-            prompt.push_str(card_format(spec.card_style));
+            prompt.push_str(card_format.as_ref());
         }
     }
     prompt
@@ -599,14 +619,82 @@ mod tests {
         assert!(p.contains("\\blank{...}"));
         assert!(p.contains("\\blank{dropped}"));
         assert!(p.contains("NEVER on the front"));
-        assert!(p.contains("never write a front with no answer"));
+        assert!(p.contains("Every card needs at least one answer line"));
         assert!(p.contains("Add a note to most cards"));
         assert!(p.contains("Give most cards a `> ` note"));
         assert!(p.contains("NO TWO CARDS MAY TEST THE SAME FACT"));
         assert!(p.contains("REVISE before finishing"));
         assert!(p.contains("cover exactly what the front asks"));
-        assert!(p.contains("drilled on its own"));
+        assert!(p.contains("one row per pair"));
         assert!(!p.contains("indented answer"));
+    }
+
+    #[test]
+    fn mixed_prompt_embeds_the_shared_card_shape_guide_and_its_syntax() {
+        let prompt = build_prompt("https://example.org/page", true, &cfg(12), &spec());
+        let guide = include_str!("../docs/card-shapes.md");
+
+        assert!(
+            prompt.contains(guide),
+            "the mixed prompt must carry the shared authoring guide"
+        );
+        for syntax in [
+            "| front | back | note |",
+            "<!-- reveal: line -->",
+            "<!-- input: draw -->",
+            "<!-- direction: both -->",
+        ] {
+            assert!(
+                prompt.contains(syntax),
+                "the mixed prompt must teach `{syntax}`"
+            );
+        }
+    }
+
+    #[test]
+    fn each_explicit_card_style_keeps_its_override_contract() {
+        let guide = include_str!("../docs/card-shapes.md");
+        let cases = [
+            (
+                GenerateCardStyle::Plain,
+                "Write every card as a plain question and answer",
+            ),
+            (GenerateCardStyle::Cloze, "Write EVERY card as cloze"),
+            (
+                GenerateCardStyle::AuthoredChoices,
+                "Write EVERY card as authored multiple-choice",
+            ),
+        ];
+
+        for (card_style, contract) in cases {
+            let prompt = build_prompt(
+                "https://example.org/page",
+                true,
+                &cfg(12),
+                &GenerationSpec {
+                    card_style,
+                    ..spec()
+                },
+            );
+            assert!(
+                prompt.contains(contract),
+                "{} must keep its override contract",
+                card_style.as_str()
+            );
+            assert!(
+                !prompt.contains(guide),
+                "{} must not receive conflicting mixed-shape guidance",
+                card_style.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_review_preserves_pair_mappings_as_card_tables() {
+        let prompt = build_review_prompt("## Draft\nAnswer\n", &spec());
+
+        assert!(prompt.contains("card table"), "prompt: {prompt}");
+        assert!(!prompt.contains("as one cloze card"), "prompt: {prompt}");
     }
 
     #[test]
@@ -616,7 +704,7 @@ mod tests {
         assert!(p.contains("MERGE cards that test the same fact"));
         assert!(p.contains("Output ONLY the improved deck"));
         assert!(p.contains("must ask and tell the same thing"));
-        assert!(p.contains("one line per pair"));
+        assert!(p.contains("one row per pair"));
         assert!(p.ends_with("---\nlink: u\n---\n\n## Q\nA\n"));
         assert!(p.contains("`---` frontmatter block"));
     }
@@ -868,7 +956,7 @@ mod tests {
         assert!(!p.contains("{source}"));
         assert!(p.contains("<!-- at: file:start-end -->"));
         assert!(p.contains("never guess"));
-        assert!(p.contains("drilled on its own"));
+        assert!(p.contains("one row per pair"));
         assert!(!p.contains("indented answer"));
     }
 
