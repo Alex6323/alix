@@ -86,7 +86,7 @@ impl MathRenderer {
 fn substitute_context_holes(source: &str) -> String {
     source
         .replace(BLANK, r"\underline{\hspace{2em}}")
-        .replace(HIDDEN, r"\cdots")
+        .replace(HIDDEN, r"{\cdots}")
 }
 
 fn render_svg(source: &str) -> Result<String, String> {
@@ -324,11 +324,27 @@ mod tests {
     fn context_holes_render_without_source_answers() {
         let source = r"x = ____ + […]";
         let substituted = substitute_context_holes(source);
-        assert_eq!(substituted, r"x = \underline{\hspace{2em}} + \cdots");
+        assert_eq!(substituted, r"x = \underline{\hspace{2em}} + {\cdots}");
         let mut renderer = MathRenderer::default();
         let view = renderer.view(source, false, true);
         assert!(view.svg.is_some(), "{}", view.error.unwrap_or_default());
         assert_eq!(renderer.render_count(), 1);
+    }
+
+    /// A hidden hole can sit directly against the next token, and a bare
+    /// control sequence would swallow it: `\cdots` followed by `x` is the
+    /// undefined `\cdotsx`, which fails the whole formula rather than the
+    /// hole. Authoring `\blank{n}x^{...}` is an ordinary thing to write.
+    #[test]
+    fn a_hidden_hole_against_the_next_token_still_renders() {
+        let source = r"\frac{d}{dx}x^n = […]x^{____}";
+        assert_eq!(
+            substitute_context_holes(source),
+            r"\frac{d}{dx}x^n = {\cdots}x^{\underline{\hspace{2em}}}"
+        );
+        let mut renderer = MathRenderer::default();
+        let view = renderer.view(source, true, true);
+        assert!(view.svg.is_some(), "{}", view.error.unwrap_or_default());
     }
 
     #[test]

@@ -131,6 +131,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A cloze card whose hidden hole sits directly against the next token
+  renders again. `\blank{n}x^{...}` failed the whole formula, because the
+  mark standing in for a hidden hole was a bare control sequence and
+  welded onto whatever followed it.
+
 - A cloze hole cut out of a formula now reveals as that formula's piece
   rather than as its source: `$x = -b \blank{\pm} \sqrt{d}$` reveals a
   typeset ± where it used to show the characters `\pm`. What you type at
