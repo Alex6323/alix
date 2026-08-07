@@ -420,8 +420,7 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
 /// `header`: rows, then trailing comments; blanks neither extend nor end it.
 fn table_block_end(lines: &[&str], header: usize) -> usize {
     let mut last = header + 2;
-    let mut index = header + 2;
-    while let Some(raw) = lines.get(index) {
+    for (index, raw) in lines.iter().enumerate().skip(header + 2) {
         // An adjacent table's header opens its own block.
         if raw.starts_with('|')
             && lines
@@ -436,7 +435,6 @@ fn table_block_end(lines: &[&str], header: usize) -> usize {
         } else if !trimmed.is_empty() {
             break;
         }
-        index += 1;
     }
     last
 }
@@ -452,8 +450,9 @@ fn line_terminator(text: &str, line: usize) -> &'static str {
     let Some(start) = nth_line_start(text, line) else {
         return "\n";
     };
-    match text[start..].find('\n') {
-        Some(rel) if rel > 0 && text.as_bytes()[start + rel - 1] == b'\r' => "\r\n",
+    let rest = &text[start..];
+    match rest.find('\n') {
+        Some(rel) if rest[..rel].ends_with('\r') => "\r\n",
         Some(_) => "\n",
         // An unterminated final line follows the file's convention.
         None if text.contains("\r\n") => "\r\n",

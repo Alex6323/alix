@@ -2763,6 +2763,12 @@ the answer
     }
 
     #[test]
+    fn an_empty_table_ends_on_its_delimiter() {
+        let deck = parse("| a | b |\n|---|---|\n");
+        assert_eq!(2, deck.tables[0].end_line);
+    }
+
+    #[test]
     fn every_table_line_matches_the_header_width() {
         assert_eq!(
             ParseError::TableRowWidth {
