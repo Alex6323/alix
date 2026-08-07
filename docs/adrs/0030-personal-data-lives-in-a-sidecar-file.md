@@ -1,6 +1,6 @@
 # 0030: Personal learning data lives in a sidecar file
 
-- Status: Proposed
+- Status: Accepted
 - Recorded: 2026-08-07
 - Retrospective: No
 
