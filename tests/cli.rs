@@ -4905,8 +4905,30 @@ fn the_real_server_keeps_exactly_two_log_files_within_the_configured_cap() {
             "response: {response:?}"
         );
     }
-    child.kill().expect("failed to stop the server");
-    let _ = child.wait();
+
+    // A line is written after its own response, and a rotation renames the
+    // current file aside before reopening it, so a killed server is caught
+    // mid-roll with one file. SIGTERM drains the workers first, which makes
+    // the set on disk the writer's finished state rather than an instant.
+    assert!(
+        Command::new("kill")
+            .arg(child.id().to_string())
+            .status()
+            .expect("failed to run kill")
+            .success()
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while child
+        .try_wait()
+        .expect("failed to poll the server")
+        .is_none()
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the server did not drain after SIGTERM"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 
     let mut logs = std::fs::read_dir(test_state_dir(home.path()))
         .unwrap()
@@ -4917,18 +4939,15 @@ fn the_real_server_keeps_exactly_two_log_files_within_the_configured_cap() {
         })
         .collect::<Vec<_>>();
     logs.sort();
-    // Rotation renames the current file aside and then reopens it, so a
-    // server killed inside that window leaves the rolled file alone. What
-    // must hold is that rotation HAPPENED and that the set stayed bounded;
-    // the count at the instant of the kill is not an invariant.
+    assert_eq!(
+        2,
+        logs.len(),
+        "20 requests at a 128 byte cap keep one live file and one rolled: {logs:?}"
+    );
     assert!(
         logs.iter()
             .any(|path| path.extension().is_some_and(|e| e == "1")),
-        "20 requests past the cap must have rolled a file: {logs:?}"
-    );
-    assert!(
-        logs.len() <= 2,
-        "the writer keeps at most one rolled file: {logs:?}"
+        "the second file is the rolled one: {logs:?}"
     );
     for path in logs {
         assert!(
