@@ -21,6 +21,14 @@ prefixed id is never listed or modified, so ordinary documents with `##`
 headings can sit in a decks folder untouched. Generated, imported, received, and
 tutorial decks are initialized when they are created.
 
+## Choosing a card shape
+
+Read the material before choosing its card shape. The shared guide below names
+the useful choices and distinguishes structural matches from judgement calls.
+The sections after it show the exact syntax for each shape.
+
+{{#include ../../card-shapes.md}}
+
 ## Cards
 
 A card starts with `##` at **column 0**, the front (the question). The lines
