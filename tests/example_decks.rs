@@ -72,7 +72,7 @@ fn every_shape_example_still_checks() {
 /// fail here instead of drifting.
 #[test]
 fn math_rendering_showcase_still_checks_and_still_demonstrates_malformed_math() {
-    let report = doctor_example("docs/examples/math-rendering-showcase.md");
+    let report = doctor_example("docs/examples/syntax/math-rendering.md");
 
     assert!(
         report.contains("malformed LaTeX math in answer `\\frac{1`"),
