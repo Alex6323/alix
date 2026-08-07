@@ -6367,10 +6367,11 @@ fn a_tutor_note_leaves_the_learner_on_the_same_card() {
 /// author acts on. One row of `docs/card-shapes.md`, one assertion.
 #[test]
 fn every_shape_example_produces_the_shape_it_advertises() {
-    fn state_of(deck: &str, depth: &str) -> serde_json::Value {
-        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("docs/examples/shapes")
-            .join(deck);
+    let shapes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/examples/shapes");
+    let examined = std::cell::RefCell::new(Vec::new());
+    let state_of = |deck: &str, depth: &str| -> serde_json::Value {
+        examined.borrow_mut().push(deck.to_owned());
+        let source = shapes.join(deck);
         let text = std::fs::read_to_string(&source)
             .unwrap_or_else(|error| panic!("missing shape example {}: {error}", source.display()));
         let (base, _guard) = spawn_full_server_fixture(
@@ -6386,7 +6387,7 @@ fn every_shape_example_produces_the_shape_it_advertises() {
         let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
         assert_eq!("review", body["phase"], "{deck}: {body}");
         body
-    }
+    };
 
     // A table row's Recognize options come from its own column, with no AI
     // cache in this fixture, which is the whole reason the shape earns a row.
@@ -6430,4 +6431,22 @@ fn every_shape_example_produces_the_shape_it_advertises() {
     // The default, and not a failure.
     let plain = state_of("plain.md", "recall");
     assert_eq!("flip", plain["mode"], "plain.md: {plain}");
+
+    // Each shape asserts a different property, so this cannot be a sweep.
+    // Compare what was examined against the directory instead: a shape
+    // example added without its own law above fails here rather than
+    // shipping unheld.
+    let mut examined = examined.into_inner();
+    examined.sort();
+    let mut present = std::fs::read_dir(&shapes)
+        .expect("docs/examples/shapes is readable")
+        .map(|entry| entry.expect("unreadable entry").file_name())
+        .filter_map(|name| name.to_str().map(str::to_owned))
+        .filter(|name| name.ends_with(".md"))
+        .collect::<Vec<_>>();
+    present.sort();
+    assert_eq!(
+        present, examined,
+        "every shape example needs a law of its own here"
+    );
 }
