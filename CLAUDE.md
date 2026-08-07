@@ -123,6 +123,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make mutants` | What the CI mutation workflows invoke (`GATE_JOBS` parallelism, `MUTANTS_BASE` diff base, `MUTANTS_SHARD` one 0-indexed shard such as `0/6`; misses reconcile against `docs/mutants-allowlist.txt`). Refuses to start while another cargo-mutants runs anywhere on the machine. **Not for local use**: it saturates the machine for hours. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
+| `make shape-eval` | Costed LLM release gate: does `docs/card-shapes.md` actually steer the deck generator? Deterministic tests prove the rule reaches the prompt; only this proves it steers. Never CI. |
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.md"` | Run the binary with args. |
 | `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |

@@ -115,6 +115,12 @@ at. **crates.io is not automated.**
    Treat a failure as evidence to investigate and resolve before tagging. A
    diagnostic rerun is fine, but do not discard a failure and release merely
    because a later run got lucky.
+4b. **Card-shape evaluation.** Run `make shape-eval` when the deck generator,
+   its prompt, or `docs/card-shapes.md` changed. Deterministic tests prove the
+   rule reaches the prompt; only this proves the rule still steers a real
+   model, which is the failure a prompt that reads well can hide. Costed,
+   non-deterministic, authenticated, manual, and judged under the same rule as
+   calibration: a failure is evidence, not noise to rerun away.
 5. **Semantic documentation audit.** Run `make docs-audit` on this exact release
    candidate. This makes a real read-only Claude call over every tracked public
    text and visual surface: root guides, API, the complete book, committed
