@@ -7,8 +7,10 @@
  * Standalone and manual, like its neighbour capture.cjs, and for the same
  * reasons: it needs a browser and `cwebp`, neither of which CI has. The CI
  * half is scripts/check-example-media.py, which proves every example has an
- * image and every image belongs to an example. It cannot prove an image is
- * CURRENT. Only re-running this and finding no diff proves that.
+ * image and every image belongs to an example. Neither proves an image is
+ * CURRENT, and no byte comparison can: a choice card's options are shuffled
+ * from a seed reseeded every session, so those decks photograph differently
+ * on every run. Re-running and reading the picture is what proves it.
  *
  *   node e2e/shots/examples.cjs [--only=table,cloze]
  *
