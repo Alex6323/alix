@@ -131,6 +131,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A cloze hole cut out of a formula is now sketched rather than typed,
+  because the hole's content is the expected answer and a formula's piece
+  has no keyboard spelling. An `input:` written on the card or the deck
+  still wins: the rule only fills in where nothing was authored.
+
 - A cloze card whose hidden hole sits directly against the next token
   renders again. `\blank{n}x^{...}` failed the whole formula, because the
   mark standing in for a hidden hole was a bare control sequence and

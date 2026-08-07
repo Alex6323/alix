@@ -1072,6 +1072,23 @@ mod tests {
         parser::card_front_lines(text).unwrap()
     }
 
+    /// The formula rule in `review::state` only fills in when nothing was
+    /// authored, so a deck-level `input:` has to reach the card before that
+    /// point for the deck half of "the author wins" to hold.
+    #[test]
+    fn a_deck_level_input_reaches_a_formula_hole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "d.md",
+            "---\ninput: type\n---\n## q <!-- id: card-q1 -->\n---\n$x = \\blank{\\pm} y$\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+
+        assert!(deck.cards[0].math_hole);
+        assert_eq!(Some(Input::Type), deck.cards[0].input);
+    }
+
     #[test]
     fn deck_state_progresses_notstarted_started_finished() {
         let dir = tempfile::tempdir().unwrap();

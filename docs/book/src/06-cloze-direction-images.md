@@ -33,11 +33,12 @@ your history.
 Reach for cloze when the *context* is the cue: a definition with its key term
 removed, a line of code with the operative token blanked.
 
-A blank inside `$...$` or `$$...$$` is a piece of the formula, and reveals as
-one: `$x = -b \blank{\pm} \sqrt{d}$` shows ± typeset, not the characters
-`\pm`. What you *type* at Reconstruct is still exactly what you wrote between
-the braces, so blank something typable. `\blank{4ac}` asks for the
-discriminant; `\blank{\pm}` asks the learner to spell a LaTeX command.
+A blank inside `$...$` or `$$...$$` is a piece of the formula, and is treated
+as one. It reveals typeset (`$x = -b \blank{\pm} \sqrt{d}$` shows ±, not the
+characters `\pm`), and at Reconstruct it is **sketched rather than typed**,
+since a formula's piece has no keyboard spelling. Write `input: type` on the
+card or the deck to keep the keyboard: an authored `input:` always wins, and
+the rule only fills in where you said nothing.
 
 ## Dual-direction cards: `direction:`
 

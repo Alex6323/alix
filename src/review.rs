@@ -289,7 +289,11 @@ pub fn state(
         choice_runs,
         keypoints,
         keypoint_runs,
-        input: card.and_then(|c| c.input).unwrap_or_default(),
+        // Last in the chain, after the card's own directive and the deck's:
+        // the rule fills a gap and never overrules what an author wrote.
+        input: card
+            .and_then(|c| c.input.or(c.math_hole.then_some(Input::Draw)))
+            .unwrap_or_default(),
         finished,
         remaining: session.remaining() as u32,
         initial: session.initial_size as u32,
@@ -1330,6 +1334,49 @@ mod tests {
         assert_eq!(
             state(&session, &store, &augment, Some(NOW)).input,
             Input::Draw
+        );
+    }
+
+    /// A piece of a formula cannot be typed as itself: the hole's content is
+    /// the expected answer, so a formula hole would ask for LaTeX source.
+    /// Drawing is what a learner does with a symbol, so the rule fills in
+    /// where nothing was authored.
+    #[test]
+    fn a_hole_cut_from_a_formula_is_drawn_rather_than_typed() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
+        assert_eq!(
+            state(&session, &store, &augment, Some(NOW)).input,
+            Input::Draw
+        );
+    }
+
+    #[test]
+    fn a_hole_cut_from_prose_is_still_typed() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## q\n---\nthe value is \\blank{dropped}\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
+        assert_eq!(
+            state(&session, &store, &augment, Some(NOW)).input,
+            Input::Type
+        );
+    }
+
+    /// The rule fills a gap and never overrules. A deck-level `input:` lands
+    /// on the card before this point (deck.rs), so pinning it on the card
+    /// covers both ways an author can say it.
+    #[test]
+    fn an_authored_input_beats_the_formula_rule() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("## q <!-- input: type -->\n---\n$x = \\blank{\\pm} y$\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
+        assert_eq!(
+            state(&session, &store, &augment, Some(NOW)).input,
+            Input::Type
         );
     }
 

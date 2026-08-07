@@ -1225,6 +1225,7 @@ fn build_card(
         card.hole = Some(n as u32);
         if hole_sits_in_math(&parsed[*hole_line], *hole_seg) {
             card.display_back = Some(vec![format!("${answer_text}$")]);
+            card.math_hole = true;
         }
         card.block_holes = block_holes.clone();
         card.images = images.clone();

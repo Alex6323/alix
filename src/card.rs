@@ -67,6 +67,9 @@ pub struct Card {
     /// Resolved table-over-deck at parse time; None means the default (on).
     pub sampling: Option<bool>,
     pub hole: Option<u32>,
+    /// Set when this card's hole was cut out of a formula, which decides how
+    /// the answer is asked for: a formula's piece is drawn, not typed.
+    pub math_hole: bool,
     pub block_holes: Vec<crate::store::HoleFingerprint>,
     pub reversed: bool,
     pub content_fingerprint: u64,
@@ -106,6 +109,7 @@ impl Card {
             row: None,
             sampling: None,
             hole: None,
+            math_hole: false,
             block_holes: Vec::new(),
             reversed: false,
             content_fingerprint,
