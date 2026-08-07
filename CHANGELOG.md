@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Each running web-server instance now keeps an always-on local diagnostic log
+  outside the decks directory. The current and one rolled file are capped at
+  5 MiB each by default, contain operational timings and minted IDs but no
+  learning content, names, titles, or paths, and are never uploaded or read
+  back by Alix. `alix doctor` and the web Doctor sheet name the profile's
+  readable, collision-safe log path; `[log]` configures its cap and verbosity.
+
 - The session summary places the sitting against the whole deck: the
   "introduced" row now also reads how many of the deck's cards have ever
   been met, out of how many it holds. `met_total` and `deck_total` carry it
@@ -56,6 +63,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+
+- `make web-debug` now runs the ordinary server with `--log http`, which keeps
+  verbose request timings in the local log and mirrors them to stderr.
 
 - A new card's badge now names its interaction too, not just "new":
   `new · choice` when it offers options, `new · draw` on a sketch card,

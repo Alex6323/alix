@@ -22,7 +22,8 @@ are all reached from the web picker rather than as their own commands (see
 The single-instance launcher's flags: `--lan` / `--port` / `--token`
 ([the web app](15-the-web-app.md)), `--session N` (cards per sitting, overriding
 the `[review] max_session` config; unrelated to the AI backend's own
-`--session-id`), and `--config <path>`. The session depth is
+`--session-id`), `--config <path>`, and `--log http,select` (enable verbose
+file records and mirror the named targets to stderr). The session depth is
 picked in the picker's split Depth… menu, an order or region in its focus
 drawer ([scheduling](05-scheduling.md)), and the card order is the deck's
 `order:` directive.
@@ -189,7 +190,8 @@ notes it.
 - `alix config`: show the active key bindings; `alix config --init` writes the
   file.
 - `alix doctor [dir-or-deck]`: environment health checks, a one-line remedy per
-  problem: the config parses, the progress store is readable, the decks dir
+  problem: the config parses, the current profile's local log path is named,
+  the progress store is readable, the decks dir
   scans, and the backend CLI is on your PATH. Name a **deck file** to lint it
   in depth (syntax, named-field `at:` locators, and frozen cards that have
   drifted from their live source). It withholds stale excerpts and reports

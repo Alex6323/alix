@@ -323,7 +323,7 @@ in-memory progress projection that could cover the removed target, and refreshes
 the catalog. Deletion is deck-first and sequential. A mid-set failure returns
 500 with `RemovalFailureDto`; `completed` and `failed` let the client report the
 partial result, and `recovery` points to `alix doctor`. The server log retains
-the exact failing path while the response does not disclose it. Retrying is
+the operation's request timing but never the exact failing path. Retrying is
 safe to attempt after following the recovery instruction, but removal has no
 undo and completed artifacts are not restored.
 
@@ -814,7 +814,7 @@ Clients must treat an id as an opaque string and never parse it as a number.
 ### DoctorDto / DoctorRowDto
 
 The web doctor report (`GET /api/doctor`): the CLI's free checks (config,
-store, decks, backend, share), serialized in that order. The costed
+local log path, store, decks, backend, share), serialized in that order. The costed
 `--backends` end-to-end probe stays CLI-only — this endpoint never makes a
 network call.
 
@@ -822,7 +822,7 @@ network call.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `name` | string | The check's name: `config` \| `store` \| `decks` \| `backend` \| `share` (open set — mirrors `alix doctor`'s rows). |
+| `name` | string | The check's name: `config` \| `log` \| `store` \| `decks` \| `backend` \| `share` (open set; mirrors `alix doctor`'s rows). |
 | `status` | string | `ok` \| `warn` \| `fail` (open set). |
 | `detail` | string | What was found, one line. |
 | `remedy` | string? | The fix; present whenever `status` isn't `ok`. |

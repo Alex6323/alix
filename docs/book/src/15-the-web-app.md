@@ -235,3 +235,20 @@ happily side by side, one per family member, say:
 
 If a launch misbehaves, `alix doctor` checks the setup (config, progress
 store, decks directory, backend CLI) and prints a one-line remedy per problem.
+The Doctor sheet also names this instance's local log file.
+
+## Sending a log with a bug report
+
+Every running server keeps a small local diagnostic history without requiring
+a flag. Open **Doctor** from the picker menu to see the exact path for the
+current profile. The current file is named
+`alix-<profile>-<digest>.log`; after it reaches 5 MiB, the previous part is
+`alix-<profile>-<digest>.log.1`. On a default Linux setup these live under
+`~/.local/state/alix/`. Attach both files when the problem may have begun before
+the current file.
+
+The log contains minted deck and card IDs and operational timings. It does not
+contain card text, notes, tutor or exam text, deck names or titles, or file
+paths. Alix never uploads it and never reads it back. Deleting either file does
+not change your decks or progress; the current file is recreated next time the
+server starts.

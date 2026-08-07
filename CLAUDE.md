@@ -126,7 +126,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.md"` | Run the binary with args. |
 | `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
-| `make web-debug` | `web` + per-request stderr timings: `at=` when the request was popped (ms since start), `took=` how long it was held, `w=` which worker. A late `at=` means the request waited to be read; a large `took=` means the handler was slow. The `{#server-subresource-stall}` net. |
+| `make web-debug` | `web` + `--log http`: per-request timings are recorded and mirrored to stderr. `at=` is when the request was popped (ms since start), `took=` how long it was held, and `w=` which worker. A late `at=` means the request waited to be read; a large `took=` means the handler was slow. The `{#server-subresource-stall}` net. |
 | `make phone` / `make tablet` / `make desktop` | Run the alix mobile app on the phone/tablet emulator (boots the AVD if needed) or as a native Linux window (fastest loop). |
 | `make frb-check` | Assert the frb toolchain-alignment invariants (version pins, template patches, NDK); fails on drift. |
 | `make push-decks DIR=~/decks` | One-way copy of a host decks folder into the running emulator's app (dev-only; restart the app to re-list). |

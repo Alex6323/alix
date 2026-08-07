@@ -113,13 +113,29 @@ client-selected desktop path. The remote exam handlers deliberately avoid the
 poll path that writes progress. These controls do not turn pairing into a
 multi-user authorization system.
 
+### Local server log
+
+Each running server writes its own size-capped log under the platform state
+directory, falling back to the data directory on platforms without a state
+directory. The file is outside the decks tree and is never included by share
+or receive. Alix only writes it: no behavior, recovery path, or diagnostic
+reads it back, and Alix has no upload or transmission path for it. Sending a
+log is always the user's deliberate attachment to a bug report.
+
+Log records may contain minted deck and card IDs. They never contain card
+fronts, backs, notes, tutor or exam text, deck names or titles, or deck and
+source paths, even when verbose targets are enabled. No logging facade is
+installed, so dependencies cannot add their own records. The verbose
+end-to-end content laws and the real-process rotation law in `tests/cli.rs`
+enforce those boundaries.
+
 A paired or localhost API client can invoke irreversible library removal with
 the server process's filesystem authority. Client input names only a catalog
 row; the Catalog owner resolves it to a validated loose deck, workspace member,
 or manifested workspace, and rejects ambiguous names and plain folders. The
 Study owner flushes progress first and refuses removal during an active session.
-Responses expose only semantic artifact labels; exact failing paths stay in the
-local server log. The adult web app's type-the-name step protects against an
+Responses expose only semantic artifact labels and do not persist exact failing
+paths in the local log. The adult web app's type-the-name step protects against an
 accidental click, not a malicious token holder. Treat a pairing token as
 authority to delete served decks and their progress.
 
@@ -248,6 +264,8 @@ The most relevant deterministic checks currently live beside their controls:
 
 - `src/serve/tests.rs`: token scope and authorization behavior;
 - `src/serve/respond.rs`: constant-time token comparison and capped reads;
+- `src/log.rs` and `tests/cli.rs`: local-only bounded logging, content and
+  name exclusion, and per-instance file separation;
 - `src/library.rs`, `src/serve/study.rs`, and `tests/api.rs`: catalog-resolved
   irreversible removal, owner-serialized progress invalidation, display-safe
   failures, and retained-snapshot regression coverage;
