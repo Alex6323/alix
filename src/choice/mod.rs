@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn question_has_four_options_with_correct_exactly_once() {
         let c = card(1, "alpha");
-        let d = ai(&["beta", "gamma", "delta"]);
+        let d = ai(&["beta", "gamma", "delta", "epsilon", "zeta"]);
         let q = build(&c, 42, &d).unwrap();
         assert_eq!(NUM_OPTIONS, q.options.len());
         assert_eq!(1, q.options.iter().filter(|o| *o == "alpha").count());

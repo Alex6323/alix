@@ -1754,21 +1754,22 @@ mod tests {
         let all = cards(1);
         let id = all[0].id().unwrap();
         let now = 1_000_000;
-        let due = now + 60_000;
-        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(due));
         let mut session = Session::new(
             all,
             &mut store,
-            sched(),
+            Box::new(crate::scheduler::Fsrs::new(0.9, 0)),
             SessionOptions {
                 new_cards_percent: 0,
                 ..Default::default()
             },
             now,
         );
-        // A future card is outside the initial due roster. Put it in the
-        // unserved roster directly to isolate the projection this method owns.
-        session.roster = vec![0];
+        assert_eq!(Some(id.clone()), session.current().and_then(Card::id));
+        session.grade(&mut store, Grade::Fail, now);
+        let due = session
+            .scheduler
+            .due_at(store.get(&id).unwrap(), Depth::Recall);
+        assert!(due > now, "a failed card gets a future relearn step");
 
         assert_eq!(
             Some(due),

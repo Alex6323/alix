@@ -843,10 +843,10 @@ fn clean_distractors(raw: &[String], answer: &str, count: usize) -> Vec<String> 
 }
 
 fn extract_json(raw: &str) -> &str {
-    match (raw.find('{'), raw.rfind('}')) {
-        (Some(a), Some(b)) if b > a => &raw[a..=b],
-        _ => raw,
-    }
+    raw.find('{')
+        .zip(raw.rfind('}'))
+        .and_then(|(start, end)| raw.get(start..=end))
+        .unwrap_or(raw)
 }
 
 fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
@@ -1107,6 +1107,17 @@ mod tests {
             generate_topology(&[item(10, "q", "a")], None, "dtok", &ask_config(&cli), None)
                 .unwrap();
         assert_eq!("pedagogical order", unguided.name);
+
+        let cli = fake_reply(dir.path(), r#"{"principle":"p","edges":[],"walk":[0]}"#);
+        let blank = generate_topology(
+            &[item(10, "q", "a")],
+            Some("   "),
+            "dtok",
+            &ask_config(&cli),
+            None,
+        )
+        .unwrap();
+        assert_eq!("pedagogical order", blank.name);
     }
 
     #[test]
@@ -1138,6 +1149,37 @@ mod tests {
         assert_eq!("Start", topo.regions[0].name);
         assert_eq!(topo.regions[0].cards, ["10"]);
         assert_eq!(topo.regions[1].cards, ["20"]);
+    }
+
+    #[test]
+    fn topology_regions_require_both_a_name_and_mapped_cards() {
+        let ids = HashMap::from([(0, "card-a".to_string())]);
+        let topology = to_topology(
+            RawTopology {
+                principle: "p".into(),
+                edges: Vec::new(),
+                walk: Vec::new(),
+                regions: vec![
+                    RawRegion {
+                        name: "".into(),
+                        cards: vec![0],
+                    },
+                    RawRegion {
+                        name: "empty".into(),
+                        cards: vec![99],
+                    },
+                    RawRegion {
+                        name: "kept".into(),
+                        cards: vec![0],
+                    },
+                ],
+            },
+            &ids,
+        );
+
+        assert_eq!(1, topology.regions.len());
+        assert_eq!("kept", topology.regions[0].name);
+        assert_eq!(["card-a"], topology.regions[0].cards.as_slice());
     }
 
     #[test]
@@ -1359,6 +1401,90 @@ mod tests {
             mode: Some("typing".to_string()),
         };
         assert!(clean_format(&item, &raw).is_none());
+    }
+
+    #[test]
+    fn clean_format_keeps_only_real_front_and_note_changes() {
+        let item = WarmItem {
+            id: "1".to_string(),
+            question: "Question".to_string(),
+            answer: "Answer".to_string(),
+            note: Some("Old note".to_string()),
+        };
+        let front = clean_format(
+            &item,
+            &RawFormat {
+                front: Some(" New question ".into()),
+                back: Vec::new(),
+                note: None,
+                mode: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(Some("New question"), front.front.as_deref());
+        let note = clean_format(
+            &item,
+            &RawFormat {
+                front: None,
+                back: Vec::new(),
+                note: Some(" New note ".into()),
+                mode: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(Some("New note"), note.note.as_deref());
+
+        for raw in [
+            RawFormat {
+                front: Some(" ".into()),
+                back: Vec::new(),
+                note: None,
+                mode: None,
+            },
+            RawFormat {
+                front: Some("Question".into()),
+                back: Vec::new(),
+                note: None,
+                mode: None,
+            },
+            RawFormat {
+                front: None,
+                back: Vec::new(),
+                note: Some(" ".into()),
+                mode: None,
+            },
+            RawFormat {
+                front: None,
+                back: Vec::new(),
+                note: Some("Old note".into()),
+                mode: None,
+            },
+        ] {
+            assert!(clean_format(&item, &raw).is_none());
+        }
+    }
+
+    #[test]
+    fn format_and_keypoint_prompts_keep_their_contract_inputs() {
+        let format = format_prompt("CARDS", Some("GUIDANCE"));
+        assert!(format.contains("improve the PRESENTATION"));
+        assert!(format.contains("Extra guidance: GUIDANCE"));
+        assert!(format.contains("CARDS"));
+        assert!(format.contains("Output ONLY JSON"));
+
+        let keypoints = keypoints_prompt("CARDS", 3, Some("GUIDANCE"));
+        assert!(keypoints.contains("at most 3 per card"));
+        assert!(keypoints.contains("Extra guidance: GUIDANCE"));
+        assert!(keypoints.contains("CARDS"));
+        assert!(keypoints.contains("Output ONLY JSON"));
+    }
+
+    #[test]
+    fn json_extraction_requires_ordered_distinct_braces() {
+        assert_eq!(r#"{"a":1}"#, extract_json(r#"prefix {"a":1} suffix"#));
+        for raw in ["plain", "only {", "only }", "} reversed {"] {
+            assert_eq!(raw, extract_json(raw));
+        }
     }
 
     #[test]

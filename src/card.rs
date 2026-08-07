@@ -233,6 +233,24 @@ mod tests {
     }
 
     #[test]
+    fn equality_is_exactly_token_hole_and_direction() {
+        let base = stamped("deck", "front", &["back"], None, "tok");
+        let mut presentation_only = base.clone();
+        presentation_only.front = "different".to_string();
+        assert_eq!(base, presentation_only);
+
+        let mut token = base.clone();
+        token.token = Some("other".into());
+        assert_ne!(base, token);
+        let mut hole = base.clone();
+        hole.hole = Some(1);
+        assert_ne!(base, hole);
+        let mut reversed = base.clone();
+        reversed.reversed = true;
+        assert_ne!(base, reversed);
+    }
+
+    #[test]
     fn append_note_creates_then_joins_with_newlines() {
         let mut c = card("d.md", "front", &["back"], None);
         c.append_note(&[]);

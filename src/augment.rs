@@ -1245,8 +1245,48 @@ mod tests {
             .path()
             .join("augment/deck2.sync-conflict-20260714-laptop.json");
         std::fs::write(&conflict, "{}").unwrap();
+        std::fs::write(dir.path().join("augment/ordinary.json"), "{}").unwrap();
+        std::fs::create_dir(dir.path().join("augment/folder.sync-conflict-x.json")).unwrap();
 
         assert_eq!(sync_conflicts(dir.path()), vec![conflict]);
+    }
+
+    #[test]
+    fn aggregate_open_ignores_non_documents_conflicts_and_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "not json").unwrap();
+        std::fs::write(
+            dir.path().join("deck.sync-conflict-20260807.json"),
+            "not a document",
+        )
+        .unwrap();
+        std::fs::create_dir(dir.path().join("folder.json")).unwrap();
+
+        let cache =
+            AugmentCache::open_aggregate(dir.path().to_path_buf(), HashMap::new(), HashSet::new())
+                .unwrap();
+        assert!(cache.is_empty());
+        assert!(cache.topologies().is_empty());
+    }
+
+    #[test]
+    fn aggregate_open_rejects_a_document_key_owned_by_another_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let card_id = "card-shared".to_string();
+        let data = AugmentDocumentData {
+            cards: HashMap::from([(card_id.clone(), Augmentation::default())]),
+            ..AugmentDocumentData::default()
+        };
+        write_deck_data(&dir.path().join("deck-a.json"), "deck-a", 0, &data).unwrap();
+
+        let Err(error) = AugmentCache::open_aggregate(
+            dir.path().to_path_buf(),
+            HashMap::from([(card_id.clone(), "deck-b".to_string())]),
+            HashSet::new(),
+        ) else {
+            panic!("accepted a key owned by another deck");
+        };
+        assert!(matches!(error, AugmentError::DuplicateKey { key } if key == card_id));
     }
 
     #[test]
@@ -1298,6 +1338,11 @@ mod tests {
             "dA",
             &["card-aa-0", "card-bb-0", "card-aa", "card-aa-1"],
         ));
+        cache.topologies[0].edges.push(TopologyEdge {
+            from: "card-aa-1".into(),
+            to: "card-bb-0".into(),
+            label: "orphaned endpoint".into(),
+        });
         let outcome = CascadeOutcome {
             remap: vec![(0, 2)],
             orphaned: vec![1],
@@ -1309,6 +1354,12 @@ mod tests {
             vec!["card-aa-2", "card-bb-0", "card-aa"],
             cache.topologies()[0].walk,
             "the target's mapped hole moves, another token's hole and the base id stay, the orphaned hole drops"
+        );
+        assert!(
+            cache.topologies()[0]
+                .edges
+                .iter()
+                .all(|edge| edge.from != "card-aa-1" && edge.to != "card-aa-1")
         );
     }
 
@@ -1328,6 +1379,16 @@ mod tests {
             !cache.wipe_tokens(&wiped, &HashSet::new()),
             "nothing left to wipe"
         );
+    }
+
+    #[test]
+    fn wipe_tokens_reports_a_topology_only_change() {
+        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
+        cache.add_topology(topology("auto", "deck-a", &["card-aa", "card-bb"]));
+
+        assert!(cache.wipe_tokens(&HashSet::new(), &tokens(&["deck-a"])));
+        assert!(cache.topologies().is_empty());
+        assert!(!cache.wipe_tokens(&HashSet::new(), &tokens(&["deck-a"])));
     }
 
     #[test]
@@ -1979,6 +2040,83 @@ mod tests {
             cache.distractors(&cid(&c), c.content_fingerprint)
         );
         assert!(cache.contains(&cid(&c)));
+    }
+
+    #[test]
+    fn each_optional_projection_clears_only_its_own_field() {
+        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
+        let id = "card-a";
+        let ids = tokens(&[id]);
+        cache.set_variants(id, vec!["variant".into()], FP);
+        cache.set_keypoints(id, vec!["point".into()], FP);
+        cache.set_format(
+            id,
+            Format {
+                front: Some("front".into()),
+                ..Format::default()
+            },
+            FP,
+        );
+        assert!(!cache.is_empty());
+
+        cache.clear_variants(&ids);
+        assert!(cache.variants(id, FP).is_none());
+        assert!(cache.keypoints(id, FP).is_some());
+        assert!(cache.format(id, FP).is_some());
+        cache.clear_keypoints(&ids);
+        assert!(cache.keypoints(id, FP).is_none());
+        assert!(cache.format(id, FP).is_some());
+        cache.clear_format(&ids);
+        assert!(cache.format(id, FP).is_none());
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn remove_cards_reports_and_closes_each_topology_surface() {
+        let drop = "card-drop";
+        let keep = "card-keep";
+
+        let mut card_only = AugmentCache::open(std::path::Path::new("unused.json"));
+        card_only.set_note(drop, "note".into(), FP);
+        assert!(card_only.remove_cards(&tokens(&[drop])));
+        assert!(card_only.is_empty());
+
+        let mut walk_only = AugmentCache::open(std::path::Path::new("unused.json"));
+        walk_only.add_topology(Topology {
+            walk: vec![drop.into(), keep.into()],
+            ..Topology::default()
+        });
+        assert!(walk_only.remove_cards(&tokens(&[drop])));
+        assert_eq!(vec![keep], walk_only.topologies()[0].walk);
+
+        let mut edge_only = AugmentCache::open(std::path::Path::new("unused.json"));
+        edge_only.add_topology(Topology {
+            edges: vec![
+                TopologyEdge {
+                    from: drop.into(),
+                    to: keep.into(),
+                    label: "outgoing".into(),
+                },
+                TopologyEdge {
+                    from: keep.into(),
+                    to: drop.into(),
+                    label: "incoming".into(),
+                },
+            ],
+            ..Topology::default()
+        });
+        assert!(edge_only.remove_cards(&tokens(&[drop])));
+        assert!(edge_only.topologies()[0].edges.is_empty());
+
+        let mut region_only = AugmentCache::open(std::path::Path::new("unused.json"));
+        region_only.add_topology(Topology {
+            regions: vec![region("part", &[drop, keep])],
+            ..Topology::default()
+        });
+        assert!(region_only.remove_cards(&tokens(&[drop])));
+        assert_eq!(vec![keep], region_only.topologies()[0].regions[0].cards);
+
+        assert!(!region_only.remove_cards(&tokens(&[drop])));
     }
 
     #[test]

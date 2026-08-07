@@ -929,17 +929,19 @@ impl Config {
     }
 
     pub fn load(path: Option<&Path>) -> Result<Self> {
-        let path = match path {
-            Some(path) => path.to_path_buf(),
-            None => match default_config_path() {
-                Some(path) if path.exists() => path,
-                _ => return Ok(Self::default()),
-            },
+        let Some(path) = selected_config_path(path, default_config_path()) else {
+            return Ok(Self::default());
         };
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("cannot read config file {}", path.display()))?;
         Self::from_toml(&text).with_context(|| format!("in config file {}", path.display()))
     }
+}
+
+fn selected_config_path(explicit: Option<&Path>, default: Option<PathBuf>) -> Option<PathBuf> {
+    explicit
+        .map(Path::to_path_buf)
+        .or_else(|| default.filter(|path| path.exists()))
 }
 
 pub fn default_config_path() -> Option<PathBuf> {
@@ -1504,6 +1506,14 @@ mod tests {
     }
 
     #[test]
+    fn plain_char_requires_a_character_without_control() {
+        assert!(parse_key("j").unwrap().is_plain_char());
+        assert!(!parse_key("ctrl-j").unwrap().is_plain_char());
+        assert!(!parse_key("enter").unwrap().is_plain_char());
+        assert!(!parse_key("ctrl-enter").unwrap().is_plain_char());
+    }
+
+    #[test]
     fn parse_rejects_garbage() {
         assert!(parse_key("jj").is_err());
         assert!(parse_key("").is_err());
@@ -1517,6 +1527,31 @@ mod tests {
         assert_eq!("SPACE", parse_key("space").unwrap().to_string());
         assert_eq!("Ctrl-S", parse_key("ctrl-s").unwrap().to_string().as_str());
         assert_eq!("ESC", parse_key("esc").unwrap().to_string());
+    }
+
+    #[test]
+    fn binding_label_uses_the_first_key_or_the_fallback() {
+        assert_eq!("j", Bindings::label(&[parse_key("j").unwrap()]));
+        assert_eq!("?", Bindings::label(&[]));
+    }
+
+    #[test]
+    fn default_config_selection_requires_an_existing_default_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("config.toml");
+        std::fs::write(&existing, "").unwrap();
+        let missing = dir.path().join("missing.toml");
+
+        assert_eq!(
+            Some(existing.clone()),
+            selected_config_path(None, Some(existing))
+        );
+        assert_eq!(None, selected_config_path(None, Some(missing.clone())));
+        assert_eq!(
+            Some(missing.clone()),
+            selected_config_path(Some(&missing), None),
+            "an explicit missing path must reach the loud read error"
+        );
     }
 
     #[test]

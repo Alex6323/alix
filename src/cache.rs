@@ -272,4 +272,23 @@ mod tests {
         assert!(cache.load(&path).is_err());
         assert_eq!(None, cache.label(&path));
     }
+
+    #[test]
+    fn has_decks_requires_both_a_directory_and_a_member() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plain.txt");
+        write(&file, "not a directory");
+        let empty = dir.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        let populated = dir.path().join("populated");
+        std::fs::create_dir(&populated).unwrap();
+        let deck = populated.join("deck.md");
+        write(&deck, "## front\nback\n");
+        crate::stamp::stamp_deck(&deck).unwrap();
+        let mut cache = DeckCache::default();
+
+        assert!(!cache.has_decks(&file));
+        assert!(!cache.has_decks(&empty));
+        assert!(cache.has_decks(&populated));
+    }
 }

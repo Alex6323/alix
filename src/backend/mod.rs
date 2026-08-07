@@ -155,18 +155,32 @@ pub fn resolved_ask_effort(cfg: &AskConfig) -> Option<String> {
 
 pub fn ensure_source_reachable(cfg: &AskConfig, is_url: bool) -> anyhow::Result<()> {
     let backend = backend_for(cfg)?;
-    if is_url && !backend.can_fetch_web() {
+    ensure_source_capability(
+        backend.name(),
+        is_url,
+        backend.can_fetch_web(),
+        backend.can_read_source(),
+    )
+}
+
+fn ensure_source_capability(
+    name: &str,
+    is_url: bool,
+    can_fetch_web: bool,
+    can_read_source: bool,
+) -> anyhow::Result<()> {
+    if is_url && !can_fetch_web {
         anyhow::bail!(
             "the {} backend can't fetch a url under read-only; point source: at a local file, \
              or use a backend that can fetch",
-            backend.name()
+            name
         );
     }
-    if !is_url && !backend.can_read_source() {
+    if !is_url && !can_read_source {
         anyhow::bail!(
             "the {} backend can't read a local source; point source: at a url, or use a backend \
              that can read files",
-            backend.name()
+            name
         );
     }
     Ok(())
@@ -226,6 +240,17 @@ mod tests {
             );
             assert!(ensure_source_reachable(&cfg, false).is_ok());
         }
+    }
+
+    #[test]
+    fn source_capability_requires_the_matching_power_only() {
+        assert!(ensure_source_capability("fake", true, true, false).is_ok());
+        assert!(ensure_source_capability("fake", false, false, true).is_ok());
+
+        let url = ensure_source_capability("fake", true, false, true).unwrap_err();
+        assert!(format!("{url:#}").contains("can't fetch a url"));
+        let local = ensure_source_capability("fake", false, true, false).unwrap_err();
+        assert!(format!("{local:#}").contains("can't read a local source"));
     }
 
     #[test]
@@ -337,15 +362,17 @@ mod tests {
             }
         ));
 
-        let c = Access::from_allowed_tools(&tools(&["Read"]));
-        assert!(matches!(
-            c,
-            Access::ReadOnly {
-                files: true,
-                fetch: false,
-                search: false
-            }
-        ));
+        for tool in ["Read", "Glob", "Grep"] {
+            let access = Access::from_allowed_tools(&tools(&[tool]));
+            assert!(matches!(
+                access,
+                Access::ReadOnly {
+                    files: true,
+                    fetch: false,
+                    search: false
+                }
+            ));
+        }
 
         let d = Access::from_allowed_tools(&[]);
         assert!(matches!(d, Access::None));

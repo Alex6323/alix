@@ -1011,6 +1011,19 @@ mod tests {
     }
 
     #[test]
+    fn workspace_defaults_parse_input_and_order_independently() {
+        let input = [("input".to_string(), "type".to_string())];
+        let parsed = DeckSettings::from_directives(&input);
+        assert_eq!(Some(Input::Type), parsed.input);
+        assert_eq!(None, parsed.order);
+
+        let order = [("order".to_string(), "sequential".to_string())];
+        let parsed = DeckSettings::from_directives(&order);
+        assert_eq!(None, parsed.input);
+        assert_eq!(Some(Order::Sequential), parsed.order);
+    }
+
+    #[test]
     fn an_unparseable_reveal_value_is_rejected_in_workspace_defaults() {
         let directives = [("reveal".to_string(), "cloze".to_string())];
         assert_eq!(None, DeckSettings::from_directives(&directives).reveal);

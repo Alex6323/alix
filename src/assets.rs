@@ -649,6 +649,49 @@ mod tests {
             Err(AssetError::InvalidName(_))
         ));
         assert!(!is_object_name("human-name.png"));
+
+        let bad_digest = format!("{DIGEST_PREFIX}{}.png", "g".repeat(64));
+        let path = directory.path().join(&bad_digest);
+        std::fs::write(&path, "bytes").unwrap();
+        assert!(matches!(
+            verify_object(&path),
+            Err(AssetError::InvalidName(name)) if name == bad_digest
+        ));
+
+        let valid_digest = "a".repeat(64);
+        for invalid in [
+            format!("{DIGEST_PREFIX}{}.png", "a".repeat(63)),
+            format!("{DIGEST_PREFIX}{}.png", "g".repeat(64)),
+            format!("{DIGEST_PREFIX}{}.png", "A".repeat(64)),
+            format!("{DIGEST_PREFIX}{valid_digest}."),
+            format!("{DIGEST_PREFIX}{valid_digest}.p-ng"),
+            format!("{DIGEST_PREFIX}{valid_digest}.PNG"),
+        ] {
+            assert!(!is_object_name(&invalid), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn image_validation_accepts_only_objects_owned_by_the_deck() {
+        let workspace = workspace();
+        let deck_path = workspace.path().join("decks/facts.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## q\na\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let inside = write_object(workspace.path(), "deck-deck1", b"inside", "png").unwrap();
+        assert!(validate_image_at_root(&deck, workspace.path(), inside.to_str().unwrap()).is_ok());
+
+        let outside = tempfile::tempdir().unwrap();
+        let name = object_name(b"outside", "png");
+        let outside_path = outside.path().join(name);
+        std::fs::write(&outside_path, b"outside").unwrap();
+        assert!(matches!(
+            validate_image_at_root(&deck, workspace.path(), outside_path.to_str().unwrap()),
+            Err(AssetError::ImageOutsideBoundary(path)) if path == outside_path
+        ));
     }
 
     #[test]
@@ -1061,6 +1104,32 @@ mod tests {
 
         assert_eq!(Some(1), source_owner(&inputs, &excerpt(&second)));
         assert_eq!(None, source_owner(&inputs, &excerpt(&outside)));
+    }
+
+    #[test]
+    fn source_boundaries_are_ordered_and_unique() {
+        let workspace = workspace();
+        let root = workspace.path().canonicalize().unwrap();
+        let source_file = root.join("source.md");
+        std::fs::write(&source_file, "source").unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_root = outside.path().canonicalize().unwrap();
+        let inputs = vec![
+            SourceInput::File {
+                path: source_file.canonicalize().unwrap(),
+            },
+            SourceInput::Directory {
+                path: outside_root.clone(),
+            },
+            SourceInput::Directory {
+                path: outside_root.clone(),
+            },
+        ];
+
+        assert_eq!(
+            vec![root, outside_root],
+            source_boundaries(workspace.path(), &inputs)
+        );
     }
 
     #[test]
