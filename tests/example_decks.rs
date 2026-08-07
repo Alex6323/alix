@@ -47,22 +47,31 @@ fn workspace_showcase_example_still_checks() {
     doctor_example("docs/examples/workspace-showcase/decks/ownership-move.md");
 }
 
-/// One deck per row of `docs/card-shapes.md`. Doctor proves each parses;
-/// that each still PRODUCES the shape it advertises is asserted through the
-/// API in `tests/api.rs`, because a file that parses can still teach the
-/// wrong thing.
+fn example_decks(set: &str) -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("docs/examples/{set}"));
+    let mut decks = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .map(|entry| entry.expect("unreadable entry").file_name())
+        .filter_map(|name| name.to_str().map(str::to_owned))
+        .filter(|name| name.ends_with(".md"))
+        .collect::<Vec<_>>();
+    decks.sort();
+    decks
+}
+
+/// Swept rather than listed: an example added to either set is checked by
+/// existing here, which is what the examples README promises. Doctor proves
+/// each parses; that a shape example still PRODUCES the shape it advertises
+/// is asserted through the API in `tests/api.rs`, because a file that parses
+/// can still teach the wrong thing.
 #[test]
-fn every_shape_example_still_checks() {
-    for shape in [
-        "table",
-        "reveal-line",
-        "draw",
-        "cloze",
-        "authored-choices",
-        "direction-both",
-        "plain",
-    ] {
-        doctor_example(&format!("docs/examples/shapes/{shape}.md"));
+fn every_example_deck_still_checks() {
+    for set in ["shapes", "syntax"] {
+        let decks = example_decks(set);
+        assert!(!decks.is_empty(), "docs/examples/{set} has no decks");
+        for deck in decks {
+            doctor_example(&format!("docs/examples/{set}/{deck}"));
+        }
     }
 }
 

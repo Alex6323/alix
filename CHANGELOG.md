@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The example decks gained one for cloze inside a formula, showing that
+  `\blank{...}` works within `$...$` and `$$...$$`.
+
 - Deck authoring has a written rule for which card shape suits which
   material, and one worked example per shape. `docs/card-shapes.md`
   marks each row structural (the material has a property the shape
@@ -127,6 +130,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+
+- The example images now show the card as the reader should read it. A
+  choice example is photographed answered, because the cursor rests on
+  option 1 and a picture of that reads as if option 1 were the answer:
+  the table example appeared to pair "to advocate" with "widerlegen".
+  Every image also waited on a fixed pause that expired before the header
+  logo finished forming, so all of them were captured mid-animation.
 
 - The summary's "Next due in N min" counts down while the page stays open
   instead of freezing at the value it had when the sitting ended.

@@ -40,8 +40,10 @@ __pycache__/
 /e2e/test-results/
 /e2e/playwright-report/
 # e2e/shots/capture.cjs's own scratch copies of ~/alix-demo and ~/alix-kids
-# (never the originals — see the script's header comment).
+# (never the originals — see the script's header comment), and the example
+# decks examples.cjs serves copies of for the same reason.
 /e2e/shots/.tmp/
+/e2e/shots/.tmp-examples/
 # Progress documents are per-run state, never fixtures — the suite must start
 # from fresh decks to exercise the never-seen/acquire path.
 /e2e/fixtures/decks/**/progress/

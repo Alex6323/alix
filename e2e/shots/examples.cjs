@@ -56,6 +56,118 @@ function examples() {
   return found;
 }
 
+/// The header logo plays a ~2.6s reveal on load, so a fixed pause photographs
+/// it mid-division. Shoot until two consecutive frames are identical instead:
+/// that settles any animation, not just the one we know about.
+async function settled(page) {
+  let previous = null;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const shot = await page.screenshot({ type: "png" });
+    if (previous && shot.equals(previous)) return shot;
+    previous = shot;
+    await page.waitForTimeout(150);
+  }
+  throw new Error("the page never stopped animating");
+}
+
+/// Compare an option to a deck line without caring how it was written: a
+/// formula reaches the page as KaTeX, whose TeX carries no `$` delimiters.
+function normalize(text) {
+  return text.replace(/\$/g, "").replace(/\s+/g, " ").trim();
+}
+
+/// The authored answers of a deck: one per `- [x]` line.
+function authoredAnswers(source) {
+  return source
+    .split("\n")
+    .filter((line) => line.trimStart().startsWith("- [x]"))
+    .map((line) => normalize(line.trimStart().slice(5)));
+}
+
+/// Every card-table row, as its list of cells. A table card's answer is the
+/// question's own row partner, not an authored mark, so this is how a table
+/// example is answered.
+function tableRows(source) {
+  return source
+    .split("\n")
+    .filter((line) => line.trimStart().startsWith("|"))
+    .map((line) =>
+      line
+        .replace(/<!--.*?-->/g, "")
+        .split("|")
+        .map((cell) => normalize(cell))
+        .filter(Boolean),
+    )
+    .filter((cells) => cells.length > 1 && !cells.every((cell) => /^-+$/.test(cell)));
+}
+
+/// What an option says. A formula is rendered to SVG paths, which carry no
+/// readable text, so fall back to the TeX kept on the run's aria-label.
+async function optionText(option) {
+  const text = (await option.locator(".opt").innerText()).trim();
+  if (text) return normalize(text);
+  const math = option.locator(".opt .math-run").first();
+  if ((await math.count()) === 0) return "";
+  return normalize((await math.getAttribute("aria-label")) || "");
+}
+
+/// Which on-screen option is the answer. Authored `[x]` decides it when the
+/// card carries one; otherwise the question and its answer are cells of the
+/// same table row, and the distractors are drawn from other rows, so exactly
+/// one option shares a row with the question.
+function correctOption(question, options, source) {
+  const authored = authoredAnswers(source);
+  const marked = options.find((option) => authored.includes(option));
+  if (marked) return marked;
+  for (const cells of tableRows(source)) {
+    if (!cells.includes(question)) continue;
+    const partner = options.find((option) => cells.includes(option));
+    if (partner) return partner;
+  }
+  return null;
+}
+
+/// Answer an on-screen choice card, because the cursor rests on option 1 and
+/// a photograph of that reads as if option 1 were the answer. Matching on
+/// text rather than position is what survives the option shuffle, which is
+/// reseeded every session on purpose.
+async function answerChoice(page, source) {
+  const options = page.locator(".options .option");
+  const count = await options.count();
+  if (count === 0) return;
+  const texts = [];
+  for (let i = 0; i < count; i += 1) {
+    texts.push(await optionText(options.nth(i)));
+  }
+  const question = normalize((await page.locator(".region.q").innerText()).split("\n").pop());
+  const answer = correctOption(question, texts, source);
+  if (answer === null) {
+    throw new Error(`no option answers ${question}: ${texts.join(" | ")}`);
+  }
+  await options.nth(texts.indexOf(answer)).click();
+  await page.locator(".option.correct").waitFor({ state: "visible", timeout: 5_000 });
+}
+
+/// Reveal the answer of a `reveal: line` deck. A fresh deck's cards are all
+/// new, and `reveal: line` becomes line-by-line only at Recall (see
+/// depth::check_for), so the front photographs a plain card. Revealing at
+/// least shows the steps the shape will later uncover one at a time, and
+/// the line count is asserted: an example whose answer collapsed to a
+/// single line fails here rather than shipping a picture of a shape it
+/// cannot demonstrate.
+async function revealSteps(page) {
+  await page.keyboard.press("Space");
+  const answer = page.locator(".reveal").first();
+  await answer.waitFor({ state: "visible", timeout: 5_000 });
+  const lines = (await answer.innerText())
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) {
+    throw new Error(`a reveal: line example needs a multi-line answer, got ${lines.length}`);
+  }
+}
+
 async function waitForServer(base) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
@@ -113,12 +225,14 @@ async function main() {
       if (!response.ok) throw new Error(`select failed for ${deck.name}: ${response.status}`);
       await page.goto(base, { waitUntil: "networkidle" });
       await page.locator(".card").first().waitFor({ state: "visible", timeout: 10_000 });
-      await page.waitForTimeout(300);
+      const source = fs.readFileSync(deck.source, "utf8");
+      await answerChoice(page, source);
+      if (/^reveal:\s*line\s*$/m.test(source)) await revealSteps(page);
 
       const out = path.join(EXAMPLES, deck.set, `${deck.name}.webp`);
       const png = path.join(WORK, `${deck.name}.png`);
       try {
-        await page.screenshot({ path: png, type: "png" });
+        fs.writeFileSync(png, await settled(page));
         execFileSync("cwebp", ["-quiet", "-lossless", "-z", "9", png, "-o", out]);
       } finally {
         fs.rmSync(png, { force: true });
