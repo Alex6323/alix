@@ -13,23 +13,26 @@
 
 use std::{path::Path, process::Command};
 
-fn doctor_example(relative_path: &str) {
+fn doctor_example(relative_path: &str) -> String {
     let deck = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path);
     assert!(
         deck.is_file(),
         "shipped example deck is missing: {}",
         deck.display()
     );
-    let status = Command::new(env!("CARGO_BIN_EXE_alix"))
+    let run = Command::new(env!("CARGO_BIN_EXE_alix"))
         .args(["doctor"])
         .arg(&deck)
-        .status()
+        .output()
         .expect("failed to run the alix binary");
+    let report =
+        String::from_utf8_lossy(&run.stdout).into_owned() + &String::from_utf8_lossy(&run.stderr);
     assert!(
-        status.success(),
-        "alix doctor failed on {}; the shipped example deck no longer validates",
+        run.status.success(),
+        "alix doctor failed on {}; the shipped example deck no longer validates\n{report}",
         deck.display()
     );
+    report
 }
 
 #[test]
@@ -44,7 +47,20 @@ fn workspace_showcase_example_still_checks() {
     doctor_example("docs/examples/workspace-showcase/decks/ownership-move.md");
 }
 
+/// The showcase deliberately carries one malformed formula, so it can show
+/// what a malformed formula renders as. Pinning the warning keeps that card
+/// honest in both directions: a silent detector and a "tidied" example both
+/// fail here instead of drifting.
 #[test]
-fn math_rendering_showcase_still_checks() {
-    doctor_example("docs/examples/math-rendering-showcase.md");
+fn math_rendering_showcase_still_checks_and_still_demonstrates_malformed_math() {
+    let report = doctor_example("docs/examples/math-rendering-showcase.md");
+
+    assert!(
+        report.contains("malformed LaTeX math in answer `\\frac{1`"),
+        "the showcase must still demonstrate malformed math:\n{report}"
+    );
+    assert!(
+        report.contains("1 warning(s)"),
+        "exactly the demonstrated warning, nothing new:\n{report}"
+    );
 }
