@@ -229,6 +229,20 @@ fn push_run(runs: &mut Vec<InlineRun>, run: InlineRun) {
     }
 }
 
+/// Whether `marker`'s first occurrence in `text` sits inside a math span.
+/// The cloze parser asks this of a hole to learn whether its answer is a
+/// piece of a formula rather than prose.
+pub fn math_encloses(text: &str, marker: &str) -> bool {
+    let Some(byte_index) = text.find(marker) else {
+        return false;
+    };
+    let index = text[..byte_index].chars().count();
+    let chars: Vec<char> = text.chars().collect();
+    math_spans(&chars)
+        .iter()
+        .any(|span| span.content_start <= index && index < span.content_end)
+}
+
 fn math_spans(chars: &[char]) -> Vec<MathSpan> {
     if let Some(display) = display_math_span(chars) {
         return vec![display];

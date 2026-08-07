@@ -1126,6 +1126,19 @@ fn build_card(
         }
     }
 
+    fn hole_sits_in_math(segments: &[Seg], hole_seg: usize) -> bool {
+        let mut line = String::new();
+        for (si, segment) in segments.iter().enumerate() {
+            match segment {
+                Seg::Text(text) => line.push_str(text),
+                Seg::Hole(_) if si == hole_seg => line.push_str(BLANK),
+                Seg::Hole(_) => line.push_str(HIDDEN),
+                Seg::Image { .. } => {}
+            }
+        }
+        crate::inline::math_encloses(&line, BLANK)
+    }
+
     let holes: Vec<(usize, usize, &str)> = parsed
         .iter()
         .enumerate()
@@ -1210,6 +1223,9 @@ fn build_card(
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
         card.hole = Some(n as u32);
+        if hole_sits_in_math(&parsed[*hole_line], *hole_seg) {
+            card.display_back = Some(vec![format!("${answer_text}$")]);
+        }
         card.block_holes = block_holes.clone();
         card.images = images.clone();
         card.images_back = images_back.clone();
@@ -2260,6 +2276,40 @@ mod tests {
         assert_eq!(Some(1), deck.cards[1].hole);
         assert_eq!(vec!["over"], deck.cards[1].back);
         assert_eq!(vec!["the […] fox", "jumps ____"], deck.cards[1].context);
+    }
+
+    /// A hole cut out of a formula is a piece of that formula, so it has to
+    /// be shown as one. `back` is what the learner types and what identifies
+    /// the card, so the math form goes to `display_back` alone: revealing
+    /// `\pm` as the characters `\pm` shows source code as an answer.
+    #[test]
+    fn a_hole_inside_math_reveals_as_math_but_is_still_typed_as_written() {
+        let deck = parse("## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["\\pm"], deck.cards[0].back);
+        assert_eq!(["$\\pm$"], *deck.cards[0].back_for_display());
+    }
+
+    #[test]
+    fn a_hole_in_display_math_reveals_as_math_too() {
+        let deck = parse("## q\n---\n$$a^2 - b^2 = \\blank{(a-b)}(a+b)$$\n");
+        assert_eq!(["$(a-b)$"], *deck.cards[0].back_for_display());
+    }
+
+    #[test]
+    fn a_hole_in_prose_reveals_exactly_as_written() {
+        let deck = parse("## q\n---\nthe value is \\blank{dropped}\n");
+        assert_eq!(None, deck.cards[0].display_back);
+        assert_eq!(["dropped"], *deck.cards[0].back_for_display());
+    }
+
+    /// Two holes on one line, only one of them inside the formula.
+    #[test]
+    fn only_the_hole_inside_the_formula_reveals_as_math() {
+        let deck = parse("## q\n---\nthe \\blank{sign} in $x = \\blank{\\pm} y$\n");
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(None, deck.cards[0].display_back);
+        assert_eq!(["$\\pm$"], *deck.cards[1].back_for_display());
     }
 
     #[test]

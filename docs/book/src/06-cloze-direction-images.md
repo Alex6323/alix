@@ -33,6 +33,12 @@ your history.
 Reach for cloze when the *context* is the cue: a definition with its key term
 removed, a line of code with the operative token blanked.
 
+A blank inside `$...$` or `$$...$$` is a piece of the formula, and reveals as
+one: `$x = -b \blank{\pm} \sqrt{d}$` shows ± typeset, not the characters
+`\pm`. What you *type* at Reconstruct is still exactly what you wrote between
+the braces, so blank something typable. `\blank{4ac}` asks for the
+discriminant; `\blank{\pm}` asks the learner to spell a LaTeX command.
+
 ## Dual-direction cards: `direction:`
 
 Reviewing a card *both ways* is what you want for vocabulary and other reversible

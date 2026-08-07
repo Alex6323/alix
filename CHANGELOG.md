@@ -131,6 +131,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A cloze hole cut out of a formula now reveals as that formula's piece
+  rather than as its source: `$x = -b \blank{\pm} \sqrt{d}$` reveals a
+  typeset ± where it used to show the characters `\pm`. What you type at
+  Reconstruct is unchanged, so blank something typable.
+
 - The example images now show the card as the reader should read it. A
   choice example is photographed answered, because the cursor rests on
   option 1 and a picture of that reads as if option 1 were the answer:

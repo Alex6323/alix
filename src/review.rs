@@ -601,6 +601,27 @@ mod tests {
         );
     }
 
+    /// The end of the path the parser starts: a hole cut from a formula
+    /// reaches the client as a rendered math run, not as the characters the
+    /// author typed. Without this the learner reveals `\pm` and reads source.
+    #[test]
+    fn a_revealed_math_hole_carries_a_rendered_run() {
+        let cards = parser::parse_str("d.md", "## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n")
+            .expect("the deck parses");
+        let view = CardView::from(&cards[0]);
+
+        // Projection strips the delimiters into the run, so the text a client
+        // shows is unchanged; what changes is that it now carries a rendering.
+        assert_eq!(view.back, ["\\pm"]);
+        let run = &view.back_runs[0][0];
+        assert_eq!("\\pm", run.text);
+        assert!(
+            run.math.as_ref().is_some_and(|math| math.svg.is_some()),
+            "the revealed hole must be rendered, got {:?}",
+            run.math
+        );
+    }
+
     #[test]
     fn card_view_projects_math_across_every_card_surface() {
         let mut card = Card::plain(
