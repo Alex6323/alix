@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Deck authoring has a written rule for which card shape suits which
+  material, and one worked example per shape. `docs/card-shapes.md`
+  marks each row structural (the material has a property the shape
+  exploits, so any other shape wastes it) or judgement (more than one
+  shape is defensible), the manual includes it, and
+  `docs/examples/shapes/` demonstrates every row. Each example is held to
+  the shape it advertises, so a deck that stops producing what it
+  documents fails the suite.
+
 - Each running web-server instance now keeps an always-on local diagnostic log
   outside the decks directory. The current and one rolled file are capped at
   5 MiB each by default, contain operational timings and minted IDs but no
@@ -63,6 +72,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+
+- Generated decks now pick a card shape from the material rather than
+  choosing between plain and cloze. `alix generate` can produce card
+  tables, line-by-line reveals, both-direction cards, and draw cards,
+  which it previously had no way to emit, so a vocabulary source becomes
+  a table and a procedure becomes an ordered reveal. Its prompt is built
+  from the same rule the manual publishes, so the two cannot drift.
+  Setting `card_style` still pins one shape for a whole run.
 
 - `make web-debug` now runs the ordinary server with `--log http`, which keeps
   verbose request timings in the local log and mirrors them to stderr.
