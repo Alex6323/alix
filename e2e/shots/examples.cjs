@@ -141,7 +141,7 @@ async function answerChoice(page, source) {
   for (let i = 0; i < count; i += 1) {
     texts.push(await optionText(options.nth(i)));
   }
-  const question = normalize((await page.locator(".region.q").innerText()).split("\n").pop());
+  const question = await questionText(page);
   const answer = correctOption(question, texts, source);
   if (answer === null) {
     throw new Error(`no option answers ${question}: ${texts.join(" | ")}`);
@@ -167,6 +167,64 @@ async function revealSteps(page) {
     .filter(Boolean);
   if (lines.length < 2) {
     throw new Error(`a reveal: line example needs a multi-line answer, got ${lines.length}`);
+  }
+}
+
+/// The question as it reads on screen: the last line of the question region,
+/// since a card table puts its container's title above the term.
+async function questionText(page) {
+  return normalize((await page.locator(".region.q").innerText()).split("\n").pop());
+}
+
+/// Hand-drawn answers, keyed by the question they answer, as strokes in a
+/// unit square. An empty canvas photographs as an empty box, so the draw
+/// example has to carry ink for the shape to read as a drawing surface at
+/// all. Keyed rather than generic because a scribble under "draw the
+/// hiragana for ka" would be a wrong answer in a picture that teaches.
+const SKETCHES = {
+  'Draw the hiragana for "ka".': [
+    [
+      [0.24, 0.32],
+      [0.42, 0.27],
+      [0.62, 0.26],
+      [0.66, 0.36],
+      [0.63, 0.54],
+      [0.53, 0.71],
+      [0.4, 0.82],
+      [0.31, 0.84],
+      [0.28, 0.75],
+    ],
+    [
+      [0.42, 0.1],
+      [0.37, 0.32],
+      [0.3, 0.56],
+      [0.19, 0.86],
+    ],
+    [
+      [0.79, 0.33],
+      [0.83, 0.53],
+    ],
+  ],
+};
+
+/// Draw the card's answer on its canvas. The strokes are proportioned in a
+/// square, so they are mapped into one centred in the canvas rather than
+/// stretched across it.
+async function sketchAnswer(page, question) {
+  const canvas = page.locator(".card canvas").first();
+  if ((await canvas.count()) === 0) return;
+  const strokes = SKETCHES[question];
+  if (!strokes) throw new Error(`no sketch for a draw card asking: ${question}`);
+  const box = await canvas.boundingBox();
+  const side = Math.min(box.width, box.height) * 0.95;
+  const left = box.x + (box.width - side) / 2;
+  const top = box.y + (box.height - side) / 2;
+  for (const stroke of strokes) {
+    const points = stroke.map(([x, y]) => [left + x * side, top + y * side]);
+    await page.mouse.move(points[0][0], points[0][1]);
+    await page.mouse.down();
+    for (const [x, y] of points.slice(1)) await page.mouse.move(x, y, { steps: 12 });
+    await page.mouse.up();
   }
 }
 
@@ -229,6 +287,7 @@ async function main() {
       await page.locator(".card").first().waitFor({ state: "visible", timeout: 10_000 });
       const source = fs.readFileSync(deck.source, "utf8");
       await answerChoice(page, source);
+      await sketchAnswer(page, await questionText(page));
       if (/^reveal:\s*line\s*$/m.test(source)) await revealSteps(page);
 
       const out = path.join(EXAMPLES, deck.set, `${deck.name}.webp`);

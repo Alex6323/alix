@@ -57,7 +57,7 @@ $$x^2 + y^2 = 1$$
 <!-- id: card-2kecxz9fwvwb4zce4q1xpn80z5 -->
 
 ## Complete the inline quadratic formula.
-$x = \frac{-b \blank{\pm} \sqrt{b^2 - \blank{4ac}}}{2a}$
+$x = \frac{-b \pm \sqrt{\blank{b^2} - \blank{4ac}}}{2a}$
 <!-- id: card-3065zgmvgh9ne54yvshff7egsk -->
 
 ## Complete the displayed difference-of-squares identity.
