@@ -86,14 +86,50 @@ fn log_path_in(state_dir: Option<&Path>, data_dir: &Path, instance: &str) -> Pat
 fn instance_file_name(instance: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let digest = Sha256::digest(instance.as_bytes());
-    let mut name = String::with_capacity(41);
+    let label = readable_instance_label(instance);
+    let mut name = String::with_capacity(18 + label.len());
     name.push_str("alix-");
-    for byte in &digest[..16] {
+    name.push_str(&label);
+    name.push('-');
+    for byte in &digest[..4] {
         name.push(HEX[(byte >> 4) as usize] as char);
         name.push(HEX[(byte & 0x0f) as usize] as char);
     }
     name.push_str(".log");
     name
+}
+
+fn readable_instance_label(instance: &str) -> String {
+    if instance.contains(['/', '\\']) {
+        return "profile".into();
+    }
+
+    let mut label = String::new();
+    let mut pending_separator = false;
+    let mut characters = 0;
+    for character in instance.chars() {
+        if character.is_alphanumeric() {
+            if pending_separator && !label.is_empty() && characters < 32 {
+                label.push('-');
+                characters += 1;
+            }
+            pending_separator = false;
+            for lowercase in character.to_lowercase() {
+                if characters == 32 {
+                    break;
+                }
+                label.push(lowercase);
+                characters += 1;
+            }
+        } else if !label.is_empty() {
+            pending_separator = true;
+        }
+    }
+    if label.is_empty() {
+        "profile".into()
+    } else {
+        label
+    }
 }
 
 pub fn init(instance: &str, settings: Settings) -> io::Result<()> {
@@ -256,6 +292,15 @@ mod tests {
         let name = escape.file_name().unwrap().to_string_lossy();
         assert!(name.starts_with("alix-") && name.ends_with(".log"));
         assert!(!name.contains("evil") && !name.contains(".."));
+    }
+
+    #[test]
+    fn readable_instance_name_survives_with_a_digest_to_disambiguate_collisions() {
+        let amelie = instance_file_name("Amelie");
+
+        assert!(amelie.starts_with("alix-amelie-"));
+        assert!(amelie.ends_with(".log"));
+        assert_ne!(instance_file_name("a b"), instance_file_name("a-b"));
     }
 
     #[test]
