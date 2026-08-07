@@ -75,6 +75,7 @@ fn run_review_remains_alive_until_the_server_is_unblocked() {
         audience,
         auth: None,
         config_path: None,
+        log_path: Some(std::path::PathBuf::from("/state/alix-test.log")),
         pair: PairInfo {
             url: format!("http://127.0.0.1:{port}"),
             lan: false,

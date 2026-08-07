@@ -117,6 +117,16 @@ pub struct Session {
     pub stats: SessionStats,
 }
 
+struct SelectionDecision {
+    index: usize,
+    id: String,
+    tier: CardTier,
+    fresh: bool,
+    revealed: bool,
+    due: u64,
+    floor: u64,
+}
+
 /// What an exhausted Recognize sitting hides: cards workable at Recall right
 /// now, and cards no pick can be built for at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -533,41 +543,61 @@ impl Session {
         self.current_idx.is_some()
     }
 
-    fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
+    fn selection_decision(
+        &self,
+        i: usize,
+        store: &Store,
+        now_ms: u64,
+    ) -> Option<SelectionDecision> {
         let card = &self.cards[i];
-        if is_retired(card, store, self.options.retire_after_days) {
-            return false;
+        let id = card.id()?;
+        let tier = card_tier(store, &id, now_ms, self.options.retire_after_days);
+        if tier == CardTier::Retired {
+            return None;
         }
-        let Some(id) = card.id() else {
-            return false;
-        };
         let depth = self.options.depth;
-        let due = if depth == Depth::Recognize {
-            self.options.cram
-                || store
-                    .progress(&id)
-                    .is_none_or(|s| s.recognized_ms.is_none())
+        let progress = store.progress(&id);
+        let revealed = self.revealed.contains(id.as_str());
+        let due = if depth == Depth::Recognize || self.options.cram {
+            now_ms
         } else {
-            match store.progress(&id) {
-                Some(state) => {
-                    self.options.cram
-                        || self.scheduler.is_due(state, depth, now_ms)
-                        // A card revealed this sitting stays its acquire card
-                        // even though the store already sees it engaged.
-                        || self.revealed.contains(id.as_str())
-                }
-                None => true,
-            }
+            progress
+                .map(|state| self.scheduler.due_at(state, depth))
+                .unwrap_or(now_ms)
         };
-        if !due {
-            return false;
+        let due_now = if depth == Depth::Recognize {
+            self.options.cram || progress.is_none_or(|state| state.recognized_ms.is_none())
+        } else {
+            self.options.cram
+                || due <= now_ms
+                // A card revealed this sitting stays its acquire card even
+                // though the store already sees it engaged.
+                || revealed
+        };
+        if !due_now {
+            return None;
         }
-        floor_passed(
-            &self.floors,
-            &id,
-            self.scheduler.acquire_cooldown_ms(),
-            now_ms,
-        )
+        let floor = self
+            .floors
+            .get(id.as_str())
+            .map(|at| at.saturating_add(self.scheduler.acquire_cooldown_ms()))
+            .unwrap_or(0);
+        if now_ms < floor {
+            return None;
+        }
+        Some(SelectionDecision {
+            index: i,
+            id,
+            tier,
+            fresh: progress.is_none() || revealed,
+            revealed,
+            due,
+            floor,
+        })
+    }
+
+    fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
+        self.selection_decision(i, store, now_ms).is_some()
     }
 
     fn floor(&mut self, id: &str, now_ms: u64) {
@@ -584,16 +614,22 @@ impl Session {
     // The single site where a card becomes current, so also the single site
     // that stamps its first presentation.
     fn select(&mut self, store: &mut Store, now_ms: u64, keep_current: bool) {
-        let sticky = if keep_current { self.current_idx } else { None }
-            .filter(|&i| self.roster.contains(&i) && self.servable(i, store, now_ms));
-        let next = sticky.or_else(|| {
+        let sticky = if keep_current { self.current_idx } else { None }.and_then(|i| {
+            self.roster
+                .contains(&i)
+                .then(|| self.selection_decision(i, store, now_ms))
+                .flatten()
+        });
+        let decision = sticky.or_else(|| {
             self.roster
                 .iter()
                 .copied()
-                .find(|&i| self.servable(i, store, now_ms))
+                .find_map(|i| self.selection_decision(i, store, now_ms))
         });
+        let next = decision.as_ref().map(|decision| decision.index);
+        let changed = next != self.current_idx;
         if let Some(i) = next
-            && next != self.current_idx
+            && changed
         {
             self.appearances[i] = self.appearances[i].saturating_add(1);
         }
@@ -610,6 +646,24 @@ impl Session {
             .copied()
             .filter(|&i| self.servable(i, store, now_ms))
             .count();
+        if changed
+            && crate::log::enabled(crate::log::Target::Select)
+            && let Some(decision) = decision
+        {
+            crate::log::emit(
+                crate::log::Target::Select,
+                format_args!(
+                    "card={} tier={} fresh={} revealed={} due={} floor={} roster={}",
+                    decision.id,
+                    decision.tier.wire_name(),
+                    u8::from(decision.fresh),
+                    u8::from(decision.revealed),
+                    decision.due,
+                    decision.floor,
+                    self.roster.len(),
+                ),
+            );
+        }
     }
 }
 

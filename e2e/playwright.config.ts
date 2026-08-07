@@ -32,7 +32,7 @@ export default defineConfig({
   // milliseconds, then one or two subresources (a sync script, a font) never
   // complete, so `domcontentloaded` never fires. Recurred on warm runners
   // (2026-07-13, 2026-07-14), so it is not cold-start starvation; the
-  // server-side request log (ALIX_HTTP_LOG below) exists to pin it on the
+  // server-side request log (`--log http` below) exists to pin it on the
   // next occurrence. Until it is found, retry in CI only: a stall passes on
   // retry and is reported "flaky" (still visible, with its trace retained),
   // while a genuine regression fails all three attempts. Locally: no
@@ -60,14 +60,13 @@ export default defineConfig({
       // real platform config — their real decks dir and AI backend.
       command:
         `node "${PREPARE_SCRIPT}" kids && ` +
-        `cargo run --quiet -- --config "${KIDS_CONFIG}" "${KIDS_DECKS_DIR}" --port ${KIDS_PORT}`,
+        `cargo run --quiet -- --config "${KIDS_CONFIG}" "${KIDS_DECKS_DIR}" --port ${KIDS_PORT} --log http`,
       cwd: REPO_ROOT,
       url: KIDS_BASE_URL,
       timeout: 180_000, // cargo may need to build first
       // The {#server-subresource-stall} net: log every request the server
       // loop handles into this suite's output, so a stalled run shows
       // whether the missing request ever reached the loop.
-      env: { ALIX_HTTP_LOG: "1" },
       stderr: "pipe",
       // Never reuse: a server carries session state (and a handle on a decks
       // dir this config wipes and recopies each run). Reusing one that a
@@ -79,12 +78,11 @@ export default defineConfig({
     {
       command:
         `node "${PREPARE_SCRIPT}" adult && ` +
-        `cargo run --quiet -- --config "${ADULT_CONFIG}" "${ADULT_DECKS_DIR}" --port ${ADULT_PORT}`,
+        `cargo run --quiet -- --config "${ADULT_CONFIG}" "${ADULT_DECKS_DIR}" --port ${ADULT_PORT} --log http`,
       cwd: REPO_ROOT,
       url: ADULT_BASE_URL,
       timeout: 180_000,
       // Same {#server-subresource-stall} net as the kids server above.
-      env: { ALIX_HTTP_LOG: "1" },
       stderr: "pipe",
       // Never reuse: a server carries session state (and a handle on a decks
       // dir this config wipes and recopies each run). Reusing one that a

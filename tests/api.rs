@@ -228,6 +228,7 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
         audience: config.serve.audience,
         auth,
         config_path: None,
+        log_path: Some(PathBuf::from("/state/alix-test.log")),
         pair: PairInfo {
             url: base.to_string(),
             lan: false,
@@ -1493,6 +1494,15 @@ fn get_api_doctor_returns_200_with_doctor_rows() {
     let rows = body["rows"].as_array().expect("rows is an array");
     assert!(!rows.is_empty(), "body: {body}");
     assert!(rows.iter().any(|r| r["name"] == "config"), "body: {body}");
+    assert!(
+        rows.iter().any(|r| {
+            r["name"] == "log"
+                && r["detail"]
+                    .as_str()
+                    .is_some_and(|detail| detail.contains(".log"))
+        }),
+        "body: {body}"
+    );
 }
 
 /// The doctor's binary probes spawn subprocesses; a parked probe must not

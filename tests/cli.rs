@@ -61,6 +61,75 @@ fn test_config_dir(home: &Path) -> PathBuf {
     }
 }
 
+fn test_state_dir(home: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        home.join("Library/Application Support/alix")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        home.join("alix")
+    }
+}
+
+struct RunningServer(std::process::Child);
+
+impl std::ops::Deref for RunningServer {
+    type Target = std::process::Child;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for RunningServer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for RunningServer {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn take_server_port(child: &mut std::process::Child) -> u16 {
+    use std::io::BufRead;
+
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let url_line = std::io::BufReader::new(stdout)
+        .lines()
+        .map_while(Result::ok)
+        .find(|line| line.contains("http://127.0.0.1:"))
+        .expect("the server never printed its URL");
+    url_line
+        .split("http://127.0.0.1:")
+        .nth(1)
+        .and_then(|rest| {
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            digits.parse().ok()
+        })
+        .expect("the URL line carries no port")
+}
+
+fn server_request(port: u16, method: &str, path: &str, body: &str) -> Vec<u8> {
+    use std::io::{Read, Write};
+
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))
+        .expect("failed to connect to the served port");
+    write!(
+        stream,
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .expect("failed to send the request");
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).unwrap();
+    response
+}
+
 /// Writes `contents` to `dir/name` and returns its path as a string.
 fn write(dir: &Path, name: &str, contents: &str) -> String {
     let path = dir.join(name);
@@ -2103,6 +2172,10 @@ fn doctor_bare_reports_config_store_and_decks_sections() {
     assert!(text.contains("config"), "{text}");
     assert!(text.contains("store"), "{text}");
     assert!(text.contains("decks"), "{text}");
+    assert!(
+        text.contains("log") && text.contains("alix-default-") && text.contains(".log"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -4539,16 +4612,18 @@ fn sigterm_flushes_and_exits_the_server_cleanly() {
     );
     assert!(alix(&["deck", "init", &deck]).status.success());
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_alix"))
-        .arg(dir.path())
-        .args(["--port", "0"])
-        .env("HOME", home.path())
-        .env("XDG_CONFIG_HOME", home.path())
-        .env("XDG_DATA_HOME", home.path())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .expect("failed to spawn the alix server");
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .arg(dir.path())
+            .args(["--port", "0"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
 
     // Readiness: the URL line prints only after the socket is bound.
     let stdout = child.stdout.take().expect("stdout was piped");
@@ -4594,6 +4669,265 @@ fn sigterm_flushes_and_exits_the_server_cleanly() {
 
 #[cfg(unix)]
 #[test]
+fn a_bare_server_creates_the_default_instance_log_without_a_flag() {
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write(dir.path(), "d.md", VALID_DECK);
+    let config_dir = test_config_dir(home.path());
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join("config.toml"),
+        format!("decks_dir = {:?}\n", dir.path().to_string_lossy()),
+    )
+    .unwrap();
+
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .args(["--port", "0"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
+
+    take_server_port(&mut child);
+
+    let state = test_state_dir(home.path());
+    let names = std::fs::read_dir(&state)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".log"))
+        .collect::<Vec<_>>();
+    assert_eq!(1, names.len(), "state files: {names:?}");
+    assert!(
+        names[0].starts_with("alix-default-") && names[0].ends_with(".log"),
+        "state files: {names:?}"
+    );
+
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+}
+
+#[cfg(unix)]
+#[test]
+fn selecting_a_card_writes_its_id_and_decision_to_the_normal_log() {
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write(dir.path(), "d.md", VALID_DECK);
+
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .arg(dir.path())
+            .args(["--port", "0"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
+    let port = take_server_port(&mut child);
+
+    let response = server_request(port, "POST", "/api/select", r#"{"deck":"d.md"}"#);
+    assert!(
+        response.starts_with(b"HTTP/1.1 200"),
+        "response: {response:?}"
+    );
+
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+    let state = test_state_dir(home.path());
+    let log_path = std::fs::read_dir(&state)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|extension| extension == "log"))
+        .expect("the default instance log exists");
+    let log = std::fs::read_to_string(log_path).unwrap();
+    assert!(
+        log.contains("target=select card=card-math1")
+            && log.contains("tier=untouched")
+            && log.contains("fresh=1")
+            && log.contains("revealed=0")
+            && log.contains("due=")
+            && log.contains("floor=")
+            && log.contains("roster=1"),
+        "log: {log:?}"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_log_open_failure_warns_once_without_stopping_the_server() {
+    use std::io::Read;
+
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let data = TempDir::new().unwrap();
+    write(dir.path(), "d.md", VALID_DECK);
+    let blocked = home.path().join("state-is-a-file");
+    std::fs::write(&blocked, "not a directory").unwrap();
+
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .arg(dir.path())
+            .args(["--port", "0"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", data.path())
+            .env("XDG_STATE_HOME", &blocked)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
+
+    take_server_port(&mut child);
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert_eq!(
+        1,
+        stderr.matches("could not open the server log").count(),
+        "{stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() {
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let filename = "private-depression-notes.md";
+    let title = "PRIVATE_DECK_TITLE_83YQ";
+    let front = "PRIVATE_FRONT_29QW";
+    let back = "PRIVATE_BACK_71JZ";
+    let note = "PRIVATE_NOTE_44PX";
+    let deck = format!(
+        "---\nformat-version: 1\nid: deck-private83yq\ntitle: {title}\n---\n\
+         ## {front} <!-- id: card-private29qw -->\n{back}\n\n> {note}\n"
+    );
+    write(dir.path(), filename, &deck);
+
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .arg(dir.path())
+            .args(["--port", "0", "--log", "http,select"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
+    let port = take_server_port(&mut child);
+
+    let body = format!(r#"{{"deck":"{filename}"}}"#);
+    let response = server_request(port, "POST", "/api/select", &body);
+    assert!(
+        response.starts_with(b"HTTP/1.1 200"),
+        "response: {response:?}"
+    );
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+
+    let state = test_state_dir(home.path());
+    let log = std::fs::read_dir(&state)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().contains(".log"))
+        })
+        .map(|path| std::fs::read_to_string(path).unwrap())
+        .collect::<String>();
+    assert!(
+        log.contains("target=select card=card-private29qw"),
+        "log: {log:?}"
+    );
+    for private in [
+        front,
+        back,
+        note,
+        filename,
+        "private-depression-notes",
+        title,
+        dir.path().to_str().unwrap(),
+    ] {
+        assert!(!log.contains(private), "log leaked {private:?}: {log:?}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn the_real_server_keeps_exactly_two_log_files_within_the_configured_cap() {
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write(dir.path(), "d.md", VALID_DECK);
+    let config = write(
+        home.path(),
+        "config.toml",
+        "decks_dir = \".\"\n[log]\nmax_bytes = 128\nverbose = true\n",
+    );
+
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .arg(dir.path())
+            .args(["--port", "0", "--config", &config])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
+    let port = take_server_port(&mut child);
+
+    for _ in 0..20 {
+        let response = server_request(port, "GET", "/api/version", "");
+        assert!(
+            response.starts_with(b"HTTP/1.1 200"),
+            "response: {response:?}"
+        );
+    }
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+
+    let mut logs = std::fs::read_dir(test_state_dir(home.path()))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().contains(".log"))
+        })
+        .collect::<Vec<_>>();
+    logs.sort();
+    assert_eq!(2, logs.len(), "logs: {logs:?}");
+    for path in logs {
+        assert!(
+            std::fs::metadata(&path).unwrap().len() <= 128,
+            "oversized: {path:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn the_http_log_prints_a_timing_line_for_a_served_request() {
     let dir = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
@@ -4604,42 +4938,21 @@ fn the_http_log_prints_a_timing_line_for_a_served_request() {
     );
     assert!(alix(&["deck", "init", &deck]).status.success());
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_alix"))
-        .arg(dir.path())
-        .args(["--port", "0"])
-        .env("HOME", home.path())
-        .env("XDG_CONFIG_HOME", home.path())
-        .env("XDG_DATA_HOME", home.path())
-        .env("ALIX_HTTP_LOG", "1")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn the alix server");
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .arg(dir.path())
+            .args(["--port", "0", "--log", "http"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
 
-    // Readiness: the URL line prints only after the socket is bound.
-    let stdout = child.stdout.take().expect("stdout was piped");
-    let (url_tx, url_rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        use std::io::BufRead;
-        for line in std::io::BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
-            if line.contains("http://127.0.0.1:") {
-                let _ = url_tx.send(line);
-                break;
-            }
-        }
-    });
-    let url_line = url_rx
-        .recv_timeout(std::time::Duration::from_secs(30))
-        .expect("the server never printed its URL");
-    let port: u16 = url_line
-        .split("http://127.0.0.1:")
-        .nth(1)
-        .and_then(|rest| {
-            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-            digits.parse().ok()
-        })
-        .expect("the URL line carries no port");
+    let port = take_server_port(&mut child);
 
     let stderr = child.stderr.take().expect("stderr was piped");
     let (log_tx, log_rx) = std::sync::mpsc::channel();
@@ -4647,30 +4960,25 @@ fn the_http_log_prints_a_timing_line_for_a_served_request() {
         use std::io::BufRead;
         for line in std::io::BufReader::new(stderr).lines() {
             let Ok(line) = line else { break };
-            if line.contains("[http]") {
+            if line.contains("target=http") {
                 let _ = log_tx.send(line);
                 break;
             }
         }
     });
 
-    {
-        use std::io::{Read, Write};
-        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))
-            .expect("failed to connect to the served port");
-        stream
-            .write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
-            .expect("failed to send the request");
-        let mut response = Vec::new();
-        let _ = stream.read_to_end(&mut response);
-    }
+    server_request(port, "GET", "/", "");
 
     let log_line = log_rx
         .recv_timeout(std::time::Duration::from_secs(10))
-        .expect("no [http] timing line reached stderr for the request");
+        .expect("no HTTP timing line reached stderr for the request");
     assert!(
-        log_line.contains("at=") && log_line.contains("took=") && log_line.contains("GET /"),
-        "the timing line must carry at=, took=, and the request line: {log_line}"
+        log_line.contains("at=") && log_line.contains("took=") && log_line.contains("w="),
+        "the timing line must carry at=, took=, and w=: {log_line}"
+    );
+    assert!(
+        !log_line.contains("GET") && !log_line.contains('/'),
+        "{log_line}"
     );
 
     child.kill().expect("failed to stop the server");

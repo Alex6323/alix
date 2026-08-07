@@ -54,27 +54,22 @@ fn json_body<T: serde::de::DeserializeOwned>(request: &mut Request) -> Option<T>
     serde_json::from_slice(&bytes).ok()
 }
 
-/// One line per request under `ALIX_HTTP_LOG`, emitted when the request is done
-/// rather than when it arrives: a stall shows as either a late `at=` (the
-/// request waited to be read at all) or a large `took=` (the handler was slow),
-/// and those have different causes.
 struct RequestTiming {
     worker: usize,
-    method: String,
-    path: String,
     popped: Instant,
     since_start: Duration,
 }
 
 impl Drop for RequestTiming {
     fn drop(&mut self) {
-        eprintln!(
-            "[http] at={}ms took={}ms w={} {} {}",
-            self.since_start.as_millis(),
-            self.popped.elapsed().as_millis(),
-            self.worker,
-            self.method,
-            self.path
+        crate::log::emit(
+            crate::log::Target::Http,
+            format_args!(
+                "at={}ms took={}ms w={}",
+                self.since_start.as_millis(),
+                self.popped.elapsed().as_millis(),
+                self.worker,
+            ),
         );
     }
 }
@@ -89,6 +84,7 @@ pub struct ReviewOptions {
     pub audience: Audience,
     pub auth: Option<String>,
     pub config_path: Option<PathBuf>,
+    pub log_path: Option<PathBuf>,
     pub pair: PairInfo,
     pub scoped: bool,
     pub cfg: assemble::AssembleConfig,
@@ -199,6 +195,7 @@ pub fn run_review(
         audience,
         auth,
         config_path,
+        log_path,
         pair,
         scoped,
         cfg,
@@ -209,7 +206,6 @@ pub fn run_review(
     let picker_keys = PickerKeysDto::from(&picker_keys);
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
-    let http_log = std::env::var_os("ALIX_HTTP_LOG").is_some();
     let started_at = Instant::now();
 
     let failure = OwnerFailure::new(Arc::clone(&server));
@@ -307,6 +303,7 @@ pub fn run_review(
             let pair = &pair;
             let auth = &auth;
             let config_path = &config_path;
+            let log_path = &log_path;
             scope.spawn(move || loop {
                 let mut request = match server.recv() {
                     Ok(r) => r,
@@ -327,10 +324,8 @@ pub fn run_review(
                 // Dropped at the end of the iteration, however this request
                 // exits, so it times the whole pop-to-response span rather than
                 // one handler's happy path.
-                let _timing = http_log.then(|| RequestTiming {
+                let _timing = crate::log::enabled(crate::log::Target::Http).then(|| RequestTiming {
                     worker,
-                    method: method.to_string(),
-                    path: path.clone(),
                     popped: Instant::now(),
                     since_start: started_at.elapsed(),
                 });
@@ -441,6 +436,7 @@ pub fn run_review(
                         let (cfg, _) = doctor::check_config(config_path.as_deref());
                         let rows = vec![
                             cfg,
+                            doctor::check_log(log_path.clone()),
                             doctor::check_store(Some(store_path)),
                             doctor::check_decks(&decks_root),
                             doctor::check_binary(

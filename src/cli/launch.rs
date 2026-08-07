@@ -47,8 +47,17 @@ pub(crate) fn generate_token() -> Result<String> {
     Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
+pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
+    let logging = alix::log::Settings {
+        max_bytes: config.log.max_bytes,
+        verbose: config.log.verbose || !args.log.is_empty(),
+        stderr: alix::log::Targets::from_slice(&args.log),
+    };
+    if let Err(error) = alix::log::init(instance, logging) {
+        eprintln!("warning: could not open the server log: {error}");
+    }
+    let log_path = alix::log::log_path(instance);
     let scoped = args.dir.is_some();
     let (decks_dir, user_root) = match &args.dir {
         None => {
@@ -104,6 +113,7 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
         audience: config.serve.audience,
         auth: token,
         config_path: args.config.clone(),
+        log_path,
         pair,
         scoped,
         cfg: assemble::AssembleConfig {

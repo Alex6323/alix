@@ -260,20 +260,55 @@ fn launch_named(args: Vec<String>) -> Result<()> {
 }
 
 pub(crate) fn launch_profile(name: &str) -> Result<()> {
+    launch_profile_with_log(name, Vec::new())
+}
+
+pub(crate) fn launch_profile_with_log(name: &str, log: Vec<alix::log::Target>) -> Result<()> {
     validate_name(name)?;
     let path = config_path_in(&profiles_dir()?, name);
     if !path.exists() {
         bail!("no profile `{name}` (looked in {})", path.display());
     }
-    crate::launch::launch(crate::LaunchArgs {
-        dir: None,
-        port: None,
-        lan: true,
-        token: None,
-        session: None,
-        config: Some(path),
-        launch_all: false,
-    })
+    crate::launch::launch(
+        crate::LaunchArgs {
+            dir: None,
+            port: None,
+            lan: true,
+            token: None,
+            session: None,
+            config: Some(path),
+            log,
+            launch_all: false,
+        },
+        name,
+    )
+}
+
+pub(crate) fn instance_name_for_launch(config: Option<&Path>, dir: Option<&Path>) -> String {
+    if let Some(name) = config
+        .filter(|path| {
+            path.parent()
+                .and_then(Path::file_name)
+                .is_some_and(|name| name == "profiles")
+        })
+        .and_then(Path::file_stem)
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+    {
+        return name.to_string();
+    }
+    if let Some(path) = config {
+        return path_instance("config", path);
+    }
+    if let Some(path) = dir {
+        return path_instance("scoped", path);
+    }
+    "default".into()
+}
+
+fn path_instance(kind: &str, path: &Path) -> String {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    format!("{kind}:{}", canonical.display())
 }
 
 pub(crate) fn resolve_default() -> Result<Option<String>> {
@@ -295,7 +330,7 @@ fn resolve_default_in(dir: &Path) -> Result<Option<String>> {
     Ok(Some(name))
 }
 
-pub(crate) fn launch_all() -> Result<()> {
+pub(crate) fn launch_all(log: &[alix::log::Target]) -> Result<()> {
     let dir = profiles_dir()?;
     let plan = plan_launch_all(&dir)?;
     if plan.is_empty() {
@@ -318,7 +353,10 @@ pub(crate) fn launch_all() -> Result<()> {
         // Never drive this from a test: under a test harness `current_exe` is
         // the test binary and `profile` reads as a name filter, so each child
         // re-runs the spawning test and the machine forks until it dies.
-        match Command::new(&executable).arg("profile").arg(&name).spawn() {
+        match Command::new(&executable)
+            .args(launch_all_child_args(&name, log))
+            .spawn()
+        {
             Ok(child) => children.push((name, child)),
             Err(error) => eprintln!("profile `{name}` failed to launch: {error}"),
         }
@@ -331,6 +369,22 @@ pub(crate) fn launch_all() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn launch_all_child_args(name: &str, log: &[alix::log::Target]) -> Vec<String> {
+    let mut args = Vec::new();
+    if !log.is_empty() {
+        args.push("--log".into());
+        args.push(
+            log.iter()
+                .map(|target| target.name())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    args.push("profile".into());
+    args.push(name.into());
+    args
 }
 
 /// What a finished child means for the operator, separated from the spawning
@@ -379,6 +433,27 @@ mod tests {
         let dir = Path::new("/cfg/profiles");
         assert_eq!(dir.join("timmy.toml"), config_path_in(dir, "timmy"));
         assert_eq!(dir.join("default"), default_marker_in(dir));
+    }
+
+    #[test]
+    fn launch_inputs_select_stable_distinct_log_instances_without_exposing_paths() {
+        assert_eq!(
+            "timmy",
+            instance_name_for_launch(Some(Path::new("/cfg/profiles/timmy.toml")), None)
+        );
+        let first = instance_name_for_launch(Some(Path::new("/one/config.toml")), None);
+        let second = instance_name_for_launch(Some(Path::new("/two/config.toml")), None);
+        assert!(first.starts_with("config:") && second.starts_with("config:"));
+        assert_ne!(
+            alix::log::log_path(&first),
+            alix::log::log_path(&second),
+            "independent config instances must never share a writer"
+        );
+        assert!(
+            instance_name_for_launch(None, Some(Path::new("/private/decks")))
+                .starts_with("scoped:")
+        );
+        assert_eq!("default", instance_name_for_launch(None, None));
     }
 
     #[test]
@@ -516,6 +591,21 @@ mod tests {
         assert_eq!(
             vec![("anna".to_string(), 7001), ("timmy".to_string(), 7002)],
             plan_launch_all(&dir).unwrap()
+        );
+    }
+
+    #[test]
+    fn launch_all_forwards_log_targets_before_the_profile_subcommand() {
+        assert_eq!(
+            vec!["--log", "http,select", "profile", "timmy"],
+            launch_all_child_args(
+                "timmy",
+                &[alix::log::Target::Http, alix::log::Target::Select]
+            )
+        );
+        assert_eq!(
+            vec!["profile", "timmy"],
+            launch_all_child_args("timmy", &[])
         );
     }
 

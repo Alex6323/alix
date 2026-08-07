@@ -3,6 +3,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
+    str::FromStr,
     sync::{Mutex, OnceLock},
 };
 
@@ -13,13 +14,50 @@ pub const DEFAULT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 static SINK: OnceLock<Sink> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Target {
     Http,
     Select,
 }
 
+impl FromStr for Target {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "http" => Ok(Self::Http),
+            "select" => Ok(Self::Select),
+            _ => Err(format!(
+                "unknown log target {value:?}: expected http or select"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Targets {
+    http: bool,
+    select: bool,
+}
+
+impl Targets {
+    pub fn from_slice(targets: &[Target]) -> Self {
+        Self {
+            http: targets.contains(&Target::Http),
+            select: targets.contains(&Target::Select),
+        }
+    }
+
+    fn contains(self, target: Target) -> bool {
+        match target {
+            Target::Http => self.http,
+            Target::Select => self.select,
+        }
+    }
+}
+
 impl Target {
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Http => "http",
             Self::Select => "select",
@@ -31,6 +69,7 @@ impl Target {
 pub struct Settings {
     pub max_bytes: u64,
     pub verbose: bool,
+    pub stderr: Targets,
 }
 
 impl Default for Settings {
@@ -38,6 +77,7 @@ impl Default for Settings {
         Self {
             max_bytes: DEFAULT_MAX_BYTES,
             verbose: false,
+            stderr: Targets::default(),
         }
     }
 }
@@ -45,11 +85,16 @@ impl Default for Settings {
 struct Sink {
     writer: Mutex<CappedWriter>,
     verbose: bool,
+    stderr: Targets,
 }
 
 impl Sink {
-    fn enabled(&self, target: Target) -> bool {
+    fn file_enabled(&self, target: Target) -> bool {
         self.verbose || target == Target::Select
+    }
+
+    fn enabled(&self, target: Target) -> bool {
+        self.file_enabled(target) || self.stderr.contains(target)
     }
 }
 
@@ -61,11 +106,15 @@ pub fn emit(target: Target, fields: fmt::Arguments<'_>) {
     let Some(sink) = SINK.get().filter(|sink| sink.enabled(target)) else {
         return;
     };
-    let Ok(mut writer) = sink.writer.lock() else {
-        return;
-    };
     let line = format_line(target, fields);
-    let _ = writer.write_all(line.as_bytes());
+    if sink.file_enabled(target)
+        && let Ok(mut writer) = sink.writer.lock()
+    {
+        let _ = writer.write_all(line.as_bytes());
+    }
+    if sink.stderr.contains(target) {
+        let _ = std::io::stderr().write_all(line.as_bytes());
+    }
 }
 
 fn format_line(target: Target, fields: fmt::Arguments<'_>) -> String {
@@ -100,6 +149,11 @@ fn instance_file_name(instance: &str) -> String {
 }
 
 fn readable_instance_label(instance: &str) -> String {
+    if let Some((kind, _)) = instance.split_once(':')
+        && matches!(kind, "config" | "scoped")
+    {
+        return kind.into();
+    }
     if instance.contains(['/', '\\']) {
         return "profile".into();
     }
@@ -153,6 +207,7 @@ pub fn init(instance: &str, settings: Settings) -> io::Result<()> {
     SINK.set(Sink {
         writer: Mutex::new(writer),
         verbose: settings.verbose,
+        stderr: settings.stderr,
     })
     .map_err(|_| {
         io::Error::new(
@@ -269,6 +324,13 @@ mod tests {
     }
 
     #[test]
+    fn target_names_parse_exactly_without_a_level_ladder() {
+        assert_eq!(Ok(Target::Http), "http".parse());
+        assert_eq!(Ok(Target::Select), "select".parse());
+        assert!("debug".parse::<Target>().is_err());
+    }
+
+    #[test]
     fn log_path_prefers_state_and_falls_back_to_data() {
         let state = log_path_in(Some(Path::new("/state")), Path::new("/data"), "profile-a");
         let data = log_path_in(None, Path::new("/data"), "profile-a");
@@ -297,10 +359,13 @@ mod tests {
     #[test]
     fn readable_instance_name_survives_with_a_digest_to_disambiguate_collisions() {
         let amelie = instance_file_name("Amelie");
+        let config = instance_file_name("config:/private/Amelie/decks.toml");
 
         assert!(amelie.starts_with("alix-amelie-"));
         assert!(amelie.ends_with(".log"));
         assert_ne!(instance_file_name("a b"), instance_file_name("a-b"));
+        assert!(config.starts_with("alix-config-") && config.ends_with(".log"));
+        assert!(!config.contains("private") && !config.contains("Amelie"));
     }
 
     #[test]

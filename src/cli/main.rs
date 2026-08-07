@@ -66,6 +66,10 @@ struct LaunchArgs {
     #[arg(long)]
     config: Option<PathBuf>,
 
+    /// Mirror comma-separated log targets to stderr and record verbose targets.
+    #[arg(long, value_delimiter = ',', value_name = "TARGETS")]
+    log: Vec<alix::log::Target>,
+
     /// Launch every profile at once, each on its own port and bound to the LAN.
     /// Runs in the foreground; Ctrl-C (or closing the window) stops them all.
     #[arg(long, conflicts_with_all = ["dir", "config"])]
@@ -663,14 +667,18 @@ fn main() -> Result<()> {
     match cli.command {
         None => {
             if cli.launch.launch_all {
-                profile::launch_all()
+                profile::launch_all(&cli.launch.log)
             } else if cli.launch.dir.is_none() && cli.launch.config.is_none() {
                 match profile::resolve_default()? {
-                    Some(name) => profile::launch_profile(&name),
-                    None => launch(cli.launch),
+                    Some(name) => profile::launch_profile_with_log(&name, cli.launch.log),
+                    None => launch(cli.launch, "default"),
                 }
             } else {
-                launch(cli.launch)
+                let instance = profile::instance_name_for_launch(
+                    cli.launch.config.as_deref(),
+                    cli.launch.dir.as_deref(),
+                );
+                launch(cli.launch, &instance)
             }
         }
         Some(Command::Profile(cmd)) => profile::run(cmd),

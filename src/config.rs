@@ -424,6 +424,21 @@ impl Default for ServeConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LogConfig {
+    pub max_bytes: u64,
+    pub verbose: bool,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            max_bytes: crate::log::DEFAULT_MAX_BYTES,
+            verbose: false,
+        }
+    }
+}
+
 // Not `Eq`: `retention` is an `f64`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReviewConfig {
@@ -510,6 +525,7 @@ pub struct Config {
     pub trace: TraceConfig,
     pub ai: AiConfig,
     pub serve: ServeConfig,
+    pub log: LogConfig,
     pub review: ReviewConfig,
     pub decks_dir: Option<PathBuf>,
 }
@@ -537,6 +553,8 @@ struct RawConfig {
     ai: RawAi,
     #[serde(default)]
     serve: RawServe,
+    #[serde(default)]
+    log: RawLog,
     #[serde(default)]
     review: RawReviewConfig,
     decks_dir: Option<String>,
@@ -586,6 +604,13 @@ struct RawServe {
     port: Option<u16>,
     token: Option<String>,
     audience: Option<Audience>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawLog {
+    max_bytes: Option<u64>,
+    verbose: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -896,6 +921,17 @@ impl Config {
             serve.audience = audience;
         }
 
+        let mut log = LogConfig::default();
+        if let Some(max_bytes) = raw.log.max_bytes {
+            if max_bytes == 0 {
+                bail!("log.max_bytes must be positive");
+            }
+            log.max_bytes = max_bytes;
+        }
+        if let Some(verbose) = raw.log.verbose {
+            log.verbose = verbose;
+        }
+
         let mut review = ReviewConfig::default();
         if let Some(retention) = raw.review.retention {
             review.retention = retention.clamp(MIN_RETENTION, MAX_RETENTION);
@@ -923,6 +959,7 @@ impl Config {
             trace,
             ai,
             serve,
+            log,
             review,
             decks_dir,
         })
@@ -1067,7 +1104,7 @@ pub fn default_config_toml() -> &'static str {
 # leave commented keep the built-in default, so improvements to the defaults
 # in newer versions still reach you. Keep the section headers ([keys.review],
 # [keys.picker], [keys.browse], [ask], [generate], [exam], [trace], [ai],
-# [serve]) so an uncommented line lands in the right section.
+# [serve], [log]) so an uncommented line lands in the right section.
 #
 # Keys are written as a single character ("j"), a special key name
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
@@ -1204,6 +1241,12 @@ pub fn default_config_toml() -> &'static str {
 [serve]
 # port = 7777                   # default port (--port overrides per instance)
 # audience = "adult"            # or "kids": which frontend `/` serves, and the tutor's voice
+
+# The always-on local server log. `--log` adds verbose records and mirrors the
+# selected targets to stderr for a developer watching the terminal.
+[log]
+# max_bytes = 5242880           # cap for each of the current and rolled files
+# verbose = false               # also record verbose targets such as HTTP timings
 
 # Review pacing (how the FSRS scheduler paces you). Personal — a workspace can
 # override these in its own alix.local.toml (which is never shared).
@@ -1751,6 +1794,20 @@ mod tests {
         assert_eq!(def.serve.audience, Audience::Adult);
         let c = Config::from_toml("[serve]\naudience = \"kids\"\n").unwrap();
         assert_eq!(c.serve.audience, Audience::Kids);
+    }
+
+    #[test]
+    fn log_defaults_are_bounded_and_the_section_is_strictly_configurable() {
+        let defaults = Config::default();
+        assert_eq!(crate::log::DEFAULT_MAX_BYTES, defaults.log.max_bytes);
+        assert!(!defaults.log.verbose);
+
+        let configured = Config::from_toml("[log]\nmax_bytes = 4096\nverbose = true\n").unwrap();
+        assert_eq!(4096, configured.log.max_bytes);
+        assert!(configured.log.verbose);
+        assert!(Config::from_toml("[log]\nmax_bytes = 0\n").is_err());
+        assert!(Config::from_toml("[log]\nlevel = \"debug\"\n").is_err());
+        assert!(default_config_toml().contains("[log]"));
     }
 
     #[test]

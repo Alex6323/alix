@@ -776,6 +776,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     }
     let (config_finding, config) = doctor::check_config(args.config.as_deref());
     let mut findings = vec![config_finding];
+    let instance =
+        crate::profile::instance_name_for_launch(args.config.as_deref(), args.dir.as_deref());
+    findings.push(doctor::check_log(alix::log::log_path(&instance)));
     let (decks_dir, store_path) = match &args.dir {
         Some(path) => (path.clone(), workspace::root_store_path(path)),
         None => {

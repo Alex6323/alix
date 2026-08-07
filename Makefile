@@ -281,11 +281,11 @@ run:
 web:
 	cargo run -- $(ARGS) --port 7780
 
-# `web` with per-request stderr logging (ALIX_HTTP_LOG), the diagnostic net
-# for {#server-subresource-stall}: when a page load hangs, the log decides
+# `web` with per-request timings mirrored to stderr, the diagnostic net for
+# {#server-subresource-stall}: when a page load hangs, the timing decides
 # whether the stuck request ever left tiny_http's connection reader.
 web-debug:
-	ALIX_HTTP_LOG=1 cargo run -- $(ARGS) --port 7780
+	cargo run -- $(ARGS) --port 7780 --log http
 
 # The mobile siblings of `web`: run the alix mobile app (mobile/alix) on a
 # phone or tablet emulator (booting that AVD first if needed; the script

@@ -97,6 +97,18 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
     }
 }
 
+pub fn check_log(path: Option<PathBuf>) -> Finding {
+    match path {
+        Some(path) => Finding::ok("log", path.display().to_string()),
+        None => Finding::bad(
+            "log",
+            Status::Fail,
+            "cannot determine the state directory",
+            "set HOME so alix has somewhere to keep its local server log",
+        ),
+    }
+}
+
 /// A broken deck only warns, it breaks itself, not the whole setup.
 pub fn check_decks(decks_dir: &Path) -> Finding {
     if !decks_dir.is_dir() {
