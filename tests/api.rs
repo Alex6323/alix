@@ -6360,3 +6360,74 @@ fn a_tutor_note_leaves_the_learner_on_the_same_card() {
         std::fs::read_to_string(guard.dir().join("sample.md")).unwrap_or_default()
     );
 }
+
+/// Every shape example must still PRODUCE the shape it advertises. Doctor
+/// proves the file parses and a screenshot proves it rendered once; neither
+/// proves the claim the example exists to make, and that claim is what an
+/// author acts on. One row of `docs/card-shapes.md`, one assertion.
+#[test]
+fn every_shape_example_produces_the_shape_it_advertises() {
+    fn state_of(deck: &str, depth: &str) -> serde_json::Value {
+        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("docs/examples/shapes")
+            .join(deck);
+        let text = std::fs::read_to_string(&source)
+            .unwrap_or_else(|error| panic!("missing shape example {}: {error}", source.display()));
+        let (base, _guard) = spawn_full_server_fixture(
+            None,
+            |dir| std::fs::write(dir.join(deck), &text).unwrap(),
+            |_opts| {},
+        );
+        let resp = post_json(
+            &base,
+            "/api/select",
+            &format!(r#"{{"deck":"{deck}","depth":"{depth}"}}"#),
+        );
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!("review", body["phase"], "{deck}: {body}");
+        body
+    }
+
+    // A table row's Recognize options come from its own column, with no AI
+    // cache in this fixture, which is the whole reason the shape earns a row.
+    let table = state_of("table.md", "recognize");
+    let options = table["choices"]
+        .as_array()
+        .unwrap_or_else(|| panic!("table.md must sample its own column: {table}"));
+    assert!(options.len() >= 2, "table.md: {table}");
+
+    // Ordered steps: the answer uncovers one line at a time, and Reconstruct
+    // grades them in order.
+    let line = state_of("reveal-line.md", "reconstruct");
+    assert_eq!("typeline", line["mode"], "reveal-line.md: {line}");
+
+    // An answer that cannot be typed.
+    let draw = state_of("draw.md", "recall");
+    assert_eq!("draw", draw["input"], "draw.md: {draw}");
+
+    // Cloze: the card id carries a hole suffix, one sub-card per blank.
+    let cloze = state_of("cloze.md", "recall");
+    let id = cloze["card"]["id"].as_str().unwrap_or_default();
+    assert!(
+        id.rsplit('-')
+            .next()
+            .is_some_and(|tail| tail.chars().all(|c| c.is_ascii_digit())),
+        "cloze.md must serve a hole sub-card, got {id}"
+    );
+
+    // Authored options need no augmentation to render as a pick.
+    let choices = state_of("authored-choices.md", "recognize");
+    assert_eq!("choice", choices["mode"], "authored-choices.md: {choices}");
+
+    // Both directions from one authoring act: the reversed half is its own
+    // card, marked by the `-r` suffix.
+    let both = state_of("direction-both.md", "recall");
+    assert_eq!(
+        4, both["initial"],
+        "direction-both.md: two authored cards must yield four: {both}"
+    );
+
+    // The default, and not a failure.
+    let plain = state_of("plain.md", "recall");
+    assert_eq!("flip", plain["mode"], "plain.md: {plain}");
+}
