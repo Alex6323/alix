@@ -47,6 +47,15 @@ Alix writes a log file itself, always, and constrains it as follows.
    `data_dir()` where the platform has no state directory), never inside
    the decks directory, which holds the user's own files and is walked by
    `share` and `receive`.
+5a. **One log per running instance.** A profile's server writes its own
+   file, so no two processes share a writer. `alix --launch-all` spawns
+   one child per configured profile (`src/cli/profile.rs`), and a shared
+   file would give each an independent byte counter, so constraint 4
+   could not hold and concurrent rotation could lose records. The
+   stronger reason is constraint 3's: profiles are usually different
+   people, and one shared file would put one learner's card ids into a
+   file another learner might send us. Coordination between processes is
+   therefore not merely avoided, it is the wrong shape.
 6. **Alix's own records only.** The emitter is written here, and no
    logging facade is installed, so no dependency can write into the file.
    Constraint 3 is then structural: it cannot be broken by a dependency
@@ -56,6 +65,12 @@ Alix writes a log file itself, always, and constrains it as follows.
 
 Easier: a non-technical bug report can carry the evidence needed to
 answer it, without a terminal, a flag, or a reproduction.
+
+Harder: a household running several profiles has several logs, so a
+report may involve more than one file and `alix doctor` names the path
+for the profile it is run against rather than one fixed location. That is
+the accepted cost of 5a, and it is smaller than the alternative, where
+one person's file carries another person's ids.
 
 Harder: diagnosis works from ids, so a report must pair the file with the
 user saying which deck they were on. This is a real and accepted cost of
@@ -143,6 +158,10 @@ authentication surface.
   appears for a deck whose name is a known distinctive string.
 - A test asserts the cap holds: emitting past it leaves the configured
   file count, each within its size bound.
+- A test asserts two writers configured for different profiles never
+  address the same file, which is 5a's executable form. Codex's
+  `two_server_writers_share_the_same_byte_cap` found the original defect
+  by opening one path twice; the surviving law is that the paths differ.
 - The absence of transmission is enforced structurally: the logging
   module has no network dependency, and the lean core (built without the
   server) must continue to compile with it.
