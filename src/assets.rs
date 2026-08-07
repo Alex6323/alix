@@ -688,9 +688,12 @@ mod tests {
         let name = object_name(b"outside", "png");
         let outside_path = outside.path().join(name);
         std::fs::write(&outside_path, b"outside").unwrap();
+        // The reported path is resolved, and macOS reaches its temp
+        // directories through a symlink, so the expectation resolves too.
+        let resolved = outside_path.canonicalize().unwrap();
         assert!(matches!(
             validate_image_at_root(&deck, workspace.path(), outside_path.to_str().unwrap()),
-            Err(AssetError::ImageOutsideBoundary(path)) if path == outside_path
+            Err(AssetError::ImageOutsideBoundary(path)) if path == resolved
         ));
     }
 
