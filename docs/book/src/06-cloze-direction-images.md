@@ -38,7 +38,9 @@ as one. It reveals typeset (`$x = -b \blank{\pm} \sqrt{d}$` shows ±, not the
 characters `\pm`), and at Reconstruct it is **sketched rather than typed**,
 since a formula's piece has no keyboard spelling. Write `input: type` on the
 card or the deck to keep the keyboard: an authored `input:` always wins, and
-the rule only fills in where you said nothing.
+the rule only fills in where you said nothing. `alix doctor` warns when a hole
+that stays typed holds a LaTeX command, since `\blank{\pm}` then asks for the
+spelling of `\pm` rather than for the sign.
 
 ## Dual-direction cards: `direction:`
 

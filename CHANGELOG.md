@@ -11,6 +11,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The example decks gained one for cloze inside a formula, showing that
   `\blank{...}` works within `$...$` and `$$...$$`.
 
+- `alix doctor` warns when a cloze hole that stays typed holds a LaTeX
+  command, because the hole's content is the expected answer and
+  `\blank{\pm}` then asks for the spelling of `\pm`. A hole inside a
+  formula is silent: it is drawn rather than typed.
+
 - Deck authoring has a written rule for which card shape suits which
   material, and one worked example per shape. `docs/card-shapes.md`
   marks each row structural (the material has a property the shape

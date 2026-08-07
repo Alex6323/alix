@@ -434,6 +434,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::IndentedH2 => {
             "an indented `##` line is content, not a card front (likely a mistype)".to_string()
         }
+        LintKind::UntypableHole { answer } => format!(
+            "the hole `{answer}` asks the learner to type a LaTeX command; \
+             hide a piece that can be typed, or let it be drawn"
+        ),
         LintKind::ClozeInHole => {
             "a `\\blank` inside a cloze hole is literal text, not a nested hole".to_string()
         }

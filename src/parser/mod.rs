@@ -85,6 +85,7 @@ pub enum LintKind {
     ChoiceNeedsBothSides,
     DuplicateChoiceOption,
     ChoiceMultiCorrectUnsupported,
+    UntypableHole { answer: String },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -1126,6 +1127,13 @@ fn build_card(
         }
     }
 
+    /// Whether the whole answer is one LaTeX command: `\pm` yes, `2a` and
+    /// `x^2` no, and `\frac{1}{2}` yes, since none of them can be typed as
+    /// what they render to.
+    fn is_control_sequence(answer: &str) -> bool {
+        answer.trim_start().starts_with('\\')
+    }
+
     fn hole_sits_in_math(segments: &[Seg], hole_seg: usize) -> bool {
         let mut line = String::new();
         for (si, segment) in segments.iter().enumerate() {
@@ -1223,9 +1231,23 @@ fn build_card(
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
         card.hole = Some(n as u32);
-        if hole_sits_in_math(&parsed[*hole_line], *hole_seg) {
+        let in_math = hole_sits_in_math(&parsed[*hole_line], *hole_seg);
+        if in_math {
             card.display_back = Some(vec![format!("${answer_text}$")]);
             card.math_hole = true;
+        }
+        // A hole that stays typed and holds a control sequence asks for the
+        // command's spelling. In a formula the input rule draws it instead,
+        // unless the author pinned the keyboard back.
+        let typed =
+            directives.input != Some(Input::Draw) && (!in_math || directives.input.is_some());
+        if typed && is_control_sequence(answer_text) {
+            lints.push(Lint {
+                line,
+                kind: LintKind::UntypableHole {
+                    answer: (*answer_text).to_string(),
+                },
+            });
         }
         card.block_holes = block_holes.clone();
         card.images = images.clone();
@@ -2283,6 +2305,52 @@ mod tests {
     /// be shown as one. `back` is what the learner types and what identifies
     /// the card, so the math form goes to `display_back` alone: revealing
     /// `\pm` as the characters `\pm` shows source code as an answer.
+    /// A hole's content is the expected answer, so a hole holding a LaTeX
+    /// command asks the learner to spell `\pm`. Inside a formula the input
+    /// rule already turns that into a sketch, so what is left to warn about
+    /// is a hole that stays typed: one outside any formula, or one the
+    /// author pinned back to the keyboard.
+    #[test]
+    fn a_hole_that_asks_for_a_typed_latex_command_is_linted() {
+        let deck = parse("## q\n---\nthe sign is \\blank{\\pm} here\n");
+        assert_eq!(
+            vec![LintKind::UntypableHole {
+                answer: "\\pm".to_string()
+            }],
+            deck.lints
+                .iter()
+                .map(|l| l.kind.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_hole_inside_a_formula_is_not_linted_because_it_is_drawn() {
+        let deck = parse("## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n");
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+    }
+
+    #[test]
+    fn a_formula_hole_pinned_back_to_typing_is_linted() {
+        let deck = parse("## q <!-- input: type -->\n---\n$x = \\blank{\\pm} y$\n");
+        assert_eq!(
+            vec![LintKind::UntypableHole {
+                answer: "\\pm".to_string()
+            }],
+            deck.lints
+                .iter()
+                .map(|l| l.kind.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn an_ordinary_hole_is_never_linted_as_untypable() {
+        let deck =
+            parse("## q\n---\n$x = \\frac{-b}{\\blank{2a}}$\nthe value is \\blank{dropped}\n");
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+    }
+
     #[test]
     fn a_hole_inside_math_reveals_as_math_but_is_still_typed_as_written() {
         let deck = parse("## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n");
