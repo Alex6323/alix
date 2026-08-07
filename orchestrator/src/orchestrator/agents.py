@@ -4,13 +4,11 @@ import json
 import threading
 import time
 from pathlib import Path
-from typing import Literal, Protocol, cast
+from typing import Protocol, cast
 
 from orchestrator.commands import Executor, SubprocessExecutor
-from orchestrator.models import Invocation
+from orchestrator.models import AgentName, Backend, Invocation
 from orchestrator.storage import append_progress
-
-AgentName = Literal["claude", "codex"]
 
 
 class Invoker(Protocol):
@@ -25,11 +23,13 @@ class SubprocessInvoker:
         run_dir: Path,
         executor: Executor | None = None,
         models: dict[str, str] | None = None,
+        backends: dict[str, str] | None = None,
         heartbeat_seconds: float = 15.0,
     ) -> None:
         self.run_dir = run_dir
         self.executor = executor or SubprocessExecutor()
         self.models = dict(models or {})
+        self.backends = dict(backends or {})
         self.heartbeat_seconds = heartbeat_seconds
         self._sequence = max(
             (
@@ -40,6 +40,12 @@ class SubprocessInvoker:
             default=0,
         )
         self._sequence_lock = threading.Lock()
+
+    def backend_for(self, agent: AgentName) -> Backend:
+        backend = self.backends.get(agent, "claude")
+        if backend not in ("claude", "codex"):
+            raise ValueError(f"seat {agent} has an unknown backend {backend!r}")
+        return cast(Backend, backend)
 
     def cancel_all(self) -> None:
         cancel = getattr(self.executor, "cancel_all", None)
@@ -52,13 +58,14 @@ class SubprocessInvoker:
         with self._sequence_lock:
             self._sequence += 1
             sequence = self._sequence
-        stem = f"{sequence:03d}-{agent}"
+        backend = self.backend_for(agent)
+        stem = f"{sequence:03d}-{agent}-{backend}"
         transcript = self.run_dir / "transcripts" / f"{stem}.txt"
         patch_path = self.run_dir / "patches" / f"{stem}.patch"
         baseline = _git(cwd, "rev-parse", "HEAD").strip()
         started = time.monotonic()
         append_progress(self.run_dir, f"agent {agent} started")
-        command = command_for(agent, prompt, self.models.get(agent))
+        command = command_for(backend, prompt, self.models.get(agent))
         stopped = threading.Event()
 
         def heartbeat() -> None:
@@ -94,7 +101,7 @@ class SubprocessInvoker:
             f"[stdout]\n{result.stdout}\n[stderr]\n{result.stderr}",
             encoding="utf-8",
         )
-        message, tokens, cost = _usage(agent, result.stdout)
+        message, tokens, cost = _usage(backend, result.stdout)
         return Invocation(
             exit_code=result.returncode,
             transcript_path=str(transcript),
@@ -117,12 +124,12 @@ def _change_summary(cwd: Path) -> str:
     return f"{len(changed)} changed {label}"
 
 
-def command_for(agent: AgentName, prompt: str, model: str | None = None) -> list[str]:
+def command_for(backend: Backend, prompt: str, model: str | None = None) -> list[str]:
     # Verified against Claude Code 2.1.220 and Codex CLI 0.145.0 on 2026-07-30.
     # subprocess cwd, rather than a CLI flag, selects the isolated worktree.
     # An unpinned model follows each CLI's ambient default, which makes a run
     # unreproducible and can strand it on an exhausted model's rate limit.
-    if agent == "claude":
+    if backend == "claude":
         command = [
             "claude",
             "--print",
@@ -150,8 +157,8 @@ def command_for(agent: AgentName, prompt: str, model: str | None = None) -> list
     return [*command, prompt]
 
 
-def _usage(agent: AgentName, stdout: str) -> tuple[str, int | None, float | None]:
-    if agent == "claude":
+def _usage(backend: Backend, stdout: str) -> tuple[str, int | None, float | None]:
+    if backend == "claude":
         try:
             value = cast(object, json.loads(stdout))
         except json.JSONDecodeError:

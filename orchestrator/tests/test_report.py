@@ -18,19 +18,19 @@ class ReportTests(unittest.TestCase):
             base_sha="abc",
             phase="COMPLETE",
             agents={
-                "claude": AgentState("/c", "agent/claude/run", "c1"),
-                "codex": AgentState("/d", "agent/codex/run", "d1"),
+                "a": AgentState("/c", "agent/a/run", "c1"),
+                "b": AgentState("/d", "agent/b/run", "d1"),
             },
             rounds_completed=1,
             max_fix_rounds=2,
-            implementer="claude",
+            implementer="a",
             spec_hash="spec-sha",
             prompt_hashes={"implement": "prompt-sha"},
             findings=[
                 Finding(
                     "F1",
-                    "codex",
-                    "claude",
+                    "b",
+                    "a",
                     "defect",
                     "findings/F1.patch",
                     True,
@@ -52,12 +52,12 @@ class ReportTests(unittest.TestCase):
                     detail="human review: existing test lines changed",
                 )
             ],
-            token_usage={"claude": 1000, "codex": 800},
-            costs_usd={"claude": 0.25},
+            token_usage={"a": 1000, "b": 800},
+            costs_usd={"a": 0.25},
         )
         scores = [
-            BranchScore("claude", 2, 2, 0, 0, 0, 120, True),
-            BranchScore("codex", 1, 2, 1, 0, 1, 90, True),
+            BranchScore("a", 2, 2, 0, 0, 0, 120, True),
+            BranchScore("b", 1, 2, 1, 0, 1, 90, True),
         ]
 
         report = render_report(state, scores, divergence_notes=["different cache key"])
@@ -70,7 +70,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("2.50", report)
         self.assertIn("human review: existing test lines changed", report)
         self.assertIn("$0.2500", report)
-        self.assertIn("claude", report)
+        self.assertIn("a", report)
         self.assertIn("eligible", report)
         self.assertIn("1/2", report)
         self.assertIn("Check", report)
@@ -80,7 +80,7 @@ class ReportTests(unittest.TestCase):
             state,
             [
                 BranchScore(
-                    "claude",
+                    "a",
                     3,
                     3,
                     1,
@@ -89,7 +89,7 @@ class ReportTests(unittest.TestCase):
                     426,
                     check_ok=False,
                 ),
-                BranchScore("codex", 1, 4, 0, 0, 886, 277, True),
+                BranchScore("b", 1, 4, 0, 0, 886, 277, True),
             ],
         )
         self.assertIn(

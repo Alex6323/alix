@@ -81,7 +81,8 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                 base="main",
                 run_root=root / "runs",
                 max_fix_rounds=1,
-                implementer="claude",
+                implementer="a",
+                backends={"a": "claude", "b": "codex"},
             )
         )
         completed = drive_run(Path(state.run_dir))

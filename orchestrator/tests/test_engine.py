@@ -71,6 +71,34 @@ def pin_formatting(repo: Path) -> None:
 
 
 class InitializeRunTests(unittest.TestCase):
+    def test_both_seats_may_be_one_backend_and_that_survives_a_resume(self) -> None:
+        """The seat is not the backend, and a resume reads the pairing back
+        from state.json rather than re-deriving it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = target_repo(root)
+            spec = root / "input.md"
+            spec.write_bytes(b"# Exact spec\n")
+
+            state = initialize_run(
+                RunOptions(
+                    mode="symmetric",
+                    spec=spec,
+                    plan=None,
+                    repo=repo,
+                    base="main",
+                    run_root=root / "runs",
+                    max_fix_rounds=1,
+                    implementer="a",
+                    backends={"a": "claude", "b": "claude"},
+                    models={"a": "opus", "b": "sonnet"},
+                )
+            )
+
+            reloaded = load_state(Path(state.run_dir) / "state.json")
+            self.assertEqual({"a": "claude", "b": "claude"}, reloaded.backends)
+            self.assertEqual({"a": "opus", "b": "sonnet"}, reloaded.models)
+
     def test_symmetric_setup_freezes_input_and_creates_independent_worktrees(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -89,7 +117,7 @@ class InitializeRunTests(unittest.TestCase):
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="fixed-symmetric",
             )
@@ -98,11 +126,11 @@ class InitializeRunTests(unittest.TestCase):
             self.assertEqual(b"# Exact spec\n", (run_dir / "spec.md").read_bytes())
             self.assertEqual(b"# Exact plan\n", (run_dir / "plan.md").read_bytes())
             self.assertEqual("IMPLEMENT", state.phase)
-            self.assertEqual({"claude", "codex"}, set(state.agents))
+            self.assertEqual({"a", "b"}, set(state.agents))
             self.assertNotEqual(
-                state.agents["claude"].worktree, state.agents["codex"].worktree
+                state.agents["a"].worktree, state.agents["b"].worktree
             )
-            for name in ("claude", "codex"):
+            for name in ("a", "b"):
                 worktree = Path(state.agents[name].worktree)
                 self.assertTrue(worktree.is_dir())
                 self.assertEqual(state.base_sha, git(worktree, "rev-parse", "HEAD"))
@@ -138,12 +166,12 @@ pub fn add(a: i32, b: i32) -> i32;
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="fixed-asymmetric",
             )
 
-            property_worktree = Path(state.agents["codex"].worktree)
+            property_worktree = Path(state.agents["b"].worktree)
             self.assertFalse((property_worktree / "Makefile").exists())
             self.assertEqual(
                 "pub fn add(a: i32, b: i32) -> i32;\n",
@@ -176,7 +204,7 @@ pub fn add(a: i32, b: i32) -> i32;
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="codex",
+                    implementer="b",
                 ),
                 run_id="spec-bug",
             )
@@ -200,18 +228,18 @@ class FakeInvoker:
         with self.lock:
             self.calls.append(agent)
             sequence = len(self.calls)
-            if agent == "claude":
+            if agent == "a":
                 self.claude_attempts += 1
                 claude_attempt = self.claude_attempts
             else:
                 claude_attempt = 0
-        if agent == "claude":
+        if agent == "a":
             if claude_attempt == 1:
                 (cwd / "Makefile").write_text("gate:\n\t@true\n")
             else:
-                (cwd / "src/claude.rs").write_text("pub fn implementation() {}\n")
+                (cwd / "src/a.rs").write_text("pub fn implementation() {}\n")
         else:
-            (cwd / "src/codex.rs").write_text("pub fn implementation() {}\n")
+            (cwd / "src/b.rs").write_text("pub fn implementation() {}\n")
         git(cwd, "add", "-N", ".")
         patch = self.run_dir / "patches" / f"{sequence:03d}.patch"
         patch.write_text(git(cwd, "diff", "--binary", "HEAD") + "\n")
@@ -267,7 +295,7 @@ class InterruptingInvoker:
     ) -> Invocation:
         del prompt, cwd, timeout
         self.barrier.wait(timeout=1)
-        if agent == "claude":
+        if agent == "a":
             raise KeyboardInterrupt
         if not self.cancelled.wait(timeout=1):
             raise RuntimeError("the peer invocation was not cancelled")
@@ -281,11 +309,11 @@ class InterruptedInvoker(FakeInvoker):
     def invoke(
         self, agent: str, prompt: str, cwd: Path, timeout: float
     ) -> Invocation:
-        if agent == "codex":
+        if agent == "b":
             self.calls.append(agent)
-            transcript = self.run_dir / "transcripts" / "interrupted-codex.txt"
+            transcript = self.run_dir / "transcripts" / "interrupted-b.txt"
             transcript.write_text("interrupted\n")
-            patch = self.run_dir / "patches" / "interrupted-codex.patch"
+            patch = self.run_dir / "patches" / "interrupted-b.patch"
             patch.write_text("")
             return Invocation(
                 exit_code=1,
@@ -306,14 +334,14 @@ class ResumeCodexInvoker:
         self, agent: str, prompt: str, cwd: Path, timeout: float
     ) -> Invocation:
         del prompt, timeout
-        if agent != "codex":
-            raise AssertionError("completed Claude step must not be rerun")
+        if agent != "b":
+            raise AssertionError("completed Seat A step must not be rerun")
         self.calls.append(agent)
-        (cwd / "src/codex.rs").write_text("pub fn resumed() {}\n")
+        (cwd / "src/b.rs").write_text("pub fn resumed() {}\n")
         git(cwd, "add", "-N", ".")
-        patch = self.run_dir / "patches" / "resumed-codex.patch"
+        patch = self.run_dir / "patches" / "resumed-b.patch"
         patch.write_text(git(cwd, "diff", "--binary", "HEAD") + "\n")
-        transcript = self.run_dir / "transcripts" / "resumed-codex.txt"
+        transcript = self.run_dir / "transcripts" / "resumed-b.txt"
         transcript.write_text("done\n")
         return Invocation(
             exit_code=0,
@@ -512,7 +540,7 @@ class FakeScoreExecutor:
         if args == ["make", "mutants"]:
             return CommandResult(0, "mutants: 0 missed", "", 0.1)
         if args[:2] == ["cargo", "clippy"]:
-            warning = "warning: pedantic example\n" if cwd.name == "codex" else ""
+            warning = "warning: pedantic example\n" if cwd.name == "b" else ""
             return CommandResult(0, "", warning, 0.1)
         return CommandResult(0, "passed", "", 0.1)
 
@@ -607,7 +635,7 @@ class PhaseExecutionTests(unittest.TestCase):
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=0,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="interrupt-parallel",
             )
@@ -633,7 +661,7 @@ class PhaseExecutionTests(unittest.TestCase):
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=0,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="parallel-implementation",
             )
@@ -641,7 +669,7 @@ class PhaseExecutionTests(unittest.TestCase):
 
             run_implementation_phase(state, invoker)
 
-            self.assertCountEqual(["claude", "codex"], invoker.calls)
+            self.assertCountEqual(["a", "b"], invoker.calls)
             self.assertEqual("SCORE", state.phase)
 
     def test_implementation_rejects_once_then_reprompts_and_commits_uniformly(
@@ -661,7 +689,7 @@ class PhaseExecutionTests(unittest.TestCase):
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="phase",
             )
@@ -669,10 +697,10 @@ class PhaseExecutionTests(unittest.TestCase):
 
             run_implementation_phase(state, invoker)
 
-            self.assertEqual(2, invoker.calls.count("claude"))
-            self.assertEqual(1, invoker.calls.count("codex"))
+            self.assertEqual(2, invoker.calls.count("a"))
+            self.assertEqual(1, invoker.calls.count("b"))
             self.assertEqual("REVIEW_ROUND_1", state.phase)
-            for name in ("claude", "codex"):
+            for name in ("a", "b"):
                 worktree = Path(state.agents[name].worktree)
                 self.assertEqual(
                     f"[orchestrator] implement {name}",
@@ -704,24 +732,24 @@ class PhaseExecutionTests(unittest.TestCase):
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="resume",
             )
 
-            with self.assertRaisesRegex(RuntimeError, "codex invocation failed"):
+            with self.assertRaisesRegex(RuntimeError, "b invocation failed"):
                 run_implementation_phase(
                     state,
                     InterruptedInvoker(Path(state.run_dir)),
                 )
-            claude_sha = state.agents["claude"].last_sha
+            claude_sha = state.agents["a"].last_sha
             persisted = load_state(Path(state.run_dir) / "state.json")
             resumed = ResumeCodexInvoker(Path(state.run_dir))
 
             run_implementation_phase(persisted, resumed)
 
-            self.assertEqual(["codex"], resumed.calls)
-            self.assertEqual(claude_sha, persisted.agents["claude"].last_sha)
+            self.assertEqual(["b"], resumed.calls)
+            self.assertEqual(claude_sha, persisted.agents["a"].last_sha)
             self.assertEqual("REVIEW_ROUND_1", persisted.phase)
             self.assertEqual([], persisted.completed_steps)
 
@@ -792,7 +820,7 @@ new file mode 100644
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=1,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="parallel-review",
             )
@@ -872,7 +900,7 @@ index e2d68f0..1bbef69 100644
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="review",
             )
@@ -909,7 +937,7 @@ index e2d68f0..1bbef69 100644
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=1,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="review-resume",
             )
@@ -948,7 +976,7 @@ index e2d68f0..1bbef69 100644
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="fix",
             )
@@ -970,10 +998,10 @@ index e2d68f0..1bbef69 100644
             self.assertTrue(
                 all("Observed red failure" in prompt for prompt in invoker.prompts)
             )
-            for name in ("claude", "codex"):
+            for name in ("a", "b"):
                 worktree = Path(state.agents[name].worktree)
                 self.assertIn(
-                    f"fn {('codex' if name == 'claude' else 'claude')}_repro",
+                    f"fn {('b' if name == 'a' else 'a')}_repro",
                     (worktree / "tests/repro.rs").read_text(),
                 )
                 self.assertEqual(
@@ -1006,28 +1034,28 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=2,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="asymmetric-phase",
             )
-            invoker = FakeAsymmetricInvoker(Path(state.run_dir), "claude")
+            invoker = FakeAsymmetricInvoker(Path(state.run_dir), "a")
 
             run_asymmetric_implementation_phase(state, invoker, GreenExecutor())
 
             self.assertEqual("RUN", state.phase)
             self.assertNotIn(
-                state.agents["claude"].worktree,
-                invoker.prompts["codex"],
+                state.agents["a"].worktree,
+                invoker.prompts["b"],
             )
             self.assertIn(
-                state.agents["codex"].worktree,
-                invoker.prompts["codex"],
+                state.agents["b"].worktree,
+                invoker.prompts["b"],
             )
 
             run_asymmetric_test_phase(state, GreenExecutor())
 
             self.assertEqual("SCORE", state.phase)
-            implementation = Path(state.agents["claude"].worktree)
+            implementation = Path(state.agents["a"].worktree)
             self.assertEqual(
                 "#[test]\nfn addition_is_commutative() {}\n",
                 (implementation / "tests/property.rs").read_text(),
@@ -1060,13 +1088,13 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=0,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="format-properties",
             )
             invoker = FakeAsymmetricInvoker(
                 Path(state.run_dir),
-                "claude",
+                "a",
                 property_source="#[test]\nfn addition_is_commutative( ) { }\n",
             )
             executor = FormattingPropertyExecutor()
@@ -1082,14 +1110,14 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
             self.assertEqual(
                 formatted,
                 (
-                    Path(state.agents["codex"].worktree)
+                    Path(state.agents["b"].worktree)
                     / "tests/property.rs"
                 ).read_text(),
             )
             self.assertEqual(
                 formatted,
                 (
-                    Path(state.agents["claude"].worktree)
+                    Path(state.agents["a"].worktree)
                     / "tests/property.rs"
                 ).read_text(),
             )
@@ -1119,15 +1147,15 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=1,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="asymmetric-fix",
             )
-            invoker = FakeAsymmetricInvoker(Path(state.run_dir), "claude")
+            invoker = FakeAsymmetricInvoker(Path(state.run_dir), "a")
             run_asymmetric_implementation_phase(state, invoker, GreenExecutor())
             run_asymmetric_test_phase(state, FailingPropertyExecutor())
             before = (
-                Path(state.agents["claude"].worktree) / "tests/property.rs"
+                Path(state.agents["a"].worktree) / "tests/property.rs"
             ).read_bytes()
 
             run_asymmetric_fix_phase(state, invoker)
@@ -1137,7 +1165,7 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
             self.assertEqual(
                 before,
                 (
-                    Path(state.agents["claude"].worktree)
+                    Path(state.agents["a"].worktree)
                     / "tests/property.rs"
                 ).read_bytes(),
             )
@@ -1159,7 +1187,7 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=0,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="score",
             )
@@ -1168,13 +1196,13 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
             state.findings.append(
                 Finding(
                     id="F1",
-                    author="claude",
-                    against="codex",
+                    author="a",
+                    against="b",
                     kind="defect",
                     test_patch="findings/F1.patch",
                     verified=True,
                     resolved=True,
-                    summary="codex loses a user update",
+                    summary="b loses a user update",
                     test_name="update_is_retained",
                     real_user_path="Submit two supported updates.",
                     impact="One update disappears.",
@@ -1196,7 +1224,7 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
             self.assertEqual(1, scores[1]["pedantic_warnings_added"])
             self.assertEqual(1, executor.max_active_gates)
             self.assertEqual(2, executor.check_calls)
-            self.assertIn("Merge `claude`.", (Path(state.run_dir) / "report.md").read_text())
+            self.assertIn("Merge `a`.", (Path(state.run_dir) / "report.md").read_text())
 
     def test_score_reports_mutants_as_skipped_after_a_failed_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1213,7 +1241,7 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=0,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="skipped-mutants",
             )
@@ -1244,17 +1272,17 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                     base="main",
                     run_root=root / "runs",
                     max_fix_rounds=0,
-                    implementer="claude",
+                    implementer="a",
                 ),
                 run_id="land",
             )
             run_implementation_phase(state, FakeInvoker(Path(state.run_dir)))
-            claude = Path(state.agents["claude"].worktree)
-            (claude / "tests").mkdir()
-            (claude / "tests/claude.rs").write_text("#[test]\nfn claude_case() {}\n")
-            git(claude, "add", "tests/claude.rs")
+            a = Path(state.agents["a"].worktree)
+            (a / "tests").mkdir()
+            (a / "tests/a.rs").write_text("#[test]\nfn claude_case() {}\n")
+            git(a, "add", "tests/a.rs")
             git(
-                claude,
+                a,
                 "-c",
                 "user.name=Test",
                 "-c",
@@ -1263,21 +1291,21 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                 "commit.gpgsign=false",
                 "commit",
                 "-m",
-                "claude test",
+                "a test",
             )
-            state.agents["claude"].last_sha = git(claude, "rev-parse", "HEAD")
+            state.agents["a"].last_sha = git(a, "rev-parse", "HEAD")
             state.phase = "SCORE"
             run_score_phase(state, FakeScoreExecutor())
 
             run_land_phase(state)
 
             self.assertEqual("COMPLETE", state.phase)
-            self.assertTrue((repo / "tests/claude.rs").is_file())
-            self.assertTrue((repo / "src/claude.rs").is_file())
-            self.assertFalse((repo / "src/codex.rs").exists())
+            self.assertTrue((repo / "tests/a.rs").is_file())
+            self.assertTrue((repo / "src/a.rs").is_file())
+            self.assertFalse((repo / "src/b.rs").exists())
             self.assertEqual(
                 [
-                    "[orchestrator] land implementation claude",
+                    "[orchestrator] land implementation a",
                     "[orchestrator] land tests",
                 ],
                 git(repo, "log", "-2", "--format=%s").splitlines(),

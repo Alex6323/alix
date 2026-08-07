@@ -35,11 +35,20 @@ uv run --project orchestrator orchestrate run \
   --max-fix-rounds 2
 ```
 
-`--claude-model` and `--codex-model` pin each agent's model for the whole run
-(`--claude-model opus`, `--codex-model gpt-5.6-sol`). Both are recorded in
-`state.json`, so a resume reuses them. Without them each CLI follows its own
-ambient default, which leaves the run unreproducible and can strand it on an
-exhausted model's rate limit.
+A run has two seats, `a` and `b`. `--agent-a` and `--agent-b` say which CLI
+fills each and, after a colon, which model to pin:
+`--agent-a claude:opus --agent-b codex:gpt-5.6-sol`. Either seat may name
+either backend, and **both seats may name the same one**
+(`--agent-a claude:opus --agent-b claude:sonnet`), which is what a run needs
+when the other CLI is rate-limited. Defaults: `a` is claude, `b` is codex.
+
+`--implementer {a,b}` (default `a`) picks which seat implements in asymmetric
+mode; the other writes the property suite without ever seeing the
+implementation.
+
+Backends and models are recorded in `state.json`, so a resume reuses them.
+Without a pinned model each CLI follows its own ambient default, which leaves
+the run unreproducible and can strand it on an exhausted model's rate limit.
 
 Resume or print the current report:
 

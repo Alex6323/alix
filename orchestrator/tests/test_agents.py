@@ -8,10 +8,11 @@ import time
 import unittest
 from pathlib import Path
 
-from orchestrator.agents import AgentName, SubprocessInvoker, _usage, command_for
+from orchestrator.agents import SubprocessInvoker, _usage, command_for
 from orchestrator.commands import CommandResult
+from orchestrator.models import Backend
 
-AGENTS: tuple[AgentName, ...] = ("claude", "codex")
+BACKENDS: tuple[Backend, ...] = ("claude", "codex")
 
 
 class AgentCommandTests(unittest.TestCase):
@@ -50,17 +51,17 @@ class AgentCommandTests(unittest.TestCase):
         )
 
     def test_a_pinned_model_reaches_both_clis_and_the_prompt_stays_last(self) -> None:
-        for agent in AGENTS:
-            command = command_for(agent, "implement this", "a-model")
+        for backend in BACKENDS:
+            command = command_for(backend, "implement this", "a-model")
 
-            self.assertEqual(agent, command[0])
+            self.assertEqual(backend, command[0])
             self.assertEqual("implement this", command[-1])
             index = command.index("--model")
             self.assertEqual("a-model", command[index + 1])
 
     def test_an_unpinned_model_passes_no_model_flag(self) -> None:
-        for agent in AGENTS:
-            self.assertNotIn("--model", command_for(agent, "implement this"))
+        for backend in BACKENDS:
+            self.assertNotIn("--model", command_for(backend, "implement this"))
 
 
 class UsageParsingTests(unittest.TestCase):
@@ -184,7 +185,7 @@ class SubprocessInvokerTests(unittest.TestCase):
             completed = threading.Event()
 
             def invoke() -> None:
-                invoker.invoke("claude", "do the thing", repo, 5.0)
+                invoker.invoke("a", "do the thing", repo, 5.0)
                 completed.set()
 
             worker = threading.Thread(target=invoke)
@@ -215,7 +216,7 @@ class SubprocessInvokerTests(unittest.TestCase):
             (run_dir / "patches").mkdir(parents=True)
 
             invoker = SubprocessInvoker(run_dir, executor=_EditingExecutor())
-            invocation = invoker.invoke("claude", "do the thing", repo, 5.0)
+            invocation = invoker.invoke("a", "do the thing", repo, 5.0)
 
             patch = Path(invocation.patch_path).read_text(encoding="utf-8")
             self.assertIn("edited.txt", patch)
@@ -231,14 +232,64 @@ class SubprocessInvokerTests(unittest.TestCase):
 
             executor = _EditingExecutor()
             invoker = SubprocessInvoker(
-                run_dir, executor=executor, models={"claude": "opus"}
+                run_dir,
+                executor=executor,
+                models={"a": "opus"},
+                backends={"a": "claude", "b": "codex"},
             )
-            invoker.invoke("claude", "do the thing", repo, 5.0)
-            invoker.invoke("codex", "do the thing", repo, 5.0)
+            invoker.invoke("a", "do the thing", repo, 5.0)
+            invoker.invoke("b", "do the thing", repo, 5.0)
 
-            claude_command, codex_command = executor.commands
-            self.assertIn("--model", claude_command)
-            self.assertEqual(
-                "opus", claude_command[claude_command.index("--model") + 1]
+            first, second = executor.commands
+            self.assertIn("--model", first)
+            self.assertEqual("opus", first[first.index("--model") + 1])
+            self.assertNotIn("--model", second)
+
+    def test_both_seats_can_be_the_same_backend_on_different_models(self) -> None:
+        """The seat is not the backend: one CLI can fill both, which is what a
+        run needs when the other CLI is rate-limited."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = _seed_repo(root)
+            run_dir = root / "run"
+            (run_dir / "transcripts").mkdir(parents=True)
+            (run_dir / "patches").mkdir(parents=True)
+
+            executor = _EditingExecutor()
+            invoker = SubprocessInvoker(
+                run_dir,
+                executor=executor,
+                models={"a": "opus", "b": "sonnet"},
+                backends={"a": "claude", "b": "claude"},
             )
-            self.assertNotIn("--model", codex_command)
+            invoker.invoke("a", "implement", repo, 5.0)
+            invoker.invoke("b", "write properties", repo, 5.0)
+
+            implementer, properties = executor.commands
+            self.assertEqual("claude", implementer[0])
+            self.assertEqual("claude", properties[0])
+            self.assertEqual("opus", implementer[implementer.index("--model") + 1])
+            self.assertEqual("sonnet", properties[properties.index("--model") + 1])
+
+    def test_a_seat_may_be_codex_while_the_other_is_claude_either_way_round(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = _seed_repo(root)
+            run_dir = root / "run"
+            (run_dir / "transcripts").mkdir(parents=True)
+            (run_dir / "patches").mkdir(parents=True)
+
+            executor = _EditingExecutor()
+            invoker = SubprocessInvoker(
+                run_dir,
+                executor=executor,
+                backends={"a": "codex", "b": "claude"},
+            )
+            invoker.invoke("a", "implement", repo, 5.0)
+            invoker.invoke("b", "write properties", repo, 5.0)
+
+            first, second = executor.commands
+            self.assertEqual("codex", first[0])
+            self.assertEqual("claude", second[0])

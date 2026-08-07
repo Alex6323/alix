@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, cast
 
-AgentName = Literal["claude", "codex"]
+# A run has two seats. Which CLI fills a seat is a run option, so the seat
+# name cannot be the backend's name: both seats may be `claude`.
+AgentName = Literal["a", "b"]
+Backend = Literal["claude", "codex"]
+AGENT_NAMES: tuple[AgentName, AgentName] = ("a", "b")
+
+
+def other_agent(name: AgentName) -> AgentName:
+    return "b" if name == "a" else "a"
 Mode = Literal["symmetric", "asymmetric"]
 FindingKind = Literal["defect", "preference"]
 
@@ -83,14 +91,14 @@ class Finding:
         author = _string(data, "author")
         against = _string(data, "against")
         kind = _string(data, "kind")
-        if author not in ("claude", "codex") or against not in ("claude", "codex"):
+        if author not in AGENT_NAMES or against not in AGENT_NAMES:
             raise ValueError("finding has an unknown agent")
         if kind not in ("defect", "preference"):
             raise ValueError("finding has an unknown kind")
         return cls(
             id=_string(data, "id"),
-            author=cast(AgentName, author),
-            against=cast(AgentName, against),
+            author=author,
+            against=against,
             kind=cast(FindingKind, kind),
             test_patch=_string(data, "test_patch"),
             verified=_bool(data, "verified"),
@@ -160,6 +168,7 @@ class RunState:
     implementer: AgentName
     spec_hash: str
     prompt_hashes: dict[str, str]
+    backends: dict[str, str] = field(default_factory=dict)
     models: dict[str, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     history: list[PhaseHistory] = field(default_factory=list)
@@ -190,6 +199,7 @@ class RunState:
             "implementer": self.implementer,
             "spec_hash": self.spec_hash,
             "prompt_hashes": self.prompt_hashes,
+            "backends": self.backends,
             "models": self.models,
             "findings": [finding.to_dict() for finding in self.findings],
             "history": [item.to_dict() for item in self.history],
@@ -220,7 +230,7 @@ class RunState:
         implementer = _string(data, "implementer")
         if mode not in ("symmetric", "asymmetric"):
             raise ValueError("state has an unknown mode")
-        if implementer not in ("claude", "codex"):
+        if implementer not in AGENT_NAMES:
             raise ValueError("state has an unknown implementer")
         raw_agents = _dict(data.get("agents"), "agents")
         raw_findings = _list(data, "findings")
@@ -255,9 +265,10 @@ class RunState:
             },
             rounds_completed=_int(data, "rounds_completed"),
             max_fix_rounds=_int(data, "max_fix_rounds"),
-            implementer=cast(AgentName, implementer),
+            implementer=implementer,
             spec_hash=_string(data, "spec_hash"),
             prompt_hashes=_string_map(data, "prompt_hashes"),
+            backends=_string_map(data, "backends"),
             models=_string_map(data, "models"),
             findings=[Finding.from_dict(item) for item in raw_findings],
             history=[PhaseHistory.from_dict(item) for item in raw_history],

@@ -19,6 +19,7 @@ from typing import Iterator, cast
 from orchestrator.agents import Invoker
 from orchestrator.commands import CommandResult, Executor
 from orchestrator.models import (
+    AGENT_NAMES,
     AgentName,
     AgentState,
     Finding,
@@ -26,6 +27,7 @@ from orchestrator.models import (
     Mode,
     PhaseHistory,
     RunState,
+    other_agent,
 )
 from orchestrator.report import render_report
 from orchestrator.review import (
@@ -59,6 +61,7 @@ class RunOptions:
     run_root: Path
     max_fix_rounds: int
     implementer: AgentName
+    backends: dict[str, str] = field(default_factory=dict)
     models: dict[str, str] = field(default_factory=dict)
 
 
@@ -97,6 +100,7 @@ def initialize_run(options: RunOptions, run_id: str | None = None) -> RunState:
         implementer=options.implementer,
         spec_hash=_sha256(run_dir / "spec.md"),
         prompt_hashes=_prompt_hashes(),
+        backends=dict(options.backends),
         models=dict(options.models),
         plan_path="plan.md" if plan is not None else None,
     )
@@ -105,13 +109,13 @@ def initialize_run(options: RunOptions, run_id: str | None = None) -> RunState:
     worktree_root = run_root / ".worktrees" / identifier
     worktree_root.mkdir(parents=True, exist_ok=True)
     if options.mode == "symmetric":
-        for agent in ("claude", "codex"):
+        for agent in AGENT_NAMES:
             state.agents[agent] = _create_target_worktree(
                 repo, worktree_root, identifier, agent, base_sha
             )
     else:
         implementer = options.implementer
-        property_author: AgentName = "codex" if implementer == "claude" else "claude"
+        property_author: AgentName = other_agent(implementer)
         state.agents[implementer] = _create_target_worktree(
             repo, worktree_root, identifier, implementer, base_sha
         )
@@ -143,7 +147,7 @@ def run_implementation_phase(state: RunState, invoker: Invoker) -> None:
     started = time.monotonic()
     details: list[str] = []
     pending: list[tuple[AgentName, str, str]] = []
-    for agent in ("claude", "codex"):
+    for agent in AGENT_NAMES:
         step = f"IMPLEMENT:{agent}"
         if step in state.completed_steps:
             continue
@@ -203,9 +207,7 @@ def run_asymmetric_implementation_phase(
     started_wall = _now()
     started = time.monotonic()
     implementer = state.implementer
-    property_author: AgentName = (
-        "codex" if implementer == "claude" else "claude"
-    )
+    property_author: AgentName = other_agent(implementer)
     implementer_worktree = Path(state.agents[implementer].worktree)
     implementation_prompt = _render_prompt(
         state,
@@ -303,9 +305,7 @@ def run_asymmetric_test_phase(
     started_wall = _now()
     started = time.monotonic()
     implementer = state.implementer
-    property_author: AgentName = (
-        "codex" if implementer == "claude" else "claude"
-    )
+    property_author: AgentName = other_agent(implementer)
     if phase_name == "RUN":
         install_step = "RUN:install-properties"
         if install_step not in state.completed_steps:
@@ -355,9 +355,7 @@ def _adjudicate_property_claim(
     executor: Executor,
 ) -> None:
     implementer = state.implementer
-    property_author: AgentName = (
-        "codex" if implementer == "claude" else "claude"
-    )
+    property_author: AgentName = other_agent(implementer)
     property_state = state.agents[property_author]
     property_worktree = Path(property_state.worktree)
     _reset_worktree(property_worktree, property_state.last_sha)
@@ -572,14 +570,14 @@ def run_score_phase(state: RunState, executor: Executor) -> list[BranchScore]:
     started_wall = _now()
     started = time.monotonic()
     if state.mode == "symmetric":
-        names: list[AgentName] = ["claude", "codex"]
+        names: list[AgentName] = list(AGENT_NAMES)
     else:
         names = [state.implementer]
     scores: list[BranchScore] = []
     for agent in names:
         worktree = Path(state.agents[agent].worktree)
         if state.mode == "symmetric":
-            opponent: AgentName = "codex" if agent == "claude" else "claude"
+            opponent: AgentName = other_agent(agent)
             cross_passed, cross_total = _cross_tests(
                 state,
                 agent,
@@ -678,7 +676,7 @@ def run_land_phase(state: RunState) -> None:
         raise ValueError("land phase requires LAND state")
     scores = _load_scores(Path(state.run_dir) / "scores.json")
     winner_name = recommend(scores)
-    if winner_name not in ("claude", "codex"):
+    if winner_name not in AGENT_NAMES:
         raise RuntimeError("landing requires one passing machine recommendation")
     winner = cast(AgentName, winner_name)
     repo = Path(state.repo)
@@ -1042,29 +1040,33 @@ def _divergence_notes(state: RunState) -> list[str]:
         if state.property_suite_passed:
             return ["The independent property suite passed."]
         return [state.property_failure or "The independent property suite failed."]
-    claude = set(
+    first = set(
         _git(
-            Path(state.agents["claude"].worktree),
+            Path(state.agents[AGENT_NAMES[0]].worktree),
             "diff",
             "--name-only",
             state.base_sha,
-            state.agents["claude"].last_sha,
+            state.agents[AGENT_NAMES[0]].last_sha,
         ).splitlines()
     )
-    codex = set(
+    second = set(
         _git(
-            Path(state.agents["codex"].worktree),
+            Path(state.agents[AGENT_NAMES[1]].worktree),
             "diff",
             "--name-only",
             state.base_sha,
-            state.agents["codex"].last_sha,
+            state.agents[AGENT_NAMES[1]].last_sha,
         ).splitlines()
     )
     notes: list[str] = []
-    if claude - codex:
-        notes.append("Claude-only files: " + ", ".join(sorted(claude - codex)))
-    if codex - claude:
-        notes.append("Codex-only files: " + ", ".join(sorted(codex - claude)))
+    if first - second:
+        notes.append(
+            f"{AGENT_NAMES[0]}-only files: " + ", ".join(sorted(first - second))
+        )
+    if second - first:
+        notes.append(
+            f"{AGENT_NAMES[1]}-only files: " + ", ".join(sorted(second - first))
+        )
     return notes or ["Both branches changed the same file set."]
 
 
@@ -1201,11 +1203,11 @@ def run_review_phase(
         tuple[AgentName, AgentName, str, Path, str]
     ] = []
     for review_index, (reviewer_name, target_name) in enumerate(
-        (("claude", "codex"), ("codex", "claude")),
+        (AGENT_NAMES, (AGENT_NAMES[1], AGENT_NAMES[0])),
         start=1,
     ):
-        reviewer = cast(AgentName, reviewer_name)
-        target = cast(AgentName, target_name)
+        reviewer = reviewer_name
+        target = target_name
         step = f"{phase_name}:{reviewer}"
         if step in state.completed_steps:
             continue
@@ -1345,7 +1347,7 @@ def run_fix_phase(
     pending: list[
         tuple[AgentName, str, list[Finding], Path, str, str]
     ] = []
-    for agent in ("claude", "codex"):
+    for agent in AGENT_NAMES:
         step = f"{phase_name}:{agent}"
         if step in state.completed_steps:
             continue

@@ -40,18 +40,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=2,
     )
     run.add_argument(
-        "--implementer",
-        choices=("claude", "codex"),
+        "--agent-a",
         default="claude",
-        help="asymmetric implementer (default: claude)",
+        metavar="BACKEND[:MODEL]",
+        help="which CLI fills seat a, and the model to pin (default: claude)",
     )
     run.add_argument(
-        "--claude-model",
-        help="pin Claude Code's model for this run (default: the CLI's own)",
+        "--agent-b",
+        default="codex",
+        metavar="BACKEND[:MODEL]",
+        help="which CLI fills seat b, and the model to pin (default: codex)",
     )
     run.add_argument(
-        "--codex-model",
-        help="pin Codex's model for this run (default: the CLI's own)",
+        "--implementer",
+        choices=("a", "b"),
+        default="a",
+        help="which seat implements in asymmetric mode; the other writes the "
+        "property suite (default: a)",
     )
 
     resume = commands.add_parser("resume", help="resume from state.json")
@@ -66,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         if args.command == "run":
+            seats = {
+                "a": _seat(args.agent_a, "--agent-a"),
+                "b": _seat(args.agent_b, "--agent-b"),
+            }
             repo = args.repo.resolve()
             run_root = (
                 args.run_dir
@@ -82,12 +91,12 @@ def main(argv: list[str] | None = None) -> int:
                     run_root=run_root,
                     max_fix_rounds=args.max_fix_rounds,
                     implementer=args.implementer,
+                    backends={
+                        seat: backend for seat, (backend, _) in seats.items()
+                    },
                     models={
-                        agent: model
-                        for agent, model in (
-                            ("claude", args.claude_model),
-                            ("codex", args.codex_model),
-                        )
+                        seat: model
+                        for seat, (_, model) in seats.items()
                         if model is not None
                     },
                 )
@@ -114,7 +123,7 @@ def drive_run(
     state_path = run_dir.resolve() / "state.json"
     state = load_state(state_path)
     active_invoker = invoker or SubprocessInvoker(
-        Path(state.run_dir), models=state.models
+        Path(state.run_dir), models=state.models, backends=state.backends
     )
     active_executor = executor or SubprocessExecutor()
     while state.phase != "COMPLETE":
@@ -179,6 +188,18 @@ def print_report(run_dir: Path) -> None:
         return
     state = load_state(run_dir / "state.json")
     print(render_report(state, []), end="")
+
+
+def _seat(value: str, flag: str) -> tuple[str, str | None]:
+    """`BACKEND[:MODEL]` for one seat. Both seats may name the same backend;
+    an unpinned model follows that CLI's ambient default, which makes the run
+    unreproducible."""
+    backend, _, model = value.partition(":")
+    if backend not in ("claude", "codex"):
+        raise argparse.ArgumentTypeError(
+            f"{flag} takes claude or codex, got {backend!r}"
+        )
+    return backend, model or None
 
 
 def _nonnegative(value: str) -> int:

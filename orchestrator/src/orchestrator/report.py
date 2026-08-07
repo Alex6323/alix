@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orchestrator.models import RunState
+from orchestrator.models import AGENT_NAMES, RunState
 from orchestrator.scoring import BranchScore, recommend
 
 
@@ -34,16 +34,19 @@ def render_report(
             "",
             "## Agent usage",
             "",
-            "| Agent | Tokens | Cost |",
-            "| --- | ---: | ---: |",
+            "| Agent | Backend | Tokens | Cost |",
+            "| --- | --- | ---: | ---: |",
         ]
     )
-    for agent in ("claude", "codex"):
+    for agent in AGENT_NAMES:
         tokens = state.token_usage.get(agent)
         cost = state.costs_usd.get(agent)
         token_text = str(tokens) if tokens is not None else "not exposed"
         cost_text = f"${cost:.4f}" if cost is not None else "not exposed"
-        lines.append(f"| {agent} | {token_text} | {cost_text} |")
+        backend = state.backends.get(agent, "unrecorded")
+        model = state.models.get(agent)
+        backend_text = f"{backend}, {model}" if model else backend
+        lines.append(f"| {agent} | {backend_text} | {token_text} | {cost_text} |")
     lines.extend(
         [
             "",
