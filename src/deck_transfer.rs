@@ -851,18 +851,27 @@ mod tests {
 
     #[test]
     fn source_materialization_preserves_urls_and_absolute_paths_only() {
-        let root = Path::new("/workspace");
+        // Absoluteness and separators are platform-defined, so the fixtures
+        // are built the way the platform spells them rather than as Unix
+        // literals: `/absolute` is a relative path on Windows.
+        let root = Path::new("/workspace").join("root");
+        // Deliberately un-normalized: an absolute source is returned
+        // verbatim, so a version that resolved it instead would collapse
+        // this and fail rather than agree by coincidence.
+        let absolute = std::env::current_dir().unwrap().join("src/../src");
+        assert!(absolute.is_absolute() && absolute.exists());
+
         assert_eq!(
             "https://example.org/source",
-            materialized_source(" https://example.org/source ", root)
+            materialized_source(" https://example.org/source ", &root)
         );
         assert_eq!(
-            "/absolute/source",
-            materialized_source("/absolute/source", root)
+            absolute.display().to_string(),
+            materialized_source(&absolute.display().to_string(), &root)
         );
         assert_eq!(
-            "/workspace/relative/source",
-            materialized_source("relative/source", root)
+            root.join("relative/source").display().to_string(),
+            materialized_source("relative/source", &root)
         );
     }
 
