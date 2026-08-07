@@ -379,13 +379,17 @@ to this codebase. When in doubt, mirror the surrounding code.
   never publish artifacts. Review Dependabot Action-pin updates as executable
   code; never auto-merge them.
 
-- **Mutation testing runs in CI, never locally, and is LOW PRIORITY**
-  (Alex, 2026-08-06, after local runs pinned all 32 cores twice). It never
+- **Mutation testing belongs in CI and is LOW PRIORITY** (Alex,
+  2026-08-06, after local runs pinned all 32 cores twice). It never
   blocks a branch, a merge, or a release, and it is never the reason to
   make Alex wait. Three workflows own it: `mutants-branch` on every push
   to a non-main branch, `mutants-nightly` for the day's merges, and
-  `mutants-rotation` for the standing tree. Do not run `make mutants` on
-  this machine; if Alex explicitly asks, use `GATE_JOBS=1`. A full sweep is 5,466 mutants, so it is diff-scoped
+  `mutants-rotation` for the standing tree. **`make gate` and
+  `make mutants` are allowed locally again (Alex, 2026-08-07), at
+  `GATE_JOBS=1` and only at 1: the jobs number is not yours to raise, for
+  any reason, however briefly.** Prefer hand-applying a mutant and
+  running its one test over a sweep; a whole-tree shard is hours at one
+  job. A full sweep is 5,466 mutants, so it is diff-scoped
   or sharded always. The
   `mutants-nightly` workflow mutates one day of merges (`MUTANTS_BASE` set to
   the newest commit older than 24h) across six `MUTANTS_SHARD` jobs, since one
