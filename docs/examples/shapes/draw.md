@@ -1,0 +1,19 @@
+---
+format-version: 1
+id: "deck-6yf0skkfjn0eekf5m60xc3br68"
+input: draw
+---
+# input: draw: answers you cannot type
+
+The learner sketches, then reveals and self-grades. Typing a diagram is
+not a check, it is a workaround.
+
+## Draw the hiragana for "ka".
+か
+> Three strokes. The short third stroke sits to the right of the vertical.
+<!-- id: card-632530xdkjq0jac3gn337sa2ps -->
+
+## Sketch a voltage divider that halves its input.
+Two equal resistors in series; the output is taken between them.
+> Equal resistors halve it. The ratio is what matters, not the values.
+<!-- id: card-5y39p207nr8kgkeymc5mayctwm -->

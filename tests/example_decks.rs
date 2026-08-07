@@ -47,6 +47,25 @@ fn workspace_showcase_example_still_checks() {
     doctor_example("docs/examples/workspace-showcase/decks/ownership-move.md");
 }
 
+/// One deck per row of `docs/card-shapes.md`. Doctor proves each parses;
+/// that each still PRODUCES the shape it advertises is asserted through the
+/// API in `tests/api.rs`, because a file that parses can still teach the
+/// wrong thing.
+#[test]
+fn every_shape_example_still_checks() {
+    for shape in [
+        "table",
+        "reveal-line",
+        "draw",
+        "cloze",
+        "authored-choices",
+        "direction-both",
+        "plain",
+    ] {
+        doctor_example(&format!("docs/examples/shapes/{shape}.md"));
+    }
+}
+
 /// The showcase deliberately carries one malformed formula, so it can show
 /// what a malformed formula renders as. Pinning the warning keeps that card
 /// honest in both directions: a silent detector and a "tidied" example both
