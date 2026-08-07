@@ -957,6 +957,77 @@ mod tests {
         assert!(!p.contains("WebFetch"));
     }
 
+    #[test]
+    fn explore_prompts_include_only_nonempty_additional_instructions() {
+        for (label, prompt) in [
+            (
+                "workspace plan",
+                explore_prompt(
+                    ".",
+                    &spec("understand the repo"),
+                    false,
+                    &TraceConfig {
+                        extra: Some("  Focus on state transitions.  ".to_string()),
+                        ..TraceConfig::default()
+                    },
+                ),
+            ),
+            (
+                "walk",
+                walk_prompt(
+                    ".",
+                    &spec("understand the repo"),
+                    false,
+                    &TraceConfig {
+                        extra: Some("  Focus on state transitions.  ".to_string()),
+                        ..TraceConfig::default()
+                    },
+                ),
+            ),
+        ] {
+            assert!(
+                prompt.contains("Additional instructions:"),
+                "{label}: {prompt}"
+            );
+            assert!(
+                prompt.contains("Focus on state transitions."),
+                "{label}: {prompt}"
+            );
+        }
+
+        for (label, prompt) in [
+            (
+                "workspace plan",
+                explore_prompt(
+                    ".",
+                    &spec("understand the repo"),
+                    false,
+                    &TraceConfig {
+                        extra: Some("   \n\t".to_string()),
+                        ..TraceConfig::default()
+                    },
+                ),
+            ),
+            (
+                "walk",
+                walk_prompt(
+                    ".",
+                    &spec("understand the repo"),
+                    false,
+                    &TraceConfig {
+                        extra: Some("   \n\t".to_string()),
+                        ..TraceConfig::default()
+                    },
+                ),
+            ),
+        ] {
+            assert!(
+                !prompt.contains("Additional instructions:"),
+                "{label}: {prompt}"
+            );
+        }
+    }
+
     // The fake backend is a /bin/sh script (`testutil` is unix-only).
     #[cfg(unix)]
     #[test]

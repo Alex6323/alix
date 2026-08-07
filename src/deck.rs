@@ -1456,6 +1456,21 @@ mod tests {
     }
 
     #[test]
+    fn id_resolution_searches_each_supplied_directory_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "renamed.md",
+            &format!("---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\n---\n## q\na\n"),
+        );
+
+        assert_eq!(
+            Some(path),
+            resolve_dep_by_id(CANONICAL_DECK_ID, Some(dir.path()), None)
+        );
+    }
+
+    #[test]
     fn a_pasted_card_id_prerequisite_never_locks() {
         let dir = tempfile::tempdir().unwrap();
         let adv = write_deck(
@@ -2215,15 +2230,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(1, out.matches("source:").count(), "{out}");
-        assert!(out.contains("source: \"../source tree\"\n"));
-        assert!(out.contains("title: kept\n"));
-        assert!(out.contains("![diagram](<assets/deck/sha256-image.png>)"));
-        assert!(out.contains(
-            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
-        ));
-        assert!(!out.contains("../README.md"));
-        assert!(!out.contains("old image.png"));
+        assert_eq!(
+            "---\nsource: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/sha256-image.png>)\na\n<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->\n",
+            out
+        );
     }
 
     #[test]
@@ -2254,13 +2264,10 @@ mod tests {
             &["/abs/a.md".to_string(), "https://example.org".to_string()],
         )
         .unwrap();
-        assert!(
-            out.contains("source:\n  - \"/abs/a.md\"\n  - \"https://example.org\"\n"),
-            "{out}"
+        assert_eq!(
+            "---\nsource:\n  - \"/abs/a.md\"\n  - \"https://example.org\"\ntrace: t\n---\n## q\na\n",
+            out
         );
-        assert!(out.contains("trace: t\n"), "{out}");
-        assert_eq!(1, out.matches("source:").count(), "{out}");
-        assert!(!out.contains("a.md\n  - b.md"), "{out}");
     }
 
     #[test]
@@ -2284,5 +2291,106 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("trace: t\n"), "{out}");
+    }
+
+    #[test]
+    fn source_citation_rewrites_preserve_target_indent_and_final_newline() {
+        let rewrite = AtRewrite {
+            at: "src/lib.rs:2".to_string(),
+            fingerprint: Some(7),
+            asset: None,
+            line: 3,
+        };
+        let without_newline = "## q\na\n  <!-- at: old.rs:1 -->";
+        let expected = "## q\na\n  <!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 -->";
+
+        assert_eq!(
+            (expected.to_string(), 1),
+            rewrite_source_citations(without_newline, std::slice::from_ref(&rewrite))
+        );
+        assert_eq!(
+            (format!("{expected}\n"), 1),
+            rewrite_source_citations(
+                &format!("{without_newline}\n"),
+                std::slice::from_ref(&rewrite)
+            )
+        );
+    }
+
+    #[test]
+    fn frozen_rewrites_preserve_frontmatter_order_and_final_newline() {
+        let text = "---\ntitle: kept\nsource: old.md\ntrace: path\n---\n## q\na";
+        let parsed = parser::parse("t.md", text).unwrap();
+        let expected = "---\ntitle: kept\nsource: \"new.md\"\ntrace: path\n---\n## q\na";
+
+        assert_eq!(
+            expected,
+            rewrite_frozen_assets(text, parsed.frontmatter_span, Some("new.md"), &[], &[]).unwrap()
+        );
+        assert_eq!(
+            format!("{expected}\n"),
+            rewrite_frozen_assets(
+                &format!("{text}\n"),
+                parsed.frontmatter_span,
+                Some("new.md"),
+                &[],
+                &[]
+            )
+            .unwrap()
+        );
+
+        let sourceless = "---\ntitle: kept\n---\n## q\na\n";
+        let parsed = parser::parse("t.md", sourceless).unwrap();
+        assert_eq!(
+            "---\ntitle: kept\nsource: \"new.md\"\n---\n## q\na\n",
+            rewrite_frozen_assets(
+                sourceless,
+                parsed.frontmatter_span,
+                Some("new.md"),
+                &[],
+                &[]
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn markdown_replacements_accept_boundaries_and_reject_each_invalid_dimension() {
+        assert_eq!(
+            "AB",
+            replace_ranges("ab", &[(0..1, "A".into()), (1..2, "B".into())]).unwrap()
+        );
+        assert_eq!("ab!", replace_ranges("ab", &[(2..2, "!".into())]).unwrap());
+
+        for (label, text, ranges) in [
+            (
+                "overlap",
+                "abcd",
+                vec![(0..3, "x".to_string()), (2..4, "y".to_string())],
+            ),
+            (
+                "reversed",
+                "abcd",
+                vec![(std::ops::Range { start: 3, end: 2 }, "x".to_string())],
+            ),
+            ("past end", "abcd", vec![(0..5, "x".to_string())]),
+            ("split utf8 start", "é", vec![(1..2, "x".to_string())]),
+            ("split utf8 end", "é", vec![(0..1, "x".to_string())]),
+            ("line feed", "ab", vec![(0..1, "x\ny".to_string())]),
+            ("carriage return", "ab", vec![(0..1, "x\ry".to_string())]),
+        ] {
+            assert!(
+                replace_ranges(text, &ranges).is_err(),
+                "{label} must be rejected: {ranges:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn top_level_yaml_keys_exclude_each_non_top_level_shape() {
+        assert_eq!(Some("source"), top_level_yaml_key("source: x"));
+        assert_eq!(None, top_level_yaml_key("  source: nested"));
+        assert_eq!(None, top_level_yaml_key("# source: commented"));
+        assert_eq!(None, top_level_yaml_key("plain text"));
     }
 }

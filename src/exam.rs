@@ -402,8 +402,11 @@ impl Sitting {
         self.pending.is_some()
     }
     pub fn elapsed_secs(&self) -> Option<u64> {
+        self.elapsed_secs_at(crate::time::now_ms())
+    }
+    fn elapsed_secs_at(&self, now_ms: u64) -> Option<u64> {
         self.pending_since
-            .map(|since| crate::time::now_ms().saturating_sub(since) / 1000)
+            .map(|since| now_ms.saturating_sub(since) / 1000)
     }
     pub fn total(&self) -> usize {
         self.questions.len()
@@ -461,6 +464,13 @@ impl Sitting {
         if i < self.questions.len() {
             self.current = i;
         }
+    }
+
+    fn accept_questions(&mut self, questions: Vec<ExamQuestion>) {
+        self.answers = vec![String::new(); questions.len()];
+        self.questions = questions;
+        self.current = 0;
+        self.phase = Phase::Answering;
     }
 
     pub fn submit(&mut self) {
@@ -548,10 +558,7 @@ impl Sitting {
         self.pending_since = None;
         match reply {
             Reply::Questions(Ok(qs)) => {
-                self.answers = vec![String::new(); qs.len()];
-                self.questions = qs;
-                self.current = 0;
-                self.phase = Phase::Answering;
+                self.accept_questions(qs);
                 None
             }
             Reply::Questions(Err(e)) => {
@@ -757,10 +764,10 @@ fn truncate(text: &str) -> (String, bool) {
     if text.len() <= MAX_SOURCE_BYTES {
         return (text.to_string(), false);
     }
-    let mut end = MAX_SOURCE_BYTES;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = (0..=MAX_SOURCE_BYTES)
+        .rev()
+        .find(|&end| text.is_char_boundary(end))
+        .unwrap_or_default();
     (
         format!("{}\n[... source truncated ...]", &text[..end]),
         true,
@@ -1010,10 +1017,10 @@ fn remediation_prompt(gaps: &[String]) -> String {
 }
 
 fn extract_json(raw: &str) -> &str {
-    match (raw.find('{'), raw.rfind('}')) {
-        (Some(start), Some(end)) if end > start => &raw[start..=end],
-        _ => raw.trim(),
-    }
+    raw.find('{')
+        .zip(raw.rfind('}'))
+        .and_then(|(start, end)| raw.get(start..=end))
+        .unwrap_or_else(|| raw.trim())
 }
 
 fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
@@ -1027,15 +1034,14 @@ fn clean_deck_output(raw: &str) -> String {
     let Some(start) = lines.iter().position(|l| l.starts_with("## ")) else {
         return raw.trim().to_string();
     };
-    let mut end = lines.len();
-    while end > start + 1 {
-        let t = lines[end - 1].trim();
-        if t.is_empty() || t.starts_with("```") {
-            end -= 1;
-        } else {
-            break;
-        }
-    }
+    let end = lines[start + 1..]
+        .iter()
+        .rposition(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && !trimmed.starts_with("```")
+        })
+        .map(|offset| start + offset + 2)
+        .unwrap_or(start + 1);
     lines[start..end].join("\n")
 }
 
@@ -1350,6 +1356,35 @@ mod tests {
         assert_eq!("## Q\nA", clean_deck_output(raw));
     }
 
+    #[test]
+    fn json_and_deck_cleanup_handle_reversed_empty_and_trailing_boundaries() {
+        assert_eq!("} before {", extract_json("  } before {  "));
+        assert_eq!("{}", extract_json("prefix {} suffix"));
+        assert_eq!("## Q", clean_deck_output("preamble\n## Q\n\n```\n"));
+        assert_eq!(
+            "## Q\n```not trailing\nA",
+            clean_deck_output("preamble\n## Q\n```not trailing\nA\n```\n\n")
+        );
+    }
+
+    #[test]
+    fn source_truncation_is_exact_and_utf8_safe() {
+        let exact = "a".repeat(MAX_SOURCE_BYTES);
+        assert_eq!((exact.clone(), false), truncate(&exact));
+
+        let mut oversized = "a".repeat(MAX_SOURCE_BYTES - 1);
+        oversized.push('é');
+        let (truncated, did_truncate) = truncate(&oversized);
+        assert!(did_truncate);
+        assert_eq!(
+            format!(
+                "{}\n[... source truncated ...]",
+                "a".repeat(MAX_SOURCE_BYTES - 1)
+            ),
+            truncated
+        );
+    }
+
     use crate::{
         parser,
         session::is_retired_id,
@@ -1374,6 +1409,116 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("no `source:`"));
+    }
+
+    #[test]
+    fn workspace_asset_boundary_failures_surface_through_the_sitting() {
+        let dir = tempfile::tempdir().unwrap();
+        let members = dir.path().join(crate::workspace::DECKS);
+        std::fs::create_dir(&members).unwrap();
+        std::fs::write(dir.path().join(crate::workspace::MANIFEST), "").unwrap();
+        let path = members.join("d.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\nsource: https://example.org/source\n---\n## q\na\n<!-- at: source.md:1 fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+
+        let boundary = source_boundary_error(&deck).unwrap();
+        assert!(boundary.contains("missing.txt"), "{boundary}");
+        let sitting = Sitting::start(
+            &deck,
+            Strictness::Lenient,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert_eq!(Strictness::Lenient, sitting.strictness());
+        assert_eq!(Some(boundary.as_str()), sitting.error());
+        assert_eq!(None, sitting.elapsed_secs());
+    }
+
+    #[test]
+    fn sitting_navigation_accepts_only_question_indices() {
+        let mut sitting = Sitting::start_trace(
+            "first".to_string(),
+            vec!["point".to_string()],
+            "trace".to_string(),
+            "deck-trace".to_string(),
+            Strictness::Strict,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        sitting.accept_questions(vec![
+            ExamQuestion {
+                prompt: "first".to_string(),
+                points: vec!["one".to_string()],
+            },
+            ExamQuestion {
+                prompt: "second".to_string(),
+                points: vec!["two".to_string()],
+            },
+        ]);
+
+        assert_eq!(Strictness::Strict, sitting.strictness());
+        assert_eq!(0, sitting.current_index());
+        sitting.next();
+        assert_eq!(1, sitting.current_index());
+        sitting.next();
+        assert_eq!(1, sitting.current_index());
+        sitting.goto(0);
+        assert_eq!(0, sitting.current_index());
+        sitting.goto(2);
+        assert_eq!(0, sitting.current_index());
+    }
+
+    #[test]
+    fn elapsed_seconds_use_a_saturating_millisecond_boundary() {
+        let mut sitting = Sitting::start_trace(
+            "trace".to_string(),
+            vec!["point".to_string()],
+            "trace".to_string(),
+            "deck-trace".to_string(),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert_eq!(None, sitting.elapsed_secs_at(3_500));
+        sitting.pending_since = Some(1_000);
+        assert_eq!(Some(2), sitting.elapsed_secs_at(3_500));
+        assert_eq!(Some(0), sitting.elapsed_secs_at(500));
+        sitting.pending_since = Some(crate::time::now_ms().saturating_sub(2_500));
+        assert!(sitting.elapsed_secs().is_some_and(|elapsed| elapsed >= 2));
+    }
+
+    #[test]
+    fn exam_run_configuration_overrides_only_its_owned_fields() {
+        let ask = AskConfig {
+            model: Some("fallback".to_string()),
+            timeout_secs: 12,
+            cwd: Some(PathBuf::from("/source")),
+            source_access: true,
+            effort: Some("high".to_string()),
+            ..AskConfig::default()
+        };
+        let exam = ExamConfig {
+            model: Some("exam-model".to_string()),
+            timeout_secs: 34,
+            ..ExamConfig::default()
+        };
+
+        let actual = run_config(&exam, &ask);
+
+        assert_eq!(Some("exam-model".to_string()), actual.model);
+        assert_eq!(34, actual.timeout_secs);
+        assert_eq!(None, actual.cwd);
+        assert!(!actual.source_access);
+        assert_eq!(Some("high".to_string()), actual.effort);
+    }
+
+    #[test]
+    fn disconnected_exam_workers_have_a_specific_error() {
+        assert_eq!("the exam helper exited unexpectedly", thread_gone());
     }
 
     #[test]
@@ -1430,14 +1575,26 @@ mod tests {
     #[test]
     fn generate_questions_rejects_a_malformed_question() {
         let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(
-            dir.path(),
-            "{\"questions\":[{\"prompt\":\"\",\"points\":[]}]}",
-        );
-        let deck = deck_with_sources(&["https://x"]);
-        let err = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
-        assert!(format!("{err:#}").contains("malformed"));
+        for (label, reply) in [
+            (
+                "empty prompt",
+                "{\"questions\":[{\"prompt\":\"\",\"points\":[\"point\"]}]}",
+            ),
+            (
+                "empty points",
+                "{\"questions\":[{\"prompt\":\"question\",\"points\":[]}]}",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let cli = fake_reply(dir.path(), reply);
+            let deck = deck_with_sources(&["https://x"]);
+            let err =
+                generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("malformed"),
+                "{label} must be rejected"
+            );
+        }
     }
 
     #[test]

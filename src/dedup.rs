@@ -527,4 +527,61 @@ mod tests {
             map.excluded_decks
         );
     }
+
+    #[test]
+    fn fast_scan_ignores_non_decks_by_extension_and_reserved_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = "card-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let extension_only = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let conventional = "card-6v3c7x4k1m8q3z5t0b2n4d8f9w";
+        let conflict = "card-8v3c7x4k1m9q2z5t0b6n4d8f9w";
+        write(dir.path(), "a.md", "deck-a", shared);
+        write(dir.path(), "b.md", "deck-b", shared);
+        write(dir.path(), "notes.txt", "deck-c", extension_only);
+        write(dir.path(), "extension-peer.md", "deck-d", extension_only);
+        write(dir.path(), "README.md", "deck-e", conventional);
+        write(dir.path(), "readme-peer.md", "deck-f", conventional);
+        write(
+            dir.path(),
+            "copy.sync-conflict-device.md",
+            "deck-g",
+            conflict,
+        );
+        write(dir.path(), "copy-peer.md", "deck-h", conflict);
+
+        let map = scan_dir_fast(dir.path());
+        let tokens: Vec<&str> = map
+            .card_dupes
+            .iter()
+            .map(|dupe| dupe.token.as_str())
+            .collect();
+
+        assert_eq!(vec![shared], tokens);
+    }
+
+    #[test]
+    fn fast_id_extraction_obeys_frontmatter_fence_heading_and_token_boundaries() {
+        let deck = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let before_heading = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let fenced = "card-6v3c7x4k1m8q3z5t0b2n4d8f9w";
+        let prose = "card-8v3c7x4k1m9q2z5t0b6n4d8f9w";
+        let accepted = "card-7v3c7x4k1m9q2z5t0b6n4d8f9w";
+        let text = format!(
+            "---\nformat-version: 1\nid: \"{deck}\"\n---\n\
+             <!-- id: {before_heading} -->\n\
+             ## real\n\
+             ```\n\
+             ```not a closing fence\n\
+             <!-- id: {fenced} -->\n\
+             ```\n\
+             prose <!-- id: {prose} -->\n\
+             <!-- id: card-invalid! -->\n\
+             <!-- id: {accepted} -->\n"
+        );
+
+        assert_eq!(
+            (Some(deck.to_string()), vec![(accepted.to_string(), 6)]),
+            extract_ids(&text)
+        );
+    }
 }

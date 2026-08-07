@@ -768,4 +768,147 @@ mod tests {
         assert!(destination.join("decks/facts.md").is_file());
         assert!(destination.join("augment/deck-deck1.json").is_file());
     }
+
+    fn prepared_transfer() -> (tempfile::TempDir, Transfer) {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let destination = dir.path().join("destination");
+        workspace(&source, None, "");
+        workspace(&destination, None, "");
+        let deck_path = deck(&source, "facts.md", "");
+        let loaded = Deck::load(&deck_path).unwrap();
+        let mut augmentation = crate::augment::AugmentCache::open_for_deck(&loaded).unwrap();
+        augmentation.set_note("card-card1", "note".to_string(), 1);
+        augmentation.save().unwrap();
+        let mut progress = crate::state::open_store(&deck_path, &source).unwrap();
+        progress.get_or_insert("card-card1", 1);
+        progress.save().unwrap();
+        let assets = source.join("assets/deck-deck1");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::write(assets.join("evidence.txt"), b"evidence").unwrap();
+        let transfer = Transfer::prepare(&deck_path, &destination, TransferMode::Move).unwrap();
+        (dir, transfer)
+    }
+
+    #[test]
+    fn staged_identity_verification_rejects_deck_and_card_id_changes() {
+        let (_dir, transfer) = prepared_transfer();
+        let bundle = tempfile::tempdir().unwrap();
+        let staged = bundle.path().join("facts.md");
+        let original = std::fs::read_to_string(&transfer.source).unwrap();
+
+        std::fs::write(&staged, original.replace("deck-deck1", "deck-changed")).unwrap();
+        assert!(
+            format!(
+                "{:#}",
+                transfer.verify_staged_identity(bundle.path()).unwrap_err()
+            )
+            .contains("deck ID")
+        );
+
+        std::fs::write(&staged, original.replace("card-card1", "card-changed")).unwrap();
+        assert!(
+            format!(
+                "{:#}",
+                transfer.verify_staged_identity(bundle.path()).unwrap_err()
+            )
+            .contains("card IDs")
+        );
+    }
+
+    #[test]
+    fn source_verification_detects_changes_to_every_snapshotted_part() {
+        let (_dir, transfer) = prepared_transfer();
+        let augmentation = transfer.source_files.augment_for(&transfer.deck_id);
+        let asset = transfer
+            .source_files
+            .assets_for(&transfer.deck_id)
+            .join("evidence.txt");
+        let cases = [
+            (&transfer.source, transfer.baseline.deck.as_slice()),
+            (
+                &augmentation,
+                transfer.baseline.augmentation.as_deref().unwrap(),
+            ),
+            (
+                &transfer.source_progress,
+                transfer.baseline.progress.as_deref().unwrap(),
+            ),
+            (&asset, b"evidence".as_slice()),
+        ];
+
+        for (path, original) in cases {
+            std::fs::write(path, b"changed").unwrap();
+            assert!(
+                transfer.verify_source_unchanged().is_err(),
+                "a change to {} must be detected",
+                path.display()
+            );
+            std::fs::write(path, original).unwrap();
+            transfer.verify_source_unchanged().unwrap();
+        }
+    }
+
+    #[test]
+    fn source_materialization_preserves_urls_and_absolute_paths_only() {
+        let root = Path::new("/workspace");
+        assert_eq!(
+            "https://example.org/source",
+            materialized_source(" https://example.org/source ", root)
+        );
+        assert_eq!(
+            "/absolute/source",
+            materialized_source("/absolute/source", root)
+        );
+        assert_eq!(
+            "/workspace/relative/source",
+            materialized_source("relative/source", root)
+        );
+    }
+
+    #[test]
+    fn optional_file_verification_distinguishes_absent_equal_and_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("optional");
+        ensure_optional_unchanged(&path, None).unwrap();
+        assert!(ensure_optional_unchanged(&path, Some(b"expected")).is_err());
+
+        std::fs::write(&path, b"expected").unwrap();
+        ensure_optional_unchanged(&path, Some(b"expected")).unwrap();
+        assert!(ensure_optional_unchanged(&path, None).is_err());
+        assert!(ensure_optional_unchanged(&path, Some(b"changed")).is_err());
+    }
+
+    #[test]
+    fn tree_reads_are_relative_recursive_and_content_exact() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        assert!(read_tree(&missing).unwrap().is_empty());
+
+        let root = dir.path().join("tree");
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        std::fs::write(root.join("a"), [0]).unwrap();
+        std::fs::write(root.join("nested/b"), [1, 2]).unwrap();
+        assert_eq!(
+            BTreeMap::from([
+                (PathBuf::from("a"), vec![0]),
+                (PathBuf::from("nested/b"), vec![1, 2]),
+            ]),
+            read_tree(&root).unwrap()
+        );
+    }
+
+    #[test]
+    fn successful_directory_cleanup_removes_the_tree_without_a_leftover() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("remove");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("file"), b"content").unwrap();
+        let mut leftovers = Vec::new();
+
+        remove_dir_if_present(&path, &mut leftovers);
+
+        assert!(!path.exists());
+        assert!(leftovers.is_empty());
+    }
 }

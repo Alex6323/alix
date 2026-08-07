@@ -463,6 +463,39 @@ mod tests {
     }
 
     #[test]
+    fn a_collection_counts_only_child_folders_that_contain_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let populated = dir.path().join("populated");
+        let also_populated = dir.path().join("also-populated");
+        let empty = dir.path().join("empty");
+        std::fs::create_dir(&populated).unwrap();
+        std::fs::create_dir(&also_populated).unwrap();
+        std::fs::create_dir(&empty).unwrap();
+        std::fs::write(dir.path().join("ordinary-file"), "not a folder").unwrap();
+        std::fs::write(
+            populated.join("member.md"),
+            "---\nformat-version: 1\nid: \"deck-member\"\n---\n## q\nanswer\n",
+        )
+        .unwrap();
+        std::fs::write(
+            also_populated.join("member.md"),
+            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## q\nanswer\n",
+        )
+        .unwrap();
+
+        let finding = check_decks(dir.path());
+
+        assert_eq!(Status::Ok, finding.status);
+        assert!(
+            finding
+                .detail
+                .starts_with("2 decks across 2 folders/workspaces"),
+            "{}",
+            finding.detail
+        );
+    }
+
+    #[test]
     fn a_missing_decks_dir_warns_with_the_fix() {
         let dir = tempfile::tempdir().unwrap();
         let finding = check_decks(&dir.path().join("absent"));
