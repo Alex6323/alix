@@ -118,7 +118,9 @@ The rest of the AI-and-deck surface:
 
 - `alix deck init <file>`: explicitly initialize a hand-authored Markdown deck
   with stable deck and card IDs. Uninitialized `.md` files are ignored by
-  discovery and never stamped merely because they contain `##` headings.
+  discovery and never stamped merely because they contain `##` headings, and a
+  `<deck>.personal.md` is refused outright: it belongs to the deck beside it
+  and never gets an `id:` of its own.
 - `alix deck augment <deck> --target <...>`: precompute AI augmentations
   (choices, notes, questions, keypoints, format, order). The augmentation
   document stays beside the deck. `--store` affects only the private progress

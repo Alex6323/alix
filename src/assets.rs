@@ -72,6 +72,8 @@ pub enum InitializeError {
         #[source]
         source: std::io::Error,
     },
+    #[error("{path} is a personal file, not a deck; it belongs to the deck beside it")]
+    Personal { path: PathBuf },
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -178,6 +180,15 @@ pub fn freeze_member(path: &Path) -> Result<FreezeReport, AssetError> {
 }
 
 pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(crate::workspace::is_sidecar_name)
+    {
+        return Err(InitializeError::Personal {
+            path: path.to_path_buf(),
+        });
+    }
     let original = std::fs::read(path).map_err(|source| InitializeError::Read {
         path: path.to_path_buf(),
         source,
@@ -587,6 +598,29 @@ mod tests {
         std::fs::create_dir(directory.path().join("decks")).unwrap();
         std::fs::write(directory.path().join("alix.toml"), "").unwrap();
         directory
+    }
+
+    #[test]
+    fn initializing_a_personal_file_refuses_and_leaves_it_untouched() {
+        let dir = workspace();
+        let decks = dir.path().join("decks");
+        std::fs::write(decks.join("spanish.md"), "## darse cuenta\nto realise\n").unwrap();
+        let personal = decks.join("spanish.personal.md");
+        let text = "---\nformat-version: 1\nfor: deck-abc\n---\n\n\
+                    <!-- note: card-one -->\n> mine\n";
+        std::fs::write(&personal, text).unwrap();
+
+        let error = initialize(&personal).unwrap_err();
+
+        assert!(
+            matches!(&error, InitializeError::Personal { path } if path == &personal),
+            "{error:?}"
+        );
+        assert_eq!(
+            text,
+            std::fs::read_to_string(&personal).unwrap(),
+            "a refusal writes nothing: no `id:`, no card stamps"
+        );
     }
 
     #[test]

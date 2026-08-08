@@ -18,8 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   marker opens its block, because a note has to name the card it belongs to
   before anything below it means anything. Nothing in the file copies the
   deck, so nothing in it can go stale.
-  A personal file is never listed as a deck, and `alix share` leaves it at
-  home in both directions: it is never bundled, and an arriving bundle
+  A personal file is never listed as a deck, `alix deck init` refuses one
+  rather than stamping it with an `id:` of its own, and `alix share` leaves
+  it at home in both directions: it is never bundled, and an arriving bundle
   cannot overwrite yours.
 
 - The example decks gained one for cloze inside a formula, showing that

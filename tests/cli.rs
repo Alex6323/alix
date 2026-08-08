@@ -4129,6 +4129,29 @@ fn deck_init_refuses_plain_prose_without_changing_it() {
 }
 
 #[test]
+fn deck_init_refuses_a_personal_file_without_changing_it() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "spanish.md", "## darse cuenta\nto realise\n");
+    let original = "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
+                    <!-- note: card-onetwothreefourfivesixsev -->\n> mine\n";
+    let path = write(dir.path(), "spanish.personal.md", original);
+
+    let out = alix(&["deck", "init", &path]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is a personal file, not a deck"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert_eq!(
+        original,
+        std::fs::read_to_string(path).unwrap(),
+        "the refusal must not stamp it with an `id:` of its own"
+    );
+}
+
+#[test]
 fn deck_init_refuses_a_generic_frontmatter_id_without_changing_it() {
     let dir = TempDir::new().unwrap();
     let original = "---\nid: \"article\"\n---\n## Question\nAnswer\n";
