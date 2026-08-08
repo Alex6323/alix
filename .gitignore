@@ -52,3 +52,9 @@ __pycache__/
 # llvm-cov run residue
 *.profraw
 /mutants.out*/
+
+# cargo-fuzz runtime output. Only the hand-authored seeds under fuzz/seeds/
+# are tracked; a real run writes hundreds of generated units into the corpus.
+/fuzz/artifacts/
+/fuzz/corpus/
+/fuzz/target/

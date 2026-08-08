@@ -1,0 +1,19 @@
+[package]
+name = "alix-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+alix = { path = "..", default-features = false }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "stamp_deck"
+path = "fuzz_targets/stamp_deck.rs"
+test = false
+doc = false
+bench = false

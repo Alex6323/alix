@@ -187,7 +187,12 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
 
     // Safety: apply insertions right-to-left (sorted below) so an earlier
     // offset is never shifted by a later insertion.
-    let mut inserts: Vec<(usize, String)> = Vec::new();
+    // (offset, rank, text). Rank breaks a tie at end of file, where a block's
+    // closing line and the last row's own end are the same position: the row's
+    // stamp has to stay inside the row.
+    const AFTER_BLOCK: u8 = 0;
+    const WITHIN_LINE: u8 = 1;
+    let mut inserts: Vec<(usize, u8, String)> = Vec::new();
     for (line, tok) in card_lines.iter().zip(&minted_cards) {
         let anchor = block_end_line(body, *line);
         let newline = line_terminator(body, anchor);
@@ -197,14 +202,18 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         } else {
             ""
         };
-        inserts.push((offset, format!("{lead}<!-- id: {tok} -->{newline}")));
+        inserts.push((
+            offset,
+            AFTER_BLOCK,
+            format!("{lead}<!-- id: {tok} -->{newline}"),
+        ));
     }
     for (line, stamp) in &row_mints {
         let start = nth_line_start(body, *line).ok_or(StampError::MissingLine(*line))?;
         let rest = &body[start..];
         let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
         let end = raw.trim_end_matches(&WS[..]).len();
-        inserts.push((start + end, format!(" <!-- r:{stamp} -->")));
+        inserts.push((start + end, WITHIN_LINE, format!(" <!-- r:{stamp} -->")));
     }
     for (end_line, tok) in &container_mints {
         let newline = line_terminator(body, *end_line);
@@ -215,7 +224,11 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         } else {
             ""
         };
-        inserts.push((offset, format!("{lead}<!-- id: {tok} -->{newline}")));
+        inserts.push((
+            offset,
+            AFTER_BLOCK,
+            format!("{lead}<!-- id: {tok} -->{newline}"),
+        ));
     }
     minted_cards.extend(container_mints.iter().map(|(_, tok)| tok.clone()));
     let mut prepend = String::new();
@@ -229,7 +242,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
                 Some(_) => String::new(),
                 None => format!("format-version: {DECK_FORMAT_VERSION}\n"),
             };
-            inserts.push((offset, format!("{version}id: \"{tok}\"\n")));
+            inserts.push((offset, AFTER_BLOCK, format!("{version}id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
             prepend = format!("---\nformat-version: {DECK_FORMAT_VERSION}\nid: \"{tok}\"\n---\n\n");
@@ -237,9 +250,12 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         _ => {}
     }
 
-    inserts.sort_by_key(|b| std::cmp::Reverse(b.0));
+    // Descending, so each insertion leaves the earlier offsets valid. At an
+    // equal offset the block-closing text goes in first, which leaves the
+    // row's stamp ahead of it in the finished line.
+    inserts.sort_by_key(|(offset, rank, _)| (std::cmp::Reverse(*offset), *rank));
     let mut new_body = body.to_string();
-    for (offset, text) in inserts {
+    for (offset, _, text) in inserts {
         new_body.insert_str(offset, &text);
     }
     let new_text = format!("{bom}{prepend}{new_body}");
@@ -1153,6 +1169,33 @@ mod tests {
         let text = "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n| c | d |\n|---|---|\n| p | q | <!-- r:7m3p5q -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
 
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_table_at_eof_without_a_final_newline_keeps_its_row_stamp_on_the_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |",
+        );
+
+        let first = stamp_deck(&path).unwrap();
+        let once = fs::read_to_string(&path).unwrap();
+        let stamp = first.minted_rows.first().expect("the row is stamped");
+
+        assert!(
+            once.contains(&format!("| x | y | <!-- r:{stamp} -->")),
+            "the row stamp belongs in the row, not on a line of its own: {once:?}"
+        );
+
+        let second = stamp_deck(&path).unwrap();
+        assert_eq!(
+            StampOutcome::default(),
+            second,
+            "a second stamp re-minted the row, so its card id would change: {once:?}"
+        );
+        assert_eq!(once, fs::read_to_string(&path).unwrap());
     }
 
     #[test]

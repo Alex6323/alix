@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants bump-rust
+.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
 
 # Compile the workspace.
 build:
@@ -188,6 +188,21 @@ mutants: gate-guard
 	elif [ $$status -ne 0 ]; then \
 		exit $$status; \
 	fi
+
+# Expensive discovery probe, intentionally absent from check, gate, and ci.
+# The weekly workflow raises the one-minute local default to ten minutes.
+FUZZ_SECONDS ?= 60
+FUZZ_TMPDIR ?= $(HOME)/tmp/alix-stamp-fuzz
+FUZZ_TARGET_DIR ?= $(HOME)/tmp/alix-stamp-fuzz-target
+FUZZ_TRIPLE ?= x86_64-unknown-linux-gnu
+
+fuzz-stamp:
+	@mkdir -p "$(FUZZ_TMPDIR)" "$(FUZZ_TARGET_DIR)" fuzz/corpus/stamp_deck
+	TMPDIR="$(FUZZ_TMPDIR)" cargo +$(RUST_NIGHTLY) fuzz run \
+		--target "$(FUZZ_TRIPLE)" --target-dir "$(FUZZ_TARGET_DIR)" \
+		--jobs 1 stamp_deck fuzz/corpus/stamp_deck fuzz/seeds/stamp_deck -- \
+		-max_total_time=$(FUZZ_SECONDS) -max_len=65536 -timeout=5 \
+		-rss_limit_mb=2048 -print_final_stats=1
 
 gate-guard:
 	@! pgrep -x cargo-mutants > /dev/null || { echo "a cargo-mutants run is already active on this machine; wait for it or stop it first"; exit 1; }

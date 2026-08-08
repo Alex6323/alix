@@ -174,6 +174,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Stamping a deck that ends in a card table with no final newline put the
+  row's stamp on a line of its own instead of in the row. The row then read
+  as unstamped, so every later stamp minted it a new one and the row's card
+  id changed with it, detaching that row's review history. Found by the new
+  stamper fuzzing.
+
 - A draw card is answerable on the mobile client. It asked for typed text
   before, including for a formula's piece, because the client dropped the
   card's input kind on the way in from the core. Pen, eraser, undo, and

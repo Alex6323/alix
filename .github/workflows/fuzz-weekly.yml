@@ -1,0 +1,51 @@
+name: Stamper fuzzing
+
+# Hand-authored malformed decks are ordinary input to `alix deck init`, and
+# this path rewrites the user's source file. The harness therefore checks both
+# rejection purity and fixed-point stamping without inspecting minted IDs.
+#
+# This is a time-boxed discovery probe, not a permanent line-count ratchet.
+# Remove the target after 2026-11-08 if three months of runs find no defect.
+on:
+  schedule:
+    # 05:41 UTC Sunday, clear of the nightly mutation and drift jobs.
+    - cron: "41 5 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stamp:
+    name: stamp_deck fixed point and rejection purity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: nightly-2026-07-23
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: fuzz -> target
+
+      - name: Install the exact fuzz runner
+        run: cargo install --locked --version 0.13.1 cargo-fuzz
+
+      - name: Fuzz for ten minutes
+        run: |
+          make fuzz-stamp \
+            FUZZ_SECONDS=600 \
+            FUZZ_TMPDIR="$RUNNER_TEMP/alix-stamp-fuzz" \
+            FUZZ_TARGET_DIR="$RUNNER_TEMP/alix-stamp-fuzz-target"
+
+      - name: Keep a reproducer
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: stamp-deck-fuzz-artifact
+          path: fuzz/artifacts/stamp_deck/
+          retention-days: 14
+          if-no-files-found: ignore
