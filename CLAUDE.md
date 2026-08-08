@@ -396,8 +396,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   the newest commit older than 24h) across six `MUTANTS_SHARD` jobs, since one
   day already exceeds GitHub's 6h ceiling in a single job. A second workflow,
   `mutants-rotation`, sweeps the whole tree (`MUTANTS_ALL=1`) across four
-  parallel thirty-sixth shards per night, picked from the day of the year so
-  no state is kept; it covers what predates the nightly and re-covers
+  parallel thirty-sixth shards per night, picked from a monotonic UTC day
+  index so no state is kept and New Year cannot reset the cycle; it covers
+  what predates the nightly and re-covers
   everything on a rolling nine-night cycle. It fails on misses, mutant
   timeouts, and overruns; the summary and artifact upload either way, and red
   stays red until the backlog drains shard by shard.

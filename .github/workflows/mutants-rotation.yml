@@ -2,12 +2,12 @@ name: Mutation rotation
 
 # The nightly diff run only ever mutates what just merged, so everything older
 # than that job has never been mutated at all. This one grinds through the
-# whole tree instead: four parallel thirty-sixths per night, advancing by
-# date, so the codebase is covered on a rolling nine-day cycle and re-covered
-# as it changes.
+# whole tree instead: four parallel thirty-sixths per night, advancing by a
+# monotonic UTC day index, so the codebase is covered on a rolling nine-day
+# cycle and re-covered as it changes.
 #
-# The four shards come from the day of the year, so there is no state to keep
-# and nothing to drift. A missed night just means those slices wait a cycle.
+# The four shards come from the UTC day index, so there is no state to keep and
+# no discontinuity at New Year. A missed night means those slices wait a cycle.
 #
 # Misses, mutant timeouts, and overruns fail the job; the summary and
 # artifact still upload either way.
@@ -38,7 +38,9 @@ jobs:
         id: shards
         env:
           REQUESTED_SHARD: ${{ inputs.shard }}
-        run: python3 scripts/mutants_rotation_plan.py "$(date -u +%j)" "$REQUESTED_SHARD" >> "$GITHUB_OUTPUT"
+        run: |
+          day=$(( $(date -u +%s) / 86400 ))
+          python3 scripts/mutants_rotation_plan.py "$day" "$REQUESTED_SHARD" >> "$GITHUB_OUTPUT"
 
   sweep:
     name: mutation rotation ${{ matrix.shard }}/${{ needs.plan.outputs.count }}

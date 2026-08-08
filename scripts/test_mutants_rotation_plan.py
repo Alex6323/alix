@@ -1,3 +1,4 @@
+import datetime
 import pathlib
 import unittest
 
@@ -8,7 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 class MutantsRotationWorkflowTests(unittest.TestCase):
-    def test_schedule_runs_four_adjacent_thirty_sixths_each_night(self):
+    def test_adjacent_utc_days_run_four_adjacent_thirty_sixths(self):
         self.assertEqual((36, [12, 13, 14, 15]), rotation_plan(219, ""))
         self.assertEqual((36, [16, 17, 18, 19]), rotation_plan(220, ""))
 
@@ -17,6 +18,18 @@ class MutantsRotationWorkflowTests(unittest.TestCase):
             shard
             for day in range(1, 10)
             for shard in rotation_plan(day, "")[1]
+        ]
+
+        self.assertEqual(list(range(36)), sorted(shards))
+
+    def test_nine_nights_crossing_new_year_cover_every_shard_once(self):
+        epoch = datetime.date(1970, 1, 1)
+        start = datetime.date(2026, 12, 24)
+        nights = [start + datetime.timedelta(days=offset) for offset in range(9)]
+        shards = [
+            shard
+            for night in nights
+            for shard in rotation_plan((night - epoch).days, "")[1]
         ]
 
         self.assertEqual(list(range(36)), sorted(shards))
@@ -32,12 +45,16 @@ class MutantsRotationWorkflowTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     rotation_plan(220, requested)
 
+        with self.assertRaises(ValueError):
+            rotation_plan(-1, "")
+
     def test_workflow_uses_the_plan_for_matrix_denominator_and_artifacts(self):
         workflow = (ROOT / ".github/workflows/mutants-rotation.yml").read_text(
             encoding="utf-8"
         )
 
         self.assertIn("shard: ${{ fromJSON(needs.plan.outputs.matrix) }}", workflow)
+        self.assertIn('day=$(( $(date -u +%s) / 86400 ))', workflow)
         self.assertIn(
             "MUTANTS_SHARD=${{ matrix.shard }}/${{ needs.plan.outputs.count }}",
             workflow,
