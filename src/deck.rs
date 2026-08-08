@@ -104,8 +104,6 @@ pub enum DeckError {
     },
     #[error("{path}: file name is not valid UTF-8")]
     InvalidFileName { path: PathBuf },
-    #[error("{path}: the card at line {line} is a table row; a note cannot attach to it")]
-    TableRowNote { path: PathBuf, line: usize },
 }
 
 impl Deck {
@@ -537,51 +535,6 @@ fn front_lines_of(path: &Path, text: &str) -> Result<Vec<usize>, DeckError> {
     })
 }
 
-pub fn append_note(path: &Path, front_line: usize, notes: &[String]) -> Result<(), DeckError> {
-    if notes.is_empty() {
-        return Ok(());
-    }
-    let io_err = |source| DeckError::Io {
-        path: path.to_path_buf(),
-        source,
-    };
-    let text = std::fs::read_to_string(path).map_err(io_err)?;
-    // A `>` line after a table row is a parse error, so writing one would
-    // make the deck unloadable; refuse with the file untouched.
-    let parsed = parser::parse("deck.md", &text).map_err(|source| DeckError::Parse {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    if parsed
-        .tables
-        .iter()
-        .any(|table| table.rows.iter().any(|row| row.line == front_line))
-    {
-        return Err(DeckError::TableRowNote {
-            path: path.to_path_buf(),
-            line: front_line,
-        });
-    }
-    // Block boundaries: plain card fronts plus each table's HEADER line; a
-    // row line as boundary would land the note inside the table block.
-    let row_lines: std::collections::HashSet<usize> = parsed
-        .tables
-        .iter()
-        .flat_map(|table| table.rows.iter().map(|row| row.line))
-        .collect();
-    let mut fronts: Vec<usize> = parsed
-        .cards
-        .iter()
-        .map(|card| card.line)
-        .filter(|line| !row_lines.contains(line))
-        .chain(parsed.tables.iter().map(|table| table.line))
-        .collect();
-    fronts.sort_unstable();
-    fronts.dedup();
-    let new_text = insert_note_lines(&text, &fronts, front_line, notes);
-    write_deck_text(path, &new_text)
-}
-
 pub fn append_cards(path: &Path, cards: &str) -> Result<(), DeckError> {
     let cards = cards.trim_end();
     if cards.is_empty() {
@@ -948,47 +901,6 @@ fn remove_card_blocks(text: &str, fronts: &[usize], front_lines: &[usize]) -> St
         .collect();
     let mut result = kept.join("\n");
     if text.ends_with('\n') && !result.is_empty() && !result.ends_with('\n') {
-        result.push('\n');
-    }
-    result
-}
-
-fn insert_note_lines(text: &str, fronts: &[usize], front_line: usize, notes: &[String]) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-
-    let bound = fronts
-        .iter()
-        .find(|&&f| f > front_line)
-        .map(|&f| f.saturating_sub(1))
-        .unwrap_or(lines.len())
-        .min(lines.len());
-    let front_index = front_line.saturating_sub(1);
-    let mut last_content = front_index;
-    for (i, line) in lines.iter().enumerate().take(bound).skip(front_index + 1) {
-        if !line.trim().is_empty() {
-            last_content = i;
-        }
-    }
-    // The card's trailing comment markers (`at:` locators, the closing `id:`)
-    // stay last: stamping mints at that position, and doctor flags a marker
-    // with content after it.
-    let content_start = front_index.saturating_add(1);
-    let insert_at = (content_start..=last_content)
-        .rev()
-        .find(|&i| {
-            let line = lines[i].trim();
-            !(line.starts_with("<!--") && line.ends_with("-->"))
-        })
-        .map(|i| i.saturating_add(1))
-        .unwrap_or(content_start);
-
-    let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
-    for (offset, note) in notes.iter().enumerate() {
-        out.insert(insert_at + offset, format!("> {note}"));
-    }
-
-    let mut result = out.join("\n");
-    if text.ends_with('\n') {
         result.push('\n');
     }
     result
@@ -1582,119 +1494,6 @@ mod tests {
         assert_eq!("mydeck.md", deck.subject);
         assert_eq!(1, deck.cards.len());
         assert_eq!("mydeck.md", &*deck.cards[0].subject);
-    }
-
-    #[test]
-    fn insert_note_after_existing_card_content() {
-        let text = "## one\nback 1\n> old note\n\n## two\nback 2\n";
-        let notes = vec!["new a".to_string(), "new b".to_string()];
-        let result = insert_note_lines(text, &fronts(text), 1, &notes);
-        assert_eq!(
-            "## one\nback 1\n> old note\n> new a\n> new b\n\n## two\nback 2\n",
-            result
-        );
-        let cards = parser::parse_str("s.md", &result).unwrap();
-        assert_eq!(Some("old note\nnew a\nnew b".to_string()), cards[0].note);
-    }
-
-    #[test]
-    fn insert_note_on_last_card_without_note() {
-        let text = "## one\nback 1\n";
-        let result = insert_note_lines(text, &fronts(text), 1, &["note".to_string()]);
-        assert_eq!("## one\nback 1\n> note\n", result);
-        let cards = parser::parse_str("s.md", &result).unwrap();
-        assert_eq!(Some("note".to_string()), cards[0].note);
-    }
-
-    #[test]
-    fn insert_note_targets_the_right_card() {
-        let text = "## one\nback 1\n\n## two\nback 2\n\n## three\nback 3\n";
-        let result = insert_note_lines(text, &fronts(text), 4, &["mid".to_string()]);
-        let cards = parser::parse_str("s.md", &result).unwrap();
-        assert_eq!(None, cards[0].note);
-        assert_eq!(Some("mid".to_string()), cards[1].note);
-        assert_eq!(None, cards[2].note);
-    }
-
-    #[test]
-    fn insert_note_is_not_fooled_by_a_fenced_heading() {
-        let text = "## one\n```\n## not a card\n```\ntail\n\n## two\nb\n";
-        let result = insert_note_lines(text, &fronts(text), 1, &["n".to_string()]);
-        assert_eq!(
-            "## one\n```\n## not a card\n```\ntail\n> n\n\n## two\nb\n",
-            result
-        );
-    }
-
-    #[test]
-    fn append_note_rewrites_the_file_and_card_ids_survive() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(&path, "## front <!-- id: card-q1 -->\nanswer\n").unwrap();
-
-        let before = Deck::load(&path).unwrap();
-        append_note(&path, 1, &["explained".to_string()]).unwrap();
-        let after = Deck::load(&path).unwrap();
-
-        assert_eq!(Some("explained".to_string()), after.cards[0].note);
-        assert_eq!(before.cards[0].id(), after.cards[0].id());
-    }
-
-    #[test]
-    fn appending_a_note_to_a_table_row_refuses_loudly_and_writes_nothing() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "| word | meaning | note |\n|---|---|---|\n| one | eins | old | <!-- r:4k2x9w -->\n| two | zwei | | <!-- r:7m3p5q -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
-        )
-        .unwrap();
-        let before = std::fs::read_to_string(&path).unwrap();
-
-        let result = append_note(&path, 3, &["fresh".to_string()]);
-
-        assert!(
-            matches!(result, Err(DeckError::TableRowNote { line: 3, .. })),
-            "{result:?}"
-        );
-        assert_eq!(before, std::fs::read_to_string(&path).unwrap());
-        Deck::load(&path).expect("persisting a tutor note must not corrupt the table deck");
-    }
-
-    #[test]
-    fn a_plain_card_still_takes_notes_in_a_deck_that_also_holds_a_table() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "## q\na\n\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:4k2x9w -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
-        )
-        .unwrap();
-
-        append_note(&path, 1, &["explained".to_string()]).unwrap();
-
-        let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some("explained"), deck.cards[0].note.as_deref());
-    }
-
-    #[test]
-    fn append_note_lands_before_the_closing_comment_markers() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "## front\nanswer\n> old note\n<!-- at: notes.md:1-2 -->\n<!-- id: card-q1 -->\n\n## next\nb\n<!-- id: card-q2 -->\n",
-        )
-        .unwrap();
-
-        append_note(&path, 1, &["fresh".to_string()]).unwrap();
-
-        let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(
-            "## front\nanswer\n> old note\n> fresh\n<!-- at: notes.md:1-2 -->\n<!-- id: card-q1 -->\n\n## next\nb\n<!-- id: card-q2 -->\n",
-            text,
-            "the id marker must stay the card's last line"
-        );
     }
 
     #[test]

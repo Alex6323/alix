@@ -480,12 +480,18 @@ impl ReviewSession {
         if notes.is_empty() {
             return Ok(());
         }
-        alix::deck::append_note(&self.deck_path, line as usize, &notes)?;
-        if let Some(cur) = self
+        let line = line as usize;
+        let Some(card_id) = self
             .session
-            .current_mut()
-            .filter(|cur| cur.line == line as usize)
-        {
+            .cards()
+            .iter()
+            .find(|card| card.line == line)
+            .and_then(alix::card::Card::id)
+        else {
+            bail!("no card at line {line} carries an id to attach a note to");
+        };
+        alix::personal::append_note(&self.deck_path, &self.deck_token, &card_id, &notes)?;
+        if let Some(cur) = self.session.current_mut().filter(|cur| cur.line == line) {
             cur.append_note(&notes);
         }
         Ok(())
@@ -1263,11 +1269,13 @@ mod tests {
         let root = dir.path();
         write(&root.join("d.md"), "## q <!-- id: card-q1 -->\na\n");
 
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        // Read after opening: stamping adds frontmatter, so the card moves.
         let before = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let id_before = before.cards[0].id().expect("the fixture stamps its own id");
         let line = before.cards[0].line;
+        let deck_bytes_before = std::fs::read(root.join("d.md")).unwrap();
 
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         s.grade(Grade::Pass, Some(LATER)).unwrap();
         let schedule_before = reopened_store(root, "d.md")
             .get(&id_before)
@@ -1280,9 +1288,19 @@ mod tests {
         s.apply_card_note(line as u32, vec!["first".to_string(), "second".to_string()])
             .unwrap();
 
-        let text = std::fs::read_to_string(root.join("d.md")).unwrap();
-        assert!(text.contains("> first"), "{text}");
-        assert!(text.contains("> second"), "{text}");
+        let sidecar =
+            std::fs::read_to_string(alix::personal::sidecar_path(&root.join("d.md"))).unwrap();
+        assert!(sidecar.contains("> first"), "{sidecar}");
+        assert!(sidecar.contains("> second"), "{sidecar}");
+        assert!(
+            sidecar.contains(&format!("<!-- note: {id_before} -->")),
+            "the block names the card the note was written against: {sidecar}"
+        );
+        assert_eq!(
+            deck_bytes_before,
+            std::fs::read(root.join("d.md")).unwrap(),
+            "the phone must not write the authored deck either"
+        );
 
         let after = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let id_after = after.cards[0].id().expect("the fixture stamps its own id");
@@ -1351,11 +1369,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q1\na1\n\n## q2\na2\n");
+
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let line1 = loaded.cards[0].line;
         let line2 = loaded.cards[1].line;
-
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         let current_line = s.tutor_card().expect("a card is current").line;
         let other_line = if current_line == line1 { line2 } else { line1 };
 
@@ -1371,10 +1389,11 @@ mod tests {
             "a note anchored to a different card's line must not mirror onto \
              the current card"
         );
-        let text = std::fs::read_to_string(root.join("d.md")).unwrap();
+        let sidecar =
+            std::fs::read_to_string(alix::personal::sidecar_path(&root.join("d.md"))).unwrap();
         assert!(
-            text.contains("> stale"),
-            "the file append is unconditional (line-keyed): {text}"
+            sidecar.contains("> stale"),
+            "the sidecar append is unconditional (line-keyed): {sidecar}"
         );
     }
 
