@@ -32,6 +32,20 @@ fn alix(args: &[&str]) -> Output {
         .expect("failed to run the alix binary")
 }
 
+/// Like [`alix`], but run from `cwd`, so a relative deck argument resolves the
+/// way it does when someone runs alix from inside their decks folder.
+fn alix_in(cwd: &Path, args: &[&str]) -> Output {
+    let home = TempDir::new().unwrap();
+    Command::new(env!("CARGO_BIN_EXE_alix"))
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path())
+        .env("XDG_DATA_HOME", home.path())
+        .output()
+        .expect("failed to run the alix binary")
+}
+
 /// Like [`alix`], but with a caller-supplied (long-lived) home directory
 /// instead of an ephemeral one — for a test that needs to inspect what landed
 /// in the default decks/config dir, or re-invoke against the same state — plus
@@ -4126,6 +4140,35 @@ fn deck_init_refuses_plain_prose_without_changing_it() {
         stderr(&out)
     );
     assert_eq!(original, std::fs::read_to_string(path).unwrap());
+}
+
+#[test]
+fn deck_init_freezes_its_excerpts_when_named_by_a_relative_path() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    std::fs::write(decks.join("notes.md"), "the cited paragraph\nsecond line\n").unwrap();
+    std::fs::write(
+        decks.join("d.md"),
+        format!(
+            "---\nsource: {}\n---\n\n## what does it say\nthe cited paragraph\n\
+             <!-- at: notes.md:1-2 -->\n",
+            decks.display()
+        ),
+    )
+    .unwrap();
+
+    // The obvious way to do it: from inside the folder, by bare file name.
+    let out = alix_in(&decks, &["deck", "init", "d.md"]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let text = std::fs::read_to_string(decks.join("d.md")).unwrap();
+    assert!(
+        text.contains("fingerprint: xxh64-") && text.contains("asset: sha256-"),
+        "a relative path must freeze the excerpt exactly as an absolute one does: {text}"
+    );
 }
 
 #[test]

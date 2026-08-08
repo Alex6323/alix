@@ -193,6 +193,12 @@ pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
         path: path.to_path_buf(),
         source,
     })?;
+    // Workspace discovery walks parents, and a bare file name has none, so a
+    // relative path would silently initialize without freezing.
+    let path = &std::path::absolute(path).map_err(|source| InitializeError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let stamp = crate::stamp::stamp_deck(path)?;
     let freeze = if crate::workspace::root_for_deck(path).is_some() {
         match freeze_member(path) {
