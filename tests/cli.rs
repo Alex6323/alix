@@ -4190,7 +4190,11 @@ fn a_relative_deck_path_resolves_the_same_workspace_as_an_absolute_one() {
 #[test]
 fn a_relative_decks_dir_resolves_the_same_store_as_an_absolute_one() {
     let dir = TempDir::new().unwrap();
-    let ws = dir.path();
+    // Canonical, because a process started in `ws` reports its resolved cwd:
+    // macOS symlinks its temp dir, so the two spellings would print different
+    // paths for the same store.
+    let ws = &dir.path().canonicalize().unwrap();
+    let ws = ws.as_path();
     std::fs::write(ws.join("alix.toml"), "").unwrap();
     let decks = ws.join("decks");
     std::fs::create_dir(&decks).unwrap();
