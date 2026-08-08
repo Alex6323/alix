@@ -64,6 +64,10 @@ pub enum StampError {
     /// `std` feature, so it can't be a `#[source]` here.
     #[error("cannot mint a token: {0}")]
     Mint(getrandom::Error),
+    #[error(
+        "{path}: line {line}: a code fence opens here and never closes, so a stamp would land inside it; close the fence and try again"
+    )]
+    UnclosedFence { path: PathBuf, line: usize },
     #[error("token `{token}` is not present in any `<!-- id: -->` comment")]
     TokenNotFound { token: String },
     #[error("cannot mint a row stamp unused by its table after many attempts")]
@@ -108,6 +112,19 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     if deck.cards.is_empty() && deck.frontmatter_span.is_none() {
         return Err(StampError::NotADeck {
             path: path.to_path_buf(),
+        });
+    }
+
+    // An id written past an unclosed fence is inside it, so the card still
+    // reads as unstamped and the next stamp appends another one, forever.
+    if let Some(lint) = deck
+        .lints
+        .iter()
+        .find(|lint| matches!(lint.kind, parser::LintKind::UnclosedFence))
+    {
+        return Err(StampError::UnclosedFence {
+            path: path.to_path_buf(),
+            line: lint.line,
         });
     }
 
@@ -1169,6 +1186,26 @@ mod tests {
         let text = "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n| c | d |\n|---|---|\n| p | q | <!-- r:7m3p5q -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
 
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn an_unclosed_fence_is_refused_rather_than_stamped_into() {
+        let dir = tempfile::tempdir().unwrap();
+        let original =
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\n~~~\nc\n";
+        let path = write(&dir, "deck.md", original);
+
+        let error = stamp_deck(&path).unwrap_err();
+
+        assert!(
+            matches!(&error, StampError::UnclosedFence { line: 6, .. }),
+            "{error:?}"
+        );
+        assert_eq!(
+            original,
+            fs::read_to_string(&path).unwrap(),
+            "a refusal must not write: the id would land inside the fence"
+        );
     }
 
     #[test]

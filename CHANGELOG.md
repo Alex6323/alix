@@ -174,6 +174,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix deck init` refuses a deck whose code fence never closes, instead of
+  writing an id line inside the fence. The card then still read as unstamped,
+  so every later stamp appended another id and the file grew one each time.
+  `alix doctor` already named the unclosed fence and its line.
+
 - Stamping a deck that ends in a card table with no final newline put the
   row's stamp on a line of its own instead of in the row. The row then read
   as unstamped, so every later stamp minted it a new one and the row's card
