@@ -76,9 +76,16 @@ pub struct Lint {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LintKind {
-    UnknownKey { key: String },
-    BadValue { key: String, value: String },
-    EmptyValue { key: String },
+    UnknownKey {
+        key: String,
+    },
+    BadValue {
+        key: String,
+        value: String,
+    },
+    EmptyValue {
+        key: String,
+    },
     RevealOnCloze,
     IndentedH2,
     ClozeInHole,
@@ -89,7 +96,15 @@ pub enum LintKind {
     ChoiceNeedsBothSides,
     DuplicateChoiceOption,
     ChoiceMultiCorrectUnsupported,
-    UntypableHole { answer: String },
+    UntypableHole {
+        answer: String,
+    },
+    /// A block note that spells out one hole's answer, which every other
+    /// hole of the block also shows. `hole` is 1-based, as an author counts.
+    NoteContainsHoleAnswer {
+        hole: usize,
+        answer: String,
+    },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -1147,6 +1162,21 @@ fn build_card(
         answer.trim_start().starts_with('\\')
     }
 
+    /// Whole-word, case-insensitive containment. Short answers are skipped:
+    /// a three-letter answer matches too much prose to be worth reporting.
+    fn names_answer(note: &str, answer: &str) -> bool {
+        let answer = answer.trim();
+        if answer.chars().count() < 4 {
+            return false;
+        }
+        let (note_lower, answer_lower) = (note.to_lowercase(), answer.to_lowercase());
+        note_lower.match_indices(&answer_lower).any(|(at, hit)| {
+            let before = note_lower[..at].chars().next_back();
+            let after = note_lower[at + hit.len()..].chars().next();
+            !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+        })
+    }
+
     fn hole_sits_in_math(segments: &[Seg], hole_seg: usize) -> bool {
         let mut line = String::new();
         for (si, segment) in segments.iter().enumerate() {
@@ -1201,6 +1231,21 @@ fn build_card(
             line: directives.reveal_line.unwrap_or(line),
             kind: LintKind::RevealOnCloze,
         });
+    }
+    if holes.len() > 1
+        && let Some(note_text) = note.as_deref()
+    {
+        for (n, (.., answer_text)) in holes.iter().enumerate() {
+            if names_answer(note_text, answer_text) {
+                lints.push(Lint {
+                    line,
+                    kind: LintKind::NoteContainsHoleAnswer {
+                        hole: n + 1,
+                        answer: answer_text.to_string(),
+                    },
+                });
+            }
+        }
     }
     let token: Option<Arc<str>> = directives.token.as_deref().map(Arc::from);
     let structure: Vec<String> = parsed.iter().map(|segments| hash_repr(segments)).collect();
@@ -2478,6 +2523,62 @@ mod tests {
                 kind: LintKind::ClozeInHole
             }],
             deck.lints
+        );
+    }
+
+    #[test]
+    fn a_block_note_naming_a_holes_answer_is_reported_per_hole() {
+        // The spec's motivating fixture: reviewing a later hole shows a note
+        // that spells out the first hole's answer.
+        let deck = parse(
+            "## The test pyramid, bottom to top\n\
+             \\blank{Unit}, \\blank{integration}, \\blank{end-to-end}\n\
+             > Unit tests sit at the base because they are fastest and most numerous.\n",
+        );
+        assert_eq!(
+            vec![Lint {
+                line: 1,
+                kind: LintKind::NoteContainsHoleAnswer {
+                    hole: 1,
+                    answer: "Unit".to_string()
+                }
+            }],
+            deck.lints,
+            "only the hole whose answer appears is named, and 1-based"
+        );
+    }
+
+    #[test]
+    fn a_note_naming_no_hole_answer_is_silent() {
+        let deck = parse("## q\n\\blank{Unit}, \\blank{integration}\n> Fastest at the base.\n");
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+    }
+
+    #[test]
+    fn a_single_hole_block_is_never_reported_however_the_note_reads() {
+        // With one hole there is no other card to leak to: the note is on the
+        // card whose answer it names, which is the ordinary way to write one.
+        let deck = parse("## q\n\\blank{Unit} tests\n> Unit tests are fastest.\n");
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+    }
+
+    #[test]
+    fn a_hole_answer_inside_a_longer_word_is_not_a_match() {
+        let deck = parse("## q\n\\blank{unit}, \\blank{integration}\n> Reunites the suites.\n");
+        assert_eq!(
+            Vec::<Lint>::new(),
+            deck.lints,
+            "`unit` inside `Reunites` is not the answer appearing"
+        );
+    }
+
+    #[test]
+    fn a_short_hole_answer_is_below_the_reporting_floor() {
+        let deck = parse("## q\n\\blank{TCP}, \\blank{integration}\n> TCP is a protocol.\n");
+        assert_eq!(
+            Vec::<Lint>::new(),
+            deck.lints,
+            "three characters match too much prose to be worth reporting"
         );
     }
 

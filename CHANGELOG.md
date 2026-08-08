@@ -174,6 +174,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix doctor` reports a cloze block whose `>` note spells out one hole's
+  answer. Every hole of a block shows the same note, so reviewing a later
+  hole reveals an earlier one's answer before the learner has met it. The
+  warning states the fact rather than a judgment: "the note contains the
+  text of hole 1's answer (`Unit`); every other hole shows this note". It
+  cannot see a paraphrase, only the answer's own text.
+
 - Stamping never leaves a deck alix cannot read. The result is parsed before
   anything is written, and a stamp that would produce an unreadable file is
   refused with the file untouched. Tab-indented frontmatter did this: it
