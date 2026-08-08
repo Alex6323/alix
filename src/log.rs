@@ -245,15 +245,19 @@ impl CappedWriter {
     fn rotate(&mut self) -> io::Result<()> {
         self.file.take();
         let rolled = self.path.with_extension("log.1");
-        match fs::remove_file(&rolled) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
+        ignore_not_found(fs::remove_file(&rolled))?;
         fs::rename(&self.path, rolled)?;
         self.file = Some(open_file(&self.path)?);
         self.bytes = 0;
         Ok(())
+    }
+}
+
+fn ignore_not_found(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -265,14 +269,19 @@ impl Write for CappedWriter {
         if self.bytes.saturating_add(buf.len() as u64) > self.max_bytes {
             self.rotate()?;
         }
-        let remaining = (self.max_bytes - self.bytes) as usize;
+        // If the buffer fit beside the current bytes, it is smaller than the
+        // cap. If it did not, rotate() reset bytes to zero. Either way the cap,
+        // not `cap - bytes`, is the only slice bound still needed here.
+        let write_len = usize::try_from(self.max_bytes)
+            .unwrap_or(usize::MAX)
+            .min(buf.len());
         let Some(file) = self.file.as_mut() else {
             return Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
                 "the log file is unavailable",
             ));
         };
-        let written = file.write(&buf[..buf.len().min(remaining)])?;
+        let written = file.write(&buf[..write_len])?;
         self.bytes += written as u64;
         Ok(written)
     }
@@ -331,6 +340,34 @@ mod tests {
     }
 
     #[test]
+    fn target_sets_enable_only_the_targets_the_user_named() {
+        let http = Targets::from_slice(&[Target::Http]);
+        assert!(http.contains(Target::Http));
+        assert!(!http.contains(Target::Select));
+
+        let select = Targets::from_slice(&[Target::Select]);
+        assert!(!select.contains(Target::Http));
+        assert!(select.contains(Target::Select));
+    }
+
+    #[test]
+    fn logging_without_an_installed_sink_stays_disabled() {
+        assert!(!enabled(Target::Http));
+    }
+
+    #[test]
+    fn a_quiet_sink_enables_selection_but_not_http() {
+        let dir = tempfile::tempdir().unwrap();
+        let sink = Sink {
+            writer: Mutex::new(CappedWriter::open(dir.path().join("alix.log"), 8).unwrap()),
+            verbose: false,
+            stderr: Targets::default(),
+        };
+        assert!(!sink.enabled(Target::Http));
+        assert!(sink.enabled(Target::Select));
+    }
+
+    #[test]
     fn log_path_prefers_state_and_falls_back_to_data() {
         let state = log_path_in(Some(Path::new("/state")), Path::new("/data"), "profile-a");
         let data = log_path_in(None, Path::new("/data"), "profile-a");
@@ -366,6 +403,56 @@ mod tests {
         assert_ne!(instance_file_name("a b"), instance_file_name("a-b"));
         assert!(config.starts_with("alix-config-") && config.ends_with(".log"));
         assert!(!config.contains("private") && !config.contains("Amelie"));
+    }
+
+    #[test]
+    fn readable_instance_labels_normalize_separators_and_stop_at_32_characters() {
+        assert_eq!("anna-marie", readable_instance_label("..Anna--Marie.."));
+
+        let thirty_two = "a".repeat(32);
+        assert_eq!(thirty_two, readable_instance_label(&"a".repeat(40)));
+
+        let thirty_one_then_separator = format!("{}-", "a".repeat(31));
+        assert_eq!(
+            thirty_one_then_separator,
+            readable_instance_label(&format!("{} b", "a".repeat(31)))
+        );
+    }
+
+    #[test]
+    fn filling_the_cap_exactly_does_not_rotate_an_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("alix.log");
+        let mut writer = CappedWriter::open(path.clone(), 8).unwrap();
+
+        writer.write_all(b"12345678").unwrap();
+
+        assert_eq!(b"12345678", std::fs::read(&path).unwrap().as_slice());
+        assert!(!path.with_extension("log.1").exists());
+    }
+
+    #[test]
+    fn a_writer_left_without_a_file_reports_flush_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer = CappedWriter::open(dir.path().join("alix.log"), 8).unwrap();
+        writer.file.take();
+
+        assert_eq!(
+            io::ErrorKind::BrokenPipe,
+            writer.flush().unwrap_err().kind()
+        );
+    }
+
+    #[test]
+    fn only_a_missing_rolled_file_is_safe_to_ignore() {
+        assert!(ignore_not_found(Ok(())).is_ok());
+        assert!(ignore_not_found(Err(io::ErrorKind::NotFound.into())).is_ok());
+        assert_eq!(
+            io::ErrorKind::PermissionDenied,
+            ignore_not_found(Err(io::ErrorKind::PermissionDenied.into()))
+                .unwrap_err()
+                .kind()
+        );
     }
 
     #[test]
