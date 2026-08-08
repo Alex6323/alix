@@ -47,13 +47,17 @@ pub(crate) fn generate_token() -> Result<String> {
     Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
+fn log_settings(config: &Config, targets: &[alix::log::Target]) -> alix::log::Settings {
+    alix::log::Settings {
+        max_bytes: config.log.max_bytes,
+        verbose: config.log.verbose || !targets.is_empty(),
+        stderr: alix::log::Targets::from_slice(targets),
+    }
+}
+
 pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
-    let logging = alix::log::Settings {
-        max_bytes: config.log.max_bytes,
-        verbose: config.log.verbose || !args.log.is_empty(),
-        stderr: alix::log::Targets::from_slice(&args.log),
-    };
+    let logging = log_settings(&config, &args.log);
     if let Err(error) = alix::log::init(instance, logging) {
         eprintln!("warning: could not open the server log: {error}");
     }
@@ -255,6 +259,13 @@ mod tests {
             );
         }
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn naming_a_live_log_target_also_enables_verbose_file_records() {
+        let config = Config::default();
+        assert!(!log_settings(&config, &[]).verbose);
+        assert!(log_settings(&config, &[alix::log::Target::Http]).verbose);
     }
 
     #[test]

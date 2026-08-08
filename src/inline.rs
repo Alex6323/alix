@@ -751,6 +751,11 @@ mod tests {
     }
 
     #[test]
+    fn a_marker_starting_at_the_closing_delimiter_is_outside_math() {
+        assert!(!math_encloses("$x$outside", "$outside"));
+    }
+
+    #[test]
     fn whole_trimmed_line_is_display_math() {
         let runs = parse_inline("  $$x_1$$  ");
         assert_eq!(runs.len(), 1);

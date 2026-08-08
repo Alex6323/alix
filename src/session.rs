@@ -3420,6 +3420,30 @@ mod tests {
     }
 
     #[test]
+    fn recognize_selection_reports_now_instead_of_an_unrelated_schedule() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(42));
+        let now = 1_000_000;
+        let session = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            now,
+        );
+
+        let decision = session
+            .selection_decision(session.current_idx.unwrap(), &store, now)
+            .unwrap();
+        assert_eq!(now, decision.due);
+    }
+
+    #[test]
     fn recognize_caps_never_met_intake_at_the_session_cap() {
         let (mut store, _dir) = empty_store();
         // All 22 are never-met, so with no met pool they fill the whole cap.
