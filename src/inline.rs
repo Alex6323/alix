@@ -507,20 +507,37 @@ mod tests {
         "[a-zA-Z0-9 *_$]{1,24}"
     }
 
-    fn inline_fragment() -> impl Strategy<Value = String> {
+    fn formatted_text() -> impl Strategy<Value = String> {
+        ("[a-zA-Z0-9]", "[a-zA-Z0-9 ,.;:!?]{0,14}", "[a-zA-Z0-9]")
+            .prop_map(|(first, middle, last)| format!("{first}{middle}{last}"))
+    }
+
+    fn inline_fragment() -> impl Strategy<Value = (String, String)> {
         prop_oneof![
-            4 => inline_text(),
-            2 => inline_text().prop_map(|text| format!("**{text}**")),
-            2 => inline_text().prop_map(|text| format!("*{text}*")),
-            2 => inline_text().prop_map(|text| format!("_{text}_")),
-            2 => inline_code_body().prop_map(|text| format!("`{text}`")),
+            4 => inline_text().prop_map(|text| (text.clone(), text)),
+            2 => formatted_text().prop_map(|text| (format!("**{text}**"), text)),
+            2 => formatted_text().prop_map(|text| (format!("*{text}*"), text)),
+            2 => formatted_text().prop_map(|text| (format!("_{text}_"), text)),
+            2 => inline_code_body().prop_map(|text| (format!("`{text}`"), text)),
             1 => prop::sample::select(vec!['*', '_', '$', '`', '\\'])
-                .prop_map(|marker| format!("\\{marker}")),
+                .prop_map(|marker| (format!("\\{marker}"), marker.to_string())),
         ]
     }
 
-    fn inline_source() -> impl Strategy<Value = String> {
-        prop::collection::vec(inline_fragment(), 0..10).prop_map(|parts| parts.concat())
+    fn inline_source() -> impl Strategy<Value = (String, String)> {
+        prop::collection::vec(inline_fragment(), 0..10).prop_map(|parts| {
+            let mut source = String::new();
+            let mut expected = String::new();
+            for (index, (markup, content)) in parts.into_iter().enumerate() {
+                if index > 0 {
+                    source.push('|');
+                    expected.push('|');
+                }
+                source.push_str(&markup);
+                expected.push_str(&content);
+            }
+            (source, expected)
+        })
     }
 
     fn math_atom() -> impl Strategy<Value = String> {
@@ -841,12 +858,26 @@ mod tests {
         #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
 
         #[test]
-        fn projected_runs_are_a_normalized_content_projection(source in inline_source()) {
+        fn projected_runs_are_a_normalized_content_projection(
+            (source, expected) in inline_source()
+        ) {
             let runs = parse_inline(&source);
             let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
             let stripped = strip_inline(&source);
 
-            prop_assert_eq!(projected.as_str(), stripped.as_str(), "source: {:?}", source);
+            prop_assert_eq!(
+                projected.as_str(),
+                expected.as_str(),
+                "source: {:?}; runs: {:?}",
+                source,
+                runs
+            );
+            prop_assert_eq!(
+                stripped.as_str(),
+                expected.as_str(),
+                "source: {:?}",
+                source
+            );
             prop_assert!(
                 runs.iter().all(|run| !run.text.is_empty()),
                 "empty run for source: {source:?}; runs: {runs:?}"
@@ -912,7 +943,7 @@ mod tests {
             let marker = crate::parser::BLANK;
             let inside = format!("${formula} + {marker}$");
             let outside = format!("${formula}$ + {marker}");
-            let code = format!("`${inside}`");
+            let code = format!("`${formula} + {marker}$`");
 
             prop_assert!(math_encloses(&inside, marker), "inside: {inside:?}");
             prop_assert!(!math_encloses(&outside, marker), "outside: {outside:?}");
