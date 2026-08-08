@@ -495,7 +495,65 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
+
+    fn inline_text() -> impl Strategy<Value = String> {
+        "[a-zA-Z0-9 ,.;:!?]{1,16}"
+    }
+
+    fn inline_code_body() -> impl Strategy<Value = String> {
+        "[a-zA-Z0-9 *_$]{1,24}"
+    }
+
+    fn inline_fragment() -> impl Strategy<Value = String> {
+        prop_oneof![
+            4 => inline_text(),
+            2 => inline_text().prop_map(|text| format!("**{text}**")),
+            2 => inline_text().prop_map(|text| format!("*{text}*")),
+            2 => inline_text().prop_map(|text| format!("_{text}_")),
+            2 => inline_code_body().prop_map(|text| format!("`{text}`")),
+            1 => prop::sample::select(vec!['*', '_', '$', '`', '\\'])
+                .prop_map(|marker| format!("\\{marker}")),
+        ]
+    }
+
+    fn inline_source() -> impl Strategy<Value = String> {
+        prop::collection::vec(inline_fragment(), 0..10).prop_map(|parts| parts.concat())
+    }
+
+    fn math_atom() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("x".to_string()),
+            Just("y".to_string()),
+            Just("n".to_string()),
+            Just("2".to_string()),
+            Just("x^2".to_string()),
+            Just(r"\alpha".to_string()),
+            Just(r"\frac{1}{2}".to_string()),
+        ]
+    }
+
+    fn math_operator() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just(" + ".to_string()),
+            Just(" - ".to_string()),
+            Just(r" \cdot ".to_string()),
+        ]
+    }
+
+    fn math_formula() -> impl Strategy<Value = String> {
+        (
+            math_atom(),
+            prop::collection::vec((math_operator(), math_atom()), 0..4),
+        )
+            .prop_map(|(first, rest)| {
+                rest.into_iter().fold(first, |formula, (operator, atom)| {
+                    format!("{formula}{operator}{atom}")
+                })
+            })
+    }
 
     fn plain(s: &str) -> InlineRun {
         InlineRun {
@@ -777,5 +835,88 @@ mod tests {
     #[test]
     fn empty_input_yields_no_runs() {
         assert!(parse_inline("").is_empty());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+        #[test]
+        fn projected_runs_are_a_normalized_content_projection(source in inline_source()) {
+            let runs = parse_inline(&source);
+            let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
+            let stripped = strip_inline(&source);
+
+            prop_assert_eq!(projected.as_str(), stripped.as_str(), "source: {:?}", source);
+            prop_assert!(
+                runs.iter().all(|run| !run.text.is_empty()),
+                "empty run for source: {source:?}; runs: {runs:?}"
+            );
+            for pair in runs.windows(2) {
+                let mergeable = pair[0].math.is_none()
+                    && pair[1].math.is_none()
+                    && (pair[0].bold, pair[0].italic, pair[0].code)
+                        == (pair[1].bold, pair[1].italic, pair[1].code);
+                prop_assert!(
+                    !mergeable,
+                    "adjacent runs should have coalesced for source: {source:?}; pair: {pair:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn inline_code_preserves_generated_markup_verbatim(body in inline_code_body()) {
+            let source = format!("`{body}`");
+            prop_assert_eq!(vec![code(&body)], parse_inline(&source));
+        }
+
+        #[test]
+        fn escaping_preserves_a_generated_marker_as_plain_text(
+            marker in prop::sample::select(vec!['*', '_', '$', '`', '\\']),
+            word in "[a-zA-Z]{1,12}",
+        ) {
+            let source = format!("\\{marker}{word}\\{marker}");
+            let expected = format!("{marker}{word}{marker}");
+            prop_assert_eq!(vec![plain(&expected)], parse_inline(&source));
+        }
+
+        #[test]
+        fn generated_math_keeps_its_source_as_one_rendered_run(formula in math_formula()) {
+            let source = format!("before ${formula}$ after");
+            let runs = parse_inline(&source);
+            let math_runs: Vec<&InlineRun> =
+                runs.iter().filter(|run| run.math.is_some()).collect();
+
+            prop_assert_eq!(
+                1,
+                math_runs.len(),
+                "source: {:?}; runs: {:?}",
+                source,
+                runs
+            );
+            prop_assert_eq!(formula.as_str(), math_runs[0].text.as_str());
+            prop_assert!(
+                math_runs[0].math.as_ref().and_then(|math| math.svg.as_ref()).is_some(),
+                "generated formula did not render: {formula:?}; run: {:?}",
+                math_runs[0]
+            );
+            prop_assert_eq!(
+                format!("before {formula} after"),
+                strip_inline(&source)
+            );
+        }
+
+        #[test]
+        fn generated_math_boundaries_classify_the_same_marker_inside_and_outside(
+            formula in math_formula()
+        ) {
+            let marker = crate::parser::BLANK;
+            let inside = format!("${formula} + {marker}$");
+            let outside = format!("${formula}$ + {marker}");
+            let code = format!("`${inside}`");
+
+            prop_assert!(math_encloses(&inside, marker), "inside: {inside:?}");
+            prop_assert!(!math_encloses(&outside, marker), "outside: {outside:?}");
+            prop_assert!(!math_encloses(&code, marker), "code: {code:?}");
+        }
     }
 }

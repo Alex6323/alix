@@ -395,6 +395,8 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
     use crate::{
         answer::Mode,
@@ -622,6 +624,54 @@ mod tests {
             "the revealed hole must be rendered, got {:?}",
             run.math
         );
+    }
+
+    fn math_hole_answer() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("x".to_string()),
+            Just("x_1".to_string()),
+            Just(r"\pm".to_string()),
+            Just(r"\alpha".to_string()),
+            Just(r"\frac{1}{2}".to_string()),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 24, ..ProptestConfig::default() })]
+
+        #[test]
+        fn every_generated_formula_hole_reveals_as_math(answer in math_hole_answer()) {
+            let math_deck = format!("## q\n$x + \\blank{{{answer}}} + y$\n");
+            let math_cards = parser::parse_str("d.md", &math_deck).expect("the math deck parses");
+            prop_assert_eq!(1, math_cards.len());
+            prop_assert!(math_cards[0].math_hole, "card: {:?}", math_cards[0]);
+
+            let math_view = CardView::from(&math_cards[0]);
+            prop_assert_eq!(1, math_view.back.len());
+            prop_assert_eq!(answer.as_str(), math_view.back[0].as_str());
+            let rendered = math_view
+                .back_runs
+                .first()
+                .and_then(|runs| runs.first())
+                .and_then(|run| run.math.as_ref());
+            prop_assert!(
+                rendered.and_then(|math| math.svg.as_ref()).is_some(),
+                "answer: {answer:?}; runs: {:?}",
+                math_view.back_runs
+            );
+
+            let prose_deck = format!("## q\nbefore \\blank{{{answer}}} after\n");
+            let prose_cards = parser::parse_str("d.md", &prose_deck).expect("the prose deck parses");
+            prop_assert_eq!(1, prose_cards.len());
+            prop_assert!(!prose_cards[0].math_hole, "card: {:?}", prose_cards[0]);
+
+            let prose_view = CardView::from(&prose_cards[0]);
+            prop_assert!(
+                prose_view.back_runs.iter().flatten().all(|run| run.math.is_none()),
+                "answer: {answer:?}; runs: {:?}",
+                prose_view.back_runs
+            );
+        }
     }
 
     #[test]

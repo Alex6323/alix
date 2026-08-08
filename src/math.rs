@@ -262,6 +262,8 @@ fn bounded_snippet(source: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     const ROADMAP_FIXTURES: [&str; 7] = [
@@ -345,6 +347,24 @@ mod tests {
         let mut renderer = MathRenderer::default();
         let view = renderer.view(source, true, true);
         assert!(view.svg.is_some(), "{}", view.error.unwrap_or_default());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
+
+        #[test]
+        fn every_letter_can_follow_a_generated_hidden_hole(next in "[A-Za-z]") {
+            let source = format!("{}{}", crate::parser::HIDDEN, next);
+            let mut renderer = MathRenderer::default();
+            let view = renderer.view(&source, false, true);
+
+            prop_assert!(
+                view.svg.is_some(),
+                "context formula {source:?} failed after substitution {:?}: {}",
+                substitute_context_holes(&source),
+                view.error.as_deref().unwrap_or_default()
+            );
+        }
     }
 
     #[test]
