@@ -1110,6 +1110,7 @@ def _run_property_change(
         if not paths or any(not path.startswith("tests/") for path in paths):
             reasons.append("property author may change only files under tests/")
         formatted = _format_property_suite(executor, worktree)
+        absorb_harness_formatting(worktree)
         if formatted.returncode != 0:
             reasons.append(
                 "property suite does not format: "
@@ -1134,6 +1135,33 @@ def _run_property_change(
         agent_state.last_sha = _git(worktree, "rev-parse", "HEAD")
         return True
     raise AssertionError("unreachable retry loop")
+
+
+def absorb_harness_formatting(worktree: Path) -> None:
+    """Commit tracked files the harness itself reformatted, so the next round's
+    patch carries only the author's work. Untracked files are left alone: those
+    are the author's."""
+    tracked = _git(worktree, "diff", "--name-only", "HEAD")
+    changed = [
+        line.strip()
+        for line in tracked.splitlines()
+        if line.strip() and not line.strip().startswith("tests/")
+    ]
+    if not changed:
+        return
+    _git(worktree, "add", *changed)
+    _git(
+        worktree,
+        "-c",
+        "user.name=orchestrator",
+        "-c",
+        "user.email=orchestrator@invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "harness formatting",
+    )
 
 
 def _format_property_suite(
@@ -1838,7 +1866,10 @@ def _create_property_worktree(
         'proptest = "1"\n',
         encoding="utf-8",
     )
-    tracked = ["Cargo.toml", "src/lib.rs"]
+    # Without this the author's own `cargo test` lands in the patch, and the
+    # tests/-only boundary rejects a suite that never left tests/.
+    (worktree / ".gitignore").write_text("/target\n/Cargo.lock\n", encoding="utf-8")
+    tracked = ["Cargo.toml", "src/lib.rs", ".gitignore"]
     for name in ("rustfmt.toml", ".rust-nightly-version"):
         source = target / name
         if source.is_file():
