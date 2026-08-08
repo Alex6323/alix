@@ -67,6 +67,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "alix-test-support"
+version = "0.0.0"
+
+[[package]]
 name = "allo-isolate"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1253,6 +1257,7 @@ name = "rust_lib_alix_mobile"
 version = "0.1.0"
 dependencies = [
  "alix",
+ "alix-test-support",
  "anyhow",
  "chrono",
  "flutter_rust_bridge",

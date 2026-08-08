@@ -74,6 +74,9 @@ default = ["full"]
 full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:clap", "dep:ctrlc"]
 
 [dev-dependencies]
+# The cross-client parity fixture; the mobile bridge is a separate crate and
+# dev-depends on the same path, so one expectation serves both.
+alix-test-support = { path = "test-support" }
 proptest = "1" # property-test the freeze-forever card-id invariants (framing injectivity, control rejection)
 
 [lib]

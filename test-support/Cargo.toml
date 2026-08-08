@@ -1,0 +1,9 @@
+[package]
+name = "alix-test-support"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Deliberately no dependencies, not even alix: an expectation computed from the
+# code under test asserts nothing.
+[dependencies]

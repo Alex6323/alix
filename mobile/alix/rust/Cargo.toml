@@ -15,6 +15,9 @@ alix = { path = "../../..", default-features = false }
 anyhow = "1"
 
 [dev-dependencies]
+# The cross-client parity fixture, shared with the desktop crate's tests: the
+# server and this bridge cannot be driven from one test binary.
+alix-test-support = { path = "../../../test-support" }
 # Temp dirs for the host-side store/deck tests.
 tempfile = "3"
 # Deadline-test fixtures construct the dates alix's own API speaks

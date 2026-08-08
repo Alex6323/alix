@@ -1464,6 +1464,29 @@ mod tests {
         );
     }
 
+    /// The bridge's half of the cross-client parity law. Its pair is
+    /// `taking_a_tutor_note_leaves_the_effects_every_client_must_leave` in the
+    /// desktop crate's `tests/api.rs`, asserting the same expectation. The two
+    /// cannot share a binary: this crate builds the lean core and the server
+    /// needs `full`, so a route that stops agreeing turns one of them red.
+    #[test]
+    fn taking_a_tutor_note_leaves_the_effects_every_client_must_leave() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = alix_test_support::seed(root);
+
+        let mut s = opened_after_acquire(&deck, root, None);
+        let line = s.tutor_card().expect("a card is current").line;
+        s.apply_card_note(line as u32, vec![alix_test_support::NOTE.to_string()])
+            .unwrap();
+
+        assert_eq!(
+            alix_test_support::after_note(),
+            alix_test_support::capture(&deck),
+            "the bridge must leave exactly the effects the server leaves"
+        );
+    }
+
     /// The write paths are pinned above; this is the way back. Everything the
     /// phone puts in the personal file has to come out of a later session,
     /// which is the half `ReviewSession::open` owns.

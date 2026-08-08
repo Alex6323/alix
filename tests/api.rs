@@ -6435,6 +6435,48 @@ fn every_shape_example_produces_the_shape_it_advertises() {
 /// T3 acceptance for {#personal-sidecar}: a tutor note leaves the authored deck
 /// byte-identical and lands in the sidecar instead. Hashing the whole file is
 /// the sharp form — an appended `>` line, a rewritten front, or a re-stamped id
+/// The server's half of the cross-client parity law. Its pair lives in the
+/// mobile bridge and asserts `alix_test_support::after_note()` too; the two cannot
+/// share a binary, since the bridge builds the lean core and the server needs
+/// `full`. A route that stops agreeing turns one of them red.
+#[test]
+fn taking_a_tutor_note_leaves_the_effects_every_client_must_leave() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), alix_test_support::NOTE);
+    let (base, guard) = spawn_full_server_fixture(
+        Some(&fake),
+        |dir| {
+            alix_test_support::seed(dir);
+        },
+        |_opts| {},
+    );
+    let deck = guard.dir().join(alix_test_support::DECK_FILE);
+
+    post_json(
+        &base,
+        "/api/select",
+        &format!(
+            r#"{{"deck":"{}","depth":"recall"}}"#,
+            alix_test_support::DECK_FILE
+        ),
+    );
+    post_gated(
+        &base,
+        "/api/ask",
+        r#"{"question":"why is that the answer?"}"#,
+    );
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    post_gated(&base, "/api/ask/note", "{}");
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+
+    assert_eq!(
+        alix_test_support::after_note(),
+        alix_test_support::capture(&deck),
+        "the server must leave exactly the effects the bridge leaves"
+    );
+}
+
 /// all fail it.
 #[test]
 fn a_tutor_note_leaves_the_authored_deck_untouched_and_writes_the_sidecar() {

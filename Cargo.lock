@@ -37,6 +37,7 @@ dependencies = [
 name = "alix"
 version = "0.7.0"
 dependencies = [
+ "alix-test-support",
  "anyhow",
  "chrono",
  "clap",
@@ -62,6 +63,10 @@ dependencies = [
  "yaml-rust2",
  "zip",
 ]
+
+[[package]]
+name = "alix-test-support"
+version = "0.0.0"
 
 [[package]]
 name = "android_system_properties"
