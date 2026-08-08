@@ -1316,17 +1316,17 @@ mod tests {
     }
 
     #[test]
-    fn personal_for_names_the_deck_a_sidecar_belongs_to() {
-        let deck = parse("---\npersonal-for: deck-abc\n---\n## q\na\n");
+    fn for_names_the_deck_a_personal_file_belongs_to() {
+        let deck = parse("---\nfor: deck-abc\n---\n## q\na\n");
         assert_eq!(Some("deck-abc".to_string()), deck.frontmatter.personal_for);
         assert_eq!(Vec::<Lint>::new(), deck.lints, "a known key never lints");
     }
 
     #[test]
-    fn a_non_string_personal_for_lints_rather_than_failing_the_file() {
-        let deck = parse("---\npersonal-for: 7\n---\n## q\na\n");
+    fn a_non_string_for_lints_rather_than_failing_the_file() {
+        let deck = parse("---\nfor: 7\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.personal_for);
-        assert_eq!(vec![bad(2, "personal-for", "an integer")], deck.lints);
+        assert_eq!(vec![bad(2, "for", "an integer")], deck.lints);
     }
 
     #[test]

@@ -1198,7 +1198,6 @@ it reads line two\n\
             &path,
             "deck-rust",
             "card-q1",
-            Some("q1"),
             &["mine on the authored card".to_string()],
         )
         .unwrap();
@@ -1206,7 +1205,6 @@ it reads line two\n\
             &path,
             "deck-rust",
             "card-vq1",
-            None,
             &["mine on my own card".to_string()],
         )
         .unwrap();
@@ -1252,7 +1250,6 @@ it reads line two\n\
             &path,
             "deck-rust",
             "card-gonegonegonegonegonegone",
-            None,
             &["addressed to nothing".to_string()],
         )
         .unwrap();

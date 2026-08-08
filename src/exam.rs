@@ -1966,7 +1966,7 @@ mod tests {
         let sidecar = std::fs::read_to_string(crate::personal::sidecar_path(&deck_path))
             .expect("remediation wrote a sidecar beside the deck");
         assert!(
-            sidecar.contains("personal-for: deck-d1"),
+            sidecar.contains("for: deck-d1"),
             "the sidecar names its deck: {sidecar}"
         );
         let cards = crate::parser::parse_str("deck-d1", &sidecar).unwrap();

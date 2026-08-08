@@ -167,7 +167,7 @@ fn load_frontmatter(
                 Yaml::String(s) => frontmatter.license = Some(s.clone()),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },
-            "personal-for" => match value {
+            "for" => match value {
                 Yaml::String(s) => frontmatter.personal_for = Some(s.clone()),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },

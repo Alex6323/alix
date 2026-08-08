@@ -22,8 +22,7 @@ fn deck_cards() -> impl Strategy<Value = Vec<DeckCard>> {
 fn sidecar_blocks() -> impl Strategy<Value = Vec<SidecarBlock>> {
     prop::collection::vec(
         prop_oneof![
-            (ids(), prop::option::of(any::<String>()), note_lines())
-                .prop_map(|(card, hint, lines)| SidecarBlock::Note { card, hint, lines }),
+            (ids(), note_lines()).prop_map(|(card, lines)| SidecarBlock::Note { card, lines }),
             (ids(), note_lines()).prop_map(|(id, notes)| SidecarBlock::Card { id, notes }),
         ],
         0..12,
@@ -84,32 +83,11 @@ fn expected_orphans(deck: &[DeckCard], sidecar: &[SidecarBlock]) -> Vec<Orphan> 
     sidecar
         .iter()
         .filter_map(|block| match block {
-            SidecarBlock::Note { card, hint, lines } if !id_exists(card) => Some(Orphan {
+            SidecarBlock::Note { card, lines } if !id_exists(card) => Some(Orphan {
                 card: card.clone(),
-                hint: hint.clone(),
                 lines: lines.clone(),
             }),
             SidecarBlock::Note { .. } | SidecarBlock::Card { .. } => None,
-        })
-        .collect()
-}
-
-fn change_hints(sidecar: &[SidecarBlock]) -> Vec<SidecarBlock> {
-    sidecar
-        .iter()
-        .map(|block| match block {
-            SidecarBlock::Note { card, hint, lines } => SidecarBlock::Note {
-                card: card.clone(),
-                hint: match hint {
-                    Some(_) => None,
-                    None => Some("replacement decoration".to_owned()),
-                },
-                lines: lines.clone(),
-            },
-            SidecarBlock::Card { id, notes } => SidecarBlock::Card {
-                id: id.clone(),
-                notes: notes.clone(),
-            },
         })
         .collect()
 }
@@ -129,25 +107,6 @@ proptest! {
         let (_, orphans) = merge(&deck, &sidecar);
 
         prop_assert_eq!(orphans, expected_orphans(&deck, &sidecar));
-    }
-
-    #[test]
-    fn changing_hints_only_changes_orphan_decoration((deck, sidecar) in inputs()) {
-        let changed_sidecar = change_hints(&sidecar);
-        let (original_cards, original_orphans) = merge(&deck, &sidecar);
-        let (changed_cards, changed_orphans) = merge(&deck, &changed_sidecar);
-
-        prop_assert_eq!(original_cards, changed_cards);
-
-        let original_without_hints: Vec<_> = original_orphans
-            .iter()
-            .map(|orphan| (&orphan.card, &orphan.lines))
-            .collect();
-        let changed_without_hints: Vec<_> = changed_orphans
-            .iter()
-            .map(|orphan| (&orphan.card, &orphan.lines))
-            .collect();
-        prop_assert_eq!(original_without_hints, changed_without_hints);
     }
 
     #[test]
@@ -180,7 +139,6 @@ fn deck_cards_precede_personal_cards_and_are_marked_by_origin() {
         },
         SidecarBlock::Note {
             card: "deck-1".to_owned(),
-            hint: None,
             lines: vec!["attached".to_owned()],
         },
         SidecarBlock::Card {
@@ -228,12 +186,10 @@ fn notes_append_in_sidecar_order_without_deduplication() {
     let sidecar = vec![
         SidecarBlock::Note {
             card: "same".to_owned(),
-            hint: Some("first hint".to_owned()),
             lines: vec!["duplicate".to_owned(), "sidecar-1".to_owned()],
         },
         SidecarBlock::Note {
             card: "same".to_owned(),
-            hint: Some("different hint".to_owned()),
             lines: vec!["sidecar-2".to_owned(), "duplicate".to_owned()],
         },
     ];
@@ -259,7 +215,6 @@ fn personal_cards_receive_notes_even_when_the_note_comes_first() {
     let sidecar = vec![
         SidecarBlock::Note {
             card: "personal".to_owned(),
-            hint: None,
             lines: vec!["before".to_owned()],
         },
         SidecarBlock::Card {
@@ -268,7 +223,6 @@ fn personal_cards_receive_notes_even_when_the_note_comes_first() {
         },
         SidecarBlock::Note {
             card: "personal".to_owned(),
-            hint: None,
             lines: vec!["after".to_owned()],
         },
     ];
@@ -287,7 +241,7 @@ fn personal_cards_receive_notes_even_when_the_note_comes_first() {
 }
 
 #[test]
-fn orphans_preserve_sidecar_order_hint_lines_and_empty_content() {
+fn orphans_preserve_sidecar_order_lines_and_empty_content() {
     let deck = vec![DeckCard {
         id: "known".to_owned(),
         notes: vec![],
@@ -295,17 +249,14 @@ fn orphans_preserve_sidecar_order_hint_lines_and_empty_content() {
     let sidecar = vec![
         SidecarBlock::Note {
             card: "missing-1".to_owned(),
-            hint: Some("first".to_owned()),
             lines: vec!["line-1".to_owned()],
         },
         SidecarBlock::Note {
             card: "known".to_owned(),
-            hint: Some("not an orphan".to_owned()),
             lines: vec!["attached".to_owned()],
         },
         SidecarBlock::Note {
             card: "missing-2".to_owned(),
-            hint: None,
             lines: vec![],
         },
     ];
@@ -317,12 +268,10 @@ fn orphans_preserve_sidecar_order_hint_lines_and_empty_content() {
         vec![
             Orphan {
                 card: "missing-1".to_owned(),
-                hint: Some("first".to_owned()),
                 lines: vec!["line-1".to_owned()],
             },
             Orphan {
                 card: "missing-2".to_owned(),
-                hint: None,
                 lines: vec![],
             },
         ]
@@ -348,7 +297,6 @@ fn repeated_ids_keep_every_card_position_and_attach_to_each_one() {
         },
         SidecarBlock::Note {
             card: "repeated".to_owned(),
-            hint: Some("decoration".to_owned()),
             lines: vec!["shared-note".to_owned()],
         },
         SidecarBlock::Card {

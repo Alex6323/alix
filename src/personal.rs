@@ -26,7 +26,6 @@ impl Personal {
         });
         let notes = self.notes.iter().map(|note| SidecarBlock::Note {
             card: note.card.clone(),
-            hint: note.hint.clone(),
             lines: note.lines.clone(),
         });
         cards.chain(notes).collect()
@@ -63,7 +62,6 @@ pub fn append_note(
     deck: &Path,
     deck_id: &str,
     card_id: &str,
-    hint: Option<&str>,
     notes: &[String],
 ) -> Result<(), DeckError> {
     if notes.is_empty() {
@@ -79,42 +77,35 @@ pub fn append_note(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => header(deck_id),
         Err(e) => return Err(io_err(e)),
     };
-    write_deck_text(&path, &rewrite(&text, card_id, hint, notes))
+    write_deck_text(&path, &rewrite(&text, card_id, notes))
 }
 
 fn header(deck_id: &str) -> String {
-    format!("---\nformat-version: {DECK_FORMAT_VERSION}\npersonal-for: {deck_id}\n---\n")
+    format!("---\nformat-version: {DECK_FORMAT_VERSION}\nfor: {deck_id}\n---\n")
 }
 
-fn marker(card_id: &str, hint: Option<&str>) -> String {
-    match hint.map(str::trim).filter(|hint| !hint.is_empty()) {
-        Some(hint) => format!("<!-- for: {card_id} ({hint}) -->"),
-        None => format!("<!-- for: {card_id} -->"),
-    }
+fn marker(card_id: &str) -> String {
+    format!("<!-- for: {card_id} -->")
 }
 
-fn rewrite(text: &str, card_id: &str, hint: Option<&str>, notes: &[String]) -> String {
+/// New notes are inserted above the block's closing marker, so the machine
+/// line stays last exactly as a deck card's `<!-- id: -->` does.
+fn rewrite(text: &str, card_id: &str, notes: &[String]) -> String {
+    let quoted = |note: &String| format!("> {note}");
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
-    let marker_line = lines.iter().position(|line| addresses(line, card_id));
-    let Some(start) = marker_line else {
+    let Some(marker_line) = lines.iter().position(|line| addresses(line, card_id)) else {
         let mut out = text.trim_end().to_string();
         out.push_str("\n\n");
-        out.push_str(&marker(card_id, hint));
-        out.push('\n');
         for note in notes {
-            out.push_str("> ");
-            out.push_str(note);
+            out.push_str(&quoted(note));
             out.push('\n');
         }
+        out.push_str(&marker(card_id));
+        out.push('\n');
         return out;
     };
-    lines[start] = marker(card_id, hint);
-    let mut end = start + 1;
-    while lines.get(end).is_some_and(|line| line.starts_with('>')) {
-        end += 1;
-    }
     for (offset, note) in notes.iter().enumerate() {
-        lines.insert(end + offset, format!("> {note}"));
+        lines.insert(marker_line + offset, quoted(note));
     }
     let mut out = lines.join("\n");
     out.push('\n');
@@ -132,7 +123,7 @@ fn addresses(line: &str, card_id: &str) -> bool {
     let Some(value) = body.trim().strip_prefix("for:") else {
         return false;
     };
-    value.split_whitespace().next() == Some(card_id)
+    value.trim() == card_id
 }
 
 /// Appends already-stamped card blocks to the sidecar, creating it on first
@@ -190,19 +181,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_note(
-            &deck,
-            "deck-abc",
-            "card-one",
-            Some("darse cuenta"),
-            &note("mine"),
-        )
-        .unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("mine")).unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(
-            "---\nformat-version: 1\npersonal-for: deck-abc\n---\n\n\
-             <!-- for: card-one (darse cuenta) -->\n> mine\n",
+            "---\nformat-version: 1\nfor: deck-abc\n---\n\n\
+             > mine\n<!-- for: card-one -->\n",
             text
         );
     }
@@ -213,7 +197,7 @@ mod tests {
         let deck = deck(dir.path());
         let before = std::fs::read(&deck).unwrap();
 
-        append_note(&deck, "deck-abc", "card-one", None, &note("mine")).unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("mine")).unwrap();
 
         assert_eq!(
             before,
@@ -227,8 +211,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_note(&deck, "deck-abc", "card-one", None, &note("first")).unwrap();
-        append_note(&deck, "deck-abc", "card-one", None, &note("second")).unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("first")).unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("second")).unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(1, text.matches("<!-- for: card-one").count());
@@ -238,35 +222,19 @@ mod tests {
     }
 
     #[test]
-    fn a_changed_front_refreshes_the_hint_and_leaves_the_id_alone() {
+    fn every_note_written_to_a_block_stays_above_its_closing_marker() {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_note(
-            &deck,
-            "deck-abc",
-            "card-one",
-            Some("darse cuenta"),
-            &note("mine"),
-        )
-        .unwrap();
-        append_note(
-            &deck,
-            "deck-abc",
-            "card-one",
-            Some("caer en cuenta"),
-            &note("more"),
-        )
-        .unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("first")).unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("second")).unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
-        assert!(
-            text.contains("<!-- for: card-one (caer en cuenta) -->"),
-            "{text}"
-        );
-        assert!(
-            !text.contains("darse cuenta"),
-            "the stale hint must be gone: {text}"
+        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(
+            Some(&"<!-- for: card-one -->"),
+            lines.last(),
+            "the machine line closes the block, as `<!-- id: -->` does in a deck: {text}"
         );
         assert_eq!(1, text.matches("card-one").count());
     }
@@ -276,8 +244,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_note(&deck, "deck-abc", "card-one", None, &note("mine")).unwrap();
-        append_note(&deck, "deck-abc", "card-two", None, &note("other")).unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("mine")).unwrap();
+        append_note(&deck, "deck-abc", "card-two", &note("other")).unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         let parsed = crate::parser::notes(&text);
@@ -294,7 +262,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_note(&deck, "deck-abc", "card-one", None, &[]).unwrap();
+        append_note(&deck, "deck-abc", "card-one", &[]).unwrap();
 
         assert!(!sidecar_path(&deck).exists());
     }
@@ -315,7 +283,7 @@ mod tests {
         assert_eq!(before, std::fs::read(&deck).unwrap());
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert!(
-            text.starts_with("---\nformat-version: 1\npersonal-for: deck-abc\n---\n"),
+            text.starts_with("---\nformat-version: 1\nfor: deck-abc\n---\n"),
             "{text}"
         );
         let cards = crate::parser::parse_str("sidecar", &text).unwrap();
@@ -344,7 +312,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_note(&deck, "deck-abc", "card-one", None, &note("a note")).unwrap();
+        append_note(&deck, "deck-abc", "card-one", &note("a note")).unwrap();
         append_cards(&deck, "deck-abc", "## mine <!-- id: card-zz -->\nback\n").unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();

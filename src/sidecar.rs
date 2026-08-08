@@ -864,15 +864,8 @@ pub struct DeckCard {
 /// One block of the personal file, in file order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidecarBlock {
-    Note {
-        card: String,
-        hint: Option<String>,
-        lines: Vec<String>,
-    },
-    Card {
-        id: String,
-        notes: Vec<String>,
-    },
+    Note { card: String, lines: Vec<String> },
+    Card { id: String, notes: Vec<String> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -886,7 +879,6 @@ pub struct SessionCard {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Orphan {
     pub card: String,
-    pub hint: Option<String>,
     pub lines: Vec<String>,
 }
 
@@ -916,7 +908,7 @@ pub fn merge(deck: &[DeckCard], sidecar: &[SidecarBlock]) -> (Vec<SessionCard>, 
     // card declared after it.
     let mut orphans = Vec::new();
     for block in sidecar {
-        let SidecarBlock::Note { card, hint, lines } = block else {
+        let SidecarBlock::Note { card, lines } = block else {
             continue;
         };
         let mut attached = false;
@@ -927,7 +919,6 @@ pub fn merge(deck: &[DeckCard], sidecar: &[SidecarBlock]) -> (Vec<SessionCard>, 
         if !attached {
             orphans.push(Orphan {
                 card: card.clone(),
-                hint: hint.clone(),
                 lines: lines.clone(),
             });
         }
@@ -949,15 +940,6 @@ mod merge_tests {
     fn note(card: &str, lines: &[&str]) -> SidecarBlock {
         SidecarBlock::Note {
             card: card.to_string(),
-            hint: None,
-            lines: lines.iter().map(|l| l.to_string()).collect(),
-        }
-    }
-
-    fn hinted(card: &str, hint: &str, lines: &[&str]) -> SidecarBlock {
-        SidecarBlock::Note {
-            card: card.to_string(),
-            hint: Some(hint.to_string()),
             lines: lines.iter().map(|l| l.to_string()).collect(),
         }
     }
@@ -1009,16 +991,12 @@ mod merge_tests {
     }
 
     #[test]
-    fn a_note_for_an_unknown_card_becomes_an_orphan_keeping_its_hint_and_lines() {
-        let (cards, orphans) = merge(
-            &[deck_card("a", &[])],
-            &[hinted("gone", "what it was", &["still mine"])],
-        );
+    fn a_note_for_an_unknown_card_becomes_an_orphan_keeping_its_lines() {
+        let (cards, orphans) = merge(&[deck_card("a", &[])], &[note("gone", &["still mine"])]);
         assert!(cards[0].notes.is_empty());
         assert_eq!(
             vec![Orphan {
                 card: "gone".to_string(),
-                hint: Some("what it was".to_string()),
                 lines: vec!["still mine".to_string()],
             }],
             orphans
@@ -1045,36 +1023,6 @@ mod merge_tests {
             orphans.is_empty(),
             "attachment does not depend on block order"
         );
-    }
-
-    #[test]
-    fn the_hint_never_changes_where_a_note_goes() {
-        let plain = merge(&[deck_card("a", &[])], &[note("a", &["x"])]);
-        let decorated = merge(
-            &[deck_card("a", &[])],
-            &[hinted("a", "anything at all", &["x"])],
-        );
-        assert_eq!(
-            plain.0, decorated.0,
-            "decoration must not move an attached note"
-        );
-        assert_eq!(plain.1, decorated.1);
-
-        // The discriminating case: decoration must not decide whether a note
-        // attaches at all, only how it reads.
-        let plain = merge(&[deck_card("a", &[])], &[note("gone", &["x"])]);
-        let decorated = merge(
-            &[deck_card("a", &[])],
-            &[hinted("gone", "a reminder", &["x"])],
-        );
-        assert_eq!(
-            plain.0, decorated.0,
-            "decoration must not move an orphaned note"
-        );
-        assert_eq!(1, plain.1.len());
-        assert_eq!(1, decorated.1.len());
-        assert_eq!(plain.1[0].card, decorated.1[0].card);
-        assert_eq!(plain.1[0].lines, decorated.1[0].lines);
     }
 
     #[test]

@@ -503,16 +503,16 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     // A note for a card that exists nowhere, and a card copying the deck's id.
     std::fs::write(
         decks.join("spanish.personal.md"),
-        "---\nformat-version: 1\npersonal-for: deck-spanishspanishspanishspa\n---\n\n\
-         <!-- for: card-gonegonegonegonegonegonego (a hint) -->\n> addressed to nothing\n\n\
-         ## a copy <!-- id: card-onetwothreefourfivesixsev -->\nmine\n",
+        "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
+         > addressed to nothing\n<!-- for: card-gonegonegonegonegonegonego -->\n\n\
+         ## a copy\nmine\n<!-- id: card-onetwothreefourfivesixsev -->\n",
     )
     .unwrap();
     // Names a deck that is not here at all.
     std::fs::write(
         decks.join("german.personal.md"),
-        "---\nformat-version: 1\npersonal-for: deck-nosuchdecknosuchdecknos\n---\n\n\
-         <!-- for: card-onetwothreefourfivesixsev -->\n> stray\n",
+        "---\nformat-version: 1\nfor: deck-nosuchdecknosuchdecknos\n---\n\n\
+         > stray\n<!-- for: card-onetwothreefourfivesixsev -->\n",
     )
     .unwrap();
 
@@ -524,8 +524,8 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     );
     let err = stderr(&out);
     assert!(
-        err.contains("card-gonegonegonegonegonegonego") && err.contains("a hint"),
-        "the orphan note is reported with its hint: {err}"
+        err.contains("card-gonegonegonegonegonegonego"),
+        "the orphan note is reported: {err}"
     );
     assert!(
         err.contains("spanish.personal.md") && err.contains("already in"),

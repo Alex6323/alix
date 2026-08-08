@@ -319,25 +319,30 @@ it belongs to:
 ```
 ---
 format-version: 1
-personal-for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
+for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
 ---
 
-<!-- for: card-3f7k2m9q1x8w5z0t6v4b2n8d7c (darse cuenta) -->
 > the "cuenta" is the tally you finally add up
+<!-- for: card-3f7k2m9q1x8w5z0t6v4b2n8d7c -->
 
-## a gap the exam found <!-- id: card-5k1m8q3z5t0v6b2n4d8f7c2x9w -->
+## a gap the exam found
 the answer
+<!-- id: card-5k1m8q3z5t0v6b2n4d8f7c2x9w -->
 ```
 
-Two kinds of block live there, in any order:
+Two kinds of block live there, in any order, and both close with their machine
+line exactly as a deck card closes with its `<!-- id: -->`:
 
-- A **note**, opened by a `<!-- for: <card-id> -->` marker and followed by `>`
-  lines. Those lines are appended to that card's own note when you review it.
-  The text in parentheses after the id is a hint for you, refreshed when the
-  card's front changes; nothing reads it.
+- A **note**: `>` lines closed by a `<!-- for: <card-id> -->` marker. Those
+  lines are appended to that card's own note when you review it. If you want a
+  label above your note, write a `## ` heading; it is yours, alix never writes
+  or rewrites one.
 - A **card**, written exactly like a deck card. It joins the session after the
   deck's own cards and is drilled and scheduled like any other, but it does not
   count toward the deck's card count.
+
+Nothing in this file is a copy of anything in the deck, so nothing here can go
+stale. The card id is the only link, and it never changes.
 
 alix writes this file for you: the tutor's **Make this a card**, its
 **Make a note**, and the exam's remediation cards all land here. You can also

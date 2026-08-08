@@ -547,12 +547,8 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
         .collect();
     let (_, orphans) = alix::merge(&deck_blocks, &personal.blocks());
     for orphan in orphans {
-        let hint = orphan
-            .hint
-            .map(|hint| format!(" ({hint})"))
-            .unwrap_or_default();
         report.warn(format!(
-            "{}: a note addresses `{}`{hint}, which is in neither the deck nor this file",
+            "{}: a note addresses `{}`, which is in neither the deck nor this file",
             sidecar.display(),
             orphan.card
         ));

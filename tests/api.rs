@@ -6471,7 +6471,12 @@ fn a_tutor_note_leaves_the_authored_deck_untouched_and_writes_the_sidecar() {
         "sidecar:\n{written}"
     );
     assert!(
-        written.contains("personal-for: deck-sample"),
+        written.contains("for: deck-sample"),
         "the sidecar names its deck: {written}"
+    );
+    assert_eq!(
+        Some("<!-- for: card-s1 -->"),
+        written.lines().rfind(|l| !l.is_empty()),
+        "the machine line closes the block: {written}"
     );
 }

@@ -618,7 +618,7 @@ impl Reviewing {
             let card_id = card
                 .id()
                 .ok_or_else(|| "the card carries no id to attach a note to".to_string())?;
-            files.append_note(&card.deck_id, &card_id, &card.front, notes)?;
+            files.append_note(&card.deck_id, &card_id, notes)?;
             if let Some(cur) = session.current_mut()
                 && cur.id() == card.id()
             {
@@ -1401,14 +1401,8 @@ impl Walking {
         self.ask.poll(|card, notes| {
             let card_id = checkpoint
                 .ok_or_else(|| "the walk is on no checkpoint to attach a note to".to_string())?;
-            crate::personal::append_note(
-                &deck_path,
-                &card.deck_id,
-                &card_id,
-                Some(&card.front),
-                notes,
-            )
-            .map_err(|e| e.to_string())
+            crate::personal::append_note(&deck_path, &card.deck_id, &card_id, notes)
+                .map_err(|e| e.to_string())
         })
     }
 
