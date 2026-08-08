@@ -4070,7 +4070,7 @@ fn walk_ask_question_then_note_writes_to_the_checkpoint() {
         "sidecar: {sidecar}"
     );
     assert!(
-        sidecar.contains("<!-- for: card-t1"),
+        sidecar.contains("<!-- note: card-t1"),
         "the note is addressed to the checkpoint's card: {sidecar}"
     );
 }
@@ -6474,9 +6474,19 @@ fn a_tutor_note_leaves_the_authored_deck_untouched_and_writes_the_sidecar() {
         written.contains("for: deck-sample"),
         "the sidecar names its deck: {written}"
     );
+    let block: Vec<&str> = written
+        .lines()
+        .skip_while(|line| *line != "<!-- note: card-s1 -->")
+        .collect();
     assert_eq!(
-        Some("<!-- for: card-s1 -->"),
-        written.lines().rfind(|l| !l.is_empty()),
-        "the machine line closes the block: {written}"
+        Some(&"<!-- note: card-s1 -->"),
+        block.first(),
+        "the machine line opens the block: {written}"
+    );
+    assert!(
+        block[1..]
+            .iter()
+            .any(|line| line.contains("the condensed insight")),
+        "the note it carries follows it: {written}"
     );
 }

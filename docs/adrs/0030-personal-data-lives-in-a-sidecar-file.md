@@ -1,6 +1,9 @@
 # 0030: Personal learning data lives in a sidecar file
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0031](0031-a-personal-file-copies-nothing.md), which keeps the
+  placement and replaces the file format: decisions 3, 4 and 5 below are no
+  longer what the code does.
 - Recorded: 2026-08-07
 - Retrospective: No
 - Supersedes:

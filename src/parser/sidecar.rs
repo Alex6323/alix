@@ -1,7 +1,7 @@
 use super::{WHITESPACE, trim_ws};
 
 /// A run of `>` lines in a personal file, addressed to a card by the
-/// `<!-- for: -->` marker that closes it.
+/// `<!-- note: -->` marker that opens it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SidecarNote {
     pub card: String,
@@ -17,7 +17,7 @@ pub fn notes(text: &str) -> Vec<SidecarNote> {
         };
         out.push(SidecarNote {
             card: card.to_string(),
-            lines: lines[quoted_run_start(&lines, index)..index]
+            lines: lines[index + 1..quoted_run_end(&lines, index)]
                 .iter()
                 .map(|line| quoted_text(line).unwrap_or_default().to_string())
                 .collect(),
@@ -36,11 +36,10 @@ pub fn without_notes(text: &str) -> String {
             continue;
         }
         dropped[index] = true;
-        let start = quoted_run_start(&lines, index);
-        dropped[start..index].fill(true);
+        dropped[index + 1..quoted_run_end(&lines, index)].fill(true);
         // A label the reader wrote above their own note; alix never writes one.
-        if start > 0 && trim_ws(lines[start - 1]).starts_with("## ") {
-            dropped[start - 1] = true;
+        if index > 0 && trim_ws(lines[index - 1]).starts_with("## ") {
+            dropped[index - 1] = true;
         }
     }
     let mut out = String::with_capacity(text.len());
@@ -53,23 +52,23 @@ pub fn without_notes(text: &str) -> String {
     out
 }
 
-fn quoted_run_start(lines: &[&str], marker: usize) -> usize {
-    let mut start = marker;
-    while start > 0 && quoted_text(lines[start - 1]).is_some() {
-        start -= 1;
+fn quoted_run_end(lines: &[&str], marker: usize) -> usize {
+    let mut end = marker + 1;
+    while end < lines.len() && quoted_text(lines[end]).is_some() {
+        end += 1;
     }
-    start
+    end
 }
 
 fn quoted_text(line: &str) -> Option<&str> {
     Some(trim_ws(trim_ws(line).strip_prefix('>')?))
 }
 
-/// The grammar is exactly `<!-- for: <card-id> -->`; anything else is not a
-/// marker, so its `>` lines stay in the text and fail as ordinary card content.
+/// The grammar is exactly `<!-- note: <card-id> -->`; anything else is not a
+/// marker, so its `>` lines stay in the text as ordinary card content.
 fn marker_target(line: &str) -> Option<&str> {
     let body = line.strip_prefix("<!--")?.strip_suffix("-->")?;
-    let value = trim_ws(trim_ws(body).strip_prefix("for:")?);
+    let value = trim_ws(trim_ws(body).strip_prefix("note:")?);
     (!value.is_empty() && !value.contains(WHITESPACE)).then_some(value)
 }
 
@@ -78,8 +77,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_marker_carries_the_quoted_lines_above_it() {
-        let text = "> not the same as realizar\n> really\n<!-- for: card-abc -->\n";
+    fn a_marker_carries_the_quoted_lines_below_it() {
+        let text = "<!-- note: card-abc -->\n> not the same as realizar\n> really\n";
         assert_eq!(
             vec![SidecarNote {
                 card: "card-abc".into(),
@@ -90,16 +89,16 @@ mod tests {
     }
 
     #[test]
-    fn a_blank_line_ends_the_run_so_earlier_quotes_are_not_swept_in() {
-        let text = "> an earlier quote\n\n> mine\n<!-- for: card-abc -->\n";
+    fn a_blank_line_ends_the_run_so_later_quotes_are_not_swept_in() {
+        let text = "<!-- note: card-abc -->\n> mine\n\n> a later quote\n";
         assert_eq!(vec!["mine".to_string()], notes(text)[0].lines);
     }
 
     #[test]
     fn blocks_are_returned_in_file_order_across_intervening_content() {
-        let text = "> first\n<!-- for: card-one -->\n\n\
+        let text = "<!-- note: card-one -->\n> first\n\n\
                     ## a personal card <!-- id: card-xyz -->\nan answer\n\n\
-                    > second\n<!-- for: card-two -->\n";
+                    <!-- note: card-two -->\n> second\n";
         assert_eq!(
             vec!["card-one".to_string(), "card-two".to_string()],
             notes(text)
@@ -110,13 +109,13 @@ mod tests {
     }
 
     #[test]
-    fn a_marker_with_nothing_above_it_is_still_a_block_so_doctor_can_report_it() {
+    fn a_marker_with_nothing_below_it_is_still_a_block_so_doctor_can_report_it() {
         assert_eq!(
             vec![SidecarNote {
                 card: "card-abc".into(),
                 lines: Vec::new(),
             }],
-            notes("<!-- for: card-abc -->\n")
+            notes("<!-- note: card-abc -->\n")
         );
     }
 
@@ -124,15 +123,24 @@ mod tests {
     fn a_marker_carrying_anything_beyond_the_id_is_not_a_marker() {
         assert_eq!(
             Vec::<SidecarNote>::new(),
-            notes("> mine\n<!-- for: card-abc (a hint) -->\n"),
+            notes("<!-- note: card-abc (a hint) -->\n> mine\n"),
             "the retired hinted form is not recognized, it is invalid input"
+        );
+    }
+
+    #[test]
+    fn a_marker_naming_a_kind_alix_does_not_write_yet_is_not_a_note() {
+        assert_eq!(
+            Vec::<SidecarNote>::new(),
+            notes("<!-- hint: card-abc -->\n> mine\n"),
+            "each kind is its own keyword, so an unbuilt one is simply not a marker"
         );
     }
 
     #[test]
     fn without_notes_drops_a_note_block_and_keeps_a_cards_own_note() {
         let text = "## a personal card <!-- id: card-xyz -->\nan answer\n> its own note\n\n\
-                    > addressed elsewhere\n<!-- for: card-abc -->\n";
+                    <!-- note: card-abc -->\n> addressed elsewhere\n";
         assert_eq!(
             "## a personal card <!-- id: card-xyz -->\nan answer\n> its own note\n\n",
             without_notes(text)
@@ -141,17 +149,17 @@ mod tests {
 
     #[test]
     fn without_notes_absorbs_a_label_the_reader_wrote_above_their_note() {
-        let text = "## why the None case matters\n> mine\n<!-- for: card-abc -->\n";
+        let text = "## why the None case matters\n<!-- note: card-abc -->\n> mine\n";
         assert_eq!("", without_notes(text));
     }
 
     #[test]
-    fn without_notes_leaves_a_card_whose_answer_precedes_a_stray_marker() {
-        let text = "## front\nan answer\n<!-- for: card-abc -->\n";
+    fn without_notes_leaves_a_card_whose_front_follows_a_stray_marker() {
+        let text = "<!-- note: card-abc -->\n## front\nan answer\n";
         assert_eq!(
             "## front\nan answer\n",
             without_notes(text),
-            "the answer is a card's, not a note's; doctor reports the ambiguity"
+            "the front is a card's, not a note's; doctor reports the ambiguity"
         );
     }
 

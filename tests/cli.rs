@@ -504,7 +504,7 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     std::fs::write(
         decks.join("spanish.personal.md"),
         "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
-         > addressed to nothing\n<!-- for: card-gonegonegonegonegonegonego -->\n\n\
+         <!-- note: card-gonegonegonegonegonegonego -->\n> addressed to nothing\n\n\
          ## a copy\nmine\n<!-- id: card-onetwothreefourfivesixsev -->\n",
     )
     .unwrap();
@@ -512,7 +512,7 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     std::fs::write(
         decks.join("german.personal.md"),
         "---\nformat-version: 1\nfor: deck-nosuchdecknosuchdecknos\n---\n\n\
-         > stray\n<!-- for: card-onetwothreefourfivesixsev -->\n",
+         <!-- note: card-onetwothreefourfivesixsev -->\n> stray\n",
     )
     .unwrap();
 

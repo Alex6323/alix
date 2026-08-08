@@ -322,24 +322,29 @@ format-version: 1
 for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
 ---
 
+<!-- note: card-3f7k2m9q1x8w5z0t6v4b2n8d7c -->
 > the "cuenta" is the tally you finally add up
-<!-- for: card-3f7k2m9q1x8w5z0t6v4b2n8d7c -->
 
 ## a gap the exam found
 the answer
 <!-- id: card-5k1m8q3z5t0v6b2n4d8f7c2x9w -->
 ```
 
-Two kinds of block live there, in any order, and both close with their machine
-line exactly as a deck card closes with its `<!-- id: -->`:
+Two kinds of block live there, in any order:
 
-- A **note**: `>` lines closed by a `<!-- for: <card-id> -->` marker. Those
+- A **note**: a `<!-- note: <card-id> -->` marker followed by `>` lines. Those
   lines are appended to that card's own note when you review it. If you want a
   label above your note, write a `## ` heading; it is yours, alix never writes
   or rewrites one.
-- A **card**, written exactly like a deck card. It joins the session after the
-  deck's own cards and is drilled and scheduled like any other, but it does not
-  count toward the deck's card count.
+- A **card**, written exactly like a deck card and closed by its own
+  `<!-- id: -->` line. It joins the session after the deck's own cards and is
+  drilled and scheduled like any other, but it does not count toward the deck's
+  card count.
+
+The two machine lines sit at opposite ends of their block on purpose. A card's
+id closes it, because the id names the card itself. A note's marker opens it,
+because a note is an attachment: it has to say which card it belongs to before
+anything below it means anything.
 
 Nothing in this file is a copy of anything in the deck, so nothing here can go
 stale. The card id is the only link, and it never changes.

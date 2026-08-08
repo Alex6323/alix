@@ -12,11 +12,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`spanish.md` gets `spanish.personal.md`), leaving the authored deck
   byte-identical. Tutor notes, tutor-made cards, and exam remediation cards
   all land there; a `for:` frontmatter key names the deck the file belongs to,
-  `>` lines closed by a `<!-- for: <card-id> -->` marker add notes to one of
-  its cards, and an ordinary card block adds a card of your own. Every block
-  closes with its machine line, exactly as a deck card closes with its
-  `<!-- id: -->`, so editing a personal file is the same job as editing a
-  deck. Nothing in it copies the deck, so nothing in it can go stale.
+  a `<!-- note: <card-id> -->` marker followed by `>` lines adds notes to one
+  of its cards, and an ordinary card block adds a card of your own. A card
+  closes with its `<!-- id: -->` line as it does in a deck, while a note's
+  marker opens its block, because a note has to name the card it belongs to
+  before anything below it means anything. Nothing in the file copies the
+  deck, so nothing in it can go stale.
   A personal file is never listed as a deck, and `alix share` leaves it at
   home in both directions: it is never bundled, and an arriving bundle
   cannot overwrite yours.

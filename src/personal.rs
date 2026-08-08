@@ -85,27 +85,32 @@ fn header(deck_id: &str) -> String {
 }
 
 fn marker(card_id: &str) -> String {
-    format!("<!-- for: {card_id} -->")
+    format!("<!-- note: {card_id} -->")
 }
 
-/// New notes are inserted above the block's closing marker, so the machine
-/// line stays last exactly as a deck card's `<!-- id: -->` does.
 fn rewrite(text: &str, card_id: &str, notes: &[String]) -> String {
     let quoted = |note: &String| format!("> {note}");
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let Some(marker_line) = lines.iter().position(|line| addresses(line, card_id)) else {
         let mut out = text.trim_end().to_string();
         out.push_str("\n\n");
+        out.push_str(&marker(card_id));
+        out.push('\n');
         for note in notes {
             out.push_str(&quoted(note));
             out.push('\n');
         }
-        out.push_str(&marker(card_id));
-        out.push('\n');
         return out;
     };
+    let mut end = marker_line + 1;
+    while lines
+        .get(end)
+        .is_some_and(|line| line.trim_start().starts_with('>'))
+    {
+        end += 1;
+    }
     for (offset, note) in notes.iter().enumerate() {
-        lines.insert(marker_line + offset, quoted(note));
+        lines.insert(end + offset, quoted(note));
     }
     let mut out = lines.join("\n");
     out.push('\n');
@@ -120,7 +125,7 @@ fn addresses(line: &str, card_id: &str) -> bool {
     else {
         return false;
     };
-    let Some(value) = body.trim().strip_prefix("for:") else {
+    let Some(value) = body.trim().strip_prefix("note:") else {
         return false;
     };
     value.trim() == card_id
@@ -186,7 +191,7 @@ mod tests {
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(
             "---\nformat-version: 1\nfor: deck-abc\n---\n\n\
-             > mine\n<!-- for: card-one -->\n",
+             <!-- note: card-one -->\n> mine\n",
             text
         );
     }
@@ -215,14 +220,14 @@ mod tests {
         append_note(&deck, "deck-abc", "card-one", &note("second")).unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
-        assert_eq!(1, text.matches("<!-- for: card-one").count());
+        assert_eq!(1, text.matches("<!-- note: card-one").count());
         let first = text.find("> first").unwrap();
         let second = text.find("> second").unwrap();
         assert!(first < second, "notes keep the order they were written in");
     }
 
     #[test]
-    fn every_note_written_to_a_block_stays_above_its_closing_marker() {
+    fn every_note_written_to_a_block_stays_below_its_opening_marker() {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
@@ -230,11 +235,14 @@ mod tests {
         append_note(&deck, "deck-abc", "card-one", &note("second")).unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
-        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+        let block: Vec<&str> = text
+            .lines()
+            .skip_while(|line| *line != "<!-- note: card-one -->")
+            .collect();
         assert_eq!(
-            Some(&"<!-- for: card-one -->"),
-            lines.last(),
-            "the machine line closes the block, as `<!-- id: -->` does in a deck: {text}"
+            vec!["<!-- note: card-one -->", "> first", "> second"],
+            block,
+            "the marker opens the block and every note follows it: {text}"
         );
         assert_eq!(1, text.matches("card-one").count());
     }
