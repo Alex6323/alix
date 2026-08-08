@@ -1,5 +1,5 @@
 //! Pairing rules for personal sidecars, as a pure function over an already
-//! read folder listing: name-based discovery and the `personal-for:` link are
+//! read folder listing: name-based discovery and the `for:` link are
 //! two independent mechanisms, so classification also reports where they
 //! disagree.
 
@@ -12,7 +12,7 @@ pub struct FileEntry {
     pub name: String,
     /// The file's own `id:` frontmatter value, when it has one.
     pub deck_id: Option<String>,
-    /// The file's `personal-for:` frontmatter value, when it has one.
+    /// The file's `for:` frontmatter value, when it has one.
     pub personal_for: Option<String>,
     /// Every card id the file carries, in file order.
     pub card_ids: Vec<String>,
