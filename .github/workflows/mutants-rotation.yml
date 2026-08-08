@@ -2,11 +2,12 @@ name: Mutation rotation
 
 # The nightly diff run only ever mutates what just merged, so everything older
 # than that job has never been mutated at all. This one grinds through the
-# whole tree instead: one ninth per night, advancing by date, so the
-# codebase is covered on a rolling nine-day cycle and re-covered as it changes.
+# whole tree instead: four parallel thirty-sixths per night, advancing by
+# date, so the codebase is covered on a rolling nine-day cycle and re-covered
+# as it changes.
 #
-# The shard comes from the day of the year, so there is no state to keep and
-# nothing to drift. A missed night just means that slice waits a cycle.
+# The four shards come from the day of the year, so there is no state to keep
+# and nothing to drift. A missed night just means those slices wait a cycle.
 #
 # Misses, mutant timeouts, and overruns fail the job; the summary and
 # artifact still upload either way.
@@ -17,22 +18,39 @@ on:
   workflow_dispatch:
     inputs:
       shard:
-        description: "Shard index to run instead of today's (0-8)"
+        description: "One physical shard to run instead of today's four (0-35)"
         required: false
 
 permissions:
   contents: read
 
-env:
-  SHARDS: 9
-
 jobs:
+  plan:
+    name: plan rotation shards
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.shards.outputs.count }}
+      matrix: ${{ steps.shards.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Pick tonight's shards
+        id: shards
+        env:
+          REQUESTED_SHARD: ${{ inputs.shard }}
+        run: python3 scripts/mutants_rotation_plan.py "$(date -u +%j)" "$REQUESTED_SHARD" >> "$GITHUB_OUTPUT"
+
   sweep:
-    name: mutation rotation
+    name: mutation rotation ${{ matrix.shard }}/${{ needs.plan.outputs.count }}
+    needs: plan
     runs-on: ubuntu-latest
     # Under GitHub's 6h ceiling. A killed job yields nothing at all, so the
     # slice size is chosen to leave room rather than to fill the budget.
     timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -46,16 +64,6 @@ jobs:
         with:
           tool: cargo-mutants,cargo-nextest
 
-      - name: Pick today's shard
-        id: pick
-        run: |
-          shard="${{ inputs.shard }}"
-          if [ -z "$shard" ]; then
-            shard=$(( $(date -u +%j) % ${SHARDS} ))
-          fi
-          echo "shard=$shard" >> "$GITHUB_OUTPUT"
-          echo "sweeping shard $shard/${SHARDS} of the whole tree"
-
       - name: Mutate this slice of the tree
         id: sweep
         run: |
@@ -65,7 +73,7 @@ jobs:
           # skips every remaining step, including the report and the artifact,
           # so an overrun would destroy exactly the measurement this run exists
           # to produce. Overrunning here ends the STEP (124) and the rest runs.
-          timeout 300m make mutants MUTANTS_ALL=1 MUTANTS_SHARD=${{ steps.pick.outputs.shard }}/${SHARDS} GATE_JOBS=4
+          timeout 300m make mutants MUTANTS_ALL=1 MUTANTS_SHARD=${{ matrix.shard }}/${{ needs.plan.outputs.count }} GATE_JOBS=4
           status=$?
           set -e
           [ "$status" -eq 124 ] && echo "OVERRAN the 300m step budget" >> "$GITHUB_STEP_SUMMARY"
@@ -80,7 +88,7 @@ jobs:
           elapsed=${{ steps.sweep.outputs.elapsed || 0 }}
           count() { [ -f "mutants.out/$1" ] && wc -l < "mutants.out/$1" | tr -d ' ' || echo 0; }
           {
-            echo "## Mutation rotation: shard ${{ steps.pick.outputs.shard }}/${SHARDS}"
+            echo "## Mutation rotation: shard ${{ matrix.shard }}/${{ needs.plan.outputs.count }}"
             echo
             echo "| | |"
             echo "|---|---|"
@@ -96,13 +104,13 @@ jobs:
             echo "slices are contiguous file ranges, so a server-heavy one costs"
             echo "far more per mutant than a pure-function one."
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "shard ${{ steps.pick.outputs.shard }}/${SHARDS} took ${elapsed}s"
+          echo "shard ${{ matrix.shard }}/${{ needs.plan.outputs.count }} took ${elapsed}s"
 
       - name: Keep the outcome
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mutants-rotation-shard-${{ steps.pick.outputs.shard }}
+          name: mutants-rotation-shard-${{ matrix.shard }}-of-${{ needs.plan.outputs.count }}
           path: mutants.out/
           retention-days: 14
           if-no-files-found: ignore
