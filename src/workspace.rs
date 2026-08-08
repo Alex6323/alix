@@ -232,24 +232,30 @@ pub fn member_dir(path: &Path) -> PathBuf {
     }
 }
 
-pub fn root_for_deck(path: &Path) -> Option<&Path> {
-    root_for_member_dir(path.parent()?)
+/// Both take the path as given and make it absolute first: discovery walks
+/// parents, and a relative name has fewer of them than it appears to, so
+/// `d.md` and `decks` would otherwise resolve against nothing.
+pub fn root_for_deck(path: &Path) -> Option<PathBuf> {
+    let deck = std::path::absolute(path).ok()?;
+    root_holding(deck.parent()?)
 }
 
-pub fn root_for_member_dir(path: &Path) -> Option<&Path> {
-    let members = path;
+pub fn root_for_member_dir(path: &Path) -> Option<PathBuf> {
+    root_holding(&std::path::absolute(path).ok()?)
+}
+
+fn root_holding(members: &Path) -> Option<PathBuf> {
     if members.file_name().and_then(|name| name.to_str()) != Some(DECKS) {
         return None;
     }
     let root = members.parent()?;
-    has_manifest(root).then_some(root)
+    has_manifest(root).then(|| root.to_path_buf())
 }
 
 pub fn content_root(path: &Path) -> PathBuf {
     root_for_deck(path)
-        .or_else(|| path.parent())
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf()
+        .or_else(|| path.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 pub fn file_is_deck(path: &Path) -> bool {
@@ -364,7 +370,7 @@ pub fn root_store_path(dir: &Path) -> PathBuf {
         return store_path(dir);
     }
     root_for_member_dir(dir)
-        .map(store_path)
+        .map(|root| store_path(&root))
         .unwrap_or_else(|| dir.to_path_buf())
 }
 
@@ -726,8 +732,11 @@ mod tests {
         let member = members.join("member.md");
         write(&member, &deck("member", "## member\nlisted\n"));
 
-        assert_eq!(Some(dir.path()), root_for_deck(&member));
-        assert_eq!(Some(dir.path()), root_for_member_dir(&members));
+        assert_eq!(Some(dir.path().to_path_buf()), root_for_deck(&member));
+        assert_eq!(
+            Some(dir.path().to_path_buf()),
+            root_for_member_dir(&members)
+        );
         assert_eq!(dir.path(), content_root(&member));
 
         let loose = dir.path().join("loose.md");

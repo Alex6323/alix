@@ -38,7 +38,7 @@ pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<
     }
     let mut stores = decks
         .iter()
-        .map(|deck| workspace::root_for_deck(deck).map(workspace::store_path));
+        .map(|deck| workspace::root_for_deck(deck).map(|root| workspace::store_path(&root)));
     match stores.next() {
         Some(Some(first)) if stores.all(|s| s.as_ref() == Some(&first)) => Some(first),
         _ => None,
@@ -387,8 +387,8 @@ pub fn select(
     let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
     let mut cards = exclude_unstamped(cards, &deck_label);
     for info in decks.values_mut() {
-        let workspace_override =
-            workspace::root_for_deck(&info.path).and_then(workspace::manifest_source_access);
+        let workspace_override = workspace::root_for_deck(&info.path)
+            .and_then(|root| workspace::manifest_source_access(&root));
         info.source_access = workspace_override.unwrap_or(cfg.ask.source_access);
     }
     let label = deck_label;

@@ -119,8 +119,8 @@ pub fn replace_deck(
     }
 
     std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
-    let workspace_files = WorkspaceFiles::new(workspace_root);
+    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or_else(|| dir.to_path_buf());
+    let workspace_files = WorkspaceFiles::new(&workspace_root);
     let mut trio = TrioBackup::default();
     trio.back_up(&path)
         .with_context(|| format!("cannot keep {} as its backup", path.display()))?;
@@ -178,7 +178,7 @@ pub fn replace_deck(
     }
     let cache_path = workspace_files.augment();
     if cache_path.exists() {
-        let mut cache = match AugmentCache::open_for_workspace(workspace_root) {
+        let mut cache = match AugmentCache::open_for_workspace(&workspace_root) {
             Ok(cache) => cache,
             Err(error) => {
                 trio.restore(&path)?;
@@ -577,7 +577,7 @@ fn removal_set(deck_path: &Path, store: &Store) -> (Vec<PathBuf>, Vec<PathBuf>, 
         }
     }
     let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
-    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
+    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or_else(|| dir.to_path_buf());
     let workspace_files = WorkspaceFiles::new(workspace_root);
     for token in &tokens {
         if let Ok(progress) = crate::state::progress_document_for(store.path(), token) {
@@ -636,7 +636,7 @@ pub fn restore_deck(deck_path: &Path, store_root: &Path) -> Result<RestoreReport
         bail!("nothing to restore: {} does not exist", bak_deck.display());
     }
     let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
-    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or(dir);
+    let workspace_root = workspace::root_for_member_dir(dir).unwrap_or_else(|| dir.to_path_buf());
     let workspace_files = WorkspaceFiles::new(workspace_root);
     let progress_dir = store_root.join("progress");
 

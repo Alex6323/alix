@@ -166,10 +166,10 @@ pub fn freeze_member(path: &Path) -> Result<FreezeReport, AssetError> {
         .deck_token
         .as_deref()
         .ok_or_else(|| AssetError::MissingDeckId(path.to_path_buf()))?;
-    let owned_dir = deck_dir(workspace_root, deck_id)?;
+    let owned_dir = deck_dir(&workspace_root, deck_id)?;
     let owned_dir_existed = owned_dir.exists();
     let root_existed = workspace_root.join(ROOT).exists();
-    let result = freeze_member_inner(workspace_root, &deck);
+    let result = freeze_member_inner(&workspace_root, &deck);
     if result.is_err() && !owned_dir_existed {
         let _ = std::fs::remove_dir_all(&owned_dir);
         if !root_existed {
@@ -190,12 +190,6 @@ pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
         });
     }
     let original = std::fs::read(path).map_err(|source| InitializeError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    // Workspace discovery walks parents, and a bare file name has none, so a
-    // relative path would silently initialize without freezing.
-    let path = &std::path::absolute(path).map_err(|source| InitializeError::Read {
         path: path.to_path_buf(),
         source,
     })?;
@@ -462,7 +456,7 @@ fn resolve_image_source(workspace_root: &Path, source: &str) -> Result<PathBuf, 
 pub fn validate_member(deck: &Deck) -> Result<(), AssetError> {
     let workspace_root = crate::workspace::root_for_deck(&deck.path)
         .ok_or_else(|| AssetError::NotWorkspaceMember(deck.path.clone()))?;
-    validate_at_root(deck, workspace_root)
+    validate_at_root(deck, &workspace_root)
 }
 
 pub fn validate_at_root(deck: &Deck, root: &Path) -> Result<(), AssetError> {
@@ -509,7 +503,7 @@ pub fn validate_owned_dir(root: &Path, deck_id: &str) -> Result<(), AssetError> 
 pub fn validate_image(deck: &Deck, source: &str) -> Result<(), AssetError> {
     let workspace_root = crate::workspace::root_for_deck(&deck.path)
         .ok_or_else(|| AssetError::NotWorkspaceMember(deck.path.clone()))?;
-    validate_image_at_root(deck, workspace_root, source)
+    validate_image_at_root(deck, &workspace_root, source)
 }
 
 pub fn validate_image_at_root(deck: &Deck, root: &Path, source: &str) -> Result<(), AssetError> {

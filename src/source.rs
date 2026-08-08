@@ -168,7 +168,7 @@ impl SourceBase {
             source_file: if multi { None } else { source_file },
             asset_dir: crate::workspace::root_for_deck(&deck.path)
                 .zip(deck.deck_token.as_deref())
-                .and_then(|(root, deck_id)| crate::assets::deck_dir(root, deck_id).ok()),
+                .and_then(|(root, deck_id)| crate::assets::deck_dir(&root, deck_id).ok()),
         }
     }
 

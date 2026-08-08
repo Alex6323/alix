@@ -135,12 +135,12 @@ impl LibraryTarget {
         }
     }
 
-    fn display_root(&self) -> &Path {
+    fn display_root(&self) -> PathBuf {
         match self {
             Self::Deck { path, .. } => workspace::root_for_deck(path)
-                .or_else(|| path.parent())
-                .unwrap_or(path),
-            Self::Workspace { root, .. } => root,
+                .or_else(|| path.parent().map(Path::to_path_buf))
+                .unwrap_or_else(|| path.clone()),
+            Self::Workspace { root, .. } => root.clone(),
         }
     }
 
@@ -176,6 +176,7 @@ impl LibraryTarget {
         let user_files = crate::state::UserFiles::new(
             progress_root
                 .parent()
+                .map(Path::to_path_buf)
                 .unwrap_or_else(|| self.display_root()),
         );
         let deck_paths: Vec<&PathBuf> = match self {

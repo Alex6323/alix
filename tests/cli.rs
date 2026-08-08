@@ -33,15 +33,16 @@ fn alix(args: &[&str]) -> Output {
 }
 
 /// Like [`alix`], but run from `cwd`, so a relative deck argument resolves the
-/// way it does when someone runs alix from inside their decks folder.
-fn alix_in(cwd: &Path, args: &[&str]) -> Output {
-    let home = TempDir::new().unwrap();
+/// way it does when someone runs alix from inside their decks folder. The home
+/// is caller-supplied so two spellings can be compared without the per-run
+/// temp home leaking into the output.
+fn alix_in(cwd: &Path, home: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_alix"))
         .args(args)
         .current_dir(cwd)
-        .env("HOME", home.path())
-        .env("XDG_CONFIG_HOME", home.path())
-        .env("XDG_DATA_HOME", home.path())
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home)
+        .env("XDG_DATA_HOME", home)
         .output()
         .expect("failed to run the alix binary")
 }
@@ -4142,6 +4143,92 @@ fn deck_init_refuses_plain_prose_without_changing_it() {
     assert_eq!(original, std::fs::read_to_string(path).unwrap());
 }
 
+/// One law over every command that resolves a workspace from a deck path. A
+/// new such command joins the list; it does not get its own test.
+#[test]
+fn a_relative_deck_path_resolves_the_same_workspace_as_an_absolute_one() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    let deck = write(
+        &decks,
+        "d.md",
+        "---\nformat-version: 1\nid: deck-relativerelativerelativ\n---\n\
+         ## Q1 <!-- id: card-relone -->\nA1\n",
+    );
+
+    let mut store = alix::state::open_store(Path::new(&deck), ws).unwrap();
+    let state = store.get_or_insert("card-relone", alix::time::now_ms());
+    state.total_reviews = 7;
+    state.total_passes = 5;
+    store.save().unwrap();
+
+    let home = TempDir::new().unwrap();
+
+    for command in ["stats", "list"] {
+        let absolute = alix_env(&[command, &deck], home.path(), &[]);
+        let relative = alix_in(&decks, home.path(), &[command, "d.md"]);
+        assert_eq!(
+            absolute.status.code(),
+            relative.status.code(),
+            "`alix {command} d.md` exited differently: {} / {}",
+            stderr(&absolute),
+            stderr(&relative)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&absolute.stdout),
+            String::from_utf8_lossy(&relative.stdout),
+            "`alix {command} d.md` from inside decks/ must match the absolute spelling"
+        );
+    }
+}
+
+/// The same law for a folder argument. It is a separate test because `doctor`
+/// echoes the path it was handed, so only the resolved lines can be compared.
+#[test]
+fn a_relative_decks_dir_resolves_the_same_store_as_an_absolute_one() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    write(
+        &decks,
+        "d.md",
+        "---
+format-version: 1
+id: deck-relativerelativerelativ
+---
+         ## Q1 <!-- id: card-relone -->
+A1
+",
+    );
+    let home = TempDir::new().unwrap();
+
+    let store_line = |out: &Output| {
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find(|line| line.contains("store"))
+            .unwrap_or_default()
+            .to_string()
+    };
+    let absolute = alix_env(&["doctor", &decks.to_string_lossy()], home.path(), &[]);
+    let relative = alix_in(ws, home.path(), &["doctor", "decks"]);
+
+    assert!(
+        store_line(&absolute).contains(&*ws.to_string_lossy()),
+        "the absolute spelling names the workspace store: {}",
+        store_line(&absolute)
+    );
+    assert_eq!(
+        store_line(&absolute),
+        store_line(&relative),
+        "`alix doctor decks` from the workspace root must resolve the same store"
+    );
+}
+
 #[test]
 fn deck_init_freezes_its_excerpts_when_named_by_a_relative_path() {
     let dir = TempDir::new().unwrap();
@@ -4161,7 +4248,8 @@ fn deck_init_freezes_its_excerpts_when_named_by_a_relative_path() {
     .unwrap();
 
     // The obvious way to do it: from inside the folder, by bare file name.
-    let out = alix_in(&decks, &["deck", "init", "d.md"]);
+    let home = TempDir::new().unwrap();
+    let out = alix_in(&decks, home.path(), &["deck", "init", "d.md"]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = std::fs::read_to_string(decks.join("d.md")).unwrap();

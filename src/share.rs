@@ -72,13 +72,13 @@ fn deck_bundle_parts(path: &Path) -> Result<Option<DeckBundleParts>> {
         return Ok(None);
     };
     let content_root = crate::workspace::root_for_deck(path)
-        .or_else(|| path.parent())
-        .unwrap_or_else(|| Path::new("."));
-    let augmentation = crate::workspace::WorkspaceFiles::new(content_root).augment_for(deck_id);
-    let owned_assets = crate::assets::deck_dir(content_root, deck_id)?;
+        .or_else(|| path.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let augmentation = crate::workspace::WorkspaceFiles::new(&content_root).augment_for(deck_id);
+    let owned_assets = crate::assets::deck_dir(&content_root, deck_id)?;
     let has_assets = owned_assets.is_dir();
     if crate::workspace::root_for_deck(path).is_some() || has_assets {
-        validate_bundle_material(&deck, content_root)?;
+        validate_bundle_material(&deck, &content_root)?;
     }
     if augmentation.is_file() {
         crate::augment::read_deck_data(&augmentation, deck_id)?;
@@ -609,8 +609,9 @@ pub fn land_deck_bundle_with_force(
 
     let source_assets = bundle.join("assets").join(deck_id);
     if source_assets.is_dir() {
-        let asset_root = crate::workspace::root_for_member_dir(dest_dir).unwrap_or(dest_dir);
-        let destination_assets = crate::assets::deck_dir(asset_root, deck_id)?;
+        let asset_root = crate::workspace::root_for_member_dir(dest_dir)
+            .unwrap_or_else(|| dest_dir.to_path_buf());
+        let destination_assets = crate::assets::deck_dir(&asset_root, deck_id)?;
         std::fs::create_dir_all(&destination_assets)
             .with_context(|| format!("cannot create {}", destination_assets.display()))?;
         for entry in std::fs::read_dir(&source_assets)? {
@@ -632,9 +633,10 @@ pub fn land_deck_bundle_with_force(
         }
     }
     if let Some((source_revision, source_data)) = source_augmentation {
-        let workspace_root = crate::workspace::root_for_member_dir(dest_dir).unwrap_or(dest_dir);
+        let workspace_root = crate::workspace::root_for_member_dir(dest_dir)
+            .unwrap_or_else(|| dest_dir.to_path_buf());
         let destination_augmentation =
-            crate::workspace::WorkspaceFiles::new(workspace_root).augment_for(deck_id);
+            crate::workspace::WorkspaceFiles::new(&workspace_root).augment_for(deck_id);
         let destination_revision = if destination_augmentation.is_file() {
             let (revision, data) =
                 crate::augment::read_deck_data(&destination_augmentation, deck_id)?;
