@@ -29,6 +29,7 @@ struct DeckBundleParts {
 fn stays_home(name: &str) -> bool {
     PERSONAL.contains(&name)
         || name.starts_with('.')
+        || crate::workspace::is_sidecar_name(name)
         || crate::workspace::is_conflict_name(name)
         || name.ends_with("-bak")
         || name.ends_with(".json.tmp")
@@ -259,6 +260,7 @@ pub fn sanitize_received(dir: &Path) -> Result<Vec<String>> {
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
         let private = PERSONAL.contains(&name.as_str())
+            || crate::workspace::is_sidecar_name(&name)
             || crate::workspace::is_conflict_name(&name)
             || name.ends_with("-bak")
             || name.ends_with(".json.tmp")
@@ -1244,5 +1246,43 @@ mod tests {
         .unwrap();
         let (landed, _) = land_deck_bundle_with_force(&bundle, &dest, false).unwrap();
         assert_eq!("x.md", landed);
+    }
+
+    #[test]
+    fn a_personal_sidecar_never_enters_a_share_bundle() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("spanish.md"),
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+        )
+        .unwrap();
+        touch(&src, "spanish.personal.md");
+
+        let stage = dir.path().join("stage");
+        let staged = stage_dir(&src, &stage).unwrap();
+
+        assert_eq!(1, staged, "the authored deck alone travels");
+        assert!(stage.join("spanish.md").exists());
+        assert!(
+            !stage.join("spanish.personal.md").exists(),
+            "the sidecar is the sender's own writing and never leaves the machine"
+        );
+    }
+
+    #[test]
+    fn a_received_sidecar_is_stripped_before_it_can_overwrite_your_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let landing = dir.path().join("landing");
+        std::fs::create_dir_all(&landing).unwrap();
+        touch(&landing, "spanish.md");
+        touch(&landing, "spanish.personal.md");
+
+        let removed = sanitize_received(&landing).unwrap();
+
+        assert!(landing.join("spanish.md").exists());
+        assert!(!landing.join("spanish.personal.md").exists());
+        assert_eq!(vec!["spanish.personal.md".to_string()], removed);
     }
 }

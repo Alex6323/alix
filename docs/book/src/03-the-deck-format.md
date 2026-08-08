@@ -304,3 +304,46 @@ missing, for instance if an external tool stripped the HTML comments.)
 
 So a deck is safe to refactor freely: your progress rides on the token, not on the
 words.
+
+## Your personal file
+
+A deck you didn't write is still yours to annotate. Anything alix or you add to
+someone else's deck goes into a **personal file** beside it, never into the deck
+itself: `spanish.md` gets `spanish.personal.md`. The deck file stays
+byte-identical, so you can pull an updated copy of it without losing your work,
+and your notes never leak back when you share the deck.
+
+It is an ordinary Markdown file with one extra frontmatter key naming the deck
+it belongs to:
+
+```
+---
+format-version: 1
+personal-for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
+---
+
+<!-- for: card-3f7k2m9q1x8w5z0t6v4b2n8d7c (darse cuenta) -->
+> the "cuenta" is the tally you finally add up
+
+## a gap the exam found <!-- id: card-5k1m8q3z5t0v6b2n4d8f7c2x9w -->
+the answer
+```
+
+Two kinds of block live there, in any order:
+
+- A **note**, opened by a `<!-- for: <card-id> -->` marker and followed by `>`
+  lines. Those lines are appended to that card's own note when you review it.
+  The text in parentheses after the id is a hint for you, refreshed when the
+  card's front changes; nothing reads it.
+- A **card**, written exactly like a deck card. It joins the session after the
+  deck's own cards and is drilled and scheduled like any other, but it does not
+  count toward the deck's card count.
+
+alix writes this file for you: the tutor's **Make this a card**, its
+**Make a note**, and the exam's remediation cards all land here. You can also
+edit it by hand. Personal files are never listed as decks of their own, and
+`alix share` leaves them at home in both directions: a bundle you send never
+carries one, and a bundle you receive can't overwrite yours.
+
+A note addressed to a card that no longer exists is left alone rather than
+dropped, and `alix doctor` reports it.

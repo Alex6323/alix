@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 572b6b7b5fca69f67395ae86b4ae1491be870a64c22bff0708c57c70d64bda95 # shrinks to files = [FileEntry { name: "a.personal.md", deck_id: None, personal_for: Some("c"), card_ids: ["c2"] }, FileEntry { name: "a.md", deck_id: Some("c"), personal_for: None, card_ids: ["c2"] }]

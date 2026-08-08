@@ -1009,18 +1009,6 @@ pub fn run_review(
                     Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Post, "/api/promote") => {
-                let Some(expected) = echoed_revision(&request) else {
-                    respond_status(request, 400);
-                    continue;
-                };
-                match study.promote(expected) {
-                    None => respond_status(request, 503),
-                    Some(Feedback::NoSession) => respond_status(request, 409),
-                    Some(Feedback::Bad) => respond_status(request, 400),
-                    Some(Feedback::Ok(dto)) => respond_json(request, &dto),
-                }
-            }
             (Method::Post, "/api/restart") => {
                 let Some(expected) = echoed_revision(&request) else {
                     respond_status(request, 400);

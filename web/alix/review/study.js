@@ -4,10 +4,9 @@
 // use once acquired. An acquire card runs its own ungraded on-ramp, so it
 // names that on-ramp (pick one, draw, or reveal) rather than the depth's
 // check, which does not run until the card has been met.
-export function modeTag({ acquire, choices, promotable, mode, draw }) {
+export function modeTag({ acquire, choices, mode, draw }) {
   const parts = [];
   if (acquire) parts.push("new");
-  if (promotable) parts.push("remediation");
   if (acquire) {
     parts.push(choices ? "choice" : draw ? "draw" : "reveal");
   } else {
@@ -123,7 +122,6 @@ export function createStudy({
   function skip()    { api("/api/skip", post({})).then(apply).catch(() => load()); }
   function acquire() { api("/api/acquire", post({})).then(apply).catch(() => load()); }
   function remove()  { api("/api/remove", post({})).then(apply).catch(() => load()); }
-  function promote() { api("/api/promote", post({})).then(apply).catch(() => load()); }
   function restart() { api("/api/restart", post({})).then(apply).catch(() => load()); }
 
   // One heatmap cell's fill: the lib's per-card tier. untouched = neutral,
@@ -241,7 +239,6 @@ export function createStudy({
     return modeTag({
       acquire: isAcquire(),
       choices: !!state.choices,
-      promotable: !!state.promotable,
       mode: state.mode,
       draw: effectiveDraw(),
     });
@@ -1561,7 +1558,6 @@ export function createStudy({
     prepareRender,
     prepareSurface,
     remove,
-    promote,
     render,
     renderSourceExcerpt,
     replaceState,

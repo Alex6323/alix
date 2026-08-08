@@ -615,7 +615,10 @@ impl Reviewing {
             ..
         } = self;
         ask.poll(|card, notes| {
-            files.append_note(&card.deck_id, card.line, notes)?;
+            let card_id = card
+                .id()
+                .ok_or_else(|| "the card carries no id to attach a note to".to_string())?;
+            files.append_note(&card.deck_id, &card_id, &card.front, notes)?;
             if let Some(cur) = session.current_mut()
                 && cur.id() == card.id()
             {
@@ -1392,8 +1395,20 @@ impl Walking {
         self.ask
             .align(self.walk.checkpoint().map(|c| c.card_id.clone()));
         let deck_path = self.walk.trace().deck_path.clone();
+        // A checkpoint card is built for the walk and carries no token of its
+        // own; the checkpoint holds the id the note is addressed to.
+        let checkpoint = self.walk.checkpoint().map(|c| c.card_id.clone());
         self.ask.poll(|card, notes| {
-            crate::deck::append_note(&deck_path, card.line, notes).map_err(|e| e.to_string())
+            let card_id = checkpoint
+                .ok_or_else(|| "the walk is on no checkpoint to attach a note to".to_string())?;
+            crate::personal::append_note(
+                &deck_path,
+                &card.deck_id,
+                &card_id,
+                Some(&card.front),
+                notes,
+            )
+            .map_err(|e| e.to_string())
         })
     }
 

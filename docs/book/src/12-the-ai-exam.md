@@ -62,20 +62,14 @@ responsive while it thinks.
   Re-drill those and re-sit. Once created, the screen reports how many remediation
   cards it added.
 
-Those remediation cards are **virtual**: they live in alix's store rather than in
-the deck file. While drilling one, the review screen's mode badge gains a
-`remediation · ` prefix ahead of its check (e.g. `remediation · flip`); its very
-first encounter still badges `new` like any unacquired card. A virtual card
-drills like
-any other (its first pass comes one acquire cooldown later, then FSRS schedules it)
-and it counts toward the deck's *due* total but not toward the deck's card
-count, and it never rewrites your `.md`.
-Regenerating the same gap won't duplicate it; once its interval reaches the
-retirement cap it's archived, and re-failing the gap brings it back. When a
-remediation card has earned a permanent place, **promote** it during review
-("Promote to deck" in the browser's review menu): alix appends it to the
-deck file, removes the virtual copy, and carries over the card's review
-progress. It doesn't restart.
+Those remediation cards land in the deck's
+[personal file](03-the-deck-format.md#your-personal-file) (`<deck>.personal.md`),
+never in the authored deck. They drill like any other card (a first pass one
+acquire cooldown later, then FSRS schedules them) and count toward the deck's
+*due* total but not toward its card count. Regenerating the same gap won't
+duplicate it; once a card's interval reaches the retirement cap it's archived,
+and re-failing the gap brings it back. Because they are plain Markdown blocks
+in a file you own, you can read, edit, or delete them yourself.
 
 A **trace** deck is examined differently: instead of generated questions, its exam
 asks you to *retrace the whole path from memory* in a sentence or two (**the

@@ -14,12 +14,11 @@ use crate::{
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings, SourceLayers},
     depth::{Depth, default_depth},
-    parser,
     scheduler::Fsrs,
-    session::{self, DeckInfo, Order, Session, SessionOptions},
+    session::{DeckInfo, Order, Session, SessionOptions},
     source::SourceBase,
     stamp, state,
-    store::{Store, VirtualCard, default_store_path},
+    store::{Store, default_store_path},
     time::now_ms,
     trace::{Trace, Walk},
     workspace,
@@ -166,20 +165,18 @@ fn resolve<T: Copy + PartialEq>(
     }
 }
 
-/// Far past any real deck's line count, so a virtual card's `line` never
-/// collides with a real card's.
-pub const VIRTUAL_LINE_BASE: usize = 1_000_000;
+/// Far past any real deck's line count, so a personal card's `line` never
+/// collides with a deck card's.
+pub const PERSONAL_LINE_BASE: usize = 1_000_000;
 
-/// `subject` sets only the reproduced `Card::subject` (display); `Card::id`
-/// is token-derived and unaffected by it.
-pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Option<Card> {
-    let mut card = parser::parse_str(subject, &vc.text)
-        .ok()?
-        .into_iter()
-        .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
-    card.line = line;
-    card.deck_id = Arc::from(vc.deck.as_str());
-    Some(card)
+/// Personal cards are addressed to the deck they sit beside, not to the
+/// sidecar, which carries no `id:` of its own.
+pub fn bind_personal(cards: &mut [Card], subject: &Arc<str>, deck_id: &Arc<str>) {
+    for (k, card) in cards.iter_mut().enumerate() {
+        card.line = PERSONAL_LINE_BASE + k;
+        card.subject = Arc::clone(subject);
+        card.deck_id = Arc::clone(deck_id);
+    }
 }
 
 pub type LoadedDecks = (
@@ -400,11 +397,6 @@ pub fn select(
         .values()
         .filter_map(|d| d.deck_token.clone())
         .collect();
-    // Computed before virtual injection adds to `cards`, so it only holds
-    // authored ids.
-    let deck_card_ids: std::collections::HashSet<String> =
-        cards.iter().filter_map(Card::id).collect();
-
     let mut augment = AugmentCache::open_for_workspace(&workspace::content_root(deck))
         .context("cannot open deck augmentation")?;
     // Records must land before the session build reaches any `get_or_insert`.
@@ -454,30 +446,34 @@ pub fn select(
         .and_then(|d| d.deck_token.as_deref())
         .map(Arc::from)
         .unwrap_or_else(|| Arc::from(label.as_str()));
-    // Quirk: a `--region` focus always excludes virtual cards (they belong to
+    // Quirk: a `--region` focus always excludes personal cards (they belong to
     // no topology).
     if region_sel.is_none() {
-        for (k, vc) in store
-            .virtual_cards_for(deck_id.as_ref())
-            .into_iter()
-            .filter(|v| !session::is_retired_id(&v.id, store, review.retire_after_days))
-            .filter(|v| !deck_card_ids.contains(&v.id)) // collision belt-and-suspenders
-            .enumerate()
-        {
-            if let Some(mut card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k) {
-                // Repeats the deck-card reshape/note steps: this loop runs
-                // after virtual cards are added, so it can't merge into the
-                // earlier one.
-                augment.apply_format(&mut card);
-                if let Some(note) = card
-                    .id()
-                    .and_then(|id| augment.note(&id, card.content_fingerprint))
-                    .map(str::to_string)
-                {
-                    card.append_note(&[note]);
-                }
-                cards.push(card);
+        let personal = crate::personal::read(deck, &label);
+        let deck_blocks: Vec<crate::sidecar::DeckCard> = cards
+            .iter()
+            .map(|card| crate::sidecar::DeckCard {
+                id: card.id().unwrap_or_default(),
+                notes: Vec::new(),
+            })
+            .collect();
+        let (roster, _orphans) = crate::sidecar::merge(&deck_blocks, &personal.blocks());
+
+        let mut personal_cards = personal.cards;
+        bind_personal(&mut personal_cards, &subject, &deck_id);
+        for mut card in personal_cards {
+            augment.apply_format(&mut card);
+            if let Some(note) = card
+                .id()
+                .and_then(|id| augment.note(&id, card.content_fingerprint))
+                .map(str::to_string)
+            {
+                card.append_note(&[note]);
             }
+            cards.push(card);
+        }
+        for (card, seat) in cards.iter_mut().zip(&roster) {
+            card.append_note(&seat.notes);
         }
     }
 
@@ -645,7 +641,7 @@ pub fn browse(paths: Vec<PathBuf>, _instance: Option<&Path>) -> Result<CardsBuil
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{answer::Mode, scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS, store::VirtualKind};
+    use crate::{answer::Mode, scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS};
 
     fn write_initialized(path: &Path, text: &str) {
         let id: String = path
@@ -1124,23 +1120,20 @@ it reads line two\n\
         );
     }
 
-    fn insert_virtual_card(store: &mut Store, deck_id: &str) {
-        insert_named_virtual_card(store, deck_id, "card-vq1", "virtual front");
+    fn write_personal_card(store: &mut Store, deck: &Path, deck_id: &str) {
+        write_named_personal_card(store, deck, deck_id, "card-vq1", "personal front");
     }
 
-    fn insert_named_virtual_card(store: &mut Store, deck_id: &str, id: &str, front: &str) {
-        let text = format!("## {front} <!-- id: {id} -->\nvirtual back\n");
-        let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
-            .id()
-            .unwrap();
-        store.insert_virtual(VirtualCard {
-            id: id.clone(),
-            kind: VirtualKind::Remediation,
-            deck: deck_id.to_string(),
-            text,
-            created_ms: 0,
-        });
-        store.get_or_insert(&id, 0);
+    fn write_named_personal_card(
+        store: &mut Store,
+        deck: &Path,
+        deck_id: &str,
+        id: &str,
+        front: &str,
+    ) {
+        let block = format!("## {front} <!-- id: {id} -->\npersonal back\n");
+        crate::personal::append_cards(deck, deck_id, &block).unwrap();
+        store.get_or_insert(id, 0);
     }
 
     #[test]
@@ -1171,7 +1164,7 @@ it reads line two\n\
     }
 
     #[test]
-    fn select_injects_a_decks_virtual_cards() {
+    fn select_injects_a_decks_personal_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
@@ -1179,7 +1172,7 @@ it reads line two\n\
         // bare `None` here would fall through to the real global data dir.
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
-        insert_virtual_card(&mut store, "deck-rust");
+        write_personal_card(&mut store, &path, "deck-rust");
 
         let Selected::Review(build) = select(
             vec![path],
@@ -1194,14 +1187,29 @@ it reads line two\n\
     }
 
     #[test]
-    fn each_injected_virtual_card_gets_a_distinct_reserved_line() {
+    fn a_sidecar_note_reaches_the_card_it_addresses_deck_or_personal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
-        insert_named_virtual_card(&mut store, "deck-rust", "card-vq1", "virtual one");
-        insert_named_virtual_card(&mut store, "deck-rust", "card-vq2", "virtual two");
+        write_personal_card(&mut store, &path, "deck-rust");
+        crate::personal::append_note(
+            &path,
+            "deck-rust",
+            "card-q1",
+            Some("q1"),
+            &["mine on the authored card".to_string()],
+        )
+        .unwrap();
+        crate::personal::append_note(
+            &path,
+            "deck-rust",
+            "card-vq1",
+            None,
+            &["mine on my own card".to_string()],
+        )
+        .unwrap();
 
         let Selected::Review(build) = select(
             vec![path],
@@ -1212,20 +1220,94 @@ it reads line two\n\
         .unwrap() else {
             panic!("a fact deck must review");
         };
-        let mut virtual_lines: Vec<usize> = build
-            .session
-            .cards()
-            .iter()
-            .filter(|card| card.line >= VIRTUAL_LINE_BASE)
-            .map(|card| card.line)
-            .collect();
-        virtual_lines.sort_unstable();
 
-        assert_eq!([VIRTUAL_LINE_BASE, VIRTUAL_LINE_BASE + 1], *virtual_lines);
+        let note_for = |id: &str| {
+            build
+                .session
+                .cards()
+                .iter()
+                .find(|card| card.id().as_deref() == Some(id))
+                .unwrap_or_else(|| panic!("{id} is in the session"))
+                .note
+                .clone()
+        };
+        assert_eq!(
+            Some("mine on the authored card".to_string()),
+            note_for("card-q1")
+        );
+        assert_eq!(
+            Some("mine on my own card".to_string()),
+            note_for("card-vq1")
+        );
     }
 
     #[test]
-    fn region_focus_excludes_virtual_cards() {
+    fn a_sidecar_note_for_no_card_leaves_every_card_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.md");
+        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        let mut store =
+            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        crate::personal::append_note(
+            &path,
+            "deck-rust",
+            "card-gonegonegonegonegonegone",
+            None,
+            &["addressed to nothing".to_string()],
+        )
+        .unwrap();
+
+        let Selected::Review(build) = select(
+            vec![path],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap() else {
+            panic!("a fact deck must review");
+        };
+        assert!(
+            build.session.cards().iter().all(|card| card.note.is_none()),
+            "an orphan note must not land on some other card"
+        );
+    }
+
+    #[test]
+    fn each_injected_personal_card_gets_a_distinct_reserved_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.md");
+        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        let mut store =
+            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        write_named_personal_card(&mut store, &path, "deck-rust", "card-vq1", "personal one");
+        write_named_personal_card(&mut store, &path, "deck-rust", "card-vq2", "personal two");
+
+        let Selected::Review(build) = select(
+            vec![path],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap() else {
+            panic!("a fact deck must review");
+        };
+        let mut personal_lines: Vec<usize> = build
+            .session
+            .cards()
+            .iter()
+            .filter(|card| card.line >= PERSONAL_LINE_BASE)
+            .map(|card| card.line)
+            .collect();
+        personal_lines.sort_unstable();
+
+        assert_eq!(
+            [PERSONAL_LINE_BASE, PERSONAL_LINE_BASE + 1],
+            *personal_lines
+        );
+    }
+
+    #[test]
+    fn region_focus_excludes_personal_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         // A frontmatter `id:` gives the deck a stable token, which topology
@@ -1258,7 +1340,7 @@ it reads line two\n\
         });
         cache.save().unwrap();
 
-        insert_virtual_card(&mut store, "deck-dtok1");
+        write_personal_card(&mut store, &path, "deck-dtok1");
 
         let Selected::Review(build) = select(
             vec![path],
@@ -1276,23 +1358,16 @@ it reads line two\n\
     }
 
     #[test]
-    fn a_format_cache_entry_applies_to_a_synthesized_virtual_card() {
+    fn a_format_cache_entry_applies_to_a_bound_personal_card() {
         let subject: Arc<str> = Arc::from("rust.md");
-        let text = "## List the parts <!-- id: card-vlist -->\nA, B, C\n".to_string();
-        let id = crate::parser::parse_str(&subject, &text).unwrap()[0]
-            .id()
-            .unwrap();
-        let vc = VirtualCard {
-            id: id.clone(),
-            kind: VirtualKind::Remediation,
-            deck: subject.to_string(),
-            text,
-            created_ms: 0,
-        };
-        let mut synth = synthesize_virtual(&vc, &subject, VIRTUAL_LINE_BASE).unwrap();
+        let text = "## List the parts <!-- id: card-vlist -->\nA, B, C\n";
+        let mut cards = crate::parser::parse_str(&subject, text).unwrap();
+        bind_personal(&mut cards, &subject, &subject);
+        let mut synth = cards.remove(0);
+        let id = synth.id().unwrap();
 
         let mut cache =
-            AugmentCache::open(std::env::temp_dir().join("nonexistent-augment-virtual.json"));
+            AugmentCache::open(std::env::temp_dir().join("nonexistent-augment-personal.json"));
         cache.set_format(
             &id,
             augment::Format {
@@ -1311,7 +1386,7 @@ it reads line two\n\
     }
 
     #[test]
-    fn select_applies_a_cached_format_to_an_injected_virtual_card() {
+    fn select_applies_a_cached_format_to_an_injected_personal_card() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
@@ -1319,26 +1394,26 @@ it reads line two\n\
         // bare `None` here would fall through to the real global data dir.
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
-        insert_virtual_card(&mut store, "deck-rust");
-        let virtual_card = crate::parser::parse_str(
+        write_personal_card(&mut store, &path, "deck-rust");
+        let personal_card = crate::parser::parse_str(
             "rust.md",
-            "## virtual front <!-- id: card-vq1 -->\nvirtual back\n",
+            "## personal front <!-- id: card-vq1 -->\npersonal back\n",
         )
         .unwrap()
         .remove(0);
-        let virtual_id = virtual_card.id().unwrap();
+        let personal_id = personal_card.id().unwrap();
 
         let deck = Deck::load(&path).unwrap();
         let mut cache = AugmentCache::open_for_deck(&deck).unwrap();
         cache.set_format(
-            &virtual_id,
+            &personal_id,
             augment::Format {
-                front: Some("Reshaped virtual front".to_string()),
-                back: vec!["Reshaped virtual back".to_string()],
+                front: Some("Reshaped personal front".to_string()),
+                back: vec!["Reshaped personal back".to_string()],
                 note: None,
                 mode: None,
             },
-            virtual_card.content_fingerprint,
+            personal_card.content_fingerprint,
         );
         cache.save().unwrap();
 
@@ -1356,10 +1431,10 @@ it reads line two\n\
             .session
             .cards()
             .iter()
-            .find(|c| c.id().as_deref() == Some(virtual_id.as_str()))
-            .expect("the injected virtual card should be in the session");
-        assert_eq!("Reshaped virtual front", synth.front);
-        assert_eq!(["Reshaped virtual back"], *synth.back_for_display());
+            .find(|c| c.id().as_deref() == Some(personal_id.as_str()))
+            .expect("the injected personal card should be in the session");
+        assert_eq!("Reshaped personal front", synth.front);
+        assert_eq!(["Reshaped personal back"], *synth.back_for_display());
     }
 
     #[test]

@@ -192,7 +192,6 @@ class ReviewStateModel {
     required this.recognizePartly,
     required this.recognizeMissed,
     required this.canRestart,
-    required this.promotable,
     this.nextDueMs,
     required this.dueLeft,
     required this.newLeft,
@@ -223,7 +222,6 @@ class ReviewStateModel {
   final int recognizePartly;
   final int recognizeMissed;
   final bool canRestart;
-  final bool promotable;
   final int? nextDueMs;
   final int dueLeft;
   final int newLeft;

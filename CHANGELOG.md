@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Personal notes and cards now live in a file of their own beside the deck
+  (`spanish.md` gets `spanish.personal.md`), leaving the authored deck
+  byte-identical. Tutor notes, tutor-made cards, and exam remediation cards
+  all land there; a `personal-for:` frontmatter key names the deck the file
+  belongs to, a `<!-- for: <card-id> -->` block adds notes to one of its
+  cards, and an ordinary card block adds a card of your own. Personal cards
+  join a session after the deck's own and are scheduled like any other.
+  A personal file is never listed as a deck, and `alix share` leaves it at
+  home in both directions: it is never bundled, and an arriving bundle
+  cannot overwrite yours.
+
 - The example decks gained one for cloze inside a formula, showing that
   `\blank{...}` works within `$...$` and `$$...$$`.
 
@@ -80,6 +91,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+
+- **Breaking:** remediation and tutor cards are no longer stored inside the
+  progress file. They are Markdown blocks in the deck's personal file, so you
+  can read, edit, and delete them yourself. A progress file written by an
+  earlier version fails to load; there is no conversion (pre-1.0).
+
+- **Breaking:** the "Promote to deck" review action is gone, with its
+  `/api/promote` endpoint, its `StateDto.promotable` field, and its
+  `[keys.review] promote` binding. A minted card is already a Markdown block
+  in a file you own, so there is nothing left to promote it into. The review
+  badge no longer carries a `remediation · ` prefix.
+
+- `alix reset` clears a personal card's schedule and leaves the personal file
+  alone, the same treatment the authored deck gets.
 
 - Generated decks now pick a card shape from the material rather than
   choosing between plain and cloze. `alix generate` can produce card

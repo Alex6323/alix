@@ -158,7 +158,7 @@ deck file or how it's graded.
 
 In the web frontend a small badge above the answer names the check you're doing
 right now (`flip`, `line`, `typing`, `typing · line`, `choice`, or
-`explain`, optionally prefixed `remediation · `), so how you'll
+`explain`), so how you'll
 interact is clear before you commit. It badges the *present* interaction, not
 the depth: a Recognize pick shows `choice` whatever the card's own mode is.
 

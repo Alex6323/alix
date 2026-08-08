@@ -407,7 +407,6 @@ document.getElementById("mAsk").addEventListener("click", () => {
   else if (study.isAnswered()) tutor.show();
 });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); study.remove(); });
-document.getElementById("mPromote").addEventListener("click", () => { menu.classList.remove("open"); study.promote(); });
 const mDraw = document.getElementById("mDraw");
 study.syncDrawMenu();
 mDraw.addEventListener("click", study.toggleDraw);
@@ -422,10 +421,8 @@ function setMenuContext(ctx) {
   // doesn't have, so they get their own narrower checks below.
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "walk") ? "" : "none"; });
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
-  // Promote is a review action, but only while the current card is virtual
   // (a remediation card) — narrower than the other .m-review items, so it
   // gets its own check on top of the context toggle.
-  document.getElementById("mPromote").style.display = ctx === "review" && study.state()?.promotable ? "" : "none";
   barNav.style.display = ctx === "picker" ? "" : "none";
 }
 

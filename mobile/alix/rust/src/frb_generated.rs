@@ -1611,7 +1611,6 @@ const _: fn() = || {
         let _: u32 = ReviewState.recognize_partly;
         let _: u32 = ReviewState.recognize_missed;
         let _: bool = ReviewState.can_restart;
-        let _: bool = ReviewState.promotable;
         let _: Option<u64> = ReviewState.next_due_ms;
         let _: u32 = ReviewState.due_left;
         let _: u32 = ReviewState.new_left;
@@ -2396,7 +2395,6 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_recognizePartly = <u32>::sse_decode(deserializer);
         let mut var_recognizeMissed = <u32>::sse_decode(deserializer);
         let mut var_canRestart = <bool>::sse_decode(deserializer);
-        let mut var_promotable = <bool>::sse_decode(deserializer);
         let mut var_nextDueMs = <Option<u64>>::sse_decode(deserializer);
         let mut var_dueLeft = <u32>::sse_decode(deserializer);
         let mut var_newLeft = <u32>::sse_decode(deserializer);
@@ -2426,7 +2424,6 @@ impl SseDecode for crate::api::review::ReviewState {
             recognize_partly: var_recognizePartly,
             recognize_missed: var_recognizeMissed,
             can_restart: var_canRestart,
-            promotable: var_promotable,
             next_due_ms: var_nextDueMs,
             due_left: var_dueLeft,
             new_left: var_newLeft,
@@ -3169,7 +3166,6 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.recognize_partly.into_into_dart().into_dart(),
             self.0.recognize_missed.into_into_dart().into_dart(),
             self.0.can_restart.into_into_dart().into_dart(),
-            self.0.promotable.into_into_dart().into_dart(),
             self.0.next_due_ms.into_into_dart().into_dart(),
             self.0.due_left.into_into_dart().into_dart(),
             self.0.new_left.into_into_dart().into_dart(),
@@ -3998,7 +3994,6 @@ impl SseEncode for crate::api::review::ReviewState {
         <u32>::sse_encode(self.recognize_partly, serializer);
         <u32>::sse_encode(self.recognize_missed, serializer);
         <bool>::sse_encode(self.can_restart, serializer);
-        <bool>::sse_encode(self.promotable, serializer);
         <Option<u64>>::sse_encode(self.next_due_ms, serializer);
         <u32>::sse_encode(self.due_left, serializer);
         <u32>::sse_encode(self.new_left, serializer);

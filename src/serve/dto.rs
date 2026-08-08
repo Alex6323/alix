@@ -117,7 +117,6 @@ pub(super) struct StateDto {
     pub(super) recognize_missed: u32,
     pub(super) exam_due: Vec<String>,
     pub(super) can_restart: bool,
-    pub(super) promotable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) next_due_ms: Option<u64>,
     pub(super) due_left: u32,
@@ -987,7 +986,6 @@ pub(super) fn review_state(
             recognize_missed: 0,
             exam_due: Vec::new(),
             can_restart: false,
-            promotable: false,
             next_due_ms: None,
             due_left: 0,
             new_left: 0,
@@ -1116,7 +1114,6 @@ pub(super) fn review_state(
         recognize_missed: s.recognize_missed,
         exam_due,
         can_restart: s.can_restart,
-        promotable: s.promotable,
         next_due_ms: s.next_due_ms,
         due_left: s.due_left,
         new_left: s.new_left,

@@ -13,12 +13,14 @@ mod canonical;
 pub(crate) mod checklist;
 mod cloze;
 mod frontmatter;
+mod sidecar;
 
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
 pub use frontmatter::{DECK_FORMAT_VERSION, Frontmatter, parse_sampling, yaml_quote};
 use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
+pub use sidecar::{SidecarNote, notes, without_notes};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
 const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
@@ -220,6 +222,15 @@ pub fn deck_identity(text: &str) -> Result<Option<String>, ParseError> {
     let mut lints = Vec::new();
     let (frontmatter, _, _) = parse_frontmatter(&lines, &mut lints)?;
     Ok(frontmatter.id)
+}
+
+/// The deck a personal file names as its parent, when it names one.
+pub fn personal_parent(text: &str) -> Result<Option<String>, ParseError> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let lines = prepare(text)?;
+    let mut lints = Vec::new();
+    let (frontmatter, _, _) = parse_frontmatter(&lines, &mut lints)?;
+    Ok(frontmatter.personal_for)
 }
 
 pub fn image_references(text: &str) -> Vec<ImageReference> {
@@ -1302,6 +1313,20 @@ mod tests {
         let deck = parse("intro prose\n---\nid: nope\n---\n## q\na\n");
         assert_eq!(Frontmatter::default(), deck.frontmatter);
         assert_eq!(None, deck.deck_token);
+    }
+
+    #[test]
+    fn personal_for_names_the_deck_a_sidecar_belongs_to() {
+        let deck = parse("---\npersonal-for: deck-abc\n---\n## q\na\n");
+        assert_eq!(Some("deck-abc".to_string()), deck.frontmatter.personal_for);
+        assert_eq!(Vec::<Lint>::new(), deck.lints, "a known key never lints");
+    }
+
+    #[test]
+    fn a_non_string_personal_for_lints_rather_than_failing_the_file() {
+        let deck = parse("---\npersonal-for: 7\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.personal_for);
+        assert_eq!(vec![bad(2, "personal-for", "an integer")], deck.lints);
     }
 
     #[test]
@@ -2551,6 +2576,7 @@ the answer
                 direction: Some(Direction::Both),
                 sampling: None,
                 unspliceable: false,
+                personal_for: None,
             },
             document.frontmatter
         );

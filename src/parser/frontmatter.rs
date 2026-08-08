@@ -26,6 +26,7 @@ pub struct Frontmatter {
     pub direction: Option<Direction>,
     pub sampling: Option<bool>,
     pub unspliceable: bool,
+    pub personal_for: Option<String>,
 }
 
 // Leading indentation doesn't match: a `---` inside a YAML block scalar can't
@@ -164,6 +165,10 @@ fn load_frontmatter(
             "tags" => frontmatter.tags = string_list(key, value, line, lints),
             "license" => match value {
                 Yaml::String(s) => frontmatter.license = Some(s.clone()),
+                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
+            },
+            "personal-for" => match value {
+                Yaml::String(s) => frontmatter.personal_for = Some(s.clone()),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },
             "created-at" => match value {

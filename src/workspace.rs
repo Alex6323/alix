@@ -199,6 +199,12 @@ pub fn is_conventional_non_deck(name: &str) -> bool {
     stem.eq_ignore_ascii_case("readme") || stem.eq_ignore_ascii_case("license")
 }
 
+/// The suffix alone decides discovery, so no file is read to skip a sidecar,
+/// and one carrying an `id:` by mistake is still never offered as a deck.
+pub fn is_sidecar_name(name: &str) -> bool {
+    name.ends_with(".personal.md")
+}
+
 /// A closed list of sync/backup name patterns. Dropbox's "conflicted copy"
 /// embeds the device name, so the match is substring, not a fixed prefix.
 pub fn is_conflict_name(name: &str) -> bool {
@@ -294,6 +300,22 @@ pub fn classified_deck_files(dir: &Path) -> io::Result<(Vec<PathBuf>, Vec<PathBu
     Ok((initialized, uninitialized))
 }
 
+/// Every `.md` member of a folder, personal files included. `members_where`
+/// excludes those by design, so pairing checks need their own listing.
+pub fn listing_with_sidecars(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(member_dir(dir))?
+        .filter_map(|r| r.ok().map(|e| e.path()))
+        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
+        .filter(|p| {
+            !p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| is_conventional_non_deck(n) || is_conflict_name(n))
+        })
+        .collect();
+    paths.sort();
+    Ok(paths)
+}
+
 pub(crate) fn members_where(
     dir: &Path,
     is_deck: impl FnMut(&Path) -> bool,
@@ -309,9 +331,9 @@ fn members_where_in(
         .filter_map(|r| r.ok().map(|e| e.path()))
         .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
         .filter(|p| {
-            !p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| is_conventional_non_deck(n) || is_conflict_name(n))
+            !p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                is_conventional_non_deck(n) || is_conflict_name(n) || is_sidecar_name(n)
+            })
         })
         .filter(|p| is_deck(p))
         .collect();

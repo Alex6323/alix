@@ -122,7 +122,7 @@ so is every client.
    current review transition. **Echo it in the `X-Alix-Study-Revision`
    header on every card-relative POST** (`/api/grade`, `/api/skip`,
    `/api/acquire`, `/api/reveal`, `/api/check`, `/api/choose`, `/api/remove`,
-   `/api/promote`, `/api/restart`, `/api/ask`, `/api/ask/note`,
+   `/api/restart`, `/api/ask`, `/api/ask/note`,
    `/api/ask/card/draft`, `/api/ask/card/create`). A missing or malformed
    header is a 400. A stale revision is a 409 and mutates nothing, so
    retrying a request whose reply was lost can never grade the next card;
@@ -142,7 +142,7 @@ so is every client.
    applies the grade, saves progress, and returns the next `StateDto`.
    Other transitions: `/api/skip`, `/api/acquire` (acknowledge a new card the
    learner has no recorded attempt on), `/api/remove` (mark for deck-file
-   removal), `/api/promote` (virtual→deck file), `/api/restart`.
+   removal), `/api/restart`.
    `POST /api/reveal` is NOT a transition: clients send it when a new card's
    answer is first shown, and the server records the encounter (the card will
    not re-introduce as new next session) without advancing the session,
@@ -206,15 +206,15 @@ and returns immediately, `thinking` while it's in flight; poll the shared
 `GET /api/ask` and read the result off the response's `draft` field
 (`DraftCardDto`), which persists there until the subject changes. `POST
 /api/ask/card/create {front, back}` (`CreateCardReq`) mints the learner's
-edited version of that draft as a free-standing virtual card on the current
-deck; synchronous, no polling. Both endpoints are adult-only (`403` when
+edited version of that draft into the deck's personal file
+(`<deck>.personal.md`), never the authored deck; synchronous, no polling. Both endpoints are adult-only (`403` when
 `[serve] audience = "kids"`) and both require an active review (`409`);
 `/api/ask/card/create` further `409`s when the review has no current card,
 and rejects an unparseable body with `400`. Success is `200` with `{"id":
 "card-<token>"}` (`CreateCardResp`), not `201`: alix's JSON responder
 always answers `200` on success, so "created" is expressed by the DTO shape,
 not the status line. A duplicate (the card's canonical content already exists
-in the deck, authored or virtual) or malformed front/back (empty after
+in the deck or its personal file) or malformed front/back (empty after
 trimming, or not exactly one well-formed card) is `422`.
 
 ### 4.6 Import
@@ -437,11 +437,10 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
 | POST | `/api/choose` | `{index, card}` (`card`: the current `card.id`, required) | `ChooseFeedbackDto` | 400 bad body / no question; 409 no session / another card |
 | POST | `/api/remove` | – | `StateDto` | 409 |
-| POST | `/api/promote` | – | `StateDto` | 400 not a virtual card / promote failed; 409 |
 | POST | `/api/restart` | – | `StateDto` | 409 |
 
-`/api/reset` wipes a row's stored progress (schedules, virtual cards, mastered
-flag) outright — a typed-name confirmation is client UX, not enforced here; a
+`/api/reset` wipes a row's stored progress (schedules, mastered flag)
+outright — a typed-name confirmation is client UX, not enforced here; a
 token holder is trusted to call it, the same trust class as `/api/grade`.
 
 `/api/workspace/deadline` sets, moves, or clears (`date: null`) a workspace's
@@ -599,7 +598,6 @@ The review-session payload; returned by every review action.
 | `recognized` / `recognize_partly` / `recognize_missed` | number | Recognize-depth tallies for this sitting (right / almost / missed). Recognize work never increments `reviews` (it is not an FSRS review), so a done screen must read these too; work done means the summary shows it. |
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything servable right now (would a restart build a non-empty sitting). |
-| `promotable` | bool | Current card is a virtual (remediation) card. |
 | `next_due_ms` | number? | Present only at `done`: the soonest epoch-millis instant a card of this sitting becomes servable (acquire floors included; at Recognize this is the only source), falling back to the schedule-wide next due instant, so an empty or cooling sitting can say when to return. Absent on a live session and when nothing is scheduled. Clients format it terse and approximate (e.g. "next due in 4 min"), never ticking. |
 | `due_left` / `new_left` | number | Backlog beyond this sitting, computed only at `done` (0 on a live session): how many due (or, at Recognize, met-but-unrecognized) and never-met cards a chained sitting would still find, minus what this sitting drilled. Lets the summary say "N still due" or "Start N new" and chain the drain. |
 | `met_total` / `deck_total` | number | The deck's lifetime standing, computed only at `done` (0 on a live session): how many of its cards carry any progress at all, out of how many it holds. Independent of the sitting, so a summary can place today's work against the whole deck. |
@@ -795,8 +793,8 @@ clients use it to name who is answering), `model: string`, `effort: string`
 `front: string`, `back: [string]`, the learner's edited draft. It derives
 `Deserialize` only, so it is documented here but not snapshot-pinned (§8's
 "request bodies aren't snapshot-tested" note). `CreateCardResp`: `id: string`
-is the newly minted virtual card's prefixed id (`card-<token>`), matching how
-the store keys ids.
+is the newly minted personal card's prefixed id (`card-<token>`), matching
+how the store keys ids.
 
 **Card id format.** A card id is always a JSON **string** on the wire (it has
 always been, since JSON object keys are strings). Its *value* is the card's

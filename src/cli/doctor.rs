@@ -468,6 +468,97 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
     format!("{}: line {}: {detail}", path.display(), lint.line)
 }
 
+fn sidecar_findings(dir: &Path, report: &mut Report) {
+    let paths = alix::workspace::listing_with_sidecars(dir).unwrap_or_default();
+    let mut entries = Vec::new();
+    for path in &paths {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        entries.push(alix::FileEntry {
+            name: name.to_string(),
+            deck_id: alix::parser::deck_identity(&text).ok().flatten(),
+            personal_for: alix::parser::personal_parent(&text).ok().flatten(),
+            card_ids: alix::parser::parse_str(name, &alix::parser::without_notes(&text))
+                .unwrap_or_default()
+                .iter()
+                .filter_map(alix::card::Card::id)
+                .collect(),
+        });
+    }
+
+    for finding in alix::classify(&entries).1 {
+        report.warn(match finding {
+            alix::Finding::ParentMissing { file } => {
+                format!("{file}: names a deck that is not in this folder")
+            }
+            alix::Finding::ParentMismatch {
+                file,
+                named,
+                neighbour,
+            } => format!(
+                "{file}: `personal-for: {named}` but the deck it sits beside is {neighbour}"
+            ),
+            alix::Finding::DuplicateCardId {
+                deck,
+                sidecar,
+                card,
+            } => format!("{sidecar}: card `{card}` is already in {deck}; one schedule, two cards"),
+            alix::Finding::SuffixMissing { file } => {
+                format!("{file}: carries `personal-for:` but is not named `<deck>.personal.md`")
+            }
+        });
+    }
+
+    for path in paths.iter().filter(|path| {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(alix::workspace::is_sidecar_name)
+    }) {
+        orphan_note_findings(path, report);
+    }
+}
+
+fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
+    let deck_path = sidecar.with_file_name(
+        sidecar
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".personal.md"))
+            .map(|stem| format!("{stem}.md"))
+            .unwrap_or_default(),
+    );
+    let Ok(deck) = Deck::load(&deck_path) else {
+        return;
+    };
+    let personal = alix::personal::read(&deck_path, &deck.subject);
+    let deck_blocks: Vec<alix::DeckCard> = deck
+        .cards
+        .iter()
+        .filter_map(|card| {
+            Some(alix::DeckCard {
+                id: card.id()?,
+                notes: Vec::new(),
+            })
+        })
+        .collect();
+    let (_, orphans) = alix::merge(&deck_blocks, &personal.blocks());
+    for orphan in orphans {
+        let hint = orphan
+            .hint
+            .map(|hint| format!(" ({hint})"))
+            .unwrap_or_default();
+        report.warn(format!(
+            "{}: a note addresses `{}`{hint}, which is in neither the deck nor this file",
+            sidecar.display(),
+            orphan.card
+        ));
+    }
+}
+
 fn workspace_findings(dir: &Path) -> Report {
     let mut report = Report::default();
     if alix::workspace::has_manifest(dir)
@@ -490,6 +581,8 @@ fn workspace_findings(dir: &Path) -> Report {
     for path in uninitialized {
         deck_findings(&path, &mut report);
     }
+
+    sidecar_findings(dir, &mut report);
 
     let map = alix::dedup::scan_dir(dir);
     for (kept, excluded, token) in &map.excluded_decks {
@@ -537,6 +630,7 @@ fn workspace_findings(dir: &Path) -> Report {
                             known_cards.insert(id);
                         }
                     }
+                    known_cards.extend(alix::personal::card_ids(&deck));
                 }
             }
             let orphans = store.orphans(&known_cards, &known_deck_ids);
@@ -2143,7 +2237,7 @@ printf ']}}'
         w(
             &dir.path().join("progress"),
             "mathdeck.json",
-            r#"{"version":1,"deck_id":"mathdeck","subject":"math.md","revision":1,"cards":{},"records":{},"virtual_cards":{},"writer":null}"#,
+            r#"{"version":1,"deck_id":"mathdeck","subject":"math.md","revision":1,"cards":{},"records":{},"writer":null}"#,
         );
 
         let report = workspace_findings(dir.path());
@@ -2218,7 +2312,7 @@ printf ']}}'
         w(
             &dir.path().join("progress"),
             "deck-deck1.json",
-            r#"{"version":1,"deck_id":"deck-deck1","subject":"facts.md","revision":1,"cards":{},"records":{},"virtual_cards":{},"writer":null}"#,
+            r#"{"version":1,"deck_id":"deck-deck1","subject":"facts.md","revision":1,"cards":{},"records":{},"writer":null}"#,
         );
 
         let report = workspace_findings(dir.path());

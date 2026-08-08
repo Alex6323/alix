@@ -129,7 +129,6 @@ ReviewStateModel _state({int remaining = 2, bool finished = false}) {
     recognizePartly: 0,
     recognizeMissed: 0,
     canRestart: true,
-    promotable: false,
     dueLeft: remaining,
     newLeft: 0,
   );

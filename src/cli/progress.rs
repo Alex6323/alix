@@ -68,21 +68,24 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
             }
         }
         let deck_id = deck.deck_token.as_deref().unwrap_or_default();
-        // Virtual (remediation) cards count toward "due" (now and within
-        // 24h), never toward the card count below: they aren't deck content.
-        due_now += alix::session::count_reviewable_virtual(
+        // Personal cards count toward "due" (now and within 24h), never toward
+        // the card count below: they aren't deck content.
+        let personal = alix::personal::read(&deck.path, &deck.subject).cards;
+        due_now += alix::session::count_reviewable(
+            &personal.iter().collect::<Vec<_>>(),
             &store,
-            deck_id,
             &scheduler,
+            Depth::Recall,
             now,
             review.retire_after_days,
         );
         // Derived, not independently counted, so the two figures can't diverge.
         let due_now_recall = due_now;
-        due_24h += alix::session::count_due_soon_virtual(
+        due_24h += alix::session::count_due_soon(
+            &personal,
             &store,
-            deck_id,
             &scheduler,
+            Depth::Recall,
             now,
             86_400_000,
             review.retire_after_days,
@@ -186,8 +189,8 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
             .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d))),
     )?;
 
-    // `store.len()` counts virtual schedules too, so a store holding only
-    // virtual cards still reports something to reset.
+    // `store.len()` counts personal-card schedules too, so a store holding
+    // only personal cards still reports something to reset.
     if args.all {
         let n = store.len();
         if n == 0 {
@@ -240,7 +243,7 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     let (cards, label, _, _) = load_decks(&deck_paths, &HashMap::new())?;
 
     // A full-deck reset (no `--card` subset) resets authored-card progress,
-    // the "mastered" exam flag, and virtual cards together atomically: a
+    // the "mastered" exam flag, and personal cards together atomically: a
     // declined/failed prompt must leave the store untouched by all of it.
     if args.card.is_none() {
         // Load the decks once, up front, for both the confirm-prompt count
@@ -265,13 +268,13 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         let mastered = decks_full
             .iter()
             .any(|deck| store.deck_mastered(deck_id(deck)));
-        let virtual_ids: Vec<String> = decks_full
+        let personal_ids: Vec<String> = decks_full
             .iter()
-            .flat_map(|deck| store.virtual_cards_for(deck_id(deck)))
-            .map(|vc| vc.id.clone())
+            .flat_map(alix::personal::card_ids)
+            .filter(|id| store.get(id).is_some())
             .collect();
 
-        if present.is_empty() && !mastered && virtual_ids.is_empty() {
+        if present.is_empty() && !mastered && personal_ids.is_empty() {
             println!("No stored progress to reset in {label}.");
             return Ok(());
         }
@@ -340,6 +343,7 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
             .context("refusing to judge orphans while a deck in the target cannot be read")?;
         known_deck_tokens.extend(deck.deck_token.clone());
         known_cards.extend(deck.cards.iter().filter_map(Card::id));
+        known_cards.extend(alix::personal::card_ids(&deck));
     }
 
     let mut store = match args.target.as_deref() {

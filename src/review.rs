@@ -181,7 +181,6 @@ pub struct ReviewState {
     pub recognize_partly: u32,
     pub recognize_missed: u32,
     pub can_restart: bool,
-    pub promotable: bool,
     pub next_due_ms: Option<u64>,
     // The uncapped backlog beyond this sitting, populated only at done: how many
     // due (or met-but-unrecognized) and never-met cards a chained sitting would
@@ -305,7 +304,6 @@ pub fn state(
         recognize_partly: session.stats.recognize_partly as u32,
         recognize_missed: session.stats.recognize_missed as u32,
         can_restart: session.has_due_now(store, now),
-        promotable: session.current_is_virtual(store),
         // Both scopes, since a card met in an earlier sitting is not in this
         // roster and can open well before anything this sitting cooled.
         next_due_ms: finished
@@ -406,7 +404,7 @@ mod tests {
         parser,
         scheduler::{Fsrs, Grade},
         session::{Session, SessionOptions},
-        store::{Store, VirtualCard, VirtualKind},
+        store::Store,
     };
 
     // NOW must stay past T0 + the acquire cooldown, or seen cards won't be
@@ -1284,29 +1282,6 @@ mod tests {
             s.next_due_ms,
             "the client cannot say when they come back without this"
         );
-    }
-
-    #[test]
-    fn promotable_flags_a_virtual_card_only() {
-        let (mut store, augment, _dir) = fixtures();
-        let text = "## virtual front <!-- id: card-vq1 -->\nvirtual back\n";
-        let mut synth = parser::parse_str("deck.md", text).unwrap().remove(0);
-        synth.line = 1_000_000;
-        store.insert_virtual(VirtualCard {
-            id: synth.id().unwrap(),
-            kind: VirtualKind::Remediation,
-            deck: "deck.md".to_string(),
-            text: text.to_string(),
-            created_ms: T0,
-        });
-        store.get_or_insert(&synth.id().unwrap(), T0);
-        let session = session_at(vec![synth], &mut store, Depth::Recall, NOW);
-        assert!(state(&session, &store, &augment, Some(NOW)).promotable);
-
-        let regular = parse("## q\na\n");
-        seen(&mut store, &regular);
-        let plain = session_at(regular, &mut store, Depth::Recall, NOW);
-        assert!(!state(&plain, &store, &augment, Some(NOW)).promotable);
     }
 
     #[test]

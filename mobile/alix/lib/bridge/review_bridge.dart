@@ -188,7 +188,6 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
     recognizePartly: state.recognizePartly,
     recognizeMissed: state.recognizeMissed,
     canRestart: state.canRestart,
-    promotable: state.promotable,
     nextDueMs: state.nextDueMs?.toInt(),
     dueLeft: state.dueLeft,
     newLeft: state.newLeft,

@@ -1899,8 +1899,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 28)
-      throw Exception('unexpected arr length: expect 28 but see ${arr.length}');
+    if (arr.length != 27)
+      throw Exception('unexpected arr length: expect 27 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
@@ -1922,14 +1922,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       recognizePartly: dco_decode_u_32(arr[17]),
       recognizeMissed: dco_decode_u_32(arr[18]),
       canRestart: dco_decode_bool(arr[19]),
-      promotable: dco_decode_bool(arr[20]),
-      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[21]),
-      dueLeft: dco_decode_u_32(arr[22]),
-      newLeft: dco_decode_u_32(arr[23]),
-      metTotal: dco_decode_u_32(arr[24]),
-      deckTotal: dco_decode_u_32(arr[25]),
-      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[26]),
-      saveError: dco_decode_opt_String(arr[27]),
+      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[20]),
+      dueLeft: dco_decode_u_32(arr[21]),
+      newLeft: dco_decode_u_32(arr[22]),
+      metTotal: dco_decode_u_32(arr[23]),
+      deckTotal: dco_decode_u_32(arr[24]),
+      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[25]),
+      saveError: dco_decode_opt_String(arr[26]),
     );
   }
 
@@ -2899,7 +2898,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_recognizePartly = sse_decode_u_32(deserializer);
     var var_recognizeMissed = sse_decode_u_32(deserializer);
     var var_canRestart = sse_decode_bool(deserializer);
-    var var_promotable = sse_decode_bool(deserializer);
     var var_nextDueMs = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_dueLeft = sse_decode_u_32(deserializer);
     var var_newLeft = sse_decode_u_32(deserializer);
@@ -2930,7 +2928,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       recognizePartly: var_recognizePartly,
       recognizeMissed: var_recognizeMissed,
       canRestart: var_canRestart,
-      promotable: var_promotable,
       nextDueMs: var_nextDueMs,
       dueLeft: var_dueLeft,
       newLeft: var_newLeft,
@@ -3894,7 +3891,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.recognizePartly, serializer);
     sse_encode_u_32(self.recognizeMissed, serializer);
     sse_encode_bool(self.canRestart, serializer);
-    sse_encode_bool(self.promotable, serializer);
     sse_encode_opt_box_autoadd_u_64(self.nextDueMs, serializer);
     sse_encode_u_32(self.dueLeft, serializer);
     sse_encode_u_32(self.newLeft, serializer);

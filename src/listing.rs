@@ -62,6 +62,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
             && path.extension().is_some_and(|e| e == "md")
             && !workspace::is_conventional_non_deck(name)
             && !workspace::is_conflict_name(name)
+            && !workspace::is_sidecar_name(name)
             && workspace::file_is_deck(&path)
         {
             out.push(
@@ -318,10 +319,11 @@ fn deck_due(
             now_ms,
             retire,
         )
-        || session::has_reviewable_virtual(
+        || session::has_reviewable(
+            &crate::personal::read(&deck.path, &deck.subject).cards,
             store,
-            deck.deck_token.as_deref().unwrap_or_default(),
             &scheduler,
+            Depth::Recall,
             now_ms,
             retire,
         )
@@ -445,10 +447,11 @@ pub fn deck_status(
         Depth::Recall,
         now,
         review.retire_after_days,
-    ) || session::has_reviewable_virtual(
+    ) || session::has_reviewable(
+        &crate::personal::read(&deck.path, &deck.subject).cards,
         store,
-        deck_id,
         &scheduler,
+        Depth::Recall,
         now,
         review.retire_after_days,
     );
@@ -1106,23 +1109,17 @@ mod tests {
         }
     }
 
-    fn insert_due_virtual_card(store: &mut Store, deck_id: &str) {
-        let text = "## virtual front <!-- id: card-vq1 -->\nvirtual back\n".to_string();
-        let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
+    fn write_due_personal_card(store: &mut Store, deck: &Path, deck_id: &str) {
+        let block = "## personal front <!-- id: card-vq1 -->\npersonal back\n";
+        let id = crate::parser::parse_str(deck_id, block).unwrap()[0]
             .id()
             .unwrap();
-        store.insert_virtual(crate::store::VirtualCard {
-            id: id.clone(),
-            kind: crate::store::VirtualKind::Remediation,
-            deck: deck_id.to_string(),
-            text,
-            created_ms: 0,
-        });
+        crate::personal::append_cards(deck, deck_id, block).unwrap();
         store.get_or_insert(&id, 0);
     }
 
     #[test]
-    fn deck_status_reviewable_true_when_only_a_virtual_card_is_due() {
+    fn deck_status_reviewable_true_when_only_a_personal_card_is_due() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.md");
         std::fs::write(
@@ -1151,7 +1148,7 @@ mod tests {
         assert_eq!("done ✓", status.badge);
         assert!(!status.reviewable);
 
-        insert_due_virtual_card(&mut store, deck.deck_token.as_deref().unwrap());
+        write_due_personal_card(&mut store, &deck_path, deck.deck_token.as_deref().unwrap());
         let status = deck_status(
             &deck,
             &store,

@@ -53,23 +53,19 @@ impl DeckFiles {
         }
     }
 
-    /// Refreshes the snapshot after appending, so a later removal keeps the
-    /// new note.
     pub(super) fn append_note(
         &mut self,
         deck_id: &str,
-        line: usize,
+        card_id: &str,
+        hint: &str,
         notes: &[String],
     ) -> Result<(), String> {
         let path = self
             .paths
             .get(deck_id)
             .ok_or_else(|| format!("no deck file known for {deck_id}"))?;
-        deck::append_note(path, line, notes).map_err(|e| e.to_string())?;
-        if let Ok(text) = std::fs::read_to_string(path) {
-            self.snapshots.insert(deck_id.to_string(), text);
-        }
-        Ok(())
+        crate::personal::append_note(path, deck_id, card_id, Some(hint), notes)
+            .map_err(|e| e.to_string())
     }
 
     /// Best-effort: a rewrite failure only warns, never propagates.
@@ -103,10 +99,15 @@ mod tests {
         assert_eq!(None, files.paths.get("whatever-its-called.md"));
 
         files
-            .append_note("stable-deck-id", 1, &["a note".to_string()])
+            .append_note("stable-deck-id", "card-q1", "q", &["a note".to_string()])
             .expect("routes to the file through its deck_id, not its filename");
-        let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains("a note"), "deck:\n{text}");
+        let text = std::fs::read_to_string(crate::personal::sidecar_path(&path)).unwrap();
+        assert!(text.contains("a note"), "sidecar:\n{text}");
+        assert_eq!(
+            "## q\na\n",
+            std::fs::read_to_string(&path).unwrap(),
+            "the authored deck is never rewritten"
+        );
     }
 }
 

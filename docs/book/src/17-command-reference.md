@@ -69,7 +69,7 @@ relevant documents in memory without creating an authoritative combined file.
   state, a ✓ once it's recognized, and its due time.
 - `alix reset <target>`: clear progress (`--card`, `--all`; `-y` to
   skip the prompt). On a workspace it also clears the mastered flags and
-  virtual cards in the workspace's own store, after one confirmation.
+  personal-card schedules in the workspace's own store, after one confirmation.
 - `alix reset --orphans [target]` clears only **orphaned** progress: store
   keys that match no card or deck in the scanned decks (a stripped
   `<!-- id: … -->` comment, a hand-deleted deck, a double-mint).
@@ -122,7 +122,7 @@ The rest of the AI-and-deck surface:
 - `alix deck augment <deck> --target <...>`: precompute AI augmentations
   (choices, notes, questions, keypoints, format, order). The augmentation
   document stays beside the deck. `--store` affects only the private progress
-  needed when the `format` target considers virtual cards.
+  needed when the `format` target considers personal cards.
 - `alix deck copy <deck> <workspace>`: copy one initialized workspace member,
   its owned frozen assets, and its augmentation into another workspace. Stable
   deck and card IDs are preserved; progress is not copied.

@@ -11,7 +11,7 @@ use crate::{
     depth::Depth,
     scheduler::{Grade, Scheduler},
     source::SourceBase,
-    store::{Store, VirtualCard},
+    store::Store,
     time,
 };
 
@@ -354,12 +354,6 @@ impl Session {
 
     pub fn current_id(&self) -> Option<String> {
         self.current_idx.and_then(|i| self.cards[i].id())
-    }
-
-    pub fn current_is_virtual(&self, store: &Store) -> bool {
-        self.current()
-            .and_then(Card::id)
-            .is_some_and(|id| store.is_virtual(&id))
     }
 
     pub fn current_fresh(&self, store: &Store) -> bool {
@@ -874,63 +868,22 @@ pub fn is_retired_id(card_id: &str, store: &Store, retire_after_days: Option<u32
         .is_some_and(|f| f.scheduled_days >= cap)
 }
 
-pub fn is_virtual_reviewable(
-    vc: &VirtualCard,
+pub fn count_due_soon(
+    cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
-    now_ms: u64,
-    retire_after_days: Option<u32>,
-) -> bool {
-    !is_retired_id(&vc.id, store, retire_after_days)
-        && store
-            .get(&vc.id)
-            .is_some_and(|s| scheduler.is_due(s, Depth::Recall, now_ms))
-}
-
-pub fn has_reviewable_virtual(
-    store: &Store,
-    deck_id: &str,
-    scheduler: &dyn Scheduler,
-    now_ms: u64,
-    retire_after_days: Option<u32>,
-) -> bool {
-    store
-        .virtual_cards_for(deck_id)
-        .into_iter()
-        .any(|vc| is_virtual_reviewable(vc, store, scheduler, now_ms, retire_after_days))
-}
-
-pub fn count_reviewable_virtual(
-    store: &Store,
-    deck_id: &str,
-    scheduler: &dyn Scheduler,
-    now_ms: u64,
-    retire_after_days: Option<u32>,
-) -> usize {
-    store
-        .virtual_cards_for(deck_id)
-        .into_iter()
-        .filter(|vc| is_virtual_reviewable(vc, store, scheduler, now_ms, retire_after_days))
-        .count()
-}
-
-pub fn count_due_soon_virtual(
-    store: &Store,
-    deck_id: &str,
-    scheduler: &dyn Scheduler,
+    depth: Depth,
     now_ms: u64,
     window_ms: u64,
     retire_after_days: Option<u32>,
 ) -> usize {
-    store
-        .virtual_cards_for(deck_id)
-        .into_iter()
-        .filter(|vc| !is_retired_id(&vc.id, store, retire_after_days))
-        .filter(|vc| {
-            store.get(&vc.id).is_some_and(|s| {
-                let due = scheduler.due_at(s, Depth::Recall);
-                due > now_ms && due <= now_ms + window_ms
-            })
+    cards
+        .iter()
+        .filter(|card| !is_retired(card, store, retire_after_days))
+        .filter(|card| {
+            card.id()
+                .and_then(|id| store.get(&id).map(|s| scheduler.due_at(s, depth)))
+                .is_some_and(|due| due > now_ms && due <= now_ms + window_ms)
         })
         .count()
 }
@@ -1119,24 +1072,16 @@ mod tests {
         Box::new(crate::scheduler::Fsrs::default())
     }
 
-    fn insert_virtual(store: &mut Store, deck_id: &str, back: &str, created_ms: u64) -> Card {
+    fn personal_card(store: &mut Store, deck_id: &str, back: &str, created_ms: u64) -> Card {
         let slug: String = back
             .chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase();
-        let text = format!("## virtual front <!-- id: card-v{slug} -->\n{back}\n");
+        let text = format!("## personal front <!-- id: card-v{slug} -->\n{back}\n");
         let mut card = crate::parser::parse_str(deck_id, &text).unwrap().remove(0);
-        card.line = 1_000_000;
-        let id = card.id().unwrap();
-        store.insert_virtual(VirtualCard {
-            id: id.clone(),
-            kind: crate::store::VirtualKind::Remediation,
-            deck: deck_id.to_string(),
-            text,
-            created_ms,
-        });
-        store.get_or_insert(&id, created_ms);
+        card.line = crate::assemble::PERSONAL_LINE_BASE;
+        store.get_or_insert(&card.id().unwrap(), created_ms);
         card
     }
 
@@ -3028,9 +2973,9 @@ mod tests {
     }
 
     #[test]
-    fn virtual_card_joins_the_roster_and_is_served() {
+    fn a_personal_card_joins_the_roster_and_is_served() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let session = Session::new(
             vec![synth],
@@ -3040,14 +2985,13 @@ mod tests {
             now,
         );
         assert_eq!(1, session.initial_size);
-        assert_eq!("virtual front", session.current().unwrap().front);
-        assert!(session.current_is_virtual(&store));
+        assert_eq!("personal front", session.current().unwrap().front);
     }
 
     #[test]
-    fn grading_a_virtual_card_updates_store_cards() {
+    fn grading_a_personal_card_updates_store_cards() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let mut session = Session::new(
@@ -3060,16 +3004,15 @@ mod tests {
 
         session.grade(&mut store, Grade::Pass, now);
 
-        let state = store.get(&id).expect("virtual schedule in store.cards");
+        let state = store.get(&id).expect("the personal card's schedule");
         assert!(state.recall.is_some());
         assert_eq!(1, state.total_reviews);
-        assert!(store.is_virtual(&id));
     }
 
     #[test]
-    fn virtual_card_not_treated_as_unseen() {
+    fn a_personal_card_is_not_treated_as_unseen() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let session = Session::new(
             vec![synth],
@@ -3082,9 +3025,9 @@ mod tests {
     }
 
     #[test]
-    fn a_missed_virtual_card_reappears_on_its_fsrs_due() {
+    fn a_missed_personal_card_reappears_on_its_fsrs_due() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let synth_id = synth.id();
         let deck_card = card("deck.md", 0);
         store.get_or_insert(&deck_card.id().unwrap(), 0);
@@ -3106,34 +3049,43 @@ mod tests {
     }
 
     #[test]
-    fn count_reviewable_virtual_counts_due_excludes_archived() {
+    fn counting_personal_cards_counts_due_and_excludes_archived() {
         let (mut store, _dir) = empty_store();
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         let sched = sched();
 
-        insert_virtual(&mut store, "deck.md", "gap-due", 0);
-        insert_virtual(&mut store, "deck.md", "gap-not-due", now);
-        let archived = insert_virtual(&mut store, "deck.md", "gap-archived", 0);
+        let due = personal_card(&mut store, "deck.md", "gap-due", 0);
+        let not_due = personal_card(&mut store, "deck.md", "gap-not-due", now);
+        let archived = personal_card(&mut store, "deck.md", "gap-archived", 0);
         store.get_or_insert(&archived.id().unwrap(), 0).recall = Some(retired_fsrs());
 
+        let personal = [due, not_due, archived];
         assert_eq!(
             1,
-            count_reviewable_virtual(&store, "deck.md", sched.as_ref(), now, cap)
+            count_reviewable(
+                &personal.iter().collect::<Vec<_>>(),
+                &store,
+                sched.as_ref(),
+                Depth::Recall,
+                now,
+                cap
+            )
         );
-        assert!(has_reviewable_virtual(
+        assert!(has_reviewable(
+            &personal,
             &store,
-            "deck.md",
             sched.as_ref(),
+            Depth::Recall,
             now,
             cap
         ));
     }
 
     #[test]
-    fn next_due_at_includes_virtual_cards() {
+    fn next_due_at_includes_personal_cards() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 1000);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 1000);
         let session = Session::new(
             vec![synth],
             &mut store,
@@ -3143,14 +3095,14 @@ mod tests {
         );
         let due = session
             .next_due_at(&store)
-            .expect("a virtual card's due time is reported");
+            .expect("a personal card's due time is reported");
         assert_eq!(1000 + DEFAULT_ACQUIRE_COOLDOWN_MS, due);
     }
 
     #[test]
-    fn virtual_card_is_retired_when_interval_reaches_cap() {
+    fn a_personal_card_is_retired_when_its_interval_reaches_the_cap() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
         let options = SessionOptions {
             retire_after_days: Some(4),
@@ -3182,16 +3134,22 @@ mod tests {
         let state = store.get(&id).expect("schedule kept, not deleted");
         assert_eq!(4, state.recall.as_ref().unwrap().scheduled_days);
         assert_eq!(2, state.total_reviews);
-        assert!(store.is_virtual(&id));
 
-        let session = Session::new(vec![synth], &mut store, sched(), options.clone(), now);
+        let session = Session::new(
+            vec![synth.clone()],
+            &mut store,
+            sched(),
+            options.clone(),
+            now,
+        );
         assert!(session.is_finished());
         assert_eq!(
             0,
-            count_reviewable_virtual(
+            count_reviewable(
+                &[&synth],
                 &store,
-                "deck.md",
                 sched().as_ref(),
+                Depth::Recall,
                 now,
                 options.retire_after_days
             )
@@ -3199,9 +3157,9 @@ mod tests {
     }
 
     #[test]
-    fn raising_retire_after_un_retires_a_virtual_card() {
+    fn raising_retire_after_un_retires_a_personal_card() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
         store.get_or_insert(&id, 0).recall = Some(crate::store::FsrsState {
             scheduled_days: 10,
@@ -3214,24 +3172,38 @@ mod tests {
         let sched = sched();
         assert_eq!(
             0,
-            count_reviewable_virtual(&store, "deck.md", sched.as_ref(), now, Some(10))
+            count_reviewable(
+                &[&synth],
+                &store,
+                sched.as_ref(),
+                Depth::Recall,
+                now,
+                Some(10)
+            )
         );
         assert_eq!(
             1,
-            count_reviewable_virtual(&store, "deck.md", sched.as_ref(), now, Some(20))
+            count_reviewable(
+                &[&synth],
+                &store,
+                sched.as_ref(),
+                Depth::Recall,
+                now,
+                Some(20)
+            )
         );
     }
 
     #[test]
-    fn retired_virtual_card_is_excluded_from_queue_and_counts() {
+    fn a_retired_personal_card_is_excluded_from_the_queue_and_counts() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
         store.get_or_insert(&id, 0).recall = Some(retired_fsrs());
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let session = Session::new(
-            vec![synth],
+            vec![synth.clone()],
             &mut store,
             sched(),
             SessionOptions::default(),
@@ -3242,15 +3214,14 @@ mod tests {
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         assert_eq!(
             0,
-            count_reviewable_virtual(&store, "deck.md", sched().as_ref(), now, cap)
+            count_reviewable(&[&synth], &store, sched().as_ref(), Depth::Recall, now, cap)
         );
-        assert!(store.is_virtual(&id));
     }
 
     #[test]
     fn retire_only_at_cap_not_below() {
         let (mut store, _dir) = empty_store();
-        let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
+        let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
@@ -3915,6 +3886,7 @@ mod tests {
             due_ms,
             ..Default::default()
         };
+        let mut personal = Vec::new();
         for (back, due) in [
             ("at now", 1_000),
             ("in window", 1_001),
@@ -3922,20 +3894,23 @@ mod tests {
             ("past edge", 1_101),
             ("overdue", 999),
         ] {
-            let card = insert_virtual(&mut store, "d.md", back, 0);
+            let card = personal_card(&mut store, "d.md", back, 0);
             store.get_or_insert(&card.id().unwrap(), 0).recall = Some(scheduled(due));
+            personal.push(card);
         }
-        let retired = insert_virtual(&mut store, "d.md", "retired but in window", 0);
+        let retired = personal_card(&mut store, "d.md", "retired but in window", 0);
         let mut retired_state = retired_fsrs();
         retired_state.state = 2;
         retired_state.stability = 1.0;
         retired_state.due_ms = 1_050;
         store.get_or_insert(&retired.id().unwrap(), 0).recall = Some(retired_state);
 
-        let count = count_due_soon_virtual(
+        personal.push(retired);
+        let count = count_due_soon(
+            &personal,
             &store,
-            "d.md",
             sched.as_ref(),
+            Depth::Recall,
             now,
             window,
             Some(DEFAULT_RETIRE_AFTER_DAYS),

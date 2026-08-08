@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 23c1b9b664cbd46a77c986a26ad1606d479c9916abcd633f1d70f6c0d86eee39 # shrinks to (deck, sidecar) = ([], [Card { id: "a", notes: [] }, Card { id: "a", notes: [] }, Note { card: "a", hint: None, lines: [""] }])

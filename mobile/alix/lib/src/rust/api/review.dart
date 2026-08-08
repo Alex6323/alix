@@ -412,7 +412,6 @@ class ReviewState {
   final int recognizePartly;
   final int recognizeMissed;
   final bool canRestart;
-  final bool promotable;
   final BigInt? nextDueMs;
   final int dueLeft;
   final int newLeft;
@@ -442,7 +441,6 @@ class ReviewState {
     required this.recognizePartly,
     required this.recognizeMissed,
     required this.canRestart,
-    required this.promotable,
     this.nextDueMs,
     required this.dueLeft,
     required this.newLeft,
@@ -474,7 +472,6 @@ class ReviewState {
       recognizePartly.hashCode ^
       recognizeMissed.hashCode ^
       canRestart.hashCode ^
-      promotable.hashCode ^
       nextDueMs.hashCode ^
       dueLeft.hashCode ^
       newLeft.hashCode ^
@@ -508,7 +505,6 @@ class ReviewState {
           recognizePartly == other.recognizePartly &&
           recognizeMissed == other.recognizeMissed &&
           canRestart == other.canRestart &&
-          promotable == other.promotable &&
           nextDueMs == other.nextDueMs &&
           dueLeft == other.dueLeft &&
           newLeft == other.newLeft &&

@@ -115,7 +115,6 @@ pub struct _ReviewState {
     pub recognize_partly: u32,
     pub recognize_missed: u32,
     pub can_restart: bool,
-    pub promotable: bool,
     pub next_due_ms: Option<u64>,
     // Done-only backlog counts; the mobile summary does not surface them yet, so
     // the bridge defaults them and leaves the wire unchanged (a later frb
@@ -268,7 +267,7 @@ pub struct ReviewSession {
     augment: alix::augment::AugmentCache,
     topology_name: Option<String>,
     deck_path: PathBuf,
-    // The stable deck id: deck-level store state (mastery, virtual-card
+    // The stable deck id: deck-level store state (mastery, personal-card
     // association) is keyed by this, captured off the loaded Deck rather
     // than re-derived from deck_path by hand.
     deck_token: String,
@@ -465,6 +464,7 @@ impl ReviewSession {
             .collect();
         let id = alix::store::mint_tutor_card(
             &mut self.store,
+            &self.deck_path,
             &self.deck_token,
             &front,
             &back,
@@ -509,6 +509,7 @@ impl ReviewSession {
     pub fn apply_remediation(&mut self, cards_text: String, now_ms: u64) -> Result<u32> {
         let count = alix::store::store_remediation_cards(
             &mut self.store,
+            Some(&self.deck_path),
             &self.deck_token,
             &self.deck_fingerprints,
             &cards_text,
@@ -1209,10 +1210,8 @@ mod tests {
             dup.is_err(),
             "a card matching an existing deck card must not mint a duplicate"
         );
-        let reopened = reopened_store(root, "d.md");
-        assert_eq!(
-            reopened.virtual_len(),
-            0,
+        assert!(
+            !alix::personal::sidecar_path(&root.join("d.md")).exists(),
             "the duplicate never reached disk"
         );
 
@@ -1223,11 +1222,16 @@ mod tests {
                 LATER,
             )
             .expect("fresh content mints");
-        let reopened = reopened_store(root, "d.md");
-        let vc = reopened
-            .get_virtual(&id)
-            .expect("the fresh mint is retrievable from disk");
-        assert_eq!(vc.kind, alix::store::VirtualKind::Tutor);
+        let personal = alix::personal::read(&root.join("d.md"), "d.md");
+        assert_eq!(
+            vec![Some(id.clone())],
+            personal.cards.iter().map(|c| c.id()).collect::<Vec<_>>(),
+            "the fresh mint is retrievable from the personal file"
+        );
+        assert!(
+            reopened_store(root, "d.md").get(&id).is_some(),
+            "and its schedule is in the store"
+        );
     }
 
     #[test]
@@ -1397,7 +1401,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_remediation_creates_virtuals_and_dedups_and_counts() {
+    fn apply_remediation_creates_personal_cards_and_dedups_and_counts() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## capital of france?\nParis\n");
@@ -1411,28 +1415,34 @@ mod tests {
         let created = s.apply_remediation(remediation.clone(), LATER).unwrap();
         assert_eq!(created, 1, "the Paris block already matches a deck card");
 
-        let reopened = reopened_store(root, "d.md");
+        let personal = alix::personal::read(&root.join("d.md"), &deck_id);
         assert_eq!(
-            reopened.virtual_len(),
             1,
-            "only the new Berlin block became a virtual"
+            personal.cards.len(),
+            "only the new Berlin block became a personal card"
         );
         let fingerprint =
             alix::parser::content_fingerprint("capital of germany?", &["Berlin".to_string()]);
-        let berlin_ids = reopened.virtual_ids_with_content(&deck_id, fingerprint);
-        assert_eq!(berlin_ids.len(), 1, "the berlin block minted one virtual");
-        let vc = reopened
-            .get_virtual(&berlin_ids[0])
-            .expect("the berlin block is stored as a virtual");
-        assert_eq!(vc.kind, alix::store::VirtualKind::Remediation);
+        assert_eq!(
+            fingerprint, personal.cards[0].content_fingerprint,
+            "the berlin block is what landed in the personal file"
+        );
+        assert!(
+            reopened_store(root, "d.md")
+                .get(&personal.cards[0].id().unwrap())
+                .is_some(),
+            "and it carries a schedule"
+        );
 
         let created_again = s.apply_remediation(remediation, LATER).unwrap();
         assert_eq!(
             created_again, 0,
             "an active dupe is left alone, no schedule reset"
         );
-        let reopened_again = reopened_store(root, "d.md");
-        assert_eq!(reopened_again.virtual_len(), 1);
+        assert_eq!(
+            1,
+            alix::personal::read(&root.join("d.md"), &deck_id).cards.len()
+        );
     }
 
     #[test]

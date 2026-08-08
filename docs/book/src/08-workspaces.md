@@ -184,7 +184,7 @@ learning state in its selected user-files root:
 ```text
 augment/deck-<token>.json    # shareable generated choices, notes, and topologies
 assets/deck-<token>/         # shareable frozen excerpts and local images
-progress/deck-<token>.json   # private schedules, history, exams, virtual cards
+progress/deck-<token>.json   # private schedules, history, exam state
 ```
 
 Renaming a deck file leaves these paths unchanged because the name comes from

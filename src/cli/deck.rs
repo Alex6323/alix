@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alix::{
-    assemble::{self, VIRTUAL_LINE_BASE, synthesize_virtual},
+    assemble,
     augment::{self, AugmentCache},
     augment_ai,
     card::Card,
@@ -380,19 +380,16 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 .filter(|c| c.hash_lines.is_none())
                 .cloned()
                 .collect();
-            for (k, vc) in store
-                .virtual_cards_for(deck.deck_token.as_deref().unwrap_or_default())
-                .into_iter()
-                .filter(|v| !deck_ids.contains(&v.id))
-                .filter(|v| !alix::session::is_retired_id(&v.id, &store, retire_after_days))
-                .enumerate()
-            {
-                if let Some(card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k)
-                    && card.hash_lines.is_none()
-                {
-                    plain.push(card);
-                }
-            }
+            let deck_id: Arc<str> = Arc::from(deck.deck_token.as_deref().unwrap_or_default());
+            let mut personal = alix::personal::read(&deck.path, &deck.subject).cards;
+            assemble::bind_personal(&mut personal, &subject, &deck_id);
+            plain.extend(
+                personal
+                    .into_iter()
+                    .filter(|c| c.hash_lines.is_none())
+                    .filter(|c| c.id().is_some_and(|id| !deck_ids.contains(&id)))
+                    .filter(|c| !alix::session::is_retired(c, &store, retire_after_days)),
+            );
             let items = warm_items(&plain);
             if items.is_empty() {
                 bail!("the deck has no plain (non-cloze) cards to format");

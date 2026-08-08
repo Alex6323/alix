@@ -111,18 +111,16 @@ class ReviewCardView extends StatelessWidget {
   }
 
   String _modeLabel() {
-    final prefix = state.promotable ? 'remediation · ' : '';
-    if (state.acquire) return '${prefix}new';
-    if (_hasChoices) return '${prefix}choice';
-    return prefix +
-        switch (state.mode) {
-          ReviewMode.typeLine => 'typing · line',
-          ReviewMode.typing => 'typing',
-          ReviewMode.explain => 'explain',
-          ReviewMode.lineByLine => 'line',
-          ReviewMode.choice => 'choice',
-          ReviewMode.flip => 'flip',
-        };
+    if (state.acquire) return 'new';
+    if (_hasChoices) return 'choice';
+    return switch (state.mode) {
+      ReviewMode.typeLine => 'typing · line',
+      ReviewMode.typing => 'typing',
+      ReviewMode.explain => 'explain',
+      ReviewMode.lineByLine => 'line',
+      ReviewMode.choice => 'choice',
+      ReviewMode.flip => 'flip',
+    };
   }
 
   Widget _face(BuildContext context, ReviewCardModel card) {

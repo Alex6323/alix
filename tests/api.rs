@@ -3070,7 +3070,7 @@ fn post_api_choose_naming_another_card_yields_409() {
     );
 }
 
-// ── Skip / acquire / promote / restart / deselect ────────────────────────
+// ── Skip / acquire / restart / deselect ──────────────────────────────────
 
 #[test]
 fn post_api_skip_defers_the_current_card_without_grading_it() {
@@ -3156,25 +3156,6 @@ fn post_api_acquire_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
     let resp = post_gated(&base, "/api/acquire", "{}");
-
-    assert_eq!(409, resp.status);
-}
-
-#[test]
-fn post_api_promote_the_current_card_when_it_is_not_virtual_yields_400() {
-    let (base, _guard) = spawn_test_server();
-    select_fixture(&base);
-
-    let resp = post_gated(&base, "/api/promote", "{}");
-
-    assert_eq!(400, resp.status);
-}
-
-#[test]
-fn post_api_promote_with_no_active_session_yields_409() {
-    let (base, _guard) = spawn_test_server();
-
-    let resp = post_gated(&base, "/api/promote", "{}");
 
     assert_eq!(409, resp.status);
 }
@@ -4079,8 +4060,18 @@ fn walk_ask_question_then_note_writes_to_the_checkpoint() {
     poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
     let deck = std::fs::read_to_string(guard.dir().join("trace.md")).unwrap();
     assert!(
-        deck.contains("the hop forwards the value"),
-        "the note landed in the trace deck: {deck}"
+        !deck.contains("the hop forwards the value"),
+        "the authored trace deck must not carry the note: {deck}"
+    );
+    let sidecar = std::fs::read_to_string(guard.dir().join("trace.personal.md"))
+        .expect("the walk note went to a sidecar");
+    assert!(
+        sidecar.contains("the hop forwards the value"),
+        "sidecar: {sidecar}"
+    );
+    assert!(
+        sidecar.contains("<!-- for: card-t1"),
+        "the note is addressed to the checkpoint's card: {sidecar}"
     );
 }
 
@@ -4131,7 +4122,6 @@ fn every_gated_route_rejects_a_stale_revision_and_mutates_nothing() {
         ("/api/reveal", "{}"),
         ("/api/choose", r#"{"index":0,"card":"CURRENT"}"#),
         ("/api/remove", "{}"),
-        ("/api/promote", "{}"),
         ("/api/restart", "{}"),
         ("/api/ask", r#"{"question":"why?"}"#),
         ("/api/ask/note", "{}"),
@@ -4978,7 +4968,7 @@ fn spawn_kids_server() -> (String, Guard) {
 /// non-empty text does, for that step) and, reused for the draft call, as the
 /// text `ask::parse_drafted_card` turns into a `DraftCardDto`.
 #[test]
-fn ask_card_draft_create_then_promote_round_trips_a_learner_card_into_the_deck() {
+fn ask_card_draft_create_round_trips_a_learner_card_into_the_session() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let fake = fake_reply(scripts.path(), "## term?\ndefinition\n");
@@ -5036,7 +5026,7 @@ fn ask_card_draft_create_then_promote_round_trips_a_learner_card_into_the_deck()
     // Drillable, not just stored: cram-reselect (the same determinism idiom
     // `post_api_restart_rebuilds_the_queue_and_resets_session_stats` uses)
     // pulls every non-retired card into the queue regardless of due date. The
-    // newly minted virtual card already has a store entry (`mint_tutor_card`
+    // newly minted personal card already has a store entry (`mint_tutor_card`
     // seeds one), so `build_queue` sorts it into the "due" group, ahead of
     // the two never-graded fixture cards in "fresh": it's the first card the
     // reselected session serves.
@@ -5059,25 +5049,16 @@ fn ask_card_draft_create_then_promote_round_trips_a_learner_card_into_the_deck()
         "body: {state_body}"
     );
 
-    // And promotable: the happy promote path lives here because the 400 test
-    // for a non-virtual card cannot prove the virtuality check's polarity
-    // (an inverted check still rejects, for a different reason); only a
-    // succeeding promote can, and this scenario already holds the minted
-    // virtual card as the current card.
-    let before = state_body["study_revision"].as_u64().unwrap();
-    let resp = post_gated(&base, "/api/promote", "{}");
-    assert_eq!(
-        200,
-        resp.status,
-        "a virtual card must promote; body: {}",
-        String::from_utf8_lossy(&resp.body)
-    );
-    let promoted: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    let after = promoted["study_revision"].as_u64().unwrap();
+    // And the deck file is untouched: the minted card lives in the personal
+    // file beside it.
+    let deck_text = std::fs::read_to_string(_guard.dir().join("sample.md")).unwrap();
     assert!(
-        after > before,
-        "promote must advance the revision ({before} -> {after})"
+        !deck_text.contains("edited term?"),
+        "the authored deck must never carry a minted card: {deck_text}"
     );
+    let sidecar =
+        std::fs::read_to_string(_guard.dir().join("sample.personal.md")).expect("a sidecar");
+    assert!(sidecar.contains("edited term?"), "sidecar: {sidecar}");
 }
 
 #[test]
@@ -6448,5 +6429,49 @@ fn every_shape_example_produces_the_shape_it_advertises() {
     assert_eq!(
         present, examined,
         "every shape example needs a law of its own here"
+    );
+}
+
+/// T3 acceptance for {#personal-sidecar}: a tutor note leaves the authored deck
+/// byte-identical and lands in the sidecar instead. Hashing the whole file is
+/// the sharp form — an appended `>` line, a rewritten front, or a re-stamped id
+/// all fail it.
+#[test]
+fn a_tutor_note_leaves_the_authored_deck_untouched_and_writes_the_sidecar() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "the condensed insight");
+    let (base, guard) = spawn_full_server(Some(&fake));
+    let deck = guard.dir().join("sample.md");
+    let sidecar = guard.dir().join("sample.personal.md");
+    let before = std::fs::read(&deck).unwrap();
+
+    post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"sample.md","depth":"recall"}"#,
+    );
+    post_gated(
+        &base,
+        "/api/ask",
+        r#"{"question":"why is that the answer?"}"#,
+    );
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    post_gated(&base, "/api/ask/note", "{}");
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+
+    assert_eq!(
+        before,
+        std::fs::read(&deck).unwrap(),
+        "alix must never write the authored deck again"
+    );
+    let written = std::fs::read_to_string(&sidecar).expect("the note went to a sidecar");
+    assert!(
+        written.contains("the condensed insight"),
+        "sidecar:\n{written}"
+    );
+    assert!(
+        written.contains("personal-for: deck-sample"),
+        "the sidecar names its deck: {written}"
     );
 }

@@ -22,7 +22,6 @@
   "next_due_ms": 1700000100000,
   "passed": 0,
   "phase": "done",
-  "promotable": false,
   "recognize_missed": 0,
   "recognize_partly": 0,
   "recognized": 0,

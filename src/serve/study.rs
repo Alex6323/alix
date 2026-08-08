@@ -305,10 +305,6 @@ pub(super) enum StudyCommand {
         expected: u64,
         reply: Reply<Option<StateDto>>,
     },
-    Promote {
-        expected: u64,
-        reply: Reply<Feedback<StateDto>>,
-    },
     AskPoll(Reply<Option<AskDto>>),
     AskCreate {
         req: CreateCardReq,
@@ -483,9 +479,6 @@ impl StudyHandle {
     }
     pub(super) fn remove(&self, expected: u64) -> Option<Option<StateDto>> {
         self.call(|reply| StudyCommand::Remove { expected, reply })
-    }
-    pub(super) fn promote(&self, expected: u64) -> Option<Feedback<StateDto>> {
-        self.call(|reply| StudyCommand::Promote { expected, reply })
     }
     pub(super) fn ask_start(
         &self,
@@ -902,14 +895,6 @@ impl StudyState {
                     None
                 } else {
                     self.remove()
-                };
-                let _ = reply.send(out);
-            }
-            StudyCommand::Promote { expected, reply } => {
-                let out = if self.revision != expected {
-                    Feedback::NoSession
-                } else {
-                    self.promote()
                 };
                 let _ = reply.send(out);
             }
@@ -1569,34 +1554,6 @@ impl StudyState {
         Some(self.review_dto())
     }
 
-    fn promote(&mut self) -> Feedback<StateDto> {
-        let Some(r) = self.reviewing.as_mut() else {
-            return Feedback::NoSession;
-        };
-        if !r.session.current_is_virtual(&self.store) {
-            return Feedback::Bad;
-        }
-        let Some(id) = r.session.current_id() else {
-            return Feedback::Bad;
-        };
-        let Some(deck_id) = r.session.current().map(|c| c.deck_id.to_string()) else {
-            return Feedback::Bad;
-        };
-        let Some(path) = r.files.paths.get(&deck_id).cloned() else {
-            return Feedback::Bad;
-        };
-        if store::promote_virtual(&mut self.store, &id, &path).is_err() {
-            return Feedback::Bad;
-        }
-        flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
-        self.writes = self.writes.wrapping_add(1);
-        r.session.poll(&mut self.store, now_ms());
-        flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
-        self.writes = self.writes.wrapping_add(1);
-        self.revision += 1;
-        Feedback::Ok(self.review_dto())
-    }
-
     fn ask_create(&mut self, req: CreateCardReq) -> CreateOutcome {
         let Some(r) = self.reviewing.as_mut() else {
             return CreateOutcome::NoSession;
@@ -1614,6 +1571,9 @@ impl StudyState {
         else {
             return CreateOutcome::NoSession;
         };
+        let Some(deck_path) = r.files.paths.get(&deck_id).cloned() else {
+            return CreateOutcome::NoSession;
+        };
         // Dedup by content fingerprint, not id: a mint carries a fresh random
         // token, so identical content still collides.
         let deck_fingerprints: std::collections::HashSet<u64> = r
@@ -1625,6 +1585,7 @@ impl StudyState {
         let now = now_ms();
         match store::mint_tutor_card(
             &mut self.store,
+            &deck_path,
             &deck_id,
             &req.front,
             &req.back,

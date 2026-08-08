@@ -545,7 +545,7 @@ struct AugmentArgs {
     #[arg(long)]
     with: Option<String>,
 
-    /// User-files root used to include virtual cards while augmenting. It does
+    /// User-files root used to include personal cards while augmenting. It does
     /// not change where workspace augmentation is written.
     #[arg(long)]
     store: Option<PathBuf>,

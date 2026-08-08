@@ -104,11 +104,7 @@ pub fn retire_replaced_progress(store_path: &Path, deck_id: &str) -> Result<bool
     let progress = progress_document_for(store_path, deck_id)?;
     if progress.is_file() {
         let (_, _, data) = store::read_deck_data(&progress, deck_id, None)?;
-        if !data.cards.is_empty()
-            || !data.records.is_empty()
-            || !data.deck.is_empty()
-            || !data.virtual_cards.is_empty()
-        {
+        if !data.cards.is_empty() || !data.records.is_empty() || !data.deck.is_empty() {
             return Ok(false);
         }
     }
@@ -339,10 +335,6 @@ mod tests {
                 r#""cards":{},"records":{"card-r1":{"version":1,"holes":[]}}"#,
             ),
             ("deck", r#""cards":{},"deck":{"last_depth":"recall"}"#),
-            (
-                "virtual_cards",
-                r###""cards":{},"virtual_cards":{"card-v1":{"id":"card-v1","kind":"Remediation","deck":"deck-r","text":"## q <!-- id: card-v1 -->\na\n","created_ms":0}}"###,
-            ),
         ];
         for (kind, body) in filled {
             let dir = tempfile::tempdir().unwrap();

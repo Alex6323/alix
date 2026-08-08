@@ -21,7 +21,6 @@
   "new_left": 0,
   "passed": 0,
   "phase": "done",
-  "promotable": false,
   "recognize_gap": {
     "recall": 13,
     "unaugmented": 13

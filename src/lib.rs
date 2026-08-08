@@ -48,6 +48,11 @@ pub mod listing;
 pub mod log;
 pub mod math;
 pub mod parser;
+pub mod personal;
+pub mod sidecar;
+pub use sidecar::{
+    DeckCard, FileEntry, Finding, Orphan, Role, SessionCard, SidecarBlock, classify, merge,
+};
 #[cfg(feature = "full")]
 pub mod picker;
 #[cfg(feature = "full")]

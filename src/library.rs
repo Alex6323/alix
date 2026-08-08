@@ -764,17 +764,14 @@ pub fn reset_decks<'a>(
     for deck in decks {
         let deck_id = deck.deck_token.as_deref().unwrap_or_default();
         store.clear_deck_mastered(deck_id);
-        let virtual_ids: Vec<String> = store
-            .virtual_cards_for(deck_id)
+        // The personal file itself is the user's, like the deck: a reset
+        // clears its cards' schedules and leaves the content alone.
+        let ids = deck
+            .cards
             .iter()
-            .map(|vc| vc.id.clone())
-            .collect();
-        for id in virtual_ids {
-            store.remove_virtual(&id);
-            store.remove(&id);
-        }
-        for card in &deck.cards {
-            let Some(id) = card.id() else { continue };
+            .filter_map(crate::card::Card::id)
+            .chain(crate::personal::card_ids(deck));
+        for id in ids {
             if store.get(&id).is_some() {
                 store.remove(&id);
                 n += 1;
@@ -888,22 +885,20 @@ mod tests {
         assert!(!store.deck_mastered(deck_a.deck_token.as_deref().unwrap()));
     }
 
-    fn virtual_card(deck_id: &str, back: &str) -> crate::store::VirtualCard {
+    /// Writes a personal card into the sidecar beside `deck` and files its
+    /// schedule, returning its id.
+    fn personal_card(store: &mut Store, deck: &Path, deck_id: &str, back: &str) -> String {
         let slug: String = back.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
-        let text = format!(
+        let block = format!(
             "## front <!-- id: card-v{} -->\n{back}\n",
             slug.to_ascii_lowercase()
         );
-        let id = crate::parser::parse_str(deck_id, &text).unwrap()[0]
+        let id = crate::parser::parse_str(deck_id, &block).unwrap()[0]
             .id()
             .unwrap();
-        crate::store::VirtualCard {
-            id,
-            kind: crate::store::VirtualKind::Remediation,
-            deck: deck_id.to_string(),
-            text,
-            created_ms: 0,
-        }
+        crate::personal::append_cards(deck, deck_id, &block).unwrap();
+        store.get_or_insert(&id, 0);
+        id
     }
 
     fn write_deck(dir: &Path, name: &str, deck_token: &str, card_token: &str) {
@@ -1547,7 +1542,7 @@ mod tests {
     }
 
     #[test]
-    fn replacing_a_deck_wipes_its_progress_augment_entries_and_parented_virtuals() {
+    fn replacing_a_deck_wipes_its_progress_and_augment_entries() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
         write_deck(dir.path(), "b.md", "db1", "cb1");
@@ -1559,18 +1554,10 @@ mod tests {
             .unwrap();
         let mut store = crate::state::open_stores(&paths, dir.path()).unwrap();
 
-        // Deck A: a card schedule, deck-family mastery, records, a parented virtual.
+        // Deck A: a card schedule, deck-family mastery, records.
         store.get_or_insert("card-c1", 0);
         store.set_deck_mastered("deck-da1", 1);
         store.ensure_records_raw("card-c1", &[]);
-        store.insert_virtual(crate::store::VirtualCard {
-            id: "card-va1".into(),
-            kind: crate::store::VirtualKind::Remediation,
-            deck: "deck-da1".into(),
-            text: "## v <!-- id: card-va1 -->\nvans\n".into(),
-            created_ms: 0,
-        });
-        store.get_or_insert("card-va1", 0);
         // Deck B (shares the store): its own schedule + mastery.
         store.get_or_insert("card-cb1", 0);
         store.set_deck_mastered("deck-db1", 1);
@@ -1598,8 +1585,6 @@ mod tests {
         assert!(store.get("card-c1").is_none());
         assert!(!store.deck_mastered("deck-da1"));
         assert!(store.records("card-c1").is_none());
-        assert!(store.get_virtual("card-va1").is_none());
-        assert!(store.get("card-va1").is_none());
         assert!(store.get("card-cb1").is_some());
         assert!(store.deck_mastered("deck-db1"));
 
@@ -1798,25 +1783,6 @@ mod tests {
             assert!(text.contains(added), "appended token preserved");
             assert_no_duplicate_tokens("d.md", &text);
         }
-        {
-            let dir = tempfile::tempdir().unwrap();
-            let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();
-            let mut store = crate::state::open_store(&placed.path, dir.path()).unwrap();
-            let vid = "card-pvzzzzzzzzzzzzzzzzzzzzzzzzz";
-            store.insert_virtual(crate::store::VirtualCard {
-                id: vid.into(),
-                kind: crate::store::VirtualKind::Tutor,
-                deck: "d.md".into(),
-                text: format!("## promoted <!-- id: {vid} -->\npans\n"),
-                created_ms: 0,
-            });
-            store.get_or_insert(vid, 0);
-            store.save().unwrap();
-            crate::store::promote_virtual(&mut store, vid, &placed.path).unwrap();
-            let text = std::fs::read_to_string(&placed.path).unwrap();
-            assert!(text.contains(vid), "promoted token preserved");
-            assert_no_duplicate_tokens("d.md", &text);
-        }
     }
 
     fn once(s: &str) -> HashSet<String> {
@@ -1861,34 +1827,36 @@ mod tests {
     }
 
     #[test]
-    fn resetting_a_deck_drops_its_virtual_cards_but_keeps_anothers() {
+    fn resetting_a_deck_clears_its_personal_schedules_and_keeps_the_file_and_anothers() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
             "---\nformat-version: 1\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
         )
         .unwrap();
+        std::fs::write(
+            dir.path().join("b.md"),
+            "---\nformat-version: 1\nid: \"deck-db\"\n---\n## qb <!-- id: card-qb -->\nans-b\n",
+        )
+        .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();
 
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let vc_a = virtual_card("deck-da", "vc-a");
-        let vc_other = virtual_card("deck-other", "vc-other");
-        let (id_a, id_other) = (vc_a.id.clone(), vc_other.id.clone());
-        store.insert_virtual(vc_a);
-        store.insert_virtual(vc_other);
-        store.get_or_insert(&id_a, 0);
-        store.get_or_insert(&id_other, 0);
+        let path_a = dir.path().join("a.md");
+        let path_b = dir.path().join("b.md");
+        let id_a = personal_card(&mut store, &path_a, "deck-da", "vc-a");
+        let id_other = personal_card(&mut store, &path_b, "deck-db", "vc-other");
 
         let n = reset_decks(&mut store, [&deck_a]).unwrap();
-        assert_eq!(0, n, "no authored cards had progress");
+        assert_eq!(1, n, "only a's personal card had progress");
+        assert!(store.get(&id_a).is_none(), "a's personal schedule dropped");
         assert!(
-            store.get_virtual(&id_a).is_none(),
-            "a's virtual card dropped"
+            crate::personal::sidecar_path(&path_a).exists(),
+            "the personal file is the user's: a reset never deletes it"
         );
-        assert!(store.get(&id_a).is_none(), "a's virtual schedule dropped");
         assert!(
-            store.get_virtual(&id_other).is_some(),
-            "another deck's virtual card survives"
+            store.get(&id_other).is_some(),
+            "another deck's personal schedule survives"
         );
     }
 }

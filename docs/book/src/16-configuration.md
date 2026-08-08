@@ -23,7 +23,7 @@ passed = ["l"]
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
 rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
-`remove` (default `ctrl-x`), `ask` (default `?`), `promote` (default `ctrl-p`),
+`remove` (default `ctrl-x`), `ask` (default `?`),
 `continue`, `restart` (default `r`), `quit`, `up`/`down`
 (defaults `k`/`j`) to move within a multiple-choice or key-point list (the arrow keys always work too),
 and the tutor's distill actions `make_note` (default `ctrl-n`) and `make_card` (default `ctrl-d`). While
@@ -207,7 +207,7 @@ per initialized deck:
 ```
 
 `progress/` is private, indispensable learning state: schedules, review
-history, exam state, virtual cards, and the last writer. `augment/` is
+history, exam state, and the last writer. `augment/` is
 regenerable, shareable material: generated choices, notes, key points,
 variants, and topologies. It stays beside the deck so sharing the deck can
 carry its generated study material without carrying personal history. The
@@ -303,5 +303,5 @@ a card starts it over. (That's the "editing is safe" rule from
 
 `alix reset <target>` clears progress so cards go "new" again: a whole deck, a
 folder or workspace (every member deck, plus a workspace's mastered flags and
-virtual cards), a single card (`--card <id-or-front>`), or the entire store
+personal-card schedules), a single card (`--card <id-or-front>`), or the entire store
 (`--all`); it confirms once unless you pass `-y`.

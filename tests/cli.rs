@@ -166,7 +166,7 @@ fn write_progress_document(
         format!(
             "{{\"version\":1,\"deck_id\":\"{deck_id}\",\"subject\":\"{subject}\",\
              \"revision\":1,\"cards\":{{{cards}}},\"records\":{{}},\
-             \"virtual_cards\":{{}},\"writer\":null}}"
+             \"writer\":null}}"
         ),
     )
     .unwrap();
@@ -488,6 +488,56 @@ fn doctor_warns_about_a_malformed_deadline_without_failing() {
 }
 
 #[test]
+fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let decks = ws.join("decks");
+    std::fs::write(
+        decks.join("spanish.md"),
+        "---\nformat-version: 1\nid: deck-spanishspanishspanishspa\n---\n\
+         ## darse cuenta <!-- id: card-onetwothreefourfivesixsev -->\nto realise\n",
+    )
+    .unwrap();
+    // A note for a card that exists nowhere, and a card copying the deck's id.
+    std::fs::write(
+        decks.join("spanish.personal.md"),
+        "---\nformat-version: 1\npersonal-for: deck-spanishspanishspanishspa\n---\n\n\
+         <!-- for: card-gonegonegonegonegonegonego (a hint) -->\n> addressed to nothing\n\n\
+         ## a copy <!-- id: card-onetwothreefourfivesixsev -->\nmine\n",
+    )
+    .unwrap();
+    // Names a deck that is not here at all.
+    std::fs::write(
+        decks.join("german.personal.md"),
+        "---\nformat-version: 1\npersonal-for: deck-nosuchdecknosuchdecknos\n---\n\n\
+         <!-- for: card-onetwothreefourfivesixsev -->\n> stray\n",
+    )
+    .unwrap();
+
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "warnings should not fail the doctor check; stderr: {}",
+        stderr(&out)
+    );
+    let err = stderr(&out);
+    assert!(
+        err.contains("card-gonegonegonegonegonegonego") && err.contains("a hint"),
+        "the orphan note is reported with its hint: {err}"
+    );
+    assert!(
+        err.contains("spanish.personal.md") && err.contains("already in"),
+        "the duplicate card id is reported: {err}"
+    );
+    assert!(
+        err.contains("german.personal.md"),
+        "the file naming an absent deck is reported: {err}"
+    );
+}
+
+#[test]
 fn doctor_nudges_a_long_source_list_toward_its_common_root() {
     let dir = TempDir::new().unwrap();
     for name in ["a.rs", "b.rs", "c.rs", "d.rs"] {
@@ -713,7 +763,7 @@ fn stats_reports_a_fresh_deck_against_an_empty_store() {
 }
 
 #[test]
-fn stats_aggregates_authored_and_virtual_due_windows_and_review_totals() {
+fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
     let dir = TempDir::new().unwrap();
     let deck_text = "---\nformat-version: 1\nid: deck-statsall\n---\n\
 ## Q1 <!-- id: card-stats1 -->\nA1\n\n\
@@ -746,16 +796,15 @@ fn stats_aggregates_authored_and_virtual_due_windows_and_review_totals() {
     }
 
     for (id, due_ms) in [
-        ("card-virtual-now", now.saturating_sub(1_000)),
-        ("card-virtual-soon", now + 6 * 60 * 60 * 1_000),
+        ("card-personalnow", now.saturating_sub(1_000)),
+        ("card-personalsoon", now + 6 * 60 * 60 * 1_000),
     ] {
-        store.insert_virtual(alix::store::VirtualCard {
-            id: id.to_string(),
-            kind: alix::store::VirtualKind::Remediation,
-            deck: "deck-statsall".to_string(),
-            text: format!("## virtual <!-- id: {id} -->\nanswer\n"),
-            created_ms: now,
-        });
+        alix::personal::append_cards(
+            Path::new(&deck),
+            "deck-statsall",
+            &format!("## personal <!-- id: {id} -->\nanswer\n"),
+        )
+        .unwrap();
         store.get_or_insert(id, now).recall = Some(alix::store::FsrsState {
             state: 2,
             due_ms,
@@ -868,12 +917,10 @@ fn reset_all_declined_in_a_terminal_preserves_the_seeded_store() {
     );
 }
 
-/// A minimal virtual card owned by `deck_id`, for seeding a store directly
-/// via the lib rather than hand-authoring its on-disk JSON shape. Its id is the
-/// `Card::id` of the card `parse(deck_id, text)` yields, identical to a deck
-/// card. The literal `<!-- id: -->` token is derived from `deck_id`: identity is
-/// the token now, so two decks' sample cards must not share one.
-fn sample_virtual_card(deck_id: &str) -> alix::store::VirtualCard {
+/// Writes a minimal personal card into the sidecar beside `deck` and returns
+/// its id. The literal `<!-- id: -->` token is derived from `deck_id`: identity
+/// is the token, so two decks' sample cards must not share one.
+fn sample_personal_card(deck: &str, deck_id: &str) -> String {
     let token: String = format!(
         "v{}",
         deck_id
@@ -882,32 +929,24 @@ fn sample_virtual_card(deck_id: &str) -> alix::store::VirtualCard {
             .collect::<String>()
             .to_ascii_lowercase()
     );
-    let text = format!("## front <!-- id: card-{token} -->\nback\n");
-    let id = alix::parser::parse_str(deck_id, &text).unwrap()[0]
+    let block = format!("## front <!-- id: card-{token} -->\nback\n");
+    let id = alix::parser::parse_str(deck_id, &block).unwrap()[0]
         .id()
         .unwrap();
-    alix::store::VirtualCard {
-        id,
-        kind: alix::store::VirtualKind::Remediation,
-        deck: deck_id.to_string(),
-        text,
-        created_ms: 0,
-    }
+    alix::personal::append_cards(Path::new(deck), deck_id, &block).unwrap();
+    id
 }
 
 #[test]
-fn reset_all_clears_virtual_cards() {
-    // A store holding ONLY virtual cards must still be reset by `--all`: the
-    // count sees the virtual card's schedule in `store.cards` (seeded beside the
-    // sidecar entry), and the clear must also drop its sidecar content.
+fn reset_all_clears_a_personal_only_store() {
+    // A store holding ONLY a personal card's schedule must still be reset by
+    // `--all`, and the personal file itself must survive: it is the user's.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let store_path = dir.path().join("state");
     let mut store = deck_store(&deck, &store_path);
-    let vc = sample_virtual_card("math.md");
-    let id = vc.id.clone();
-    store.insert_virtual(vc);
-    store.get_or_insert(&id, 0); // the virtual card's schedule lives in store.cards
+    let id = sample_personal_card(&deck, "math.md");
+    store.get_or_insert(&id, 0);
     store.save().unwrap();
 
     let out = alix(&[
@@ -920,12 +959,16 @@ fn reset_all_clears_virtual_cards() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         !stdout(&out).contains("No stored progress"),
-        "a virtual-only store wrongly reported nothing to reset: {}",
+        "a personal-only store wrongly reported nothing to reset: {}",
         stdout(&out)
     );
 
     let reloaded = deck_store(&deck, &store_path);
-    assert_eq!(0, reloaded.iter_virtual_cards().count());
+    assert!(reloaded.get(&id).is_none(), "the schedule was not cleared");
+    assert!(
+        alix::personal::sidecar_path(Path::new(&deck)).exists(),
+        "a reset must never delete the personal file"
+    );
 }
 
 #[test]
@@ -1264,7 +1307,7 @@ fn reset_orphans_names_a_target_that_is_neither_a_deck_file_nor_a_folder() {
 }
 
 #[test]
-fn deck_reset_drops_that_decks_virtual_cards() {
+fn deck_reset_drops_that_decks_personal_schedules() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let other = write(
@@ -1275,14 +1318,12 @@ fn deck_reset_drops_that_decks_virtual_cards() {
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    let math_vc = sample_virtual_card("deck-mathdeck");
-    let math_id = math_vc.id.clone();
-    store.insert_virtual(math_vc);
+    let math_id = sample_personal_card(&deck, "deck-mathdeck");
+    store.get_or_insert(&math_id, 0);
     store.save().unwrap();
     let mut other_store = deck_store(&other, &store_path);
-    let other_vc = sample_virtual_card("deck-otherdeck");
-    let other_id = other_vc.id.clone();
-    other_store.insert_virtual(other_vc);
+    let other_id = sample_personal_card(&other, "deck-otherdeck");
+    other_store.get_or_insert(&other_id, 0);
     other_store.save().unwrap();
 
     let out = alix(&[
@@ -1296,22 +1337,20 @@ fn deck_reset_drops_that_decks_virtual_cards() {
 
     let reloaded = deck_store(&deck, &store_path);
     assert!(
-        reloaded.get_virtual(&math_id).is_none(),
-        "the reset deck's own virtual card should be dropped"
+        reloaded.get(&math_id).is_none(),
+        "the reset deck's own personal schedule should be dropped"
     );
     assert!(
-        deck_store(&other, &store_path)
-            .get_virtual(&other_id)
-            .is_some(),
-        "another deck's virtual card should survive"
+        deck_store(&other, &store_path).get(&other_id).is_some(),
+        "another deck's personal schedule should survive"
     );
 }
 
 #[test]
 fn deck_reset_without_yes_leaves_store_unchanged() {
     // A declined/failed confirmation must not partially apply the reset: the
-    // deck's mastered flag, its virtual card, and its authored progress must
-    // all still be there afterwards, byte-for-byte.
+    // deck's mastered flag, its personal card's schedule, and its authored
+    // progress must all still be there afterwards, byte-for-byte.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let store_path = dir.path().join("state");
@@ -1322,7 +1361,8 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
     let mut store = deck_store(&deck, &store_path);
     store.get_or_insert(&card_id, 0);
     store.set_deck_mastered("deck-mathdeck", 0);
-    store.insert_virtual(sample_virtual_card("deck-mathdeck"));
+    let personal_id = sample_personal_card(&deck, "deck-mathdeck");
+    store.get_or_insert(&personal_id, 0);
     store.save().unwrap();
     let before = std::fs::read_to_string(store.path()).unwrap();
 
@@ -1344,10 +1384,9 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         "mastered flag wiped"
     );
     assert!(reloaded.get(&card_id).is_some(), "authored progress wiped");
-    assert_eq!(
-        1,
-        reloaded.virtual_cards_for("deck-mathdeck").len(),
-        "virtual card wiped"
+    assert!(
+        reloaded.get(&personal_id).is_some(),
+        "personal schedule wiped"
     );
 }
 
@@ -1409,15 +1448,16 @@ fn targeted_reset_without_confirmation_names_the_card_and_preserves_it() {
 }
 
 #[test]
-fn confirmed_virtual_only_deck_reset_clears_virtual() {
-    // A deck with ONLY a virtual card (no authored progress, not mastered) must
-    // still have that virtual card cleared and persisted on a confirmed reset.
+fn a_confirmed_personal_only_deck_reset_clears_the_schedule() {
+    // A deck with ONLY a personal card (no authored progress, not mastered)
+    // must still have that schedule cleared and persisted on a confirmed reset.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    store.insert_virtual(sample_virtual_card("deck-mathdeck"));
+    let personal_id = sample_personal_card(&deck, "deck-mathdeck");
+    store.get_or_insert(&personal_id, 0);
     store.save().unwrap();
 
     let out = alix(&[
@@ -1430,7 +1470,7 @@ fn confirmed_virtual_only_deck_reset_clears_virtual() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
     let reloaded = deck_store(&deck, &store_path);
-    assert_eq!(0, reloaded.virtual_cards_for("deck-mathdeck").len());
+    assert!(reloaded.get(&personal_id).is_none());
 }
 
 #[test]
@@ -1588,12 +1628,11 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
 
     let store_path = dir.path().join("state");
     let mut store = deck_store(&deck, &store_path);
-    let vc = sample_virtual_card("deck-parts");
-    let virtual_id = vc.id.clone();
-    store.insert_virtual(vc);
+    let personal_id = sample_personal_card(&deck, "deck-parts");
+    store.get_or_insert(&personal_id, 0);
     store.save().unwrap();
 
-    // The deck's one plain card is warmed at index 0; the deck's one virtual
+    // The deck's one plain card is warmed at index 0; the deck's one personal
     // card follows it at index 1.
     let cli = fake_claude(dir.path(), r#"{"1": {"back": ["X", "Y"], "mode": "line"}}"#);
     let config = write(
@@ -1616,42 +1655,35 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
 
     let cached = augmentation_text(&deck);
     assert!(
-        cached.contains(virtual_id.as_str()),
-        "augmentation should key a format entry by the virtual card's id: {cached}"
+        cached.contains(personal_id.as_str()),
+        "augmentation should key a format entry by the personal card's id: {cached}"
     );
     assert!(cached.contains("\"X\""), "augmentation: {cached}");
 }
 
 #[test]
-fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_deck_card() {
-    // A partial cloze promote can leave an orphaned sidecar `virtual_cards`
-    // entry whose id collides with a real deck card (see `promote_virtual`).
-    // `deck augment --target format` must filter those out exactly like
-    // `assemble::select`'s injection does, or the same card gets warmed twice.
+fn augment_target_format_skips_a_personal_card_colliding_with_a_real_deck_card() {
+    // A hand-edited personal file can address a card by an id a deck card
+    // already owns. `deck augment --target format` filters those out, or one
+    // card is warmed twice and the format cache entry keyed by that id
+    // reshapes the authored card from personal content.
     let dir = TempDir::new().unwrap();
     let deck_text = "---\nformat-version: 1\nid: \"deck-parts\"\n---\n## List the parts <!-- id: card-parts1 -->\nA, B, C\n";
     let deck = write(dir.path(), "parts.md", deck_text);
-    let real_id = alix::parser::parse_str("parts.md", deck_text).unwrap()[0]
-        .id()
-        .unwrap();
 
     let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
-    store.insert_virtual(alix::store::VirtualCard {
-        id: real_id.clone(), // collides with the real deck card's id — simulates an orphan
-        kind: alix::store::VirtualKind::Remediation,
-        deck: "deck-parts".to_string(),
-        // Must reproduce `real_id` when parsed (`synthesize_virtual` matches by
-        // id), so an orphan left behind by a partial promote uses the same text
-        // as the now-real deck card it collides with.
-        text: deck_text.to_string(),
-        created_ms: 0,
-    });
+    let store = deck_store(&deck, &store_path);
+    // The personal card carries the deck card's own id.
+    alix::personal::append_cards(
+        Path::new(&deck),
+        "deck-parts",
+        "## List the parts <!-- id: card-parts1 -->\nA, B, C\n",
+    )
+    .unwrap();
     store.save().unwrap();
 
-    // Only one item should ever be warmed (the real deck card) — if the orphan
-    // isn't filtered, the fake reply's index 1 lookup would matter too, but
-    // asserting "1 of 1" below is what actually pins the count down.
+    // Only one item should ever be warmed (the real deck card): asserting
+    // "1 of 1" below is what pins the count down.
     let cli = fake_claude(
         dir.path(),
         r#"{"0": {"back": ["A", "B", "C"], "mode": "line"}}"#,

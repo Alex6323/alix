@@ -1672,7 +1672,7 @@ fn ask_transcript_resets_when_the_card_changes() {
 }
 
 #[test]
-fn poll_ask_condense_appends_note_to_deck_and_live_card() {
+fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, deck) = one_card_reviewing(dir.path());
     r.ask.transcript.push(("q".to_string(), "a".to_string()));
@@ -1689,8 +1689,13 @@ fn poll_ask_condense_appends_note_to_deck_and_live_card() {
     let (status, error) = r.poll_ask();
     assert_eq!(Some("note saved".to_string()), status);
     assert!(error.is_none());
-    let text = std::fs::read_to_string(&deck).unwrap();
-    assert!(text.contains("key insight to reread"), "deck:\n{text}");
+    let authored = std::fs::read_to_string(&deck).unwrap();
+    assert!(
+        !authored.contains("key insight to reread"),
+        "the authored deck must not carry the note:\n{authored}"
+    );
+    let text = std::fs::read_to_string(crate::personal::sidecar_path(&deck)).unwrap();
+    assert!(text.contains("key insight to reread"), "sidecar:\n{text}");
     assert!(
         r.session
             .current()
@@ -2061,10 +2066,15 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
     let (status, error) = w.poll_ask();
     assert_eq!(Some("note saved".to_string()), status);
     assert!(error.is_none());
-    let text = std::fs::read_to_string(&deck_path).unwrap();
+    let authored = std::fs::read_to_string(&deck_path).unwrap();
+    assert!(
+        !authored.contains("the read lock is released first"),
+        "the authored trace deck must not carry the note:\n{authored}"
+    );
+    let text = std::fs::read_to_string(crate::personal::sidecar_path(&deck_path)).unwrap();
     assert!(
         text.contains("the read lock is released first"),
-        "deck:\n{text}"
+        "sidecar:\n{text}"
     );
 }
 

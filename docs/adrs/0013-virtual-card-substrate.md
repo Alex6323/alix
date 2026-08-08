@@ -1,6 +1,7 @@
 # 0013: Virtual-card substrate
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0030](0030-personal-data-lives-in-a-sidecar-file.md)
 - Recorded: 2026-07-24
 - Retrospective: Yes
 - Refined by: [ADR 0017](0017-per-deck-state-documents.md), which keeps each

@@ -83,7 +83,6 @@ pub struct Bindings {
     pub submit: Vec<KeyPattern>,
     pub skip: Vec<KeyPattern>,
     pub remove: Vec<KeyPattern>,
-    pub promote: Vec<KeyPattern>,
     pub cont: Vec<KeyPattern>,
     pub restart: Vec<KeyPattern>,
     pub ask: Vec<KeyPattern>,
@@ -106,7 +105,6 @@ impl Default for Bindings {
             submit: keys(&["enter"]),
             skip: keys(&["ctrl-s"]),
             remove: keys(&["ctrl-x"]),
-            promote: keys(&["ctrl-p"]),
             cont: keys(&["enter", "space"]),
             restart: keys(&["r"]),
             ask: keys(&["?"]),
@@ -713,7 +711,6 @@ struct RawReview {
     submit: Option<Vec<String>>,
     skip: Option<Vec<String>>,
     remove: Option<Vec<String>>,
-    promote: Option<Vec<String>>,
     r#continue: Option<Vec<String>>,
     restart: Option<Vec<String>>,
     ask: Option<Vec<String>>,
@@ -751,7 +748,6 @@ impl Config {
         assign(&mut keys.submit, review.submit, "review.submit")?;
         assign(&mut keys.skip, review.skip, "review.skip")?;
         assign(&mut keys.remove, review.remove, "review.remove")?;
-        assign(&mut keys.promote, review.promote, "review.promote")?;
         assign(&mut keys.cont, review.r#continue, "review.continue")?;
         assign(&mut keys.restart, review.restart, "review.restart")?;
         assign(&mut keys.ask, review.ask, "review.ask")?;
@@ -1128,7 +1124,6 @@ pub fn default_config_toml() -> &'static str {
 # submit = ["enter"]            # typeline mode: submit the current line
 # skip = ["ctrl-s"]             # requeue the current card without grading
 # remove = ["ctrl-x"]           # mark the card for removal from the deck file
-# promote = ["ctrl-p"]          # promote a virtual (remediation) card into its deck file
 # continue = ["enter", "space"] # leave the feedback screen
 # restart = ["r"]               # start a new session from the summary screen
 # ask = ["?"]                   # ask the tutor about an answered card

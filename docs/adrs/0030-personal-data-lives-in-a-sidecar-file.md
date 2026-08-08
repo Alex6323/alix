@@ -3,6 +3,8 @@
 - Status: Accepted
 - Recorded: 2026-08-07
 - Retrospective: No
+- Supersedes:
+  [ADR 0013](0013-virtual-card-substrate.md)
 
 ## Context
 

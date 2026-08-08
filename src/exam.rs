@@ -298,6 +298,8 @@ pub struct Sitting {
     kind: SittingKind,
     subject: String,
     deck_token: String,
+    /// Absent for a trace sitting, which has no deck file to write beside.
+    deck_path: Option<std::path::PathBuf>,
     deck_fingerprints: HashSet<u64>,
     strictness: Strictness,
     cfg: ExamConfig,
@@ -329,6 +331,7 @@ impl Sitting {
             kind: SittingKind::Source,
             subject: deck.subject.clone(),
             deck_token: deck.deck_token.clone().unwrap_or_default(),
+            deck_path: Some(deck.path.clone()),
             deck_fingerprints: deck.cards.iter().map(|c| c.content_fingerprint).collect(),
             strictness,
             cfg,
@@ -366,6 +369,7 @@ impl Sitting {
             kind: SittingKind::Trace,
             subject,
             deck_token,
+            deck_path: None,
             deck_fingerprints: HashSet::new(),
             strictness,
             cfg,
@@ -617,6 +621,7 @@ impl Sitting {
                 store_mutated = true;
                 match crate::store::store_remediation_cards(
                     store,
+                    self.deck_path.as_deref(),
                     &self.deck_token,
                     &self.deck_fingerprints,
                     &cards,
@@ -1388,7 +1393,6 @@ mod tests {
     use crate::{
         parser,
         session::is_retired_id,
-        store::VirtualKind,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},
     };
 
@@ -1789,6 +1793,12 @@ mod tests {
         fake_cli(dir, &body)
     }
 
+    fn sidecar_cards(deck_path: &std::path::Path, deck_id: &str) -> Vec<crate::card::Card> {
+        let text =
+            std::fs::read_to_string(crate::personal::sidecar_path(deck_path)).unwrap_or_default();
+        parser::parse_str(deck_id, &text).unwrap_or_default()
+    }
+
     fn sourced_deck(dir: &std::path::Path) -> Deck {
         let path = dir.join("d.md");
         std::fs::write(
@@ -1846,12 +1856,10 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
         assert_eq!(snapshot, std::fs::read(dir.path().join("d.md")).unwrap());
-        let virtuals = store.virtual_cards_for("deck-d1");
-        assert_eq!(1, virtuals.len());
-        assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
-        let synth = parser::parse_str("d.md", &virtuals[0].text).unwrap();
-        assert_eq!("Why does X?", synth[0].front);
-        assert_eq!(vec!["point one".to_string()], synth[0].back);
+        let personal = sidecar_cards(&dir.path().join("d.md"), "deck-d1");
+        assert_eq!(1, personal.len());
+        assert_eq!("Why does X?", personal[0].front);
+        assert_eq!(vec!["point one".to_string()], personal[0].back);
     }
 
     #[test]
@@ -1885,9 +1893,9 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
 
-        let virtuals = store.virtual_cards_for("deck-d1");
-        assert_eq!(1, virtuals.len());
-        assert_eq!(Some(virtuals.len()), s.remediated_count());
+        let personal = sidecar_cards(&dir.path().join("d.md"), "deck-d1");
+        assert_eq!(1, personal.len());
+        assert_eq!(Some(personal.len()), s.remediated_count());
     }
 
     #[test]
@@ -1921,7 +1929,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_exam_creates_virtual_cards_and_leaves_the_deck_file_unchanged() {
+    fn a_failed_exam_writes_remediation_to_the_sidecar_and_leaves_the_deck_unchanged() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = branching_cli(
@@ -1955,10 +1963,18 @@ mod tests {
         let after = std::fs::read(&deck_path).unwrap();
         assert_eq!(before, after, "remediation must never touch the deck file");
 
-        let virtuals = store.virtual_cards_for("deck-d1");
-        assert_eq!(1, virtuals.len());
-        assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
-        assert_eq!("deck-d1", virtuals[0].deck);
+        let sidecar = std::fs::read_to_string(crate::personal::sidecar_path(&deck_path))
+            .expect("remediation wrote a sidecar beside the deck");
+        assert!(
+            sidecar.contains("personal-for: deck-d1"),
+            "the sidecar names its deck: {sidecar}"
+        );
+        let cards = crate::parser::parse_str("deck-d1", &sidecar).unwrap();
+        assert_eq!(1, cards.len(), "one remediation card: {sidecar}");
+        assert!(
+            cards[0].id().is_some_and(|id| store.get(&id).is_some()),
+            "the store carries the card's schedule, the file carries its content"
+        );
     }
 
     #[test]
@@ -1990,7 +2006,7 @@ mod tests {
         s.remediate();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        assert!(!store.virtual_cards_for("deck-d1").is_empty());
+        assert!(!sidecar_cards(&dir.path().join("d.md"), "deck-d1").is_empty());
 
         let cli_dir2 = tempfile::tempdir().unwrap();
         let cli2 = branching_cli(
@@ -2013,13 +2029,10 @@ mod tests {
         assert!(s2.result().unwrap().passed);
         assert!(store.deck_mastered("deck-d1"));
 
-        for vc in store.virtual_cards_for("deck-d1") {
+        for card in sidecar_cards(&dir.path().join("d.md"), "deck-d1") {
+            let id = card.id().expect("a personal card carries its id");
             assert!(
-                !is_retired_id(
-                    &vc.id,
-                    &store,
-                    Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)
-                ),
+                !is_retired_id(&id, &store, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)),
                 "a passing re-sit must not retire remediation cards"
             );
         }

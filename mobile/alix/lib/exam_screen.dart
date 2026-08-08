@@ -66,7 +66,7 @@ class ExamScreen extends StatefulWidget {
   final void Function(BigInt nowMs) applyPassed;
 
   /// Turns a failed sitting's remediation deck-text into phone-store
-  /// virtual cards (a closure over `applyRemediation`), returning how many
+  /// personal cards (a closure over `applyRemediation`), returning how many
   /// were created or revived.
   final int Function(String cardsText, BigInt nowMs) applyRemediation;
 

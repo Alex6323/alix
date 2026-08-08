@@ -38,6 +38,7 @@ fn dir_candidates(
                 && path.extension().is_some_and(|e| e == "md")
                 && !workspace::is_conventional_non_deck(&name)
                 && !workspace::is_conflict_name(&name)
+                && !workspace::is_sidecar_name(&name)
                 && cache.is_deck(&path);
             if is_deck {
                 Some((path, false))
