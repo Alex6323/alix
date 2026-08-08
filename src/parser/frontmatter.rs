@@ -7,6 +7,9 @@ use crate::{answer::Input, card::Direction, depth::Reveal, session::Order, token
 /// rather than bumping. Read to refuse a foreign document, never to adapt
 /// to one.
 pub const DECK_FORMAT_VERSION: u32 = 1;
+/// One spelling for the personal file's link to its deck, shared by the
+/// parser, the header writer, and every message that names it.
+pub const PERSONAL_PARENT_KEY: &str = "for";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
@@ -167,7 +170,7 @@ fn load_frontmatter(
                 Yaml::String(s) => frontmatter.license = Some(s.clone()),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },
-            "for" => match value {
+            PERSONAL_PARENT_KEY => match value {
                 Yaml::String(s) => frontmatter.personal_for = Some(s.clone()),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },

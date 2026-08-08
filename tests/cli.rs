@@ -4259,6 +4259,57 @@ fn deck_init_freezes_its_excerpts_when_named_by_a_relative_path() {
     );
 }
 
+/// The two findings that quote the frontmatter key back at the reader. They
+/// are what make the single spelling in `parser::PERSONAL_PARENT_KEY` fail
+/// loudly: a message naming a key the parser rejects sends the reader to edit
+/// a working file into a broken one.
+#[test]
+fn doctor_quotes_the_personal_key_the_parser_actually_accepts() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    write(
+        &decks,
+        "spanish.md",
+        "---\nformat-version: 1\nid: deck-spanishspanishspanishspa\n---\n\
+         ## darse cuenta <!-- id: card-onetwothreefourfivesixsev -->\nto realise\n",
+    );
+    write(
+        &decks,
+        "german.md",
+        "---\nformat-version: 1\nid: deck-germangermangermangerm\n---\n\
+         ## sich freuen <!-- id: card-sevensixfivefourthreetwoone -->\nto be glad\n",
+    );
+    // Names a deck that exists, but not the one it sits beside.
+    write(
+        &decks,
+        "spanish.personal.md",
+        "---\nformat-version: 1\nfor: deck-germangermangermangerm\n---\n\n\
+         <!-- note: card-onetwothreefourfivesixsev -->\n> mine\n",
+    );
+    // Carries the key without the name that would make it a personal file.
+    write(
+        &decks,
+        "notes.md",
+        "---\nfor: deck-spanishspanishspanishspa\n---\n\nordinary prose\n",
+    );
+
+    let err = stderr(&alix(&["doctor", ws.to_str().unwrap()]));
+
+    assert!(
+        err.contains(
+            "spanish.personal.md: `for: deck-germangermangermangerm` but the deck it sits beside is deck-spanishspanishspanishspa"
+        ),
+        "the mismatch quotes the key, the named deck and the neighbour: {err}"
+    );
+    assert!(
+        err.contains("notes.md: carries `for:` but is not named `<deck>.personal.md`"),
+        "the suffix finding quotes the key: {err}"
+    );
+}
+
 #[test]
 fn deck_init_refuses_a_personal_file_without_changing_it() {
     let dir = TempDir::new().unwrap();

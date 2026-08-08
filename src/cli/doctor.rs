@@ -503,14 +503,20 @@ fn sidecar_findings(dir: &Path, report: &mut Report) {
                 file,
                 named,
                 neighbour,
-            } => format!("{file}: `for: {named}` but the deck it sits beside is {neighbour}"),
+            } => format!(
+                "{file}: `{key}: {named}` but the deck it sits beside is {neighbour}",
+                key = alix::parser::PERSONAL_PARENT_KEY
+            ),
             alix::Finding::DuplicateCardId {
                 deck,
                 sidecar,
                 card,
             } => format!("{sidecar}: card `{card}` is already in {deck}; one schedule, two cards"),
             alix::Finding::SuffixMissing { file } => {
-                format!("{file}: carries `for:` but is not named `<deck>.personal.md`")
+                format!(
+                    "{file}: carries `{key}:` but is not named `<deck>.personal.md`",
+                    key = alix::parser::PERSONAL_PARENT_KEY
+                )
             }
         });
     }

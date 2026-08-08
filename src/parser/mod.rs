@@ -18,7 +18,9 @@ mod sidecar;
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
-pub use frontmatter::{DECK_FORMAT_VERSION, Frontmatter, parse_sampling, yaml_quote};
+pub use frontmatter::{
+    DECK_FORMAT_VERSION, Frontmatter, PERSONAL_PARENT_KEY, parse_sampling, yaml_quote,
+};
 use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 pub use sidecar::{SidecarNote, notes, without_notes};
 

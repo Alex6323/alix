@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     card::Card,
     deck::{Deck, DeckError, write_deck_text},
-    parser::{DECK_FORMAT_VERSION, SidecarNote},
+    parser::{DECK_FORMAT_VERSION, PERSONAL_PARENT_KEY, SidecarNote},
     sidecar::SidecarBlock,
 };
 
@@ -81,7 +81,7 @@ pub fn append_note(
 }
 
 fn header(deck_id: &str) -> String {
-    format!("---\nformat-version: {DECK_FORMAT_VERSION}\nfor: {deck_id}\n---\n")
+    format!("---\nformat-version: {DECK_FORMAT_VERSION}\n{PERSONAL_PARENT_KEY}: {deck_id}\n---\n")
 }
 
 fn marker(card_id: &str) -> String {
