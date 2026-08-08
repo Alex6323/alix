@@ -1482,7 +1482,50 @@ mod tests {
 
         assert_eq!(
             alix_test_support::after_note(),
-            alix_test_support::capture(&deck),
+            alix_test_support::capture(&deck, root),
+            "the bridge must leave exactly the effects the server leaves"
+        );
+    }
+
+    /// Bridge half of the grade row. Pair:
+    /// `passing_a_card_leaves_the_effects_every_client_must_leave` in the
+    /// desktop crate's `tests/api.rs`.
+    #[test]
+    fn passing_a_card_leaves_the_effects_every_client_must_leave() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = alix_test_support::seed(root);
+
+        let mut s = opened_after_acquire(&deck, root, None);
+        s.grade(Grade::Pass, Some(LATER)).unwrap();
+
+        assert_eq!(
+            alix_test_support::after_pass(),
+            alix_test_support::capture(&deck, root),
+            "the bridge must leave exactly the effects the server leaves"
+        );
+    }
+
+    /// Bridge half of the mint row. Pair:
+    /// `minting_a_card_leaves_the_effects_every_client_must_leave` in the
+    /// desktop crate's `tests/api.rs`.
+    #[test]
+    fn minting_a_card_leaves_the_effects_every_client_must_leave() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = alix_test_support::seed(root);
+
+        let mut s = opened_after_acquire(&deck, root, None);
+        s.mint_tutor_card(
+            alix_test_support::MINTED_FRONT.to_string(),
+            vec![alix_test_support::MINTED_BACK.to_string()],
+            LATER,
+        )
+        .expect("fresh content mints");
+
+        assert_eq!(
+            alix_test_support::after_mint(),
+            alix_test_support::capture(&deck, root),
             "the bridge must leave exactly the effects the server leaves"
         );
     }

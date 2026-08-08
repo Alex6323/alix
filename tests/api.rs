@@ -6472,7 +6472,79 @@ fn taking_a_tutor_note_leaves_the_effects_every_client_must_leave() {
 
     assert_eq!(
         alix_test_support::after_note(),
-        alix_test_support::capture(&deck),
+        alix_test_support::capture(&deck, &state_root(guard.dir())),
+        "the server must leave exactly the effects the bridge leaves"
+    );
+}
+
+/// Server half of the grade row. Pair:
+/// `passing_a_card_leaves_the_effects_every_client_must_leave` in the bridge.
+#[test]
+fn passing_a_card_leaves_the_effects_every_client_must_leave() {
+    let _lock = exec_lock();
+    let (base, guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            alix_test_support::seed(dir);
+        },
+        |_opts| {},
+    );
+    let deck = guard.dir().join(alix_test_support::DECK_FILE);
+
+    post_json(
+        &base,
+        "/api/select",
+        &format!(
+            r#"{{"deck":"{}","depth":"recall"}}"#,
+            alix_test_support::DECK_FILE
+        ),
+    );
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, resp.status, "{}", String::from_utf8_lossy(&resp.body));
+
+    assert_eq!(
+        alix_test_support::after_pass(),
+        alix_test_support::capture(&deck, &state_root(guard.dir())),
+        "the server must leave exactly the effects the bridge leaves"
+    );
+}
+
+/// Server half of the mint row. Pair:
+/// `minting_a_card_leaves_the_effects_every_client_must_leave` in the bridge.
+#[test]
+fn minting_a_card_leaves_the_effects_every_client_must_leave() {
+    let _lock = exec_lock();
+    let (base, guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            alix_test_support::seed(dir);
+        },
+        |_opts| {},
+    );
+    let deck = guard.dir().join(alix_test_support::DECK_FILE);
+
+    post_json(
+        &base,
+        "/api/select",
+        &format!(
+            r#"{{"deck":"{}","depth":"recall"}}"#,
+            alix_test_support::DECK_FILE
+        ),
+    );
+    let resp = post_gated(
+        &base,
+        "/api/ask/card/create",
+        &format!(
+            r#"{{"front":"{}","back":["{}"]}}"#,
+            alix_test_support::MINTED_FRONT,
+            alix_test_support::MINTED_BACK
+        ),
+    );
+    assert_eq!(200, resp.status, "{}", String::from_utf8_lossy(&resp.body));
+
+    assert_eq!(
+        alix_test_support::after_mint(),
+        alix_test_support::capture(&deck, &state_root(guard.dir())),
         "the server must leave exactly the effects the bridge leaves"
     );
 }
