@@ -306,7 +306,7 @@ pub(crate) fn source_path(value: &str, base: Option<&Path>) -> Option<PathBuf> {
 
 /// A locator is a single span, never comma-separated, so a stitched,
 /// misleading excerpt is impossible.
-pub(crate) fn parse_locator(locator: &str) -> (Option<String>, Option<String>) {
+pub fn parse_locator(locator: &str) -> (Option<String>, Option<String>) {
     let locator = locator.trim();
     if let Some((file, spec)) = locator.rsplit_once(':')
         && is_line_spec(spec)
@@ -564,7 +564,7 @@ fn excerpt_from_lines(path: &Path, file_lines: &[&str], start: usize, len: usize
     }
 }
 
-fn relocated_locator(file: Option<&str>, start: usize, len: usize) -> String {
+pub fn relocated_locator(file: Option<&str>, start: usize, len: usize) -> String {
     let range = if len == 1 {
         start.to_string()
     } else {

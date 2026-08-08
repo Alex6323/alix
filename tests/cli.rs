@@ -538,6 +538,86 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
 }
 
 #[test]
+fn doctor_reports_a_moved_excerpt_and_repair_rebases_it_without_touching_the_evidence() {
+    // The frozen bytes are intact, only further down the file. Nothing about
+    // the evidence changed, so the address is the only thing to correct.
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let source = ws.join("notes.md");
+    std::fs::write(
+        &source,
+        "the cited paragraph
+",
+    )
+    .unwrap();
+
+    let deck = ws.join("decks/d.md");
+    std::fs::write(
+        &deck,
+        format!(
+            "---\nformat-version: 1\nsource: {}\n---\n## q\na\n<!-- at: notes.md:1 -->\n",
+            source.display()
+        ),
+    )
+    .unwrap();
+    let alix_bin = |args: &[&str]| alix(args);
+    assert!(
+        alix_bin(&["deck", "init", deck.to_str().unwrap()])
+            .status
+            .success()
+    );
+
+    let stamped = std::fs::read_to_string(&deck).unwrap();
+    let frozen: String = stamped
+        .lines()
+        .find(|l| l.contains("<!-- at:"))
+        .expect("a stamped citation")
+        .to_string();
+    assert!(frozen.contains("fingerprint:"), "{frozen}");
+
+    // Push the cited line down; its bytes are untouched.
+    std::fs::write(
+        &source,
+        "a new first line
+another
+the cited paragraph
+",
+    )
+    .unwrap();
+
+    let out = alix_bin(&["doctor", ws.to_str().unwrap()]);
+    assert!(
+        stderr(&out).contains("is intact but now at lines 3"),
+        "a moved excerpt must be reported, not silently tolerated: {}",
+        stderr(&out)
+    );
+
+    let out = alix_bin(&["doctor", ws.to_str().unwrap(), "--repair-source-locators"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let repaired = std::fs::read_to_string(&deck).unwrap();
+    let line = repaired
+        .lines()
+        .find(|l| l.contains("<!-- at:"))
+        .expect("the citation survives");
+    assert!(
+        line.contains("notes.md:3"),
+        "rebased to its new lines: {line}"
+    );
+    assert_eq!(
+        frozen.split("fingerprint:").nth(1),
+        line.split("fingerprint:").nth(1),
+        "the evidence must be byte-identical; only the address may move"
+    );
+    assert!(
+        !stderr(&alix_bin(&["doctor", ws.to_str().unwrap()])).contains("frozen excerpt"),
+        "the drift is gone after the repair"
+    );
+}
+
+#[test]
 fn doctor_nudges_a_long_source_list_toward_its_common_root() {
     let dir = TempDir::new().unwrap();
     for name in ["a.rs", "b.rs", "c.rs", "d.rs"] {

@@ -1,12 +1,12 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
 use alix::{
     deck::{AtRewrite, Deck},
     source::{CitationIntegrity, SourceBase},
-    trace::Trace,
+    trace::{DriftKind, Trace},
     workspace,
 };
 use anyhow::{Context, Result, bail};
@@ -278,10 +278,14 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         }
     }
     for drift in alix::trace::drifted_cards(deck) {
-        let what = if drift.gone {
-            "source file is gone"
-        } else {
-            "no longer found in the source"
+        let what = match drift.kind {
+            DriftKind::SourceGone => "source file is gone".to_string(),
+            DriftKind::Rewritten => "no longer found in the source".to_string(),
+            DriftKind::Ambiguous => "occurs more than once, so its lines are unclear".to_string(),
+            DriftKind::Moved { start, len } => format!(
+                "is intact but now at lines {start}-{}; `--repair-source-locators` rebases it",
+                start + len.saturating_sub(1)
+            ),
         };
         report.warn(format!(
             "{}: card at line {}: frozen excerpt {} ({})",
@@ -784,8 +788,38 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
         let base = SourceBase::for_deck(&deck);
         let mut rewrites = Vec::new();
         let mut changed = false;
+        // A frozen citation's fingerprint verifies the asset, not the source, so
+        // `inspect_citation` cannot see that its `at:` range moved. Rebasing the
+        // address while the evidence stays byte-identical is the one repair that
+        // adds no claim: ADR 0026 forbids rewriting the frozen fingerprint, not
+        // correcting the provenance lines.
+        let moved: HashMap<String, (usize, usize)> = alix::trace::drifted_cards(&deck)
+            .into_iter()
+            .filter_map(|drift| match drift.kind {
+                DriftKind::Moved { start, len } => Some((drift.at, (start, len))),
+                _ => None,
+            })
+            .collect();
         for card in &deck.cards {
             for citation in &card.citations {
+                if let Some((start, len)) = moved.get(&citation.locator) {
+                    let (file, _) = alix::source::parse_locator(&citation.locator);
+                    let at = alix::source::relocated_locator(file.as_deref(), *start, *len);
+                    println!(
+                        "rebased {}:{} `{}` -> `{at}`",
+                        path.display(),
+                        citation.line,
+                        citation.locator
+                    );
+                    changed = true;
+                    rewrites.push(AtRewrite {
+                        at,
+                        fingerprint: citation.fingerprint,
+                        asset: citation.asset.clone(),
+                        line: citation.line,
+                    });
+                    continue;
+                }
                 let (at, fingerprint) = match base.inspect_citation(citation)? {
                     CitationIntegrity::Current(_) => {
                         (citation.locator.clone(), citation.fingerprint)

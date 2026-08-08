@@ -229,8 +229,12 @@ notes it.
   report-only and fixes nothing.
 - `alix doctor [dir-or-deck] --repair-source-locators`: after you review the
   reported citations, stamp fingerprints on currently addressed excerpts and
-  apply unique exact locator rebases. Changed or multiply matching excerpts
-  remain untouched and make the command fail. Deck and card IDs are preserved.
+  rebase any whose lines moved while their content stayed identical, frozen
+  excerpts included. A rebase corrects the `at:` line numbers only; the frozen
+  evidence and its fingerprint are never rewritten. Changed or multiply
+  matching excerpts remain untouched and make the command fail, because whether
+  such a card still teaches the truth is a reader's call. Deck and card IDs are
+  preserved.
 - Folder and workspace runs also count accumulated `.bak` backup files
   (overwrite leftovers) with their total size, naming both remedies:
   `alix deck restore <deck>` swaps one back,

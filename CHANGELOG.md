@@ -94,6 +94,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `alix doctor` now reports a frozen source excerpt whose lines moved, and
+  `--repair-source-locators` rebases it. Previously a moved excerpt was found
+  anywhere in the file and passed silently, so a card could point a reader at
+  unrelated code while doctor said nothing; on the maintainer's own decks that
+  was true of 29 citations. A rebase corrects the `at:` line numbers only: the
+  frozen bytes and their fingerprint are untouched, so no card gains a claim it
+  did not already have. An excerpt whose content actually changed is still
+  reported and never repaired automatically.
+
 - **Breaking:** remediation and tutor cards are no longer stored inside the
   progress file. They are Markdown blocks in the deck's personal file, so you
   can read, edit, and delete them yourself. A progress file written by an

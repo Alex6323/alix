@@ -349,15 +349,31 @@ fn render_frozen_block(excerpt: Excerpt, at: &str) -> String {
     s
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DriftKind {
+    /// The file named by `at:` is not there.
+    SourceGone,
+    /// The frozen bytes are nowhere in the file; only a reader can say whether
+    /// the card still teaches the truth.
+    Rewritten,
+    /// The frozen bytes are intact, at a line `at:` does not name. The evidence
+    /// still holds, so only the address is wrong.
+    Moved { start: usize, len: usize },
+    /// The frozen bytes occur more than once, so which one `at:` means is not
+    /// decidable here.
+    Ambiguous,
+}
+
+#[derive(Clone, Debug)]
 pub struct Drift {
     pub line: usize,
     pub at: String,
-    pub gone: bool,
+    pub kind: DriftKind,
 }
 
-/// A *moved* excerpt that's otherwise unchanged is NOT flagged (the block is
-/// searched across the whole file).
+/// Reports a moved excerpt as well as a lost one: an `at:` range that no longer
+/// holds its own evidence points a reader at unrelated code, and says nothing
+/// while doing it.
 pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
     let Some(base_root) = deck.base_root() else {
         return Vec::new();
@@ -369,48 +385,81 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
             if citation.asset.is_none() {
                 continue;
             }
-            let (Some(file), _) = parse_locator(&citation.locator) else {
+            let (Some(file), spec) = parse_locator(&citation.locator) else {
                 continue;
             };
             let Ok(frozen) = source_base.citation_excerpt(citation) else {
                 continue;
             };
-            match std::fs::read_to_string(base_root.join(&file)) {
-                Err(_) => out.push(Drift {
+            let block: Vec<String> = frozen
+                .lines
+                .iter()
+                .map(|(_, text)| text.trim_end().to_string())
+                .collect();
+            let mut drift = |kind| {
+                out.push(Drift {
                     line: card.line,
                     at: citation.locator.clone(),
-                    gone: true,
-                }),
-                Ok(live) if !excerpt_occurs_in(&frozen, &live) => out.push(Drift {
-                    line: card.line,
-                    at: citation.locator.clone(),
-                    gone: false,
-                }),
-                Ok(_) => {}
+                    kind,
+                })
+            };
+            let Ok(live) = std::fs::read_to_string(base_root.join(&file)) else {
+                drift(DriftKind::SourceGone);
+                continue;
+            };
+            let live_lines: Vec<&str> = live.lines().collect();
+            match locate_block(&block, &live_lines) {
+                Placement::Everywhere => {}
+                Placement::Nowhere => drift(DriftKind::Rewritten),
+                Placement::Many => drift(DriftKind::Ambiguous),
+                Placement::Once(start) => {
+                    let recorded = spec.as_deref().map(|spec| parse_line_range(spec).0);
+                    if recorded != Some(start) {
+                        drift(DriftKind::Moved {
+                            start,
+                            len: block.len(),
+                        });
+                    }
+                }
             }
         }
     }
     out
 }
 
-/// Trailing whitespace is ignored, so reformatted line endings don't read
-/// as drift.
-fn excerpt_occurs_in(frozen: &Excerpt, live: &str) -> bool {
-    let block = frozen
-        .lines
-        .iter()
-        .map(|(_, t)| t.trim_end())
-        .collect::<Vec<_>>()
-        .join("\n");
-    if block.trim().is_empty() {
-        return true;
+enum Placement {
+    /// A blank excerpt pins nothing, so it can never be misplaced.
+    Everywhere,
+    Nowhere,
+    Once(usize),
+    Many,
+}
+
+/// Trailing whitespace is ignored, so reformatted line endings don't read as
+/// drift. Matching is line-aligned: a block whose first line is only a suffix
+/// of some live line is not a match.
+fn locate_block(block: &[String], live: &[&str]) -> Placement {
+    if block.iter().all(|line| line.trim().is_empty()) {
+        return Placement::Everywhere;
     }
-    let live_norm = live
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n");
-    live_norm.contains(&block)
+    if live.len() < block.len() {
+        return Placement::Nowhere;
+    }
+    let mut first = None;
+    for offset in 0..=live.len() - block.len() {
+        let matched = live[offset..offset + block.len()]
+            .iter()
+            .zip(block)
+            .all(|(live, frozen)| live.trim_end() == frozen.trim_end());
+        if !matched {
+            continue;
+        }
+        if first.is_some() {
+            return Placement::Many;
+        }
+        first = Some(offset + 1);
+    }
+    first.map_or(Placement::Nowhere, Placement::Once)
 }
 
 pub fn frozen_excerpt_block(citation: &SourceCitation, source_base: &SourceBase) -> Option<String> {
@@ -872,11 +921,39 @@ mod tests {
         std::fs::write(root.join("src/a.rs"), "alpha\nCHANGED\nLINES\n").unwrap();
         let d = drifted_cards(&Deck::load(&deck_path).unwrap());
         assert_eq!(1, d.len(), "{d:?}");
-        assert!(!d[0].gone);
+        assert_eq!(DriftKind::Rewritten, d[0].kind);
         assert_eq!("a.rs:2-3", d[0].at);
 
         std::fs::remove_file(root.join("src/a.rs")).unwrap();
         let d = drifted_cards(&Deck::load(&deck_path).unwrap());
-        assert!(d.iter().any(|x| x.gone && x.at == "a.rs:2-3"), "{d:?}");
+        assert!(
+            d.iter()
+                .any(|x| x.kind == DriftKind::SourceGone && x.at == "a.rs:2-3"),
+            "{d:?}"
+        );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn drifted_cards_reports_an_intact_excerpt_that_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck_path = frozen_workspace(root);
+        crate::assets::initialize(&deck_path).unwrap();
+        assert!(drifted_cards(&Deck::load(&deck_path).unwrap()).is_empty());
+
+        // The cited bytes are untouched; two lines were inserted above them.
+        let moved = format!(
+            "pushed\ndown\n{}",
+            std::fs::read_to_string(root.join("src/a.rs")).unwrap()
+        );
+        std::fs::write(root.join("src/a.rs"), moved).unwrap();
+
+        let d = drifted_cards(&Deck::load(&deck_path).unwrap());
+        assert_eq!(
+            vec![DriftKind::Moved { start: 4, len: 2 }],
+            d.iter().map(|x| x.kind.clone()).collect::<Vec<_>>(),
+            "an address that no longer holds its own evidence is drift: {d:?}"
+        );
     }
 }
