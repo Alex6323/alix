@@ -174,6 +174,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Stamping never leaves a deck alix cannot read. The result is parsed before
+  anything is written, and a stamp that would produce an unreadable file is
+  refused with the file untouched. Tab-indented frontmatter did this: it
+  parsed as written, and splicing the `id:` in made it invalid YAML.
+
 - `alix deck init` refuses a deck whose code fence never closes, instead of
   writing an id line inside the fence. The card then still read as unstamped,
   so every later stamp appended another id and the file grew one each time.

@@ -68,6 +68,13 @@ pub enum StampError {
         "{path}: line {line}: a code fence opens here and never closes, so a stamp would land inside it; close the fence and try again"
     )]
     UnclosedFence { path: PathBuf, line: usize },
+    /// The input parsed and the stamped result would not. Nothing is written.
+    #[error("stamping {path} would leave it unreadable ({source}); nothing was written")]
+    WouldNotParse {
+        path: PathBuf,
+        #[source]
+        source: parser::ParseError,
+    },
     #[error("token `{token}` is not present in any `<!-- id: -->` comment")]
     TokenNotFound { token: String },
     #[error("cannot mint a row stamp unused by its table after many attempts")]
@@ -276,6 +283,14 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         new_body.insert_str(offset, &text);
     }
     let new_text = format!("{bom}{prepend}{new_body}");
+
+    // The input parsed, but an insertion can still land somewhere that makes
+    // the result invalid, and this path writes the user's own file. Costs a
+    // second parse of a file alix has already read, once per stamp.
+    parser::parse(subject, &new_text[bom.len()..]).map_err(|source| StampError::WouldNotParse {
+        path: path.to_path_buf(),
+        source,
+    })?;
 
     write_atomic(path, &new_text)?;
 
@@ -1186,6 +1201,27 @@ mod tests {
         let text = "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n| c | d |\n|---|---|\n| p | q | <!-- r:7m3p5q -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
 
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_stamp_that_would_leave_the_deck_unreadable_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        // Parses as it stands; splicing an `id:` makes the frontmatter a
+        // block mapping, and the tab indentation is then invalid YAML.
+        let original = "---\n## ia\n\t\tn: []\n---\n## q\na\n";
+        let path = write(&dir, "deck.md", original);
+
+        let error = stamp_deck(&path).unwrap_err();
+
+        assert!(
+            matches!(&error, StampError::WouldNotParse { .. }),
+            "{error:?}"
+        );
+        assert_eq!(
+            original,
+            fs::read_to_string(&path).unwrap(),
+            "the user's file is left exactly as it was"
+        );
     }
 
     #[test]
