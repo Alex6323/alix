@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       shards:
-        description: "How many shards to split the diff across"
+        description: "How many shards to split the diff across (1-64)"
         required: false
         default: "4"
 
@@ -21,8 +21,24 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    name: plan mutation shards
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.shards.outputs.count }}
+      matrix: ${{ steps.shards.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve the requested shard count
+        id: shards
+        env:
+          REQUESTED_SHARDS: ${{ inputs.shards }}
+        run: python3 scripts/mutants_branch_plan.py "$REQUESTED_SHARDS" >> "$GITHUB_OUTPUT"
+
   mutants:
-    name: mutants ${{ matrix.shard }}/4
+    name: mutants ${{ matrix.shard }}/${{ needs.plan.outputs.count }}
+    needs: plan
     runs-on: ubuntu-latest
     # Under the 6h hard limit, so an unusually large branch fails cleanly on
     # time instead of being killed mid-run with no summary.
@@ -32,7 +48,7 @@ jobs:
       # hide the rest of the branch's.
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,14 +70,14 @@ jobs:
         run: |
           make mutants \
             MUTANTS_BASE=$(git merge-base origin/main HEAD) \
-            MUTANTS_SHARD=${{ matrix.shard }}/4 \
+            MUTANTS_SHARD=${{ matrix.shard }}/${{ needs.plan.outputs.count }} \
             GATE_JOBS=4
 
       - name: Keep the outcome
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mutants-branch-${{ github.ref_name }}-shard${{ matrix.shard }}
+          name: mutants-branch-${{ github.ref_name }}-shard${{ matrix.shard }}-of-${{ needs.plan.outputs.count }}
           path: mutants.out/
           retention-days: 14
           if-no-files-found: ignore

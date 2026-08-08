@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
+.PHONY: build build-core test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
 
 # Compile the workspace.
 build:
@@ -29,6 +29,10 @@ test:
 # prose, where normal suite growth makes it stale immediately.
 test-inventory:
 	@sh scripts/test-inventory.sh
+
+# Unit-test dependency-free build and CI tooling.
+tooling-test:
+	@python3 -m unittest discover -s scripts -p 'test_*.py'
 
 # Lint, including tests and examples.
 lint:
@@ -147,7 +151,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-check example-media-check docs-audit-manifest-check toolchain-check
+check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
 
 # Bump the Rust toolchain across the repo
 bump-rust:
