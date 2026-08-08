@@ -1464,6 +1464,56 @@ mod tests {
         );
     }
 
+    /// The write paths are pinned above; this is the way back. Everything the
+    /// phone puts in the personal file has to come out of a later session,
+    /// which is the half `ReviewSession::open` owns.
+    #[test]
+    fn a_reopened_session_serves_the_personal_file_beside_the_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("d.md");
+        write(&deck, "## q\na\n");
+
+        let mut s = opened_after_acquire(&deck, root, None);
+        let minted = s
+            .mint_tutor_card("mine?".to_string(), vec!["my answer".to_string()], LATER)
+            .expect("fresh content mints");
+        let line = s.tutor_card().expect("a card is current").line;
+        s.apply_card_note(line as u32, vec!["mine to remember".to_string()])
+            .unwrap();
+        let deck_card_id = alix::deck::Deck::load(&deck).unwrap().cards[0]
+            .id()
+            .expect("stamped");
+
+        let reopened = ReviewSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            None,
+            Some(LATER),
+            None,
+        )
+        .unwrap();
+
+        let cards = reopened.session.cards();
+        assert!(
+            cards.iter().any(|card| card.id() == Some(minted.clone())),
+            "the minted personal card joins the session: {:?}",
+            cards.iter().map(alix::card::Card::id).collect::<Vec<_>>()
+        );
+        let deck_card = cards
+            .iter()
+            .find(|card| card.id() == Some(deck_card_id.clone()))
+            .expect("the authored card is still there");
+        assert!(
+            deck_card
+                .note
+                .as_deref()
+                .is_some_and(|note| note.contains("mine to remember")),
+            "the personal note reaches the authored card: {:?}",
+            deck_card.note
+        );
+    }
+
     #[test]
     fn crumb_is_none_for_a_plain_non_topology_deck() {
         let dir = tempfile::tempdir().unwrap();
