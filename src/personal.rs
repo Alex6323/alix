@@ -335,4 +335,58 @@ mod tests {
         append_cards(&deck, "deck-abc", "   \n").unwrap();
         assert!(!sidecar_path(&deck).exists());
     }
+
+    /// Only a missing sidecar means "start one". Every other read failure is
+    /// the reader's own file being unreachable, and writing a fresh one over
+    /// it would take their notes with it.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_sidecar_errors_instead_of_being_replaced() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let original =
+            "---\nformat-version: 1\nfor: deck-abc\n---\n\n<!-- note: card-one -->\n> mine\n";
+        for writer in ["append_note", "append_cards"] {
+            let dir = tempfile::tempdir().unwrap();
+            let deck = deck(dir.path());
+            let sidecar = sidecar_path(&deck);
+            std::fs::write(&sidecar, original).unwrap();
+            std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o222)).unwrap();
+
+            let result = match writer {
+                "append_note" => append_note(&deck, "deck-abc", "card-one", &note("added")),
+                _ => append_cards(&deck, "deck-abc", "## new <!-- id: card-two -->\nback\n"),
+            };
+
+            std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(
+                matches!(result, Err(DeckError::Io { .. })),
+                "{writer}: {result:?}"
+            );
+            assert_eq!(
+                original,
+                std::fs::read_to_string(&sidecar).unwrap(),
+                "{writer}: the file it could not read is still the reader's"
+            );
+        }
+    }
+
+    #[test]
+    fn several_notes_appended_at_once_keep_their_written_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = deck(dir.path());
+
+        append_note(&deck, "deck-abc", "card-one", &note("first")).unwrap();
+        append_note(
+            &deck,
+            "deck-abc",
+            "card-one",
+            &["second".to_string(), "third".to_string()],
+        )
+        .unwrap();
+
+        let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
+        let quoted: Vec<&str> = text.lines().filter(|line| line.starts_with('>')).collect();
+        assert_eq!(vec!["> first", "> second", "> third"], quoted);
+    }
 }

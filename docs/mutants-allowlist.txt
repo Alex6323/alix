@@ -3,7 +3,7 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents: SEVEN entries, down from twenty-four. Alex ruled
+# Current contents: EIGHT argued groups, down from twenty-four. Alex ruled
 # 2026-08-06 that the only admissible reason is "it really cannot be
 # tested", so everything merely awkward was seamed and killed instead:
 # the uuid mixer became a pure function of its seed (11 killed), the
@@ -89,20 +89,19 @@ src/cli/deck.rs: replace + with * in augment_cmd
 # as a value; the match-arm mutant there is killed.
 src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 
-# DEAD-PATH. synthesize_virtual stores this line number only on the Card, and
-# WarmItem::from_card discards it before any output is generated; the
-# value has no consumer on this path.
-
-
 # The table end_line init is observable only for a table with no rows
 # and no directive comments, and such a table mints no container id;
 # every other table overwrites the init before any use. Line-pinned
 # because scan() holds many other additions.
-src/parser/mod.rs:507: replace + with - in scan
-src/parser/mod.rs:507: replace + with * in scan
+src/parser/mod.rs:557: replace + with - in scan
+src/parser/mod.rs:557: replace + with * in scan
 
-# The differing case needs an empty anchor line at file start; anchor
-# lines are non-empty content lines by construction. Line-pinned to
-# the rel > 0 comparison.
-src/stamp.rs:448: replace > with >= in line_terminator
+
+# EQUIVALENT, provably. The line above already sets `dropped[index]`, and
+# `quoted_run_end` starts its scan at `marker + 1` and only grows, so it
+# never returns less than `index + 1`. The mutant widens the fill by the
+# one element that is already `true`; every other element is untouched.
+# Output is identical for every input. Line-pinned because the marker
+# scan holds other arithmetic.
+src/parser/sidecar.rs:39: replace + with * in without_notes
 

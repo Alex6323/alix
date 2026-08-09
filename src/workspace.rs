@@ -770,6 +770,42 @@ mod tests {
         );
     }
 
+    /// One fixture, both listings: the only difference between them is the
+    /// personal file, and everything either one refuses it refuses for the
+    /// same reason.
+    #[test]
+    fn both_listings_refuse_the_same_non_decks_and_only_one_shows_a_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "spanish.md",
+            "spanish.personal.md",
+            "README.md",
+            "LICENSE.md",
+            "spanish.sync-conflict-8FA2.md",
+            "notes.txt",
+        ] {
+            std::fs::write(dir.path().join(name), "## q\na\n").unwrap();
+        }
+        std::fs::create_dir(dir.path().join("folder.md")).unwrap();
+
+        let names = |paths: Vec<PathBuf>| -> Vec<String> {
+            paths
+                .iter()
+                .filter_map(|p| p.file_name()?.to_str().map(str::to_string))
+                .collect()
+        };
+        assert_eq!(
+            vec!["spanish.md", "spanish.personal.md"],
+            names(listing_with_sidecars(dir.path()).unwrap()),
+            "pairing checks need the personal file"
+        );
+        assert_eq!(
+            vec!["spanish.md"],
+            names(members_where(dir.path(), |_| true).unwrap()),
+            "deck discovery excludes it by design"
+        );
+    }
+
     #[test]
     fn set_deadline_creates_updates_and_clears_the_key() {
         let dir = tempfile::tempdir().unwrap();

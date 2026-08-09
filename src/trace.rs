@@ -474,6 +474,19 @@ mod tests {
 
     use super::*;
 
+    /// The scan window is `0..=live.len() - block.len()`, so a block that
+    /// cannot fit has to be turned away before the subtraction, and a block
+    /// that fits exactly still has to be looked for.
+    #[test]
+    fn a_block_that_cannot_fit_is_nowhere_and_one_that_fills_the_file_is_found() {
+        let block = vec!["a".to_string(), "b".to_string()];
+        assert!(matches!(locate_block(&block, &["a"]), Placement::Nowhere));
+        assert!(matches!(
+            locate_block(&block, &["a", "b"]),
+            Placement::Once(1)
+        ));
+    }
+
     fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, body).unwrap();

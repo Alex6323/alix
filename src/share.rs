@@ -1124,6 +1124,35 @@ mod tests {
         validate_workspace_material(root).unwrap();
     }
 
+    /// A workspace deck is validated because it is in a workspace, whether
+    /// or not it owns an assets directory: the material it names lives at the
+    /// workspace root either way.
+    #[test]
+    fn a_workspace_deck_without_owned_assets_is_still_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::create_dir(root.join("decks")).unwrap();
+        let deck = root.join("decks/m.md");
+        std::fs::write(
+            &deck,
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\n![](gone.png)\n<!-- id: card-m1c1 -->\n",
+        )
+        .unwrap();
+        assert!(
+            !crate::assets::deck_dir(root, "deck-m1").unwrap().is_dir(),
+            "the deck owns no assets directory"
+        );
+
+        let stage = tempfile::tempdir().unwrap();
+        let result = stage_deck_bundle(&deck, stage.path());
+
+        assert!(
+            result.is_err(),
+            "an image the bundle cannot carry must stop the bundle: {result:?}"
+        );
+    }
+
     #[test]
     fn sanitizing_removes_a_backup_suffixed_entry_alone() {
         let dir = tempfile::tempdir().unwrap();
