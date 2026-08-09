@@ -53,8 +53,11 @@ impl Reveal {
     }
 }
 
-fn answer_is_atomic(card: &Card) -> bool {
-    card.back.len() == 1
+/// A cloze card's back lines are its hidden spans, exact text however many
+/// spans it asks. Any other multi-line answer is key points, which is
+/// explained rather than typed.
+fn asks_for_exact_text(card: &Card) -> bool {
+    card.hole.is_some() || card.back.len() == 1
 }
 
 pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
@@ -67,7 +70,7 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
         Depth::Reconstruct => match reveal {
             Reveal::Line => Mode::TypeLine,
             Reveal::Flip => {
-                if answer_is_atomic(card) {
+                if asks_for_exact_text(card) {
                     Mode::Typing
                 } else {
                     Mode::Explain

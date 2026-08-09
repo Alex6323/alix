@@ -64,6 +64,28 @@ names a blank and the name before the `:` is one of them, so a note that opens
 `2: the second one` is still a note. `alix doctor` reports an address that
 names no blank of its card, and shows the line as an ordinary note.
 
+### Blanks that belong together
+
+Give two blanks the *same* name and they become one card asking both, instead
+of two cards each asking half a fact:
+
+```
+## The TCP three-way handshake, in order
+\blank[open]{SYN}, \blank[open]{SYN-ACK}, \blank{ACK}
+```
+
+That is two cards, not three: one asking `SYN` and `SYN-ACK` together, one
+asking `ACK`. Both spans show as `____` on the merged card, and you answer them
+as a list, one line per span. They don't have to sit next to each other or even
+on the same line, so `\blank[c]{Berlin} is the capital of \blank[c]{Germany}`
+groups too.
+
+**Grouping starts that card's history over.** Two spans recalled together are a
+harder question than either alone, so the merged card takes no schedule from
+the blanks it replaces: it comes back as if it were new. The blanks you did
+*not* group keep their history, even though grouping renumbered them. Group
+early if you are going to.
+
 **A name addresses a blank; it is not its id.** Identity is the card's token
 (chapter 3), so renaming a blank, or adding a name to one you have already
 drilled, keeps your history exactly as rewording the question does. The name

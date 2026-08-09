@@ -19,6 +19,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   address inside its own card, never an id: naming a blank you have already
   drilled keeps its history, and two cards may each have a `base`.
 
+- Two blanks of one card that share a name are drilled as a single card asking
+  both spans, so a fact split across two blanks is no longer answered in
+  halves. They need not be adjacent or on the same line, both show as `____`,
+  and the answer is typed as a list with one line per span. Grouping starts the
+  merged card's history over, because recalling two spans together is a harder
+  question than either alone and an inherited schedule would overstate what you
+  know; the blanks you did not group keep theirs.
+
 - Personal notes and cards now live in a file of their own beside the deck
   (`spanish.md` gets `spanish.personal.md`), leaving the authored deck
   byte-identical. Tutor notes, tutor-made cards, and exam remediation cards

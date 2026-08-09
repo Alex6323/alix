@@ -40,23 +40,41 @@ pub(super) struct Hole<'a> {
     pub name: Option<&'a str>,
 }
 
-pub(super) fn hole_fingerprints(parsed: &[Vec<Seg>], holes: &[Hole<'_>]) -> Vec<HoleFingerprint> {
-    holes
+/// One fingerprint per sub-card, since `store::apply_hole_cascade` indexes
+/// this list by sub-card. A group of one is byte-identical to what a lone
+/// hole hashed before grouping existed, so no drilled deck resets.
+pub(super) fn hole_fingerprints(
+    parsed: &[Vec<Seg>],
+    holes: &[Hole<'_>],
+    groups: &[Vec<usize>],
+) -> Vec<HoleFingerprint> {
+    groups
         .iter()
-        .map(|hole| {
-            let text_fp = hash64(&collapse(hole.text));
-            let mut line = String::new();
-            for (si, segment) in parsed[hole.line].iter().enumerate() {
-                match segment {
-                    Seg::Text(t) => line.push_str(t),
-                    Seg::Hole { .. } if si == hole.seg => line.push_str(HOLE_MASK),
-                    Seg::Hole { text, .. } => line.push_str(text),
-                    Seg::Image { src, alt } => push_image(&mut line, src, alt.as_deref()),
-                }
-            }
+        .map(|group| {
+            let answers: Vec<String> = group.iter().map(|h| collapse(holes[*h].text)).collect();
+            let mut lines: Vec<usize> = group.iter().map(|h| holes[*h].line).collect();
+            lines.dedup();
+            let rendered: Vec<String> = lines
+                .iter()
+                .map(|li| {
+                    let mut line = String::new();
+                    for (si, segment) in parsed[*li].iter().enumerate() {
+                        let masked = group
+                            .iter()
+                            .any(|h| holes[*h].line == *li && holes[*h].seg == si);
+                        match segment {
+                            Seg::Text(t) => line.push_str(t),
+                            Seg::Hole { .. } if masked => line.push_str(HOLE_MASK),
+                            Seg::Hole { text, .. } => line.push_str(text),
+                            Seg::Image { src, alt } => push_image(&mut line, src, alt.as_deref()),
+                        }
+                    }
+                    collapse(&line)
+                })
+                .collect();
             HoleFingerprint {
-                text_fp,
-                line_fp: hash64(&collapse(&line)),
+                text_fp: hash64(&answers.join("\n")),
+                line_fp: hash64(&rendered.join("\n")),
             }
         })
         .collect()
@@ -711,8 +729,9 @@ mod tests {
         }];
         let (with_image, _) = answer("\\blank{a} ![](x.png)");
         let (without_image, _) = answer("\\blank{a}");
-        let with_image = hole_fingerprints(&[with_image], &holes);
-        let without_image = hole_fingerprints(&[without_image], &holes);
+        let groups = vec![vec![0usize]];
+        let with_image = hole_fingerprints(&[with_image], &holes, &groups);
+        let without_image = hole_fingerprints(&[without_image], &holes, &groups);
         assert_ne!(with_image[0].line_fp, without_image[0].line_fp);
     }
 }

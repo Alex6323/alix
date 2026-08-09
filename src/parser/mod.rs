@@ -144,8 +144,6 @@ pub enum ParseError {
         "line {0}: a hole name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`, closed by `]` and followed by `{{answer}}`: `\\blank[base]{{Unit}}`"
     )]
     InvalidHoleName(usize),
-    #[error("line {line}: this card already has a hole named `{name}`; a name addresses one hole")]
-    DuplicateHoleName { line: usize, name: String },
     #[error("line {0}: unclosed cloze hole (missing the closing `}}`)")]
     UnclosedHole(usize),
     #[error("line {0}: empty cloze hole")]
@@ -1287,14 +1285,18 @@ fn build_card(
         .collect();
 
     let mut named = HashSet::new();
-    for hole in &holes {
-        let Some(name) = hole.name else { continue };
-        if !named.insert(name) {
-            return Err(ParseError::DuplicateHoleName {
-                line: answer[hole.line].0,
-                name: name.to_string(),
-            });
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for (h, hole) in holes.iter().enumerate() {
+        let joined = hole.name.and_then(|name| {
+            groups
+                .iter_mut()
+                .find(|group| holes[group[0]].name == Some(name))
+                .map(|group| group.push(h))
+        });
+        if joined.is_none() {
+            groups.push(vec![h]);
         }
+        named.extend(hole.name);
     }
 
     if holes.is_empty() {
@@ -1326,26 +1328,28 @@ fn build_card(
         });
     }
     let (block_note, addressed) = split_note(note.as_deref(), &named, line, lints);
-    let notes: Vec<Option<String>> = holes
+    let notes: Vec<Option<String>> = groups
         .iter()
-        .map(|hole| resolve_note(block_note.as_deref(), &addressed, hole.name))
+        .map(|group| resolve_note(block_note.as_deref(), &addressed, holes[group[0]].name))
         .collect();
-    if holes.len() > 1 {
-        for (n, hole) in holes.iter().enumerate() {
-            let shown_elsewhere = notes.iter().enumerate().any(|(other, note)| {
-                other != n
-                    && note
-                        .as_deref()
-                        .is_some_and(|note| names_answer(note, hole.text))
-            });
-            if shown_elsewhere {
-                lints.push(Lint {
-                    line,
-                    kind: LintKind::NoteContainsHoleAnswer {
-                        hole: n + 1,
-                        answer: hole.text.to_string(),
-                    },
+    if groups.len() > 1 {
+        for (n, group) in groups.iter().enumerate() {
+            for hole in group.iter().map(|h| &holes[*h]) {
+                let shown_elsewhere = notes.iter().enumerate().any(|(other, note)| {
+                    other != n
+                        && note
+                            .as_deref()
+                            .is_some_and(|note| names_answer(note, hole.text))
                 });
+                if shown_elsewhere {
+                    lints.push(Lint {
+                        line,
+                        kind: LintKind::NoteContainsHoleAnswer {
+                            hole: n + 1,
+                            answer: hole.text.to_string(),
+                        },
+                    });
+                }
             }
         }
     }
@@ -1355,9 +1359,9 @@ fn build_card(
     // text and this can't collide with a plain card repeating the hidden text.
     let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
     let block_fingerprint = content_fingerprint(&front, &raw_answer);
-    let block_holes = hole_fingerprints(&parsed, &holes);
-    for (n, hole) in holes.iter().enumerate() {
-        let answer_text = hole.text;
+    let block_holes = hole_fingerprints(&parsed, &holes, &groups);
+    for (n, group) in groups.iter().enumerate() {
+        let asked: Vec<&Hole<'_>> = group.iter().map(|h| &holes[*h]).collect();
         let context: Vec<String> = parsed
             .iter()
             .enumerate()
@@ -1365,11 +1369,10 @@ fn build_card(
             .map(|(li, segments)| {
                 let mut rendered = String::new();
                 for (si, segment) in segments.iter().enumerate() {
+                    let asked_here = asked.iter().any(|hole| hole.line == li && hole.seg == si);
                     match segment {
                         Seg::Text(text) => rendered.push_str(text),
-                        Seg::Hole { .. } if li == hole.line && si == hole.seg => {
-                            rendered.push_str(BLANK);
-                        }
+                        Seg::Hole { .. } if asked_here => rendered.push_str(BLANK),
                         Seg::Hole { .. } => rendered.push_str(HIDDEN),
                         Seg::Image { .. } => {}
                     }
@@ -1382,7 +1385,7 @@ fn build_card(
         let mut card = Card::plain(
             Arc::clone(subject),
             front.clone(),
-            vec![answer_text.to_string()],
+            asked.iter().map(|hole| hole.text.to_string()).collect(),
             notes[n].clone(),
             line,
         );
@@ -1392,24 +1395,38 @@ fn build_card(
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
         card.hole = Some(n as u32);
-        card.hole_name = hole.name.map(str::to_string);
-        let in_math = hole_sits_in_math(&parsed[hole.line], hole.seg);
-        if in_math {
-            card.display_back = Some(vec![format!("${answer_text}$")]);
+        card.hole_name = asked[0].name.map(str::to_string);
+        let in_math: Vec<bool> = asked
+            .iter()
+            .map(|hole| hole_sits_in_math(&parsed[hole.line], hole.seg))
+            .collect();
+        if in_math.iter().any(|it| *it) {
+            card.display_back = Some(
+                asked
+                    .iter()
+                    .zip(&in_math)
+                    .map(|(hole, math)| match math {
+                        true => format!("${}$", hole.text),
+                        false => hole.text.to_string(),
+                    })
+                    .collect(),
+            );
             card.math_hole = true;
         }
         // A hole that stays typed and holds a control sequence asks for the
         // command's spelling. In a formula the input rule draws it instead,
         // unless the author pinned the keyboard back.
-        let typed =
-            directives.input != Some(Input::Draw) && (!in_math || directives.input.is_some());
-        if typed && is_control_sequence(answer_text) {
-            lints.push(Lint {
-                line,
-                kind: LintKind::UntypableHole {
-                    answer: answer_text.to_string(),
-                },
-            });
+        for (hole, math) in asked.iter().zip(&in_math) {
+            let typed =
+                directives.input != Some(Input::Draw) && (!math || directives.input.is_some());
+            if typed && is_control_sequence(hole.text) {
+                lints.push(Lint {
+                    line,
+                    kind: LintKind::UntypableHole {
+                        answer: hole.text.to_string(),
+                    },
+                });
+            }
         }
         card.block_holes = block_holes.clone();
         card.images = images.clone();
@@ -2622,14 +2639,94 @@ mod tests {
     }
 
     #[test]
-    fn two_holes_of_one_card_sharing_a_name_is_a_parse_error() {
+    fn two_holes_sharing_a_name_are_drilled_as_one_card_asking_both_spans() {
+        let deck = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}, \\blank{ACK}\n");
+        assert_eq!(2, deck.cards.len(), "the group is one card, `ACK` another");
+        assert_eq!(vec!["SYN", "SYN-ACK"], deck.cards[0].back);
+        assert_eq!(Some("hs"), deck.cards[0].hole_name.as_deref());
+        assert_eq!(vec!["____, ____, […]"], deck.cards[0].context);
+        assert_eq!(vec!["ACK"], deck.cards[1].back);
+        assert_eq!(vec!["[…], […], ____"], deck.cards[1].context);
+        assert_eq!(Some(0), deck.cards[0].hole);
+        assert_eq!(Some(1), deck.cards[1].hole);
+    }
+
+    #[test]
+    fn a_group_may_span_lines() {
+        let deck = parse("## q\n---\n\\blank[c]{Berlin} is the capital\nof \\blank[c]{Germany}\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["Berlin", "Germany"], deck.cards[0].back);
         assert_eq!(
-            ParseError::DuplicateHoleName {
-                line: 4,
-                name: "base".to_string(),
-            },
-            err("## q\n---\n\\blank[base]{Unit}\n\\blank[base]{integration}\n")
+            vec!["____ is the capital", "of ____"],
+            deck.cards[0].context
         );
+    }
+
+    #[test]
+    fn a_group_of_three_is_one_card() {
+        let deck = parse("## q\n---\n\\blank[a]{x} \\blank[a]{y} \\blank[a]{z}\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["x", "y", "z"], deck.cards[0].back);
+    }
+
+    /// A merged card asks two spans, which are exact answers rather than the
+    /// key points a multi-line plain answer holds, so it stays typed.
+    #[test]
+    fn a_merged_card_is_typed_at_reconstruct_not_self_graded() {
+        let deck = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}\n");
+        assert_eq!(
+            crate::answer::Mode::Typing,
+            crate::depth::check_for(
+                Reveal::Flip,
+                crate::depth::Depth::Reconstruct,
+                &deck.cards[0]
+            )
+        );
+    }
+
+    #[test]
+    fn a_note_addressed_to_a_group_lands_on_the_merged_card() {
+        let deck = parse(
+            "## q\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}, \\blank{ACK}\n\
+             > Shared.\n> hs: Both halves of the opening.\n",
+        );
+        assert_eq!(
+            Some("Both halves of the opening."),
+            deck.cards[0].note.as_deref()
+        );
+        assert_eq!(Some("Shared."), deck.cards[1].note.as_deref());
+    }
+
+    /// D4: the merged card inherits nothing, and the hole it did not touch
+    /// rides the positional shift on its fingerprint.
+    #[test]
+    fn grouping_resets_the_merged_card_alone() {
+        let before = parse("## q\n---\n\\blank{SYN}, \\blank{SYN-ACK}, \\blank{ACK}\n");
+        let after = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}, \\blank{ACK}\n");
+        let outcome =
+            crate::store::realign_holes(&before.cards[0].block_holes, &after.cards[0].block_holes);
+        assert_eq!(vec![(2, 1)], outcome.remap, "`ACK` moves from -2 to -1");
+        assert_eq!(vec![0], outcome.fresh, "the merged card starts fresh");
+        assert_eq!(vec![0, 1], outcome.orphaned, "neither half is inherited");
+    }
+
+    /// `line_fp` is the context half of a hole's identity, so it must not
+    /// move when only the hidden text does. A group hides several spans, and
+    /// every one of them is masked out of its own line.
+    #[test]
+    fn a_groups_line_fingerprint_ignores_the_text_it_hides() {
+        let one = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}\n");
+        let two = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYNACK}\n");
+        let (one, two) = (&one.cards[0].block_holes[0], &two.cards[0].block_holes[0]);
+        assert_eq!(one.line_fp, two.line_fp, "the line around the spans is one");
+        assert_ne!(one.text_fp, two.text_fp, "what it asks for did change");
+    }
+
+    #[test]
+    fn naming_a_hole_without_grouping_it_keeps_every_fingerprint() {
+        let plain = parse("## q\n---\n\\blank{SYN}, \\blank{SYN-ACK}\n");
+        let named = parse("## q\n---\n\\blank[a]{SYN}, \\blank[b]{SYN-ACK}\n");
+        assert_eq!(plain.cards[0].block_holes, named.cards[0].block_holes);
     }
 
     #[test]
