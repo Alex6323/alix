@@ -12,8 +12,16 @@ pub const HIDDEN: &str = "[…]";
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Seg {
     Text(String),
-    Hole(String),
-    Image { src: String, alt: Option<String> },
+    /// `name` addresses this hole within its own block, for a per-hole
+    /// payload. It is not an identity: see ADR 0032.
+    Hole {
+        text: String,
+        name: Option<String>,
+    },
+    Image {
+        src: String,
+        alt: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,20 +33,24 @@ pub(super) enum Region {
     Answer,
 }
 
-pub(super) fn hole_fingerprints(
-    parsed: &[Vec<Seg>],
-    holes: &[(usize, usize, &str)],
-) -> Vec<HoleFingerprint> {
+pub(super) struct Hole<'a> {
+    pub line: usize,
+    pub seg: usize,
+    pub text: &'a str,
+    pub name: Option<&'a str>,
+}
+
+pub(super) fn hole_fingerprints(parsed: &[Vec<Seg>], holes: &[Hole<'_>]) -> Vec<HoleFingerprint> {
     holes
         .iter()
-        .map(|(hole_line, hole_seg, text)| {
-            let text_fp = hash64(&collapse(text));
+        .map(|hole| {
+            let text_fp = hash64(&collapse(hole.text));
             let mut line = String::new();
-            for (si, segment) in parsed[*hole_line].iter().enumerate() {
+            for (si, segment) in parsed[hole.line].iter().enumerate() {
                 match segment {
                     Seg::Text(t) => line.push_str(t),
-                    Seg::Hole(_) if si == *hole_seg => line.push_str(HOLE_MASK),
-                    Seg::Hole(h) => line.push_str(h),
+                    Seg::Hole { .. } if si == hole.seg => line.push_str(HOLE_MASK),
+                    Seg::Hole { text, .. } => line.push_str(text),
                     Seg::Image { src, alt } => push_image(&mut line, src, alt.as_deref()),
                 }
             }
@@ -69,6 +81,14 @@ pub(super) fn scan_markers(
         } else if region == Region::Answer
             && let Some(after) = rest.strip_prefix("\\blank")
         {
+            let (named, after_name) = match after.strip_prefix('[') {
+                Some(bracketed) => match scan_hole_name(bracketed) {
+                    Some((name, rest_after)) => (Some(name), rest_after),
+                    None => return Err(ParseError::InvalidHoleName(lineno)),
+                },
+                None => (None, after),
+            };
+            let after = after_name;
             if let Some(arg) = after.strip_prefix('{') {
                 let (content, after_hole) = scan_group(arg, lineno)?;
                 if trim_ws(&content).is_empty() {
@@ -85,10 +105,14 @@ pub(super) fn scan_markers(
                 if !text.is_empty() {
                     segments.push(Seg::Text(std::mem::take(&mut text)));
                 }
-                segments.push(Seg::Hole(content));
+                segments.push(Seg::Hole {
+                    text: content,
+                    name: named,
+                });
                 rest = after_hole;
-            } else if after.starts_with('[') {
-                return Err(ParseError::ClozeBracketReserved(lineno));
+            } else if named.is_some() {
+                // `\blank[name]` with no `{answer}` after it.
+                return Err(ParseError::InvalidHoleName(lineno));
             } else {
                 text.push_str("\\blank");
                 rest = after;
@@ -228,6 +252,17 @@ fn image_malformed(lineno: usize) -> Lint {
     }
 }
 
+/// `[name]` after `\blank`, where a name is one or more of
+/// `[a-zA-Z0-9_-]`. Returns None for every other shape so a typo stays a loud
+/// parse error rather than a silently unnamed hole.
+fn scan_hole_name(after_bracket: &str) -> Option<(String, &str)> {
+    let close = after_bracket.find(']')?;
+    let name = &after_bracket[..close];
+    let legal = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+    (!name.is_empty() && name.chars().all(legal))
+        .then(|| (name.to_string(), &after_bracket[close + 1..]))
+}
+
 fn scan_group(arg: &str, lineno: usize) -> Result<(String, &str), ParseError> {
     let mut content = String::new();
     let mut depth = 1usize;
@@ -287,7 +322,7 @@ pub(super) fn seg_display(segments: &[Seg]) -> String {
     for segment in segments {
         match segment {
             Seg::Text(text) => out.push_str(text),
-            Seg::Hole(hole) => {
+            Seg::Hole { text: hole, .. } => {
                 out.push_str("\\blank{");
                 out.push_str(hole);
                 out.push('}');
@@ -303,7 +338,7 @@ pub(super) fn hash_repr(segments: &[Seg]) -> String {
     for segment in segments {
         match segment {
             Seg::Text(text) => out.push_str(text),
-            Seg::Hole(hole) => {
+            Seg::Hole { text: hole, .. } => {
                 out.push('\u{1f}');
                 out.push_str(hole);
                 out.push('\u{1f}');
@@ -348,7 +383,10 @@ mod tests {
     }
 
     fn hole(h: &str) -> Seg {
-        Seg::Hole(h.into())
+        Seg::Hole {
+            text: h.into(),
+            name: None,
+        }
     }
 
     fn image(src: &str, alt: Option<&str>) -> Seg {
@@ -607,7 +645,7 @@ mod tests {
 
     #[test]
     fn cloze_bracket_stays_reserved_in_the_answer_region() {
-        assert_eq!(ParseError::ClozeBracketReserved(7), fatal("\\blank[pin]"));
+        assert_eq!(ParseError::InvalidHoleName(7), fatal("\\blank[pin]"));
     }
 
     #[test]
@@ -651,13 +689,21 @@ mod tests {
             src: "x".into(),
             alt: None,
         }];
-        let hole_segments = vec![Seg::Hole("image x".into())];
+        let hole_segments = vec![Seg::Hole {
+            text: "image x".into(),
+            name: None,
+        }];
         assert_ne!(hash_repr(&image_segments), hash_repr(&hole_segments));
     }
 
     #[test]
     fn hole_fingerprints_see_an_image_on_the_hole_line() {
-        let holes = vec![(0usize, 0usize, "a")];
+        let holes = vec![Hole {
+            line: 0,
+            seg: 0,
+            text: "a",
+            name: None,
+        }];
         let (with_image, _) = answer("\\blank{a} ![](x.png)");
         let (without_image, _) = answer("\\blank{a}");
         let with_image = hole_fingerprints(&[with_image], &holes);

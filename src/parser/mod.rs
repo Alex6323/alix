@@ -17,7 +17,7 @@ mod sidecar;
 
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
-use cloze::{Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
+use cloze::{Hole, Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
 pub use frontmatter::{
     DECK_FORMAT_VERSION, Frontmatter, PERSONAL_PARENT_KEY, parse_sampling, yaml_quote,
 };
@@ -137,8 +137,12 @@ pub enum ParseError {
         "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order"
     )]
     InvalidLocator { line: usize, message: String },
-    #[error("line {0}: `\\blank[` is reserved for a future per-hole pin; write `\\blank{{...}}`")]
-    ClozeBracketReserved(usize),
+    #[error(
+        "line {0}: a hole name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`, closed by `]` and followed by `{{answer}}`: `\\blank[base]{{Unit}}`"
+    )]
+    InvalidHoleName(usize),
+    #[error("line {line}: this card already has a hole named `{name}`; a name addresses one hole")]
+    DuplicateHoleName { line: usize, name: String },
     #[error("line {0}: unclosed cloze hole (missing the closing `}}`)")]
     UnclosedHole(usize),
     #[error("line {0}: empty cloze hole")]
@@ -1021,7 +1025,7 @@ fn card_images(segments: &[Seg]) -> impl Iterator<Item = CardImage> + '_ {
             src: PathBuf::from(src),
             alt: alt.clone(),
         }),
-        Seg::Text(_) | Seg::Hole(_) => None,
+        Seg::Text(_) | Seg::Hole { .. } => None,
     })
 }
 
@@ -1182,15 +1186,15 @@ fn build_card(
         for (si, segment) in segments.iter().enumerate() {
             match segment {
                 Seg::Text(text) => line.push_str(text),
-                Seg::Hole(_) if si == hole_seg => line.push_str(BLANK),
-                Seg::Hole(_) => line.push_str(HIDDEN),
+                Seg::Hole { .. } if si == hole_seg => line.push_str(BLANK),
+                Seg::Hole { .. } => line.push_str(HIDDEN),
                 Seg::Image { .. } => {}
             }
         }
         crate::inline::math_encloses(&line, BLANK)
     }
 
-    let holes: Vec<(usize, usize, &str)> = parsed
+    let holes: Vec<Hole<'_>> = parsed
         .iter()
         .enumerate()
         .flat_map(|(li, segments)| {
@@ -1198,11 +1202,27 @@ fn build_card(
                 .iter()
                 .enumerate()
                 .filter_map(move |(si, segment)| match segment {
-                    Seg::Hole(h) => Some((li, si, h.as_str())),
+                    Seg::Hole { text, name } => Some(Hole {
+                        line: li,
+                        seg: si,
+                        text: text.as_str(),
+                        name: name.as_deref(),
+                    }),
                     Seg::Text(_) | Seg::Image { .. } => None,
                 })
         })
         .collect();
+
+    let mut named = HashSet::new();
+    for hole in &holes {
+        let Some(name) = hole.name else { continue };
+        if !named.insert(name) {
+            return Err(ParseError::DuplicateHoleName {
+                line: answer[hole.line].0,
+                name: name.to_string(),
+            });
+        }
+    }
 
     if holes.is_empty() {
         let back_lines: Vec<String> = parsed
@@ -1235,13 +1255,13 @@ fn build_card(
     if holes.len() > 1
         && let Some(note_text) = note.as_deref()
     {
-        for (n, (.., answer_text)) in holes.iter().enumerate() {
-            if names_answer(note_text, answer_text) {
+        for (n, hole) in holes.iter().enumerate() {
+            if names_answer(note_text, hole.text) {
                 lints.push(Lint {
                     line,
                     kind: LintKind::NoteContainsHoleAnswer {
                         hole: n + 1,
-                        answer: answer_text.to_string(),
+                        answer: hole.text.to_string(),
                     },
                 });
             }
@@ -1254,7 +1274,8 @@ fn build_card(
     let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
     let block_fingerprint = content_fingerprint(&front, &raw_answer);
     let block_holes = hole_fingerprints(&parsed, &holes);
-    for (n, (hole_line, hole_seg, answer_text)) in holes.iter().enumerate() {
+    for (n, hole) in holes.iter().enumerate() {
+        let answer_text = hole.text;
         let context: Vec<String> = parsed
             .iter()
             .enumerate()
@@ -1264,10 +1285,10 @@ fn build_card(
                 for (si, segment) in segments.iter().enumerate() {
                     match segment {
                         Seg::Text(text) => rendered.push_str(text),
-                        Seg::Hole(_) if li == *hole_line && si == *hole_seg => {
+                        Seg::Hole { .. } if li == hole.line && si == hole.seg => {
                             rendered.push_str(BLANK);
                         }
-                        Seg::Hole(_) => rendered.push_str(HIDDEN),
+                        Seg::Hole { .. } => rendered.push_str(HIDDEN),
                         Seg::Image { .. } => {}
                     }
                 }
@@ -1289,7 +1310,8 @@ fn build_card(
         card.hash_lines = Some(hash_lines);
         card.token = token.clone();
         card.hole = Some(n as u32);
-        let in_math = hole_sits_in_math(&parsed[*hole_line], *hole_seg);
+        card.hole_name = hole.name.map(str::to_string);
+        let in_math = hole_sits_in_math(&parsed[hole.line], hole.seg);
         if in_math {
             card.display_back = Some(vec![format!("${answer_text}$")]);
             card.math_hole = true;
@@ -1303,7 +1325,7 @@ fn build_card(
             lints.push(Lint {
                 line,
                 kind: LintKind::UntypableHole {
-                    answer: (*answer_text).to_string(),
+                    answer: answer_text.to_string(),
                 },
             });
         }
@@ -2470,11 +2492,70 @@ mod tests {
     }
 
     #[test]
-    fn cloze_bracket_is_a_reserved_parse_error() {
+    fn a_named_hole_parses_and_the_sub_card_carries_the_name() {
+        let deck = parse("## fill\n---\nthe \\blank[speed]{quick} \\blank{fox}\n");
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(Some("speed"), deck.cards[0].hole_name.as_deref());
+        assert_eq!(vec!["quick"], deck.cards[0].back);
+        assert_eq!(None, deck.cards[1].hole_name.as_deref());
+        assert_eq!(vec!["fox"], deck.cards[1].back);
+        assert_eq!(vec!["the ____ […]"], deck.cards[0].context);
+    }
+
+    /// A name is an address, never an identity (ADR 0032): naming a hole an
+    /// author has already drilled must not reset its schedule, and
+    /// `store::realign_holes` decides that from these fingerprints alone.
+    #[test]
+    fn naming_a_hole_leaves_the_card_it_addresses_untouched() {
+        let unnamed = parse("## q\n---\n\\blank{Unit}, \\blank{integration}\n");
+        let named = parse("## q\n---\n\\blank[base]{Unit}, \\blank[middle]{integration}\n");
+        assert_eq!(2, named.cards.len());
+        for (n, (plain, addressed)) in unnamed.cards.iter().zip(&named.cards).enumerate() {
+            assert_eq!(plain.block_holes, addressed.block_holes, "hole {n} holes");
+            assert_eq!(
+                plain.hash_lines, addressed.hash_lines,
+                "hole {n} hash lines"
+            );
+            assert_eq!(plain.back, addressed.back, "hole {n} answer");
+            assert_eq!(plain.context, addressed.context, "hole {n} context");
+        }
+    }
+
+    #[test]
+    fn a_malformed_hole_name_is_a_parse_error() {
+        for spelling in [
+            "\\blank[]{x}",
+            "\\blank[a b]{x}",
+            "\\blank[a.b]{x}",
+            "\\blank[a{x}",
+            "\\blank[name]",
+            "\\blank[name] {x}",
+        ] {
+            assert_eq!(
+                ParseError::InvalidHoleName(3),
+                err(&format!("## q\n---\n{spelling}\n")),
+                "for `{spelling}`"
+            );
+        }
+    }
+
+    #[test]
+    fn two_holes_of_one_card_sharing_a_name_is_a_parse_error() {
         assert_eq!(
-            ParseError::ClozeBracketReserved(3),
-            err("## q\n---\na \\blank[x]{y} b\n")
+            ParseError::DuplicateHoleName {
+                line: 4,
+                name: "base".to_string(),
+            },
+            err("## q\n---\n\\blank[base]{Unit}\n\\blank[base]{integration}\n")
         );
+    }
+
+    #[test]
+    fn two_cards_may_each_carry_a_hole_of_the_same_name() {
+        let deck = parse("## a\n---\n\\blank[base]{Unit}\n\n## b\n---\n\\blank[base]{atom}\n");
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(Some("base"), deck.cards[0].hole_name.as_deref());
+        assert_eq!(Some("base"), deck.cards[1].hole_name.as_deref());
     }
 
     #[test]
