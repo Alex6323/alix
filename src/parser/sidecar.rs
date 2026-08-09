@@ -53,11 +53,12 @@ pub fn without_notes(text: &str) -> String {
 }
 
 fn quoted_run_end(lines: &[&str], marker: usize) -> usize {
-    let mut end = marker + 1;
-    while end < lines.len() && quoted_text(lines[end]).is_some() {
-        end += 1;
-    }
-    end
+    let start = marker + 1;
+    start
+        + lines[start..]
+            .iter()
+            .take_while(|line| quoted_text(line).is_some())
+            .count()
 }
 
 fn quoted_text(line: &str) -> Option<&str> {

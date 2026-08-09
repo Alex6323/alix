@@ -102,13 +102,12 @@ fn rewrite(text: &str, card_id: &str, notes: &[String]) -> String {
         }
         return out;
     };
-    let mut end = marker_line + 1;
-    while lines
-        .get(end)
-        .is_some_and(|line| line.trim_start().starts_with('>'))
-    {
-        end += 1;
-    }
+    let start = marker_line + 1;
+    let end = start
+        + lines[start..]
+            .iter()
+            .take_while(|line| line.trim_start().starts_with('>'))
+            .count();
     for (offset, note) in notes.iter().enumerate() {
         lines.insert(end + offset, quoted(note));
     }

@@ -1407,6 +1407,43 @@ mod tests {
         );
     }
 
+    /// A personal file's own cards are the reader's, and a deck whose authored
+    /// cards have all settled is still due while one of them is unseen.
+    #[test]
+    fn deck_due_counts_a_card_that_lives_only_in_the_personal_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: \"deck-r1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
+        let now = session::now_ms();
+        let entry = store.get_or_insert(&deck.cards[0].id().unwrap(), now);
+        entry.recall = Some(graduated_not_due(now));
+        entry.reconstruct = Some(graduated_not_due(now));
+
+        assert!(
+            !deck_due(&deck, &store, &no_augment(), &ReviewConfig::default(), now),
+            "the authored card has settled"
+        );
+
+        crate::personal::append_cards(
+            &deck_path,
+            "deck-r1",
+            "## mine <!-- id: card-mine1 -->\nmy answer\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        assert!(
+            deck_due(&deck, &store, &no_augment(), &ReviewConfig::default(), now),
+            "a card of the reader's own is still waiting"
+        );
+    }
+
     fn mature(now: u64, stability: f64) -> crate::store::FsrsState {
         crate::store::FsrsState {
             state: 2,
