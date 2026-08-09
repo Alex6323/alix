@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A cloze blank can be named, `\blank[base]{Unit}`, and a note line can be
+  written to that name: `> base: text` gives that blank a note of its own
+  instead of the shared one, and `> base+: text` adds to the shared note. A
+  `>` note belongs to the whole card, so until now a note that spelled out
+  one blank's answer gave it away on every sibling card. A line is only an
+  address when the card names a blank and the name before the `:` is one of
+  them, so ordinary notes are untouched; `alix doctor` reports an address
+  naming no blank of its card and shows the line as a note. The name is an
+  address inside its own card, never an id: naming a blank you have already
+  drilled keeps its history, and two cards may each have a `base`.
+
 - Personal notes and cards now live in a file of their own beside the deck
   (`spanish.md` gets `spanish.personal.md`), leaving the authored deck
   byte-identical. Tutor notes, tutor-made cards, and exam remediation cards

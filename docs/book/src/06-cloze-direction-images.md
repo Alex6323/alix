@@ -42,6 +42,34 @@ the rule only fills in where you said nothing. `alix doctor` warns when a hole
 that stays typed holds a LaTeX command, since `\blank{\pm}` then asks for the
 spelling of `\pm` rather than for the sign.
 
+### A note for one blank
+
+A `>` note belongs to the card you wrote, so every blank of it shows the same
+note, and a note that spells out one blank's answer gives it away on all the
+others. Name the blank you mean and write the note to that name:
+
+```
+## The test pyramid, bottom to top
+\blank[base]{Unit}, \blank{integration}, \blank{end-to-end}
+> base: Fastest and most numerous, which is why they sit at the bottom.
+```
+
+Only the `Unit` card shows that line; the other two show nothing. Written as
+`> base+: ...` it is added below the shared note instead of replacing it. A
+name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`, and two blanks of one
+card can't share it.
+
+Everything else stays prose. A note line is only an address when the card
+names a blank and the name before the `:` is one of them, so a note that opens
+`2: the second one` is still a note. `alix doctor` reports an address that
+names no blank of its card, and shows the line as an ordinary note.
+
+**A name addresses a blank; it is not its id.** Identity is the card's token
+(chapter 3), so renaming a blank, or adding a name to one you have already
+drilled, keeps your history exactly as rewording the question does. The name
+means nothing outside the card it is written in: two cards may each have a
+`base`.
+
 ## Dual-direction cards: `direction:`
 
 Reviewing a card *both ways* is what you want for vocabulary and other reversible

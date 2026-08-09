@@ -255,12 +255,17 @@ fn image_malformed(lineno: usize) -> Lint {
 /// `[name]` after `\blank`, where a name is one or more of
 /// `[a-zA-Z0-9_-]`. Returns None for every other shape so a typo stays a loud
 /// parse error rather than a silently unnamed hole.
+pub(super) fn is_hole_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 fn scan_hole_name(after_bracket: &str) -> Option<(String, &str)> {
     let close = after_bracket.find(']')?;
     let name = &after_bracket[..close];
-    let legal = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
-    (!name.is_empty() && name.chars().all(legal))
-        .then(|| (name.to_string(), &after_bracket[close + 1..]))
+    is_hole_name(name).then(|| (name.to_string(), &after_bracket[close + 1..]))
 }
 
 fn scan_group(arg: &str, lineno: usize) -> Result<(String, &str), ParseError> {

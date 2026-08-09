@@ -237,6 +237,10 @@ To agree on initial sequence numbers in both directions.
 Keep the *answer* to the thing you want to recall, and put the *why*, the example,
 or the mnemonic in a note.
 
+A cloze card can give one blank a note of its own, so a note that names an
+answer doesn't give it away on the sibling cards. See
+[a note for one blank](06-cloze-direction-images.md#a-note-for-one-blank).
+
 ## Title, and deck-wide settings
 
 A deck's title is a single-`#` heading. Deck-wide settings and its

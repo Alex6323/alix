@@ -105,6 +105,9 @@ pub enum LintKind {
         hole: usize,
         answer: String,
     },
+    NoteNamesNoHole {
+        name: String,
+    },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -1181,6 +1184,76 @@ fn build_card(
         })
     }
 
+    /// A `>` line addressed to one hole of this block: `name: text` replaces
+    /// the block note for it, `name+: text` keeps the block note above it.
+    fn address(text: &str) -> Option<(&str, bool, &str)> {
+        let (head, rest) = text.split_once(':')?;
+        if !rest.starts_with(WHITESPACE) {
+            return None;
+        }
+        let payload = trim_ws(rest);
+        if payload.is_empty() {
+            return None;
+        }
+        let (name, append) = match head.strip_suffix('+') {
+            Some(name) => (name, true),
+            None => (head, false),
+        };
+        cloze::is_hole_name(name).then_some((name, append, payload))
+    }
+
+    fn split_note(
+        note: Option<&str>,
+        names: &HashSet<&str>,
+        line: usize,
+        lints: &mut Vec<Lint>,
+    ) -> (Option<String>, Vec<(String, bool, String)>) {
+        let Some(note) = note else {
+            return (None, Vec::new());
+        };
+        let mut block: Vec<&str> = Vec::new();
+        let mut addressed = Vec::new();
+        for text in note.lines() {
+            match address(text) {
+                Some((name, append, payload)) if names.contains(name) => {
+                    addressed.push((name.to_string(), append, payload.to_string()));
+                }
+                // Only a card that names a hole can be addressing one, so a
+                // note beginning `2:` on any other card is prose.
+                Some((name, ..)) if !names.is_empty() => {
+                    lints.push(Lint {
+                        line,
+                        kind: LintKind::NoteNamesNoHole {
+                            name: name.to_string(),
+                        },
+                    });
+                    block.push(text);
+                }
+                _ => block.push(text),
+            }
+        }
+        ((!block.is_empty()).then(|| block.join("\n")), addressed)
+    }
+
+    fn resolve_note(
+        block: Option<&str>,
+        addressed: &[(String, bool, String)],
+        name: Option<&str>,
+    ) -> Option<String> {
+        let mine: Vec<&(String, bool, String)> = name
+            .map(|name| addressed.iter().filter(|(to, ..)| to == name).collect())
+            .unwrap_or_default();
+        let Some((_, append, _)) = mine.first() else {
+            return block.map(str::to_string);
+        };
+        let mut lines: Vec<&str> = Vec::new();
+        if *append && let Some(block) = block {
+            lines.push(block);
+        }
+        lines.extend(mine.iter().map(|(_, _, text)| text.as_str()));
+        Some(lines.join("\n"))
+    }
+
     fn hole_sits_in_math(segments: &[Seg], hole_seg: usize) -> bool {
         let mut line = String::new();
         for (si, segment) in segments.iter().enumerate() {
@@ -1252,11 +1325,20 @@ fn build_card(
             kind: LintKind::RevealOnCloze,
         });
     }
-    if holes.len() > 1
-        && let Some(note_text) = note.as_deref()
-    {
+    let (block_note, addressed) = split_note(note.as_deref(), &named, line, lints);
+    let notes: Vec<Option<String>> = holes
+        .iter()
+        .map(|hole| resolve_note(block_note.as_deref(), &addressed, hole.name))
+        .collect();
+    if holes.len() > 1 {
         for (n, hole) in holes.iter().enumerate() {
-            if names_answer(note_text, hole.text) {
+            let shown_elsewhere = notes.iter().enumerate().any(|(other, note)| {
+                other != n
+                    && note
+                        .as_deref()
+                        .is_some_and(|note| names_answer(note, hole.text))
+            });
+            if shown_elsewhere {
                 lints.push(Lint {
                     line,
                     kind: LintKind::NoteContainsHoleAnswer {
@@ -1301,7 +1383,7 @@ fn build_card(
             Arc::clone(subject),
             front.clone(),
             vec![answer_text.to_string()],
-            note.clone(),
+            notes[n].clone(),
             line,
         );
         card.deck_id = Arc::clone(deck_id);
@@ -2627,6 +2709,108 @@ mod tests {
             deck.lints,
             "only the hole whose answer appears is named, and 1-based"
         );
+    }
+
+    #[test]
+    fn an_addressed_note_replaces_the_block_note_for_its_hole_alone() {
+        let deck = parse(
+            "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
+             > Shared.\n> base: Fastest and most numerous.\n",
+        );
+        assert_eq!(
+            Some("Fastest and most numerous."),
+            deck.cards[0].note.as_deref()
+        );
+        assert_eq!(Some("Shared."), deck.cards[1].note.as_deref());
+    }
+
+    #[test]
+    fn a_plus_addressed_note_keeps_the_block_note_above_it() {
+        let deck = parse(
+            "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
+             > Shared.\n> base+: And fastest.\n",
+        );
+        assert_eq!(Some("Shared.\nAnd fastest."), deck.cards[0].note.as_deref());
+        assert_eq!(Some("Shared."), deck.cards[1].note.as_deref());
+    }
+
+    #[test]
+    fn an_addressed_note_with_no_block_note_stands_alone() {
+        let deck = parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> base+: Fastest.\n");
+        assert_eq!(Some("Fastest."), deck.cards[0].note.as_deref());
+        assert_eq!(None, deck.cards[1].note.as_deref());
+    }
+
+    #[test]
+    fn two_lines_addressed_to_one_hole_join_in_written_order() {
+        let deck = parse(
+            "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
+             > base: First.\n> base: Second.\n",
+        );
+        assert_eq!(Some("First.\nSecond."), deck.cards[0].note.as_deref());
+    }
+
+    /// A card with no named hole cannot be addressing anything, so a note
+    /// beginning `2:` is prose and stays prose.
+    #[test]
+    fn a_note_that_looks_addressed_is_prose_where_no_hole_is_named() {
+        let deck = parse("## q\n\\blank{Unit}, \\blank{integration}\n> 2: the second one.\n");
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+        for card in &deck.cards {
+            assert_eq!(Some("2: the second one."), card.note.as_deref());
+        }
+    }
+
+    #[test]
+    fn an_address_is_separated_from_its_text_by_a_space() {
+        let deck = parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> base:no space.\n");
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+        for card in &deck.cards {
+            assert_eq!(Some("base:no space."), card.note.as_deref());
+        }
+    }
+
+    #[test]
+    fn an_address_naming_no_hole_of_this_card_is_reported_and_kept() {
+        let deck = parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> bass: typo.\n");
+        assert_eq!(
+            vec![Lint {
+                line: 1,
+                kind: LintKind::NoteNamesNoHole {
+                    name: "bass".to_string()
+                }
+            }],
+            deck.lints
+        );
+        for card in &deck.cards {
+            assert_eq!(
+                Some("bass: typo."),
+                card.note.as_deref(),
+                "the line is still shown rather than lost"
+            );
+        }
+    }
+
+    #[test]
+    fn the_pyramid_stops_leaking_once_its_note_is_addressed() {
+        let deck = parse(
+            "## The test pyramid, bottom to top\n\
+             \\blank[base]{Unit}, \\blank{integration}, \\blank{end-to-end}\n\
+             > base: Unit tests sit at the base because they are fastest and most numerous.\n",
+        );
+        assert_eq!(
+            Vec::<Lint>::new(),
+            deck.lints,
+            "no other hole shows the note that names `Unit`"
+        );
+        assert!(
+            deck.cards[0]
+                .note
+                .as_deref()
+                .is_some_and(|note| note.starts_with("Unit tests sit at the base"))
+        );
+        assert_eq!(None, deck.cards[1].note.as_deref());
+        assert_eq!(None, deck.cards[2].note.as_deref());
     }
 
     #[test]

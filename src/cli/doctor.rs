@@ -442,6 +442,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
             "the note contains the text of hole {hole}'s answer (`{answer}`); \
              every other hole shows this note"
         ),
+        LintKind::NoteNamesNoHole { name } => format!(
+            "`{name}:` names no hole of this card, so the line is shown as the \
+             block note"
+        ),
         LintKind::UntypableHole { answer } => format!(
             "the hole `{answer}` asks the learner to type a LaTeX command; \
              hide a piece that can be typed, or let it be drawn"
