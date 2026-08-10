@@ -644,6 +644,21 @@ fn mkfifo_at(path: &Path) {
     );
 }
 
+/// Releases a fake process parked on `read _ < fifo`. Opening a fifo
+/// write-only blocks inside `open` until a reader arrives, and these tests
+/// kill that reader on purpose, so a lost race wedges the whole suite behind
+/// [`exec_lock`] rather than failing. Opening read-write cannot block: this
+/// process is itself the reader `open` would wait for.
+fn release_fifo(fifo: &Path) {
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(fifo)
+        .expect("a fifo opens read-write whether or not anything reads it");
+    file.write_all(b"go\n")
+        .expect("the release byte is written");
+}
+
 fn with_empty_path<R>(dir: &Path, f: impl FnOnce() -> R) -> R {
     let lock = PATH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original = std::env::var_os("PATH");
@@ -1550,7 +1565,7 @@ fn a_parked_doctor_binary_probe_does_not_block_state_requests() {
     let state = rx.recv_timeout(HANG_BUDGET);
     // Release the parked probe before asserting, so a regression fails this
     // test instead of wedging the suite on a never-finishing doctor.
-    std::fs::write(&fifo, "go\n").unwrap();
+    release_fifo(&fifo);
 
     let state = state.expect("/api/state must answer while the doctor probe is parked");
     assert_eq!(200, state.status);
@@ -4389,7 +4404,7 @@ fn a_tutor_answer_arriving_after_a_card_advance_is_dropped() {
 
     let resp = post_gated(&base, "/api/skip", "{}");
     assert_eq!(200, resp.status);
-    std::fs::write(&fifo, "go\n").unwrap();
+    release_fifo(&fifo);
 
     let body = poll_until(&base, "/api/ask", |b| b["thinking"] == false);
     assert_eq!(
@@ -4454,7 +4469,7 @@ fn server_shutdown_cancels_the_in_flight_tutor_worker() {
     let survived_shutdown = process_exists(pid);
 
     if survived_shutdown {
-        std::fs::write(&fifo, "go\n").unwrap();
+        release_fifo(&fifo);
         let deadline = Instant::now() + HANG_BUDGET;
         while process_exists(pid) && Instant::now() < deadline {
             thread::yield_now();
@@ -4534,7 +4549,7 @@ fn server_shutdown_cancels_tutor_descendant_processes() {
     let survived_shutdown = process_exists(pid);
 
     if survived_shutdown {
-        std::fs::write(&fifo, "go\n").unwrap();
+        release_fifo(&fifo);
         let deadline = Instant::now() + HANG_BUDGET;
         while process_exists(pid) && Instant::now() < deadline {
             thread::yield_now();
@@ -4606,7 +4621,7 @@ fn server_shutdown_cancels_the_in_flight_remote_tutor_worker() {
     let survived_shutdown = process_exists(pid);
 
     if survived_shutdown {
-        std::fs::write(&fifo, "go\n").unwrap();
+        release_fifo(&fifo);
         let deadline = Instant::now() + HANG_BUDGET;
         while process_exists(pid) && Instant::now() < deadline {
             thread::yield_now();
@@ -4659,7 +4674,7 @@ fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
     }
 
     post_gated(&base, "/api/skip", "{}");
-    std::fs::write(&fifo, "go\n").unwrap();
+    release_fifo(&fifo);
     poll_until(&base, "/api/ask", |b| b["thinking"] == false);
 
     let deck = std::fs::read_to_string(guard.dir().join("sample.md")).unwrap();
