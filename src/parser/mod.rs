@@ -1332,24 +1332,22 @@ fn build_card(
         .iter()
         .map(|group| resolve_note(block_note.as_deref(), &addressed, holes[group[0]].name))
         .collect();
-    if groups.len() > 1 {
-        for (n, group) in groups.iter().enumerate() {
-            for hole in group.iter().map(|h| &holes[*h]) {
-                let shown_elsewhere = notes.iter().enumerate().any(|(other, note)| {
-                    other != n
-                        && note
-                            .as_deref()
-                            .is_some_and(|note| names_answer(note, hole.text))
+    for (n, group) in groups.iter().enumerate() {
+        for hole in group.iter().map(|h| &holes[*h]) {
+            let shown_elsewhere = notes.iter().enumerate().any(|(other, note)| {
+                other != n
+                    && note
+                        .as_deref()
+                        .is_some_and(|note| names_answer(note, hole.text))
+            });
+            if shown_elsewhere {
+                lints.push(Lint {
+                    line,
+                    kind: LintKind::NoteContainsHoleAnswer {
+                        hole: n + 1,
+                        answer: hole.text.to_string(),
+                    },
                 });
-                if shown_elsewhere {
-                    lints.push(Lint {
-                        line,
-                        kind: LintKind::NoteContainsHoleAnswer {
-                            hole: n + 1,
-                            answer: hole.text.to_string(),
-                        },
-                    });
-                }
             }
         }
     }
@@ -2618,6 +2616,31 @@ mod tests {
             assert_eq!(plain.back, addressed.back, "hole {n} answer");
             assert_eq!(plain.context, addressed.context, "hole {n} context");
         }
+    }
+
+    #[test]
+    fn a_hole_name_may_carry_an_underscore_or_a_hyphen() {
+        let deck = parse("## q\n---\n\\blank[base_two]{x} \\blank[base-three]{y}\n");
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(Some("base_two"), deck.cards[0].hole_name.as_deref());
+        assert_eq!(Some("base-three"), deck.cards[1].hole_name.as_deref());
+    }
+
+    /// A hole's line fingerprint masks that hole and renders every other one
+    /// as its text, so the siblings' wording is part of the context this hole
+    /// is identified by.
+    #[test]
+    fn a_holes_line_fingerprint_reads_the_other_holes_text() {
+        let one = parse("## q\n---\n\\blank{a}, \\blank{alpha}\n");
+        let two = parse("## q\n---\n\\blank{a}, \\blank{omega}\n");
+        assert_ne!(
+            one.cards[0].block_holes[0].line_fp, two.cards[0].block_holes[0].line_fp,
+            "the sibling's text sits in this hole's line"
+        );
+        assert_eq!(
+            one.cards[0].block_holes[0].text_fp, two.cards[0].block_holes[0].text_fp,
+            "what this hole asks for did not change"
+        );
     }
 
     #[test]
