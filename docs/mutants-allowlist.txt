@@ -23,15 +23,29 @@
 # under the mutant) and a TIMEOUT (the mutated tests hung). Timeouts need
 # entries too, because cargo-mutants reports a timeout in preference to a
 # miss, so one unargued timeout keeps a shard red no matter how well its
-# misses are argued. Whether a hang counts as detection at all is Alex's
-# open ruling; until he rules, no timeout entry is written here and the
-# shards that have them stay red on purpose.
+# misses are argued. Alex ruled 2026-08-10: a hang counts as detection
+# ONLY where the mutant is proven NON-TERMINATING at that site. Every
+# other hang stays red, because a timeout is evidence about the mutant,
+# not about the tests. The 2026-08-09 nightly is why: of its four hangs,
+# two were real, one mutant was already caught, and one was a plain miss
+# that the hang hid (`deck_due`, which runs green in 16s).
 #
 # Every group states its CLASS, because "residual" must never be read as
-# "impossible". Four classes, only the first of which is truly unfixable:
+# "impossible". Five classes, only the first two of which are unfixable:
 #
 #   EQUIVALENT   no test can distinguish the mutant: output is identical
 #                for every input. Genuinely unkillable.
+#   NON-TERMINATING  the only survivor class for a TIMEOUT. The mutated
+#                expression is a loop's only advance, so the loop never
+#                exits and hanging is the only outcome any budget can
+#                produce. Proof is per SITE, never per operator: the same
+#                substitution terminates wherever something else advances
+#                the counter. cargo-mutants usually supplies the contrast
+#                itself, as a sibling mutant on the same line that
+#                terminates and is caught. Prefer deleting the manual
+#                counter loop (an iterator expression has no such site) to
+#                writing the entry: that is what closed both of the
+#                2026-08-09 hangs, and it leaves nothing to argue.
 #   DELIBERATE   unreachable code kept on purpose (defence in depth). The
 #                mutant is the price of the safety net; killing it means
 #                deleting the net.
