@@ -81,13 +81,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: 1.97.1
 
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
-      - uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
+      - uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2
         with:
           tool: cargo-mutants,cargo-nextest
 
