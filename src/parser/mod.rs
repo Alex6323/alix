@@ -174,6 +174,64 @@ pub enum ParseError {
     TableTrailing(usize),
 }
 
+impl ParseError {
+    pub(crate) fn diagnostic_code(&self) -> &'static str {
+        match self {
+            Self::UnclosedFrontmatter(_) => "unclosed_frontmatter",
+            Self::FrontmatterSyntax { .. } => "frontmatter_syntax",
+            Self::NonStringId { .. } => "non_string_id",
+            Self::InvalidDeckId { .. } => "invalid_deck_id",
+            Self::InvalidCardId { .. } => "invalid_card_id",
+            Self::MissingDeckVersion(_) => "missing_deck_version",
+            Self::UnsupportedDeckVersion { .. } => "unsupported_deck_version",
+            Self::NonIntegerVersion { .. } => "non_integer_version",
+            Self::ControlChar { .. } => "control_character",
+            Self::EmptyFront(_) => "empty_front",
+            Self::FrontWithoutAnswer(_) => "front_without_answer",
+            Self::InvalidLocator { .. } => "invalid_locator",
+            Self::InvalidHoleName(_) => "invalid_hole_name",
+            Self::UnclosedHole(_) => "unclosed_hole",
+            Self::EmptyHole(_) => "empty_hole",
+            Self::TableLineMalformed(_) => "table_line_malformed",
+            Self::TableColumns { .. } => "table_columns",
+            Self::TableRowWidth { .. } => "table_row_width",
+            Self::TableCellHole(_) => "table_cell_hole",
+            Self::TableCellImage(_) => "table_cell_image",
+            Self::TableRowStamp { .. } => "table_row_stamp",
+            Self::TableDuplicateStamp { .. } => "table_duplicate_stamp",
+            Self::TableTrailing(_) => "table_trailing",
+        }
+    }
+
+    pub(crate) fn line(&self) -> usize {
+        match self {
+            Self::UnclosedFrontmatter(line)
+            | Self::MissingDeckVersion(line)
+            | Self::EmptyFront(line)
+            | Self::FrontWithoutAnswer(line)
+            | Self::InvalidHoleName(line)
+            | Self::UnclosedHole(line)
+            | Self::EmptyHole(line)
+            | Self::TableLineMalformed(line)
+            | Self::TableCellHole(line)
+            | Self::TableCellImage(line)
+            | Self::TableTrailing(line) => *line,
+            Self::FrontmatterSyntax { line, .. }
+            | Self::NonStringId { line, .. }
+            | Self::InvalidDeckId { line, .. }
+            | Self::InvalidCardId { line, .. }
+            | Self::UnsupportedDeckVersion { line, .. }
+            | Self::NonIntegerVersion { line, .. }
+            | Self::ControlChar { line, .. }
+            | Self::InvalidLocator { line, .. }
+            | Self::TableColumns { line, .. }
+            | Self::TableRowWidth { line, .. }
+            | Self::TableRowStamp { line, .. }
+            | Self::TableDuplicateStamp { line, .. } => *line,
+        }
+    }
+}
+
 pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     let document = parse_document(text)?;
     // Zero `## ` fronts is a valid, loadable zero-card deck, not a parse error.

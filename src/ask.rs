@@ -462,6 +462,22 @@ fn run_supervised(
     extra_args: &[String],
     slot: &std::sync::Mutex<ChildSlot>,
 ) -> Result<String> {
+    let result = run_supervised_inner(config, prompt, extra_args, slot);
+    if result.is_err() {
+        crate::log::error(
+            crate::log::ErrorKind::Ai,
+            format_args!("backend={}", config.backend.name()),
+        );
+    }
+    result
+}
+
+fn run_supervised_inner(
+    config: &AskConfig,
+    prompt: &str,
+    extra_args: &[String],
+    slot: &std::sync::Mutex<ChildSlot>,
+) -> Result<String> {
     let backend = backend_for(config)?;
     // Session flags are Claude-specific; forwarding them to a backend without a session mechanism
     // would error on an unknown flag.
@@ -1396,6 +1412,32 @@ mod tests {
         );
         let err = run(&config(&cli, 10), "x", &[]).unwrap_err();
         assert!(format!("{err:#}").contains("not logged in"));
+    }
+
+    #[test]
+    fn failed_ai_calls_emit_diagnostics_without_prompt_or_backend_output() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(
+            dir.path(),
+            "cat >/dev/null; echo 'private-backend-output' >&2; exit 1",
+        );
+
+        let lines = crate::log::capture(|| {
+            let error = run(&config(&cli, 10), "private-prompt-text", &[]).unwrap_err();
+            assert!(format!("{error:#}").contains("private-backend-output"));
+        });
+
+        assert_eq!(
+            vec!["target=error kind=ai backend=claude\n".to_string()],
+            lines
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|line| !line.contains("private-prompt-text")
+                    && !line.contains("private-backend-output"))
+        );
     }
 
     #[test]

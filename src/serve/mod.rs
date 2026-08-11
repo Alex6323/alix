@@ -207,6 +207,7 @@ pub fn run_review(
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
     let started_at = Instant::now();
+    let report_root = decks_dir.clone();
 
     let failure = OwnerFailure::new(Arc::clone(&server));
 
@@ -304,6 +305,7 @@ pub fn run_review(
             let auth = &auth;
             let config_path = &config_path;
             let log_path = &log_path;
+            let report_root = &report_root;
             scope.spawn(move || loop {
                 let mut request = match server.recv() {
                     Ok(r) => r,
@@ -390,6 +392,44 @@ pub fn run_review(
                                 version: env!("CARGO_PKG_VERSION"),
                             },
                         );
+                        continue;
+                    }
+                    (Method::Get, "/api/bug-report") => {
+                        let result = (|| -> Result<(Vec<u8>, String)> {
+                            let stage = tempfile::tempdir()?;
+                            let home = directories::BaseDirs::new()
+                                .ok_or_else(|| anyhow!("cannot determine the home directory"))?;
+                            let tokens = auth.iter().cloned().collect::<Vec<_>>();
+                            let log_paths = log_path.iter().cloned().collect::<Vec<_>>();
+                            let bundle = crate::bug_report::write_bundle_with(
+                                &crate::bug_report::BundleOptions {
+                                    root: report_root,
+                                    out_dir: stage.path(),
+                                    config_path: config_path.as_deref(),
+                                    log_paths: &log_paths,
+                                    include_deck: None,
+                                    home: home.home_dir(),
+                                    tokens: &tokens,
+                                    now_ms: crate::time::now_ms(),
+                                },
+                            )?;
+                            let filename = bundle
+                                .path
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .ok_or_else(|| anyhow!("bug report filename is not portable"))?
+                                .to_string();
+                            Ok((std::fs::read(bundle.path)?, filename))
+                        })();
+                        match result {
+                            Ok((bytes, filename)) => respond_download(
+                                request,
+                                bytes,
+                                "application/zip",
+                                &filename,
+                            ),
+                            Err(_) => respond_status(request, 500),
+                        }
                         continue;
                     }
                     (Method::Get, "/api/pair") => {

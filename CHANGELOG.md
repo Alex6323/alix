@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix bug-report` writes a local, reviewable diagnostics archive, and the
+  adult web app offers the same download from About. It includes bounded
+  current and rolled logs, platform and version details, a token-free config,
+  and only hashed deck identities with aggregate counts. By default it includes
+  no deck text; `--include-deck <path>` deliberately adds exactly that deck
+  verbatim, including card text and authored notes. Personal sidecars, prompts,
+  and AI responses are always excluded. It never uploads anything,
+  and removes configured tokens and home-directory identity from every text
+  file. Panic locations, failed AI calls, parse-error classes, and HTTP-error
+  classes now join card selection in the default bounded log, without request
+  paths or learning content. Archives use the frozen versioned name and
+  user-reviewable entry order; copied logs admit only known-safe fields, and
+  copied config drops AI prompt overrides and extra guidance.
+
 - A cloze blank can be named, `\blank[base]{Unit}`, and a note line can be
   written to that name: `> base: text` gives that blank a note of its own
   instead of the shared one, and `> base+: text` adds to the shared note. A

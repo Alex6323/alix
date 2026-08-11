@@ -39,6 +39,7 @@ Alix does not claim to provide:
 | Decks, notes, images, source citations, and frozen excerpts | Private learning or source material is disclosed or altered. |
 | `progress/<deck-id>.json`, `recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
 | Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
+| User-created bug-report archive | Redacted diagnostics or metadata are disclosed after the user attaches the file. |
 | Explicit `source` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
 | AI CLI session and provider account | Prompts or local reads are disclosed; model-backed actions are performed as the user. |
 | Share-transfer process and received archive | An external transfer tool or hostile archive discloses data or writes unexpected files. |
@@ -122,12 +123,33 @@ or receive. Alix only writes it: no behavior, recovery path, or diagnostic
 reads it back, and Alix has no upload or transmission path for it. Sending a
 log is always the user's deliberate attachment to a bug report.
 
-Log records may contain minted deck and card IDs. They never contain card
-fronts, backs, notes, tutor or exam text, deck names or titles, or deck and
-source paths, even when verbose targets are enabled. No logging facade is
-installed, so dependencies cannot add their own records. The verbose
-end-to-end content laws and the real-process rotation law in `tests/cli.rs`
-enforce those boundaries.
+Log records may contain minted deck and card IDs. Default records cover card
+selection plus content-free panic locations, AI backend failures, parse-error
+classes and line numbers, and HTTP method, status, and broad request area.
+They never contain card fronts, backs, notes, tutor or exam text, deck names or
+titles, request paths, or deck and source paths, even when verbose targets are
+enabled. No logging facade is installed, so dependencies cannot add their own
+records. The verbose end-to-end content laws and the real-process rotation law
+in `tests/cli.rs` enforce those boundaries.
+
+### Bug-report archive
+
+`alix bug-report` and `GET /api/bug-report` call one library implementation.
+The endpoint is under the existing `/api/*` token guard and returns
+`Cache-Control: no-store`. Both surfaces write or download a local ZIP only;
+Alix has no submission or upload path. The user must inspect and attach it.
+
+The archive includes bounded current logs and their one rollover, version and
+platform data, a config rendered after recursively removing every `token`,
+`prompt`, and `extra` key, and deck counts keyed by a SHA-256 hash of the stable
+deck ID. By default it includes no deck text. `--include-deck <path>` adds only
+that deck verbatim, including its card text and authored notes, and names it in
+`report.md`. Personal sidecars, prompts, and responses are always excluded.
+Every generated text passes through one redactor that removes configured token
+values, the home path, and the home directory's user name. Structured logs
+admit only known-safe fields; a newly added field is excluded until reviewed.
+The archive remains potentially identifying through stable deck and card
+hashes and operational history, which is why user review remains required.
 
 A paired or localhost API client can invoke irreversible library removal with
 the server process's filesystem authority. Client input names only a catalog
@@ -228,6 +250,7 @@ safe or accurate.
 | A broad `source` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `source` as narrow as practical and inspect inherited workspace defaults. |
 | Syncthing or another tool creates concurrent same-deck progress writes | Per-deck atomic replacement, revision checks, writer warnings, and conflict-file detection. | Different decks are independent; for one deck, keep one active writer, resolve conflict copies manually, and back up before recovery. |
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
+| A support archive leaks credentials or unintended learning content | Token and prompt keys are dropped, generated text is redacted, deck identities are hashed, and personal sidecars are never read into the archive. `--include-deck` deliberately includes the one named deck verbatim. Deterministic tests open and inspect every archive entry. | Stable hashes, operational history, and any explicitly included deck can identify a learner or subject. Review the local archive before attaching it. |
 | Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `id` (`deck-<token>`); the retired `alix-id` is an ordinary unknown key that lints and grants nothing, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
 | A numeric source range slides onto unrelated text | Every complete citation fingerprints the normalized excerpt and source consumers fail closed on a mismatch. | Review doctor findings before using explicit locator repair; fingerprints detect drift but do not prove semantic support. |
 | A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
@@ -266,6 +289,9 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/serve/respond.rs`: constant-time token comparison and capped reads;
 - `src/log.rs` and `tests/cli.rs`: local-only bounded logging, content and
   name exclusion, and per-instance file separation;
+- `src/bug_report.rs`, `tests/cli.rs`, and `tests/api.rs`: bundle redaction,
+  content exclusion, deterministic layout, token-guarded download, and
+  cross-surface byte identity;
 - `src/library.rs`, `src/serve/study.rs`, and `tests/api.rs`: catalog-resolved
   irreversible removal, owner-serialized progress invalidation, display-safe
   failures, and retained-snapshot regression coverage;

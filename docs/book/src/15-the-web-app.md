@@ -237,18 +237,25 @@ If a launch misbehaves, `alix doctor` checks the setup (config, progress
 store, decks directory, backend CLI) and prints a one-line remedy per problem.
 The Doctor sheet also names this instance's local log file.
 
-## Sending a log with a bug report
+## Preparing a bug report
 
 Every running server keeps a small local diagnostic history without requiring
-a flag. Open **Doctor** from the picker menu to see the exact path for the
-current profile. The current file is named
-`alix-<profile>-<digest>.log`; after it reaches 5 MiB, the previous part is
-`alix-<profile>-<digest>.log.1`. On a default Linux setup these live under
-`~/.local/state/alix/`. Attach both files when the problem may have begun before
-the current file.
+a flag. From the adult web app, open **About** and choose **Prepare a bug
+report**. From a terminal, run `alix bug-report`; `--out <dir>` chooses where
+the archive lands. Both paths use the same local ZIP format. Nothing is
+uploaded or sent, so open it and review its plain-text files before attaching
+it yourself.
 
-The log contains minted deck and card IDs and operational timings. It does not
-contain card text, notes, tutor or exam text, deck names or titles, or file
-paths. Alix never uploads it and never reads it back. Deleting either file does
-not change your decks or progress; the current file is recreated next time the
-server starts.
+The web archive contains the current instance log and its one rollover; the
+CLI collects every instance log so it does not have to guess which server had
+the bug. The archive also contains version and platform details, a copy of the
+active config with every token and AI prompt override removed, and per-deck
+counts keyed only by a SHA-256 hash of the stable deck ID. Home-directory and
+user names are redacted. By default, no deck text is included. The CLI's explicit
+`--include-deck <path>` option adds that one deck verbatim, including card text
+and authored notes, and names it in `report.md`. Personal sidecars, AI prompts,
+and AI responses are always excluded. The diagnostic log records minted card
+IDs plus content-free panic, AI, parser, and HTTP failure classes; verbose
+logging can add operational timings. Only known-safe diagnostic fields enter
+the archive. Deleting the archive or either log file does not change decks or
+progress.

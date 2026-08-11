@@ -4033,6 +4033,67 @@ fn share_zip_roundtrips_through_receive_zip() {
     assert_eq!("done", body["phase"], "body: {body}");
 }
 
+#[test]
+fn bug_report_download_is_token_guarded_private_and_identical_to_the_library_bundle() {
+    let (base, guard) = spawn_test_server_with(Some("secret"));
+
+    let unauthorized = http(&base, "GET", "/api/bug-report", &[], &[]);
+    assert_eq!(401, unauthorized.status);
+
+    let response = http(
+        &base,
+        "GET",
+        "/api/bug-report",
+        &[("Authorization", "Bearer secret")],
+        &[],
+    );
+    assert_eq!(200, response.status);
+    assert_eq!(Some("application/zip"), response.header("Content-Type"));
+    assert_eq!(Some("no-store"), response.header("Cache-Control"));
+    let disposition = response
+        .header("Content-Disposition")
+        .expect("the download names its archive");
+    let filename = disposition
+        .strip_prefix("attachment; filename=\"")
+        .and_then(|value| value.strip_suffix('"'))
+        .expect("a quoted download filename");
+    let timestamp = filename
+        .strip_prefix(&format!("alix-bug-report-{}-", alix::VERSION))
+        .and_then(|value| value.strip_suffix(".zip"))
+        .expect("the frozen report filename");
+    let now_ms = chrono::NaiveDateTime::parse_from_str(timestamp, "%Y%m%dT%H%M%SZ")
+        .unwrap()
+        .and_utc()
+        .timestamp_millis() as u64;
+
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&response.body)).unwrap();
+    let mut combined = String::new();
+    for index in 0..archive.len() {
+        use std::io::Read;
+        let mut entry = archive.by_index(index).unwrap();
+        entry.read_to_string(&mut combined).unwrap();
+    }
+    assert!(!combined.contains("secret"), "{combined}");
+    assert!(!combined.contains("2 + 2"), "{combined}");
+    assert!(!combined.contains("## 3 + 3"), "{combined}");
+
+    let direct_out = tempfile::tempdir().unwrap();
+    let home = directories::BaseDirs::new().unwrap();
+    let log_paths = vec![Path::new("/state/alix-test.log").to_path_buf()];
+    let direct = alix::bug_report::write_bundle_with(&alix::bug_report::BundleOptions {
+        root: guard.dir(),
+        out_dir: direct_out.path(),
+        config_path: None,
+        log_paths: &log_paths,
+        include_deck: None,
+        home: home.home_dir(),
+        tokens: &["secret".to_string()],
+        now_ms,
+    })
+    .unwrap();
+    assert_eq!(response.body, std::fs::read(direct.path).unwrap());
+}
+
 /// Close arms answer 200 with no job active (a deleted arm would 404).
 #[test]
 fn share_and_receive_close_arms_exist() {

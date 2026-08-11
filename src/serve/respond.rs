@@ -124,6 +124,7 @@ pub(super) fn respond_json<T: Serialize>(request: Request, value: &T) {
 }
 
 pub(super) fn respond_json_status<T: Serialize>(request: Request, code: u16, value: &T) {
+    log_http_error(&request, code);
     let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
     let header = Header::from_bytes(
         &b"Content-Type"[..],
@@ -169,7 +170,28 @@ pub(super) fn respond_font(request: Request, bytes: &'static [u8]) {
 }
 
 pub(super) fn respond_status(request: Request, code: u16) {
+    log_http_error(&request, code);
     let _ = request.respond(Response::from_string(String::new()).with_status_code(code));
+}
+
+fn log_http_error(request: &Request, code: u16) {
+    if code < 400 {
+        return;
+    }
+    let path = request_path(request);
+    let area = if path.starts_with("/api/") {
+        "api"
+    } else if path.starts_with("/img/") {
+        "image"
+    } else if path.starts_with("/fonts/") {
+        "font"
+    } else {
+        "page"
+    };
+    crate::log::error(
+        crate::log::ErrorKind::Http,
+        format_args!("method={} area={area} status={code}", request.method(),),
+    );
 }
 
 pub(super) fn respond_bytes(request: Request, bytes: Vec<u8>, content_type: &str) {
@@ -216,7 +238,9 @@ pub(super) fn respond_download(
     let content_type_header =
         Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
     let disposition = format!("attachment; filename=\"{}\"", download_filename(filename));
-    let response = Response::from_data(bytes).with_header(content_type_header);
+    let response = Response::from_data(bytes)
+        .with_header(content_type_header)
+        .with_header(cache_header(b"no-store"));
     let _ = match Header::from_bytes(&b"Content-Disposition"[..], disposition.as_bytes()) {
         Ok(disposition_header) => request.respond(response.with_header(disposition_header)),
         Err(_) => request.respond(response),
@@ -230,5 +254,42 @@ pub(super) fn serve_image_path(request: Request, path: Option<&Path>) {
             Err(_) => respond_status(request, 404),
         },
         None => respond_status(request, 404),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tiny_http::{Method, TestRequest};
+
+    use super::*;
+
+    #[test]
+    fn error_responses_log_method_area_and_status_without_the_query() {
+        let request: Request = TestRequest::new()
+            .with_method(Method::Post)
+            .with_path("/api/grade?token=private-token")
+            .into();
+
+        let lines = crate::log::capture(|| respond_status(request, 409));
+
+        assert_eq!(
+            vec!["target=error kind=http method=POST area=api status=409\n".to_string()],
+            lines
+        );
+        assert!(lines.iter().all(|line| !line.contains("private-token")));
+    }
+
+    #[test]
+    fn error_response_diagnostics_do_not_record_request_path_data() {
+        let request: Request = TestRequest::new()
+            .with_method(Method::Get)
+            .with_path("/api/private-card-front?token=private-token")
+            .into();
+
+        let lines = crate::log::capture(|| respond_status(request, 404));
+
+        assert!(lines.iter().all(|line| {
+            !line.contains("private-card-front") && !line.contains("private-token")
+        }));
     }
 }

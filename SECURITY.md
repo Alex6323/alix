@@ -23,6 +23,12 @@ Include what you can without sending sensitive deck content:
 If an attachment must contain private source material, ask how to transfer it
 before sending it. Ordinary bugs still belong in the
 [public issue form](https://github.com/Alex6323/alix/issues/new/choose).
+For an ordinary bug, `alix bug-report` can prepare a local ZIP with redacted
+diagnostics and no deck text by default. `--include-deck <path>` deliberately
+adds that complete deck, including its card text and authored notes. It never
+sends the file. Review its plain-text contents before attaching it. For a
+suspected vulnerability, ask before attaching even that archive because stable
+hashes and operational history can still be identifying.
 
 ## What happens next
 

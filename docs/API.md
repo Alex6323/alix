@@ -411,6 +411,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
 | GET | `/api/version` | – | `VersionDto` | – |
+| GET | `/api/bug-report` | – | private diagnostics ZIP | 500 collection or archive failure |
 | GET | `/api/doctor` | – | `DoctorDto` | – |
 | GET | `/api/pair` | – | `PairDto` | – |
 | GET | `/api/decks` | – | `DeckListDto` | – |
@@ -1163,9 +1164,12 @@ they may change without notice and native clients must not depend on them:
 - **Request bodies are documented here but not snapshot-tested** (responses
   are). Body field names come from the same Rust-field convention.
 - **No CORS** (see §3) — a browser client must be served same-origin by alix.
-- **`GET /api/share/zip` is the one non-JSON API response**, deliberately: it
-  streams `application/zip` bytes with a `Content-Disposition: attachment`
-  header (§4.8's offline fallback to the wormhole flow) rather than a DTO.
+- **Two GET endpoints return ZIP bytes rather than JSON.**
+  `GET /api/share/zip` carries staged deck material as §4.8's offline fallback
+  to wormhole. `GET /api/bug-report` carries only redacted diagnostics,
+  token-free config, and hashed deck inventory. Both use
+  `Content-Disposition: attachment` and `Cache-Control: no-store`. Neither
+  endpoint uploads anything.
 - **`POST /api/receive/zip` is the one non-JSON API *request***, deliberately:
   the request body is raw `application/zip` bytes (§4.9), not a JSON envelope
   — avoids a base64 dependency for what's already a binary transfer. Capped at

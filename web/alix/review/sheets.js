@@ -437,10 +437,15 @@ export function createSheets({
         '<p class="about-name">alix <b>' + version + '</b></p>' +
         '<p class="about-tag">Spaced repetition with an AI exam that checks understanding. Early and changing fast.</p>' +
         '<p><a href="https://alix.study" target="_blank" rel="noopener">alix.study</a></p>' +
+        '<p><a id="bugReport" download>Prepare a bug report</a><br>' +
+        '<span class="sheet-hint">Writes a private archive for you to review and attach yourself.</span></p>' +
         '<p class="about-support">Free and open source. Telling someone who studies is the best support. ' +
         '<a href="https://github.com/sponsors/Alex6323" target="_blank" rel="noopener">Sponsor</a></p>' +
         '</div>'
       );
+      const report = sheetPanel.querySelector("#bugReport");
+      report.href = withToken("/api/bug-report");
+      report.download = "";
       return d;
     });
   }

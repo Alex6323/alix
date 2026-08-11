@@ -2,6 +2,7 @@
 // `#[coverage(off)]` under nightly llvm-cov (see src/lib.rs for the lib's).
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+mod bug_report;
 mod common;
 mod deck;
 mod doctor;
@@ -133,12 +134,24 @@ enum Command {
     /// a received folder lands beside your other decks under its own name.
     /// Leaked personal files are stripped either way.
     Receive(ReceiveArgs),
+    /// Write a private, reviewable diagnostics archive to attach to a bug report.
+    BugReport(BugReportArgs),
     /// Show the configuration (key bindings) or create the config file.
     Config {
         /// Write a config file with the default bindings to edit.
         #[arg(long)]
         init: bool,
     },
+}
+
+#[derive(Args)]
+struct BugReportArgs {
+    /// Directory to write the archive into (default: current directory).
+    #[arg(long, default_value = ".")]
+    out: PathBuf,
+    /// Include one deck verbatim after reviewing its private contents.
+    #[arg(long)]
+    include_deck: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -702,6 +715,7 @@ fn main() -> Result<()> {
         },
         Some(Command::Share(args)) => share::share_cmd(args),
         Some(Command::Receive(args)) => share::receive_cmd(args),
+        Some(Command::BugReport(args)) => bug_report::bug_report_cmd(args),
         Some(Command::Config { init }) => config_cmd(init),
         Some(Command::Doctor(args)) => doctor::doctor_cmd(args),
     }

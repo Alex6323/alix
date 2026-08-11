@@ -125,9 +125,15 @@ impl Deck {
             path: path.clone(),
             source,
         })?;
-        let parsed = parser::parse(&subject, &text).map_err(|source| DeckError::Parse {
-            path: path.clone(),
-            source,
+        let parsed = parser::parse(&subject, &text).map_err(|source| {
+            crate::log::error(
+                crate::log::ErrorKind::Parse,
+                format_args!("code={} line={}", source.diagnostic_code(), source.line()),
+            );
+            DeckError::Parse {
+                path: path.clone(),
+                source,
+            }
         })?;
         let links = parsed.frontmatter.link.clone();
         let requires = parsed.frontmatter.requires.clone();
@@ -2208,5 +2214,24 @@ mod tests {
         assert_eq!(None, top_level_yaml_key("  source: nested"));
         assert_eq!(None, top_level_yaml_key("# source: commented"));
         assert_eq!(None, top_level_yaml_key("plain text"));
+    }
+
+    #[test]
+    fn failed_deck_parses_emit_content_free_diagnostics() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("private-deck-name.md");
+        std::fs::write(&path, "## private-card-front\n").unwrap();
+
+        let lines = crate::log::capture(|| {
+            assert!(Deck::load(&path).is_err());
+        });
+
+        assert_eq!(
+            vec!["target=error kind=parse code=front_without_answer line=1\n".to_string()],
+            lines
+        );
+        assert!(lines.iter().all(|line| {
+            !line.contains("private-deck-name") && !line.contains("private-card-front")
+        }));
     }
 }

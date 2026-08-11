@@ -18,6 +18,8 @@ pub mod augment_ai;
 #[cfg(feature = "full")]
 pub mod backend;
 #[cfg(feature = "full")]
+pub mod bug_report;
+#[cfg(feature = "full")]
 pub mod cache;
 #[cfg(feature = "full")]
 pub mod calibrate;

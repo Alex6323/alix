@@ -5,12 +5,16 @@ import { createSheets } from "../../web/alix/review/sheets.js";
 
 function harness() {
   const calls = [];
+  const reportLink = {};
   const sheet = {
     hidden: true,
     dataset: {},
     addEventListener: () => {},
   };
-  const panel = { innerHTML: "" };
+  const panel = {
+    innerHTML: "",
+    querySelector: (selector) => selector === "#bugReport" ? reportLink : null,
+  };
   const nodes = { sheet, sheetPanel: panel };
   const sheets = createSheets({
     api: async (path, options) => {
@@ -19,7 +23,7 @@ function harness() {
     },
     fetchApi: async () => {},
     post: (body) => ({ method: "POST", body }),
-    withToken: (path) => path,
+    withToken: (path) => "token:" + path,
     focusedRowName: () => null,
     notice: () => {},
     refreshPicker: () => {},
@@ -33,7 +37,7 @@ function harness() {
       Option: class {},
     },
   });
-  return { calls, panel, sheet, sheets };
+  return { calls, panel, reportLink, sheet, sheets };
 }
 
 function removalHarness(responses) {
@@ -118,6 +122,16 @@ test("sheets own visibility and cancel live work when closed", () => {
     path: "/api/share/close",
     options: { method: "POST", body: {} },
   }]);
+});
+
+test("about offers one token-guarded bug report download", async () => {
+  const run = harness();
+
+  await run.sheets.openAbout();
+
+  assert.match(run.panel.innerHTML, /Prepare a bug report/);
+  assert.equal(run.reportLink.href, "token:/api/bug-report");
+  assert.equal(run.reportLink.download, "");
 });
 
 test("library removal previews stakes and requires the exact focused name", async () => {

@@ -191,6 +191,16 @@ notes it.
 
 - `alix config`: show the active key bindings; `alix config --init` writes the
   file.
+- `alix bug-report [--out <dir>] [--include-deck <path>]`: write a local ZIP
+  containing the bounded diagnostic logs, platform and version details, a
+  config without tokens or AI prompt guidance, and hashed deck identities with
+  aggregate counts. Every included file is plain
+  text. No deck content is included by default. `--include-deck` adds exactly
+  the named deck verbatim, including its card text and authored notes, and
+  names it in `report.md`. Personal sidecars, prompts, and responses always
+  stay out. The command never uploads or sends the archive; review it before
+  attaching it yourself. It uses the default profile when one is selected,
+  otherwise the default config and decks directory.
 - `alix doctor [dir-or-deck]`: environment health checks, a one-line remedy per
   problem: the config parses, the current profile's local log path is named,
   the progress store is readable, the decks dir

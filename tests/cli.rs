@@ -2289,6 +2289,272 @@ fn config_init_writes_a_file_then_refuses_to_clobber_it() {
     );
 }
 
+#[test]
+fn bug_report_collects_the_log_of_the_instance_the_user_actually_ran() {
+    let home = TempDir::new().unwrap();
+    let decks = home.path().join("decks");
+    let reports = home.path().join("reports");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::create_dir_all(test_config_dir(home.path())).unwrap();
+    std::fs::write(
+        test_config_dir(home.path()).join("config.toml"),
+        format!("decks_dir = {:?}\n", decks),
+    )
+    .unwrap();
+    let state = home.path().join(".local/state/alix");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(
+        state.join("alix-test-9f86d081.log"),
+        "target=select card=card-sentinel00000000000000 tier=seen due=1\n",
+    )
+    .unwrap();
+
+    let output = alix_env(
+        &["bug-report", "--out", reports.to_str().unwrap()],
+        home.path(),
+        &[],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let archive = std::fs::read_dir(&reports)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .next()
+        .expect("one archive");
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive).unwrap()).unwrap();
+    let mut text = String::new();
+    for index in 0..zip.len() {
+        use std::io::Read;
+        zip.by_index(index)
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
+    }
+    assert!(
+        text.contains("card-sentinel00000000000000"),
+        "the running instance's log must be in the bundle: {text}"
+    );
+}
+
+#[test]
+fn bug_report_archive_names_the_version_it_came_from() {
+    let home = TempDir::new().unwrap();
+    let decks = home.path().join("decks");
+    let reports = home.path().join("reports");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::create_dir_all(test_config_dir(home.path())).unwrap();
+    std::fs::write(
+        test_config_dir(home.path()).join("config.toml"),
+        format!("decks_dir = {:?}\n", decks),
+    )
+    .unwrap();
+
+    let output = alix_env(
+        &["bug-report", "--out", reports.to_str().unwrap()],
+        home.path(),
+        &[],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let name = std::fs::read_dir(&reports)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .next()
+        .expect("one archive");
+    assert!(
+        name.contains(env!("CARGO_PKG_VERSION")),
+        "the frozen shape is alix-bug-report-<version>-<UTC>.zip, got `{name}`"
+    );
+}
+
+#[test]
+fn bug_report_include_deck_adds_exactly_the_requested_deck_verbatim() {
+    let home = TempDir::new().unwrap();
+    let decks = home.path().join("decks");
+    let reports = home.path().join("reports");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::create_dir_all(test_config_dir(home.path())).unwrap();
+    std::fs::write(
+        test_config_dir(home.path()).join("config.toml"),
+        format!("decks_dir = {:?}\n", decks),
+    )
+    .unwrap();
+    let requested = decks.join("requested-private-name.md");
+    let requested_bytes = b"---\nformat-version: 1\nid: deck-requested123\n---\n## requested-front <!-- id: card-requested123 -->\nrequested-back\n> requested-authored-note\n";
+    std::fs::write(&requested, requested_bytes).unwrap();
+    std::fs::write(
+        decks.join("other.md"),
+        "---\nformat-version: 1\nid: deck-other123456\n---\n## other-front <!-- id: card-other123456 -->\nother-back\n",
+    )
+    .unwrap();
+    std::fs::write(
+        decks.join("requested-private-name.personal.md"),
+        "personal-sidecar-sentinel",
+    )
+    .unwrap();
+
+    let output = alix_env(
+        &[
+            "bug-report",
+            "--out",
+            reports.to_str().unwrap(),
+            "--include-deck",
+            requested.to_str().unwrap(),
+        ],
+        home.path(),
+        &[],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let archive = std::fs::read_dir(&reports)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .next()
+        .expect("one archive");
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(archive).unwrap()).unwrap();
+    let mut included = Vec::new();
+    {
+        use std::io::Read;
+        zip.by_name("deck.md")
+            .unwrap()
+            .read_to_end(&mut included)
+            .unwrap();
+    }
+    assert_eq!(requested_bytes, included.as_slice());
+    let mut report = String::new();
+    {
+        use std::io::Read;
+        zip.by_name("report.md")
+            .unwrap()
+            .read_to_string(&mut report)
+            .unwrap();
+    }
+    assert!(report.contains("requested-private-name.md"), "{report}");
+
+    let mut all = String::new();
+    for index in 0..zip.len() {
+        use std::io::Read;
+        zip.by_index(index)
+            .unwrap()
+            .read_to_string(&mut all)
+            .unwrap();
+    }
+    assert!(!all.contains("other-front"), "{all}");
+    assert!(!all.contains("personal-sidecar-sentinel"), "{all}");
+}
+
+#[test]
+fn bug_report_include_deck_can_never_attach_a_personal_sidecar() {
+    let home = TempDir::new().unwrap();
+    let decks = home.path().join("decks");
+    let reports = home.path().join("reports");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::create_dir_all(test_config_dir(home.path())).unwrap();
+    std::fs::write(
+        test_config_dir(home.path()).join("config.toml"),
+        format!("decks_dir = {:?}\n", decks),
+    )
+    .unwrap();
+    let sidecar = decks.join("private.personal.md");
+    std::fs::write(&sidecar, "personal-sidecar-sentinel").unwrap();
+
+    let output = alix_env(
+        &[
+            "bug-report",
+            "--out",
+            reports.to_str().unwrap(),
+            "--include-deck",
+            sidecar.to_str().unwrap(),
+        ],
+        home.path(),
+        &[],
+    );
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("personal sidecar"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!reports.exists());
+}
+
+#[test]
+fn bug_report_writes_a_local_archive_from_the_configured_decks() {
+    let home = TempDir::new().unwrap();
+    let decks = home.path().join("decks");
+    let reports = home.path().join("reports");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::create_dir_all(test_config_dir(home.path())).unwrap();
+    std::fs::write(
+        decks.join("private-name.md"),
+        "---\nformat-version: 1\nid: deck-private123\n---\n## private-front <!-- id: card-private123 -->\nprivate-back\n",
+    )
+    .unwrap();
+    let config_path = test_config_dir(home.path()).join("config.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            "decks_dir = {:?}\n[serve]\ntoken = \"live-token-123456\"\n",
+            decks
+        ),
+    )
+    .unwrap();
+
+    let output = alix_env(
+        &["bug-report", "--out", reports.to_str().unwrap()],
+        home.path(),
+        &[],
+    );
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("alix-bug-report-"), "{stdout}");
+    assert!(stdout.contains("included"), "{stdout}");
+    let archives = std::fs::read_dir(&reports)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(1, archives.len(), "{archives:?}");
+    let bytes = std::fs::read(&archives[0]).unwrap();
+    for private in [
+        "live-token-123456",
+        "private-name",
+        "private-front",
+        "private-back",
+    ] {
+        assert!(
+            !bytes
+                .windows(private.len())
+                .any(|window| window == private.as_bytes()),
+            "archive leaked {private:?}"
+        );
+    }
+
+    let timestamp = archives[0]
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .and_then(|stem| stem.strip_prefix(&format!("alix-bug-report-{}-", alix::VERSION)))
+        .unwrap();
+    let now_ms = chrono::NaiveDateTime::parse_from_str(timestamp, "%Y%m%dT%H%M%SZ")
+        .unwrap()
+        .and_utc()
+        .timestamp_millis() as u64;
+    let direct_out = home.path().join("direct");
+    let direct = alix::bug_report::write_bundle_with(&alix::bug_report::BundleOptions {
+        root: &decks,
+        out_dir: &direct_out,
+        config_path: Some(&config_path),
+        log_paths: &[],
+        include_deck: None,
+        home: home.path(),
+        tokens: &["live-token-123456".to_string()],
+        now_ms,
+    })
+    .unwrap();
+    assert_eq!(bytes, std::fs::read(direct.path).unwrap());
+}
+
 // ── `alix doctor` ────────────────────────────────────────────────────────────
 
 #[test]

@@ -57,10 +57,11 @@ verbose = false       # also record verbose targets such as HTTP timings
 (Jump-to-first/last stays fixed at `g`/`G`, and the arrow keys always move.)
 
 The server log is always on. `[log] max_bytes` bounds each of its two files and
-must be positive. `[log] verbose = true` adds the HTTP timing target to the
-normal card-selection records. For live debugging, `--log http,select` also
+must be positive. Card selection and content-free panic, AI, parser, and HTTP
+failure records are written by default. `[log] verbose = true` adds HTTP
+timings. For live debugging, `--log http,select,error` also
 mirrors the named targets to stderr and enables verbose file records for that
-run. It does not add card content, deck names, or paths.
+run. It does not add card content, deck names, or request paths.
 
 ## Review pacing
 

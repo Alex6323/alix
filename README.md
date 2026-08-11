@@ -97,6 +97,7 @@ grading and card identity keep using the source text.
 | `alix stats <path>` · `alix list <path>` | Progress · schedules (deck, folder, or workspace) |
 | `alix reset <path>` | Clear stored progress (deck, folder, or workspace) |
 | `alix share <path>` · `alix receive <code>` | Send/get decks over [magic-wormhole](https://magic-wormhole.readthedocs.io) |
+| `alix bug-report [--out <dir>] [--include-deck <path>]` | Write a private diagnostics archive for you to review and attach |
 | `alix config` | Show the config (`--init` writes a starter file) |
 | `alix doctor [path]` | Check the setup, or lint a deck; `--backends` probes the AI |
 

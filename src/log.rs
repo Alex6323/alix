@@ -1,10 +1,12 @@
+#[cfg(test)]
+use std::cell::RefCell;
 use std::{
     fmt,
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, Once, OnceLock},
 };
 
 use sha2::{Digest, Sha256};
@@ -16,6 +18,7 @@ static SINK: OnceLock<Sink> = OnceLock::new();
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Target {
+    Error,
     Http,
     Select,
 }
@@ -25,10 +28,11 @@ impl FromStr for Target {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
+            "error" => Ok(Self::Error),
             "http" => Ok(Self::Http),
             "select" => Ok(Self::Select),
             _ => Err(format!(
-                "unknown log target {value:?}: expected http or select"
+                "unknown log target {value:?}: expected error, http, or select"
             )),
         }
     }
@@ -36,6 +40,7 @@ impl FromStr for Target {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Targets {
+    error: bool,
     http: bool,
     select: bool,
 }
@@ -43,6 +48,7 @@ pub struct Targets {
 impl Targets {
     pub fn from_slice(targets: &[Target]) -> Self {
         Self {
+            error: targets.contains(&Target::Error),
             http: targets.contains(&Target::Http),
             select: targets.contains(&Target::Select),
         }
@@ -50,6 +56,7 @@ impl Targets {
 
     fn contains(self, target: Target) -> bool {
         match target {
+            Target::Error => self.error,
             Target::Http => self.http,
             Target::Select => self.select,
         }
@@ -59,6 +66,7 @@ impl Targets {
 impl Target {
     pub fn name(self) -> &'static str {
         match self {
+            Self::Error => "error",
             Self::Http => "http",
             Self::Select => "select",
         }
@@ -90,7 +98,7 @@ struct Sink {
 
 impl Sink {
     fn file_enabled(&self, target: Target) -> bool {
-        self.verbose || target == Target::Select
+        self.verbose || matches!(target, Target::Error | Target::Select)
     }
 
     fn enabled(&self, target: Target) -> bool {
@@ -103,10 +111,32 @@ pub fn enabled(target: Target) -> bool {
 }
 
 pub fn emit(target: Target, fields: fmt::Arguments<'_>) {
-    let Some(sink) = SINK.get().filter(|sink| sink.enabled(target)) else {
+    let sink = SINK.get().filter(|sink| sink.enabled(target));
+    #[cfg(test)]
+    let capturing = capture_enabled();
+    #[cfg(not(test))]
+    let capturing = false;
+    if sink.is_none() && !capturing {
         return;
-    };
+    }
     let line = format_line(target, fields);
+    #[cfg(test)]
+    capture_line(&line);
+    if let Some(sink) = sink {
+        write_to_sink(sink, target, &line);
+    }
+}
+
+#[cfg(test)]
+fn emit_to(sink: &Sink, target: Target, fields: fmt::Arguments<'_>) {
+    if !sink.enabled(target) {
+        return;
+    }
+    let line = format_line(target, fields);
+    write_to_sink(sink, target, &line);
+}
+
+fn write_to_sink(sink: &Sink, target: Target, line: &str) {
     if sink.file_enabled(target)
         && let Ok(mut writer) = sink.writer.lock()
     {
@@ -117,6 +147,94 @@ pub fn emit(target: Target, fields: fmt::Arguments<'_>) {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ErrorKind {
+    Ai,
+    Http,
+    Panic,
+    Parse,
+}
+
+impl ErrorKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Ai => "ai",
+            Self::Http => "http",
+            Self::Panic => "panic",
+            Self::Parse => "parse",
+        }
+    }
+}
+
+pub fn error(kind: ErrorKind, fields: fmt::Arguments<'_>) {
+    emit(Target::Error, format_args!("kind={} {fields}", kind.name()));
+}
+
+fn record_panic(file: &str, line: u32, thread: &str) {
+    error(
+        ErrorKind::Panic,
+        format_args!("file={file} line={line} thread={thread}"),
+    );
+}
+
+fn install_panic_hook() {
+    static INSTALLED: Once = Once::new();
+    INSTALLED.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let (file, line) = info.location().map_or(("unknown", 0), |location| {
+                (location.file(), location.line())
+            });
+            let thread = std::thread::current();
+            record_panic(file, line, thread.name().unwrap_or("unnamed"));
+            previous(info);
+        }));
+    });
+}
+
+#[cfg(test)]
+thread_local! {
+    static CAPTURE_LINES: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn capture(work: impl FnOnce()) -> Vec<String> {
+    struct ResetCapture;
+    impl Drop for ResetCapture {
+        fn drop(&mut self) {
+            CAPTURE_LINES.with(|lines| {
+                lines.borrow_mut().take();
+            });
+        }
+    }
+
+    CAPTURE_LINES.with(|lines| {
+        assert!(
+            lines.borrow_mut().replace(Vec::new()).is_none(),
+            "diagnostic captures cannot be nested"
+        );
+    });
+    let reset = ResetCapture;
+    work();
+    let captured = CAPTURE_LINES.with(|lines| lines.borrow_mut().take().unwrap_or_default());
+    drop(reset);
+    captured
+}
+
+#[cfg(test)]
+fn capture_enabled() -> bool {
+    CAPTURE_LINES.with(|lines| lines.borrow().is_some())
+}
+
+#[cfg(test)]
+fn capture_line(line: &str) {
+    CAPTURE_LINES.with(|lines| {
+        if let Some(lines) = lines.borrow_mut().as_mut() {
+            lines.push(line.to_string());
+        }
+    });
+}
+
 fn format_line(target: Target, fields: fmt::Arguments<'_>) -> String {
     format!("target={} {fields}\n", target.name())
 }
@@ -124,6 +242,32 @@ fn format_line(target: Target, fields: fmt::Arguments<'_>) -> String {
 pub fn log_path(instance: &str) -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix")
         .map(|dirs| log_path_in(dirs.state_dir(), dirs.data_dir(), instance))
+}
+
+pub fn log_paths() -> io::Result<Vec<PathBuf>> {
+    let Some(dirs) = directories::ProjectDirs::from("", "", "alix") else {
+        return Ok(Vec::new());
+    };
+    log_paths_in(dirs.state_dir().unwrap_or(dirs.data_dir()))
+}
+
+fn log_paths_in(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut paths = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("alix-") && name.ends_with(".log") && entry.file_type()?.is_file() {
+            paths.push(entry.path());
+        }
+    }
+    paths.sort();
+    Ok(paths)
 }
 
 fn log_path_in(state_dir: Option<&Path>, data_dir: &Path, instance: &str) -> PathBuf {
@@ -214,7 +358,9 @@ pub fn init(instance: &str, settings: Settings) -> io::Result<()> {
             io::ErrorKind::AlreadyExists,
             "the server log is already initialized",
         )
-    })
+    })?;
+    install_panic_hook();
+    Ok(())
 }
 
 struct CappedWriter {
@@ -334,6 +480,7 @@ mod tests {
 
     #[test]
     fn target_names_parse_exactly_without_a_level_ladder() {
+        assert_eq!(Ok(Target::Error), "error".parse());
         assert_eq!(Ok(Target::Http), "http".parse());
         assert_eq!(Ok(Target::Select), "select".parse());
         assert!("debug".parse::<Target>().is_err());
@@ -342,12 +489,19 @@ mod tests {
     #[test]
     fn target_sets_enable_only_the_targets_the_user_named() {
         let http = Targets::from_slice(&[Target::Http]);
+        assert!(!http.contains(Target::Error));
         assert!(http.contains(Target::Http));
         assert!(!http.contains(Target::Select));
 
         let select = Targets::from_slice(&[Target::Select]);
+        assert!(!select.contains(Target::Error));
         assert!(!select.contains(Target::Http));
         assert!(select.contains(Target::Select));
+
+        let error = Targets::from_slice(&[Target::Error]);
+        assert!(error.contains(Target::Error));
+        assert!(!error.contains(Target::Http));
+        assert!(!error.contains(Target::Select));
     }
 
     #[test]
@@ -368,6 +522,45 @@ mod tests {
     }
 
     #[test]
+    fn quiet_logging_records_diagnostics_but_not_request_timings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("alix.log");
+        let sink = Sink {
+            writer: Mutex::new(CappedWriter::open(path.clone(), 1024).unwrap()),
+            verbose: false,
+            stderr: Targets::default(),
+        };
+
+        emit_to(
+            &sink,
+            Target::Error,
+            format_args!("kind=parse code=front_without_answer line=7"),
+        );
+        emit_to(&sink, Target::Http, format_args!("at=1ms took=2ms w=0"));
+
+        assert_eq!(
+            "target=error kind=parse code=front_without_answer line=7\n",
+            std::fs::read_to_string(path).unwrap()
+        );
+    }
+
+    #[test]
+    fn panic_diagnostics_omit_the_panic_payload() {
+        let lines = capture(|| {
+            record_panic("src/serve/study.rs", 42, "study-owner");
+        });
+
+        assert_eq!(
+            vec![
+                "target=error kind=panic file=src/serve/study.rs line=42 thread=study-owner\n"
+                    .to_string()
+            ],
+            lines
+        );
+        assert!(lines.iter().all(|line| !line.contains("payload")));
+    }
+
+    #[test]
     fn log_path_prefers_state_and_falls_back_to_data() {
         let state = log_path_in(Some(Path::new("/state")), Path::new("/data"), "profile-a");
         let data = log_path_in(None, Path::new("/data"), "profile-a");
@@ -375,6 +568,23 @@ mod tests {
         assert_eq!(Some(Path::new("/state")), state.parent());
         assert_eq!(Some(Path::new("/data")), data.parent());
         assert_eq!(state.file_name(), data.file_name());
+    }
+
+    #[test]
+    fn log_listing_finds_each_instance_but_not_its_rollover() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix-anna-a.log"), "anna").unwrap();
+        std::fs::write(dir.path().join("alix-anna-a.log.1"), "old anna").unwrap();
+        std::fs::write(dir.path().join("alix-timmy-b.log"), "timmy").unwrap();
+        std::fs::write(dir.path().join("other.log"), "other").unwrap();
+
+        assert_eq!(
+            vec![
+                dir.path().join("alix-anna-a.log"),
+                dir.path().join("alix-timmy-b.log")
+            ],
+            log_paths_in(dir.path()).unwrap()
+        );
     }
 
     #[test]
