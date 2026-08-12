@@ -58,7 +58,11 @@ fn alix_env(args: &[&str], home: &Path, extra_env: &[(&str, &str)]) -> Output {
     cmd.args(args)
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home)
-        .env("XDG_DATA_HOME", home);
+        .env("XDG_DATA_HOME", home)
+        // Pinned like the other three: left unset, the state directory falls
+        // back to the developer's real `$HOME/.local/state` on Linux while
+        // `test_state_dir` points at the data directory, and the two disagree.
+        .env("XDG_STATE_HOME", home);
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
@@ -2301,7 +2305,7 @@ fn bug_report_collects_the_log_of_the_instance_the_user_actually_ran() {
         format!("decks_dir = {:?}\n", decks),
     )
     .unwrap();
-    let state = home.path().join(".local/state/alix");
+    let state = test_state_dir(home.path());
     std::fs::create_dir_all(&state).unwrap();
     std::fs::write(
         state.join("alix-test-9f86d081.log"),
