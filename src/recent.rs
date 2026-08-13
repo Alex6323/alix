@@ -70,6 +70,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_default_recent_path_names_the_alix_recent_document() {
+        let path = default_recent_path().expect("this platform has an application data directory");
+        assert_eq!(
+            Some("recent.json"),
+            path.file_name().and_then(|name| name.to_str())
+        );
+        assert_eq!(
+            Some("alix"),
+            path.parent()
+                .and_then(|parent| parent.file_name())
+                .and_then(|name| name.to_str())
+        );
+    }
+
+    #[test]
     fn record_moves_to_front_and_dedups() {
         let dir = tempfile::tempdir().unwrap();
         let mut r = RecentDecks::load(dir.path().join("recent.json"));

@@ -437,6 +437,28 @@ mod tests {
         (store, augment, dir)
     }
 
+    #[test]
+    fn multiline_projection_keeps_line_breaks_in_text_and_runs() {
+        let mut projector = DisplayProjector::default();
+        let (text, runs) = project_block("first\nsecond", &mut projector);
+        assert_eq!("first\nsecond", text);
+        assert_eq!(
+            "first\nsecond",
+            runs.iter().map(|run| run.text.as_str()).collect::<String>()
+        );
+    }
+
+    #[test]
+    fn only_the_matching_marker_closes_a_projected_code_fence() {
+        let lines = ["```", "$x$", "~~~", "$y$", "```", "$z$"]
+            .map(str::to_string)
+            .to_vec();
+        let mut projector = DisplayProjector::default();
+        let (_, runs) = project_lines(&lines, &mut projector);
+        assert!(runs[..5].iter().flatten().all(|run| run.math.is_none()));
+        assert!(runs[5].iter().any(|run| run.math.is_some()));
+    }
+
     fn session_at(cards: Vec<Card>, store: &mut Store, depth: Depth, now: u64) -> Session {
         Session::new(
             cards,
@@ -1317,12 +1339,19 @@ mod tests {
     fn a_sitting_that_only_acquired_reports_when_those_cards_return() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse(FOUR);
+        let card_count = cards.len();
         let mut session = session_at(cards, &mut store, Depth::Recall, NOW);
-        // Meet every card without grading any: the pure-acquire sitting a big
-        // new deck produces.
-        while !session.is_finished() {
+        for index in 0..card_count {
+            assert!(
+                !session.is_finished(),
+                "session finished after only {index} of {card_count} acquisitions"
+            );
             session.acquire_current(&mut store, NOW);
         }
+        assert!(
+            session.is_finished(),
+            "session did not finish after acquiring all {card_count} cards once"
+        );
         let s = state(&session, &store, &augment, Some(NOW));
 
         assert!(s.acquired > 0, "the sitting acquired cards");

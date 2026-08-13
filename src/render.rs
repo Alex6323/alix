@@ -219,11 +219,9 @@ pub fn split_sentences(text: &str) -> Vec<String> {
             start = i + 1;
         }
     }
-    if start < chars.len() {
-        let tail: String = chars[start..].iter().collect();
-        if !tail.trim().is_empty() {
-            sentences.push(tail.trim().to_string());
-        }
+    let tail: String = chars[start..].iter().collect();
+    if !tail.trim().is_empty() {
+        sentences.push(tail.trim().to_string());
     }
     sentences
 }
@@ -292,6 +290,18 @@ mod tests {
     fn no_note_yields_no_units() {
         let card = Card::plain(Arc::from("s.txt"), "f".into(), vec!["b".into()], None, 1);
         assert!(note_units(&card).is_empty());
+    }
+
+    #[test]
+    fn checklist_items_preserve_the_authored_state_and_text() {
+        assert_eq!(
+            Some(vec![ChecklistItem {
+                checked: true,
+                text: "keep this".into(),
+                runs: crate::inline::parse_inline("keep this"),
+            }]),
+            checklist_items(&["- [x] keep this"])
+        );
     }
 
     #[test]
@@ -511,6 +521,14 @@ mod tests {
         assert_eq!(
             context_spans("____ here"),
             vec![Blank("____".into()), Text(" here".into())]
+        );
+        assert_eq!(
+            context_spans("[…] before ____"),
+            vec![
+                Hidden("[…]".into()),
+                Text(" before ".into()),
+                Blank("____".into()),
+            ]
         );
     }
 }

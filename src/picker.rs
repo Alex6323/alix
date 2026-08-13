@@ -101,11 +101,15 @@ pub fn workspace_last_progress(folder: &Path) -> Option<String> {
         .ok()?
         .last_review_ms()?;
     let now = crate::time::now_ms();
-    Some(if now > ts {
+    Some(progress_age(ts, now))
+}
+
+fn progress_age(ts: u64, now: u64) -> String {
+    if now > ts {
         format!("{} ago", crate::time::humanize_ms(now - ts))
     } else {
         "just now".to_string()
-    })
+    }
 }
 
 fn stem(name: &str) -> String {
@@ -227,6 +231,35 @@ mod tests {
             format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{text}")
         };
         std::fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn workspace_progress_reports_past_equal_and_future_reviews() {
+        assert_eq!("1s ago", progress_age(1_000, 2_000));
+        assert_eq!("just now", progress_age(2_000, 2_000));
+        assert_eq!("just now", progress_age(3_000, 2_000));
+
+        let dir = tempfile::tempdir().unwrap();
+        let progress = dir.path().join("progress/deck-test.json");
+        let mut store = crate::store::Store::open_deck(&progress, "deck-test", "test.md").unwrap();
+        store.get_or_insert("card-test", 0).record_review(
+            1,
+            crate::scheduler::Grade::Pass,
+            crate::depth::Depth::Recall,
+            false,
+        );
+        store.save().unwrap();
+
+        assert!(
+            workspace_last_progress(dir.path()).is_some_and(|age| age.ends_with(" ago")),
+            "a persisted workspace review must surface a progress age"
+        );
+    }
+
+    #[test]
+    fn stems_drop_only_the_markdown_suffix() {
+        assert_eq!("deck", stem("deck.md"));
+        assert_eq!("deck.txt", stem("deck.txt"));
     }
 
     #[test]

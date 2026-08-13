@@ -360,11 +360,11 @@ fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageRefere
             .get(alt_end + 1..)
             .and_then(|tail| tail.strip_prefix('('))
         else {
-            cursor = alt_end + 1;
+            cursor = alt_end.saturating_add(1);
             continue;
         };
         let Some((source, after)) = cloze::scan_src(paren) else {
-            cursor = alt_end + 1;
+            cursor = alt_end.saturating_add(1);
             continue;
         };
         let consumed = paren.len() - after.len();
@@ -374,12 +374,14 @@ fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageRefere
         } else {
             paren_start..paren_start + consumed.saturating_sub(1)
         };
-        if destination.start <= destination.end && destination.end <= line.len() {
-            out.push(ImageReference {
-                source,
-                destination: offset + destination.start..offset + destination.end,
-            });
+        if line.get(destination.clone()).is_none() {
+            cursor = paren_start + consumed;
+            continue;
         }
+        out.push(ImageReference {
+            source,
+            destination: offset + destination.start..offset + destination.end,
+        });
         cursor = paren_start + consumed;
     }
 }
@@ -469,7 +471,7 @@ fn prepare(text: &str) -> Result<Vec<&str>, ParseError> {
         let line = raw.strip_suffix('\r').unwrap_or(raw);
         if let Some(ch) = line
             .chars()
-            .find(|c| (*c as u32) < 0x20 && !WHITESPACE.contains(c))
+            .find(|c| matches!(*c as u32, 0x00..=0x1f) && !WHITESPACE.contains(c))
         {
             return Err(ParseError::ControlChar {
                 line: idx + 1,
@@ -1785,6 +1787,33 @@ mod tests {
         assert!(!deck.frontmatter.unspliceable);
     }
 
+    /// `ImageReference.source` is consumed as a FILENAME by
+    /// `assets::validate_image_at_root`, `share`, `explore` and `doctor`, so it
+    /// has to be the resolved path rather than the bytes as typed.
+    #[test]
+    fn an_image_source_is_the_resolved_path_the_asset_lookup_will_use() {
+        for (line, expected_source, expected_typed) in [
+            (r"![](my\(file\).png)", "my(file).png", r"my\(file\).png"),
+            (r"![](<a\>b.png>)", "a>b.png", r"a\>b.png"),
+            ("![](  spaced.png  )", "spaced.png", "  spaced.png  "),
+        ] {
+            let found = image_references(line);
+            assert_eq!(1, found.len(), "for {line}");
+            assert_eq!(expected_source, found[0].source, "for {line}");
+            assert_eq!(expected_typed, &line[found[0].destination.clone()]);
+        }
+    }
+
+    #[test]
+    fn directive_keys_are_nonempty_single_words() {
+        assert_eq!(None, directive(": value"));
+        assert_eq!(None, directive("bad key: value"));
+        assert_eq!(
+            Some(("key".into(), "value".into())),
+            directive("KEY: value")
+        );
+    }
+
     #[test]
     fn frontmatter_lists_accept_a_scalar_as_a_singleton() {
         let deck = parse("---\nsource: notes.md\nrequires: basics\n---\n## q\na\n");
@@ -2028,6 +2057,18 @@ mod tests {
             card.authored_distractors
         );
         assert!(card.hole.is_none());
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+    }
+
+    #[test]
+    fn blank_and_image_only_lines_do_not_turn_authored_choices_into_prose() {
+        let deck = parse("## Which is prime?\n\n- [ ] 4\n![](number-line.png)\n- [x] 5\n");
+        assert_eq!(vec!["5"], deck.cards[0].back);
+        assert_eq!(vec!["4".to_string()], deck.cards[0].authored_distractors);
+        assert_eq!(
+            vec![PathBuf::from("number-line.png")],
+            img_srcs(&deck.cards[0].images_back)
+        );
         assert!(deck.lints.is_empty(), "{:?}", deck.lints);
     }
 
@@ -3007,12 +3048,16 @@ mod tests {
 
     #[test]
     fn a_hole_answer_inside_a_longer_word_is_not_a_match() {
-        let deck = parse("## q\n\\blank{unit}, \\blank{integration}\n> Reunites the suites.\n");
-        assert_eq!(
-            Vec::<Lint>::new(),
-            deck.lints,
-            "`unit` inside `Reunites` is not the answer appearing"
-        );
+        for note in ["Reunites the suites.", "Unitary tests are narrow."] {
+            let deck = parse(&format!(
+                "## q\n\\blank{{unit}}, \\blank{{integration}}\n> {note}\n"
+            ));
+            assert_eq!(
+                Vec::<Lint>::new(),
+                deck.lints,
+                "`unit` inside {note:?} is not the answer appearing"
+            );
+        }
     }
 
     #[test]
@@ -3255,8 +3300,7 @@ the answer
 
     #[test]
     fn image_references_report_exact_destination_byte_spans() {
-        let text =
-            "---\ntitle: x\n---\n## q\n![one](images/Moon.PNG)\n![two](<with space/a.png>)\n";
+        let text = "---\ncover: ![private](ignored.png)\n---\n## q\nprefix ![one](images/Moon.PNG) and ![two](<with space/a.png>)\n";
         let references = image_references(text);
 
         assert_eq!(2, references.len());
@@ -3264,6 +3308,15 @@ the answer
         assert_eq!("images/Moon.PNG", &text[references[0].destination.clone()]);
         assert_eq!("with space/a.png", references[1].source);
         assert_eq!("with space/a.png", &text[references[1].destination.clone()]);
+    }
+
+    #[test]
+    fn an_escaped_image_after_a_long_prefix_never_hides_the_following_real_image() {
+        let text = "## q\nabcdefghijklmnopqrstuvwxyz0123456789 \\![skip](private.png) ![keep](public.png)\n";
+        let references = image_references(text);
+        assert_eq!(1, references.len());
+        assert_eq!("public.png", references[0].source);
+        assert_eq!("public.png", &text[references[0].destination.clone()]);
     }
 
     #[test]

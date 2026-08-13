@@ -370,6 +370,8 @@ mod tests {
     #[test]
     fn unsafe_svg_features_are_rejected() {
         let unsafe_fragments = [
+            r#"<div xmlns="http://www.w3.org/2000/svg"><path/></div>"#,
+            r#"<svg><path/></svg>"#,
             r#"<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>"#,
             r#"<svg xmlns="http://www.w3.org/2000/svg"><foreignObject/></svg>"#,
             r#"<svg xmlns="http://www.w3.org/2000/svg"><text>x</text></svg>"#,

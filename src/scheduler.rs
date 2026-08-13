@@ -54,9 +54,7 @@ pub trait Scheduler: Send + Sync {
         self.due_at(state, depth) <= now_ms
     }
 
-    fn acquire_cooldown_ms(&self) -> u64 {
-        DEFAULT_ACQUIRE_COOLDOWN_MS
-    }
+    fn acquire_cooldown_ms(&self) -> u64;
 }
 
 /// Doubles as `Session`'s same-card re-serve floor: one knob moves both gaps.
@@ -189,17 +187,21 @@ impl Fsrs {
         acquire_cooldown_ms: u64,
         deadline: Option<DeadlineTuning>,
     ) -> Self {
-        let parameters = Parameters {
-            request_retention: deadline.map_or(retention, |t| t.retention),
-            maximum_interval: deadline.map_or(36500, |t| t.max_interval_days),
-            enable_short_term: true,
-            ..Parameters::default()
-        };
+        let parameters = fsrs_parameters(retention, deadline);
         Self {
             fsrs: FSRS::new(parameters),
             acquire_cooldown_ms,
             due_ceiling_ms: deadline.map(|t| t.due_ceiling_ms),
         }
+    }
+}
+
+fn fsrs_parameters(retention: f64, deadline: Option<DeadlineTuning>) -> Parameters {
+    Parameters {
+        request_retention: deadline.map_or(retention, |t| t.retention),
+        maximum_interval: deadline.map_or(36500, |t| t.max_interval_days),
+        enable_short_term: true,
+        ..Parameters::default()
     }
 }
 
@@ -598,6 +600,72 @@ mod tests {
         let capped = deadline_tuning(d(2026, 9, 1), 0, 0.9, d(2026, 9, 1), 0).unwrap();
         assert_eq!(0.9, capped.retention, "ramp 0 = cap only");
         assert_eq!(1, capped.max_interval_days);
+
+        let outside = deadline_tuning(d(2026, 9, 1), 14, 0.97, d(2026, 8, 12), 0).unwrap();
+        assert_eq!(
+            0.97, outside.retention,
+            "outside the ramp the higher base holds"
+        );
+    }
+
+    #[test]
+    fn reanchor_converts_each_scheduled_day_to_milliseconds() {
+        let mut state = CardState {
+            recall: Some(FsrsState {
+                scheduled_days: 2,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        Fsrs::default().reanchor(&mut state, Depth::Recall, 1_234);
+        assert_eq!(1_234 + 2 * 86_400_000, state.recall.unwrap().due_ms);
+    }
+
+    #[test]
+    fn fsrs_conversion_preserves_every_persisted_source_field() {
+        let source = FsrsCard {
+            due: ms_to_dt(9_000),
+            stability: 2.5,
+            difficulty: 7.5,
+            elapsed_days: 4,
+            scheduled_days: 6,
+            reps: 8,
+            lapses: 3,
+            state: RawState::Review,
+            last_review: ms_to_dt(8_000),
+        };
+        let state = from_fsrs_card(&source);
+        assert_eq!(2.5, state.stability);
+        assert_eq!(7.5, state.difficulty);
+        assert_eq!(8, state.reps);
+        assert_eq!(3, state.lapses);
+        assert_eq!(2, state.state);
+        assert_eq!(6, state.scheduled_days);
+        assert_eq!(8_000, state.last_review_ms);
+        assert_eq!(9_000, state.due_ms);
+    }
+
+    #[test]
+    fn a_seeded_fsrs_card_is_new_and_anchored_at_the_review_time() {
+        let card = seed_card(&CardState::default(), 12_345);
+        assert_eq!(RawState::New, card.state);
+        assert_eq!(ms_to_dt(12_345), card.last_review);
+        assert_eq!(ms_to_dt(12_345), card.due);
+    }
+
+    #[test]
+    fn fsrs_parameters_preserve_deadline_tuning_and_short_term_steps() {
+        let parameters = fsrs_parameters(
+            0.83,
+            Some(DeadlineTuning {
+                retention: 0.96,
+                max_interval_days: 7,
+                due_ceiling_ms: 9_000,
+            }),
+        );
+        assert_eq!(0.96, parameters.request_retention);
+        assert_eq!(7, parameters.maximum_interval);
+        assert!(parameters.enable_short_term);
     }
 
     #[test]

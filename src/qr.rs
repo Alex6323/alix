@@ -2,8 +2,7 @@ pub fn terminal_blocks(text: &str) -> Option<String> {
     let qr = qrcodegen::QrCode::encode_text(text, qrcodegen::QrCodeEcc::Low).ok()?;
     let quiet = 2i32;
     let mut out = String::new();
-    let mut row = -quiet;
-    while row < qr.size() + quiet {
+    for row in (-quiet..qr.size() + quiet).step_by(2) {
         out.push_str("  ");
         for col in -quiet..qr.size() + quiet {
             // Out-of-range modules read as light, which draws the quiet zone.
@@ -17,7 +16,6 @@ pub fn terminal_blocks(text: &str) -> Option<String> {
             );
         }
         out.push('\n');
-        row += 2;
     }
     Some(out)
 }
@@ -49,7 +47,34 @@ mod tests {
     fn a_short_text_renders_terminal_blocks() {
         let q = terminal_blocks("HELLO").unwrap();
         assert!(q.contains('█'), "{q}");
-        assert!(q.lines().count() >= 12, "quiet zone + modules");
+        let lines: Vec<&str> = q.lines().collect();
+        assert_eq!(13, lines.len(), "quiet zone + paired module rows");
+        assert!(
+            lines.iter().all(|line| line.chars().count() == 27),
+            "every row carries the two-module quiet zone: {lines:?}"
+        );
+        assert_eq!(
+            [
+                "",
+                "    █▀▀▀▀▀█  ▀▄ ▀ █▀▀▀▀▀█",
+                "    █ ███ █  ▄▄ █ █ ███ █",
+                "    █ ▀▀▀ █ ▀█▄█▀ █ ▀▀▀ █",
+                "    ▀▀▀▀▀▀▀ █▄▀ █ ▀▀▀▀▀▀▀",
+                "     ▄█▀▄▄▀▀█▄▀███▀▄▀▄▄▄▄",
+                "    ▄▄█▀█▄▀  ▄▀▀█ ▄▀▀ █▄",
+                "    ▀  ▀▀▀▀▀███ ▀▀ ▄▀ █▄",
+                "    █▀▀▀▀▀█ ▀▄ ▄█▄  ▀▄ ▀█",
+                "    █ ███ █ ▄▀  ███ ▄▀ ▄▀",
+                "    █ ▀▀▀ █ ▀▄█ ▀█  █▄▀",
+                "    ▀▀▀▀▀▀▀      ▀ ▀   ▀",
+                "",
+            ],
+            lines
+                .iter()
+                .map(|line| line.trim_end())
+                .collect::<Vec<_>>()
+                .as_slice()
+        );
     }
 
     #[test]
@@ -58,6 +83,7 @@ mod tests {
         assert!(s.starts_with("<svg "), "{s}");
         assert!(s.contains("<path "), "{s}");
         assert!(s.contains("viewBox"), "{s}");
+        assert!(s.contains("viewBox=\"0 0 37 37\""), "{s}");
     }
 
     #[test]
