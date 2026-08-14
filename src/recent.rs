@@ -76,11 +76,13 @@ mod tests {
             Some("recent.json"),
             path.file_name().and_then(|name| name.to_str())
         );
-        assert_eq!(
-            Some("alix"),
-            path.parent()
-                .and_then(|parent| parent.file_name())
-                .and_then(|name| name.to_str())
+        // Windows data dirs end in a `data` component (`...\\alix\\data`), so
+        // `alix` is an ancestor rather than always the parent.
+        assert!(
+            path.ancestors()
+                .any(|ancestor| ancestor.file_name().and_then(|n| n.to_str()) == Some("alix")),
+            "the recent document lives under an `alix` directory: {}",
+            path.display()
         );
     }
 
