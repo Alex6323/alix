@@ -42,18 +42,26 @@ Recognize becomes an ordinary scheduled depth.
    `recognized_ms` is removed.
 2. `session::is_reviewable` loses its Recognize branch; all three depths run
    through `is_due`.
-3. Propagation extends one step down, copying the existing
-   Reconstruct-to-Recall rule exactly, all five clauses: only a `Pass`
-   propagates; in cram only when the source was due; a missing target schedule
-   is **not** created; an existing due target takes propagated credit; an
-   existing not-due target is re-anchored. A card with no Recognize schedule
-   therefore reads as available at that depth rather than as debt, which is what
-   `due_at` already means when another depth has a schedule and this one does
-   not.
-4. Recognize counts in `reviews`, `passed` and `failed`. Its private
+3. Propagation copies the existing Reconstruct-to-Recall rule exactly, all five
+   clauses: only a `Pass` propagates; in cram only when the source was due; a
+   missing target schedule is **not** created; an existing due target takes
+   propagated credit; an existing not-due target is re-anchored. A card with no
+   Recognize schedule therefore reads as available at that depth rather than as
+   debt, which is what `due_at` already means when another depth has a schedule
+   and this one does not.
+4. **A pass propagates to every SHALLOWER depth, not one step down.**
+   Reconstruct targets Recall and Recognize; Recall targets Recognize; the five
+   clauses apply per source-target pair. Stated because the clauses above fix
+   when propagation happens and not to whom. Read as a one-step chain, clause 3
+   would break at a missing Recall and leave an existing Recognize schedule
+   unmaintained while the learner demonstrably performs above it, which is the
+   failure this record exists to end. It is also today's direction:
+   `session.rs:420-421` marks recognition on every `Pass` before branching on
+   depth, so this narrows that behaviour with guards rather than reversing it.
+5. Recognize counts in `reviews`, `passed` and `failed`. Its private
    `recognized` / `recognize_partly` / `recognize_missed` tallies are retired
    in favour of a generic `partial` counter serving all three depths.
-5. Longer durability is expressed as tuning, not as a second mechanism:
+6. Longer durability is expressed as tuning, not as a second mechanism:
    `review.recognize_retention`, default 0.85, reusing the existing 0.70 to
    0.99 clamp.
 
@@ -122,18 +130,31 @@ snapshots and the `tests/contracts/*.json` corpus change with it:
 
 ## Security
 
-No trust boundary changes. No new input is parsed, no new file is written, and
-nothing crosses a process or network boundary that did not before.
+No trust boundary changes. `review.recognize_retention` is a new config input,
+read from the same already-trusted config file as the rest of `[review]` and
+clamped by the existing 0.70 to 0.99 rule, so it widens no boundary. No new file
+is written, and nothing crosses a process or network boundary that did not
+before.
 
 ## Verification
 
 - `CardState::schedule(Depth::Recognize)` returns the new state rather than
   `None`, and `schedule_slot` likewise.
 - A test that a Recognize pass creates a schedule and a second pass extends it.
-- A test that a Recall pass propagates to a due Recognize schedule and
-  re-anchors a not-yet-due one, mirroring
-  `a_due_reconstruct_cram_pass_credits_recall_like_a_normal_review` and
-  `an_early_reconstruct_cram_pass_propagates_nothing`.
+- A test that a **Reconstruct** pass credits an existing Recognize schedule
+  while Recall has none. This is the discriminator between the target set ruled
+  here and a one-step chain, so it is the single test that pins clause 4; under
+  the chain reading it would assert the opposite.
+- A test that a Recall pass takes propagated credit on a due Recognize
+  schedule, mirroring
+  `a_due_reconstruct_cram_pass_credits_recall_like_a_normal_review`.
+- A test that it re-anchors a not-yet-due one, mirroring
+  `a_reconstruct_pass_on_a_not_yet_due_recall_reanchors_without_reward`.
+- A test that an early cram pass leaves a lower schedule untouched, mirroring
+  `an_early_reconstruct_cram_pass_propagates_nothing`. This record previously
+  cited that test as the mirror for re-anchoring, which it is not: it asserts
+  "no recall credit, not even a re-anchor". Two distinct laws, corrected after
+  the fifth adversarial pass.
 - A test that a Recall pass does **not** create a missing Recognize schedule,
   mirroring `no_propagation_without_a_recall_schedule`. This is the clause the
   first draft of the decision got wrong, so it is the one most worth pinning.
