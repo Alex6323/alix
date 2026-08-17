@@ -42,10 +42,14 @@ Recognize becomes an ordinary scheduled depth.
    `recognized_ms` is removed.
 2. `session::is_reviewable` loses its Recognize branch; all three depths run
    through `is_due`.
-3. A `Pass` at Recall or Reconstruct propagates to the Recognize schedule when
-   Recognize is due, and re-anchors it when it is not. This extends the
-   existing Reconstruct-to-Recall propagation one step down rather than
-   introducing a new mechanism.
+3. Propagation extends one step down, copying the existing
+   Reconstruct-to-Recall rule exactly, all five clauses: only a `Pass`
+   propagates; in cram only when the source was due; a missing target schedule
+   is **not** created; an existing due target takes propagated credit; an
+   existing not-due target is re-anchored. A card with no Recognize schedule
+   therefore reads as available at that depth rather than as debt, which is what
+   `due_at` already means when another depth has a schedule and this one does
+   not.
 4. Recognize counts in `reviews`, `passed` and `failed`. Its private
    `recognized` / `recognize_partly` / `recognize_missed` tallies are retired
    in favour of a generic `partial` counter serving all three depths.
@@ -130,6 +134,9 @@ nothing crosses a process or network boundary that did not before.
   re-anchors a not-yet-due one, mirroring
   `a_due_reconstruct_cram_pass_credits_recall_like_a_normal_review` and
   `an_early_reconstruct_cram_pass_propagates_nothing`.
+- A test that a Recall pass does **not** create a missing Recognize schedule,
+  mirroring `no_propagation_without_a_recall_schedule`. This is the clause the
+  first draft of the decision got wrong, so it is the one most worth pinning.
 - A test that `partials_and_fails_never_propagate` still holds at the new depth.
 - A test that a card with no store entry stays immediately eligible at
   Recognize while a card engaged elsewhere waits out the acquire cooldown.
