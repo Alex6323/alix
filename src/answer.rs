@@ -207,14 +207,24 @@ pub fn grade_lines_unordered(inputs: &[String], expected: &[String]) -> Vec<Type
             None => results.push(grade_typed(input, "")),
         }
     }
+    // Fewer inputs than expected lines: every unclaimed line still owes a
+    // result, or a card is passed by answering part of it.
+    for (i, exp) in expected.iter().enumerate() {
+        if !claimed[i] {
+            results.push(grade_typed("", exp));
+        }
+    }
     results
 }
 
 pub fn grade_lines_ordered(inputs: &[String], expected: &[String]) -> Vec<TypedResult> {
-    inputs
-        .iter()
-        .enumerate()
-        .map(|(i, input)| grade_typed(input, expected.get(i).map_or("", String::as_str)))
+    (0..inputs.len().max(expected.len()))
+        .map(|i| {
+            grade_typed(
+                inputs.get(i).map_or("", String::as_str),
+                expected.get(i).map_or("", String::as_str),
+            )
+        })
         .collect()
 }
 
@@ -374,6 +384,34 @@ mod tests {
 
     fn lines(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn unordered_grading_fails_an_expected_line_nobody_answered() {
+        let expected = lines(&["scaphoid", "lunate"]);
+        let results = grade_lines_unordered(&lines(&["scaphoid"]), &expected);
+        assert_eq!(
+            expected.len(),
+            results.len(),
+            "every expected line owes a result"
+        );
+        assert!(
+            !results.iter().all(|result| result.passed),
+            "one line cannot satisfy a two-answer card"
+        );
+        let missed = results.iter().find(|r| !r.passed).expect("a failed result");
+        assert_eq!("lunate", missed.expected, "the unanswered line is named");
+        assert_eq!("", missed.input, "with no input against it");
+    }
+
+    #[test]
+    fn ordered_grading_fails_an_expected_line_nobody_answered() {
+        let expected = lines(&["one", "two", "three"]);
+        let results = grade_lines_ordered(&lines(&["one"]), &expected);
+        assert_eq!(expected.len(), results.len());
+        assert!(!results.iter().all(|result| result.passed));
+        assert_eq!("two", results[1].expected);
+        assert_eq!("three", results[2].expected);
     }
 
     #[test]

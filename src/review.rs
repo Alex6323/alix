@@ -1135,6 +1135,21 @@ mod tests {
     }
 
     #[test]
+    fn check_typed_fails_a_grouped_card_answered_only_in_part() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## carpals\nThe \\blank[w]{scaphoid} and the \\blank[w]{lunate}.\n");
+        assert_eq!(1, cards.len(), "one grouped card");
+        assert_eq!(2, cards[0].back.len(), "asking two spans");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+        let feedback = check_typed(&session, &["scaphoid".to_string()]).expect("feedback");
+        assert!(
+            !feedback.passed,
+            "one submitted line cannot pass a two-span card"
+        );
+    }
+
+    #[test]
     fn check_typed_orders_only_for_typeline() {
         let (mut store, _augment, _dir) = fixtures();
         let line = parse("## q <!-- reveal: line -->\none\ntwo\n");

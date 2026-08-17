@@ -207,6 +207,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A typed card with several expected answers can no longer be passed by
+  answering only some of them. Grading returned one result per submitted
+  line, so an unanswered line produced no result and the card passed when
+  every returned result passed. Both the unordered and the ordered check now
+  return a result for every expected line, failing the ones nobody answered.
+  The adult web app was unaffected, because it submits one field per expected
+  line including empty ones, but any client that sends only filled fields was
+  told a partly answered card had passed.
+
 - `alix doctor` reports a cloze block whose `>` note spells out one hole's
   answer. Every hole of a block shows the same note, so reviewing a later
   hole reveals an earlier one's answer before the learner has met it. The
