@@ -80,9 +80,16 @@ deeper depth is now maintained at Recognize instead of being permanently
 invisible; per-depth due information becomes expressible, and `alix list`
 replaces its `✓` and its Recall-only `due` column with three per-depth cells.
 
-Harder, and accepted: a card engaged at another depth but never recognized now
-waits out the acquire cooldown before appearing in a Recognize session, where
-today it appears at once. A Recognize sitting begins reporting an accuracy
+Unchanged, contrary to an earlier draft of this record: a card holding a
+schedule at another depth is available at Recognize immediately, both before and
+after. `due_at` returns 0 for a depth with no schedule when another depth has
+one, by an explicit branch, and generalizing `schedule(Recognize)` does not
+touch it. Only a card with an introduction timestamp and no schedule anywhere
+waits out the introduction cooldown, which is also true today. This record
+previously claimed the change introduced that wait; it does not, and the spacing
+gap it implied is `{#cross-depth-recency}`, tracked separately.
+
+Harder, and accepted: a Recognize sitting begins reporting an accuracy
 percentage, since session counters are single-depth
 (`options.depth` is fixed at construction).
 
@@ -160,7 +167,9 @@ before.
   first draft of the decision got wrong, so it is the one most worth pinning.
 - A test that `partials_and_fails_never_propagate` still holds at the new depth.
 - A test that a card with no store entry stays immediately eligible at
-  Recognize while a card engaged elsewhere waits out the acquire cooldown.
+  Recognize, and that a card holding a schedule at another depth is likewise
+  immediately available there rather than waiting. An earlier version of this
+  bullet asked for the opposite and could not have passed.
 - The `contract.rs` snapshots, which fail until `docs/API.md` and the corpus
   agree.
 
