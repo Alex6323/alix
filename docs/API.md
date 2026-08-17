@@ -140,6 +140,15 @@ so is every client.
 4. `POST /api/grade` is **authoritative**: `{grade: "failed"|"partly"|"passed"}`
    *(closed)*, or `{covered, total}` for the explain-keypoints rubric. It
    applies the grade, saves progress, and returns the next `StateDto`.
+   **After a correct Recognize pick, offer the learner a demote.** The pick
+   feedback is evidence, not a grade, so a learner who guessed right should be
+   able to say so: alongside the commit action, send `{grade: "failed"}`
+   instead. Both shipped clients do this with a quiet "I guessed" control
+   (`web/alix/review/study.js`, `mobile/alix/lib/review/review_card.dart`), and
+   neither auto-continues, so the learner always has the last word. Nothing in
+   the protocol enforces it, which is why it is written down here: a client
+   that omits it silently records lucky guesses as knowledge, and the guess
+   rate is highest exactly where the option count is lowest.
    Other transitions: `/api/skip`, `/api/acquire` (acknowledge a new card the
    learner has no recorded attempt on), `/api/remove` (mark for deck-file
    removal), `/api/restart`.
