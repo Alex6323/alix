@@ -1,6 +1,7 @@
 # 0033: Recognize is a scheduled depth, not a one-way gate
 
-- Status: Proposed
+- Status: Accepted
+- Evidence: recognize_retention in src/scheduler.rs
 - Recorded: 2026-08-17
 - Retrospective: No
 

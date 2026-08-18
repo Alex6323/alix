@@ -28,21 +28,16 @@ class ReviewSummaryView extends StatelessWidget {
     final tokens = theme.alix;
     final reviews = state.reviews;
     final acquired = state.acquired;
-    // Recognize answers are work too (the invariant: work done means the
-    // summary shows it), even though they never count as FSRS reviews.
-    final recognized = state.recognized;
-    final recognizePartly = state.recognizePartly;
-    final recognizeMissed = state.recognizeMissed;
-    final recognizeWork = recognized + recognizePartly + recognizeMissed;
+    final partial = state.partial;
     final accuracy = reviews > 0
         ? '${(100 * state.passed / reviews).round()}%'
         : '–';
-    final headline = reviews > 0 || recognizeWork > 0
+    final headline = reviews > 0
         ? 'Nicely charged.'
         : acquired > 0
         ? 'New cards planted.'
         : 'Nothing due.';
-    final nextDue = reviews == 0 && acquired == 0 && recognizeWork == 0
+    final nextDue = reviews == 0 && acquired == 0
         ? _nextDueNote(state.nextDueMs)
         : null;
     final noteText =
@@ -87,12 +82,7 @@ class ReviewSummaryView extends StatelessWidget {
             ),
             _summaryRow(context, 'accuracy', accuracy, tokens),
           ],
-          if (recognized > 0)
-            _summaryRow(context, 'recognized', '$recognized', tokens),
-          if (recognizePartly > 0)
-            _summaryRow(context, 'almost', '$recognizePartly', tokens),
-          if (recognizeMissed > 0)
-            _summaryRow(context, 'missed', '$recognizeMissed', tokens),
+          if (partial > 0) _summaryRow(context, 'almost', '$partial', tokens),
           if (noteText != null) ...[
             const SizedBox(height: 18),
             Container(

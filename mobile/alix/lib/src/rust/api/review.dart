@@ -408,9 +408,7 @@ class ReviewState {
   final int passed;
   final int failed;
   final int acquired;
-  final int recognized;
-  final int recognizePartly;
-  final int recognizeMissed;
+  final int partial;
   final bool canRestart;
   final BigInt? nextDueMs;
   final int dueLeft;
@@ -437,9 +435,7 @@ class ReviewState {
     required this.passed,
     required this.failed,
     required this.acquired,
-    required this.recognized,
-    required this.recognizePartly,
-    required this.recognizeMissed,
+    required this.partial,
     required this.canRestart,
     this.nextDueMs,
     required this.dueLeft,
@@ -468,9 +464,7 @@ class ReviewState {
       passed.hashCode ^
       failed.hashCode ^
       acquired.hashCode ^
-      recognized.hashCode ^
-      recognizePartly.hashCode ^
-      recognizeMissed.hashCode ^
+      partial.hashCode ^
       canRestart.hashCode ^
       nextDueMs.hashCode ^
       dueLeft.hashCode ^
@@ -501,9 +495,7 @@ class ReviewState {
           passed == other.passed &&
           failed == other.failed &&
           acquired == other.acquired &&
-          recognized == other.recognized &&
-          recognizePartly == other.recognizePartly &&
-          recognizeMissed == other.recognizeMissed &&
+          partial == other.partial &&
           canRestart == other.canRestart &&
           nextDueMs == other.nextDueMs &&
           dueLeft == other.dueLeft &&

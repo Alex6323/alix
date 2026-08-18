@@ -110,10 +110,7 @@ pub struct _ReviewState {
     pub passed: u32,
     pub failed: u32,
     pub acquired: u32,
-    // Recognize work is not an FSRS review, but a summary must still show it.
-    pub recognized: u32,
-    pub recognize_partly: u32,
-    pub recognize_missed: u32,
+    pub partial: u32,
     pub can_restart: bool,
     pub next_due_ms: Option<u64>,
     // Done-only backlog counts; the mobile summary does not surface them yet, so

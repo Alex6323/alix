@@ -24,6 +24,18 @@ impl Depth {
             _ => None,
         }
     }
+
+    // Propagation targets: a pass proves every shallower ability, so credit
+    // flows to each of them, never upward (ADR 0033).
+    pub fn shallower(self) -> impl Iterator<Item = Depth> {
+        match self {
+            Depth::Recognize => [].as_slice(),
+            Depth::Recall => [Depth::Recognize].as_slice(),
+            Depth::Reconstruct => [Depth::Recall, Depth::Recognize].as_slice(),
+        }
+        .iter()
+        .copied()
+    }
 }
 
 pub fn depth_name(depth: Depth) -> &'static str {

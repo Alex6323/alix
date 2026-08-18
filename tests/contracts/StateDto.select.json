@@ -19,11 +19,9 @@
   "met_total": 4,
   "mode": "flip",
   "new_left": 0,
+  "partial": 0,
   "passed": 0,
   "phase": "select",
-  "recognize_missed": 0,
-  "recognize_partly": 0,
-  "recognized": 0,
   "remaining": 0,
   "reviews": 0,
   "study_revision": 7

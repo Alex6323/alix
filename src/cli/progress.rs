@@ -22,11 +22,25 @@ use crate::{
     common::{confirm, expand_target},
 };
 
+// One depth's cell: its state label plus its due, `-` with no schedule.
+fn depth_cell(state: &alix::store::CardState, scheduler: &Fsrs, depth: Depth, now: u64) -> String {
+    let Some(fsrs) = state.schedule(depth) else {
+        return "-".to_string();
+    };
+    let label = state_label(Some(fsrs.state));
+    let due = scheduler.due_at(state, depth);
+    if due <= now {
+        format!("{label} due")
+    } else {
+        format!("{label} {}", humanize_ms(due - now))
+    }
+}
+
 fn state_label(fsrs_state: Option<u8>) -> &'static str {
     match fsrs_state {
-        Some(1) => "learning",
+        Some(1) => "learn",
         Some(2) => "review",
-        Some(3) => "relearning",
+        Some(3) => "relearn",
         Some(_) => "new",
         None => "-",
     }
@@ -46,6 +60,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let mut due_now = 0usize;
         let mut due_24h = 0usize;
         let mut due_now_reconstruct = 0usize;
+        let mut due_now_recognize = 0usize;
         let mut reviews = 0u32;
         let mut passes = 0u32;
         for card in &deck.cards {
@@ -61,6 +76,9 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
                     }
                     if scheduler.is_due(state, Depth::Reconstruct, now) {
                         due_now_reconstruct += 1;
+                    }
+                    if scheduler.is_due(state, Depth::Recognize, now) {
+                        due_now_recognize += 1;
                     }
                 }
                 reviews += state.total_reviews;
@@ -101,6 +119,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         println!("{} ({} cards)", deck.display_name(), deck.cards.len());
         println!("  state:   {state}");
         println!("  due:     {due_now} now, {due_24h} within 24h");
+        println!("  due now (recognize):   {due_now_recognize}");
         println!("  due now (recall):      {due_now_recall}");
         println!("  due now (reconstruct): {due_now_reconstruct}");
         if reviews > 0 {
@@ -125,34 +144,23 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
         let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
         println!("{}", deck.display_name());
         for card in &deck.cards {
-            let (recall_label, recon_label, recognized_mark, due) =
-                match card.id().and_then(|id| store.progress(&id)) {
-                    Some(state) => {
-                        // A retired card's due time is moot until `alix reset`.
-                        let due =
-                            if alix::session::is_retired(card, &store, review.retire_after_days) {
-                                "resting".to_string()
-                            } else {
-                                let due = scheduler.due_at(state, Depth::Recall);
-                                if due <= now {
-                                    "due now".to_string()
-                                } else {
-                                    format!("due in {}", humanize_ms(due - now))
-                                }
-                            };
-                        let recall_label = state_label(state.recall.as_ref().map(|f| f.state));
-                        let recon_label = state_label(state.reconstruct.as_ref().map(|f| f.state));
-                        let recognized_mark = if state.recognized_ms.is_some() {
-                            "✓"
-                        } else {
-                            " "
-                        };
-                        (recall_label, recon_label, recognized_mark, due)
+            let cells = match card.id().and_then(|id| store.progress(&id)) {
+                Some(state) => {
+                    // A retired card's due time is moot until `alix reset`.
+                    if alix::session::is_retired(card, &store, review.retire_after_days) {
+                        "resting".to_string()
+                    } else {
+                        [Depth::Recognize, Depth::Recall, Depth::Reconstruct]
+                            .map(|depth| {
+                                format!("{:>11}", depth_cell(state, &scheduler, depth, now))
+                            })
+                            .join("|")
                     }
-                    None => (state_label(None), state_label(None), " ", "-".to_string()),
-                };
+                }
+                None => format!("{0:>11}|{0:>11}|{0:>11}", "-"),
+            };
             let front: String = card.front.chars().take(60).collect();
-            println!("  [{recall_label:>10}|{recon_label:>10}]{recognized_mark} {front:<60} {due}");
+            println!("  [{cells}] {front}");
         }
     }
     Ok(())

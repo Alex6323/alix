@@ -57,6 +57,11 @@ pub trait Scheduler: Send + Sync {
     fn acquire_cooldown_ms(&self) -> u64;
 }
 
+/// Recognition holds far longer than production; 0.85 is inferred from the
+/// interval curve, not measured (ADR 0033 records the provenance), which is
+/// why it is a config key and not a constant learners cannot move.
+pub const DEFAULT_RECOGNIZE_RETENTION: f64 = 0.85;
+
 /// Doubles as `Session`'s same-card re-serve floor: one knob moves both gaps.
 pub const DEFAULT_ACQUIRE_COOLDOWN_MS: u64 = 5 * 60 * 1000;
 
@@ -173,25 +178,43 @@ fn seed_card(_state: &CardState, now_ms: u64) -> FsrsCard {
 
 pub struct Fsrs {
     fsrs: FSRS,
+    // Recognition decays slower than production, so Recognize runs its own
+    // desired retention (ADR 0033); one mechanism, two tunings.
+    recognize_fsrs: FSRS,
     acquire_cooldown_ms: u64,
     due_ceiling_ms: Option<u64>,
 }
 
 impl Fsrs {
     pub fn new(retention: f64, acquire_cooldown_ms: u64) -> Self {
-        Self::tuned(retention, acquire_cooldown_ms, None)
+        Self::tuned(
+            retention,
+            DEFAULT_RECOGNIZE_RETENTION,
+            acquire_cooldown_ms,
+            None,
+        )
     }
 
     pub fn tuned(
         retention: f64,
+        recognize_retention: f64,
         acquire_cooldown_ms: u64,
         deadline: Option<DeadlineTuning>,
     ) -> Self {
         let parameters = fsrs_parameters(retention, deadline);
+        let recognize_parameters = fsrs_parameters(recognize_retention, deadline);
         Self {
             fsrs: FSRS::new(parameters),
+            recognize_fsrs: FSRS::new(recognize_parameters),
             acquire_cooldown_ms,
             due_ceiling_ms: deadline.map(|t| t.due_ceiling_ms),
+        }
+    }
+
+    fn engine(&self, depth: Depth) -> &FSRS {
+        match depth {
+            Depth::Recognize => &self.recognize_fsrs,
+            Depth::Recall | Depth::Reconstruct => &self.fsrs,
         }
     }
 }
@@ -215,9 +238,14 @@ impl Scheduler for Fsrs {
     fn due_at(&self, state: &CardState, depth: Depth) -> u64 {
         match state.schedule(depth) {
             Some(s) => s.due_ms,
-            // Established at the other depth: due now, skipping the acquire
+            // Established at another depth: due now, skipping the acquire
             // warm-up (its own schedule is created lazily on the first grade).
-            None if state.recall.is_some() || state.reconstruct.is_some() => 0,
+            None if state.recognize.is_some()
+                || state.recall.is_some()
+                || state.reconstruct.is_some() =>
+            {
+                0
+            }
             // Anchor the warm-up on the acquire fact, or on the first
             // presentation for a card that was shown but never acquired (a
             // failed fresh pick), so it still waits out the cooldown rather than
@@ -247,7 +275,9 @@ impl Scheduler for Fsrs {
             Some(s) => (to_fsrs_card(s), s.state, s.learning_goods),
             None => (seed_card(state, now_ms), 0, 0),
         };
-        let info = self.fsrs.next(card, ms_to_dt(now_ms), rating_for(grade));
+        let info = self
+            .engine(depth)
+            .next(card, ms_to_dt(now_ms), rating_for(grade));
         let mut next = from_fsrs_card(&info.card);
 
         // Graduation gate: acquisition (state 0|1) needs two full Goods before
@@ -278,8 +308,6 @@ impl Scheduler for Fsrs {
             next.scheduled_days = (ceiling.saturating_sub(now_ms) / DAY_MS) as u32;
         }
 
-        // `Recognize` has no slot (unscheduled + boolean): a silent no-op,
-        // never reached since Recognize is graded by pick, not `apply`.
         let Some(slot) = state.schedule_slot(depth) else {
             return;
         };
@@ -359,11 +387,41 @@ mod tests {
     }
 
     #[test]
-    fn apply_on_recognize_is_a_no_op() {
+    fn apply_on_recognize_creates_its_own_schedule_and_touches_no_other() {
         let sched = Fsrs::default();
         let mut st = CardState::new(0);
         sched.apply(&mut st, Depth::Recognize, Grade::Pass, 1_000, false);
-        assert!(st.recall.is_none() && st.reconstruct.is_none() && st.history.is_empty());
+        assert!(
+            st.recognize.is_some(),
+            "recognize is an ordinary scheduled depth"
+        );
+        assert!(st.recall.is_none() && st.reconstruct.is_none());
+        assert_eq!(Depth::Recognize, st.history[0].depth);
+    }
+
+    #[test]
+    fn recognize_runs_its_own_retention_and_schedules_longer() {
+        // Same review sequence, laxer desired retention: the recognize engine
+        // must produce a longer interval than the recall engine, or the
+        // per-depth tuning is wired to nothing.
+        let sched = Fsrs::tuned(0.9, 0.7, 0, None);
+        let mut st = CardState::new(0);
+        let mut now = 1_000;
+        for _ in 0..3 {
+            sched.apply(&mut st, Depth::Recall, Grade::Pass, now, false);
+            sched.apply(&mut st, Depth::Recognize, Grade::Pass, now, false);
+            now = st
+                .recall
+                .as_ref()
+                .map(|f| f.due_ms.max(now + 1))
+                .unwrap_or(now + 1);
+        }
+        let recall_days = st.recall.as_ref().unwrap().scheduled_days;
+        let recognize_days = st.recognize.as_ref().unwrap().scheduled_days;
+        assert!(
+            recognize_days > recall_days,
+            "0.7 retention must out-schedule 0.9: recognize {recognize_days}d vs recall {recall_days}d"
+        );
     }
 
     #[test]
@@ -680,6 +738,7 @@ mod tests {
         let ceiling = now + 3 * 86_400_000;
         let sched = Fsrs::tuned(
             0.9,
+            DEFAULT_RECOGNIZE_RETENTION,
             1_000,
             Some(DeadlineTuning {
                 retention: 0.9,

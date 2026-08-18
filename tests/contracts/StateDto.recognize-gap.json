@@ -19,15 +19,13 @@
   "met_total": 4,
   "mode": "flip",
   "new_left": 0,
+  "partial": 1,
   "passed": 0,
   "phase": "done",
   "recognize_gap": {
     "recall": 13,
     "unaugmented": 13
   },
-  "recognize_missed": 2,
-  "recognize_partly": 1,
-  "recognized": 5,
   "remaining": 0,
   "reviews": 0,
   "study_revision": 7

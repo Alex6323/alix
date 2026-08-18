@@ -914,7 +914,10 @@ fn workspace_members_fall_back_to_the_workspaces_own_store_on_disk() {
     let id = Deck::load(ws.join("decks/one.md")).unwrap().cards[0]
         .id()
         .unwrap();
-    ws_store.get_or_insert(&id, now).recognized_ms = Some(now);
+    ws_store.get_or_insert(&id, now).recognize = Some(crate::store::FsrsState {
+        due_ms: now + 30 * 86_400_000,
+        ..Default::default()
+    });
     ws_store.save().unwrap();
 
     let recent = RecentDecks::load(dir.path().join("recent.json"));
@@ -967,7 +970,10 @@ fn workspace_members_prefer_a_retained_store_over_reopening_from_disk() {
     let id = Deck::load(ws.join("decks/one.md")).unwrap().cards[0]
         .id()
         .unwrap();
-    retained_store.get_or_insert(&id, now).recognized_ms = Some(now);
+    retained_store.get_or_insert(&id, now).recognize = Some(crate::store::FsrsState {
+        due_ms: now + 30 * 86_400_000,
+        ..Default::default()
+    });
 
     let mut retained: HashMap<PathBuf, Arc<Store>> = HashMap::new();
     retained.insert(ws_root, Arc::new(retained_store));
@@ -1026,7 +1032,7 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
             ..Default::default()
         };
         let entry = ws_store.get_or_insert(&id, now);
-        entry.recognized_ms = Some(now);
+        entry.recognize = Some(future);
         entry.recall = Some(future);
         entry.reconstruct = Some(future);
     }
@@ -1106,7 +1112,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
         ..Default::default()
     };
     let entry = instance_store.get_or_insert(&id, now);
-    entry.recognized_ms = Some(now);
+    entry.recognize = Some(future);
     entry.recall = Some(future);
     entry.reconstruct = Some(future);
     instance_store.save().unwrap();
@@ -1537,7 +1543,10 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     let state = store.get_or_insert(&cards[0].id().unwrap(), 0);
-    state.recognized_ms = Some(500);
+    state.recognize = Some(crate::store::FsrsState {
+        due_ms: 500,
+        ..Default::default()
+    });
     let r = reviewing_at(deck, cards, &mut store, Depth::Recall);
 
     let dto = review_state(Some(&r), &store, None, 0);

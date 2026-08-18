@@ -441,6 +441,7 @@ impl Default for LogConfig {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReviewConfig {
     pub retention: f64,
+    pub recognize_retention: f64,
     pub retire_after_days: Option<u32>,
     pub acquire_cooldown_ms: u64,
     pub max_session: Option<usize>,
@@ -453,6 +454,7 @@ impl Default for ReviewConfig {
     fn default() -> Self {
         Self {
             retention: 0.9,
+            recognize_retention: crate::scheduler::DEFAULT_RECOGNIZE_RETENTION,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
             acquire_cooldown_ms: crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
             max_session: None,
@@ -477,6 +479,9 @@ impl ReviewConfig {
         let mut review = self;
         if let Some(retention) = raw.review.retention {
             review.retention = retention.clamp(MIN_RETENTION, MAX_RETENTION);
+        }
+        if let Some(r) = raw.review.recognize_retention {
+            review.recognize_retention = r.clamp(MIN_RETENTION, MAX_RETENTION);
         }
         if let Some(retire_after) = raw.review.retire_after
             && let Ok(days) = parse_retire_after(&retire_after)
@@ -562,6 +567,7 @@ struct RawConfig {
 #[serde(deny_unknown_fields)]
 struct RawReviewConfig {
     retention: Option<f64>,
+    recognize_retention: Option<f64>,
     retire_after: Option<String>,
     acquire_cooldown: Option<String>,
     max_session: Option<usize>,
@@ -572,6 +578,7 @@ struct RawReviewConfig {
 #[serde(deny_unknown_fields)]
 struct RawLocalReviewConfig {
     retention: Option<f64>,
+    recognize_retention: Option<f64>,
     retire_after: Option<String>,
     acquire_cooldown: Option<String>,
     max_session: Option<usize>,
@@ -931,6 +938,9 @@ impl Config {
         let mut review = ReviewConfig::default();
         if let Some(retention) = raw.review.retention {
             review.retention = retention.clamp(MIN_RETENTION, MAX_RETENTION);
+        }
+        if let Some(r) = raw.review.recognize_retention {
+            review.recognize_retention = r.clamp(MIN_RETENTION, MAX_RETENTION);
         }
         if let Some(retire_after) = raw.review.retire_after {
             review.retire_after_days =

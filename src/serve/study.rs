@@ -1801,7 +1801,11 @@ mod tests {
     }
 
     #[test]
-    fn a_passing_recognition_grade_records_the_nonempty_deck_badge() {
+    fn a_single_recognition_pass_no_longer_earns_the_deck_badge() {
+        // Under ADR 0033 the recognize badge means mature-at-recognize, the
+        // same bar the other depths always had; one pass is a learning-state
+        // schedule far below it. The badge write path itself is exercised
+        // through `note_badges`, whose maturity laws live in store tests.
         let dir = tempfile::tempdir().unwrap();
         let (mut state, deck_id) =
             study_state_with_review(dir.path(), crate::depth::Depth::Recognize);
@@ -1814,11 +1818,12 @@ mod tests {
 
         assert!(state.grade(crate::scheduler::Grade::Pass).is_some());
 
-        assert!(
+        assert_eq!(
+            None,
             state
                 .store
-                .badge_earned(&deck_id, crate::depth::Depth::Recognize)
-                .is_some()
+                .badge_earned(&deck_id, crate::depth::Depth::Recognize),
+            "one pass is not maturity; the flag-era instant badge is gone"
         );
     }
 

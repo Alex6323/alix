@@ -129,6 +129,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Recognize is now an ordinary scheduled depth (ADR 0033). A recognition
+  answer creates and extends its own FSRS schedule at a laxer desired
+  retention (`[review] recognize_retention`, default 0.85), so recognition
+  fades and returns instead of being asked exactly once forever. Recognize
+  grades count in `reviews`/`passed`/`failed`; the per-depth
+  `recognized`/`recognize_partly`/`recognize_missed` tallies are replaced by
+  one `partial` counter for all depths. A pass now propagates credit to every
+  shallower depth with an existing schedule. `alix list` shows three per-depth
+  cells (state plus due, shallow to deep) instead of the `✓` mark and the
+  Recall-only due column, and `alix stats` gains a `due now (recognize)` line.
+  The recognize deck badge now means mature-at-recognize, the same bar the
+  other depths always had. Existing progress files fail to open (pre-1.0, no
+  migration); recognize progress was one boolean per card and is recoverable
+  by one pass.
+
 - `alix doctor` now reports a frozen source excerpt whose lines moved, and
   `--repair-source-locators` rebases it. Previously a moved excerpt was found
   anywhere in the file and passed silently, so a card could point a reader at

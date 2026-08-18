@@ -538,6 +538,7 @@ pub fn select(
         store,
         Box::new(Fsrs::tuned(
             review.retention,
+            review.recognize_retention,
             review.acquire_cooldown_ms,
             tuning,
         )),

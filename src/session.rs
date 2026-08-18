@@ -83,10 +83,10 @@ pub struct SessionStats {
     pub reviews: usize,
     pub passed: usize,
     pub failed: usize,
+    // Partial passes at any depth; the retired per-depth Recognize tallies
+    // collapsed into this one generic counter (ADR 0033).
+    pub partial: usize,
     pub acquired: usize,
-    pub recognized: usize,
-    pub recognize_partly: usize,
-    pub recognize_missed: usize,
 }
 
 pub struct Session {
@@ -263,12 +263,7 @@ impl Session {
             }
             match store.progress(&id) {
                 Some(state) => {
-                    let eligible = if depth == Depth::Recognize {
-                        self.options.cram || state.recognized_ms.is_none()
-                    } else {
-                        self.options.cram || self.scheduler.is_due(state, depth, now_ms)
-                    };
-                    if eligible {
+                    if self.options.cram || self.scheduler.is_due(state, depth, now_ms) {
                         due_left += 1;
                     }
                 }
@@ -291,21 +286,10 @@ impl Session {
                     return None;
                 }
                 let id = card.id()?;
-                let due_at = if self.options.depth == Depth::Recognize {
-                    let eligible = self.options.cram
-                        || store
-                            .progress(&id)
-                            .is_none_or(|s| s.recognized_ms.is_none());
-                    if !eligible {
-                        return None;
-                    }
-                    now_ms
-                } else {
-                    match store.progress(&id) {
-                        None => now_ms,
-                        Some(_) if self.options.cram => now_ms,
-                        Some(state) => self.scheduler.due_at(state, self.options.depth),
-                    }
+                let due_at = match store.progress(&id) {
+                    None => now_ms,
+                    Some(_) if self.options.cram => now_ms,
+                    Some(state) => self.scheduler.due_at(state, self.options.depth),
                 };
                 let floor_open = self
                     .floors
@@ -417,26 +401,6 @@ impl Session {
         if grade.passed() && state.acquired_ms.is_none() {
             state.acquired_ms = Some(now_ms);
         }
-        if grade == Grade::Pass && state.recognized_ms.is_none() {
-            state.recognized_ms = Some(now_ms);
-        }
-
-        if depth == Depth::Recognize {
-            state.record_review(now_ms, grade, Depth::Recognize, false);
-            match grade {
-                Grade::Pass => self.stats.recognized += 1,
-                Grade::Partial => self.stats.recognize_partly += 1,
-                Grade::Fail => self.stats.recognize_missed += 1,
-            }
-            if grade == Grade::Pass {
-                self.roster
-                    .retain(|&i| self.cards[i].id().as_deref() != Some(id.as_str()));
-                self.served.insert(id.clone());
-            }
-            self.floor(&id, now_ms);
-            self.advance(store, now_ms);
-            return;
-        }
 
         let was_due = self.scheduler.is_due(state, depth, now_ms);
         // A cram pass on a card not yet due only re-anchors an existing
@@ -450,16 +414,20 @@ impl Session {
             self.scheduler.apply(state, depth, grade, now_ms, false);
         }
 
-        if depth == Depth::Reconstruct
-            && grade == Grade::Pass
-            && (!self.options.cram || was_due)
-            && state.recall.is_some()
-        {
-            if self.scheduler.is_due(state, Depth::Recall, now_ms) {
-                self.scheduler
-                    .apply(state, Depth::Recall, Grade::Pass, now_ms, true);
-            } else {
-                self.scheduler.reanchor(state, Depth::Recall, now_ms);
+        // A pass propagates to EVERY shallower depth (ADR 0033 clause 4),
+        // under the same five guards per source-target pair; a missing target
+        // schedule is never created.
+        if grade == Grade::Pass && (!self.options.cram || was_due) {
+            for target in depth.shallower() {
+                if state.schedule(target).is_none() {
+                    continue;
+                }
+                if self.scheduler.is_due(state, target, now_ms) {
+                    self.scheduler
+                        .apply(state, target, Grade::Pass, now_ms, true);
+                } else {
+                    self.scheduler.reanchor(state, target, now_ms);
+                }
             }
         }
 
@@ -469,6 +437,9 @@ impl Session {
             self.stats.passed += 1;
         } else {
             self.stats.failed += 1;
+        }
+        if grade == Grade::Partial {
+            self.stats.partial += 1;
         }
         if passed || self.options.cram {
             self.roster.retain(|&i| i != index);
@@ -552,16 +523,14 @@ impl Session {
         let depth = self.options.depth;
         let progress = store.progress(&id);
         let revealed = self.revealed.contains(id.as_str());
-        let due = if depth == Depth::Recognize || self.options.cram {
+        let due = if self.options.cram {
             now_ms
         } else {
             progress
                 .map(|state| self.scheduler.due_at(state, depth))
                 .unwrap_or(now_ms)
         };
-        let due_now = if depth == Depth::Recognize {
-            self.options.cram || progress.is_none_or(|state| state.recognized_ms.is_none())
-        } else {
+        let due_now = {
             self.options.cram
                 || due <= now_ms
                 // A card revealed this sitting stays its acquire card even
@@ -746,11 +715,7 @@ fn build_queue(
         }
         match store.progress(&id) {
             Some(state) => {
-                let eligible = if depth == Depth::Recognize {
-                    options.cram || state.recognized_ms.is_none()
-                } else {
-                    options.cram || scheduler.is_due(state, depth, now_ms)
-                };
+                let eligible = options.cram || scheduler.is_due(state, depth, now_ms);
                 if eligible {
                     due.push(i);
                 }
@@ -994,11 +959,6 @@ pub fn is_reviewable(
     let Some(id) = card.id() else {
         return true;
     };
-    if depth == Depth::Recognize {
-        return store
-            .progress(&id)
-            .is_none_or(|s| s.recognized_ms.is_none());
-    }
     match store.progress(&id) {
         Some(state) => scheduler.is_due(state, depth, now_ms),
         None => true,
@@ -1554,7 +1514,7 @@ mod tests {
         );
         assert_eq!(Some(first.clone()), s.current().and_then(|c| c.id()));
 
-        store.get_or_insert(&first, 1_000).recognized_ms = Some(1_000);
+        store.get_or_insert(&first, 1_000).recognize = Some(mature_fsrs(2_000_000));
 
         s.poll(&mut store, 1_000);
         assert_eq!(
@@ -3310,11 +3270,26 @@ mod tests {
         );
         s.grade(&mut store, Grade::Pass, 1_000);
         s.grade(&mut store, Grade::Fail, 2_000);
-        assert!(store.get(&a).unwrap().recognized_ms.is_some());
-        assert!(store.get(&b).is_none_or(|st| st.recognized_ms.is_none()));
+        assert!(
+            store.get(&a).unwrap().recognize.is_some(),
+            "a correct pick creates the recognize schedule"
+        );
+        assert!(
+            store.get(&b).unwrap().recognize.is_some(),
+            "a failed pick is a review too and seeds its learning schedule"
+        );
+        assert!(
+            store
+                .get(&b)
+                .unwrap()
+                .history
+                .iter()
+                .all(|r| !r.grade.passed()),
+            "the seeded schedule carries the fail, not a pass"
+        );
         assert!(
             store.get(&a).unwrap().recall.is_none(),
-            "recognize never schedules"
+            "a recognize pass schedules its own depth, never recall"
         );
         assert_eq!(
             0,
@@ -3402,10 +3377,10 @@ mod tests {
     }
 
     #[test]
-    fn recognize_queue_holds_only_unrecognized_cards() {
+    fn recognize_queue_holds_only_due_cards() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        store.get_or_insert(&all[0].id().unwrap(), 0).recognized_ms = Some(5);
+        store.get_or_insert(&all[0].id().unwrap(), 0).recognize = Some(mature_fsrs(2_000_000));
         let s = Session::new(
             all,
             &mut store,
@@ -3420,7 +3395,7 @@ mod tests {
     }
 
     #[test]
-    fn recognize_selection_reports_now_instead_of_an_unrelated_schedule() {
+    fn recognize_selection_is_immediately_available_when_established_elsewhere() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
@@ -3440,7 +3415,10 @@ mod tests {
         let decision = session
             .selection_decision(session.current_idx.unwrap(), &store, now)
             .unwrap();
-        assert_eq!(now, decision.due);
+        assert_eq!(
+            0, decision.due,
+            "established at recall means available since always, not since now"
+        );
     }
 
     #[test]
@@ -3464,11 +3442,11 @@ mod tests {
     #[test]
     fn recognize_caps_the_total_splitting_met_and_never_met() {
         let (mut store, _dir) = empty_store();
-        // 15 met-but-unrecognized (the due analog) + 5 never-met. Cap 10 at 30%
+        // 15 met-and-due + 5 never-met. Cap 10 at 30%
         // new: 7 met + 3 never-met, and the met sweep finishes across sittings.
         let all = cards(20);
         for c in &all[..15] {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0).recognize = Some(mature_fsrs(500));
         }
         let now = 1_000;
         let s = Session::new(
@@ -3644,6 +3622,185 @@ mod tests {
         assert!(st.history[1].propagated);
     }
 
+    fn recognize_session(all: Vec<Card>, store: &mut Store, cram: bool, now: u64) -> Session {
+        Session::new(
+            all,
+            store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                cram,
+                ..Default::default()
+            },
+            now,
+        )
+    }
+
+    #[test]
+    fn a_recognize_pass_creates_a_schedule_and_a_second_pass_extends_it() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let now = 1_000_000;
+
+        let mut s = recognize_session(all.clone(), &mut store, false, now);
+        s.grade(&mut store, Grade::Pass, now);
+        let first = store.get(&id).unwrap().recognize;
+        let first = first.expect("first pass creates the schedule");
+        assert!(first.due_ms > now, "scheduled into the future");
+        assert_eq!(1, store.get(&id).unwrap().history.len());
+        assert_eq!(Depth::Recognize, store.get(&id).unwrap().history[0].depth);
+
+        let later = first.due_ms + 1;
+        let mut s2 = recognize_session(all, &mut store, false, later);
+        s2.grade(&mut store, Grade::Pass, later);
+        let second = store.get(&id).unwrap().recognize.unwrap();
+        assert!(
+            second.due_ms > first.due_ms,
+            "second pass extends: {} then {}",
+            first.due_ms,
+            second.due_ms
+        );
+    }
+
+    #[test]
+    fn recognize_counts_in_reviews_passed_and_failed() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let now = 1_000_000;
+
+        let mut s = recognize_session(all, &mut store, false, now);
+        s.grade(&mut store, Grade::Pass, now);
+        s.grade(&mut store, Grade::Fail, now);
+
+        assert_eq!(2, s.stats.reviews, "both recognize grades are reviews");
+        assert_eq!(1, s.stats.passed);
+        assert_eq!(1, s.stats.failed);
+    }
+
+    #[test]
+    fn a_partial_at_any_depth_lands_in_the_generic_partial_counter() {
+        let now = 1_000_000;
+        for depth in [Depth::Recognize, Depth::Recall, Depth::Reconstruct] {
+            let (mut store, _dir) = empty_store();
+            let all = cards(1);
+            let mut s = Session::new(
+                all,
+                &mut store,
+                sched(),
+                SessionOptions {
+                    depth,
+                    ..Default::default()
+                },
+                now,
+            );
+            s.grade(&mut store, Grade::Partial, now);
+            assert_eq!(
+                1, s.stats.partial,
+                "a {depth:?} partial increments the shared counter"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reconstruct_pass_with_no_recall_schedule_credits_an_existing_recognize_schedule() {
+        // ADR 0033 clause 4's discriminator: every SHALLOWER depth is a
+        // target, so the missing Recall schedule does not break a chain.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let now = 40 * 86_400_000;
+        let state = store.get_or_insert(&id, 0);
+        state.recognize = Some(mature_fsrs(500));
+
+        let mut s = reconstruct_session(all, &mut store, false, now);
+        s.grade(&mut store, Grade::Pass, now);
+
+        let st = store.get(&id).unwrap();
+        assert!(st.recall.is_none(), "no Recall schedule is created");
+        assert!(
+            st.recognize.unwrap().stability > 30.0,
+            "the due recognize schedule took the propagated credit"
+        );
+        assert!(
+            st.history
+                .iter()
+                .any(|r| r.depth == Depth::Recognize && r.propagated),
+            "the propagated recognize review is recorded"
+        );
+    }
+
+    #[test]
+    fn a_recall_pass_credits_a_due_recognize_and_reanchors_a_not_due_one() {
+        let now = 40 * 86_400_000;
+
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let state = store.get_or_insert(&id, 0);
+        state.recall = Some(mature_fsrs(500));
+        state.recognize = Some(mature_fsrs(500));
+        let mut s = recall_session(all, &mut store, now);
+        s.grade(&mut store, Grade::Pass, now);
+        let st = store.get(&id).unwrap();
+        assert!(
+            st.recognize.unwrap().stability > 30.0,
+            "due recognize takes propagated credit from a recall pass"
+        );
+
+        let (mut store2, _dir2) = empty_store();
+        let all2 = cards(1);
+        let id2 = all2[0].id().unwrap();
+        let future = 80 * 86_400_000;
+        let state2 = store2.get_or_insert(&id2, 0);
+        state2.recall = Some(mature_fsrs(500));
+        state2.recognize = Some(mature_fsrs(future));
+        let mut s2 = recall_session(all2, &mut store2, now);
+        s2.grade(&mut store2, Grade::Pass, now);
+        let st2 = store2.get(&id2).unwrap();
+        let recog = st2.recognize.unwrap();
+        assert_eq!(
+            30.0, recog.stability,
+            "not-due recognize is only re-anchored"
+        );
+        assert_eq!(
+            now + 30 * 86_400_000,
+            recog.due_ms,
+            "due re-derived from now"
+        );
+    }
+
+    #[test]
+    fn no_propagation_creates_a_missing_recognize_schedule() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let now = 1_000_000;
+        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(500));
+
+        let mut s = recall_session(all, &mut store, now);
+        s.grade(&mut store, Grade::Pass, now);
+
+        let st = store.get(&id).unwrap();
+        assert!(
+            st.recognize.is_none(),
+            "propagation never creates a schedule at any depth"
+        );
+    }
+
+    fn recall_session(all: Vec<Card>, store: &mut Store, now: u64) -> Session {
+        Session::new(
+            all,
+            store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recall,
+                ..Default::default()
+            },
+            now,
+        )
+    }
+
     #[test]
     fn a_reconstruct_pass_on_a_not_yet_due_recall_reanchors_without_reward() {
         let (mut store, _dir) = empty_store();
@@ -3706,7 +3863,7 @@ mod tests {
                 st.recall.unwrap(),
                 "recall untouched by a partial or a fail"
             );
-            assert!(st.recognized_ms.is_none(), "recognized untouched");
+            assert!(st.recognize.is_none(), "recognize untouched");
             assert!(st.history.iter().all(|r| !r.propagated));
         }
     }
@@ -3735,7 +3892,10 @@ mod tests {
         );
         assert_eq!(2, st.history.len());
         assert!(st.history[1].propagated);
-        assert_eq!(Some(now), st.recognized_ms);
+        assert!(
+            st.recognize.is_none(),
+            "no recognize schedule existed, so propagation creates none"
+        );
     }
 
     #[test]
@@ -3762,7 +3922,10 @@ mod tests {
         assert_eq!(30.0, reconstruct.stability, "an early pass never rewards");
         assert_eq!(now + 30 * 86_400_000, reconstruct.due_ms, "re-anchored");
         assert!(st.history.is_empty(), "an early cram pass is not a review");
-        assert_eq!(Some(now), st.recognized_ms);
+        assert!(
+            st.recognize.is_none(),
+            "an early cram pass propagates nothing"
+        );
     }
 
     #[test]
@@ -3771,7 +3934,7 @@ mod tests {
         let all = cards(2);
         let now = 1_000_000;
         for card in &all {
-            store.get_or_insert(&card.id().unwrap(), 0).recognized_ms = Some(1);
+            store.get_or_insert(&card.id().unwrap(), 0).recognize = Some(mature_fsrs(2_000_000));
         }
 
         let normal = Session::new(
@@ -3801,10 +3964,13 @@ mod tests {
     }
 
     #[test]
-    fn any_full_pass_sets_recognized_transitively() {
+    fn any_full_pass_credits_an_existing_recognize_schedule() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
-        let now = 1_000_000;
+        let now = 40 * 86_400_000;
+        for card in &all {
+            store.get_or_insert(&card.id().unwrap(), 0).recognize = Some(mature_fsrs(500));
+        }
 
         let mut recall = Session::new(
             vec![all[0].clone()],
@@ -3814,18 +3980,28 @@ mod tests {
             now,
         );
         recall.grade(&mut store, Grade::Pass, now);
-        assert_eq!(
-            Some(now),
-            store.get(&all[0].id().unwrap()).unwrap().recognized_ms,
-            "a recall pass marks recognized"
+        assert!(
+            store
+                .get(&all[0].id().unwrap())
+                .unwrap()
+                .recognize
+                .unwrap()
+                .stability
+                > 30.0,
+            "a recall pass credits the due recognize schedule"
         );
 
         let mut reconstruct = reconstruct_session(vec![all[1].clone()], &mut store, false, now);
         reconstruct.grade(&mut store, Grade::Pass, now);
-        assert_eq!(
-            Some(now),
-            store.get(&all[1].id().unwrap()).unwrap().recognized_ms,
-            "a reconstruct pass marks recognized"
+        assert!(
+            store
+                .get(&all[1].id().unwrap())
+                .unwrap()
+                .recognize
+                .unwrap()
+                .stability
+                > 30.0,
+            "a reconstruct pass credits the due recognize schedule"
         );
 
         let mut partial = Session::new(
@@ -3836,18 +4012,15 @@ mod tests {
             now,
         );
         partial.grade(&mut store, Grade::Partial, now);
-        assert!(
-            store
-                .get(&all[2].id().unwrap())
-                .unwrap()
-                .recognized_ms
-                .is_none(),
-            "a partial never marks recognized"
+        assert_eq!(
+            mature_fsrs(500),
+            store.get(&all[2].id().unwrap()).unwrap().recognize.unwrap(),
+            "a partial never propagates"
         );
     }
 
     #[test]
-    fn a_recognize_session_tallies_every_grade_kind_without_fsrs_reviews() {
+    fn a_recognize_session_counts_in_the_generic_review_tallies() {
         let (mut store, _dir) = empty_store();
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let all = cards(3);
@@ -3868,12 +4041,15 @@ mod tests {
         session.grade(&mut store, Grade::Partial, now);
         session.grade(&mut store, Grade::Fail, now);
 
-        assert_eq!(1, session.stats.recognized, "one correct recognition");
-        assert_eq!(1, session.stats.recognize_partly, "one almost");
-        assert_eq!(1, session.stats.recognize_missed, "one miss");
         assert_eq!(
-            0, session.stats.reviews,
-            "recognize work is never an FSRS review"
+            3, session.stats.reviews,
+            "every recognize grade is a review"
+        );
+        assert_eq!(2, session.stats.passed, "pass and partial both pass");
+        assert_eq!(1, session.stats.failed);
+        assert_eq!(
+            1, session.stats.partial,
+            "the almost lands in the generic counter"
         );
     }
 

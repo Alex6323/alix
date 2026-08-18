@@ -669,7 +669,7 @@ mod tests {
         let scheduler = Fsrs::default();
         for card in &deck.cards {
             let state = store.get_or_insert(&card.id().unwrap(), T0);
-            state.recognized_ms = Some(T0);
+            scheduler.apply(state, Depth::Recognize, Grade::Pass, T0, false);
             scheduler.apply(state, Depth::Recall, Grade::Pass, T0, false);
             scheduler.apply(state, Depth::Reconstruct, Grade::Pass, T0, false);
         }
@@ -1027,7 +1027,7 @@ mod tests {
         let mut store =
             crate::state::open_store(&ws.join("decks/zzz-examdue.md"), &store_path).unwrap();
         let entry = store.get_or_insert(&examdue_id, T0);
-        entry.recognized_ms = Some(T0);
+        entry.recognize = Some(graduated_not_due(T0));
         entry.recall = Some(graduated_not_due(T0));
         entry.reconstruct = Some(graduated_not_due(T0));
         store.save().unwrap();
@@ -1133,7 +1133,7 @@ mod tests {
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
         let entry = store.get_or_insert(&card_id, now);
-        entry.recognized_ms = Some(now);
+        entry.recognize = Some(graduated_not_due(now));
         entry.recall = Some(graduated_not_due(now));
         entry.reconstruct = Some(graduated_not_due(now));
 
@@ -1236,7 +1236,7 @@ mod tests {
         let now = session::now_ms();
         store
             .get_or_insert(&deck.cards[0].id().unwrap(), now)
-            .recognized_ms = Some(now);
+            .recognize = Some(graduated_not_due(now));
 
         let status = deck_status(
             &deck,
@@ -1251,7 +1251,7 @@ mod tests {
 
         store
             .get_or_insert(&deck.cards[1].id().unwrap(), now)
-            .recognized_ms = Some(now);
+            .recognize = Some(graduated_not_due(now));
         let status = deck_status(
             &deck,
             &store,

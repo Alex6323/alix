@@ -605,11 +605,11 @@ The review-session payload; returned by every review action.
 | `depth` | string | `recognize` \| `recall` \| `reconstruct` *(closed)*. |
 | `input` | string | `type` \| `draw`. |
 | `remaining` / `initial` / `reviews` / `passed` / `failed` / `acquired` | number | Session counters; `acquired` counts new cards introduced this sitting (a first pass is acquire-only, so `reviews` alone reads 0). |
-| `recognized` / `recognize_partly` / `recognize_missed` | number | Recognize-depth tallies for this sitting (right / almost / missed). Recognize work never increments `reviews` (it is not an FSRS review), so a done screen must read these too; work done means the summary shows it. |
+| `partial` | number | Partial passes this sitting, at any depth. Recognize grades are ordinary FSRS reviews and land in `reviews`/`passed`/`failed` like every depth; this is the one extra grade nuance a summary may want. |
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything servable right now (would a restart build a non-empty sitting). |
 | `next_due_ms` | number? | Present only at `done`: the soonest epoch-millis instant a card of this sitting becomes servable (acquire floors included; at Recognize this is the only source), falling back to the schedule-wide next due instant, so an empty or cooling sitting can say when to return. Absent on a live session and when nothing is scheduled. Clients format it terse and approximate (e.g. "next due in 4 min"), never ticking. |
-| `due_left` / `new_left` | number | Backlog beyond this sitting, computed only at `done` (0 on a live session): how many due (or, at Recognize, met-but-unrecognized) and never-met cards a chained sitting would still find, minus what this sitting drilled. Lets the summary say "N still due" or "Start N new" and chain the drain. |
+| `due_left` / `new_left` | number | Backlog beyond this sitting, computed only at `done` (0 on a live session): how many due and never-met cards a chained sitting would still find, minus what this sitting drilled. Lets the summary say "N still due" or "Start N new" and chain the drain. |
 | `met_total` / `deck_total` | number | The deck's lifetime standing, computed only at `done` (0 on a live session): how many of its cards carry any progress at all, out of how many it holds. Independent of the sitting, so a summary can place today's work against the whole deck. |
 | `recognize_gap` | object? | Present only on a `done` Recognize sitting that excluded cards (Recognize schedules pick-capable cards only, so `due_left`/`new_left` cannot see them): `{recall, unaugmented}` — how many of the deck's cards are workable at Recall right now, and how many can build no pick at all. The summary points at those two exits (continue at Recall / augment choices) instead of claiming nothing is due. Absent everywhere else. |
 | `label` | string | Session header label *(presentational)*. |
@@ -714,7 +714,7 @@ region per card; the same seven-value tier vocabulary as
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` for decks; `workspace` \| `folder` for groups (open set). |
 | `locked` | bool | A `requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
-| `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both unrecognized **and** recognizable (see `can_recognize`). |
+| `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both due at Recognize **and** recognizable (see `can_recognize`). |
 | `can_recognize` | bool | The deck has at least one recognizable card: authored task-list options, or cached choice distractors (`alix deck augment --target choices`), that build a pick. Gate the **Recognize** depth on this: a deck without it can build no pick, so Recognize is unavailable (grey it out) even under cram. Group rows aggregate members. |
 | `mastered` | bool | Exam passed. |
 | `is_trace` | bool | Selecting it walks instead of reviewing. |

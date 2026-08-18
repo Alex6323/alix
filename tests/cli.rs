@@ -2112,18 +2112,18 @@ fn doctor_all_backends_probes_each() {
 
 /// A store JSON fragment for one card: a Recall schedule in FSRS state 2
 /// (`review`) due in the past, a Reconstruct schedule in state 1 (`learning`)
-/// also past-due, and a set `recognized_ms`.
+/// also past-due, and a Recognize schedule in state 2 due in the past.
 fn both_depths_due_card(card_id: &str) -> String {
     format!(
-        r#""{card_id}":{{"acquired_ms":1000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"recognized_ms":1000,"total_reviews":5,"total_passes":5}}"#
+        r#""{card_id}":{{"acquired_ms":1000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"recognize":{{"stability":9.0,"difficulty":5.0,"reps":2,"lapses":0,"state":2,"scheduled_days":15,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"total_reviews":5,"total_passes":5}}"#
     )
 }
 
 #[test]
-fn list_shows_per_depth_labels_and_recognized_mark() {
+fn list_shows_three_per_depth_cells_shallow_to_deep() {
     let dir = TempDir::new().unwrap();
-    // Card 1: recall=review (state 2), reconstruct=learning (state 1), recognized.
-    // Card 2: recall=learning only — no reconstruct schedule, not recognized.
+    // Card 1: schedules at every depth, all past due.
+    // Card 2: recall=learning only — no reconstruct or recognize schedule.
     let deck_text = "---\nformat-version: 1\nid: deck-cardsdeck\n---\n## Q1 <!-- id: card-q1 -->\nA1\n\n## Q2 <!-- id: card-q2 -->\nA2\n";
     let deck = write(dir.path(), "cards.md", deck_text);
     let cards = alix::parser::parse_str("cards.md", deck_text).unwrap();
@@ -2142,14 +2142,15 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
     let out = alix(&["list", &deck, "--store", state_root.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
-    // Slot order is recall|reconstruct — a swap would print [  learning|    review].
+    // Cell order is recognize|recall|reconstruct, shallow to deep, each cell
+    // its state plus due, right-aligned to a fixed 11 so rows line up.
     assert!(
-        result.contains("[    review|  learning]✓"),
-        "recall slot first, then reconstruct, then the recognized mark: {result}"
+        result.contains("[ review due| review due|  learn due]"),
+        "three cells shallow to deep, each state plus due: {result}"
     );
-    // An absent schedule shows `-` in its slot; no recognized mark → space.
+    // An absent schedule shows a bare `-` in its own cell.
     assert!(
-        result.contains("[  learning|         -] "),
+        result.contains("[          -|  learn due|          -]"),
         "a depth without a schedule shows '-': {result}"
     );
 }

@@ -188,9 +188,7 @@ class ReviewStateModel {
     required this.passed,
     required this.failed,
     required this.acquired,
-    required this.recognized,
-    required this.recognizePartly,
-    required this.recognizeMissed,
+    required this.partial,
     required this.canRestart,
     this.nextDueMs,
     required this.dueLeft,
@@ -218,9 +216,7 @@ class ReviewStateModel {
   final int passed;
   final int failed;
   final int acquired;
-  final int recognized;
-  final int recognizePartly;
-  final int recognizeMissed;
+  final int partial;
   final bool canRestart;
   final int? nextDueMs;
   final int dueLeft;

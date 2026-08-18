@@ -68,12 +68,12 @@ pub struct CardState {
     pub presented_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
-    // Independent of `recall` on purpose: no cross-crediting between depths.
+    // Depth states are independent on purpose: no cross-crediting between
+    // depths (a pass propagates credit downward; the states never merge).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reconstruct: Option<FsrsState>,
-    // Recognize is unscheduled: this flag, not an FsrsState, is its only progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recognized_ms: Option<u64>,
+    pub recognize: Option<FsrsState>,
     #[serde(default)]
     pub total_reviews: u32,
     #[serde(default)]
@@ -92,7 +92,7 @@ impl CardState {
             presented_ms: None,
             recall: None,
             reconstruct: None,
-            recognized_ms: None,
+            recognize: None,
             total_reviews: 0,
             total_passes: 0,
             streak: 0,
@@ -104,7 +104,7 @@ impl CardState {
     // did something with the card beyond being shown it.
     pub fn engaged(&self) -> bool {
         self.acquired_ms.is_some()
-            || self.recognized_ms.is_some()
+            || self.recognize.is_some()
             || self.recall.is_some()
             || self.reconstruct.is_some()
             || self.total_reviews > 0
@@ -113,16 +113,15 @@ impl CardState {
     // Recognize is never scheduled: always answers None.
     pub fn schedule(&self, depth: Depth) -> Option<&FsrsState> {
         match depth {
-            Depth::Recognize => None,
+            Depth::Recognize => self.recognize.as_ref(),
             Depth::Recall => self.recall.as_ref(),
             Depth::Reconstruct => self.reconstruct.as_ref(),
         }
     }
 
-    // Recognize has no slot to hand back.
     pub fn schedule_slot(&mut self, depth: Depth) -> Option<&mut Option<FsrsState>> {
         match depth {
-            Depth::Recognize => None,
+            Depth::Recognize => Some(&mut self.recognize),
             Depth::Recall => Some(&mut self.recall),
             Depth::Reconstruct => Some(&mut self.reconstruct),
         }
@@ -1363,12 +1362,9 @@ pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
         let Some(state) = card.id().and_then(|id| store.get(&id)) else {
             return false;
         };
-        match depth {
-            Depth::Recognize => state.recognized_ms.is_some(),
-            Depth::Recall | Depth::Reconstruct => state
-                .schedule(depth)
-                .is_some_and(|fsrs| fsrs.stability >= MATURE_STABILITY_DAYS),
-        }
+        state
+            .schedule(depth)
+            .is_some_and(|fsrs| fsrs.stability >= MATURE_STABILITY_DAYS)
     })
 }
 
@@ -2368,12 +2364,12 @@ mod tests {
         );
         assert!(
             s.schedule(Depth::Recognize).is_none(),
-            "recognize is never scheduled"
+            "no cross-crediting: recognize starts empty"
         );
     }
 
     #[test]
-    fn per_depth_schedules_and_recognized_flag_survive_save_reload() {
+    fn per_depth_schedules_survive_save_reload() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let st = store.get_or_insert("7", 1_000);
@@ -2381,7 +2377,10 @@ mod tests {
             stability: 4.5,
             ..Default::default()
         });
-        st.recognized_ms = Some(2_000);
+        *st.schedule_slot(Depth::Recognize).unwrap() = Some(FsrsState {
+            stability: 2.5,
+            ..Default::default()
+        });
         st.record_review(2_000, Grade::Pass, Depth::Reconstruct, false);
         store.save().unwrap();
         let reloaded = Store::open(dir.path().join("deck1.json")).unwrap();
@@ -2390,7 +2389,10 @@ mod tests {
             Some(4.5),
             st.schedule(Depth::Reconstruct).map(|f| f.stability)
         );
-        assert_eq!(Some(2_000), st.recognized_ms);
+        assert_eq!(
+            Some(2.5),
+            st.schedule(Depth::Recognize).map(|f| f.stability)
+        );
         assert_eq!(Depth::Reconstruct, st.history[0].depth);
     }
 
@@ -2487,21 +2489,23 @@ mod tests {
     }
 
     #[test]
-    fn recognize_badge_needs_every_card_recognized() {
+    fn recognize_badge_needs_every_card_mature_at_recognize() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let cards = two_cards();
-        store
-            .get_or_insert(&cards[0].id().unwrap(), 0)
-            .recognized_ms = Some(500);
+        store.get_or_insert(&cards[0].id().unwrap(), 0).recognize = Some(FsrsState {
+            stability: 30.0,
+            ..Default::default()
+        });
         assert!(
             !badge_solid(&cards, &store, Depth::Recognize),
-            "second card not yet recognized"
+            "second card not yet mature at recognize"
         );
 
-        store
-            .get_or_insert(&cards[1].id().unwrap(), 0)
-            .recognized_ms = Some(600);
+        store.get_or_insert(&cards[1].id().unwrap(), 0).recognize = Some(FsrsState {
+            stability: 30.0,
+            ..Default::default()
+        });
         assert!(badge_solid(&cards, &store, Depth::Recognize));
     }
 

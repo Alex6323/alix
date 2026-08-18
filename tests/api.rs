@@ -2795,7 +2795,12 @@ fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
             for c in cards.iter().filter(|c| !c.authored_distractors.is_empty()) {
                 let s = store.get_or_insert(&c.id().unwrap(), 1_000);
                 s.acquired_ms = Some(1_000);
-                s.recognized_ms = Some(2_000);
+                s.recognize = Some(alix::store::FsrsState {
+                    stability: 30.0,
+                    state: 2,
+                    due_ms: 2_000_000_000_000,
+                    ..Default::default()
+                });
             }
             store.save().unwrap();
         },
@@ -2872,7 +2877,11 @@ fn a_recognize_done_with_floored_cards_says_when_one_opens() {
         "done", body["phase"],
         "both picks acquired and floored ends the sitting: {body}"
     );
-    assert_eq!(2, body["due_left"], "the floored picks stay due: {body}");
+    assert_eq!(
+        0, body["due_left"],
+        "acquired picks cool behind the introduction cooldown like any depth, \
+         so nothing is due yet: {body}"
+    );
     assert_eq!(
         false, body["can_restart"],
         "nothing is servable while cooling: {body}"

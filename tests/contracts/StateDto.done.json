@@ -20,11 +20,9 @@
   "mode": "flip",
   "new_left": 3,
   "next_due_ms": 1700000100000,
+  "partial": 0,
   "passed": 0,
   "phase": "done",
-  "recognize_missed": 0,
-  "recognize_partly": 0,
-  "recognized": 0,
   "remaining": 0,
   "reviews": 0,
   "study_revision": 7
