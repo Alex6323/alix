@@ -211,6 +211,16 @@ is chosen because the format already escapes with backslash in this exact role
 (`\##`, `\>`, `\---`, `\{`). Unknown escapes are rejected to keep `\n` available
 if values ever stop being single-line.
 
+Both sides are single-pass left-to-right scanners over their original input:
+a backslash consumes exactly the next character once, emitted and decoded
+characters are never rescanned, and a backslash with nothing after it inside
+the value is a parse error. The reader accepts `\>` anywhere in a quoted
+value; the writer emits it only for the two dangerous terminators, so an
+unnecessary `\>` is accepted input that is not canonical writer output. A raw
+`-->` or `--!>` inside a quoted value is a hard parse error, never an early
+comment close that spills author text. (Sharpened 2026-08-18 with the
+serialization note above; no behavior changed.)
+
 **Two sequences are dangerous, and a lone `>` is not.** An HTML comment ends at
 the first `-->`, and the tokenizer's comment-end-bang state also ends one when
 `>` follows `--!`. A value containing either would close the comment early in
@@ -249,11 +259,21 @@ never written in the file:
 Frozen derivation, in order:
 
 1. Take each member's stamp.
-2. Sort them in byte order.
-3. Join with `-`.
-4. Hash with XxHash64, seed 0 (the `hash64` the codebase already uses).
-5. Render as 13 Crockford base32 characters, most-significant-first, reusing the
-   existing token rendering convention.
+2. Sort them ascending lexicographically by their six ASCII bytes.
+3. Join with exactly one ASCII `0x2d` byte between stamps; no leading,
+   trailing, NUL or newline byte.
+4. Hash those exact bytes with XxHash64, seed 0 (the `hash64` the codebase
+   already uses).
+5. Treat the hash as an unsigned 64-bit integer and emit exactly 13 digits of
+   `0123456789abcdefghjkmnpqrstvwxyz` from shifts 60, 55, ..., 0,
+   most-significant-first; the first digit carries one implicit leading zero
+   bit. Digest bytes are never serialized or reversed, and no `=` padding
+   exists.
+
+(The serialization sentences above were sharpened 2026-08-18 after an
+independent reimplementation from this prose alone reproduced the vector but
+found the byte encoding and the integer-versus-bitstream rendering implicit;
+no value changed.)
 
 Known vector, computed independently twice: `"a1b2c3-d4e5f6"` hashes to
 `0xc8e57f0916150c1d` and renders as `chsbz14b1a30x`. Sorting is load-bearing:
