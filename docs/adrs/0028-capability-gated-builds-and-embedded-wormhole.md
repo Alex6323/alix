@@ -25,6 +25,19 @@ Requiring a separately installed Python `wormhole` executable cannot work on
 Android or iOS and makes desktop sharing depend on external installation.
 Alix therefore embeds the Rust `magic-wormhole` crate.
 
+**First product scope is desktop and Android; iOS is a later arc with its own
+gate.** Amended 2026-08-18: the feasibility work ran on Linux and closed every
+proof except iOS, where compilation and the transfer lifecycle are unproved and
+unprovable without macOS. No iOS client exists yet; one is planned once the
+deck format is settled and the Android app reaches feature parity including
+Wormhole sharing and Syncthing syncing. The first task of that iOS arc, before
+any capability work builds on it, is the evidence this record cannot supply
+today: a release-mode iOS build linking the Wormhole-only library, then a
+lifecycle proof that suspension or cancellation leaves no detached transfer
+task, no detached writer, and no partial file published. iOS suspension is the
+structural risk: unlike Android's foreground service, iOS offers no mechanism
+to keep an arbitrary socket transfer alive in the background.
+
 Embedding Wormhole does not require the parser, scheduler, session, store, or
 document model to become async. The executor that drives the transfer crate is
 private to the transfer boundary. It neither selects nor prejudices whether
@@ -70,11 +83,10 @@ Conceptually:
 ```toml
 [features]
 default = ["full"]
-wormhole = ["dep:magic-wormhole", "dep:<reviewed-executor>"]
+wormhole = ["dep:magic-wormhole", "dep:<reviewed-executor>", "dep:zip"]
 full = [
   "wormhole",
   "dep:tiny_http",
-  "dep:zip",
   "dep:qrcodegen",
   "dep:clap",
   "dep:ctrlc",
@@ -109,9 +121,10 @@ every lower feature must be appropriate for every consumer.
 
 ### Give each mobile application its actual capability set
 
-The current study application is renamed from `apps/mobile` to `mobile/alix`.
-It depends on the Alix library with default features disabled and the
-`wormhole` feature enabled. It receives the shared learning domain plus
+The study application lives at `mobile/alix` (renamed from `apps/mobile`
+before this record was implemented; the rename is baseline, not work this
+record claims). It depends on the Alix library with default features disabled
+and the `wormhole` feature enabled. It receives the shared learning domain plus
 Wormhole transfer, without the desktop HTTP and AI stack.
 
 The new `mobile/alix-sync` application embeds Syncthing and does not depend on
@@ -160,8 +173,40 @@ mobile reuse the same Rust transfer boundary. A missing external executable is
 no longer a production transfer state.
 
 Existing public-bundle staging and receive landing remain the Alix-owned file
-boundary. Wormhole transports the prepared bytes and does not decide which
-workspace files are public.
+boundary. Wormhole transports the staged file-or-directory payload using the
+private framing below and does not decide which workspace files are public.
+
+### The payload framing is the existing zip container
+
+**Amended 2026-08-18 after an adversarial re-validation found this decision
+missing.** Ordinary Alix bundles are directories: a shared workspace always, and
+any initialized deck with augmentation or owned assets (`share::stage_path`).
+The `magic-wormhole` crate sends a folder as a tarball the receiver must
+unpack by hand, and the feasibility prototype proved regular-file transport
+only. Without a ruled framing, a builder either rejects the ordinary share or
+delivers residue Alix does not land.
+
+Ruled: **a staged directory travels as the same zip container the `--zip`
+share path already produces** (`share::zip_to`). The sender frames a staged
+directory before offering it; a staged single file is offered as-is. The
+receiver detects and strips the framing (`share::unzip_to`, whose extraction
+already defends against hostile paths) **before** the existing sanitization,
+collision, and atomic landing boundary, so landing sees exactly what it sees
+today and no user-visible archive residue survives a successful receive.
+
+This is a private framing between Alix instances, not a public format: both
+ends are Alix, the container is internal to the transfer, and changing it
+later is an ordinary pre-1.0 change. It reuses the reviewed `zip` dependency
+and the existing land-a-zip receive path rather than adding a `tar` dependency
+to do a job an existing one already does; the `zip` crate therefore moves from
+`full` into the `wormhole` capability, which is the one dependency-placement
+change this amendment makes.
+
+Receiving is a network trust boundary: the receiver enforces explicit bounds
+on entry count, per-entry expanded size, and total expanded size before
+extraction, and rejects an over-limit payload without landing anything. The
+concrete limits are implementation values documented with the security
+regression evidence, not frozen here.
 
 ### Pin and review the dependency and license boundary
 
@@ -230,6 +275,24 @@ The protocol, cryptography, rendezvous behavior, and transit negotiation are
 correctness-critical commodity functionality. Reimplementation would create
 more security and interoperability risk than maintaining the dependency.
 
+**Sized and kept as the named licensing fallback, 2026-08-18.** The rejection
+above stands, and one fact could overturn it: the EUPL review concluding that
+shipping the crate is untenable for a distributed build. The permissive route
+exists: `spake2` (the protocol's own PAKE primitive, `MIT OR Apache-2.0`,
+RustCrypto) plus permissive crates for every other primitive, with alix
+implementing the protocol layers above them, which are the rendezvous mailbox
+state machine over WebSocket, HKDF phase-key derivation and secretbox message
+encryption, the transfer offer protocol, and transit with hint gathering,
+connection races, relay fallback, and Noise-framed records. Reimplementing from
+the published protocol documents is legally clean, third-party clients exist
+(`wormhole-william`, Go, MIT), and the public rendezvous and relay
+infrastructure serves them. The cost is multiple focused days against the
+Python peer as interop oracle and permanent ownership of a security-sensitive
+protocol client, where the primitives come from crates but the derivation
+strings, handshakes, and record framing are hand-rolled glue whose mistakes can
+be silent. The cheaper per-platform escape stays available first: a build can
+ship without the `wormhole` capability at all.
+
 ### Merge Wormhole transfer into `mobile/alix-sync`
 
 `mobile/alix-sync` owns continuous Syncthing convergence. Requiring it for an
@@ -275,10 +338,19 @@ authority.
   Wormhole-only build.
 - Desktop and mobile transfer tests exchange the same staged public bundle and
   land it through the same receive workflow.
+- Landed-bundle interoperability runs in both directions against the Python
+  `wormhole` CLI for the two directory cases: a workspace, and an initialized
+  deck carrying an asset and augmentation. Each run feeds the received object
+  through the existing landing path and asserts identical public files, no
+  progress or personal state, and no user-visible archive residue.
+- A framed receive over the entry-count or size bounds is rejected without
+  landing anything.
 - Cancellation and shutdown tests prove no transfer thread or file writer is
   detached.
 - Mobile evidence records Android library and APK size before and after the
-  capability.
+  capability. iOS evidence is deliberately absent: first product scope is
+  desktop and Android, and the iOS compile/link and lifecycle gate is the
+  first task of the later iOS arc (see Context).
 - Source and release audits verify license notices and pinned provenance.
 - Production searches prove the external `wormhole` subprocess path is gone.
 
