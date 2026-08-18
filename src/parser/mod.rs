@@ -892,6 +892,20 @@ fn build_table_cards(
     raw: RawTable,
     cards: &mut Vec<Card>,
 ) -> Result<(), ParseError> {
+    if let Some(line) = raw
+        .directives
+        .regions
+        .first()
+        .map(|region| region.line)
+        .or(raw.directives.crops.first().map(|crop| crop.line))
+    {
+        return Err(ParseError::InvalidRegion {
+            line,
+            message:
+                "a region binds to a media element or an answer block, and a card table has neither"
+                    .into(),
+        });
+    }
     let token: Option<Arc<str>> = raw.directives.token.as_deref().map(Arc::from);
     for row in raw.rows {
         let front = row.cells[0].clone();
@@ -3902,6 +3916,16 @@ the answer
             "the invisible cover creates nothing and errors nothing"
         );
         assert!(image.crop.is_some());
+    }
+
+    #[test]
+    fn a_region_directive_on_a_card_table_is_rejected_not_dropped() {
+        let error =
+            err("| a | b |\n|---|---|\n| x | y |\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n");
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("card table"), "{message}");
     }
 
     #[test]
