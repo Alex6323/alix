@@ -923,7 +923,7 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
         return Ok(());
     }
     let template = cards[block_start].clone();
-    let blanks: Vec<&RawRegion> = template
+    let mut blanks: Vec<&RawRegion> = template
         .images
         .iter()
         .chain(template.images_back.iter())
@@ -931,16 +931,21 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
         .chain(template.span_regions.iter())
         .filter(|region| region.kind == RegionKind::Blank)
         .collect();
+    // Collection above walks storage buckets (front images, back images,
+    // spans); everything downstream owes the AUTHOR's order.
+    blanks.sort_by_key(|region| region.line);
     if blanks.is_empty() {
         return Ok(());
     }
 
-    let region_card = |slot: RegionSlot, back: Vec<String>, line: usize| {
+    let region_card = |slot: RegionSlot, back: Vec<String>| {
         let mut card = template.clone();
         card.back = back;
         card.display_back = None;
         card.note = None;
-        card.line = line;
+        // card.line stays the authored block line: card_front_lines exposes
+        // every distinct line as a Markdown block boundary, and a directive
+        // line there once let removal truncate the parent's answer.
         card.region = Some(slot);
         card.hole = None;
         card.hole_name = None;
@@ -965,9 +970,9 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
                     RegionSlot::Single {
                         stamp: blank.stamp.as_deref().map(Arc::from),
                         hidden: blank.hidden.clone(),
+                        line: blank.line,
                     },
                     blank.hidden.iter().cloned().collect(),
-                    blank.line,
                 ));
             }
         }
@@ -998,13 +1003,18 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
                 .map(|m| GroupMember {
                     stamp: m.stamp.as_deref().map(Arc::from),
                     hidden: m.hidden.clone(),
+                    line: m.line,
                 })
                 .collect(),
         };
-        let line = members[0].line;
-        new_cards.push(region_card(slot, back, line));
+        new_cards.push(region_card(slot, back));
     }
-    new_cards.sort_by_key(|card| card.line);
+    new_cards.sort_by_key(|card| {
+        card.region
+            .as_ref()
+            .map(crate::card::RegionSlot::first_line)
+            .unwrap_or(0)
+    });
     cards.extend(new_cards);
     Ok(())
 }
@@ -4153,6 +4163,24 @@ the answer
             deck.cards[1].id(),
             swapped.cards[1].id(),
             "member order in the file never changes the id"
+        );
+    }
+
+    #[test]
+    fn a_mixed_shape_group_keeps_its_answers_in_file_order() {
+        let deck = parse(
+            "## identify both <!-- id: card-mixed1 -->\n---\nalpha beta\n<!-- blank: span [pair] hidden=\"alpha\" word=1 b:a1b2c3 -->\n![](diagram.png)\n<!-- blank: rect [pair] x=1 y=1 width=2 height=2 hidden=\"diagram\" b:d4e5f6 -->\n",
+        );
+        let group = deck
+            .cards
+            .iter()
+            .find(|card| card.region.is_some())
+            .unwrap();
+
+        assert_eq!(
+            vec!["alpha", "diagram"],
+            group.back,
+            "a grouped answer follows the author's source order across shapes"
         );
     }
 

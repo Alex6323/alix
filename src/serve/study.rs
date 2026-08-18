@@ -1479,6 +1479,7 @@ impl StudyState {
         if let Some(first) = dropped.first() {
             let deck_id = first.deck_id.to_string();
             let line = first.line;
+            let region_lines = first.region.as_ref().map(|slot| slot.directive_lines());
             for card in &dropped {
                 if let Some(id) = card.id() {
                     self.store.remove(&id);
@@ -1486,7 +1487,10 @@ impl StudyState {
             }
             flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
             self.writes = self.writes.wrapping_add(1);
-            r.files.remove_block(&deck_id, line);
+            match region_lines {
+                Some(lines) => r.files.remove_region_lines(&deck_id, &lines),
+                None => r.files.remove_block(&deck_id, line),
+            }
         }
         self.writes = self.writes.wrapping_add(1);
         self.revision += 1;

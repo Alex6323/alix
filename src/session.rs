@@ -441,13 +441,17 @@ impl Session {
             return Vec::new();
         };
         let group = sibling_group(&self.cards[index]);
+        // A region card removes only itself: its file address is a directive
+        // line inside the parent block, never the block. Removing the parent
+        // still sweeps its region cards, which share the block line.
+        let region_only = self.cards[index].region.is_some();
         let mut removed = vec![self.cards[index].clone()];
         let mut kept: Vec<usize> = Vec::with_capacity(self.roster.len());
         for &i in &self.roster {
             if i == index {
                 continue;
             }
-            if sibling_group(&self.cards[i]) == group {
+            if !region_only && sibling_group(&self.cards[i]) == group {
                 removed.push(self.cards[i].clone());
             } else {
                 kept.push(i);

@@ -420,6 +420,7 @@ mod tests {
         region.region = Some(crate::card::RegionSlot::Single {
             stamp: Some(Arc::from("a1b2c3")),
             hidden: Some("answer".into()),
+            line: 3,
         });
         region.authored_distractors = vec!["x".into(), "y".into(), "z".into()];
         assert!(

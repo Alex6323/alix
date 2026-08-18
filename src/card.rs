@@ -29,6 +29,9 @@ impl Direction {
 pub struct GroupMember {
     pub stamp: Option<Arc<str>>,
     pub hidden: Option<String>,
+    /// The member's directive line: the removal address of exactly this
+    /// region, never a card-block boundary.
+    pub line: usize,
 }
 
 /// What a region card asks (ADR 0034): one region, or a named group asking
@@ -39,12 +42,28 @@ pub enum RegionSlot {
     Single {
         stamp: Option<Arc<str>>,
         hidden: Option<String>,
+        line: usize,
     },
     Group {
         name: String,
         hash: Option<Arc<str>>,
         members: Vec<GroupMember>,
     },
+}
+
+impl RegionSlot {
+    /// The directive line(s) this card owns in the file: what removal
+    /// deletes instead of a card block.
+    pub fn directive_lines(&self) -> Vec<usize> {
+        match self {
+            RegionSlot::Single { line, .. } => vec![*line],
+            RegionSlot::Group { members, .. } => members.iter().map(|m| m.line).collect(),
+        }
+    }
+
+    pub fn first_line(&self) -> usize {
+        self.directive_lines().into_iter().min().unwrap_or(0)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

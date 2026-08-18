@@ -34,6 +34,7 @@ pub(super) struct DeckFiles {
     /// removed then).
     snapshots: HashMap<String, String>,
     removed: HashMap<String, BTreeSet<usize>>,
+    removed_region_lines: HashMap<String, BTreeSet<usize>>,
 }
 
 impl DeckFiles {
@@ -50,6 +51,7 @@ impl DeckFiles {
             paths,
             snapshots,
             removed: HashMap::new(),
+            removed_region_lines: HashMap::new(),
         }
     }
 
@@ -68,12 +70,37 @@ impl DeckFiles {
 
     /// Best-effort: a rewrite failure only warns, never propagates.
     pub(super) fn remove_block(&mut self, deck_id: &str, line: usize) {
-        let lines = self.removed.entry(deck_id.to_string()).or_default();
-        lines.insert(line);
+        self.removed
+            .entry(deck_id.to_string())
+            .or_default()
+            .insert(line);
+        self.rewrite(deck_id);
+    }
+
+    /// A region card's removal address: exact directive lines inside a
+    /// surviving block, never a block boundary.
+    pub(super) fn remove_region_lines(&mut self, deck_id: &str, lines: &[usize]) {
+        self.removed_region_lines
+            .entry(deck_id.to_string())
+            .or_default()
+            .extend(lines.iter().copied());
+        self.rewrite(deck_id);
+    }
+
+    fn rewrite(&mut self, deck_id: &str) {
         if let (Some(path), Some(original)) = (self.paths.get(deck_id), self.snapshots.get(deck_id))
         {
-            let lines: Vec<usize> = lines.iter().copied().collect();
-            if let Err(e) = deck::rewrite_without_cards(path, original, &lines) {
+            let blocks: Vec<usize> = self
+                .removed
+                .get(deck_id)
+                .map(|set| set.iter().copied().collect())
+                .unwrap_or_default();
+            let exact: Vec<usize> = self
+                .removed_region_lines
+                .get(deck_id)
+                .map(|set| set.iter().copied().collect())
+                .unwrap_or_default();
+            if let Err(e) = deck::rewrite_without(path, original, &blocks, &exact) {
                 eprintln!("warning: could not update {}: {e}", path.display());
             }
         }

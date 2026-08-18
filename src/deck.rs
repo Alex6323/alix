@@ -874,16 +874,42 @@ pub fn rewrite_without_cards(
     original: &str,
     front_lines: &[usize],
 ) -> Result<(), DeckError> {
+    rewrite_without(path, original, front_lines, &[])
+}
+
+/// One pass over the original text: card blocks by boundary, region
+/// directives by exact line. Both sets carry original line numbers, so
+/// applying them together never shifts an address.
+pub fn rewrite_without(
+    path: &Path,
+    original: &str,
+    front_lines: &[usize],
+    exact_lines: &[usize],
+) -> Result<(), DeckError> {
     let fronts = front_lines_of(path, original)?;
-    let new_text = remove_card_blocks(original, &fronts, front_lines);
+    let new_text = remove_blocks_and_lines(original, &fronts, front_lines, exact_lines);
     write_deck_text(path, &new_text)
 }
 
 fn remove_card_blocks(text: &str, fronts: &[usize], front_lines: &[usize]) -> String {
+    remove_blocks_and_lines(text, fronts, front_lines, &[])
+}
+
+fn remove_blocks_and_lines(
+    text: &str,
+    fronts: &[usize],
+    front_lines: &[usize],
+    exact_lines: &[usize],
+) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let targets: std::collections::HashSet<usize> = front_lines.iter().copied().collect();
 
     let mut drop = vec![false; lines.len()];
+    for &lineno in exact_lines {
+        if (1..=lines.len()).contains(&lineno) {
+            drop[lineno - 1] = true;
+        }
+    }
     for (i, &front) in fronts.iter().enumerate() {
         if !targets.contains(&front) {
             continue;
@@ -1512,6 +1538,23 @@ mod tests {
         assert_eq!(
             "## one\nback 1\n> a note\n",
             remove_card_blocks(text, &fronts(text), &[5])
+        );
+    }
+
+    #[test]
+    fn removing_a_region_card_keeps_its_parent_cards_answer() {
+        let text = "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n\n## next <!-- id: card-next1 -->\nanswer\n";
+        let expected = "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n\n---\ncarpals\n\n## next <!-- id: card-next1 -->\nanswer\n";
+
+        assert_eq!(
+            expected,
+            remove_blocks_and_lines(text, &fronts(text), &[], &[3]),
+            "a synthesized region line is one removable directive, not the start of a Markdown card block"
+        );
+        assert_eq!(
+            text,
+            remove_card_blocks(text, &fronts(text), &[3]),
+            "a directive line is never a block boundary, so the block path cannot truncate through it"
         );
     }
 

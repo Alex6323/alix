@@ -3858,6 +3858,52 @@ fn remove_drops_the_current_card_from_the_session_and_the_deck_file() {
     );
 }
 
+/// The sixteenth review pass's P1, at the user's own route: removing a
+/// REGION card deletes exactly its directive line; the parent's divider and
+/// answer stay in the file, and the parent card survives the session.
+#[test]
+fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(
+            dir.join("regions.md"),
+            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## anatomy <!-- id: card-regionfixture000000000000 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n",
+        )
+        .unwrap();
+    });
+    post_json(&base, "/api/select", r#"{"deck":"regions.md"}"#);
+
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    assert_eq!(
+        "anatomy", body["card"]["front"],
+        "the parent serves first: {body}"
+    );
+
+    // Leave the parent (introduce it), so the region card becomes current.
+    let resp = post_gated(&base, "/api/introduce", "{}");
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        "anatomy", body["card"]["front"],
+        "the region card shares the parent's front: {body}"
+    );
+
+    let resp = post_gated(&base, "/api/remove", "{}");
+    assert_eq!(200, resp.status);
+    let deck = std::fs::read_to_string(guard.dir().join("regions.md")).unwrap();
+    assert!(
+        !deck.contains("blank:"),
+        "the directive line is gone: {deck}"
+    );
+    assert!(
+        deck.contains("carpals") && deck.contains("---"),
+        "the parent's divider and answer survive: {deck}"
+    );
+    assert!(
+        deck.contains("## anatomy"),
+        "the parent card survives: {deck}"
+    );
+}
+
 /// Arm-existence smokes for routes whose deletion survived the gate: the
 /// distinguishing status is 409 (no active sitting), never the 404 a
 /// deleted arm would produce.
