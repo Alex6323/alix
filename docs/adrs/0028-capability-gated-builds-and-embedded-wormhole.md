@@ -32,13 +32,14 @@ unprovable without macOS. No iOS client exists yet; one is planned once the
 deck format is settled and the Android app reaches feature parity, where the
 sharing bar is server-backed sharing while paired (restated 2026-08-18 with
 the first-scope ruling below; it was first stated as on-device Wormhole) plus
-Syncthing syncing. The first task of that iOS arc, before
-any capability work builds on it, is the evidence this record cannot supply
-today: a release-mode iOS build linking the Wormhole-only library, then a
-lifecycle proof that suspension or cancellation leaves no detached transfer
-task, no detached writer, and no partial file published. iOS suspension is the
-structural risk: unlike Android's foreground service, iOS offers no mechanism
-to keep an arbitrary socket transfer alive in the background.
+Syncthing syncing. That server-backed iOS client needs NO on-device transfer
+evidence: its bridge stays domain-only and no phone drives a background
+socket (corrected 2026-08-18; an earlier revision demanded the on-device
+evidence here, which belongs to a different arc). The compile/link and
+suspension-lifecycle proof is instead the first task of the DEFERRED
+on-device transfer arc, if that is ever proposed for iOS. iOS suspension is
+the structural risk there: unlike Android's foreground service, iOS offers no
+mechanism to keep an arbitrary socket transfer alive in the background.
 
 Embedding Wormhole does not require the parser, scheduler, session, store, or
 document model to become async. The executor that drives the transfer crate is
@@ -65,10 +66,37 @@ closure, no zip, and no EUPL code. There is no evidence yet that anyone shares
 where no desktop is running, so the on-device transfer arc is deferred until
 that evidence exists; the capability flag makes enabling it a build change,
 not an architectural one. Deferring it also removes the iOS transfer-lifecycle
-risk from every planned build, since no phone drives a background socket. The
-build cost this ruling adds: share and receive become job-shaped endpoints on
-the server (the existing background-ask pattern), reachable by any paired
-client.
+risk from every planned build, since no phone drives a background socket.
+
+**Whose files move: the phone's, ruled 2026-08-18** after an adversarial pass
+showed the sentence above never chose. Phone-only decks are a normal
+population (remote generation deliberately writes into the phone's app-private
+root), so paired sharing moves PHONE-OWNED content, and the phone is never a
+mere remote control over the desktop's catalog. The shape:
+
+- **Staging and landing run on the phone.** The monolithic `share` module
+  splits: public-bundle staging and receive landing become domain code the
+  lean core carries, while ZIP-CLI-subprocess transport concerns stay
+  full-only. The public-bundle filter therefore runs ON the device, and the
+  paired desktop only ever sees the public bundle; progress and personal
+  files never leave the phone, preserving ADR 0010's phone-owned state and
+  ADR 0024's alix-owned filtering.
+- **Transport runs on the desktop.** The phone uploads its staged, framed
+  bundle to the paired server and polls the existing job-shaped share flow;
+  receive mirrors it, the phone downloading the framed bundle and landing it
+  through the same landing boundary into its own root. Uploads and downloads
+  are bounded by the same framing limits as any framed receive.
+- **The job stays desktop-owned**: one transfer slot, cancellation and
+  terminal outcome exactly as the transfer boundary defines them; the phone
+  is a polling client.
+
+**The share/receive job endpoints already exist** (`/api/share` and
+`/api/receive` with start, poll, and close routes, documented as polling
+jobs). This ruling's build cost is therefore not new endpoints: it is the
+staging/landing split above, the phone-payload extension of the existing
+route contract under the normal API discipline, and swapping the subprocess
+worker for the embedded transfer boundary. An earlier revision of this
+paragraph claimed the endpoints were new; that was written without checking.
 
 The separate `mobile/alix-sync` application embeds Syncthing for continuous
 workspace synchronization. It is a different product and does not depend on
@@ -168,8 +196,10 @@ network state behind a transfer boundary that exposes:
 - one terminal outcome; and
 - joined shutdown.
 
-Desktop CLI, desktop web jobs, and the mobile bridge consume that boundary
-without receiving executor handles or Wormhole protocol types.
+Desktop CLI and desktop web jobs consume that boundary without receiving
+executor handles or Wormhole protocol types. The first-scope phone consumes
+only the HTTP job DTOs above it; the deferred on-device bridge is what would
+consume the Rust boundary directly.
 
 The implementation may run one transfer on a dedicated thread that drives the
 private executor. It must not establish a global application runtime merely
@@ -238,7 +268,8 @@ The dependency review records:
 - the async executor and I/O families;
 - duplicate dependency families;
 - desktop binary-size change;
-- Android Rust-library and APK size changes; and
+- Android Rust-library and APK size changes (a deferred on-device-arc
+  record: first-scope mobile carries no transfer dependencies); and
 - the license and notice obligations of Magic Wormhole and its dependencies.
 
 Magic Wormhole's EUPL-1.2 license and source-availability obligations are
@@ -388,8 +419,13 @@ authority.
 - Dependency inventories prove HTTP and AI families remain absent from the
   Wormhole-only build.
 - Desktop transfer tests exchange the same staged public bundle and land it
-  through the same receive workflow, and a paired client drives a share and a
-  receive end to end through the server's job-shaped endpoints.
+  through the same receive workflow.
+- A paired phone shares a PHONE-ONLY deck (present in its app-private root,
+  absent from the desktop root): a Python wormhole peer lands the exact
+  public bundle, the phone's progress and personal files are absent, and the
+  desktop root is unchanged.
+- A paired phone receives: the canonical public bundle lands in the PHONE
+  root, the desktop root is unchanged, and no archive residue remains.
 - Landed-bundle interoperability runs in both directions against the Python
   `wormhole` CLI for the two directory cases: a workspace, and an initialized
   deck carrying an asset and augmentation. Each run feeds the received object
