@@ -29,8 +29,10 @@ Alix therefore embeds the Rust `magic-wormhole` crate.
 gate.** Amended 2026-08-18: the feasibility work ran on Linux and closed every
 proof except iOS, where compilation and the transfer lifecycle are unproved and
 unprovable without macOS. No iOS client exists yet; one is planned once the
-deck format is settled and the Android app reaches feature parity including
-Wormhole sharing and Syncthing syncing. The first task of that iOS arc, before
+deck format is settled and the Android app reaches feature parity, where the
+sharing bar is server-backed sharing while paired (restated 2026-08-18 with
+the first-scope ruling below; it was first stated as on-device Wormhole) plus
+Syncthing syncing. The first task of that iOS arc, before
 any capability work builds on it, is the evidence this record cannot supply
 today: a release-mode iOS build linking the Wormhole-only library, then a
 lifecycle proof that suspension or cancellation leaves no detached transfer
@@ -51,8 +53,22 @@ or require the HTTP server to share an executor.
 The useful build boundary is capability-based:
 
 - a domain-only dependency firewall;
-- a Wormhole-capable mobile and library build; and
+- a Wormhole-capable library build, enabled per application when an
+  application needs it; and
 - the complete desktop application.
+
+**First-scope mobile sharing is server-backed, ruled 2026-08-18.** The phone
+shares and receives through the paired desktop server's JSON API, which runs
+the one transfer implementation on the desktop; the phone is interface, not
+transport. `mobile/alix` therefore stays domain-only and carries no Wormhole
+closure, no zip, and no EUPL code. There is no evidence yet that anyone shares
+where no desktop is running, so the on-device transfer arc is deferred until
+that evidence exists; the capability flag makes enabling it a build change,
+not an architectural one. Deferring it also removes the iOS transfer-lifecycle
+risk from every planned build, since no phone drives a background socket. The
+build cost this ruling adds: share and receive become job-shaped endpoints on
+the server (the existing background-ask pattern), reachable by any paired
+client.
 
 The separate `mobile/alix-sync` application embeds Syncthing for continuous
 workspace synchronization. It is a different product and does not depend on
@@ -123,9 +139,12 @@ every lower feature must be appropriate for every consumer.
 
 The study application lives at `mobile/alix` (renamed from `apps/mobile`
 before this record was implemented; the rename is baseline, not work this
-record claims). It depends on the Alix library with default features disabled
-and the `wormhole` feature enabled. It receives the shared learning domain plus
-Wormhole transfer, without the desktop HTTP and AI stack.
+record claims). **In the first scope it depends on the Alix library with
+default features disabled and no `wormhole` feature**: sharing reaches it
+through the paired server (see Context, ruled 2026-08-18). The deferred
+on-device arc enables the `wormhole` feature on this same dependency line,
+receiving the shared learning domain plus Wormhole transfer without the
+desktop HTTP and AI stack; nothing else about the application layout changes.
 
 The new `mobile/alix-sync` application embeds Syncthing and does not depend on
 the Alix Rust library merely to reuse paths, configuration, QR rendering, or
@@ -225,14 +244,44 @@ The dependency review records:
 Magic Wormhole's EUPL-1.2 license and source-availability obligations are
 handled in the release and notice workflow before distribution.
 
+The focused engineering review ran 2026-08-18 (working notes in the local
+`docs/research/`; this record carries every load-bearing conclusion, since the
+notes are not tracked). Findings: the full dependency tree contains exactly one
+copyleft component, the crate itself; the European Commission's published FAQ
+states that static and dynamic linking do not make the linking application a
+derivative work; and the `EUPL-1.2` versus or-later metadata discrepancy
+dissolved, because or-later is the licence text's own default and SPDX cannot
+express the distinction.
+
+**The first distributed binary containing the crate is gated on:**
+
+- a `NOTICE` entry (crate, copyright holder, EUPL-1.2) and the EUPL-1.2 text
+  shipped with distributed artifacts;
+- a corresponding-source pointer (exact version, crates.io URL, upstream tag)
+  in the release notes;
+- the license inventory re-run on the release lockfile, still showing exactly
+  one copyleft component, else this review reopens;
+- counsel sign-off that an unmodified statically linked EUPL crate does not
+  make the distributing binary a derivative work, and on the or-later reading.
+
+**A store build containing the crate carries one further sign-off:** store
+terms against the licence's no-additional-restrictions clause. Precedent
+exists (an EUPL-licensed national application shipped through the Play Store
+with the tension acknowledged), and the capability flag remains the escape: a
+store build can ship without `wormhole` entirely. **Under the first-scope
+ruling no planned build triggers this sign-off**: mobile stays domain-only and
+the crate ships only in direct-distributed desktop binaries. It becomes due
+with the deferred on-device arc, and not before.
+
 ## Consequences
 
 - Desktop sharing no longer requires Python or an external `wormhole`
   executable.
-- The Alix study application can send and receive directly on mobile.
+- The Alix study application shares and receives through the paired server in
+  the first scope; it sends and receives on-device only in the deferred arc.
 - Domain-only builds remain a strong dependency-direction check.
-- Mobile carries the Wormhole networking dependency closure by deliberate
-  capability choice.
+- Mobile carries no Wormhole networking closure in the first scope; the
+  deferred arc adds it by deliberate capability choice.
 - The desktop `full` build composes Wormhole with server, CLI, AI, and archive
   capabilities.
 - Async implementation details remain confined to transfer code.
@@ -304,9 +353,10 @@ availability depend on the companion application.
 Deck, workspace, progress, augmentation, and public-bundle formats do not
 change.
 
-The feature graph is an in-repository build contract. `mobile/alix` changes from
-domain-only to domain-plus-Wormhole. The completed tree contains no fallback
-subprocess path.
+The feature graph is an in-repository build contract. `mobile/alix` stays
+domain-only in the first scope and changes to domain-plus-Wormhole in the
+deferred on-device arc. The completed tree contains no fallback subprocess
+path.
 
 Public transfer commands and API DTOs retain their product meaning. Observable
 event or error changes require the normal API, client, documentation, and
@@ -331,13 +381,15 @@ authority.
 - `cargo build --no-default-features --lib` proves the domain-only dependency
   firewall.
 - `cargo build --no-default-features --features wormhole --lib` proves the
-  mobile transfer composition.
+  Wormhole-only library composition (no application enables it on mobile in
+  the first scope; the build proves the boundary, not a shipped product).
 - The `full` build proves the desktop application composes the same transfer
   implementation.
 - Dependency inventories prove HTTP and AI families remain absent from the
   Wormhole-only build.
-- Desktop and mobile transfer tests exchange the same staged public bundle and
-  land it through the same receive workflow.
+- Desktop transfer tests exchange the same staged public bundle and land it
+  through the same receive workflow, and a paired client drives a share and a
+  receive end to end through the server's job-shaped endpoints.
 - Landed-bundle interoperability runs in both directions against the Python
   `wormhole` CLI for the two directory cases: a workspace, and an initialized
   deck carrying an asset and augmentation. Each run feeds the received object
@@ -347,9 +399,9 @@ authority.
   landing anything.
 - Cancellation and shutdown tests prove no transfer thread or file writer is
   detached.
-- Mobile evidence records Android library and APK size before and after the
-  capability. iOS evidence is deliberately absent: first product scope is
-  desktop and Android, and the iOS compile/link and lifecycle gate is the
+- Android size evidence moves to the deferred on-device arc with the
+  capability itself. iOS evidence is deliberately absent: first product scope
+  is desktop and Android, and the iOS compile/link and lifecycle gate is the
   first task of the later iOS arc (see Context).
 - Source and release audits verify license notices and pinned provenance.
 - Production searches prove the external `wormhole` subprocess path is gone.
