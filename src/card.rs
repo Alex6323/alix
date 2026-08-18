@@ -26,6 +26,10 @@ impl Direction {
 pub struct CardImage {
     pub src: PathBuf,
     pub alt: Option<String>,
+    /// Regions bound to this media element (ADR 0034), in file order.
+    pub regions: Vec<crate::parser::region::RawRegion>,
+    /// The one optional viewport onto this media element.
+    pub crop: Option<crate::parser::region::RawCrop>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,6 +81,9 @@ pub struct Card {
     pub reversed: bool,
     pub content_fingerprint: u64,
     pub authored_distractors: Vec<String>,
+    /// `span`-shaped regions bound to the answer block (ADR 0034), in file
+    /// order; geometric regions ride their media element in `images`.
+    pub span_regions: Vec<crate::parser::region::RawRegion>,
 }
 
 impl Card {
@@ -118,6 +125,7 @@ impl Card {
             reversed: false,
             content_fingerprint,
             authored_distractors: Vec::new(),
+            span_regions: Vec::new(),
         }
     }
 
@@ -316,6 +324,8 @@ mod tests {
         fwd.images_back = vec![CardImage {
             src: PathBuf::from("/tabs/g.png"),
             alt: None,
+            regions: Vec::new(),
+            crop: None,
         }];
         let rev = fwd.reversed();
         assert_eq!(
@@ -332,6 +342,8 @@ mod tests {
         a.images = vec![CardImage {
             src: PathBuf::from("/imgs/a.png"),
             alt: None,
+            regions: Vec::new(),
+            crop: None,
         }];
         a.citations.push(SourceCitation {
             locator: "card.rs:1-9".to_string(),

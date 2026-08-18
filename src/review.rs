@@ -583,10 +583,14 @@ mod tests {
         cards[0].images = vec![crate::card::CardImage {
             src: "/pics/front.png".into(),
             alt: None,
+            regions: Vec::new(),
+            crop: None,
         }];
         cards[0].images_back = vec![crate::card::CardImage {
             src: "/pics/back.png".into(),
             alt: None,
+            regions: Vec::new(),
+            crop: None,
         }];
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);

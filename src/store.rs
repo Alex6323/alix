@@ -927,9 +927,8 @@ impl Store {
         self.cards.get(card_id)
     }
 
-    // The entry's mere existence no longer implies engagement (presentation
-    // creates one too): queue/on-ramp classification reads this instead of
-    // `get`.
+    // A default CardState can be materialized without engagement, so
+    // queue/on-ramp classification reads this filtered view instead of `get`.
     pub fn progress(&self, card_id: &str) -> Option<&CardState> {
         self.cards.get(card_id).filter(|state| state.engaged())
     }

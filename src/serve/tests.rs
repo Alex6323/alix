@@ -286,10 +286,14 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
     card.images = vec![CardImage {
         src: PathBuf::from("/imgs/moon.png"),
         alt: None,
+        regions: Vec::new(),
+        crop: None,
     }];
     card.images_back = vec![CardImage {
         src: PathBuf::from("/imgs/tab.png"),
         alt: None,
+        regions: Vec::new(),
+        crop: None,
     }];
 
     let dto = card_dto((&card).into(), card.id());

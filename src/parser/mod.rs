@@ -13,11 +13,12 @@ mod canonical;
 pub(crate) mod checklist;
 mod cloze;
 mod frontmatter;
+pub mod region;
 mod sidecar;
 
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
-use cloze::{Hole, Region, Seg, hash_repr, hole_fingerprints, scan_markers, seg_display};
+use cloze::{Hole, Seg, Side, hash_repr, hole_fingerprints, scan_markers, seg_display};
 pub use frontmatter::{
     DECK_FORMAT_VERSION, Frontmatter, PERSONAL_PARENT_KEY, parse_sampling, yaml_quote,
 };
@@ -140,6 +141,8 @@ pub enum ParseError {
         "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order"
     )]
     InvalidLocator { line: usize, message: String },
+    #[error("line {line}: {message}")]
+    InvalidRegion { line: usize, message: String },
     #[error(
         "line {0}: a hole name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`, closed by `]` and followed by `{{answer}}`: `\\blank[base]{{Unit}}`"
     )]
@@ -189,6 +192,7 @@ impl ParseError {
             Self::EmptyFront(_) => "empty_front",
             Self::FrontWithoutAnswer(_) => "front_without_answer",
             Self::InvalidLocator { .. } => "invalid_locator",
+            Self::InvalidRegion { .. } => "invalid_region",
             Self::InvalidHoleName(_) => "invalid_hole_name",
             Self::UnclosedHole(_) => "unclosed_hole",
             Self::EmptyHole(_) => "empty_hole",
@@ -224,6 +228,7 @@ impl ParseError {
             | Self::NonIntegerVersion { line, .. }
             | Self::ControlChar { line, .. }
             | Self::InvalidLocator { line, .. }
+            | Self::InvalidRegion { line, .. }
             | Self::TableColumns { line, .. }
             | Self::TableRowWidth { line, .. }
             | Self::TableRowStamp { line, .. }
@@ -439,6 +444,8 @@ struct RawRow {
 
 #[derive(Debug, Default, PartialEq)]
 struct CardDirectives {
+    regions: Vec<region::RawRegion>,
+    crops: Vec<region::RawCrop>,
     token: Option<String>,
     sampling: Option<bool>,
     reveal: Option<Reveal>,
@@ -1068,6 +1075,9 @@ fn apply_directive(
             None => lints.push(bad_value(line, key, value)),
         },
         "given" => directives.givens.push(value),
+        "blank" => directives.regions.push(region::parse_blank(&value, line)?),
+        "cover" => directives.regions.push(region::parse_cover(&value, line)?),
+        "crop" => directives.crops.push(region::parse_crop(&value, line)?),
         _ => lints.push(Lint {
             line,
             kind: LintKind::UnknownKey {
@@ -1085,9 +1095,64 @@ fn card_images(segments: &[Seg]) -> impl Iterator<Item = CardImage> + '_ {
         Seg::Image { src, alt } => Some(CardImage {
             src: PathBuf::from(src),
             alt: alt.clone(),
+            regions: Vec::new(),
+            crop: None,
         }),
         Seg::Text(_) | Seg::Hole { .. } => None,
     })
+}
+
+fn bind_regions(
+    regions: Vec<region::RawRegion>,
+    crops: Vec<region::RawCrop>,
+    front_media: &mut [(usize, CardImage)],
+    back_media: &mut [(usize, CardImage)],
+    answer_start: usize,
+) -> Result<Vec<region::RawRegion>, ParseError> {
+    fn target<'a>(
+        front: &'a mut [(usize, CardImage)],
+        back: &'a mut [(usize, CardImage)],
+        line: usize,
+        answer_start: usize,
+    ) -> Option<&'a mut CardImage> {
+        let side = if line >= answer_start { back } else { front };
+        side.iter_mut()
+            .rfind(|(media_line, _)| *media_line < line)
+            .map(|(_, image)| image)
+    }
+    let mut spans = Vec::new();
+    for crop in crops {
+        let Some(image) = target(front_media, back_media, crop.line, answer_start) else {
+            return Err(ParseError::InvalidRegion {
+                line: crop.line,
+                message: "`crop:` needs a preceding media element on its side of the card".into(),
+            });
+        };
+        if image.crop.is_some() {
+            return Err(ParseError::InvalidRegion {
+                line: crop.line,
+                message: "a media element takes at most one `crop:`".into(),
+            });
+        }
+        image.crop = Some(crop);
+    }
+    for region in regions {
+        if matches!(region.geometry, region::RegionGeometry::Span { .. }) {
+            spans.push(region);
+            continue;
+        }
+        let Some(image) = target(front_media, back_media, region.line, answer_start) else {
+            return Err(ParseError::InvalidRegion {
+                line: region.line,
+                message: "a geometric region needs a preceding media element on its side of the card (`span` binds to the answer block instead)".into(),
+            });
+        };
+        image.regions.push(region);
+    }
+    for (_, image) in front_media.iter_mut().chain(back_media.iter_mut()) {
+        region::validate_media(&mut image.regions, image.crop.as_ref())?;
+    }
+    Ok(spans)
 }
 
 // The empty guard is load-bearing: an all-image line drops, but a blank content line (a fence's
@@ -1112,12 +1177,12 @@ fn build_card(
         note,
         directives,
     } = raw;
-    let mut images: Vec<CardImage> = Vec::new();
+    let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     let (front, answer) = if divided {
         let mut front_lines = vec![heading];
         for (lineno, text) in &front_extra {
-            let segments = scan_markers(text, *lineno, Region::Front, lints)?;
-            images.extend(card_images(&segments));
+            let segments = scan_markers(text, *lineno, Side::Front, lints)?;
+            front_media.extend(card_images(&segments).map(|image| (*lineno, image)));
             if !image_only(&segments) {
                 front_lines.push(seg_display(&segments));
             }
@@ -1132,12 +1197,30 @@ fn build_card(
 
     let mut parsed = Vec::with_capacity(answer.len());
     for (lineno, text) in &answer {
-        parsed.push(scan_markers(text, *lineno, Region::Answer, lints)?);
+        parsed.push(scan_markers(text, *lineno, Side::Answer, lints)?);
     }
-    let mut images_back: Vec<CardImage> = Vec::new();
-    for segments in &parsed {
-        images_back.extend(card_images(segments));
+    let mut back_media: Vec<(usize, CardImage)> = Vec::new();
+    for ((lineno, _), segments) in answer.iter().zip(&parsed) {
+        back_media.extend(card_images(segments).map(|image| (*lineno, image)));
     }
+
+    let answer_start = if divided {
+        answer
+            .first()
+            .map(|(lineno, _)| *lineno)
+            .unwrap_or(usize::MAX)
+    } else {
+        0
+    };
+    let span_regions = bind_regions(
+        directives.regions,
+        directives.crops,
+        &mut front_media,
+        &mut back_media,
+        answer_start,
+    )?;
+    let images: Vec<CardImage> = front_media.into_iter().map(|(_, image)| image).collect();
+    let images_back: Vec<CardImage> = back_media.into_iter().map(|(_, image)| image).collect();
 
     let mut task_lines = Vec::new();
     let mut has_other = false;
@@ -1211,6 +1294,7 @@ fn build_card(
                 card.token = directives.token.as_deref().map(Arc::from);
                 card.images = images;
                 card.images_back = images_back;
+                card.span_regions = span_regions;
                 card.citations = directives.citations;
                 card.givens = directives.givens;
                 card.authored_distractors = distractors;
@@ -1374,6 +1458,7 @@ fn build_card(
         card.sampling = directives.sampling;
         card.images = images;
         card.images_back = images_back;
+        card.span_regions = span_regions;
         card.citations = directives.citations;
         card.givens = directives.givens;
         cards.push(card);
@@ -1489,6 +1574,7 @@ fn build_card(
         card.block_holes = block_holes.clone();
         card.images = images.clone();
         card.images_back = images_back.clone();
+        card.span_regions = span_regions.clone();
         card.content_fingerprint = block_fingerprint;
         // A cloze sub-card never reverses and keeps no direction: only the
         // per-card `input:` still applies here.
@@ -3178,6 +3264,8 @@ the answer
         };
         assert_eq!(
             CardDirectives {
+                regions: Vec::new(),
+                crops: Vec::new(),
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
                 reveal_line: Some(29),
@@ -3699,5 +3787,131 @@ the answer
                 "| a | b |\n|---|---|\n| x | y |\n<!-- id: {CONTAINER}-2 -->\n"
             ))
         );
+    }
+
+    // ── Image regions (ADR 0034): binding and cross-region rules ──
+
+    #[test]
+    fn a_geometric_region_binds_to_the_nearest_preceding_image_on_its_side() {
+        let deck = parse(
+            "## bones\n![](a.png)\n![](b.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\n![](c.png)\n<!-- blank: rect x=3 y=3 width=4 height=4 -->\nanswer\n",
+        );
+        let card = &deck.cards[0];
+        assert_eq!(2, card.images.len(), "both front images survive");
+        assert!(
+            card.images[0].regions.is_empty(),
+            "the farther image gets nothing"
+        );
+        assert_eq!(
+            1,
+            card.images[1].regions.len(),
+            "the nearest preceding image binds"
+        );
+        assert_eq!(
+            1,
+            card.images_back[0].regions.len(),
+            "the back region binds on its own side"
+        );
+        assert!(card.span_regions.is_empty());
+    }
+
+    #[test]
+    fn a_geometric_region_without_a_media_element_on_its_side_is_rejected() {
+        let error =
+            err("## q\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\n![](a.png)\nanswer\n");
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("preceding media element"), "{message}");
+    }
+
+    #[test]
+    fn a_span_region_binds_to_the_answer_block_without_any_media() {
+        let deck =
+            parse("## q\nanswer with der Artikel\n<!-- blank: span hidden=\"der\" word=3 -->\n");
+        let card = &deck.cards[0];
+        assert_eq!(1, card.span_regions.len());
+        assert!(card.images.is_empty() && card.images_back.is_empty());
+    }
+
+    #[test]
+    fn a_media_element_takes_at_most_one_crop() {
+        let error = err(
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n<!-- crop: rect x=1 y=1 width=2 height=2 -->\n---\nanswer\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("at most one"), "{message}");
+    }
+
+    #[test]
+    fn one_media_element_carries_one_unit_across_regions_and_crop() {
+        let error = err(
+            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n<!-- blank: rect x=1% y=1% width=2% height=2% -->\n---\nanswer\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("same unit"), "{message}");
+
+        let error = err(
+            "## q\n![](a.png)\n<!-- crop: rect x=0% y=0% width=9% height=9% -->\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n---\nanswer\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("same unit"), "{message}");
+    }
+
+    #[test]
+    fn viewport_bounds_reject_an_invisible_blank_and_accept_partial_overlap() {
+        // Touching the crop edge is outside: no positive-area intersection.
+        let error = err(
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=100 y=0 width=10 height=10 -->\n\n---\nanswer\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("visible area"), "{message}");
+
+        // Partial overlap is legal and clipped.
+        let deck = parse(
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=90 y=0 width=20 height=20 -->\n\n---\nanswer\n",
+        );
+        assert_eq!(1, deck.cards[0].images[0].regions.len());
+
+        // The ADR's no-crop percentage example: x=100% width=10% clips to nothing.
+        let error = err(
+            "## q\n![](a.png)\n<!-- blank: rect x=100% y=0% width=10% height=10% -->\n\n---\nanswer\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("visible area"), "{message}");
+    }
+
+    #[test]
+    fn an_empty_cover_is_dropped_rather_than_rejected() {
+        let deck = parse(
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n<!-- cover: rect x=60 y=60 width=5 height=5 -->\n\n---\nanswer\n",
+        );
+        let image = &deck.cards[0].images[0];
+        assert!(
+            image.regions.is_empty(),
+            "the invisible cover creates nothing and errors nothing"
+        );
+        assert!(image.crop.is_some());
+    }
+
+    #[test]
+    fn region_and_crop_survive_onto_the_stored_card_image() {
+        let deck = parse(
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n",
+        );
+        let image = &deck.cards[0].images[0];
+        assert_eq!(1, image.regions.len());
+        assert_eq!(Some("a1b2c3"), image.regions[0].stamp.as_deref());
+        assert_eq!("50", image.crop.as_ref().unwrap().width.literal);
     }
 }

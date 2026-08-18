@@ -25,7 +25,7 @@ pub(super) enum Seg {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Region {
+pub(super) enum Side {
     // Test-only until front scanning wires in; an #[expect] would be
     // unfulfilled under cfg(test).
     #[allow(dead_code)]
@@ -83,7 +83,7 @@ pub(super) fn hole_fingerprints(
 pub(super) fn scan_markers(
     line_text: &str,
     lineno: usize,
-    region: Region,
+    side: Side,
     lints: &mut Vec<Lint>,
 ) -> Result<Vec<Seg>, ParseError> {
     let mut segments = Vec::new();
@@ -96,7 +96,7 @@ pub(super) fn scan_markers(
         } else if let Some(after) = rest.strip_prefix("\\![") {
             text.push_str("![");
             rest = after;
-        } else if region == Region::Answer
+        } else if side == Side::Answer
             && let Some(after) = rest.strip_prefix("\\blank")
         {
             let (named, after_name) = match after.strip_prefix('[') {
@@ -386,19 +386,19 @@ pub(super) fn hash_repr(segments: &[Seg]) -> String {
 mod tests {
     use super::*;
 
-    fn scan(line: &str, region: Region) -> (Vec<Seg>, Vec<Lint>) {
+    fn scan(line: &str, side: Side) -> (Vec<Seg>, Vec<Lint>) {
         let mut lints = Vec::new();
-        let segments = scan_markers(line, 7, region, &mut lints).unwrap();
+        let segments = scan_markers(line, 7, side, &mut lints).unwrap();
         (segments, lints)
     }
 
     fn answer(line: &str) -> (Vec<Seg>, Vec<Lint>) {
-        scan(line, Region::Answer)
+        scan(line, Side::Answer)
     }
 
     fn fatal(line: &str) -> ParseError {
         let mut lints = Vec::new();
-        scan_markers(line, 7, Region::Answer, &mut lints).unwrap_err()
+        scan_markers(line, 7, Side::Answer, &mut lints).unwrap_err()
     }
 
     fn text(t: &str) -> Seg {
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn an_image_is_recognized_in_the_front_region_too() {
-        let (segments, _) = scan("![](x.png)", Region::Front);
+        let (segments, _) = scan("![](x.png)", Side::Front);
         assert_eq!(vec![image("x.png", None)], segments);
     }
 
@@ -673,20 +673,20 @@ mod tests {
 
     #[test]
     fn cloze_in_the_front_region_stays_literal() {
-        let (segments, lints) = scan("\\blank{mut}", Region::Front);
+        let (segments, lints) = scan("\\blank{mut}", Side::Front);
         assert_eq!(vec![text("\\blank{mut}")], segments);
         assert!(lints.is_empty());
     }
 
     #[test]
     fn cloze_bracket_in_the_front_region_stays_literal() {
-        let (segments, _) = scan("\\blank[pin]", Region::Front);
+        let (segments, _) = scan("\\blank[pin]", Side::Front);
         assert_eq!(vec![text("\\blank[pin]")], segments);
     }
 
     #[test]
     fn escaped_cloze_unescapes_in_the_front_region_too() {
-        let (segments, _) = scan("\\\\blank{x}", Region::Front);
+        let (segments, _) = scan("\\\\blank{x}", Side::Front);
         assert_eq!(vec![text("\\blank{x}")], segments);
     }
 
