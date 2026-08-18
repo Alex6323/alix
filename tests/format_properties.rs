@@ -200,7 +200,7 @@ proptest! {
         let parsed = alix::token::parse_prefixed_card_id(&id);
         let base = format!("card-{token}");
         prop_assert_eq!(
-            Some((base.as_str(), row.as_deref(), hole, reversed)),
+            Some((base.as_str(), row.as_deref(), hole, reversed, None)),
             parsed
         );
     }

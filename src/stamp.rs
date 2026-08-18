@@ -24,6 +24,7 @@ const MINT_ATTEMPTS: usize = 64;
 pub struct StampOutcome {
     pub minted_cards: Vec<String>,
     pub minted_rows: Vec<String>,
+    pub minted_regions: Vec<String>,
     pub minted_deck: Option<String>,
 }
 
@@ -166,13 +167,61 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             .collect();
         for row in &table.rows {
             if row.stamp.is_none() {
-                let stamp = mint_row_unique(&taken)?;
+                let stamp = mint_stamp_unique(&taken)?;
                 taken.insert(stamp.clone());
                 row_mints.push((row.line, stamp));
             }
         }
         if table.token.is_none() && !table.rows.is_empty() {
             container_mints.push((table.end_line, mint_card_id()?));
+        }
+    }
+
+    // Region stamps (ADR 0034): blanks mint per parent card, covers never
+    // stamp. Cloze sub-cards clone their block's images, so regions dedupe
+    // by their unique file line while uniqueness stays scoped to the block.
+    let mut region_mints: Vec<(usize, String)> = Vec::new();
+    let mut region_remints: Vec<(usize, String, String)> = Vec::new();
+    {
+        use crate::parser::region::{RawRegion, RegionKind};
+        // (region line, its authored stamp) per parent block, in file order.
+        type BlockRegions = Vec<(usize, Option<String>)>;
+        let mut seen_lines: HashSet<usize> = HashSet::new();
+        let mut blocks: Vec<(usize, BlockRegions)> = Vec::new();
+        for card in &deck.cards {
+            let mut push = |region: &RawRegion| {
+                if region.kind != RegionKind::Blank || !seen_lines.insert(region.line) {
+                    return;
+                }
+                match blocks.iter_mut().find(|(block, _)| *block == card.line) {
+                    Some((_, regions)) => regions.push((region.line, region.stamp.clone())),
+                    None => blocks.push((card.line, vec![(region.line, region.stamp.clone())])),
+                }
+            };
+            for image in card.images.iter().chain(card.images_back.iter()) {
+                image.regions.iter().for_each(&mut push);
+            }
+            card.span_regions.iter().for_each(&mut push);
+        }
+        for (_, regions) in blocks {
+            let mut taken: HashSet<String> = HashSet::new();
+            for (line, stamp) in regions {
+                match stamp {
+                    Some(stamp) if taken.insert(stamp.clone()) => {}
+                    Some(old) => {
+                        // A copy-pasted line must not silently fuse two
+                        // members: the collision re-mints (ADR 0034).
+                        let new = mint_stamp_unique(&taken)?;
+                        taken.insert(new.clone());
+                        region_remints.push((line, old, new));
+                    }
+                    None => {
+                        let stamp = mint_stamp_unique(&taken)?;
+                        taken.insert(stamp.clone());
+                        region_mints.push((line, stamp));
+                    }
+                }
+            }
         }
     }
 
@@ -194,6 +243,8 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     if card_lines.is_empty()
         && row_mints.is_empty()
         && container_mints.is_empty()
+        && region_mints.is_empty()
+        && region_remints.is_empty()
         && matches!(deck_action, DeckAction::None)
     {
         return Ok(StampOutcome::default());
@@ -216,7 +267,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     // stamp has to stay inside the row.
     const AFTER_BLOCK: u8 = 0;
     const WITHIN_LINE: u8 = 1;
-    let mut inserts: Vec<(usize, u8, String)> = Vec::new();
+    let mut inserts: Vec<(usize, u8, usize, String)> = Vec::new();
     for (line, tok) in card_lines.iter().zip(&minted_cards) {
         let anchor = block_end_line(body, *line);
         let newline = line_terminator(body, anchor);
@@ -229,6 +280,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         inserts.push((
             offset,
             AFTER_BLOCK,
+            0,
             format!("{lead}<!-- id: {tok} -->{newline}"),
         ));
     }
@@ -237,7 +289,27 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         let rest = &body[start..];
         let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
         let end = raw.trim_end_matches(&WS[..]).len();
-        inserts.push((start + end, WITHIN_LINE, format!(" <!-- r:{stamp} -->")));
+        inserts.push((start + end, WITHIN_LINE, 0, format!(" <!-- r:{stamp} -->")));
+    }
+    for (line, stamp) in &region_mints {
+        let start = nth_line_start(body, *line).ok_or(StampError::MissingLine(*line))?;
+        let rest = &body[start..];
+        let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
+        let terminator = raw.find("-->").ok_or(StampError::MissingLine(*line))?;
+        let end = raw[..terminator].trim_end().len();
+        inserts.push((start + end, WITHIN_LINE, 0, format!(" b:{stamp}")));
+    }
+    for (line, old, new) in &region_remints {
+        let start = nth_line_start(body, *line).ok_or(StampError::MissingLine(*line))?;
+        let rest = &body[start..];
+        let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
+        let within = stamp_token_offset(raw, old).ok_or(StampError::MissingLine(*line))?;
+        inserts.push((
+            start + within,
+            WITHIN_LINE,
+            "b:".len() + old.len(),
+            format!("b:{new}"),
+        ));
     }
     for (end_line, tok) in &container_mints {
         let newline = line_terminator(body, *end_line);
@@ -251,6 +323,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         inserts.push((
             offset,
             AFTER_BLOCK,
+            0,
             format!("{lead}<!-- id: {tok} -->{newline}"),
         ));
     }
@@ -266,7 +339,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
                 Some(_) => String::new(),
                 None => format!("format-version: {DECK_FORMAT_VERSION}\n"),
             };
-            inserts.push((offset, AFTER_BLOCK, format!("{version}id: \"{tok}\"\n")));
+            inserts.push((offset, AFTER_BLOCK, 0, format!("{version}id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
             prepend = format!("---\nformat-version: {DECK_FORMAT_VERSION}\nid: \"{tok}\"\n---\n\n");
@@ -277,10 +350,10 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     // Descending, so each insertion leaves the earlier offsets valid. At an
     // equal offset the block-closing text goes in first, which leaves the
     // row's stamp ahead of it in the finished line.
-    inserts.sort_by_key(|(offset, rank, _)| (std::cmp::Reverse(*offset), *rank));
+    inserts.sort_by_key(|(offset, rank, _, _)| (std::cmp::Reverse(*offset), *rank));
     let mut new_body = body.to_string();
-    for (offset, _, text) in inserts {
-        new_body.insert_str(offset, &text);
+    for (offset, _, remove_len, text) in inserts {
+        new_body.replace_range(offset..offset + remove_len, &text);
     }
     let new_text = format!("{bom}{prepend}{new_body}");
 
@@ -297,6 +370,11 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     Ok(StampOutcome {
         minted_cards,
         minted_rows: row_mints.into_iter().map(|(_, stamp)| stamp).collect(),
+        minted_regions: region_mints
+            .into_iter()
+            .map(|(_, stamp)| stamp)
+            .chain(region_remints.into_iter().map(|(_, _, new)| new))
+            .collect(),
         minted_deck: deck_token,
     })
 }
@@ -338,7 +416,26 @@ fn mint_card_id() -> Result<String, StampError> {
 
 /// Bounded: a broken generator returning one value forever would otherwise
 /// spin here instead of failing.
-fn mint_row_unique(taken: &HashSet<String>) -> Result<String, StampError> {
+/// Finds the byte offset of the `b:<stamp>` token in a region line, skipping
+/// quoted values, where the same characters could appear as answer text.
+fn stamp_token_offset(line: &str, stamp: &str) -> Option<usize> {
+    let needle = format!("b:{stamp}");
+    let bytes = line.as_bytes();
+    let mut quoted = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if quoted => i += 1,
+            b'"' => quoted = !quoted,
+            _ if !quoted && line[i..].starts_with(&needle) => return Some(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+fn mint_stamp_unique(taken: &HashSet<String>) -> Result<String, StampError> {
     for _ in 0..MINT_ATTEMPTS {
         let stamp = token::mint_row().map_err(StampError::Mint)?;
         if !taken.contains(&stamp) {
@@ -1125,7 +1222,7 @@ mod tests {
             taken.insert(token::mint_row().unwrap());
         }
         // A healthy generator still finds a free stamp among 32^6 values.
-        assert!(mint_row_unique(&taken).is_ok());
+        assert!(mint_stamp_unique(&taken).is_ok());
 
         // The pathological case the bound exists for: every candidate taken.
         let everything: HashSet<String> = (0..32u8)
@@ -1141,7 +1238,7 @@ mod tests {
             .collect();
         // Not exhaustive over the space, so this must still succeed rather
         // than hang; the bound only fires when the generator itself repeats.
-        assert!(mint_row_unique(&everything).is_ok());
+        assert!(mint_stamp_unique(&everything).is_ok());
     }
 
     #[test]
@@ -1499,5 +1596,114 @@ mod tests {
         let overlapping = "## q\na\n<!-- x <!-->\n<!-- id: card-q1 -->\n";
         let range = first_id_token_span(overlapping, "card-q1").unwrap();
         assert_eq!("card-q1", &overlapping[range]);
+    }
+
+    // ── Region stamps (ADR 0034) ──
+
+    const DECK_HEAD: &str =
+        "---\nformat-version: 1\nid: \"deck-regionregionregionregion\"\n---\n\n";
+
+    #[test]
+    fn an_unstamped_region_is_minted_into_on_the_first_pass_and_then_stable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n"
+            ),
+        );
+        let outcome = stamp_deck(&path).unwrap();
+        assert_eq!(1, outcome.minted_regions.len());
+        let stamp = &outcome.minted_regions[0];
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains(&format!("height=2 b:{stamp} -->")),
+            "the mint lands inside the directive comment before its terminator: {text}"
+        );
+
+        let again = stamp_deck(&path).unwrap();
+        assert!(
+            again.minted_regions.is_empty(),
+            "a stamped region is left alone"
+        );
+        assert_eq!(
+            text,
+            fs::read_to_string(&path).unwrap(),
+            "the second pass is a byte no-op"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_stamp_within_one_parent_card_is_reminted_not_fused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n"
+            ),
+        );
+        let outcome = stamp_deck(&path).unwrap();
+        assert_eq!(
+            1,
+            outcome.minted_regions.len(),
+            "exactly one side of the collision re-mints"
+        );
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            1,
+            text.matches("b:a1b2c3").count(),
+            "the first keeps its stamp"
+        );
+        assert!(text.contains(&format!("b:{}", outcome.minted_regions[0])));
+    }
+
+    #[test]
+    fn identical_stamps_on_different_parent_cards_are_harmless_and_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let card = |token: &str| {
+            format!(
+                "## q{token} <!-- id: card-{token}{token}{token}{token}{token}{token}re -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n"
+            )
+        };
+        let path = write(
+            &dir,
+            "d.md",
+            &format!("{DECK_HEAD}{}{}", card("xxxxx"), card("yyyyy")),
+        );
+        let before = fs::read_to_string(&path).unwrap();
+        let outcome = stamp_deck(&path).unwrap();
+        assert!(
+            outcome.minted_regions.is_empty(),
+            "cross-card sameness is not a collision"
+        );
+        assert_eq!(before, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn a_cover_is_never_stamped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n"
+            ),
+        );
+        let outcome = stamp_deck(&path).unwrap();
+        assert!(outcome.minted_regions.is_empty());
+        assert!(!fs::read_to_string(&path).unwrap().contains(" b:"));
+    }
+
+    #[test]
+    fn a_stamp_matching_text_inside_a_quoted_value_is_not_the_token() {
+        let line =
+            r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="say b:a1b2c3 aloud" b:a1b2c3 -->"#;
+        let offset = stamp_token_offset(line, "a1b2c3").unwrap();
+        assert!(
+            line[..offset].ends_with("aloud\" "),
+            "the quoted decoy is skipped; found at {offset}: {line}"
+        );
     }
 }

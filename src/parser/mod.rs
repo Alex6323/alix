@@ -1040,7 +1040,7 @@ fn apply_directive(
             // Markers hold base ids only; a sub-id suffix (`-N`, `-r`) never appears here.
             if !matches!(
                 token::parse_prefixed_card_id(&value),
-                Some((_, None, None, false))
+                Some((_, None, None, false, None))
             ) {
                 return Err(ParseError::InvalidCardId { line, value });
             }

@@ -4,8 +4,6 @@
 
 use super::ParseError;
 
-pub const STAMP_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RegionKind {
     Blank,
@@ -198,7 +196,7 @@ fn group_name(raw: &str, line: usize) -> Result<String, ParseError> {
 }
 
 fn stamp(raw: &str, line: usize) -> Result<String, ParseError> {
-    let legal = raw.len() == 6 && raw.chars().all(|c| STAMP_ALPHABET.contains(c));
+    let legal = crate::token::is_valid_region_stamp(raw);
     if !legal {
         return Err(err(
             line,

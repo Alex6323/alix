@@ -996,7 +996,7 @@ impl Store {
             .keys()
             .filter(|key| key.starts_with(&prefix))
             .filter_map(|key| match crate::token::parse_prefixed_card_id(key) {
-                Some((_, None, Some(n), false)) => Some((n, key.clone())),
+                Some((_, None, Some(n), false, None)) => Some((n, key.clone())),
                 _ => None,
             })
             .collect();
@@ -1186,7 +1186,9 @@ impl Store {
         let pruned_tokens: HashSet<&str> = orphans
             .cards
             .iter()
-            .filter_map(|id| crate::token::parse_prefixed_card_id(id).map(|(token, _, _, _)| token))
+            .filter_map(|id| {
+                crate::token::parse_prefixed_card_id(id).map(|(token, _, _, _, _)| token)
+            })
             .collect();
         for token in pruned_tokens {
             let prefix = format!("{token}-");
@@ -1210,7 +1212,7 @@ impl Store {
             .keys()
             .filter(|id| {
                 crate::token::parse_prefixed_card_id(id)
-                    .is_some_and(|(token, _, _, _)| tokens.contains(token))
+                    .is_some_and(|(token, _, _, _, _)| tokens.contains(token))
             })
             .cloned()
             .collect();
@@ -2584,7 +2586,7 @@ mod tests {
             .find(|card| card.front == "Fill")
             .and_then(|card| card.id())
             .expect("the cloze block reached the sidecar");
-        let (base, _, _, _) = crate::token::parse_prefixed_card_id(&cloze_id).unwrap();
+        let (base, _, _, _, _) = crate::token::parse_prefixed_card_id(&cloze_id).unwrap();
         assert_eq!(
             2,
             store.records(base).unwrap().holes.len(),

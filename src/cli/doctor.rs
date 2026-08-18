@@ -135,7 +135,7 @@ fn deck_findings(path: &Path, report: &mut Report) {
         }
     }
     for tok in &tokens {
-        if let Some((_, token, _, _, _)) = alix::token::parse_id(tok)
+        if let Some((_, token, _, _, _, _)) = alix::token::parse_id(tok)
             && !alix::token::is_canonical(token)
         {
             report.warn(format!(
