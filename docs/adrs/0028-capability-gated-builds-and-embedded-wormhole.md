@@ -1,10 +1,18 @@
 # 0028: Capability-gated builds and embedded Wormhole
 
-- Status: Accepted (design; NOT yet implemented — the text below describes
-  the target state in completed tense. Production still shells out to the
-  `wormhole` CLI, there is no `wormhole` Cargo feature, and `mobile/alix-sync`
-  is empty. Corrected 2026-08-02 after the docs audit read the tense as a
-  shipped claim.)
+- Status: Accepted (design; DEFERRED and not implemented — the text below
+  describes the target state in completed tense. Production still shells out
+  to the `wormhole` CLI, there is no `wormhole` Cargo feature, and
+  `mobile/alix-sync` is empty. Corrected 2026-08-02 after the docs audit read
+  the tense as a shipped claim. **Deferred 2026-08-18 by Alex: "keep the CLI,
+  defer embedding."** The paired-sharing ruling removed embedding's mobile
+  motivation; the paired share/receive endpoints build against the existing
+  subprocess worker, and the desktop onboarding friction is met by the
+  install script offering `pipx install magic-wormhole` instead. Embedding
+  activates with the deferred on-device arc, or if the subprocess path or
+  install friction becomes a named problem; nothing else in this record
+  changes, and while deferred the EUPL counsel sign-offs are moot because no
+  distributed binary contains the crate.)
 - Recorded: 2026-07-29
 - Retrospective: No
 - Refines:
