@@ -247,7 +247,11 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     let mut tables = Vec::new();
     for block in document.blocks {
         match block {
-            RawBlock::Card(raw) => build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?,
+            RawBlock::Card(raw) => {
+                let block_start = cards.len();
+                build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?;
+                build_region_cards(block_start, &mut cards)?;
+            }
             RawBlock::Table(raw) => {
                 tables.push(TableStamping {
                     line: raw.line,
@@ -904,6 +908,105 @@ fn extract_row_stamp(line: &str) -> Option<(String, String)> {
     let start = prefix.rfind("<!--")?;
     let (key, value) = directive(&prefix[start + 4..])?;
     (key == "r").then(|| (trim_ws(&prefix[..start]).to_string(), value))
+}
+
+/// Synthesizes the region cards a block's blanks ask (ADR 0034): a named
+/// group is one card asking every member, an ungrouped blank one card each,
+/// a cover no card. Runs after `build_card`, using the first card the block
+/// pushed as the template all its sub-cards already share.
+fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), ParseError> {
+    use region::{RawRegion, RegionKind};
+
+    use crate::card::{GroupMember, RegionSlot};
+
+    if cards.len() == block_start {
+        return Ok(());
+    }
+    let template = cards[block_start].clone();
+    let blanks: Vec<&RawRegion> = template
+        .images
+        .iter()
+        .chain(template.images_back.iter())
+        .flat_map(|image| image.regions.iter())
+        .chain(template.span_regions.iter())
+        .filter(|region| region.kind == RegionKind::Blank)
+        .collect();
+    if blanks.is_empty() {
+        return Ok(());
+    }
+
+    let region_card = |slot: RegionSlot, back: Vec<String>, line: usize| {
+        let mut card = template.clone();
+        card.back = back;
+        card.display_back = None;
+        card.note = None;
+        card.line = line;
+        card.region = Some(slot);
+        card.hole = None;
+        card.hole_name = None;
+        card.reversed = false;
+        card.direction = None;
+        card.input = None;
+        card.row = None;
+        card.content_fingerprint = content_fingerprint(&card.front, &card.back);
+        card
+    };
+
+    let mut groups: Vec<(&str, Vec<&RawRegion>)> = Vec::new();
+    let mut new_cards = Vec::new();
+    for blank in &blanks {
+        match blank.group.as_deref() {
+            Some(name) => match groups.iter_mut().find(|(group, _)| *group == name) {
+                Some((_, members)) => members.push(blank),
+                None => groups.push((name, vec![blank])),
+            },
+            None => {
+                new_cards.push(region_card(
+                    RegionSlot::Single {
+                        stamp: blank.stamp.as_deref().map(Arc::from),
+                        hidden: blank.hidden.clone(),
+                    },
+                    blank.hidden.iter().cloned().collect(),
+                    blank.line,
+                ));
+            }
+        }
+    }
+    for (name, members) in groups {
+        // The all-or-none rule for a group's answers, exactly as text holes
+        // have it: mixed presence would leave the card half-answerable.
+        let with_hidden = members.iter().filter(|m| m.hidden.is_some()).count();
+        if with_hidden != 0 && with_hidden != members.len() {
+            return Err(ParseError::InvalidRegion {
+                line: members[0].line,
+                message: format!(
+                    "group `[{name}]` mixes regions that carry `hidden=` with regions that do not"
+                ),
+            });
+        }
+        let hash = members
+            .iter()
+            .map(|m| m.stamp.as_deref())
+            .collect::<Option<Vec<&str>>>()
+            .map(|stamps| Arc::from(crate::token::derive_group_hash(&stamps)));
+        let back: Vec<String> = members.iter().filter_map(|m| m.hidden.clone()).collect();
+        let slot = RegionSlot::Group {
+            name: name.to_string(),
+            hash,
+            members: members
+                .iter()
+                .map(|m| GroupMember {
+                    stamp: m.stamp.as_deref().map(Arc::from),
+                    hidden: m.hidden.clone(),
+                })
+                .collect(),
+        };
+        let line = members[0].line;
+        new_cards.push(region_card(slot, back, line));
+    }
+    new_cards.sort_by_key(|card| card.line);
+    cards.extend(new_cards);
+    Ok(())
 }
 
 fn build_table_cards(
@@ -3995,5 +4098,123 @@ the answer
             panic!("expected InvalidRegion, got {error:?}");
         };
         assert!(message.contains("media element"), "{message}");
+    }
+
+    // ── Region cards (ADR 0034): assembly ──
+
+    const RTOK: &str = "card-regionregionregionregion";
+
+    fn region_deck(regions: &str) -> String {
+        format!(
+            "## name the parts <!-- id: {RTOK} -->\n![](hand.png)\n{regions}\n\n---\nthe parts\n"
+        )
+    }
+
+    #[test]
+    fn a_stamped_blank_yields_a_region_card_with_the_literal_b_id() {
+        let deck = parse(&region_deck(
+            r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" b:a1b2c3 -->"#,
+        ));
+        assert_eq!(2, deck.cards.len(), "the parent card plus one region card");
+        let region_card = &deck.cards[1];
+        assert_eq!(Some(format!("{RTOK}-ba1b2c3")), region_card.id());
+        assert_eq!(vec!["lunate"], region_card.back);
+        assert_eq!("name the parts", region_card.front);
+        assert_eq!(
+            1,
+            region_card.images.len(),
+            "the media rides along for masking"
+        );
+    }
+
+    #[test]
+    fn a_named_group_is_one_card_asking_every_member_with_a_derived_id() {
+        let two = |a: &str, b: &str| {
+            parse(&region_deck(&format!(
+                "<!-- blank: rect [carpals] x=1 y=1 width=2 height=2 hidden=\"lunate\" b:{a} -->\n<!-- blank: rect [carpals] x=5 y=5 width=2 height=2 hidden=\"hamate\" b:{b} -->"
+            )))
+        };
+        let deck = two("a1b2c3", "d4e5f6");
+        assert_eq!(2, deck.cards.len(), "one group card, not one per member");
+        let group = &deck.cards[1];
+        assert_eq!(
+            Some(format!("{RTOK}-gchsbz14b1a30x")),
+            group.id(),
+            "the frozen vector, derived live"
+        );
+        assert_eq!(
+            vec!["lunate", "hamate"],
+            group.back,
+            "the card asks every member"
+        );
+
+        let swapped = two("d4e5f6", "a1b2c3");
+        assert_eq!(
+            deck.cards[1].id(),
+            swapped.cards[1].id(),
+            "member order in the file never changes the id"
+        );
+    }
+
+    #[test]
+    fn changing_group_membership_changes_the_derived_id() {
+        let deck = parse(&region_deck(
+            r#"<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden="a" b:a1b2c3 -->"#,
+        ));
+        let grown = parse(&region_deck(
+            "<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"a\" b:a1b2c3 -->\n<!-- blank: rect [g] x=5 y=5 width=2 height=2 hidden=\"b\" b:d4e5f6 -->",
+        ));
+        assert_ne!(deck.cards[1].id(), grown.cards[1].id());
+    }
+
+    #[test]
+    fn a_cover_produces_no_card_and_a_cover_only_deck_is_undisturbed() {
+        let deck = parse(&region_deck(
+            r#"<!-- cover: rect x=1 y=1 width=2 height=2 hidden="legend" -->"#,
+        ));
+        assert_eq!(1, deck.cards.len(), "a cover never asks");
+        assert_eq!(
+            1,
+            deck.cards[0].images[0].regions.len(),
+            "the cover still rides the media for drawing"
+        );
+    }
+
+    #[test]
+    fn a_group_mixing_hidden_presence_is_rejected() {
+        let error = err(&region_deck(
+            "<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"a\" b:a1b2c3 -->\n<!-- blank: rect [g] x=5 y=5 width=2 height=2 b:d4e5f6 -->",
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("mixes"), "{message}");
+    }
+
+    #[test]
+    fn an_unstamped_blank_yields_an_idless_region_card() {
+        let deck = parse(&region_deck(
+            r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" -->"#,
+        ));
+        let region_card = &deck.cards[1];
+        assert_eq!(
+            None,
+            region_card.id(),
+            "no usable id until the stamper reconciles"
+        );
+        assert!(region_card.region.is_some());
+    }
+
+    #[test]
+    fn an_unlabelled_blank_asks_with_an_empty_back() {
+        let deck = parse(&region_deck(
+            "<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->",
+        ));
+        let region_card = &deck.cards[1];
+        assert_eq!(Some(format!("{RTOK}-ba1b2c3")), region_card.id());
+        assert!(
+            region_card.back.is_empty(),
+            "the reveal is visual: unmasking is the answer"
+        );
     }
 }

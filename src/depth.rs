@@ -93,6 +93,12 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
 }
 
 pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card]) -> bool {
+    // Region cards are not recognizable until the MC-family spec rules how
+    // their choices work, cached or authored distractors notwithstanding
+    // (Alex, 2026-08-18).
+    if card.region.is_some() {
+        return false;
+    }
     if !card.authored_distractors.is_empty() {
         return true;
     }
@@ -131,6 +137,28 @@ mod tests {
             .to_ascii_lowercase();
         let text = format!("## q <!-- id: card-q{slug}x -->\n{back}\n");
         parser::parse_str("t.md", &text).unwrap().remove(0)
+    }
+
+    #[test]
+    fn a_region_card_is_never_recognizable_even_with_cached_distractors() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let text = "## q <!-- id: card-qregionx -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"ans\" b:a1b2c3 -->\n\n---\nback\n";
+        let cards = parser::parse_str("t.md", text).unwrap();
+        let region_card = cards
+            .iter()
+            .find(|card| card.region.is_some())
+            .expect("the blank produced a region card");
+        cache.set_distractors(
+            &region_card.id().unwrap(),
+            vec!["x".into(), "y".into(), "z".into()],
+            region_card.content_fingerprint,
+        );
+        assert!(
+            !card_recognizable(region_card, &cache, &cards),
+            "the MC-family gate holds even against cached distractors (ruling A)"
+        );
+        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }
 
     #[test]

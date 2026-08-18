@@ -1009,7 +1009,7 @@ impl Store {
         // Re-add only remapped entries; a stray token-N schedule must not be inherited.
         for (from, to) in &outcome.remap {
             if let Some(state) = old.remove(from) {
-                let key = crate::token::card_id(token, None, Some(*to), false);
+                let key = crate::token::card_id(token, None, Some(*to), false, None);
                 self.cards.insert(key, state);
             }
         }

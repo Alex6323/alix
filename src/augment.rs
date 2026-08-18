@@ -854,15 +854,17 @@ impl AugmentCache {
         for n in &stored {
             if let Some(aug) =
                 self.cards
-                    .remove(&crate::token::card_id(token, None, Some(*n), false))
+                    .remove(&crate::token::card_id(token, None, Some(*n), false, None))
             {
                 pulled.push((*n, aug));
             }
         }
         for (from, aug) in pulled {
             if let Some(to) = moves.get(&from) {
-                self.cards
-                    .insert(crate::token::card_id(token, None, Some(*to), false), aug);
+                self.cards.insert(
+                    crate::token::card_id(token, None, Some(*to), false, None),
+                    aug,
+                );
             }
         }
 
@@ -870,7 +872,7 @@ impl AugmentCache {
             match crate::token::parse_prefixed_card_id(id) {
                 Some((t, None, Some(n), false, None)) if t == token => moves
                     .get(&n)
-                    .map(|to| crate::token::card_id(token, None, Some(*to), false)),
+                    .map(|to| crate::token::card_id(token, None, Some(*to), false, None)),
                 _ => Some(id.to_string()),
             }
         };
@@ -967,9 +969,11 @@ impl AugmentCache {
     }
 
     pub fn missing_choices(&self, cards: &[Card]) -> Vec<WarmItem> {
+        // Region cards are gated out of AI choices until the MC-family spec
+        // rules them (Alex, 2026-08-18).
         self.missing(
             cards,
-            |_| true,
+            |card| card.region.is_none(),
             |c| {
                 !c.authored_distractors.is_empty()
                     || c.id()
@@ -1979,6 +1983,28 @@ mod tests {
             .map(|w| w.id.clone())
             .collect();
         assert_eq!(mq, [cid(&cards[0]), cid(&cards[1])]);
+    }
+
+    #[test]
+    fn a_region_card_is_never_a_choices_gap() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let mut region = plain_card("a");
+        region.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(std::sync::Arc::from("a1b2c3")),
+            hidden: Some("a".into()),
+        });
+        let cards = vec![region, plain_card("b")];
+        let missing: Vec<String> = cache
+            .missing_choices(&cards)
+            .iter()
+            .map(|item| item.answer.clone())
+            .collect();
+        assert_eq!(
+            ["b"],
+            missing.as_slice(),
+            "region cards are gated out of choices augmentation (ruling A)"
+        );
     }
 
     #[test]

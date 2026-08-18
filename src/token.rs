@@ -104,7 +104,13 @@ pub fn format_region_card_id(token: &str, region: RegionRef<'_>) -> String {
     }
 }
 
-pub fn card_id(token: &str, row: Option<&str>, hole: Option<u32>, reversed: bool) -> String {
+pub fn card_id(
+    token: &str,
+    row: Option<&str>,
+    hole: Option<u32>,
+    reversed: bool,
+    region: Option<RegionRef<'_>>,
+) -> String {
     debug_assert!(
         hole.is_none() || !reversed,
         "a cloze sub-card never reverses"
@@ -113,6 +119,16 @@ pub fn card_id(token: &str, row: Option<&str>, hole: Option<u32>, reversed: bool
         row.is_none() || hole.is_none(),
         "a table row card is never cloze"
     );
+    debug_assert!(
+        region.is_none() || (row.is_none() && hole.is_none() && !reversed),
+        "a region card carries no other suffix"
+    );
+    if let Some(region) = region {
+        return match region {
+            RegionRef::Single(stamp) => format!("{token}-b{stamp}"),
+            RegionRef::Group(hash) => format!("{token}-g{hash}"),
+        };
+    }
     if let Some(row) = row {
         if reversed {
             format!("{token}-t{row}-r")
@@ -149,7 +165,7 @@ pub fn format_deck_id(token: &str) -> String {
 }
 
 pub fn format_card_id(token: &str, row: Option<&str>, hole: Option<u32>, reversed: bool) -> String {
-    format!("card-{}", card_id(token, row, hole, reversed))
+    format!("card-{}", card_id(token, row, hole, reversed, None))
 }
 
 pub type ParsedCardSuffix<'a> = (
@@ -259,11 +275,17 @@ mod tests {
 
     #[test]
     fn card_id_composes_token_row_hole_and_reversed() {
-        assert_eq!(card_id("t0", None, None, false), "t0");
-        assert_eq!(card_id("t0", None, Some(2), false), "t0-2");
-        assert_eq!(card_id("t0", None, None, true), "t0-r");
-        assert_eq!(card_id("t0", Some("abcdef"), None, false), "t0-tabcdef");
-        assert_eq!(card_id("t0", Some("abcdef"), None, true), "t0-tabcdef-r");
+        assert_eq!(card_id("t0", None, None, false, None), "t0");
+        assert_eq!(card_id("t0", None, Some(2), false, None), "t0-2");
+        assert_eq!(card_id("t0", None, None, true, None), "t0-r");
+        assert_eq!(
+            card_id("t0", Some("abcdef"), None, false, None),
+            "t0-tabcdef"
+        );
+        assert_eq!(
+            card_id("t0", Some("abcdef"), None, true, None),
+            "t0-tabcdef-r"
+        );
     }
 
     #[test]

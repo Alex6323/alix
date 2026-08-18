@@ -93,6 +93,12 @@ pub fn build_authored(
 }
 
 pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
+    // Region cards take no choice question until the MC-family spec rules
+    // them (Alex, 2026-08-18); this holds even against stale cached
+    // distractors the eligibility gate never minted.
+    if card.region.is_some() {
+        return false;
+    }
     distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
 }
 
@@ -124,6 +130,9 @@ pub fn build_sampled(card: &Card, seed: u64, deck_cards: &[Card]) -> Option<Choi
 }
 
 pub fn can_sample(card: &Card, deck_cards: &[Card]) -> bool {
+    if card.region.is_some() {
+        return false;
+    }
     build_sampled(card, 0, deck_cards).is_some()
 }
 
@@ -403,5 +412,20 @@ mod tests {
             later_orders_differ,
             "no later appearance ever varied the order"
         );
+    }
+
+    #[test]
+    fn a_region_card_takes_no_choice_question_from_any_source() {
+        let mut region = card(1, "answer");
+        region.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(Arc::from("a1b2c3")),
+            hidden: Some("answer".into()),
+        });
+        region.authored_distractors = vec!["x".into(), "y".into(), "z".into()];
+        assert!(
+            !can_build(&region, &ai(&["p", "q", "r"])),
+            "cached or authored distractors never build a region choice (ruling A)"
+        );
+        assert!(!can_sample(&region, &[region.clone()]));
     }
 }

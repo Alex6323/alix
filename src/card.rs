@@ -22,6 +22,31 @@ impl Direction {
     }
 }
 
+/// One member of a region group: its stamp (None while unstamped) and what
+/// its mask hides. Provenance stays member-level so the future MC-family
+/// spec can see shape, never a flattened list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupMember {
+    pub stamp: Option<Arc<str>>,
+    pub hidden: Option<String>,
+}
+
+/// What a region card asks (ADR 0034): one region, or a named group asking
+/// every member. An unstamped region (or a group with one) has no usable id
+/// and its card is excluded at the session boundary like any token-less card.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RegionSlot {
+    Single {
+        stamp: Option<Arc<str>>,
+        hidden: Option<String>,
+    },
+    Group {
+        name: String,
+        hash: Option<Arc<str>>,
+        members: Vec<GroupMember>,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CardImage {
     pub src: PathBuf,
@@ -84,6 +109,8 @@ pub struct Card {
     /// `span`-shaped regions bound to the answer block (ADR 0034), in file
     /// order; geometric regions ride their media element in `images`.
     pub span_regions: Vec<crate::parser::region::RawRegion>,
+    /// Set on a synthesized region card: which region(s) this card asks.
+    pub region: Option<RegionSlot>,
 }
 
 impl Card {
@@ -126,6 +153,7 @@ impl Card {
             content_fingerprint,
             authored_distractors: Vec::new(),
             span_regions: Vec::new(),
+            region: None,
         }
     }
 
@@ -161,9 +189,21 @@ impl Card {
     }
 
     pub fn id(&self) -> Option<String> {
-        self.token
-            .as_deref()
-            .map(|token| token::card_id(token, self.row.as_deref(), self.hole, self.reversed))
+        let token = self.token.as_deref()?;
+        let region = match &self.region {
+            None => None,
+            Some(RegionSlot::Single { stamp, .. }) => {
+                Some(token::RegionRef::Single(stamp.as_deref()?))
+            }
+            Some(RegionSlot::Group { hash, .. }) => Some(token::RegionRef::Group(hash.as_deref()?)),
+        };
+        Some(token::card_id(
+            token,
+            self.row.as_deref(),
+            self.hole,
+            self.reversed,
+            region,
+        ))
     }
 
     pub fn append_note(&mut self, notes: &[String]) {
