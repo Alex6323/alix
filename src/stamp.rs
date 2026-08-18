@@ -203,7 +203,11 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             }
             card.span_regions.iter().for_each(&mut push);
         }
-        for (_, regions) in blocks {
+        for (_, mut regions) in blocks {
+            // Collection visits image regions before spans; collision repair
+            // must run in SOURCE order so the first occurrence survives and
+            // the later paste re-mints, never the other way around.
+            regions.sort_by_key(|(line, _)| *line);
             let mut taken: HashSet<String> = HashSet::new();
             for (line, stamp) in regions {
                 match stamp {
@@ -1657,6 +1661,34 @@ mod tests {
             "the first keeps its stamp"
         );
         assert!(text.contains(&format!("b:{}", outcome.minted_regions[0])));
+    }
+
+    #[test]
+    fn a_later_duplicate_region_is_reminted_in_file_order_across_shapes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\nanswer one\n<!-- blank: span hidden=\"one\" word=2 b:a1b2c3 -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n"
+            ),
+        );
+
+        let outcome = stamp_deck(&path).unwrap();
+
+        assert_eq!(1, outcome.minted_regions.len());
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("<!-- blank: span hidden=\"one\" word=2 b:a1b2c3 -->"),
+            "the earlier region keeps the identity and history it already owned: {text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "<!-- blank: rect x=1 y=1 width=2 height=2 b:{} -->",
+                outcome.minted_regions[0]
+            )),
+            "the later pasted region receives the fresh identity: {text}"
+        );
     }
 
     #[test]
