@@ -1,3 +1,20 @@
+# Card shapes: the shared authoring guide
+
+This file is consumed twice, and in neither place as a file:
+
+- compiled into the deck generator's prompt
+  (`src/generate.rs`, `card_shape_guide()`);
+- included in the manual under that chapter's own heading
+  (`docs/book/src/03-the-deck-format.md`).
+
+Only the content between the `ANCHOR` lines reaches either consumer; this
+preamble exists for a human opening the file, which is why the anchored content
+itself starts headingless and mid-thought. Editing the anchored content edits
+the generator's prompt: deterministic tests prove it still *reaches* the
+prompt, and the costed `make shape-eval` gate is what proves it still
+*steers*.
+
+<!-- ANCHOR: guide -->
 Which card shape suits which material. Read the material first, then
 pick the shape; do not pick a shape and bend the material into it.
 
@@ -28,3 +45,4 @@ Rules that hold whatever the shape:
 
 `order:` and `sampling:` are not shapes. They modify how an existing
 deck is served and are documented with the other directives.
+<!-- ANCHOR_END: guide -->

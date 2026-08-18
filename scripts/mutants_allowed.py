@@ -61,7 +61,7 @@ def main(out_dir: str, allowlist_path: str) -> int:
             print(f"UNREGISTERED {kind}: {survivor}")
         print(
             f"mutants-allowed: {len(unregistered)} unregistered survivor(s); "
-            "kill them or argue them into docs/mutants-allowlist.txt"
+            "kill them or argue them into scripts/mutants-allowlist.txt"
         )
         return 1
     print(f"mutants-allowed: all {len(survivors)} survivor(s) are argued residuals")

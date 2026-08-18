@@ -12,7 +12,16 @@ use crate::{
 };
 
 pub const DEFAULT_GOAL: &str = "understand the whole source";
-const CARD_SHAPE_GUIDE: &str = include_str!("../docs/card-shapes.md");
+const CARD_SHAPE_FILE: &str = include_str!("../docs/include/card-shapes.md");
+
+// The file opens with a human-facing preamble that must reach neither the
+// prompt nor the book; both consumers take only the anchored span.
+fn card_shape_guide() -> &'static str {
+    CARD_SHAPE_FILE
+        .split_once("<!-- ANCHOR: guide -->\n")
+        .and_then(|(_, rest)| rest.split_once("<!-- ANCHOR_END: guide -->"))
+        .map_or(CARD_SHAPE_FILE, |(guide, _)| guide)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenerationSpec {
@@ -68,11 +77,12 @@ impl GenerationSpec {
 }
 
 pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
+    let guide = card_shape_guide();
     match style {
         GenerateCardStyle::Mixed => Cow::Owned(format!(
             "- Choose each card's shape from the shared guide according to the material. Do \
              not default every card to one shape.\n\n\
-             CARD SHAPE GUIDE:\n{CARD_SHAPE_GUIDE}\n\
+             CARD SHAPE GUIDE:\n{guide}\n\
              CARD SHAPE SYNTAX:\n\
              - A plain card puts short answer lines below its `## ` front. Do not prefix \
              answers with bullets or dashes.\n\
@@ -630,9 +640,26 @@ mod tests {
     }
 
     #[test]
+    fn the_card_shape_guide_is_the_anchored_span_without_the_preamble() {
+        let guide = card_shape_guide();
+        assert_ne!(
+            CARD_SHAPE_FILE, guide,
+            "the strip did nothing; the anchors are gone from docs/include/card-shapes.md"
+        );
+        assert!(
+            guide.starts_with("Which card shape suits which material."),
+            "the guide must open with the first rule, not the preamble"
+        );
+        assert!(
+            !guide.contains("ANCHOR") && !guide.contains("consumed twice"),
+            "no anchor marker or preamble text may reach the prompt"
+        );
+    }
+
+    #[test]
     fn mixed_prompt_embeds_the_shared_card_shape_guide_and_its_syntax() {
         let prompt = build_prompt("https://example.org/page", true, &cfg(12), &spec());
-        let guide = include_str!("../docs/card-shapes.md");
+        let guide = card_shape_guide();
 
         assert!(
             prompt.contains(guide),
@@ -653,7 +680,7 @@ mod tests {
 
     #[test]
     fn each_explicit_card_style_keeps_its_override_contract() {
-        let guide = include_str!("../docs/card-shapes.md");
+        let guide = card_shape_guide();
         let cases = [
             (
                 GenerateCardStyle::Plain,

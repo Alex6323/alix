@@ -6421,7 +6421,7 @@ fn a_tutor_note_leaves_the_learner_on_the_same_card() {
 /// Every shape example must still PRODUCE the shape it advertises. Doctor
 /// proves the file parses and a screenshot proves it rendered once; neither
 /// proves the claim the example exists to make, and that claim is what an
-/// author acts on. One row of `docs/card-shapes.md`, one assertion.
+/// author acts on. One row of `docs/include/card-shapes.md`, one assertion.
 #[test]
 fn every_shape_example_produces_the_shape_it_advertises() {
     let shapes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/examples/shapes");

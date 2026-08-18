@@ -27,7 +27,7 @@ Read the material before choosing its card shape. The shared guide below names
 the useful choices and distinguishes structural matches from judgement calls.
 The sections after it show the exact syntax for each shape.
 
-{{#include ../../card-shapes.md}}
+{{#include ../../include/card-shapes.md:guide}}
 
 ## Cards
 

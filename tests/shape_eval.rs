@@ -1,6 +1,6 @@
 //! Card-shape evaluation: does the generator actually FOLLOW the rule?
 //!
-//! `docs/card-shapes.md` says which shape suits which material, and
+//! `docs/include/card-shapes.md` says which shape suits which material, and
 //! `src/generate.rs` builds its prompt from that file. A deterministic test
 //! can prove the rule reached the prompt. Only a real model call can prove
 //! the rule steers, and a prompt that reads well while steering badly is the

@@ -194,7 +194,7 @@ mutants: gate-guard
 		cargo mutants --in-diff target/review.diff $$shard --jobs $(GATE_JOBS) --timeout-multiplier 12; \
 	fi; status=$$?; \
 	if [ $$status -eq 2 ] || [ $$status -eq 3 ]; then \
-		python3 scripts/mutants_allowed.py mutants.out docs/mutants-allowlist.txt || exit $$status; \
+		python3 scripts/mutants_allowed.py mutants.out scripts/mutants-allowlist.txt || exit $$status; \
 	elif [ $$status -ne 0 ]; then \
 		exit $$status; \
 	fi
@@ -297,7 +297,7 @@ calibrate:
 	cargo test --test calibrate -- --ignored --nocapture --test-threads=1
 
 # Does the shape rule actually STEER the generator? A deterministic test can
-# prove docs/card-shapes.md reached the prompt; only a real call proves a
+# prove docs/include/card-shapes.md reached the prompt; only a real call proves a
 # prompt that reads well does not steer badly. Costed and non-deterministic,
 # so it is a release gate beside calibrate, never CI.
 shape-eval:
