@@ -422,6 +422,10 @@ struct RawCard {
     front_extra: Vec<(usize, String)>,
     back: Vec<(usize, String)>,
     divided: bool,
+    /// The `---` line's number when divided: the side boundary for region
+    /// binding, which first-answer-content would misplace for a directive
+    /// sitting between the divider and the first content line.
+    divider_line: Option<usize>,
     note: Option<String>,
     directives: CardDirectives,
 }
@@ -643,6 +647,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 front_extra: Vec::new(),
                 back: Vec::new(),
                 divided: false,
+                divider_line: None,
                 note: None,
                 directives,
             });
@@ -673,6 +678,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 current.as_ref().is_some_and(|card| !card.divided) && (prev_blank || prev_heading);
             if divides && let Some(card) = current.as_mut() {
                 card.divided = true;
+                card.divider_line = Some(lineno);
             } else {
                 push_content(&mut current, lineno, "---".to_string());
             }
@@ -693,10 +699,24 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
 
         if t.starts_with("<!--") {
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
-                if let Some((key, value)) = directive(body)
-                    && let Some(card) = current.as_mut()
-                {
-                    apply_directive(&mut card.directives, &key, value, lineno, lints)?;
+                if let Some((key, value)) = directive(body) {
+                    match current.as_mut() {
+                        Some(card) => {
+                            apply_directive(&mut card.directives, &key, value, lineno, lints)?;
+                        }
+                        // A region outside any card has nothing to bind to and
+                        // would otherwise vanish silently; other directives
+                        // keep their historical tolerance here.
+                        None if matches!(key.as_str(), "blank" | "cover" | "crop") => {
+                            return Err(ParseError::InvalidRegion {
+                                line: lineno,
+                                message: format!(
+                                    "`{key}:` appears before any card, so no media element or answer block can bind it"
+                                ),
+                            });
+                        }
+                        None => {}
+                    }
                 }
                 prev_blank = false;
                 prev_heading = false;
@@ -1188,6 +1208,7 @@ fn build_card(
         front_extra,
         back,
         divided,
+        divider_line,
         note,
         directives,
     } = raw;
@@ -1218,11 +1239,10 @@ fn build_card(
         back_media.extend(card_images(segments).map(|image| (*lineno, image)));
     }
 
+    // The side boundary is the divider itself: a directive between `---` and
+    // the first answer content line is already answer-side.
     let answer_start = if divided {
-        answer
-            .first()
-            .map(|(lineno, _)| *lineno)
-            .unwrap_or(usize::MAX)
+        divider_line.map(|line| line + 1).unwrap_or(usize::MAX)
     } else {
         0
     };
@@ -3937,5 +3957,43 @@ the answer
         assert_eq!(1, image.regions.len());
         assert_eq!(Some("a1b2c3"), image.regions[0].stamp.as_deref());
         assert_eq!("50", image.crop.as_ref().unwrap().width.literal);
+    }
+
+    #[test]
+    fn a_quoted_hidden_value_accepts_ordinary_non_ascii_text_without_panicking() {
+        let deck =
+            parse("## German noun\nanswer for Bär\n<!-- blank: span hidden=\"Bär\" word=3 -->\n");
+        assert_eq!(Some("Bär"), deck.cards[0].span_regions[0].hidden.as_deref());
+    }
+
+    #[test]
+    fn a_region_immediately_after_the_divider_cannot_bind_to_front_media() {
+        let error = err(
+            "## q\n![](front.png)\n\n---\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\nanswer\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("preceding media element"), "{message}");
+    }
+
+    #[test]
+    fn percentage_crop_and_blank_are_clipped_against_the_source_viewport() {
+        let error = err(
+            "## q\n![](a.png)\n<!-- crop: rect x=100% y=0% width=10% height=10% -->\n<!-- blank: rect x=100% y=0% width=10% height=10% -->\n\n---\nanswer\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("visible area"), "{message}");
+    }
+
+    #[test]
+    fn a_region_directive_before_any_card_is_rejected_not_silently_dropped() {
+        let error = err("<!-- blank: rect x=1 y=1 width=2 height=2 -->\n## q\nanswer\n");
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("media element"), "{message}");
     }
 }

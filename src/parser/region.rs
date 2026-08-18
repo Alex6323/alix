@@ -76,22 +76,22 @@ fn tokens(body: &str, line: usize) -> Result<Vec<String>, ParseError> {
     let mut current = String::new();
     let mut chars = body.chars();
     let mut quoted = false;
-    // The last raw source characters seen inside the quoted state, for the
-    // dangerous-terminator rule: a raw `>` after `--` or `--!` would close
-    // the HTML comment in other renderers and spill the rest as page text.
-    let mut tail = String::new();
+    // The last three raw source CHARACTERS seen inside the quoted state
+    // (escape-consumed ones excluded), for the dangerous-terminator rule: a
+    // raw `>` after `--` or `--!` would close the HTML comment in other
+    // renderers and spill the rest as page text.
+    let mut tail = ['\0'; 3];
     while let Some(c) = chars.next() {
         if quoted {
-            if c == '>' && (tail.ends_with("--") || tail.ends_with("--!")) {
+            let ends_dash_dash = tail[1] == '-' && tail[2] == '-';
+            let ends_bang = tail == ['-', '-', '!'];
+            if c == '>' && (ends_dash_dash || ends_bang) {
                 return Err(err(
                     line,
                     "a raw `-->` or `--!>` inside a quoted value would close the comment; escape the `>` as `\\>`",
                 ));
             }
-            tail.push(c);
-            if tail.len() > 3 {
-                tail.drain(..tail.len() - 3);
-            }
+            tail = [tail[1], tail[2], c];
             match c {
                 '\\' => match chars.next() {
                     Some('"') => current.push('"'),
@@ -484,6 +484,14 @@ pub(crate) fn validate_media(
     }
 
     let viewport: Option<(f64, f64, f64, f64)> = match crop {
+        // A percentage crop is itself bounded by the source: what the learner
+        // sees is the crop INTERSECTED with [0,100]x[0,100], so a right-edge
+        // crop must not lend visibility it does not have.
+        Some(c) if c.x.percent => {
+            let width = (c.x.value + c.width.value).min(100.0) - c.x.value;
+            let height = (c.y.value + c.height.value).min(100.0) - c.y.value;
+            Some((c.x.value, c.y.value, width.max(0.0), height.max(0.0)))
+        }
         Some(c) => Some((c.x.value, c.y.value, c.width.value, c.height.value)),
         None if units.first().is_some_and(|(percent, _)| *percent) => {
             Some((0.0, 0.0, 100.0, 100.0))
