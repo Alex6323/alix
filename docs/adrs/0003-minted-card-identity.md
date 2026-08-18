@@ -1,6 +1,7 @@
 # 0003: Minted card identity
 
 - Status: Accepted
+- Evidence: TOKEN_ALPHABET in src/token.rs
 - Details evolved by
   [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): ids now carry
   `deck-`/`card-` prefixes (sub-ids `card-<token>-<n>` and `card-<token>-r`) and

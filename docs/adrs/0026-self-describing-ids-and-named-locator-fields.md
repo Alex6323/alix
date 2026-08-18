@@ -1,6 +1,7 @@
 # 0026: Self-describing ids and named locator fields
 
 - Status: Accepted
+- Evidence: parse_locator_fields in src/source.rs
 - Recorded: 2026-07-28
 - Retrospective: No
 

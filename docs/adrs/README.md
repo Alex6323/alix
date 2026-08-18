@@ -22,6 +22,18 @@ Routine implementation choices do not need ADRs.
 Use the next four-digit sequence number and a short noun phrase:
 `0002-card-identity.md`.
 
+Every Accepted record names what proves it is in force:
+
+```
+- Evidence: <literal string> in <path>
+```
+
+`make adr-check` fails when a named string is absent from that path, so a status
+cannot drift ahead of the code. Repeat the line for several markers. Use
+`- Evidence: none, <why>` for a record that constrains no identifier, such as a
+scope boundary or a policy. Records predating this rule are listed by the check
+rather than failing it, since a marker invented in a hurry gives false assurance.
+
 An ADR has one of these statuses:
 
 - **Proposed:** under review and not yet binding.

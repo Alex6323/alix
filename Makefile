@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
+.PHONY: build build-core test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
 
 # Compile the workspace.
 build:
@@ -142,6 +142,12 @@ fmt-changelog:
 changelog-check:
 	@sh scripts/changelog-check.sh
 
+# An Accepted ADR asserts a constraint that is in force, so every marker such a
+# record names must exist in the tree. Catches a status drifting ahead of the
+# code, which ADR 0028 did for months until a costed docs audit noticed.
+adr-check:
+	@sh scripts/adr-check.sh
+
 # Roadmap stats, read-only: items by state (done/partial/open) and the open
 # items split by priority. The deterministic half of a roadmap audit; whether
 # an "open" item is secretly already shipped still needs a reader (see
@@ -151,7 +157,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: fmt-check pre-1-0-check deps-check changelog-check lint test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
+check: fmt-check pre-1-0-check deps-check changelog-check adr-check lint test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
 
 # Bump the Rust toolchain across the repo
 bump-rust:

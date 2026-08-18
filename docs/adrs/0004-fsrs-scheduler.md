@@ -1,6 +1,7 @@
 # 0004: FSRS as the single scheduler
 
 - Status: Accepted
+- Evidence: struct Fsrs in src/scheduler.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 
