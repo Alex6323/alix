@@ -309,9 +309,6 @@ impl Session {
         self.options.retire_after_days
     }
 
-    // True once since the last take: a presentation stamp was written and the
-    // store has unsaved state. The caller decides when to persist.
-
     pub fn current(&self) -> Option<&Card> {
         self.current_idx.map(|i| &self.cards[i])
     }
@@ -529,8 +526,7 @@ impl Session {
         self.select(store, now_ms, false);
     }
 
-    // The single site where a card becomes current, so also the single site
-    // that stamps its first presentation.
+    // The single site where a card becomes current.
     fn select(&mut self, store: &mut Store, now_ms: u64, keep_current: bool) {
         let sticky = if keep_current { self.current_idx } else { None }.and_then(|i| {
             self.roster
@@ -1891,7 +1887,7 @@ mod tests {
         for card in session.cards() {
             assert!(
                 store.progress(&card.id().unwrap()).is_none(),
-                "skipping engages nothing beyond the presentation stamp"
+                "skipping persists nothing"
             );
         }
     }
@@ -1913,7 +1909,7 @@ mod tests {
         for card in session.cards() {
             assert!(
                 store.progress(&card.id().unwrap()).is_none(),
-                "removal engages nothing beyond the presentation stamp"
+                "removal persists nothing"
             );
         }
     }

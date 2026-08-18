@@ -40,7 +40,7 @@ test("visible source scrollbars use the active theme", async ({ page }) => {
   expect(resetResponse.ok(), "the isolation reset must land").toBeTruthy();
   // The reset happened behind the already-loaded picker: reload so the
   // listing (which gates Learn/Depth…) reflects the reset deck, not the
-  // introduction the previous test's reveal recorded on this one-card deck.
+  // previous test's leftover progress on this one-card deck.
   await openApp(page);
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "Source Fact").click();

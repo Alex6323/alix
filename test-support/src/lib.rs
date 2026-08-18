@@ -55,14 +55,25 @@ pub fn seed(dir: &Path) -> PathBuf {
 }
 
 pub fn capture(deck: &Path, store_root: &Path) -> Effects {
+    let sidecar = std::fs::read_to_string(deck.with_extension("personal.md")).ok();
+    let minted = sidecar.as_deref().map(minted_tokens).unwrap_or_default();
     Effects {
         deck: std::fs::read_to_string(deck).expect("the deck survives every action"),
-        sidecar: std::fs::read_to_string(deck.with_extension("personal.md"))
-            .ok()
-            .map(|text| normalize(&text)),
-        scheduled: progress(store_root).into_iter().map(|p| p.0).collect(),
-        reviews: progress(store_root),
-        introduced: introduced(store_root),
+        sidecar: sidecar.as_deref().map(normalize),
+        scheduled: progress(store_root, &minted).into_iter().map(|p| p.0).collect(),
+        reviews: progress(store_root, &minted),
+        introduced: introduced(store_root, &minted),
+    }
+}
+
+/// Progress ids are projected through the SIDECAR's minted tokens: an id the
+/// sidecar did not mint stays literal, so progress attached to a different
+/// card than the minted one cannot masquerade as a coherent mint.
+fn project_id(id: &str, minted: &[String]) -> String {
+    if minted.iter().any(|token| token == id) {
+        MINTED.to_string()
+    } else {
+        id.to_string()
     }
 }
 
@@ -90,7 +101,7 @@ fn minted_tokens(text: &str) -> Vec<String> {
     found
 }
 
-fn progress(store_root: &Path) -> Vec<(String, u64, u64)> {
+fn progress(store_root: &Path, minted: &[String]) -> Vec<(String, u64, u64)> {
     let progress = store_root.join("progress").join(format!("{DECK_ID}.json"));
     let Ok(text) = std::fs::read_to_string(&progress) else {
         return Vec::new();
@@ -107,15 +118,18 @@ fn progress(store_root: &Path) -> Vec<(String, u64, u64)> {
     let mut rows: Vec<(String, u64, u64)> = cards
         .iter()
         .map(|(id, state)| {
-            let id = if id == CARD_ID { id.clone() } else { MINTED.to_string() };
-            (id, count(state, "total_reviews"), count(state, "total_passes"))
+            (
+                project_id(id, minted),
+                count(state, "total_reviews"),
+                count(state, "total_passes"),
+            )
         })
         .collect();
     rows.sort();
     rows
 }
 
-fn introduced(store_root: &Path) -> Vec<String> {
+fn introduced(store_root: &Path, minted: &[String]) -> Vec<String> {
     let progress = store_root.join("progress").join(format!("{DECK_ID}.json"));
     let Ok(text) = std::fs::read_to_string(&progress) else {
         return Vec::new();
@@ -134,13 +148,7 @@ fn introduced(store_root: &Path) -> Vec<String> {
                 .and_then(serde_json::Value::as_u64)
                 .is_some()
         })
-        .map(|(id, _)| {
-            if id == CARD_ID {
-                id.clone()
-            } else {
-                MINTED.to_string()
-            }
-        })
+        .map(|(id, _)| project_id(id, minted))
         .collect();
     ids.sort();
     ids
@@ -192,5 +200,51 @@ pub fn after_pass() -> Effects {
         scheduled: vec![CARD_ID.to_string()],
         reviews: vec![(CARD_ID.to_string(), 1, 1)],
         introduced: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_rejects_progress_attached_to_a_different_id_than_the_minted_card() {
+        const SIDECAR_ID: &str = "card-aaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const PROGRESS_ID: &str = "card-bbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+        let root = PathBuf::from(std::env::var("TMPDIR").expect("TMPDIR is set for the repro"))
+            .join(format!("alix-parity-id-repro-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("progress")).unwrap();
+        let deck = seed(&root);
+        std::fs::write(
+            deck.with_extension("personal.md"),
+            format!(
+                "---\nformat-version: 1\nfor: {DECK_ID}\n---\n\n\
+                 ## {MINTED_FRONT} <!-- id: {SIDECAR_ID} -->\n{MINTED_BACK}\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("progress").join(format!("{DECK_ID}.json")),
+            serde_json::json!({
+                "cards": {
+                    PROGRESS_ID: {
+                        "introduced_ms": 1,
+                        "total_reviews": 0,
+                        "total_passes": 0
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let captured = capture(&deck, &root);
+        std::fs::remove_dir_all(&root).ok();
+        assert_ne!(
+            after_mint(),
+            captured,
+            "the parity oracle must preserve enough identity to reject progress for a different card"
+        );
     }
 }

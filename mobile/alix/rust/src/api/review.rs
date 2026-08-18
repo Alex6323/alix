@@ -364,8 +364,6 @@ impl ReviewSession {
     pub fn grade(&mut self, grade: Grade, now_ms: Option<u64>) -> Result<ReviewState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
         self.session.grade(&mut self.store, grade.into(), now);
-        // Poll before save: the advance may stamp the next card's first
-        // presentation, and the save must carry it.
         self.session.poll(&mut self.store, now);
         self.save_store();
         Ok(self.state(Some(now)))

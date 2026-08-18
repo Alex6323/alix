@@ -58,8 +58,8 @@ impl FsrsState {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CardState {
-    // None: presented but never introduced (an entry can exist from
-    // presentation alone).
+    // None: never acknowledged. An entry can still exist, because grading
+    // supplies schedule and history without introducing (ADR 0035).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub introduced_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

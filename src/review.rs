@@ -572,7 +572,7 @@ mod tests {
         let again = session_at(cards, &mut store, Depth::Recall, NOW + 1);
         assert!(
             state(&again, &store, &augment, Some(NOW + 1)).introducing,
-            "the presentation stamp alone must not consume the on-ramp"
+            "presentation persists nothing, so the reopened card is still introducing"
         );
     }
 

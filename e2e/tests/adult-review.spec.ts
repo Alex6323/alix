@@ -200,8 +200,8 @@ test("locking in a choice redraws only the answer, not the question", async ({ p
 });
 
 test("revealed inline formatting renders as safe DOM elements", async ({ page }) => {
-  // Revealing now records engagement, so an earlier test's reveal would
-  // reshape this session: start from a clean wild.
+  // Isolation: earlier tests answered and graded wild's cards, which
+  // reshapes this session's queue, so start from a clean wild.
   const resetResponse = await page.request.post("/api/reset", { data: { deck: "animals/wild.md" } });
   expect(resetResponse.ok(), "the isolation reset must land").toBeTruthy();
   // Reload after the out-of-band reset: the picker listing gates the row
