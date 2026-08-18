@@ -253,8 +253,7 @@ pub struct TutorCard {
 pub struct CrumbState {
     pub regions: Vec<String>,
     pub current: u32,
-    // Wire names of the lib's `CardTier` (untouched/seen/introduced/
-    // learned-strong/learned-fading/learned-weak/retired).
+    // Wire names of the lib's `CardTier`.
     pub cells: Vec<Vec<String>>,
 }
 
@@ -831,6 +830,18 @@ mod tests {
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             depth,
+            Some(LATER),
+            None,
+        )
+        .unwrap()
+    }
+
+    fn opened_fresh(deck: &Path, root: &Path) -> ReviewSession {
+        alix::stamp::stamp_deck(deck).unwrap();
+        ReviewSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            None,
             Some(LATER),
             None,
         )
@@ -1472,7 +1483,11 @@ mod tests {
         let root = dir.path();
         let deck = alix_test_support::seed(root);
 
-        let mut s = opened_after_introduction(&deck, root, None);
+        let mut s = opened_fresh(&deck, root);
+        assert!(
+            s.state(Some(LATER)).introducing,
+            "the bridge parity row must start from the same fresh card as the server row"
+        );
         let line = s.tutor_card().expect("a card is current").line;
         s.apply_card_note(line as u32, vec![alix_test_support::NOTE.to_string()])
             .unwrap();
@@ -1493,7 +1508,11 @@ mod tests {
         let root = dir.path();
         let deck = alix_test_support::seed(root);
 
-        let mut s = opened_after_introduction(&deck, root, None);
+        let mut s = opened_fresh(&deck, root);
+        assert!(
+            s.state(Some(LATER)).introducing,
+            "the bridge parity row must start from the same fresh card as the server row"
+        );
         s.grade(Grade::Pass, Some(LATER)).unwrap();
 
         assert_eq!(
@@ -1512,7 +1531,11 @@ mod tests {
         let root = dir.path();
         let deck = alix_test_support::seed(root);
 
-        let mut s = opened_after_introduction(&deck, root, None);
+        let mut s = opened_fresh(&deck, root);
+        assert!(
+            s.state(Some(LATER)).introducing,
+            "the bridge parity row must start from the same fresh card as the server row"
+        );
         s.mint_tutor_card(
             alix_test_support::MINTED_FRONT.to_string(),
             vec![alix_test_support::MINTED_BACK.to_string()],

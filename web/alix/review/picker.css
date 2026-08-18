@@ -147,7 +147,7 @@
 
   /* The picker's focus drawer: opens under any selected deck. It shows the
      deck's preamble (the prose under its H1, if any) and a per-card tier
-     heatmap (see paintHeatCell for the five tiers). A deck with a topology
+     heatmap (see paintHeatCell). A deck with a topology
      augmentation splits that heatmap into named regions you can pick to
      drill; a deck without one shows a single whole-deck bar. The reveal is a
      single `height` transition on the clipping wrapper: the drawer's content

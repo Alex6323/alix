@@ -635,7 +635,6 @@ function fabricateGraduation() {
         id,
         {
           introduced_ms: now - 30 * day,
-          presented_ms: now - 30 * day,
           recall: {
             stability: 30.0,
             difficulty: 5.0,

@@ -118,7 +118,6 @@ impl CardState {
             || self.total_reviews > 0
     }
 
-    // Recognize is never scheduled: always answers None.
     pub fn schedule(&self, depth: Depth) -> Option<&FsrsState> {
         match depth {
             Depth::Recognize => self.recognize.as_ref(),

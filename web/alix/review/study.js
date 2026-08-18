@@ -124,10 +124,8 @@ export function createStudy({
   function remove()  { api("/api/remove", post({})).then(apply).catch(() => load()); }
   function restart() { api("/api/restart", post({})).then(apply).catch(() => load()); }
 
-  // One heatmap cell's fill: the lib's per-card tier. unseen = neutral,
-  // seen = dim grey (presented, never yet correct), introduced = white (correct
-  // once, not graduated), learned-strong/-fading/-weak = green/yellow/red by
-  // current retrievability, retired = purple.
+  // One heatmap cell's fill: the lib's per-card tier, colored by the CSS
+  // class of the same name.
   function paintHeatCell(cellEl, tier) {
     cellEl.classList.add(tier === "unseen" ? "empty" : tier);
   }

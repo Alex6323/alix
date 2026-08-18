@@ -43,6 +43,9 @@ pub struct Effects {
     /// Per card, how much review it records: (id, total_reviews, total_passes).
     /// Counts, not due times, because the clients inject different clocks.
     pub reviews: Vec<(String, u64, u64)>,
+    /// Ids whose `introduced_ms` is present, sorted, minted ones normalized.
+    /// The presence of the timestamp is compared, never its value.
+    pub introduced: Vec<String>,
 }
 
 pub fn seed(dir: &Path) -> PathBuf {
@@ -59,6 +62,7 @@ pub fn capture(deck: &Path, store_root: &Path) -> Effects {
             .map(|text| normalize(&text)),
         scheduled: progress(store_root).into_iter().map(|p| p.0).collect(),
         reviews: progress(store_root),
+        introduced: introduced(store_root),
     }
 }
 
@@ -111,6 +115,37 @@ fn progress(store_root: &Path) -> Vec<(String, u64, u64)> {
     rows
 }
 
+fn introduced(store_root: &Path) -> Vec<String> {
+    let progress = store_root.join("progress").join(format!("{DECK_ID}.json"));
+    let Ok(text) = std::fs::read_to_string(&progress) else {
+        return Vec::new();
+    };
+    let Ok(document) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    let Some(cards) = document.get("cards").and_then(|c| c.as_object()) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = cards
+        .iter()
+        .filter(|(_, state)| {
+            state
+                .get("introduced_ms")
+                .and_then(serde_json::Value::as_u64)
+                .is_some()
+        })
+        .map(|(id, _)| {
+            if id == CARD_ID {
+                id.clone()
+            } else {
+                MINTED.to_string()
+            }
+        })
+        .collect();
+    ids.sort();
+    ids
+}
+
 /// Taking a tutor note: the authored deck is untouched, the note opens a block
 /// addressed to the card it was taken against, and nothing is scheduled by it.
 /// Being shown the card records nothing either (ADR 0035: presentation writes
@@ -125,6 +160,7 @@ pub fn after_note() -> Effects {
         ),
         scheduled: Vec::new(),
         reviews: Vec::new(),
+        introduced: Vec::new(),
     }
 }
 
@@ -141,17 +177,20 @@ pub fn after_mint() -> Effects {
         )),
         scheduled: vec![MINTED.to_string()],
         reviews: vec![(MINTED.to_string(), 0, 0)],
+        introduced: vec![MINTED.to_string()],
     }
 }
 
 /// Passing the card: nothing on disk changes, and the one durable trace is in
 /// the progress document. Due times are not compared, since the clients inject
-/// different clocks; the counts are what both must agree on.
+/// different clocks; the counts are what both must agree on. The grade
+/// supplies the schedule but never the introduction (ADR 0035).
 pub fn after_pass() -> Effects {
     Effects {
         deck: DECK.to_string(),
         sidecar: None,
         scheduled: vec![CARD_ID.to_string()],
         reviews: vec![(CARD_ID.to_string(), 1, 1)],
+        introduced: Vec::new(),
     }
 }

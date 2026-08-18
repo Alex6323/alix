@@ -299,18 +299,19 @@ impl Scheduler for Fsrs {
             .next(card, ms_to_dt(now_ms), rating_for(grade));
         let mut next = from_fsrs_card(&info.card);
 
-        // Graduation gate: acquisition (state 0|1) needs two full Goods before
-        // Review; a Fail resets the count, Relearning re-graduates on one Good.
-        let acquiring = matches!(pre_state, 0 | 1);
+        // Graduation gate: the learning phase (state 0|1) needs two full Goods
+        // before Review; a Fail resets the count, Relearning re-graduates on
+        // one Good.
+        let learning = matches!(pre_state, 0 | 1);
         let mut goods = prev_goods;
-        if acquiring {
+        if learning {
             match grade {
                 Grade::Pass => goods = goods.saturating_add(1),
                 Grade::Fail => goods = 0,
                 Grade::Partial => {}
             }
         }
-        if next.state == 2 && acquiring && goods < 2 {
+        if next.state == 2 && learning && goods < 2 {
             // rs-fsrs would graduate on this single Good; hold in Learning instead.
             next.state = 1;
             next.scheduled_days = 0;

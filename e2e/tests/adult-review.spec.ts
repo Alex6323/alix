@@ -497,14 +497,14 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   await expect(drawer).toHaveCount(1);
   await expect(drawer.locator(".drawer-preamble")).toHaveText(/wild animals/i);
   // The progress funnel, top-right: both wild cards counted lib-side. The
-  // note-layout test above reset wild and answered exactly one card (the
-  // giraffe, engaged by its reveal), so one cell reads as the white acquired
-  // tier and the other stays empty; "learned"/"retired" stay hidden at zero.
-  await expect(drawer.locator(".drawer-size")).toHaveText("2 cards · 1 seen");
+  // note-layout test above reset wild and answered one card without ever
+  // leaving it, and an abandoned sitting persists nothing (ADR 0035), so
+  // both cells stay empty.
+  await expect(drawer.locator(".drawer-size")).toHaveText("2 cards");
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2); // one per stamped card
-  await expect(drawer.locator(".crumb-cell.learning")).toHaveCount(1);
+  await expect(drawer.locator(".crumb-cell.learning")).toHaveCount(0);
   await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(0);
-  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(1);
+  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(2);
   await expect(page.locator(".drawer-due")).toHaveCount(0); // the old due count is gone
   await drawer.screenshot({ path: testInfo.outputPath("drawer.png") });
 });
@@ -559,19 +559,20 @@ test("a repeat G-jump keeps the drawer clear of the footer", async ({ page }) =>
   ).toBeLessThanOrEqual((overlap as { legendTop: number }).legendTop);
 });
 
-test("a card merely shown in an earlier session reads as a grey seen cell", async ({ page }) => {
+test("a card merely shown in an earlier session stays an untouched empty cell", async ({ page }) => {
   // The task-list test above selected `fronts` and rendered its only card
-  // without acknowledging or grading it: presented, nothing more. The drawer
-  // must show that as the grey seen tier, not as untouched.
+  // without acknowledging or grading it: presented, nothing more.
+  // Presentation persists nothing (ADR 0035), so the drawer must show it as
+  // untouched, not as seen.
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "fronts").click();
 
   // Scoped to fronts' own drawer: a sibling drawer may linger mid-close.
-  const drawer = page.locator(".drawer").filter({ hasText: "1 seen" });
+  const drawer = page.locator(".drawer").filter({ hasText: "1 card" });
   await expect(drawer).toHaveCount(1);
-  await expect(drawer.locator(".drawer-size")).toHaveText("1 card · 1 seen");
-  await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(1);
-  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(0);
+  await expect(drawer.locator(".drawer-size")).toHaveText("1 card");
+  await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(0);
+  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(1);
   await expect(drawer.locator(".crumb-cell.learning")).toHaveCount(0);
 });
 
