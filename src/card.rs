@@ -241,12 +241,25 @@ impl Card {
 }
 
 impl Eq for Card {}
-// Equality is (token, hole, reversed) only; unstamped cards (token: None) compare equal, which is
-// harmless since the session/store boundary excludes them first.
+// Equality is (token, hole, reversed, region identity) only; unstamped cards (token: None) compare
+// equal, which is harmless since the session/store boundary excludes them first. The region
+// discriminant matters: a parent and its region cards share the token.
 impl PartialEq for Card {
     fn eq(&self, other: &Self) -> bool {
-        self.token == other.token && self.hole == other.hole && self.reversed == other.reversed
+        self.token == other.token
+            && self.hole == other.hole
+            && self.reversed == other.reversed
+            && region_identity(&self.region) == region_identity(&other.region)
     }
+}
+
+/// The identity-bearing half of a region slot: which region(s), never where
+/// their directives sit in the file.
+fn region_identity(slot: &Option<RegionSlot>) -> Option<(bool, Option<Arc<str>>)> {
+    slot.as_ref().map(|slot| match slot {
+        RegionSlot::Single { stamp, .. } => (false, stamp.clone()),
+        RegionSlot::Group { hash, .. } => (true, hash.clone()),
+    })
 }
 
 #[cfg(test)]
@@ -267,6 +280,37 @@ mod tests {
         let mut c = card(subject, front, back, note);
         c.token = Some(Arc::from(token));
         c
+    }
+
+    #[test]
+    fn a_parent_and_its_region_cards_are_never_equal() {
+        let parent = stamped("s", "f", &["b"], None, "card-tok0");
+        let mut single = parent.clone();
+        single.region = Some(RegionSlot::Single {
+            stamp: Some(Arc::from("a1b2c3")),
+            hidden: None,
+            line: 3,
+        });
+        let mut other_single = parent.clone();
+        other_single.region = Some(RegionSlot::Single {
+            stamp: Some(Arc::from("d4e5f6")),
+            hidden: None,
+            line: 4,
+        });
+        let mut group = parent.clone();
+        group.region = Some(RegionSlot::Group {
+            name: "g".into(),
+            hash: Some(Arc::from("chsbz14b1a30x")),
+            members: Vec::new(),
+        });
+        assert_ne!(parent, single, "the shared token must not conflate them");
+        assert_ne!(single, other_single, "two singles differ by stamp");
+        assert_ne!(single, group, "a single is not a group");
+        let mut moved = single.clone();
+        if let Some(RegionSlot::Single { line, .. }) = &mut moved.region {
+            *line = 9;
+        }
+        assert_eq!(single, moved, "a directive's file position is not identity");
     }
 
     #[test]

@@ -3886,9 +3886,15 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
         "anatomy", body["card"]["front"],
         "the region card shares the parent's front: {body}"
     );
+    let removed_region_id = body["card"]["id"].as_str().unwrap().to_string();
 
     let resp = post_gated(&base, "/api/remove", "{}");
     assert_eq!(200, resp.status);
+    let removed: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        false, removed["can_restart"],
+        "the removed region must not make the done screen offer a new sitting: {removed}"
+    );
     let deck = std::fs::read_to_string(guard.dir().join("regions.md")).unwrap();
     assert!(
         !deck.contains("blank:"),
@@ -3901,6 +3907,15 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
     assert!(
         deck.contains("## anatomy"),
         "the parent card survives: {deck}"
+    );
+
+    let resp = post_gated(&base, "/api/restart", "{}");
+    assert_eq!(200, resp.status);
+    let restarted: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_ne!(
+        Some(removed_region_id.as_str()),
+        restarted["card"]["id"].as_str(),
+        "an explicit restart must not resurrect the removed region: {restarted}"
     );
 }
 

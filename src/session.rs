@@ -440,29 +440,68 @@ impl Session {
         let Some(index) = self.current_idx else {
             return Vec::new();
         };
-        let group = sibling_group(&self.cards[index]);
+        let (group_deck, group_line) = {
+            let (deck, line) = sibling_group(&self.cards[index]);
+            (deck.to_string(), line)
+        };
+        let in_group = |card: &Card| card.deck_id.as_ref() == group_deck && card.line == group_line;
         // A region card removes only itself: its file address is a directive
         // line inside the parent block, never the block. Removing the parent
-        // still sweeps its region cards, which share the block line.
+        // sweeps every card of its block from ALL cards, not the capped
+        // roster: a sibling the session cap excluded still loses its source
+        // when the block goes.
         let region_only = self.cards[index].region.is_some();
-        let mut removed = vec![self.cards[index].clone()];
-        let mut kept: Vec<usize> = Vec::with_capacity(self.roster.len());
-        for &i in &self.roster {
-            if i == index {
-                continue;
-            }
-            if !region_only && sibling_group(&self.cards[i]) == group {
-                removed.push(self.cards[i].clone());
-            } else {
-                kept.push(i);
-            }
-        }
-        self.roster = kept;
+        let doomed: Vec<usize> = self
+            .cards
+            .iter()
+            .enumerate()
+            .filter(|(i, card)| *i == index || (!region_only && in_group(card)))
+            .map(|(i, _)| i)
+            .collect();
+        let removed: Vec<Card> = doomed.iter().map(|&i| self.cards[i].clone()).collect();
         for card in &removed {
             if let Some(id) = card.id() {
                 self.served.insert(id);
             }
         }
+        // Physically drop them, remapping every index, so restart and
+        // has_due_now are right by construction and cannot resurrect a card
+        // whose source is gone from the file.
+        let doomed_set: std::collections::HashSet<usize> = doomed.iter().copied().collect();
+        let mut new_index = vec![usize::MAX; self.cards.len()];
+        let mut kept_count = 0;
+        for (i, slot) in new_index.iter_mut().enumerate() {
+            if !doomed_set.contains(&i) {
+                *slot = kept_count;
+                kept_count += 1;
+            }
+        }
+        let mut card_i = 0;
+        self.cards.retain(|_| {
+            let keep = !doomed_set.contains(&card_i);
+            card_i += 1;
+            keep
+        });
+        let mut app_i = 0;
+        self.appearances.retain(|_| {
+            let keep = !doomed_set.contains(&app_i);
+            app_i += 1;
+            keep
+        });
+        self.roster = self
+            .roster
+            .iter()
+            .filter(|&&i| !doomed_set.contains(&i))
+            .map(|&i| new_index[i])
+            .collect();
+        if region_only {
+            let removed_id = removed[0].id();
+            self.depth_excluded
+                .retain(|card| removed_id.is_none() || card.id() != removed_id);
+        } else {
+            self.depth_excluded.retain(|card| !in_group(card));
+        }
+        self.current_idx = None;
         self.advance(store, now_ms);
         removed
     }
@@ -1916,6 +1955,69 @@ mod tests {
                 "removal persists nothing"
             );
         }
+    }
+
+    #[test]
+    fn a_removed_region_card_does_not_return_after_restart() {
+        let (mut store, _dir) = empty_store();
+        let parent = card("deck.md", 1);
+        let mut region = parent.clone();
+        region.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(Arc::from("a1b2c3")),
+            hidden: Some("lunate".into()),
+            line: 3,
+        });
+        let region_id = region.id().unwrap();
+        let mut session = Session::new(
+            vec![parent, region],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            0,
+        );
+
+        session.introduce_current(&mut store, 0);
+        assert_eq!(Some(region_id.as_str()), session.current_id().as_deref());
+        let removed = session.remove_current(&mut store, 0);
+        assert_eq!(1, removed.len());
+        assert_eq!(Some(region_id.as_str()), removed[0].id().as_deref());
+
+        assert!(
+            !session.restart(&mut store, 0),
+            "restart must not rebuild a region card whose directive and schedule were removed"
+        );
+        assert_ne!(Some(region_id), session.current_id());
+    }
+
+    #[test]
+    fn removing_a_parent_drops_region_siblings_outside_the_session_cap() {
+        let (mut store, _dir) = empty_store();
+        let parent = card("deck.md", 1);
+        let mut region = parent.clone();
+        region.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(Arc::from("a1b2c3")),
+            hidden: Some("lunate".into()),
+            line: 3,
+        });
+        let region_id = region.id().unwrap();
+        let mut session = Session::new(
+            vec![parent, region],
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 1,
+                ..SessionOptions::default()
+            },
+            0,
+        );
+
+        let removed = session.remove_current(&mut store, 0);
+        assert!(
+            removed
+                .iter()
+                .any(|card| card.id().as_deref() == Some(region_id.as_str())),
+            "removing the parent block must drop its region sibling even when the cap kept that sibling out of the roster"
+        );
     }
 
     #[test]
