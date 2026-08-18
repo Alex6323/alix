@@ -458,7 +458,23 @@ impl Session {
             .filter(|(i, card)| *i == index || (!region_only && in_group(card)))
             .map(|(i, _)| i)
             .collect();
-        let removed: Vec<Card> = doomed.iter().map(|&i| self.cards[i].clone()).collect();
+        let mut removed: Vec<Card> = doomed.iter().map(|&i| self.cards[i].clone()).collect();
+        // Depth-excluded cards of the same removal lose their source too and
+        // must join the RETURNED set: the caller clears store progress only
+        // for what comes back, and a discarded exclusion would leave an
+        // orphan schedule behind a successful removal.
+        let (gone, kept): (Vec<Card>, Vec<Card>) = std::mem::take(&mut self.depth_excluded)
+            .into_iter()
+            .partition(|card| {
+                if region_only {
+                    let removed_id = removed[0].id();
+                    removed_id.is_some() && card.id() == removed_id
+                } else {
+                    in_group(card)
+                }
+            });
+        self.depth_excluded = kept;
+        removed.extend(gone);
         for card in &removed {
             if let Some(id) = card.id() {
                 self.served.insert(id);
@@ -494,13 +510,6 @@ impl Session {
             .filter(|&&i| !doomed_set.contains(&i))
             .map(|&i| new_index[i])
             .collect();
-        if region_only {
-            let removed_id = removed[0].id();
-            self.depth_excluded
-                .retain(|card| removed_id.is_none() || card.id() != removed_id);
-        } else {
-            self.depth_excluded.retain(|card| !in_group(card));
-        }
         self.current_idx = None;
         self.advance(store, now_ms);
         removed
@@ -2017,6 +2026,43 @@ mod tests {
                 .iter()
                 .any(|card| card.id().as_deref() == Some(region_id.as_str())),
             "removing the parent block must drop its region sibling even when the cap kept that sibling out of the roster"
+        );
+    }
+
+    #[test]
+    fn removing_a_parent_returns_depth_excluded_regions_for_store_cleanup() {
+        let (mut store, _dir) = empty_store();
+        let parent = card("deck.md", 1);
+        let mut region = parent.clone();
+        region.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(Arc::from("a1b2c3")),
+            hidden: Some("lunate".into()),
+            line: 3,
+        });
+        let region_id = region.id().unwrap();
+        store.get_or_insert(&region_id).introduced_ms = Some(0);
+        let mut session = Session::new(
+            vec![parent],
+            &mut store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..SessionOptions::default()
+            },
+            0,
+        );
+        session.set_depth_excluded(vec![region]);
+
+        let removed = session.remove_current(&mut store, 0);
+        for card in removed {
+            if let Some(id) = card.id() {
+                store.remove(&id);
+            }
+        }
+
+        assert!(
+            store.progress(&region_id).is_none(),
+            "removing the parent block must return its depth-excluded region so the serve layer clears that region's progress"
         );
     }
 

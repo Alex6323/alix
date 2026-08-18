@@ -3919,6 +3919,51 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
     );
 }
 
+#[test]
+fn removing_a_parent_in_recognize_clears_excluded_region_progress() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(
+            dir.join("regions.md"),
+            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## anatomy <!-- id: card-regionfixture000000000000 -->\n- [x] carpals\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n- [ ] tarsals\n- [ ] phalanges\n",
+        )
+        .unwrap();
+    });
+
+    post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"regions.md","depth":"recall"}"#,
+    );
+    let resp = post_gated(&base, "/api/introduce", "{}");
+    let region: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let region_id = region["card"]["id"].as_str().unwrap().to_string();
+    post_gated(&base, "/api/introduce", "{}");
+    post_json(&base, "/api/deselect", "{}");
+
+    let selected = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"regions.md","depth":"recognize","cram":true}"#,
+    );
+    let selected: serde_json::Value = serde_json::from_slice(&selected.body).unwrap();
+    assert_eq!(
+        "anatomy", selected["card"]["front"],
+        "the recognizable parent is current while the region is depth-excluded: {selected}"
+    );
+    assert!(
+        selected["choices"].is_array(),
+        "the parent has authored choices"
+    );
+
+    let removed = post_gated(&base, "/api/remove", "{}");
+    assert_eq!(200, removed.status);
+    let store = open_instance_store(guard.dir());
+    assert!(
+        store.progress(&region_id).is_none(),
+        "parent removal must clear progress for the region excluded from the Recognize session"
+    );
+}
+
 /// Arm-existence smokes for routes whose deletion survived the gate: the
 /// distinguishing status is 409 (no active sitting), never the 404 a
 /// deleted arm would produce.
