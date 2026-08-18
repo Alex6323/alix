@@ -1,6 +1,7 @@
 # 0009: CLI-backed AI providers
 
 - Status: Accepted
+- Evidence: fn command(&self) -> &str; in src/backend/mod.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

@@ -1,6 +1,6 @@
 # 0028: Capability-gated builds and embedded Wormhole
 
-- Status: Accepted (design; DEFERRED and not implemented — the text below
+- Status: Accepted (design; DEFERRED and NOT yet implemented — the text below
   describes the target state in completed tense. Production still shells out
   to the `wormhole` CLI, there is no `wormhole` Cargo feature, and
   `mobile/alix-sync` is empty. Corrected 2026-08-02 after the docs audit read

@@ -1,6 +1,7 @@
 # 0008: Flutter with Flutter Rust Bridge
 
 - Status: Accepted
+- Evidence: flutter_rust_bridge = in mobile/alix/rust/Cargo.toml
 - Recorded: 2026-07-24
 - Retrospective: Yes
 - Refined by:

@@ -1,6 +1,7 @@
 # 0016: Pinned release toolchains with separate drift probes
 
 - Status: Accepted
+- Evidence: grep -Eq '^[0-9a-f]{40}$' in scripts/toolchain-check.sh
 - Recorded: 2026-07-25
 - Retrospective: No
 

@@ -1,6 +1,7 @@
 # 0025: Backups are out of scope; the folder is the backup unit
 
 - Status: Accepted
+- Evidence: none, a general backup command, backup archives, generations, and retention stay out of scope; an absence has no positive marker
 - Recorded: 2026-07-27
 - Retrospective: No
 - Refines: [ADR 0001](0001-local-first-files.md) and

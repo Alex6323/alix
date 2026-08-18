@@ -1,6 +1,7 @@
 # 0007: Client-neutral review contract
 
 - Status: Accepted
+- Evidence: pub struct ReviewState in src/review.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

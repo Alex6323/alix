@@ -1,6 +1,7 @@
 # 0029: The server log is local, content-free, and write-only
 
 - Status: Accepted
+- Evidence: the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths in tests/cli.rs
 - Recorded: 2026-08-07
 - Retrospective: No
 

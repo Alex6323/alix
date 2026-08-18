@@ -1,6 +1,7 @@
 # 0022: Workspace and user file ownership
 
 - Status: Accepted
+- Evidence: pub struct WorkspaceFiles in src/workspace.rs
 - Recorded: 2026-07-27
 - Retrospective: No
 - Supersedes:

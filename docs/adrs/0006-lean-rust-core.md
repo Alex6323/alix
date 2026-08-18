@@ -4,6 +4,7 @@
   [ADR 0028](0028-capability-gated-builds-and-embedded-wormhole.md) is the
   accepted successor design but is not yet implemented; this record stays
   binding until it ships.
+- Evidence: cargo build --no-default-features --lib in Makefile
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

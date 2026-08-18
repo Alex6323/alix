@@ -1,6 +1,7 @@
 # 0010: LAN pairing and phone-owned state
 
 - Status: Accepted
+- Evidence: remote_endpoints_never_write_the_server_store in tests/api.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

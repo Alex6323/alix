@@ -1,6 +1,7 @@
 # 0014: Independent review depths
 
 - Status: Accepted
+- Evidence: recall_and_reconstruct_schedules_are_independent in src/store.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 - Details evolved: one pass-only downward credit ships — a full Reconstruct

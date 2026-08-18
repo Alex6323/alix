@@ -1,6 +1,7 @@
 # 0011: Shared RaTeX math rendering
 
 - Status: Accepted
+- Evidence: pub struct MathView in src/math.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

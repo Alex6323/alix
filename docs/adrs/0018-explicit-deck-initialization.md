@@ -1,6 +1,7 @@
 # 0018: Explicit deck initialization
 
 - Status: Accepted
+- Evidence: maintenance_refuses_an_uninitialized_file_without_writing in src/stamp.rs
 - Recorded: 2026-07-25
 - Retrospective: No
 - Refines: [ADR 0002](0002-markdown-native-decks.md)

@@ -1,6 +1,7 @@
 # 0020: Source excerpt integrity
 
 - Status: Accepted
+- Evidence: a_trace_does_not_reveal_a_relocated_excerpt_before_repair in src/trace.rs
 - Details evolved by
   [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): the citation
   locator uses named fields (`at:` then `fingerprint:` then `asset:`) and the

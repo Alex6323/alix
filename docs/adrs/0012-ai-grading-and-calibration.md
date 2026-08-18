@@ -1,6 +1,7 @@
 # 0012: AI grading and calibration
 
 - Status: Accepted
+- Evidence: cargo test --test calibrate -- --ignored --nocapture --test-threads=1 in Makefile
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

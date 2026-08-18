@@ -1,6 +1,7 @@
 # 0019: Workspace artifact layout
 
 - Status: Accepted
+- Evidence: workspace_members_live_only_under_the_decks_directory in src/workspace.rs
 - Recorded: 2026-07-26
 - Retrospective: No
 - Refines: [ADR 0001](0001-local-first-files.md),

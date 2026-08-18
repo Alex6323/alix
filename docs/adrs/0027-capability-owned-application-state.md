@@ -1,6 +1,7 @@
 # 0027: Capability-owned application state
 
 - Status: Accepted
+- Evidence: pub(super) struct CatalogHandle in src/serve/catalog_owner.rs
 - Recorded: 2026-07-29
 - Retrospective: No
 - Refines:

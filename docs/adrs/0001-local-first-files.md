@@ -1,6 +1,7 @@
 # 0001: Local-first plain files
 
 - Status: Accepted
+- Evidence: pub struct UserFiles in src/state.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 - Refined by:

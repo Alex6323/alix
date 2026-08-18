@@ -1,6 +1,7 @@
 # 0023: Semantic workspace update
 
 - Status: Accepted
+- Evidence: workspace_update_previews_then_applies_without_a_second_backend_call in tests/cli.rs
 - Recorded: 2026-07-27
 - Retrospective: No
 - Refines:

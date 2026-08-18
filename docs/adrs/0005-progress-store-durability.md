@@ -1,6 +1,7 @@
 # 0005: Progress-store durability and writer model
 
 - Status: Accepted
+- Evidence: a_fault_at_any_write_step_never_leaves_a_partial_target in src/fsio.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 - Refined by:

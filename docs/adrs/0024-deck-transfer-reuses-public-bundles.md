@@ -1,6 +1,7 @@
 # 0024: Deck transfer reuses public bundles
 
 - Status: Accepted
+- Evidence: copy_uses_the_public_bundle_without_copying_progress in src/deck_transfer.rs
 - Recorded: 2026-07-27
 - Retrospective: No
 - Refines:

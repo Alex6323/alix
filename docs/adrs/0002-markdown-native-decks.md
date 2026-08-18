@@ -1,6 +1,7 @@
 # 0002: Markdown-native decks
 
 - Status: Accepted
+- Evidence: a_card_runs_from_its_h2_to_the_next_h2_or_eof in src/parser/mod.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
 - Refined by:

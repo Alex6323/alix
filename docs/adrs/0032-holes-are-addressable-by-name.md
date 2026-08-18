@@ -1,6 +1,7 @@
 # 0032: A cloze hole is addressable by name, and grouping starts fresh
 
 - Status: Accepted
+- Evidence: grouping_resets_the_merged_card_alone in src/parser/mod.rs
 - Recorded: 2026-08-09
 - Retrospective: No
 

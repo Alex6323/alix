@@ -1,6 +1,7 @@
 # 0031: A personal file copies nothing, and a note names its card first
 
 - Status: Accepted
+- Evidence: every_note_written_to_a_block_stays_below_its_opening_marker in src/personal.rs
 - Recorded: 2026-08-08
 - Retrospective: No
 - Supersedes:
