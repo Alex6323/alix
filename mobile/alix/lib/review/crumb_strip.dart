@@ -88,7 +88,7 @@ class CrumbStrip extends StatelessWidget {
   Widget _cell(String tier, Color ink, AlixTokens tokens) {
     final Color fill = switch (tier) {
       'seen' => ink.withValues(alpha: 0.55),
-      'acquired' => ink.withValues(alpha: 0.85),
+      'learning' => ink.withValues(alpha: 0.85),
       'learned-strong' => tokens.good,
       'learned-fading' => tokens.warn,
       'learned-weak' => tokens.again,

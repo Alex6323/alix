@@ -96,7 +96,7 @@ void main() {
         deckPath: exam,
         rootDir: root.path,
         nowMs: BigInt.from(t0),
-      ).acquire(nowMs: BigInt.from(t0));
+      ).introduce(nowMs: BigInt.from(t0));
       ReviewSession.open(
         deckPath: exam,
         rootDir: root.path,

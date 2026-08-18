@@ -38,7 +38,7 @@ function syncSaveAlert() {
   a.textContent = "Uh oh, your progress isn't saving. Ask a grown-up to help!";
 }
 // ── The review loop ───────────────────────────────────────────────────────
-// Every review action (/api/select, /api/grade, /api/acquire, /api/deselect)
+// Every review action (/api/select, /api/grade, /api/introduce, /api/deselect)
 // returns the NEXT StateDto -- apply it, reset the per-card view state, and route.
 // `/api/select` and each action can also return a WalkDto (a trace deck); kids
 // v1 handles only the review StateDto, so we branch on `kind` and route a
@@ -67,11 +67,11 @@ function renderReview() {
   if (!state || state.kind !== "review" || !state.card) { renderNotReady(); return; }
 
   const card = state.card;
-  const acquire = !!state.acquire;
+  const introducing = !!state.introducing;
   const choiceMode = isChoiceMode();
   const lineMode = state.mode === "line";
   // A never-seen card is ATTEMPTED like any other -- attempt-first, as the
-  // engine intends (it ships `choices` on acquire cards too, and /api/choose
+  // engine intends (it ships `choices` on introduction cards too, and /api/choose
   // answers them). Only the bar differs: one ungraded "Got it! Next" instead of
   // a rate. Forcing `done` here would skip the attempt entirely and make the
   // depth the kid just chose ("Tap the answer" / "Say it yourself") meaningless
@@ -81,7 +81,7 @@ function renderReview() {
   const inner = el("div", "rev-stage-inner");
   const cardEl = el("div", "rev-card");
 
-  cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, acquire)));
+  cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, introducing)));
   cardEl.appendChild(frontPrompt(card));
   for (let i = 0; i < (card.context || []).length; i++) {
     cardEl.appendChild(contextLine(card.context[i], card.context_runs && card.context_runs[i]));
@@ -109,11 +109,11 @@ function renderReview() {
   inner.appendChild(cardEl);
   stage.appendChild(inner);
 
-  renderReviewBar(done, acquire, lineMode, choiceMode);
+  renderReviewBar(done, introducing, lineMode, choiceMode);
 }
 
-function eyebrowFor(s, acquire) {
-  if (acquire) return "Here's a new one! ✨";
+function eyebrowFor(s, introducing) {
+  if (introducing) return "Here's a new one! ✨";
   if (isChoiceMode()) return "Tap the answer 👆";
   if (s.mode === "line") return "Line by line 📖";
   return "Fill in the blank ✏️";
@@ -255,7 +255,7 @@ function renderWhy(parent, card) {
 
 // Home (left) · reveal/rate (centre) · Ask Alix (right) -- Home and Ask Alix
 // persist on every card. No score, no "X of N" counter anywhere.
-function renderReviewBar(done, acquire, lineMode, choiceMode) {
+function renderReviewBar(done, introducing, lineMode, choiceMode) {
   const left = el("div", "bar-left");
   const home = el("button", "ghost-home", "🏠 Home");
   home.type = "button";
@@ -270,10 +270,10 @@ function renderReviewBar(done, acquire, lineMode, choiceMode) {
       const lbl = lineMode ? (revealed === 0 ? "Show me 👀" : "Show me next 👀") : "Show me 👀";
       mid.appendChild(barBtn(lbl, "show-btn", reveal));
     }
-  } else if (acquire) {
+  } else if (introducing) {
     // Attempted, but never seen before: the engine grades nothing on a first
-    // meeting -- acknowledge it and move on (POST /api/acquire).
-    mid.appendChild(barBtn("Got it! Next", "show-btn", acquireNext));
+    // meeting -- acknowledge it and move on (POST /api/introduce).
+    mid.appendChild(barBtn("Got it! Next", "show-btn", introduceNext));
   } else if (choiceMode) {
     // Tap-the-answer: chosen.passed is the engine's truth (ChooseFeedbackDto),
     // never something the UI computes. A correct pick may self-demote via the
@@ -318,14 +318,12 @@ function barBtn(text, cls, fn) {
 function reveal() {
   // Seeing a new card's answer counts as the encounter even if the session
   // ends here (same rule as the adult client). Fire-and-forget.
-  if (revealed === 0 && state.acquire) api("/api/reveal", post({})).catch(() => {});
   syncStudyModel(model.reveal(studyModel));
   rerender();
 }
 // A pick is evidence only (ChooseFeedbackDto, discloses the correct index); the
 // grade is separate, via the rate bar / /api/grade. Same card stays on screen.
 function choose(i) {
-  if (state.acquire && !chosen) api("/api/reveal", post({})).catch(() => {});
   api("/api/choose", post({ index: i, card: state.card.id })).then((f) => {
     syncStudyModel(model.choose(studyModel, f));
     rerender();
@@ -337,8 +335,8 @@ function grade(g) {
   api("/api/grade", post({ grade: g })).then(apply).catch(resync);
 }
 // Acknowledge a never-seen card (no rating).
-function acquireNext() {
-  api("/api/acquire", post({})).then(apply).catch(resync);
+function introduceNext() {
+  api("/api/introduce", post({})).then(apply).catch(resync);
 }
 // Leave the session for Home: deselect on the server, then re-scan the boxes.
 function homeFromReview() {
@@ -370,9 +368,11 @@ function renderDone() {
   const wrap = el("div", "done");
   wrap.appendChild(mascotEl("mascot-lg"));
   const reviews = (state && state.reviews) || 0;
-  const met = (state && state.acquired) || 0;
-  const passed = (state && state.passed) || 0;
+  const met = (state && state.introduced) || 0;
+  // `passed` includes Partial (a partial is a pass); "exactly right" must
+  // not re-count the almosts the next line reports (Codex tenth pass, P1).
   const almost = (state && state.partial) || 0;
+  const passed = Math.max(((state && state.passed) || 0) - almost, 0);
   const didSomething = reviews + met > 0;
   wrap.appendChild(el("div", "done-title", didSomething ? "Nice work! 🎉" : "All done for now 🌱"));
   const line = (text) => wrap.appendChild(el("div", "done-count", text));

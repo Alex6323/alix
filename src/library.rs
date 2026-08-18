@@ -323,7 +323,7 @@ pub fn removal_preview(deck_path: &Path, store: &Store) -> RemovalPreview {
                 continue;
             };
             preview.cards_with_progress += 1;
-            if let Some(seen) = state.presented_ms.or(state.acquired_ms) {
+            if let Some(seen) = state.introduced_ms {
                 earliest = Some(earliest.map_or(seen, |e| e.min(seen)));
             }
         }
@@ -868,8 +868,12 @@ mod tests {
         let deck_b = Deck::load(dir.path().join("b.md")).unwrap();
 
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert(&deck_a.cards[0].id().unwrap(), 0);
-        store.get_or_insert(&deck_b.cards[0].id().unwrap(), 0);
+        store
+            .get_or_insert(&deck_a.cards[0].id().unwrap())
+            .introduced_ms = Some(0);
+        store
+            .get_or_insert(&deck_b.cards[0].id().unwrap())
+            .introduced_ms = Some(0);
         store.set_deck_mastered(deck_a.deck_token.as_deref().unwrap(), 0);
 
         let n = reset_decks(&mut store, [&deck_a]).unwrap();
@@ -897,7 +901,7 @@ mod tests {
             .id()
             .unwrap();
         crate::personal::append_cards(deck, deck_id, &block).unwrap();
-        store.get_or_insert(&id, 0);
+        store.get_or_insert(&id).introduced_ms = Some(0);
         id
     }
 
@@ -917,7 +921,7 @@ mod tests {
         write_deck(dir.path(), "a.md", "da1", "c1");
         let orig = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert("c1", 0);
+        store.get_or_insert("c1").introduced_ms = Some(0);
         store.save().unwrap();
 
         let err =
@@ -960,7 +964,7 @@ mod tests {
         write_deck(dir.path(), "a.md", "da1", "c1");
         let orig_deck = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.ensure_records_raw("card-c1", &[]);
         store.save().unwrap();
         let progress = dir.path().join("progress/deck-da1.json");
@@ -1007,7 +1011,7 @@ mod tests {
         write_deck(&members, "a.md", "da1", "c1");
         let orig_deck = std::fs::read_to_string(members.join("a.md")).unwrap();
         let mut store = crate::state::open_store(&members.join("a.md"), dir.path()).unwrap();
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.save().unwrap();
         let progress = store.path().to_path_buf();
         let orig_progress = std::fs::read(&progress).unwrap();
@@ -1058,7 +1062,7 @@ mod tests {
     fn trio_fixture(dir: &Path) -> (Vec<u8>, Vec<u8>, String) {
         write_deck(dir, "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.join("a.md"), dir).unwrap();
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.ensure_records_raw("card-c1", &[]);
         store.save().unwrap();
         let deck = Deck::load(dir.join("a.md")).unwrap();
@@ -1174,7 +1178,9 @@ mod tests {
         // on the live deck so progress for its fresh token exists too.
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         let live = Deck::load(dir.path().join("a.md")).unwrap();
-        store.get_or_insert(&live.cards[0].id().unwrap(), 0);
+        store
+            .get_or_insert(&live.cards[0].id().unwrap())
+            .introduced_ms = Some(0);
         store.save().unwrap();
 
         let report = remove_deck(&dir.path().join("a.md"), &store).unwrap();
@@ -1241,8 +1247,8 @@ mod tests {
 
         let paths = vec![members.join("a.md"), members.join("b.md")];
         let mut store = crate::state::open_stores(&paths, &ws).unwrap();
-        store.get_or_insert("card-ca1", 100);
-        store.get_or_insert("card-cb1", 200);
+        store.get_or_insert("card-ca1").introduced_ms = Some(100);
+        store.get_or_insert("card-cb1").introduced_ms = Some(200);
         store.save().unwrap();
         std::fs::write(ws.join("recent.json"), "{}\n").unwrap();
         for deck_id in ["deck-da1", "deck-db1"] {
@@ -1302,7 +1308,7 @@ mod tests {
         write_deck(&members, "a.md", "da1", "ca1");
         let paths = vec![members.join("a.md")];
         let mut store = crate::state::open_stores(&paths, &user).unwrap();
-        store.get_or_insert("card-ca1", 100);
+        store.get_or_insert("card-ca1").introduced_ms = Some(100);
         store.save().unwrap();
         std::fs::write(user.join("progress/unrelated.json"), "keep\n").unwrap();
         std::fs::write(user.join("recent.json"), "keep\n").unwrap();
@@ -1422,7 +1428,7 @@ mod tests {
         ];
         let mut store = crate::state::open_stores(&paths, &ws).unwrap();
         for card_id in ["card-ca1", "card-cb1", "card-cc1"] {
-            store.get_or_insert(card_id, 0);
+            store.get_or_insert(card_id).introduced_ms = Some(0);
         }
         store.save().unwrap();
         let failed = ws.join("progress/deck-db1.json");
@@ -1471,7 +1477,7 @@ mod tests {
         )
         .unwrap();
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
-        store.get_or_insert("card-c1", 4_200);
+        store.get_or_insert("card-c1").introduced_ms = Some(4_200);
         store.save().unwrap();
 
         let preview = removal_preview(&dir.path().join("a.md"), &store);
@@ -1496,7 +1502,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.save().unwrap();
         // Make the progress document undeletable as a file by replacing it
         // with a directory: deck-first ordering then fails on member two.
@@ -1555,11 +1561,11 @@ mod tests {
         let mut store = crate::state::open_stores(&paths, dir.path()).unwrap();
 
         // Deck A: a card schedule, deck-family mastery, records.
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.set_deck_mastered("deck-da1", 1);
         store.ensure_records_raw("card-c1", &[]);
         // Deck B (shares the store): its own schedule + mastery.
-        store.get_or_insert("card-cb1", 0);
+        store.get_or_insert("card-cb1").introduced_ms = Some(0);
         store.set_deck_mastered("deck-db1", 1);
         store.save().unwrap();
 
@@ -1600,7 +1606,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.set_deck_mastered("deck-da1", 1);
         store.ensure_records_raw("card-c1", &[]);
         store.save().unwrap();
@@ -1646,8 +1652,8 @@ mod tests {
         write_deck(dir.path(), "b.md", "db1", "c2");
         let paths = [dir.path().join("a.md"), dir.path().join("b.md")];
         let mut aggregate = crate::state::open_stores(&paths, dir.path()).unwrap();
-        aggregate.get_or_insert("card-c1", 0);
-        aggregate.get_or_insert("card-c2", 0);
+        aggregate.get_or_insert("card-c1").introduced_ms = Some(0);
+        aggregate.get_or_insert("card-c2").introduced_ms = Some(0);
         aggregate.save().unwrap();
         let mut augmentation = AugmentCache::open_for_decks(
             dir.path(),
@@ -1796,7 +1802,7 @@ mod tests {
         let path = dir.path().join("t.md");
         std::fs::write(&path, existing).unwrap();
         let mut store = crate::state::open_store(&path, dir.path()).unwrap();
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.save().unwrap();
 
         let new_text = crate::deck::trace_checkpoint_text(

@@ -45,8 +45,8 @@ class FakeAccess implements PlatformAccess {
   Future<String?> appVersion() async => '9.9.9+9';
 }
 
-/// Acquired at T0, quizzed once the cooldown has elapsed. 301000 = the
-/// core's DEFAULT_ACQUIRE_COOLDOWN_MS (5 min, src/scheduler.rs) + 1s; keep
+/// Introduced at T0, quizzed once the cooldown has elapsed. 301000 = the
+/// core's DEFAULT_INTRODUCTION_COOLDOWN_MS (5 min, src/scheduler.rs) + 1s; keep
 /// them in step.
 final t0 = BigInt.from(1000000);
 final later = BigInt.from(1000000 + 301000);
@@ -72,14 +72,14 @@ Directory makeRoot() {
   return root;
 }
 
-/// Acquires every card of a deck at T0 through the real bridge, so a session
+/// Introduces every card of a deck at T0 through the real bridge, so a session
 /// opened at `later` serves the first quiz. The store lands wherever the
 /// core routes it.
-void acquireAll(String deck, String root) {
+void introduceAll(String deck, String root) {
   final s = ReviewSession.open(deckPath: deck, rootDir: root, nowMs: t0);
   var state = s.state();
-  while (state.acquire) {
-    state = s.acquire(nowMs: t0);
+  while (state.introducing) {
+    state = s.introduce(nowMs: t0);
   }
 }
 
@@ -211,13 +211,13 @@ void main() {
       'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
       'The discriminant is \$b^2 - 4ac\$.\n',
     );
-    final acquire = ReviewSession.open(
+    final introduction = ReviewSession.open(
       deckPath: explainDeck,
       rootDir: root.path,
       depth: Depth.reconstruct,
       nowMs: t0,
     );
-    acquire.acquire(nowMs: t0);
+    introduction.introduce(nowMs: t0);
     final explain = ReviewSession.open(
       deckPath: explainDeck,
       rootDir: root.path,
@@ -235,14 +235,14 @@ void main() {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/ws/decks/m.md';
-    acquireAll(deck, root.path);
+    introduceAll(deck, root.path);
 
     final s = ReviewSession.open(
       deckPath: deck,
       rootDir: root.path,
       nowMs: later,
     );
-    expect(s.state().acquire, isFalse);
+    expect(s.state().introducing, isFalse);
     expect(s.state().mode, Mode.flip);
     s.grade(grade: Grade.pass, nowMs: later);
     final store = onlyProgressDocument('${root.path}/ws');
@@ -262,7 +262,7 @@ void main() {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/ws/decks/m.md';
-    acquireAll(deck, root.path);
+    introduceAll(deck, root.path);
     // Recognize is pick-only: arm the deck's cached distractors so it renders a
     // real pick (on a phone these arrive by syncing the desktop's augmentation).
     seedChoiceDistractors(deckPath: deck, rootDir: root.path);
@@ -660,7 +660,7 @@ void main() {
       nowMs: backdated,
       device: 'desk-1',
     );
-    s.acquire(nowMs: backdated);
+    s.introduce(nowMs: backdated);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -727,7 +727,7 @@ void main() {
       rootDir: root.path,
       nowMs: backdated,
     );
-    s.acquire(nowMs: backdated);
+    s.introduce(nowMs: backdated);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -869,7 +869,7 @@ void main() {
       rootDir: root.path,
       depth: Depth.reconstruct,
       nowMs: backdated,
-    ).acquire(nowMs: backdated);
+    ).introduce(nowMs: backdated);
     await tester.pumpWidget(
       MaterialApp(
         theme: alixDark(),
@@ -917,7 +917,7 @@ void main() {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/loose.md';
-    // Backdate the acquire far enough that the real clock is past the
+    // Backdate the introduction far enough that the real clock is past the
     // cooldown (5 min default): the UI (which always uses the wall clock)
     // then serves the first quiz immediately.
     final backdated = BigInt.from(
@@ -928,7 +928,7 @@ void main() {
       rootDir: root.path,
       nowMs: backdated,
     );
-    s.acquire(nowMs: backdated);
+    s.introduce(nowMs: backdated);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -994,7 +994,7 @@ void main() {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/ws/decks/m.md';
-    acquireAll(deck, root.path);
+    introduceAll(deck, root.path);
     // Recognize is pick-only: arm the deck's cached distractors so it renders a
     // real pick (on a phone these arrive by syncing the desktop's augmentation).
     seedChoiceDistractors(deckPath: deck, rootDir: root.path);

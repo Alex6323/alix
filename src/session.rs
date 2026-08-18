@@ -86,7 +86,7 @@ pub struct SessionStats {
     // Partial passes at any depth; the retired per-depth Recognize tallies
     // collapsed into this one generic counter (ADR 0033).
     pub partial: usize,
-    pub acquired: usize,
+    pub introduced: usize,
 }
 
 pub struct Session {
@@ -99,16 +99,10 @@ pub struct Session {
     // so the done-summary backlog counts don't re-count what was just drilled.
     // Accumulates across chained restarts within one session.
     served: HashSet<String>,
-    // Cards whose answer was revealed this sitting: the store records the
-    // engagement for FUTURE sessions, while THIS sitting keeps treating them
-    // as its acquire cards — otherwise the next poll would reclassify the
-    // on-screen card unservable and swap it without a revision bump.
-    revealed: HashSet<String>,
     appearances: Vec<u32>,
     choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
     options: SessionOptions,
-    presented_stamped: bool,
     // Cards the depth filter kept out of this sitting entirely (Recognize
     // schedules only pick-capable cards), so the done summary can say what
     // still waits beyond the depth instead of "nothing".
@@ -122,7 +116,6 @@ struct SelectionDecision {
     id: String,
     tier: CardTier,
     fresh: bool,
-    revealed: bool,
     due: u64,
     floor: u64,
 }
@@ -156,12 +149,10 @@ impl Session {
             remaining_now: 0,
             floors,
             served: HashSet::new(),
-            revealed: HashSet::new(),
             appearances,
             choice_seed: now_ms,
             scheduler,
             options,
-            presented_stamped: false,
             depth_excluded: Vec::new(),
             initial_size,
             stats: SessionStats::default(),
@@ -277,7 +268,7 @@ impl Session {
     /// included — `next_due_at` is schedule-wide and floor-blind, so it cannot
     /// explain a done sitting whose cards are merely cooling.
     pub fn next_servable_at(&self, store: &Store, now_ms: u64) -> Option<u64> {
-        let cooldown = self.scheduler.acquire_cooldown_ms();
+        let cooldown = self.scheduler.introduction_cooldown_ms();
         self.roster
             .iter()
             .filter_map(|&i| {
@@ -302,9 +293,6 @@ impl Session {
     }
 
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {
-        if self.options.depth == Depth::Recognize {
-            return None;
-        }
         self.cards
             .iter()
             .filter_map(|c| c.id())
@@ -323,9 +311,6 @@ impl Session {
 
     // True once since the last take: a presentation stamp was written and the
     // store has unsaved state. The caller decides when to persist.
-    pub fn take_presented_stamped(&mut self) -> bool {
-        std::mem::take(&mut self.presented_stamped)
-    }
 
     pub fn current(&self) -> Option<&Card> {
         self.current_idx.map(|i| &self.cards[i])
@@ -343,22 +328,7 @@ impl Session {
     pub fn current_fresh(&self, store: &Store) -> bool {
         self.current()
             .and_then(Card::id)
-            .is_some_and(|id| store.progress(&id).is_none() || self.revealed.contains(id.as_str()))
-    }
-
-    /// Records that the current acquire card's answer was shown: the store
-    /// remembers the encounter for future sessions, this sitting is
-    /// unaffected. `false` when the current card is not an acquire card.
-    pub fn reveal_current(&mut self, store: &mut Store, now_ms: u64) -> bool {
-        if !self.current_fresh(store) {
-            return false;
-        }
-        let Some(id) = self.current_id() else {
-            return false;
-        };
-        let recorded = store.note_revealed(&id, now_ms);
-        self.revealed.insert(id);
-        recorded
+            .is_some_and(|id| store.progress(&id).is_none())
     }
 
     pub fn cards(&self) -> &[Card] {
@@ -395,17 +365,11 @@ impl Session {
         };
         let depth = self.options.depth;
 
-        let state = store.get_or_insert(&id, now_ms);
-        // A presentation-created entry has no acquire fact: the first passing
-        // grade is what proves the card was ever gotten right.
-        if grade.passed() && state.acquired_ms.is_none() {
-            state.acquired_ms = Some(now_ms);
-        }
-
+        let state = store.get_or_insert(&id);
         let was_due = self.scheduler.is_due(state, depth, now_ms);
         // A cram pass on a card not yet due only re-anchors an existing
-        // schedule. With no schedule at all (a just-acquired card), re-anchor is
-        // a no-op that leaves the card pinned to acquired+cooldown, so it wins
+        // schedule. With no schedule at all (a just-introduced card), re-anchor is
+        // a no-op that leaves the card pinned to introduced+cooldown, so it wins
         // every rebuild and blocks the rest; apply a genuine first learning
         // event instead.
         if self.options.cram && grade.passed() && !was_due && state.schedule(depth).is_some() {
@@ -449,7 +413,7 @@ impl Session {
         self.advance(store, now_ms);
     }
 
-    pub fn acquire_current(&mut self, store: &mut Store, now_ms: u64) {
+    pub fn introduce_current(&mut self, store: &mut Store, now_ms: u64) {
         let Some(index) = self.current_idx else {
             return;
         };
@@ -457,12 +421,11 @@ impl Session {
             self.advance(store, now_ms);
             return;
         };
-        let state = store.get_or_insert(&id, now_ms);
-        if state.acquired_ms.is_none() {
-            state.acquired_ms = Some(now_ms);
+        let state = store.get_or_insert(&id);
+        if state.introduced_ms.is_none() {
+            state.introduced_ms = Some(now_ms);
         }
-        self.revealed.remove(&id);
-        self.stats.acquired += 1;
+        self.stats.introduced += 1;
         self.floor(&id, now_ms);
         self.advance(store, now_ms);
     }
@@ -522,7 +485,6 @@ impl Session {
         }
         let depth = self.options.depth;
         let progress = store.progress(&id);
-        let revealed = self.revealed.contains(id.as_str());
         let due = if self.options.cram {
             now_ms
         } else {
@@ -530,20 +492,14 @@ impl Session {
                 .map(|state| self.scheduler.due_at(state, depth))
                 .unwrap_or(now_ms)
         };
-        let due_now = {
-            self.options.cram
-                || due <= now_ms
-                // A card revealed this sitting stays its acquire card even
-                // though the store already sees it engaged.
-                || revealed
-        };
+        let due_now = self.options.cram || due <= now_ms;
         if !due_now {
             return None;
         }
         let floor = self
             .floors
             .get(id.as_str())
-            .map(|at| at.saturating_add(self.scheduler.acquire_cooldown_ms()))
+            .map(|at| at.saturating_add(self.scheduler.introduction_cooldown_ms()))
             .unwrap_or(0);
         if now_ms < floor {
             return None;
@@ -552,8 +508,7 @@ impl Session {
             index: i,
             id,
             tier,
-            fresh: progress.is_none() || revealed,
-            revealed,
+            fresh: progress.is_none(),
             due,
             floor,
         })
@@ -564,7 +519,7 @@ impl Session {
     }
 
     fn floor(&mut self, id: &str, now_ms: u64) {
-        let cooldown_ms = self.scheduler.acquire_cooldown_ms();
+        let cooldown_ms = self.scheduler.introduction_cooldown_ms();
         self.floors
             .retain(|_, &mut t| now_ms < t.saturating_add(cooldown_ms));
         self.floors.insert(id.to_string(), now_ms);
@@ -596,12 +551,6 @@ impl Session {
         {
             self.appearances[i] = self.appearances[i].saturating_add(1);
         }
-        if let Some(i) = next
-            && let Some(id) = self.cards[i].id()
-            && store.note_presented(&id, now_ms)
-        {
-            self.presented_stamped = true;
-        }
         self.current_idx = next;
         self.remaining_now = self
             .roster
@@ -616,11 +565,10 @@ impl Session {
             crate::log::emit(
                 crate::log::Target::Select,
                 format_args!(
-                    "card={} tier={} fresh={} revealed={} due={} floor={} roster={}",
+                    "card={} tier={} fresh={} due={} floor={} roster={}",
                     decision.id,
                     decision.tier.wire_name(),
                     u8::from(decision.fresh),
-                    u8::from(decision.revealed),
                     decision.due,
                     decision.floor,
                     self.roster.len(),
@@ -697,7 +645,7 @@ fn build_queue(
     now_ms: u64,
 ) -> VecDeque<usize> {
     let depth = options.depth;
-    let cooldown = scheduler.acquire_cooldown_ms();
+    let cooldown = scheduler.introduction_cooldown_ms();
 
     // Partition into the due pool and the never-met pool, dropping retired cards
     // and any still cooling behind a floor so their slots pass to the next
@@ -867,9 +815,9 @@ pub const LEARNED_WEAK_BELOW: f32 = 0.7;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CardTier {
-    Untouched,
+    Unseen,
     Seen,
-    Acquired,
+    Learning,
     LearnedStrong,
     LearnedFading,
     LearnedWeak,
@@ -879,9 +827,9 @@ pub enum CardTier {
 impl CardTier {
     pub fn wire_name(self) -> &'static str {
         match self {
-            CardTier::Untouched => "untouched",
+            CardTier::Unseen => "unseen",
             CardTier::Seen => "seen",
-            CardTier::Acquired => "acquired",
+            CardTier::Learning => "learning",
             CardTier::LearnedStrong => "learned-strong",
             CardTier::LearnedFading => "learned-fading",
             CardTier::LearnedWeak => "learned-weak",
@@ -915,7 +863,7 @@ fn card_tier(
     retire_after_days: Option<u32>,
 ) -> CardTier {
     let Some(state) = store.get(card_id) else {
-        return CardTier::Untouched;
+        return CardTier::Unseen;
     };
     if is_retired_id(card_id, store, retire_after_days) {
         return CardTier::Retired;
@@ -934,8 +882,8 @@ fn card_tier(
             CardTier::LearnedFading
         };
     }
-    if state.acquired_ms.is_some() {
-        CardTier::Acquired
+    if state.total_passes > 0 {
+        CardTier::Learning
     } else {
         CardTier::Seen
     }
@@ -1002,7 +950,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
+        scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS,
         store::{FsrsState, Store},
     };
 
@@ -1041,7 +989,7 @@ mod tests {
         let text = format!("## personal front <!-- id: card-v{slug} -->\n{back}\n");
         let mut card = crate::parser::parse_str(deck_id, &text).unwrap().remove(0);
         card.line = crate::assemble::PERSONAL_LINE_BASE;
-        store.get_or_insert(&card.id().unwrap(), created_ms);
+        store.get_or_insert(&card.id().unwrap()).introduced_ms = Some(created_ms);
         card
     }
 
@@ -1099,7 +1047,7 @@ mod tests {
             assert!(!passed[idx], "a passed card must never be served again");
 
             if session.current_fresh(&store) {
-                session.acquire_current(&mut store, now);
+                session.introduce_current(&mut store, now);
             } else {
                 let g = match roll(3) {
                     0 => Grade::Fail,
@@ -1144,7 +1092,7 @@ mod tests {
         // 8 due (met, overdue) + 8 never-met; cap 10, 30% new → 3 new + 7 due.
         let all = cards(16);
         for c in &all[..8] {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let now = 2 * 604_800_000;
         let session = Session::new(
@@ -1174,7 +1122,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(16);
         for c in &all[..3] {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let now = 2 * 604_800_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
@@ -1186,7 +1134,7 @@ mod tests {
 
         while session.current().is_some() {
             if session.current_fresh(&store) {
-                session.acquire_current(&mut store, now);
+                session.introduce_current(&mut store, now);
             } else {
                 session.grade(&mut store, Grade::Pass, now);
             }
@@ -1206,7 +1154,7 @@ mod tests {
         // then the split reports what a chained sitting would still find.
         let all = cards(16);
         for c in &all[..8] {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let now = 2 * 604_800_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
@@ -1218,14 +1166,14 @@ mod tests {
                 "the sitting must exhaust, never serve past the deck"
             );
             if session.current_fresh(&store) {
-                session.acquire_current(&mut store, now);
+                session.introduce_current(&mut store, now);
             } else {
                 session.grade(&mut store, Grade::Pass, now);
             }
         }
         let (due_left, new_left) = session.remaining_split(&store, now);
         // 7 due passed (scheduled out, served); 1 due untouched. 3 never-met
-        // were acquired (now have progress); 5 never-met remain.
+        // were introduced (now have progress); 5 never-met remain.
         assert_eq!((1, 5), (due_left, new_left));
     }
 
@@ -1235,7 +1183,7 @@ mod tests {
         // 20 due + 5 never-met, cap 10: ceil(10*10/100)=1, so at least 1 new.
         let all = cards(25);
         for c in &all[..20] {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let now = 2 * 604_800_000;
         let session = Session::new(
@@ -1265,7 +1213,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(20);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let now = 2 * 604_800_000;
         let session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
@@ -1273,34 +1221,34 @@ mod tests {
     }
 
     #[test]
-    fn acquire_current_records_the_card_unscheduled_without_a_review() {
+    fn introduce_current_records_the_card_unscheduled_without_a_review() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1000);
         assert!(session.current_fresh(&store));
 
-        session.acquire_current(&mut store, 1000);
+        session.introduce_current(&mut store, 1000);
 
-        let state = store.get(&id).expect("acquired card is recorded");
+        let state = store.get(&id).expect("introduced card is recorded");
         assert!(
             state.recall.is_none(),
-            "acquiring does not schedule under FSRS"
+            "introducing does not schedule under FSRS"
         );
         assert_eq!(
             Some(1000),
-            state.acquired_ms,
-            "acquire stamps the acquire time"
+            state.introduced_ms,
+            "introduce stamps the introduction time"
         );
         assert!(state.history.is_empty());
         assert_eq!(0, state.total_reviews);
-        assert_eq!(1, session.stats.acquired);
+        assert_eq!(1, session.stats.introduced);
         assert_eq!(0, session.stats.reviews);
         assert!(session.is_finished());
     }
 
     #[test]
-    fn acquired_cards_are_not_due_until_the_relearn_cooldown() {
+    fn introduced_cards_are_not_due_until_the_relearn_cooldown() {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(
             cards(1),
@@ -1309,17 +1257,17 @@ mod tests {
             SessionOptions::default(),
             1000,
         );
-        session.acquire_current(&mut store, 1000);
+        session.introduce_current(&mut store, 1000);
 
         assert!(!session.has_due_now(&store, 1000));
-        assert!(!session.has_due_now(&store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1));
-        assert!(session.has_due_now(&store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
+        assert!(!session.has_due_now(&store, 1000 + DEFAULT_INTRODUCTION_COOLDOWN_MS - 1));
+        assert!(session.has_due_now(&store, 1000 + DEFAULT_INTRODUCTION_COOLDOWN_MS));
     }
 
     #[test]
-    fn an_acquired_card_returns_in_session_after_its_cooldown() {
-        for revealed_first in [false, true] {
-            let at = format!("revealed_first={revealed_first}");
+    fn an_introduced_card_returns_in_session_after_its_cooldown() {
+        {
+            let at = "plain introduce";
             let (mut store, _dir) = empty_store();
             let mut session = Session::new(
                 cards(1),
@@ -1329,16 +1277,10 @@ mod tests {
                 1000,
             );
             let id = session.current().unwrap().id();
-            if revealed_first {
-                assert!(
-                    session.reveal_current(&mut store, 1000),
-                    "{at}: a fresh card reveals"
-                );
-            }
-            session.acquire_current(&mut store, 1000);
+            session.introduce_current(&mut store, 1000);
             assert!(session.is_finished(), "{at}: the sitting empties");
             assert!(
-                session.poll(&mut store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS),
+                session.poll(&mut store, 1000 + DEFAULT_INTRODUCTION_COOLDOWN_MS),
                 "{at}: the card returns after its cooldown"
             );
             assert_eq!(
@@ -1348,7 +1290,7 @@ mod tests {
             );
             assert!(
                 !session.current_fresh(&store),
-                "{at}: it returns as a graded review, never as another acquire"
+                "{at}: it returns as a graded review, never as another introduction"
             );
         }
     }
@@ -1358,9 +1300,9 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         let first = session.current().unwrap().id();
@@ -1375,15 +1317,15 @@ mod tests {
         let all = cards(2);
         let first_id = all[0].id();
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         assert_eq!(first_id, session.current().unwrap().id());
         session.grade(&mut store, Grade::Fail, now);
         session.grade(&mut store, Grade::Pass, now + 1000);
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000);
         assert_eq!(first_id, session.current().unwrap().id());
     }
 
@@ -1394,9 +1336,9 @@ mod tests {
         let a_id = all[0].id().unwrap();
         let b_id = all[1].id().unwrap();
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
 
@@ -1407,12 +1349,7 @@ mod tests {
             "the other due card takes over right after the miss"
         );
 
-        store
-            .get_or_insert(&a_id, now)
-            .recall
-            .as_mut()
-            .unwrap()
-            .due_ms = now + 10_000;
+        store.get_or_insert(&a_id).recall.as_mut().unwrap().due_ms = now + 10_000;
 
         session.poll(&mut store, now + 30_000);
         assert_eq!(
@@ -1421,7 +1358,11 @@ mod tests {
             "the floor keeps A from immediately following itself"
         );
 
-        session.grade(&mut store, Grade::Fail, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        session.grade(
+            &mut store,
+            Grade::Fail,
+            now + DEFAULT_INTRODUCTION_COOLDOWN_MS,
+        );
         assert_eq!(
             Some(a_id.clone()),
             session.current().unwrap().id(),
@@ -1434,8 +1375,8 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        store.get_or_insert(&id, 0);
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        store.get_or_insert(&id).introduced_ms = Some(0);
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Fail, now);
@@ -1444,17 +1385,12 @@ mod tests {
             "cooling on its own retry, nothing else to serve"
         );
 
-        store
-            .get_or_insert(&id, now)
-            .recall
-            .as_mut()
-            .unwrap()
-            .due_ms = now + 1_000;
+        store.get_or_insert(&id).recall.as_mut().unwrap().due_ms = now + 1_000;
 
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS - 1);
         assert!(session.is_finished(), "the floor delays the repeat");
 
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS);
         assert_eq!(Some(id), session.current().and_then(|c| c.id()));
     }
 
@@ -1464,7 +1400,7 @@ mod tests {
         let all = cards(2);
         let earlier = all[0].id().unwrap();
         let current = all[1].id().unwrap();
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         assert_eq!(
@@ -1480,14 +1416,14 @@ mod tests {
             "failing the earlier card moves the learner to the later one"
         );
 
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS - 1);
         assert_eq!(
             Some(current.clone()),
             session.current().and_then(|c| c.id()),
             "inside the earlier card's cooldown the learner stays put"
         );
 
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS);
         assert_eq!(
             Some(current),
             session.current().and_then(|c| c.id()),
@@ -1514,7 +1450,7 @@ mod tests {
         );
         assert_eq!(Some(first.clone()), s.current().and_then(|c| c.id()));
 
-        store.get_or_insert(&first, 1_000).recognize = Some(mature_fsrs(2_000_000));
+        store.get_or_insert(&first).recognize = Some(mature_fsrs(2_000_000));
 
         s.poll(&mut store, 1_000);
         assert_eq!(
@@ -1529,7 +1465,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         let current = all[1].id().unwrap();
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Pass, now);
@@ -1539,7 +1475,7 @@ mod tests {
             "passing the earlier card moves the learner to the later one"
         );
 
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS);
         assert_eq!(
             Some(current),
             session.current().and_then(|c| c.id()),
@@ -1552,8 +1488,8 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        store.get_or_insert(&id, 0);
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        store.get_or_insert(&id).introduced_ms = Some(0);
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(
             all,
             &mut store,
@@ -1562,12 +1498,7 @@ mod tests {
             now,
         );
         session.grade(&mut store, Grade::Fail, now);
-        store
-            .get_or_insert(&id, now)
-            .recall
-            .as_mut()
-            .unwrap()
-            .due_ms = now + 500;
+        store.get_or_insert(&id).recall.as_mut().unwrap().due_ms = now + 500;
         session.poll(&mut store, now + 1_000);
         assert_eq!(Some(id), session.current().and_then(|c| c.id()));
     }
@@ -1579,9 +1510,9 @@ mod tests {
         let a_id = all[0].id().unwrap();
         let b_id = all[1].id().unwrap();
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
         assert_eq!(
@@ -1602,14 +1533,10 @@ mod tests {
             "moving off doesn't bump — only being re-served does"
         );
 
-        store
-            .get_or_insert(&a_id, now)
-            .recall
-            .as_mut()
-            .unwrap()
-            .due_ms = now + DEFAULT_ACQUIRE_COOLDOWN_MS;
+        store.get_or_insert(&a_id).recall.as_mut().unwrap().due_ms =
+            now + DEFAULT_INTRODUCTION_COOLDOWN_MS;
         session.grade(&mut store, Grade::Pass, now + 1_000);
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000);
         assert_eq!(
             Some(a_id.clone()),
             session.current().unwrap().id(),
@@ -1627,8 +1554,8 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        store.get_or_insert(&id, 0);
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        store.get_or_insert(&id).introduced_ms = Some(0);
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Fail, now);
@@ -1644,8 +1571,8 @@ mod tests {
     fn only_cooling_cards_left_finishes_the_session() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(&all[0].id().unwrap(), 0);
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        store.get_or_insert(&all[0].id().unwrap()).introduced_ms = Some(0);
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Fail, now);
         assert!(session.is_finished(), "nothing due now → finished");
@@ -1660,9 +1587,9 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Fail, now);
         session.grade(&mut store, Grade::Pass, now);
@@ -1672,7 +1599,7 @@ mod tests {
     #[test]
     fn a_recognize_gap_needs_both_the_recognize_depth_and_exclusions() {
         let (mut store, _dir) = empty_store();
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
 
         // A Recall sitting never reports a gap, even with excluded cards.
         let mut recall = Session::new(
@@ -1763,16 +1690,16 @@ mod tests {
             },
             1000,
         );
-        let mut acquired = 0;
+        let mut introduced = 0;
         while session.current().is_some() {
-            session.acquire_current(&mut store, 1000);
-            acquired += 1;
+            session.introduce_current(&mut store, 1000);
+            introduced += 1;
             assert!(
-                acquired <= 5,
+                introduced <= 5,
                 "the roster must exhaust, never serve past the deck"
             );
         }
-        assert_eq!(2, acquired, "the roster fixes the new set at start");
+        assert_eq!(2, introduced, "the roster fixes the new set at start");
     }
 
     #[test]
@@ -1780,7 +1707,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(10);
         for c in &all[7..] {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let session = Session::new(
             all.clone(),
@@ -1795,7 +1722,7 @@ mod tests {
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
                 depth: crate::depth::Depth::default(),
             },
-            DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000,
+            DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000,
         );
         assert_eq!(3, session.initial_size, "the 3 due cards, no new");
         assert_eq!("front 7", session.current().unwrap().front);
@@ -1812,7 +1739,7 @@ mod tests {
         for (offset, c) in all.iter().enumerate() {
             // Earlier last_review = older due_at; card 11 the oldest.
             let ts = (11 - offset) as u64;
-            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(FsrsState {
+            store.get_or_insert(&c.id().unwrap()).recall = Some(FsrsState {
                 stability: 1.0,
                 difficulty: 5.0,
                 state: 2,
@@ -1845,8 +1772,8 @@ mod tests {
     fn due_cards_are_ordered_by_due_time() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
-        store.get_or_insert(&all[0].id().unwrap(), 0);
-        store.get_or_insert(&all[1].id().unwrap(), 0);
+        store.get_or_insert(&all[0].id().unwrap()).introduced_ms = Some(0);
+        store.get_or_insert(&all[1].id().unwrap()).introduced_ms = Some(0);
 
         let now = 2 * 604_800_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
@@ -1861,8 +1788,8 @@ mod tests {
     fn sequential_order_follows_deck_order() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
-        store.get_or_insert(&all[0].id().unwrap(), 0);
-        store.get_or_insert(&all[1].id().unwrap(), 0);
+        store.get_or_insert(&all[0].id().unwrap()).introduced_ms = Some(0);
+        store.get_or_insert(&all[1].id().unwrap()).introduced_ms = Some(0);
 
         let now = 2 * 604_800_000;
         let mut session = Session::new(
@@ -1887,9 +1814,9 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let now = 5_000_000;
-        store.get_or_insert(&all[0].id().unwrap(), now);
+        store.get_or_insert(&all[0].id().unwrap()).introduced_ms = Some(now);
 
-        // An acquired card is a due-pool card, so no-new intake is irrelevant;
+        // An introduced card is a due-pool card, so no-new intake is irrelevant;
         // it is simply not due one ms into its cooldown.
         let session = Session::new(
             all.clone(),
@@ -1918,9 +1845,9 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!(2, session.remaining());
 
@@ -2190,14 +2117,14 @@ mod tests {
         let c = card("deck.md", 0);
 
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
-        store.get_or_insert(&c.id().unwrap(), 0).recall = Some(retired_fsrs());
+        store.get_or_insert(&c.id().unwrap()).recall = Some(retired_fsrs());
         assert!(is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
-        store.get_or_insert(&c.id().unwrap(), 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&c.id().unwrap()).recall = Some(crate::store::FsrsState {
             scheduled_days: DEFAULT_RETIRE_AFTER_DAYS - 1,
             ..Default::default()
         });
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
-        let s = store.get_or_insert(&c.id().unwrap(), 0);
+        let s = store.get_or_insert(&c.id().unwrap());
         s.recall = None;
         s.streak = 1;
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
@@ -2219,9 +2146,9 @@ mod tests {
         ));
 
         let c = card("deck.md", 0);
-        let s = store.get_or_insert(&c.id().unwrap(), now);
+        let s = store.get_or_insert(&c.id().unwrap());
         s.streak = 1;
-        s.acquired_ms = Some(now);
+        s.introduced_ms = Some(now);
         let one = std::slice::from_ref(&c);
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         assert!(!has_reviewable(
@@ -2241,7 +2168,7 @@ mod tests {
             cap
         ));
 
-        store.get_or_insert(&c.id().unwrap(), now).recall = Some(retired_fsrs());
+        store.get_or_insert(&c.id().unwrap()).recall = Some(retired_fsrs());
         assert!(!has_reviewable(
             std::slice::from_ref(&c),
             &store,
@@ -2256,7 +2183,7 @@ mod tests {
     fn retired_card_excluded_even_under_cram() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(retired_fsrs());
+        store.get_or_insert(&all[0].id().unwrap()).recall = Some(retired_fsrs());
 
         let session = Session::new(
             all,
@@ -2275,7 +2202,7 @@ mod tests {
     fn a_due_cram_pass_grades_like_a_normal_review() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(mature_fsrs(1000));
+        store.get_or_insert(&all[0].id().unwrap()).recall = Some(mature_fsrs(1000));
         let now = 40 * 86_400_000;
 
         let mut session = Session::new(
@@ -2302,7 +2229,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let now = 10 * 86_400_000;
-        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(mature_fsrs(40 * 86_400_000));
+        store.get_or_insert(&all[0].id().unwrap()).recall = Some(mature_fsrs(40 * 86_400_000));
         let before = store.get(&all[0].id().unwrap()).unwrap().recall.unwrap();
 
         let mut session = Session::new(
@@ -2329,7 +2256,7 @@ mod tests {
     fn cram_miss_lapses_normally() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&all[0].id().unwrap()).recall = Some(crate::store::FsrsState {
             stability: 30.0,
             difficulty: 5.0,
             scheduled_days: 30,
@@ -2360,7 +2287,7 @@ mod tests {
         let all = cards(2);
         let id_a = all[0].id().unwrap();
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(crate::store::FsrsState {
+            store.get_or_insert(&c.id().unwrap()).recall = Some(crate::store::FsrsState {
                 stability: 30.0,
                 difficulty: 5.0,
                 scheduled_days: 30,
@@ -2391,13 +2318,13 @@ mod tests {
     #[test]
     fn chained_cram_serves_disjoint_batches_off_a_first_learning_event() {
         let (mut store, _dir) = empty_store();
-        // Three acquired-but-unscheduled cards. A cram pass on a not-yet-due
+        // Three introduced-but-unscheduled cards. A cram pass on a not-yet-due
         // card with no schedule must be a genuine first learning event, so its
         // due moves out and a chained sitting reaches the next card instead of
         // looping the same one.
         let all = cards(3);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let t1 = 1;
         let mut s = Session::new(
@@ -2421,7 +2348,7 @@ mod tests {
 
         // Restart past the first card's floor: its due has moved out, so it no
         // longer leads, and a fresh card takes the slot.
-        assert!(s.restart(&mut store, t1 + DEFAULT_ACQUIRE_COOLDOWN_MS));
+        assert!(s.restart(&mut store, t1 + DEFAULT_INTRODUCTION_COOLDOWN_MS));
         let second = s.current().unwrap().id().unwrap();
         assert_ne!(first, second, "the chained batch is disjoint");
     }
@@ -2436,9 +2363,9 @@ mod tests {
         // while a servable card remains).
         let all = cards(3);
         let a = all[0].id().unwrap();
-        store.get_or_insert(&a, 0).recall = Some(mature_fsrs(5));
+        store.get_or_insert(&a).recall = Some(mature_fsrs(5));
         for c in &all[1..] {
-            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(mature_fsrs(1_000));
+            store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(1_000));
         }
         let t1 = 2_000_000;
         let mut s = Session::new(
@@ -2459,7 +2386,7 @@ mod tests {
             "oldest-due leads"
         );
         s.grade(&mut store, Grade::Pass, t1);
-        store.get_or_insert(&a, t1).recall.as_mut().unwrap().due_ms = 5;
+        store.get_or_insert(&a).recall.as_mut().unwrap().due_ms = 5;
         assert!(s.is_finished(), "cap 1: the sitting ends after the grade");
 
         let t2 = t1 + 1_000;
@@ -2519,11 +2446,11 @@ mod tests {
     #[test]
     fn cram_remaining_split_subtracts_what_the_sitting_already_drilled() {
         let (mut store, _dir) = empty_store();
-        // Five acquired cards, all eligible under cram; cap 2. After drilling the
+        // Five introduced cards, all eligible under cram; cap 2. After drilling the
         // sitting, the backlog counts the three not yet served, not all five.
         let all = cards(5);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(mature_fsrs(10));
+            store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(10));
         }
         let now = 2_000_000;
         let mut s = Session::new(
@@ -2564,7 +2491,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
         let mut session = Session::new(
@@ -2589,10 +2516,10 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         let now = 5_000_000;
-        store.get_or_insert(&all[0].id().unwrap(), 0);
-        store.get_or_insert(&all[1].id().unwrap(), now);
+        store.get_or_insert(&all[0].id().unwrap()).introduced_ms = Some(0);
+        store.get_or_insert(&all[1].id().unwrap()).introduced_ms = Some(now);
         let topo = topology_order(&[&all[1], &all[0]]);
-        // Both cards are acquired, so the never-met pool is empty; only card 0
+        // Both cards are introduced, so the never-met pool is empty; only card 0
         // is due, and the walk cannot re-admit the not-due card 1.
         let session = Session::new(
             all.clone(),
@@ -2613,7 +2540,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let topo = topology_order(&[&all[1]]);
         let mut session = Session::new(
@@ -2637,7 +2564,7 @@ mod tests {
     fn retired_card_excluded_even_with_a_topology() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(retired_fsrs());
+        store.get_or_insert(&all[0].id().unwrap()).recall = Some(retired_fsrs());
         let topo = topology_order(&[&all[0]]);
         let session = Session::new(
             all.clone(),
@@ -2676,7 +2603,7 @@ mod tests {
         let other = card("d.md", 3);
         let all = vec![sib_a.clone(), sib_b.clone(), other.clone()];
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let topo = topology_order(&[&sib_a, &sib_b, &other]);
         let mut session = Session::new(
@@ -2707,7 +2634,7 @@ mod tests {
         let now = 10 * 604_800_000;
         for (i, c) in all.iter().enumerate() {
             let ts = i as u64; // card 3 has the smallest (oldest) due_at
-            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(FsrsState {
+            store.get_or_insert(&c.id().unwrap()).recall = Some(FsrsState {
                 stability: 1.0,
                 difficulty: 5.0,
                 state: 2,
@@ -2746,35 +2673,92 @@ mod tests {
     const CAP: Option<u32> = Some(DEFAULT_RETIRE_AFTER_DAYS);
 
     #[test]
-    fn a_first_presentation_stamps_once_and_later_presentations_never_rewrite() {
-        let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        let id = all[0].id().unwrap();
-        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1_000);
-
-        assert_eq!(Some(1_000), store.get(&id).unwrap().presented_ms);
-        assert!(session.take_presented_stamped(), "the first showing wrote");
-        assert!(!session.take_presented_stamped(), "the latch is one-shot");
-
-        session.poll(&mut store, 2_000);
-        assert!(!session.take_presented_stamped(), "same showing, no write");
-
-        session.acquire_current(&mut store, 3_000);
-        session.poll(&mut store, 3_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
-        assert_eq!(Some(id.clone()), session.current().and_then(|c| c.id()));
-        assert!(
-            !session.take_presented_stamped(),
-            "a second presentation is a no-op"
+    fn durable_state_changes_only_when_leaving_the_current_card() {
+        // ADR 0035's invariant, law-shaped: for every session entry point that
+        // takes `&mut Store`, either the current card changes or the
+        // serialized store is byte-identical afterwards. Presentation and
+        // arrival write nothing; grading and the Seen press write on
+        // departure.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        let mut store = Store::open(&path).unwrap();
+        // The saved document's `revision` ticks on every save, so the law
+        // compares the card state itself.
+        let snapshot = |store: &mut Store| {
+            store.save().unwrap();
+            let value: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            format!("{}{}", value["cards"], value["records"])
+        };
+        let all = cards(2);
+        let before_build = snapshot(&mut store);
+        let mut session = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1_000,
         );
         assert_eq!(
-            Some(1_000),
-            store.get(&id).unwrap().presented_ms,
-            "the first-presented instant never moves"
+            before_build,
+            snapshot(&mut store),
+            "building a session presents a card and writes nothing"
+        );
+
+        type Action = Box<dyn Fn(&mut Session, &mut Store)>;
+        let cases: Vec<(&str, Action)> = vec![
+            (
+                "poll",
+                Box::new(|s, st| {
+                    s.poll(st, 2_000);
+                }),
+            ),
+            ("skip", Box::new(|s, st| s.skip(st, 2_000))),
+            (
+                "restart",
+                Box::new(|s, st| {
+                    s.restart(st, 2_000);
+                }),
+            ),
+        ];
+        for (name, act) in cases {
+            let current = session.current().and_then(|c| c.id());
+            let before = snapshot(&mut store);
+            act(&mut session, &mut store);
+            let after_current = session.current().and_then(|c| c.id());
+            assert!(
+                current != after_current || before == snapshot(&mut store),
+                "{name}: stayed on the card yet mutated the store"
+            );
+        }
+
+        let before = snapshot(&mut store);
+        let current = session.current().and_then(|c| c.id());
+        session.grade(&mut store, Grade::Pass, 2_000);
+        assert_ne!(
+            current,
+            session.current().and_then(|c| c.id()),
+            "grading departs"
+        );
+        assert_ne!(before, snapshot(&mut store), "grading writes on departure");
+
+        let before = snapshot(&mut store);
+        let current = session.current().and_then(|c| c.id());
+        session.introduce_current(&mut store, 2_000);
+        assert_ne!(
+            current,
+            session.current().and_then(|c| c.id()),
+            "the Seen press departs"
+        );
+        assert_ne!(
+            before,
+            snapshot(&mut store),
+            "the Seen press writes on departure"
         );
     }
 
     #[test]
-    fn a_presented_then_failed_card_is_seen_with_no_acquire_fact() {
+    fn a_presented_then_failed_card_is_seen_with_no_introduction_fact() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
@@ -2792,14 +2776,14 @@ mod tests {
 
         let state = store.get(&id).expect("the failed attempt left an entry");
         assert_eq!(
-            None, state.acquired_ms,
-            "never gotten right, never acquired"
+            None, state.introduced_ms,
+            "a grade never introduces; only the Seen press does"
         );
-        assert_eq!(Some(1_000), state.presented_ms);
+        assert_eq!(0, state.total_passes);
         assert_eq!(
             vec![CardTier::Seen],
             card_tiers(&[id], &store, 1_000, CAP),
-            "presented plus failed reads as seen, not acquired"
+            "a failed attempt reads as seen, never learning"
         );
     }
 
@@ -2815,10 +2799,16 @@ mod tests {
             SessionOptions::default(),
             1_000,
         );
-        assert!(session.current_fresh(&store), "still the acquire on-ramp");
+        assert!(
+            session.current_fresh(&store),
+            "still the introduction on-ramp"
+        );
         assert_eq!(None, session.next_due_at(&store));
         drop(session);
-        assert!(store.get(&id).is_some(), "the presentation left its stamp");
+        assert!(
+            store.get(&id).is_none(),
+            "presentation alone writes nothing at all"
+        );
 
         let capped = Session::new(
             all,
@@ -2837,20 +2827,22 @@ mod tests {
     }
 
     #[test]
-    fn card_tiers_maps_untouched_seen_acquired_and_retired() {
+    fn card_tiers_maps_unseen_seen_learning_and_retired() {
         let (mut store, _dir) = empty_store();
         let seen = "seen".to_string();
-        store.note_presented(&seen, 1_000);
-        let acquired = "acquired".to_string();
-        store.get_or_insert(&acquired, 1_000);
+        store.get_or_insert(&seen).introduced_ms = Some(1_000);
+        let learning = "learning".to_string();
+        store
+            .get_or_insert(&learning)
+            .record_review(1_000, Grade::Pass, Depth::Recall, false);
         let retired = "retired".to_string();
-        store.get_or_insert(&retired, 1_000).recall = Some(retired_fsrs());
-        let ids = ["untouched".to_string(), seen, acquired, retired];
+        store.get_or_insert(&retired).recall = Some(retired_fsrs());
+        let ids = ["unseen".to_string(), seen, learning, retired];
         assert_eq!(
             vec![
-                CardTier::Untouched,
+                CardTier::Unseen,
                 CardTier::Seen,
-                CardTier::Acquired,
+                CardTier::Learning,
                 CardTier::Retired,
             ],
             card_tiers(&ids, &store, 1_000, CAP)
@@ -2859,10 +2851,25 @@ mod tests {
     }
 
     #[test]
+    fn a_first_sight_fail_is_seen_never_learning() {
+        // The published ladder's core promise: the tier reflects what the
+        // learner DID. A wrong answer is not "correct at least once".
+        let (mut store, _dir) = empty_store();
+        let id = "missed".to_string();
+        store
+            .get_or_insert(&id)
+            .record_review(1_000, Grade::Fail, Depth::Recall, false);
+        assert_eq!(
+            vec![CardTier::Seen],
+            card_tiers(std::slice::from_ref(&id), &store, 1_000, CAP)
+        );
+    }
+
+    #[test]
     fn learned_tiers_band_current_retrievability_not_history() {
         let (mut store, _dir) = empty_store();
         let id = "learned".to_string();
-        store.get_or_insert(&id, 0).recall = Some(FsrsState {
+        store.get_or_insert(&id).recall = Some(FsrsState {
             stability: 10.0,
             state: 2,
             ..Default::default()
@@ -2895,27 +2902,30 @@ mod tests {
             card_tiers(std::slice::from_ref(&id), &store, 100 * day, CAP)
         );
 
-        store.get_or_insert(&id, 0).recall = Some(FsrsState {
+        store.get_or_insert(&id).recall = Some(FsrsState {
             stability: 10.0,
             state: 1,
             ..Default::default()
         });
+        store
+            .get_or_insert(&id)
+            .record_review(0, Grade::Pass, Depth::Recall, false);
         assert_eq!(
-            vec![CardTier::Acquired],
+            vec![CardTier::Learning],
             card_tiers(std::slice::from_ref(&id), &store, 0, CAP),
-            "a not-yet-graduated schedule is acquired, never banded"
+            "a not-yet-graduated passed card is learning, never banded"
         );
     }
 
     #[test]
-    fn every_engaged_card_was_presented_first() {
+    fn every_engaged_card_carries_its_engagement_not_a_presentation() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1_000);
-        session.acquire_current(&mut store, 1_000);
-        session.acquire_current(&mut store, 1_000);
-        session.acquire_current(&mut store, 1_000);
-        let now = 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS;
+        session.introduce_current(&mut store, 1_000);
+        session.introduce_current(&mut store, 1_000);
+        session.introduce_current(&mut store, 1_000);
+        let now = 1_000 + DEFAULT_INTRODUCTION_COOLDOWN_MS;
         session.poll(&mut store, now);
         session.grade(&mut store, Grade::Fail, now);
         session.grade(&mut store, Grade::Pass, now);
@@ -2923,11 +2933,9 @@ mod tests {
         let ids: Vec<String> = session.cards().iter().filter_map(|c| c.id()).collect();
         for id in &ids {
             let state = store.get(id).expect("every card was served");
-            assert!(state.engaged());
             assert!(
-                state.presented_ms.is_some(),
-                "grading or acquiring happens to the current card, so the \
-                 presentation stamp always lands first ({id})"
+                state.engaged(),
+                "an entry exists only because the learner DID something ({id})"
             );
         }
     }
@@ -2936,7 +2944,7 @@ mod tests {
     fn a_personal_card_joins_the_roster_and_is_served() {
         let (mut store, _dir) = empty_store();
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let session = Session::new(
             vec![synth],
             &mut store,
@@ -2953,7 +2961,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let mut session = Session::new(
             vec![synth],
             &mut store,
@@ -2973,7 +2981,7 @@ mod tests {
     fn a_personal_card_is_not_treated_as_unseen() {
         let (mut store, _dir) = empty_store();
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let session = Session::new(
             vec![synth],
             &mut store,
@@ -2990,9 +2998,9 @@ mod tests {
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let synth_id = synth.id();
         let deck_card = card("deck.md", 0);
-        store.get_or_insert(&deck_card.id().unwrap(), 0);
+        store.get_or_insert(&deck_card.id().unwrap()).introduced_ms = Some(0);
 
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = Session::new(
             vec![synth, deck_card],
             &mut store,
@@ -3004,21 +3012,21 @@ mod tests {
         assert_eq!(synth_id, session.current().unwrap().id());
         session.grade(&mut store, Grade::Fail, now);
         session.grade(&mut store, Grade::Pass, now + 1000);
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000);
         assert_eq!(synth_id, session.current().unwrap().id());
     }
 
     #[test]
     fn counting_personal_cards_counts_due_and_excludes_archived() {
         let (mut store, _dir) = empty_store();
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         let sched = sched();
 
         let due = personal_card(&mut store, "deck.md", "gap-due", 0);
         let not_due = personal_card(&mut store, "deck.md", "gap-not-due", now);
         let archived = personal_card(&mut store, "deck.md", "gap-archived", 0);
-        store.get_or_insert(&archived.id().unwrap(), 0).recall = Some(retired_fsrs());
+        store.get_or_insert(&archived.id().unwrap()).recall = Some(retired_fsrs());
 
         let personal = [due, not_due, archived];
         assert_eq!(
@@ -3056,7 +3064,7 @@ mod tests {
         let due = session
             .next_due_at(&store)
             .expect("a personal card's due time is reported");
-        assert_eq!(1000 + DEFAULT_ACQUIRE_COOLDOWN_MS, due);
+        assert_eq!(1000 + DEFAULT_INTRODUCTION_COOLDOWN_MS, due);
     }
 
     #[test]
@@ -3069,7 +3077,7 @@ mod tests {
             ..SessionOptions::default()
         };
 
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let mut session = Session::new(
             vec![synth.clone()],
             &mut store,
@@ -3121,14 +3129,14 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
-        store.get_or_insert(&id, 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&id).recall = Some(crate::store::FsrsState {
             scheduled_days: 10,
             ..Default::default()
         });
         assert!(is_retired_id(&id, &store, Some(10)));
         assert!(!is_retired_id(&id, &store, Some(20)));
 
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let sched = sched();
         assert_eq!(
             0,
@@ -3159,9 +3167,9 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
-        store.get_or_insert(&id, 0).recall = Some(retired_fsrs());
+        store.get_or_insert(&id).recall = Some(retired_fsrs());
 
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let session = Session::new(
             vec![synth.clone()],
             &mut store,
@@ -3184,7 +3192,7 @@ mod tests {
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
 
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let mut session = Session::new(
             vec![synth],
             &mut store,
@@ -3202,7 +3210,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        store.get_or_insert(&id, 0).recall = Some(FsrsState {
+        store.get_or_insert(&id).recall = Some(FsrsState {
             stability: 30.0,
             state: 2,
             ..Default::default()
@@ -3234,7 +3242,7 @@ mod tests {
     fn a_recall_drilled_deck_is_immediately_due_at_reconstruct() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(FsrsState {
+        store.get_or_insert(&all[0].id().unwrap()).recall = Some(FsrsState {
             stability: 30.0,
             state: 2,
             due_ms: u64::MAX,
@@ -3296,7 +3304,7 @@ mod tests {
             s.remaining(),
             "the wrong pick re-queues, but the floor holds it back"
         );
-        s.poll(&mut store, 2_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        s.poll(&mut store, 2_000 + DEFAULT_INTRODUCTION_COOLDOWN_MS);
         assert_eq!(
             1,
             s.remaining(),
@@ -3334,7 +3342,7 @@ mod tests {
         s.grade(
             &mut store,
             Grade::Fail,
-            1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS + 500,
+            1_000 + DEFAULT_INTRODUCTION_COOLDOWN_MS + 500,
         );
         assert_eq!(
             a,
@@ -3365,10 +3373,10 @@ mod tests {
             "the only card floors instead of resurfacing instantly"
         );
 
-        s.poll(&mut store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
+        s.poll(&mut store, 1_000 + DEFAULT_INTRODUCTION_COOLDOWN_MS - 1);
         assert!(s.is_finished(), "the floor hasn't passed yet");
 
-        s.poll(&mut store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        s.poll(&mut store, 1_000 + DEFAULT_INTRODUCTION_COOLDOWN_MS);
         assert_eq!(
             Some(id),
             s.current().and_then(|c| c.id()),
@@ -3380,7 +3388,7 @@ mod tests {
     fn recognize_queue_holds_only_due_cards() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        store.get_or_insert(&all[0].id().unwrap(), 0).recognize = Some(mature_fsrs(2_000_000));
+        store.get_or_insert(&all[0].id().unwrap()).recognize = Some(mature_fsrs(2_000_000));
         let s = Session::new(
             all,
             &mut store,
@@ -3399,7 +3407,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(42));
+        store.get_or_insert(&id).recall = Some(mature_fsrs(42));
         let now = 1_000_000;
         let session = Session::new(
             all,
@@ -3446,7 +3454,7 @@ mod tests {
         // new: 7 met + 3 never-met, and the met sweep finishes across sittings.
         let all = cards(20);
         for c in &all[..15] {
-            store.get_or_insert(&c.id().unwrap(), 0).recognize = Some(mature_fsrs(500));
+            store.get_or_insert(&c.id().unwrap()).recognize = Some(mature_fsrs(500));
         }
         let now = 1_000;
         let s = Session::new(
@@ -3479,7 +3487,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
         let mut s = Session::new(
@@ -3505,7 +3513,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let mut s = Session::new(
             all,
@@ -3552,7 +3560,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0);
+            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
         }
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
         let mut s = Session::new(
@@ -3604,7 +3612,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(500));
+        store.get_or_insert(&id).recall = Some(mature_fsrs(500));
         let now = 40 * 86_400_000;
 
         let mut s = reconstruct_session(all, &mut store, false, now);
@@ -3664,6 +3672,28 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_recognize_reopen_reports_when_the_scheduled_card_returns() {
+        // Codex tenth pass, P2: the flag-era next_due_at guard returned None
+        // for Recognize wholesale; a scheduled depth owes its return time.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let now = 1_000_000;
+        let mut s = recognize_session(all.clone(), &mut store, false, now);
+        s.grade(&mut store, Grade::Pass, now);
+        let due = store.get(&id).unwrap().recognize.unwrap().due_ms;
+        assert!(due > now);
+
+        let reopened = recognize_session(all, &mut store, false, now + 1);
+        assert!(reopened.is_finished(), "nothing is due yet");
+        assert_eq!(
+            Some(due),
+            reopened.next_due_at(&store),
+            "the empty screen must say when the scheduled card returns"
+        );
+    }
+
+    #[test]
     fn recognize_counts_in_reviews_passed_and_failed() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
@@ -3710,7 +3740,7 @@ mod tests {
         let all = cards(1);
         let id = all[0].id().unwrap();
         let now = 40 * 86_400_000;
-        let state = store.get_or_insert(&id, 0);
+        let state = store.get_or_insert(&id);
         state.recognize = Some(mature_fsrs(500));
 
         let mut s = reconstruct_session(all, &mut store, false, now);
@@ -3737,7 +3767,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id().unwrap();
-        let state = store.get_or_insert(&id, 0);
+        let state = store.get_or_insert(&id);
         state.recall = Some(mature_fsrs(500));
         state.recognize = Some(mature_fsrs(500));
         let mut s = recall_session(all, &mut store, now);
@@ -3752,7 +3782,7 @@ mod tests {
         let all2 = cards(1);
         let id2 = all2[0].id().unwrap();
         let future = 80 * 86_400_000;
-        let state2 = store2.get_or_insert(&id2, 0);
+        let state2 = store2.get_or_insert(&id2);
         state2.recall = Some(mature_fsrs(500));
         state2.recognize = Some(mature_fsrs(future));
         let mut s2 = recall_session(all2, &mut store2, now);
@@ -3776,7 +3806,7 @@ mod tests {
         let all = cards(1);
         let id = all[0].id().unwrap();
         let now = 1_000_000;
-        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(500));
+        store.get_or_insert(&id).recall = Some(mature_fsrs(500));
 
         let mut s = recall_session(all, &mut store, now);
         s.grade(&mut store, Grade::Pass, now);
@@ -3807,7 +3837,7 @@ mod tests {
         let all = cards(1);
         let id = all[0].id().unwrap();
         let now = 1_000_000;
-        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(2_000_000));
+        store.get_or_insert(&id).recall = Some(mature_fsrs(2_000_000));
 
         let mut s = reconstruct_session(all, &mut store, false, now);
         s.grade(&mut store, Grade::Pass, now);
@@ -3832,7 +3862,7 @@ mod tests {
         let all = cards(1);
         let id = all[0].id().unwrap();
         let now = 1_000_000;
-        store.get_or_insert(&id, 0).reconstruct = Some(mature_fsrs(500));
+        store.get_or_insert(&id).reconstruct = Some(mature_fsrs(500));
 
         let mut s = reconstruct_session(all, &mut store, false, now);
         s.grade(&mut store, Grade::Pass, now);
@@ -3849,7 +3879,7 @@ mod tests {
         let all = cards(2);
         let now = 1_000_000;
         for c in &all {
-            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(mature_fsrs(500));
+            store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(500));
         }
 
         let mut s = reconstruct_session(all.clone(), &mut store, false, now);
@@ -3874,7 +3904,7 @@ mod tests {
         let all = cards(1);
         let id = all[0].id().unwrap();
         let now = 40 * 86_400_000;
-        let state = store.get_or_insert(&id, 0);
+        let state = store.get_or_insert(&id);
         state.recall = Some(mature_fsrs(500));
         state.reconstruct = Some(mature_fsrs(500));
 
@@ -3905,7 +3935,7 @@ mod tests {
         let id = all[0].id().unwrap();
         let now = 10 * 86_400_000;
         let future = 40 * 86_400_000;
-        let state = store.get_or_insert(&id, 0);
+        let state = store.get_or_insert(&id);
         state.recall = Some(mature_fsrs(future));
         state.reconstruct = Some(mature_fsrs(future));
 
@@ -3934,7 +3964,7 @@ mod tests {
         let all = cards(2);
         let now = 1_000_000;
         for card in &all {
-            store.get_or_insert(&card.id().unwrap(), 0).recognize = Some(mature_fsrs(2_000_000));
+            store.get_or_insert(&card.id().unwrap()).recognize = Some(mature_fsrs(2_000_000));
         }
 
         let normal = Session::new(
@@ -3969,7 +3999,7 @@ mod tests {
         let all = cards(3);
         let now = 40 * 86_400_000;
         for card in &all {
-            store.get_or_insert(&card.id().unwrap(), 0).recognize = Some(mature_fsrs(500));
+            store.get_or_insert(&card.id().unwrap()).recognize = Some(mature_fsrs(500));
         }
 
         let mut recall = Session::new(
@@ -4022,10 +4052,10 @@ mod tests {
     #[test]
     fn a_recognize_session_counts_in_the_generic_review_tallies() {
         let (mut store, _dir) = empty_store();
-        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
         let all = cards(3);
         for card in &all {
-            store.get_or_insert(&card.id().unwrap(), 0);
+            store.get_or_insert(&card.id().unwrap()).introduced_ms = Some(0);
         }
         let mut session = Session::new(
             all,
@@ -4095,7 +4125,7 @@ mod tests {
             ("overdue", 999),
         ] {
             let card = personal_card(&mut store, "d.md", back, 0);
-            store.get_or_insert(&card.id().unwrap(), 0).recall = Some(scheduled(due));
+            store.get_or_insert(&card.id().unwrap()).recall = Some(scheduled(due));
             personal.push(card);
         }
         let retired = personal_card(&mut store, "d.md", "retired but in window", 0);
@@ -4103,7 +4133,7 @@ mod tests {
         retired_state.state = 2;
         retired_state.stability = 1.0;
         retired_state.due_ms = 1_050;
-        store.get_or_insert(&retired.id().unwrap(), 0).recall = Some(retired_state);
+        store.get_or_insert(&retired.id().unwrap()).recall = Some(retired_state);
 
         personal.push(retired);
         let count = count_due_soon(

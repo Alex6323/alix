@@ -294,7 +294,7 @@ fn deck_due(
     review: &ReviewConfig,
     now_ms: u64,
 ) -> bool {
-    let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
+    let scheduler = Fsrs::new(review.retention, review.introduction_cooldown_ms);
     let retire = review.retire_after_days;
     // Recognize needs both due AND recognizable, or an un-augmented deck
     // over-reports as due.
@@ -425,7 +425,7 @@ pub fn deck_status(
     // exam re-sit cooldown is enforced at the launch sites, not here.
     let has_exam = deck.has_exam();
     let examable = has_exam && !actually_locked;
-    let scheduler = crate::scheduler::Fsrs::new(review.retention, review.acquire_cooldown_ms);
+    let scheduler = crate::scheduler::Fsrs::new(review.retention, review.introduction_cooldown_ms);
     let now = session::now_ms();
     // A card counts only if it's both unrecognized AND recognizable; an
     // un-augmented card must never count as due.
@@ -668,7 +668,7 @@ mod tests {
         let deck = Deck::load(deck_path).unwrap();
         let scheduler = Fsrs::default();
         for card in &deck.cards {
-            let state = store.get_or_insert(&card.id().unwrap(), T0);
+            let state = store.get_or_insert(&card.id().unwrap());
             scheduler.apply(state, Depth::Recognize, Grade::Pass, T0, false);
             scheduler.apply(state, Depth::Recall, Grade::Pass, T0, false);
             scheduler.apply(state, Depth::Reconstruct, Grade::Pass, T0, false);
@@ -886,7 +886,7 @@ mod tests {
             .unwrap();
         let paths = workspace::deck_files(&ws);
         let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
-        store.get_or_insert(&base_id, T0).recall = Some(graduated_not_due(T0));
+        store.get_or_insert(&base_id).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
         let review = ReviewConfig::default();
 
@@ -1026,7 +1026,7 @@ mod tests {
             .unwrap();
         let mut store =
             crate::state::open_store(&ws.join("decks/zzz-examdue.md"), &store_path).unwrap();
-        let entry = store.get_or_insert(&examdue_id, T0);
+        let entry = store.get_or_insert(&examdue_id);
         entry.recognize = Some(graduated_not_due(T0));
         entry.recall = Some(graduated_not_due(T0));
         entry.reconstruct = Some(graduated_not_due(T0));
@@ -1115,7 +1115,7 @@ mod tests {
             .id()
             .unwrap();
         crate::personal::append_cards(deck, deck_id, block).unwrap();
-        store.get_or_insert(&id, 0);
+        store.get_or_insert(&id).introduced_ms = Some(0);
     }
 
     #[test]
@@ -1132,7 +1132,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
-        let entry = store.get_or_insert(&card_id, now);
+        let entry = store.get_or_insert(&card_id);
         entry.recognize = Some(graduated_not_due(now));
         entry.recall = Some(graduated_not_due(now));
         entry.reconstruct = Some(graduated_not_due(now));
@@ -1201,7 +1201,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
-        store.get_or_insert(&card_id, now).recall = Some(mature(now, 25.0));
+        store.get_or_insert(&card_id).recall = Some(mature(now, 25.0));
 
         let status = deck_status(
             &deck,
@@ -1234,9 +1234,7 @@ mod tests {
         let mut augment = AugmentCache::open(dir.path().join("deck1-generated.json"));
         arm(&mut augment, &deck.cards);
         let now = session::now_ms();
-        store
-            .get_or_insert(&deck.cards[0].id().unwrap(), now)
-            .recognize = Some(graduated_not_due(now));
+        store.get_or_insert(&deck.cards[0].id().unwrap()).recognize = Some(graduated_not_due(now));
 
         let status = deck_status(
             &deck,
@@ -1249,9 +1247,7 @@ mod tests {
         assert!(status.reviewable_recognize);
         assert!(status.can_recognize);
 
-        store
-            .get_or_insert(&deck.cards[1].id().unwrap(), now)
-            .recognize = Some(graduated_not_due(now));
+        store.get_or_insert(&deck.cards[1].id().unwrap()).recognize = Some(graduated_not_due(now));
         let status = deck_status(
             &deck,
             &store,
@@ -1317,7 +1313,7 @@ mod tests {
         let mut store =
             crate::state::open_store(&ws.join("decks/done.md"), &workspace::store_path(&ws))
                 .unwrap();
-        store.get_or_insert(&done_id, T0).recall = Some(graduated_not_due(T0));
+        store.get_or_insert(&done_id).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 
         let review = ReviewConfig::default();
@@ -1390,7 +1386,7 @@ mod tests {
         let deck = Deck::load(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
-        let entry = store.get_or_insert(&deck.cards[0].id().unwrap(), now);
+        let entry = store.get_or_insert(&deck.cards[0].id().unwrap());
         entry.recall = Some(graduated_not_due(now));
         entry.reconstruct = Some(graduated_not_due(now));
 
@@ -1421,7 +1417,7 @@ mod tests {
         let deck = Deck::load(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
-        let entry = store.get_or_insert(&deck.cards[0].id().unwrap(), now);
+        let entry = store.get_or_insert(&deck.cards[0].id().unwrap());
         entry.recall = Some(graduated_not_due(now));
         entry.reconstruct = Some(graduated_not_due(now));
 
@@ -1464,7 +1460,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
-        let entry = store.get_or_insert(&card_id, now);
+        let entry = store.get_or_insert(&card_id);
         entry.recall = Some(mature(now, 25.0));
         entry.reconstruct = Some(mature(now, 30.0));
 
@@ -1494,15 +1490,15 @@ mod tests {
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id().unwrap();
-        store.get_or_insert(&card_id, now).recall = Some(mature(now, 25.0));
-        crate::store::note_badges(
+        store.get_or_insert(&card_id).recall = Some(mature(now, 25.0));
+        crate::store::record_badges(
             &mut store,
             deck.deck_token.as_deref().unwrap(),
             &deck.cards,
             now,
         );
 
-        store.get_or_insert(&card_id, now).recall = Some(mature(now, 5.0));
+        store.get_or_insert(&card_id).recall = Some(mature(now, 5.0));
 
         let status = deck_status(
             &deck,
@@ -1557,9 +1553,7 @@ mod tests {
 
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
         let now = session::now_ms();
-        store
-            .get_or_insert(&deck.cards[0].id().unwrap(), now)
-            .recall = Some(graduated_not_due(now));
+        store.get_or_insert(&deck.cards[0].id().unwrap()).recall = Some(graduated_not_due(now));
 
         let status = deck_status(
             &deck,

@@ -443,7 +443,7 @@ pub struct ReviewConfig {
     pub retention: f64,
     pub recognize_retention: f64,
     pub retire_after_days: Option<u32>,
-    pub acquire_cooldown_ms: u64,
+    pub introduction_cooldown_ms: u64,
     pub max_session: Option<usize>,
     pub new_cards_percent: Option<u8>,
     pub deadline: Option<chrono::NaiveDate>,
@@ -456,7 +456,7 @@ impl Default for ReviewConfig {
             retention: 0.9,
             recognize_retention: crate::scheduler::DEFAULT_RECOGNIZE_RETENTION,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
-            acquire_cooldown_ms: crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
+            introduction_cooldown_ms: crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS,
             max_session: None,
             new_cards_percent: None,
             deadline: None,
@@ -488,10 +488,10 @@ impl ReviewConfig {
         {
             review.retire_after_days = days;
         }
-        if let Some(cooldown) = raw.review.acquire_cooldown
-            && let Ok(ms) = parse_acquire_cooldown(&cooldown)
+        if let Some(cooldown) = raw.review.introduction_cooldown
+            && let Ok(ms) = parse_introduction_cooldown(&cooldown)
         {
-            review.acquire_cooldown_ms = ms;
+            review.introduction_cooldown_ms = ms;
         }
         if let Some(n) = raw.review.max_session {
             review.max_session = Some(n);
@@ -569,7 +569,7 @@ struct RawReviewConfig {
     retention: Option<f64>,
     recognize_retention: Option<f64>,
     retire_after: Option<String>,
-    acquire_cooldown: Option<String>,
+    introduction_cooldown: Option<String>,
     max_session: Option<usize>,
     new_cards_percent: Option<u8>,
 }
@@ -580,7 +580,7 @@ struct RawLocalReviewConfig {
     retention: Option<f64>,
     recognize_retention: Option<f64>,
     retire_after: Option<String>,
-    acquire_cooldown: Option<String>,
+    introduction_cooldown: Option<String>,
     max_session: Option<usize>,
     new_cards_percent: Option<u8>,
     deadline: Option<String>,
@@ -946,9 +946,9 @@ impl Config {
             review.retire_after_days =
                 parse_retire_after(&retire_after).context("in [review] retire_after")?;
         }
-        if let Some(cooldown) = raw.review.acquire_cooldown {
-            review.acquire_cooldown_ms =
-                parse_acquire_cooldown(&cooldown).context("in [review] acquire_cooldown")?;
+        if let Some(cooldown) = raw.review.introduction_cooldown {
+            review.introduction_cooldown_ms = parse_introduction_cooldown(&cooldown)
+                .context("in [review] introduction_cooldown")?;
         }
         review.max_session = raw.review.max_session;
         review.new_cards_percent = raw.review.new_cards_percent.map(|n| n.min(100));
@@ -1035,19 +1035,19 @@ fn parse_retire_after(s: &str) -> Result<Option<u32>> {
     Ok(Some(days))
 }
 
-fn parse_acquire_cooldown(s: &str) -> Result<u64> {
+fn parse_introduction_cooldown(s: &str) -> Result<u64> {
     let s = s.trim();
     let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
     let (num, unit) = s.split_at(split);
     let Ok(n) = num.trim().parse::<u64>() else {
-        bail!("invalid acquire_cooldown {s:?}: expected e.g. \"90s\", \"5m\", or \"1h\"");
+        bail!("invalid introduction_cooldown {s:?}: expected e.g. \"90s\", \"5m\", or \"1h\"");
     };
     let ms = match unit.trim().to_ascii_lowercase().as_str() {
         "s" => n.saturating_mul(1000),
         "" | "m" => n.saturating_mul(60 * 1000),
         "h" => n.saturating_mul(60 * 60 * 1000),
         other => {
-            bail!("invalid acquire_cooldown unit {other:?}: expected s, m, or h")
+            bail!("invalid introduction_cooldown unit {other:?}: expected s, m, or h")
         }
     };
     Ok(ms)
@@ -1258,7 +1258,7 @@ pub fn default_config_toml() -> &'static str {
 [review]
 # retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
 # retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
-# acquire_cooldown = "5m"       # settle gap before a new card's first quiz, and the same-card retry floor ("90s", "10m"; "0" = none)
+# introduction_cooldown = "5m"       # settle gap before a new card's first quiz, and the same-card retry floor ("90s", "10m"; "0" = none)
 # max_session = 10              # cards a single sitting serves (--session overrides per instance)
 # new_cards_percent = 30        # new-card share of max_session; the rest are due cards (each pool backfills the other)
 "#
@@ -1274,18 +1274,18 @@ mod tests {
         assert_eq!(0.9, config.review.retention);
         assert_eq!(Some(365), config.review.retire_after_days);
         assert_eq!(
-            crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
-            config.review.acquire_cooldown_ms
+            crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS,
+            config.review.introduction_cooldown_ms
         );
     }
 
     #[test]
-    fn review_parses_acquire_cooldown_units() {
+    fn review_parses_introduction_cooldown_units() {
         let load = |v: &str| {
-            Config::from_toml(&format!("[review]\nacquire_cooldown = \"{v}\"\n"))
+            Config::from_toml(&format!("[review]\nintroduction_cooldown = \"{v}\"\n"))
                 .unwrap()
                 .review
-                .acquire_cooldown_ms
+                .introduction_cooldown_ms
         };
         assert_eq!(90_000, load("90s"));
         assert_eq!(600_000, load("10m"));
@@ -1295,9 +1295,9 @@ mod tests {
     }
 
     #[test]
-    fn review_rejects_a_malformed_acquire_cooldown() {
-        assert!(Config::from_toml("[review]\nacquire_cooldown = \"soon\"\n").is_err());
-        assert!(Config::from_toml("[review]\nacquire_cooldown = \"5x\"\n").is_err());
+    fn review_rejects_a_malformed_introduction_cooldown() {
+        assert!(Config::from_toml("[review]\nintroduction_cooldown = \"soon\"\n").is_err());
+        assert!(Config::from_toml("[review]\nintroduction_cooldown = \"5x\"\n").is_err());
     }
 
     #[test]
@@ -1339,15 +1339,15 @@ mod tests {
     }
 
     #[test]
-    fn for_workspace_overlays_the_acquire_cooldown() {
+    fn for_workspace_overlays_the_introduction_cooldown() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("alix.local.toml"),
-            "[review]\nacquire_cooldown = \"90s\"\n",
+            "[review]\nintroduction_cooldown = \"90s\"\n",
         )
         .unwrap();
         let resolved = ReviewConfig::default().for_workspace(dir.path());
-        assert_eq!(90_000, resolved.acquire_cooldown_ms);
+        assert_eq!(90_000, resolved.introduction_cooldown_ms);
         assert_eq!(0.9, resolved.retention);
     }
 

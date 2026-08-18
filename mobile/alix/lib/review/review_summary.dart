@@ -27,17 +27,17 @@ class ReviewSummaryView extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = theme.alix;
     final reviews = state.reviews;
-    final acquired = state.acquired;
+    final introduced = state.introduced;
     final partial = state.partial;
     final accuracy = reviews > 0
         ? '${(100 * state.passed / reviews).round()}%'
         : '–';
     final headline = reviews > 0
         ? 'Nicely charged.'
-        : acquired > 0
+        : introduced > 0
         ? 'New cards planted.'
         : 'Nothing due.';
-    final nextDue = reviews == 0 && acquired == 0
+    final nextDue = reviews == 0 && introduced == 0
         ? _nextDueNote(state.nextDueMs)
         : null;
     final noteText =
@@ -68,8 +68,8 @@ class ReviewSummaryView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          if (acquired > 0)
-            _summaryRow(context, 'introduced', '$acquired', tokens),
+          if (introduced > 0)
+            _summaryRow(context, 'introduced', '$introduced', tokens),
           // A zero-valued row is never printed: a done screen must not read
           // as "you did nothing" when other rows carry the real work.
           if (reviews > 0) ...[

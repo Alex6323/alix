@@ -1259,8 +1259,8 @@ mod tests {
             "---\nformat-version: 1\nid: deck-facts\n---\n## q <!-- id: card-live -->\na\n",
         );
         let mut store = alix::state::open_store(&deck, dir.path()).unwrap();
-        store.get_or_insert("card-live", 0);
-        store.get_or_insert("card-orphan", 0);
+        store.get_or_insert("card-live");
+        store.get_or_insert("card-orphan");
         store.save().unwrap();
 
         let report = workspace_findings(dir.path());
@@ -2154,7 +2154,7 @@ printf ']}}'
             "orphan-owner.md",
         )
         .unwrap();
-        store.get_or_insert("orphancard", 0);
+        store.get_or_insert("orphancard");
         store.set_last_depth("orphan-owner", alix::depth::Depth::Recall);
         store.save().unwrap();
 

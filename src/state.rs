@@ -204,7 +204,7 @@ mod tests {
         deck(&deck_path, "deck1", "card1");
 
         let mut store = open_store(&deck_path, dir.path()).unwrap();
-        store.get_or_insert("card-card1", 1);
+        store.get_or_insert("card-card1");
         store.save().unwrap();
 
         assert_eq!(
@@ -232,7 +232,7 @@ mod tests {
         let new_path = dir.path().join("new.md");
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
-        store.get_or_insert("card-card1", 1);
+        store.get_or_insert("card-card1");
         store.set_deck_mastered("deck-deck1", 1);
         store.save().unwrap();
         std::fs::rename(&old_path, &new_path).unwrap();
@@ -297,8 +297,8 @@ mod tests {
         deck(&second_path, "deck2", "card2");
         let paths = [first_path, second_path];
         let mut aggregate = open_stores(&paths, dir.path()).unwrap();
-        aggregate.get_or_insert("card-card1", 1);
-        aggregate.get_or_insert("card-card2", 1);
+        aggregate.get_or_insert("card-card1");
+        aggregate.get_or_insert("card-card2");
         aggregate.save().unwrap();
         let first = dir.path().join("progress/deck-deck1.json");
         let second = dir.path().join("progress/deck-deck2.json");

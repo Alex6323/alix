@@ -366,15 +366,15 @@ async function shot(page, filename, ready) {
 // ---- setup: establish real Recall schedules on the hero deck's 10 cards ---
 // This single batch feeds shots (1) explain/keypoints, which needs a card
 // established at Recall so Reconstruct is immediately due, and (8), whose
-// topology heatmap reads Recall retrievability. demo.toml zeroes the acquire
-// cooldown so phase 2 can grade right after acquiring.
+// topology heatmap reads Recall retrievability. demo.toml zeroes the introduction
+// cooldown so phase 2 can grade right after introducing.
 async function establishHeroSchedules(page) {
-  log("acquiring all hero-deck cards (phase 1/2)…");
+  log("introducing all hero-deck cards (phase 1/2)…");
   let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20 });
   let guard = 0;
   while (s && s.kind === "review" && s.phase === "review" && guard++ < 20) {
-    if (s.acquire) {
-      s = await api(DEMO_BASE, "POST", "/api/acquire", {}, s.study_revision);
+    if (s.introducing) {
+      s = await api(DEMO_BASE, "POST", "/api/introduce", {}, s.study_revision);
     } else {
       break;
     }
@@ -445,11 +445,11 @@ async function shot1(page) {
   let guard = 0;
   // Skip cards without a cached keypoints list (a couple of atomic answers
   // were deliberately skipped by `alix deck augment --target keypoints`);
-  // the guard covers acquire+grade for every card of the grown deck.
+  // the guard covers introduce+grade for every card of the grown deck.
   while (s && s.kind === "review" && s.phase === "review" && guard++ < 40) {
     const hasKp = Array.isArray(s.keypoints) && s.keypoints.length > 0;
     if (hasKp) break;
-    if (s.acquire) s = await api(DEMO_BASE, "POST", "/api/acquire", {}, s.study_revision);
+    if (s.introducing) s = await api(DEMO_BASE, "POST", "/api/introduce", {}, s.study_revision);
     else s = await api(DEMO_BASE, "POST", "/api/grade", { grade: "passed" }, s.study_revision);
   }
   if (!s || !Array.isArray(s.keypoints) || s.keypoints.length === 0) {
@@ -487,7 +487,7 @@ async function shot2(page) {
   log("== shot 2: ask-tutor ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   // A graduated scratch store serves review cards immediately (cram), instead
-  // of trapping the fresh hero in its acquire loop.
+  // of trapping the fresh hero in its introduction loop.
   fabricateGraduation();
   // cram:true: on a re-run against a reused scratch copy, every Recall card
   // may already be graded and not due again for days — without it, /api/select
@@ -495,8 +495,8 @@ async function shot2(page) {
   // chip, per shot 2's own earlier failure).
   let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "recall", session: 20, cram: true });
   let guard = 0;
-  while (s && s.kind === "review" && s.phase === "review" && s.acquire && guard++ < 15) {
-    s = await api(DEMO_BASE, "POST", "/api/acquire", {}, s.study_revision);
+  while (s && s.kind === "review" && s.phase === "review" && s.introducing && guard++ < 15) {
+    s = await api(DEMO_BASE, "POST", "/api/introduce", {}, s.study_revision);
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
@@ -537,7 +537,7 @@ async function shot2(page) {
 async function shot3(page) {
   log("== shot 3: multiple-choice ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
-  // Recognize is unscheduled/boolean — no acquire cooldown, so this is
+  // Recognize is unscheduled/boolean — no introduction cooldown, so this is
   // reachable immediately, even on a totally fresh card. cram:true covers a
   // re-run where every card is already past its first Recognize pass.
   let s = await api(DEMO_BASE, "POST", "/api/select", {
@@ -634,7 +634,7 @@ function fabricateGraduation() {
       ids.map((id) => [
         id,
         {
-          acquired_ms: now - 30 * day,
+          introduced_ms: now - 30 * day,
           presented_ms: now - 30 * day,
           recall: {
             stability: 30.0,

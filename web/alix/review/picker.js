@@ -121,7 +121,7 @@ export function createPicker({
   }
 
   function paintHeatCell(cell, tier) {
-    cell.classList.add(tier === "untouched" ? "empty" : tier);
+    cell.classList.add(tier === "unseen" ? "empty" : tier);
   }
 
   let lastDecksSignature = "";

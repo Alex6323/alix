@@ -116,7 +116,7 @@ const DONE = {
   reviews: 0,
   passed: 0,
   failed: 0,
-  acquired: 3,
+  introduced: 3,
   due_left: 2,
   new_left: 5,
   met_total: 24,
@@ -179,11 +179,11 @@ test("the badge names provenance and the interaction actually on screen", () => 
     [{ mode: "flip" }, "flip"],
     [{ mode: "typeline" }, "typing · line"],
     [{ mode: "flip", choices: true }, "choice"],
-    // An acquire card never runs the depth's check: it picks, draws, or reveals.
-    [{ mode: "flip", acquire: true }, "new · reveal"],
-    [{ mode: "typing", acquire: true }, "new · reveal"],
-    [{ mode: "flip", acquire: true, choices: true }, "new · choice"],
-    [{ mode: "flip", acquire: true, draw: true }, "new · draw"],
+    // An introduction card never runs the depth's check: it picks, draws, or reveals.
+    [{ mode: "flip", introducing: true }, "new · reveal"],
+    [{ mode: "typing", introducing: true }, "new · reveal"],
+    [{ mode: "flip", introducing: true, choices: true }, "new · choice"],
+    [{ mode: "flip", introducing: true, draw: true }, "new · draw"],
   ];
   for (const [state, want] of cases) {
     assert.equal(modeTag(state), want, `badge for ${JSON.stringify(state)}`);

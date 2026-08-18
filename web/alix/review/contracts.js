@@ -28,7 +28,7 @@ export function validatorFor(path) {
     case "/api/deselect":
     case "/api/grade":
     case "/api/skip":
-    case "/api/acquire":
+    case "/api/introduce":
     case "/api/remove":
     case "/api/restart":
     case "/api/exam/close":

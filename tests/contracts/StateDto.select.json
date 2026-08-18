@@ -1,6 +1,4 @@
 {
-  "acquire": false,
-  "acquired": 0,
   "can_restart": false,
   "card": null,
   "choice_runs": null,
@@ -12,6 +10,8 @@
   "failed": 0,
   "initial": 0,
   "input": "type",
+  "introduced": 0,
+  "introducing": false,
   "keypoint_runs": null,
   "keypoints": null,
   "kind": "review",

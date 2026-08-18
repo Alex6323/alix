@@ -162,7 +162,7 @@ right now (`flip`, `line`, `typing`, `typing · line`, `choice`, or
 interact is clear before you commit. It badges the *present* interaction, not
 the depth: a Recognize pick shows `choice` whatever the card's own mode is.
 
-A brand-new (acquire) card is prefixed `new · ` and names its on-ramp rather
+A brand-new (introduction) card is prefixed `new · ` and names its on-ramp rather
 than a check, because no check is happening yet on a card you're only meeting:
 `new · choice` when it offers options, `new · draw` on a sketch card, and
 `new · reveal` otherwise.

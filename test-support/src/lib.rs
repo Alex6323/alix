@@ -113,6 +113,8 @@ fn progress(store_root: &Path) -> Vec<(String, u64, u64)> {
 
 /// Taking a tutor note: the authored deck is untouched, the note opens a block
 /// addressed to the card it was taken against, and nothing is scheduled by it.
+/// Being shown the card records nothing either (ADR 0035: presentation writes
+/// nothing), so no store entry exists at all.
 pub fn after_note() -> Effects {
     Effects {
         deck: DECK.to_string(),
@@ -121,13 +123,15 @@ pub fn after_note() -> Effects {
              <!-- note: card-parityparityparityparit -->\n> the condensed insight\n"
                 .to_string(),
         ),
-        scheduled: vec![CARD_ID.to_string()],
-        reviews: vec![(CARD_ID.to_string(), 0, 0)],
+        scheduled: Vec::new(),
+        reviews: Vec::new(),
     }
 }
 
 /// Minting a card the learner keeps: it lands in the personal file as an
-/// ordinary card block and carries a schedule of its own.
+/// ordinary card block, introduced at creation (writing it IS meeting it).
+/// The card the learner was viewing leaves no entry: presentation writes
+/// nothing (ADR 0035).
 pub fn after_mint() -> Effects {
     Effects {
         deck: DECK.to_string(),
@@ -135,8 +139,8 @@ pub fn after_mint() -> Effects {
             "---\nformat-version: 1\nfor: deck-parityparityparityparit\n---\n\n\
              ## {MINTED_FRONT} <!-- id: {MINTED} -->\n{MINTED_BACK}\n"
         )),
-        scheduled: vec![MINTED.to_string(), CARD_ID.to_string()],
-        reviews: vec![(MINTED.to_string(), 0, 0), (CARD_ID.to_string(), 0, 0)],
+        scheduled: vec![MINTED.to_string()],
+        reviews: vec![(MINTED.to_string(), 0, 0)],
     }
 }
 

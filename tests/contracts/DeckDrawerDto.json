@@ -1,9 +1,9 @@
 {
   "graduated": 4,
   "heatmap": [
-    "untouched",
+    "unseen",
     "seen",
-    "acquired",
+    "learning",
     "learned-strong",
     "learned-fading",
     "learned-weak",

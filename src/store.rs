@@ -58,14 +58,10 @@ impl FsrsState {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CardState {
-    // None: presented but never acquired (an entry can exist from
+    // None: presented but never introduced (an entry can exist from
     // presentation alone).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub acquired_ms: Option<u64>,
-    // First time the card was the displayed card in any session; correctness
-    // plays no part.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presented_ms: Option<u64>,
+    pub introduced_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
     // Depth states are independent on purpose: no cross-crediting between
@@ -86,10 +82,12 @@ pub struct CardState {
 }
 
 impl CardState {
-    pub fn new(now_ms: u64) -> Self {
+    // Materializing an entry INTRODUCES nothing: only the Seen press writes
+    // the timestamp (ADR 0035); two constructors that disagreed once made
+    // any future get-or-insert path mark a card introduced on the spot.
+    pub fn new() -> Self {
         Self {
-            acquired_ms: Some(now_ms),
-            presented_ms: None,
+            introduced_ms: None,
             recall: None,
             reconstruct: None,
             recognize: None,
@@ -102,8 +100,18 @@ impl CardState {
 
     // Presentation alone sets none of these: any of them means the learner
     // did something with the card beyond being shown it.
+    /// The explicit form the silent-stamping constructor was killed for:
+    /// says what it does in its name, so a call site cannot introduce a card
+    /// by accident.
+    pub fn introduced_at(now_ms: u64) -> Self {
+        Self {
+            introduced_ms: Some(now_ms),
+            ..Self::new()
+        }
+    }
+
     pub fn engaged(&self) -> bool {
-        self.acquired_ms.is_some()
+        self.introduced_ms.is_some()
             || self.recognize.is_some()
             || self.recall.is_some()
             || self.reconstruct.is_some()
@@ -927,31 +935,6 @@ impl Store {
         self.cards.get(card_id).filter(|state| state.engaged())
     }
 
-    // Once-only: the first call stamps and answers true; every later call is
-    // a no-op. The default entry acquires nothing.
-    pub fn note_presented(&mut self, card_id: &str, now_ms: u64) -> bool {
-        let state = self.cards.entry(card_id.to_string()).or_default();
-        if state.presented_ms.is_none() {
-            state.presented_ms = Some(now_ms);
-            true
-        } else {
-            false
-        }
-    }
-
-    // A reveal is an encounter: seeing the answer engages the card even if
-    // the session ends without the Seen acknowledgment. Once-only, and never
-    // on a card the learner already engaged some other way.
-    pub fn note_revealed(&mut self, card_id: &str, now_ms: u64) -> bool {
-        let state = self.cards.entry(card_id.to_string()).or_default();
-        if state.engaged() {
-            false
-        } else {
-            state.acquired_ms = Some(now_ms);
-            true
-        }
-    }
-
     // Reflects actual reviews, not merely opening the deck.
     pub fn last_review_ms(&self) -> Option<u64> {
         self.cards
@@ -960,10 +943,8 @@ impl Store {
             .max()
     }
 
-    pub fn get_or_insert(&mut self, card_id: &str, now_ms: u64) -> &mut CardState {
-        self.cards
-            .entry(card_id.to_string())
-            .or_insert_with(|| CardState::new(now_ms))
+    pub fn get_or_insert(&mut self, card_id: &str) -> &mut CardState {
+        self.cards.entry(card_id.to_string()).or_default()
     }
 
     pub fn remove(&mut self, card_id: &str) -> bool {
@@ -1349,7 +1330,7 @@ pub fn mint_tutor_card(
         .map_err(|e| MintError::Malformed(e.to_string()))?;
     // Records must exist before the schedule entry: keep this order.
     store.ensure_records(card);
-    store.get_or_insert(&id, now_ms);
+    store.get_or_insert(&id).introduced_ms = Some(now_ms);
     Ok(id)
 }
 
@@ -1370,7 +1351,7 @@ pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
 
 // High-water: an already-earned date survives a later drop below the mature line.
 // Badges gate nothing here, bookkeeping only, never a lifecycle interaction.
-pub fn note_badges(store: &mut Store, deck_id: &str, cards: &[Card], now_ms: u64) {
+pub fn record_badges(store: &mut Store, deck_id: &str, cards: &[Card], now_ms: u64) {
     for depth in [Depth::Recognize, Depth::Recall, Depth::Reconstruct] {
         if store.badge_earned(deck_id, depth).is_some() || !badge_solid(cards, store, depth) {
             continue;
@@ -1465,7 +1446,7 @@ pub fn store_remediation_cards(
                 };
                 // Records must exist before the schedule entry: keep this order.
                 store.ensure_records(card);
-                store.get_or_insert(&id, now_ms);
+                store.get_or_insert(&id).introduced_ms = Some(now_ms);
                 created_or_revived += 1;
             }
         } else if existing
@@ -1473,7 +1454,7 @@ pub fn store_remediation_cards(
             .all(|id| crate::session::is_retired_id(id, store, retire_after_days))
         {
             for id in &existing {
-                *store.get_or_insert(id, now_ms) = CardState::new(now_ms);
+                *store.get_or_insert(id) = CardState::new();
                 created_or_revived += 1;
             }
         }
@@ -1711,8 +1692,8 @@ mod tests {
         let a = hf(1, 10);
         let b = hf(2, 20);
         store.ensure_records_raw(token, &[a, b]);
-        store.get_or_insert("card-tok-0", 0).total_reviews = 1;
-        store.get_or_insert("card-tok-1", 0).total_reviews = 2;
+        store.get_or_insert("card-tok-0").total_reviews = 1;
+        store.get_or_insert("card-tok-1").total_reviews = 2;
 
         let z = hf(8, 80);
         let outcome = store.realign_card_holes(token, &[z, b]).unwrap();
@@ -1736,9 +1717,9 @@ mod tests {
         let a = hf(1, 10);
         let b = hf(2, 20);
         store.ensure_records_raw(token, &[a, b]);
-        store.get_or_insert("card-tok-0", 0).total_reviews = 1;
-        store.get_or_insert("card-tok-1", 0).total_reviews = 2;
-        store.get_or_insert("card-tok-5", 0).total_reviews = 9;
+        store.get_or_insert("card-tok-0").total_reviews = 1;
+        store.get_or_insert("card-tok-1").total_reviews = 2;
+        store.get_or_insert("card-tok-5").total_reviews = 9;
 
         let outcome = store.realign_card_holes(token, &[b, a]).unwrap();
         assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
@@ -1773,7 +1754,7 @@ mod tests {
                 holes: vec![a],
             },
         );
-        store.get_or_insert("card-tok-0", 0).total_reviews = 7;
+        store.get_or_insert("card-tok-0").total_reviews = 7;
 
         let outcome = store.realign_card_holes(token, &[a, b]);
         assert!(outcome.is_none());
@@ -1787,9 +1768,9 @@ mod tests {
     fn orphans_are_the_keys_with_no_live_card_or_deck_and_prune_clears_them() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert("live", 0);
-        store.get_or_insert("gone", 0);
-        store.get_or_insert("card-vq", 0);
+        store.get_or_insert("live").introduced_ms = Some(0);
+        store.get_or_insert("gone").introduced_ms = Some(0);
+        store.get_or_insert("card-vq").introduced_ms = Some(0);
         store.set_last_depth("d1", Depth::Recall);
         store.set_last_depth("d2", Depth::Recall);
 
@@ -1816,9 +1797,9 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let a = hf(1, 10);
 
-        store.get_or_insert("card-gonetoken", 0).total_reviews = 3;
+        store.get_or_insert("card-gonetoken").total_reviews = 3;
         store.ensure_records_raw("card-gonetoken", &[a]);
-        store.get_or_insert("card-livetoken", 0).total_reviews = 7;
+        store.get_or_insert("card-livetoken").total_reviews = 7;
         store.ensure_records_raw("card-livetoken", &[a]);
 
         let known_cards: HashSet<String> = ["card-livetoken".to_string()].into_iter().collect();
@@ -1839,11 +1820,11 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let a = hf(1, 10);
 
-        store.get_or_insert("card-doom", 0);
-        store.get_or_insert("card-doom-0", 0);
+        store.get_or_insert("card-doom").introduced_ms = Some(0);
+        store.get_or_insert("card-doom-0").introduced_ms = Some(0);
         store.ensure_records_raw("card-doom", &[a]);
         store.set_deck_mastered("doomed", 1);
-        store.get_or_insert("keep", 0);
+        store.get_or_insert("keep").introduced_ms = Some(0);
         store.ensure_records_raw("keep", &[a]);
         store.set_deck_mastered("keep", 1);
 
@@ -1997,7 +1978,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
-        store.get_or_insert("not-a-token", 0);
+        store.get_or_insert("not-a-token").introduced_ms = Some(0);
         store.save().unwrap();
         let store = Store::open(&path).unwrap();
         assert!(store.get("not-a-token").is_some());
@@ -2010,10 +1991,10 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         assert_eq!(None, store.last_review_ms());
         store
-            .get_or_insert("1", 0)
+            .get_or_insert("1")
             .record_review(100, Grade::Pass, Depth::Recall, false);
         store
-            .get_or_insert("2", 0)
+            .get_or_insert("2")
             .record_review(300, Grade::Pass, Depth::Recall, false);
         assert_eq!(Some(300), store.last_review_ms());
     }
@@ -2032,7 +2013,7 @@ mod tests {
         let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
-        let state = store.get_or_insert("42", 1000);
+        let state = store.get_or_insert("42");
         state.record_review(1000, Grade::Pass, Depth::Recall, false);
         store.save().unwrap();
 
@@ -2056,7 +2037,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
-        store.get_or_insert("card1", 1);
+        store.get_or_insert("card1").introduced_ms = Some(1);
         store.set_deck_mastered("deck1", 2);
         store.save().unwrap();
 
@@ -2076,7 +2057,7 @@ mod tests {
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
         store.set_deck_mastered("deck1", 2);
-        store.get_or_insert("card-one", 1);
+        store.get_or_insert("card-one").introduced_ms = Some(1);
         store.save().unwrap();
 
         // Deck-level state follows the id, so a reopen under a new filename
@@ -2113,9 +2094,9 @@ mod tests {
             .unwrap();
         let mut first = Store::open_deck(&path, "deck1", "d.md").unwrap();
         let mut stale = Store::open_deck(&path, "deck1", "d.md").unwrap();
-        first.get_or_insert("newer", 1);
+        first.get_or_insert("newer").introduced_ms = Some(1);
         first.save().unwrap();
-        stale.get_or_insert("stale", 1);
+        stale.get_or_insert("stale").introduced_ms = Some(1);
 
         let error = stale.save().unwrap_err();
         assert!(matches!(
@@ -2169,7 +2150,7 @@ mod tests {
         // The document is not the only copy of anything yet; a fresh save lands.
         std::fs::remove_file(&path).unwrap();
         let mut fresh = Store::open_deck(&path, "deck1", "d.md").unwrap();
-        fresh.get_or_insert("card1", 1);
+        fresh.get_or_insert("card1").introduced_ms = Some(1);
         fresh.save().unwrap();
         assert!(
             Store::open_deck(&path, "deck1", "d.md")
@@ -2185,7 +2166,7 @@ mod tests {
         let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
-        let state = store.get_or_insert("42", 1000);
+        let state = store.get_or_insert("42");
         state.record_review(1000, Grade::Pass, Depth::Reconstruct, false);
         state.record_review(1000, Grade::Pass, Depth::Recall, true);
         store.save().unwrap();
@@ -2300,7 +2281,7 @@ mod tests {
     fn remove_drops_the_entry() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert("42", 1000);
+        store.get_or_insert("42").introduced_ms = Some(1000);
         assert!(store.remove("42"));
         assert!(store.get("42").is_none());
         assert!(!store.remove("42"));
@@ -2310,8 +2291,8 @@ mod tests {
     fn clear_empties_and_counts() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert("1", 0);
-        store.get_or_insert("2", 0);
+        store.get_or_insert("1").introduced_ms = Some(0);
+        store.get_or_insert("2").introduced_ms = Some(0);
         assert_eq!(2, store.clear());
         assert!(store.is_empty());
         assert_eq!(0, store.clear());
@@ -2319,7 +2300,7 @@ mod tests {
 
     #[test]
     fn history_is_capped() {
-        let mut state = CardState::new(0);
+        let mut state = CardState::new();
         for i in 0..(HISTORY_CAP as u64 + 10) {
             state.record_review(i, Grade::Pass, Depth::Recall, false);
         }
@@ -2330,7 +2311,7 @@ mod tests {
 
     #[test]
     fn streak_resets_on_fail() {
-        let mut state = CardState::new(0);
+        let mut state = CardState::new();
         state.record_review(1, Grade::Pass, Depth::Recall, false);
         state.record_review(2, Grade::Pass, Depth::Recall, false);
         assert_eq!(2, state.streak);
@@ -2342,7 +2323,7 @@ mod tests {
 
     #[test]
     fn record_review_stores_the_grade_and_partial_counts_as_a_pass() {
-        let mut state = CardState::new(0);
+        let mut state = CardState::new();
         state.record_review(10, Grade::Partial, Depth::Recall, false);
         assert_eq!(Grade::Partial, state.history.last().unwrap().grade);
         assert_eq!(1, state.total_reviews);
@@ -2352,7 +2333,7 @@ mod tests {
 
     #[test]
     fn recall_and_reconstruct_schedules_are_independent() {
-        let mut s = CardState::new(1_000);
+        let mut s = CardState::new();
         *s.schedule_slot(Depth::Recall).unwrap() = Some(FsrsState {
             stability: 30.0,
             ..Default::default()
@@ -2372,7 +2353,7 @@ mod tests {
     fn per_depth_schedules_survive_save_reload() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
-        let st = store.get_or_insert("7", 1_000);
+        let st = store.get_or_insert("7");
         *st.schedule_slot(Depth::Reconstruct).unwrap() = Some(FsrsState {
             stability: 4.5,
             ..Default::default()
@@ -2401,7 +2382,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
-        let st = store.get_or_insert("7", 0);
+        let st = store.get_or_insert("7");
         st.record_review(100, Grade::Partial, Depth::Recall, false);
         st.record_review(200, Grade::Fail, Depth::Recall, false);
         store.save().unwrap();
@@ -2417,7 +2398,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
-        store.get_or_insert("9", 0).recall = Some(FsrsState {
+        store.get_or_insert("9").recall = Some(FsrsState {
             stability: 12.5,
             difficulty: 6.0,
             reps: 3,
@@ -2449,7 +2430,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let cards = two_cards();
         for card in &cards {
-            store.get_or_insert(&card.id().unwrap(), 0).recall = Some(FsrsState {
+            store.get_or_insert(&card.id().unwrap()).recall = Some(FsrsState {
                 stability: 30.0,
                 ..Default::default()
             });
@@ -2471,15 +2452,15 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let cards = two_cards();
         for card in &cards {
-            store.get_or_insert(&card.id().unwrap(), 0).recall = Some(FsrsState {
+            store.get_or_insert(&card.id().unwrap()).recall = Some(FsrsState {
                 stability: 30.0,
                 ..Default::default()
             });
         }
-        note_badges(&mut store, "t", &cards, 1_000);
+        record_badges(&mut store, "t", &cards, 1_000);
         assert_eq!(Some(1_000), store.badge_earned("t", Depth::Recall));
 
-        store.get_or_insert(&cards[0].id().unwrap(), 0).recall = Some(FsrsState {
+        store.get_or_insert(&cards[0].id().unwrap()).recall = Some(FsrsState {
             stability: 3.0,
             ..Default::default()
         });
@@ -2493,7 +2474,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let cards = two_cards();
-        store.get_or_insert(&cards[0].id().unwrap(), 0).recognize = Some(FsrsState {
+        store.get_or_insert(&cards[0].id().unwrap()).recognize = Some(FsrsState {
             stability: 30.0,
             ..Default::default()
         });
@@ -2502,7 +2483,7 @@ mod tests {
             "second card not yet mature at recognize"
         );
 
-        store.get_or_insert(&cards[1].id().unwrap(), 0).recognize = Some(FsrsState {
+        store.get_or_insert(&cards[1].id().unwrap()).recognize = Some(FsrsState {
             stability: 30.0,
             ..Default::default()
         });
@@ -2793,7 +2774,7 @@ mod tests {
         assert_eq!(2, ids.len());
 
         for id in &ids {
-            store.get_or_insert(id, 1_000).recall = Some(FsrsState {
+            store.get_or_insert(id).recall = Some(FsrsState {
                 scheduled_days: 90,
                 ..Default::default()
             });
@@ -2813,7 +2794,7 @@ mod tests {
                 "revived, no longer retired"
             );
             assert_eq!(
-                &CardState::new(2_000),
+                &CardState::new(),
                 store.get(id).unwrap(),
                 "the hole's schedule was reset"
             );
@@ -2902,7 +2883,7 @@ mod tests {
 
     #[test]
     fn an_overfull_history_from_disk_trims_to_the_cap_on_the_next_review() {
-        let mut state = CardState::new(0);
+        let mut state = CardState::new();
         for i in 0..(HISTORY_CAP + 5) {
             state.history.push(Review {
                 ts_ms: i as u64,
@@ -3082,7 +3063,7 @@ mod tests {
     fn a_stocked_store_is_not_empty() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert("card-one", 0);
+        store.get_or_insert("card-one").introduced_ms = Some(0);
         assert!(!store.is_empty());
     }
 }

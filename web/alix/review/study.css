@@ -77,7 +77,7 @@
                     border-radius: 5px; padding: 1px 5px; }
   .region.a.citable:hover .cite-toggle, .region.a.hidable:hover .cite-toggle { color: var(--bolt); }
   .region.a.citable:hover .cite-toggle .k, .region.a.hidable:hover .cite-toggle .k { border-color: var(--bolt); }
-  /* Hide (acquire self-test): conceal ONLY the answer's content, visibility-only so
+  /* Hide (introduction self-test): conceal ONLY the answer's content, visibility-only so
      its box keeps its exact size and position — the note, the footer, and the layout
      never move. The corner cue is excluded so you can still un-hide. */
   .region.a.concealed > *:not(.cite-toggle) { visibility: hidden; }
@@ -101,7 +101,7 @@
 
   .crumb-cell.empty { background: color-mix(in srgb, var(--dim) 26%, transparent); }
   .crumb-cell.seen { background: color-mix(in srgb, var(--dim) 60%, transparent); }
-  .crumb-cell.acquired { background: color-mix(in srgb, var(--ink) 85%, transparent); }
+  .crumb-cell.learning { background: color-mix(in srgb, var(--ink) 85%, transparent); }
   .crumb-cell.learned-strong { background: var(--good); }
   .crumb-cell.learned-fading { background: var(--warn); }
   .crumb-cell.learned-weak { background: var(--again); }

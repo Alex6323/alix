@@ -914,7 +914,7 @@ fn workspace_members_fall_back_to_the_workspaces_own_store_on_disk() {
     let id = Deck::load(ws.join("decks/one.md")).unwrap().cards[0]
         .id()
         .unwrap();
-    ws_store.get_or_insert(&id, now).recognize = Some(crate::store::FsrsState {
+    ws_store.get_or_insert(&id).recognize = Some(crate::store::FsrsState {
         due_ms: now + 30 * 86_400_000,
         ..Default::default()
     });
@@ -970,7 +970,7 @@ fn workspace_members_prefer_a_retained_store_over_reopening_from_disk() {
     let id = Deck::load(ws.join("decks/one.md")).unwrap().cards[0]
         .id()
         .unwrap();
-    retained_store.get_or_insert(&id, now).recognize = Some(crate::store::FsrsState {
+    retained_store.get_or_insert(&id).recognize = Some(crate::store::FsrsState {
         due_ms: now + 30 * 86_400_000,
         ..Default::default()
     });
@@ -1031,7 +1031,7 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
             due_ms: now + 30 * 86_400_000,
             ..Default::default()
         };
-        let entry = ws_store.get_or_insert(&id, now);
+        let entry = ws_store.get_or_insert(&id);
         entry.recognize = Some(future);
         entry.recall = Some(future);
         entry.reconstruct = Some(future);
@@ -1111,7 +1111,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
         due_ms: now + 30 * 86_400_000,
         ..Default::default()
     };
-    let entry = instance_store.get_or_insert(&id, now);
+    let entry = instance_store.get_or_insert(&id);
     entry.recognize = Some(future);
     entry.recall = Some(future);
     entry.reconstruct = Some(future);
@@ -1348,7 +1348,7 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&cards[0].id().unwrap(), 0);
+    store.get_or_insert(&cards[0].id().unwrap()).introduced_ms = Some(0);
     let r = reviewing_at(deck, cards, &mut store, Depth::Reconstruct);
 
     let dto = review_state(Some(&r), &store, None, 0);
@@ -1370,7 +1370,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&cards[0].id().unwrap(), 0);
+    store.get_or_insert(&cards[0].id().unwrap()).introduced_ms = Some(0);
     let mut r = reviewing_at(deck, cards.clone(), &mut store, Depth::Reconstruct);
 
     let fallback = review_state(Some(&r), &store, None, 0);
@@ -1400,7 +1400,7 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let id = cards[0].id().unwrap();
     let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&id, 0);
+    store.get_or_insert(&id).introduced_ms = Some(0);
     let mut r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
@@ -1429,7 +1429,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
     let id = cards[0].id().unwrap();
     let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&id, 0);
+    store.get_or_insert(&id).introduced_ms = Some(0);
     let mut r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
@@ -1466,7 +1466,7 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&cards[0].id().unwrap(), 0);
+    store.get_or_insert(&cards[0].id().unwrap()).introduced_ms = Some(0);
     let r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
 
     let dto = review_state(Some(&r), &store, None, 0);
@@ -1486,7 +1486,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     let id = cards[0].id().unwrap();
     let fingerprint = cards[0].content_fingerprint;
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&id, 0);
+    store.get_or_insert(&id).introduced_ms = Some(0);
     let mut r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
@@ -1514,7 +1514,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
             r.session.is_finished(),
             "the only card floors instead of resurfacing instantly"
         );
-        now += crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        now += crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS;
         r.session.poll(&mut store, now);
         assert_eq!(
             Some(id.clone()),
@@ -1535,14 +1535,14 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
 }
 
 #[test]
-fn an_already_recognized_card_skips_the_acquire_mc() {
+fn an_already_recognized_card_skips_the_introduction_mc() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
     let text = "## q <!-- id: card-q1 -->\nanswer\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    let state = store.get_or_insert(&cards[0].id().unwrap(), 0);
+    let state = store.get_or_insert(&cards[0].id().unwrap());
     state.recognize = Some(crate::store::FsrsState {
         due_ms: 500,
         ..Default::default()
@@ -1550,7 +1550,7 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     let r = reviewing_at(deck, cards, &mut store, Depth::Recall);
 
     let dto = review_state(Some(&r), &store, None, 0);
-    assert!(!dto.acquire, "a recognized card isn't acquired cold");
+    assert!(!dto.introducing, "a recognized card isn't introduced cold");
     assert!(
         dto.choices.is_none(),
         "no recognition MC for an already-recognized card"
@@ -1920,7 +1920,7 @@ fn exam_due_reports_the_decks_name_not_its_routing_id() {
     let id = card.id().unwrap();
     // A year-out review: graduated and long past due, so the deck reads as
     // exam-due rather than merely started.
-    store.get_or_insert(&id, 0).recall = Some(crate::store::FsrsState {
+    store.get_or_insert(&id).recall = Some(crate::store::FsrsState {
         state: 2,
         scheduled_days: 100_000,
         ..Default::default()
@@ -2319,7 +2319,7 @@ fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
     let dto = deck_drawer_dto(&augment, &store, &deck, None);
     assert_eq!(Some("A short intro."), dto.preamble.as_deref());
     // One cell per stamped card; a never-presented card is the untouched tier.
-    assert_eq!(vec![CardTier::Untouched, CardTier::Untouched], dto.heatmap);
+    assert_eq!(vec![CardTier::Unseen, CardTier::Unseen], dto.heatmap);
     assert!(dto.topologies.is_empty());
 }
 

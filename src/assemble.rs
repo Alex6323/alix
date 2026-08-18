@@ -539,7 +539,7 @@ pub fn select(
         Box::new(Fsrs::tuned(
             review.retention,
             review.recognize_retention,
-            review.acquire_cooldown_ms,
+            review.introduction_cooldown_ms,
             tuning,
         )),
         options,
@@ -642,7 +642,7 @@ pub fn browse(paths: Vec<PathBuf>, _instance: Option<&Path>) -> Result<CardsBuil
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{answer::Mode, scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS};
+    use crate::{answer::Mode, scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS};
 
     fn write_initialized(path: &Path, text: &str) {
         let id: String = path
@@ -1013,8 +1013,8 @@ it reads line two\n\
             &SelectOptions::default(),
         )
         .unwrap();
-        store.get_or_insert("card-fillcard-0", 0).total_reviews = 1;
-        store.get_or_insert("card-fillcard-1", 0).total_reviews = 2;
+        store.get_or_insert("card-fillcard-0").total_reviews = 1;
+        store.get_or_insert("card-fillcard-1").total_reviews = 2;
 
         std::fs::write(
             &path,
@@ -1052,7 +1052,7 @@ it reads line two\n\
         .unwrap();
         let store_path = workspace::root_store_path(dir.path());
         let mut store = state::open_store(&deck_path, &store_path).unwrap();
-        store.get_or_insert("card-qcard", 0);
+        store.get_or_insert("card-qcard").introduced_ms = Some(0);
         store.save().unwrap();
         let before = std::fs::read(store.path()).unwrap();
 
@@ -1134,7 +1134,7 @@ it reads line two\n\
     ) {
         let block = format!("## {front} <!-- id: {id} -->\npersonal back\n");
         crate::personal::append_cards(deck, deck_id, &block).unwrap();
-        store.get_or_insert(id, 0);
+        store.get_or_insert(id).introduced_ms = Some(0);
     }
 
     #[test]
@@ -1619,7 +1619,7 @@ it reads line two\n\
     }
 
     #[test]
-    fn a_configured_acquire_cooldown_reaches_the_session() {
+    fn a_configured_introduction_cooldown_reaches_the_session() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
         write_initialized(&deck, "## q <!-- id: card-q1 -->\na\n");
@@ -1628,10 +1628,10 @@ it reads line two\n\
             .id()
             .unwrap();
         let t0 = 1_000_000;
-        store.get_or_insert(&id, t0);
+        store.get_or_insert(&id).introduced_ms = Some(t0);
 
         let mut config = test_config();
-        config.review.acquire_cooldown_ms = 1_000;
+        config.review.introduction_cooldown_ms = 1_000;
         let opts = SelectOptions {
             now_ms: Some(t0 + 2_000),
             ..Default::default()
@@ -1655,7 +1655,7 @@ it reads line two\n\
             .id()
             .unwrap();
         let t0 = 1_000_000;
-        store.get_or_insert(&id, t0);
+        store.get_or_insert(&id).introduced_ms = Some(t0);
 
         let early = SelectOptions {
             now_ms: Some(t0 + 30_000),
@@ -1668,7 +1668,7 @@ it reads line two\n\
             Selected::Walk(_) => panic!("a fact deck must review"),
         }
         let late = SelectOptions {
-            now_ms: Some(t0 + DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000),
+            now_ms: Some(t0 + DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000),
             ..Default::default()
         };
         match select(vec![deck], &mut store, &test_config(), &late).unwrap() {
@@ -1696,7 +1696,7 @@ it reads line two\n\
             .unwrap();
 
         let now = crate::time::now_ms();
-        store.get_or_insert(&id, now).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&id).recall = Some(crate::store::FsrsState {
             stability: 200.0,
             difficulty: 5.0,
             state: 2,
@@ -1781,7 +1781,7 @@ it reads line two\n\
         assert_eq!(keeper.clone(), map.card_dupes[0].keeper.0);
 
         let mut store = state::open_store(&loser, dir.path()).unwrap();
-        store.get_or_insert("card-cshared", 1_000);
+        store.get_or_insert("card-cshared").introduced_ms = Some(1_000);
         store.save().unwrap();
 
         let Selected::Review(build) = select(

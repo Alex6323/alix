@@ -59,7 +59,7 @@
   .answer { color: var(--ink); font-family: var(--mono); font-weight: 500; font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 0 0 4px; white-space: pre-wrap; }
   .answer.pass { color: var(--good); }
   .answer.pending { color: var(--dim); }
-  .acquire-hint { color: var(--dim); font-size: 0.85rem; margin-top: 12px; font-style: italic; }
+  .introduction-hint { color: var(--dim); font-size: 0.85rem; margin-top: 12px; font-style: italic; }
   /* a wrong typed line recedes (dim + small) so the correct answer leads */
   .answer.miss { color: var(--again); opacity: 0.5; font-size: clamp(0.92rem, 2.6vw, 1.08rem); }
   .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */

@@ -54,7 +54,7 @@ pub trait Scheduler: Send + Sync {
         self.due_at(state, depth) <= now_ms
     }
 
-    fn acquire_cooldown_ms(&self) -> u64;
+    fn introduction_cooldown_ms(&self) -> u64;
 }
 
 /// Recognition holds far longer than production; 0.85 is inferred from the
@@ -63,7 +63,7 @@ pub trait Scheduler: Send + Sync {
 pub const DEFAULT_RECOGNIZE_RETENTION: f64 = 0.85;
 
 /// Doubles as `Session`'s same-card re-serve floor: one knob moves both gaps.
-pub const DEFAULT_ACQUIRE_COOLDOWN_MS: u64 = 5 * 60 * 1000;
+pub const DEFAULT_INTRODUCTION_COOLDOWN_MS: u64 = 5 * 60 * 1000;
 
 /// Deliberately a constant, not a config key: an expert knob with no
 /// pre-exam feedback loop; base `retention` is the pressure valve.
@@ -75,8 +75,20 @@ pub const DEADLINE_RETENTION: f64 = 0.95;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DeadlineTuning {
     pub retention: f64,
+    // How far the ramp has progressed (0 outside the window, 1 at the
+    // deadline), kept so a second engine can ramp from ITS OWN base instead
+    // of inheriting the recall-resolved retention (Codex tenth pass, P1).
+    pub ramp_progress: f64,
     pub max_interval_days: i32,
     pub due_ceiling_ms: u64,
+}
+
+impl DeadlineTuning {
+    // The same ramp applied to another base: cap-only tuning (progress 0)
+    // leaves that base untouched.
+    fn retention_for(self, base: f64) -> f64 {
+        (base + (DEADLINE_RETENTION - base) * self.ramp_progress).max(base)
+    }
 }
 
 /// `None` past the date is deliberate: the ramp releases rather than
@@ -93,15 +105,17 @@ pub fn deadline_tuning(
     if days_left < 0 {
         return None;
     }
-    let retention = if ramp_days == 0 || days_left >= i64::from(ramp_days) {
-        base_retention
+    let ramp_progress = if ramp_days == 0 || days_left >= i64::from(ramp_days) {
+        0.0
     } else {
         let w = f64::from(ramp_days);
-        let progressed = (w - days_left as f64) / w;
-        (base_retention + (DEADLINE_RETENTION - base_retention) * progressed).max(base_retention)
+        (w - days_left as f64) / w
     };
+    let retention = (base_retention + (DEADLINE_RETENTION - base_retention) * ramp_progress)
+        .max(base_retention);
     Some(DeadlineTuning {
         retention,
+        ramp_progress,
         max_interval_days: days_left.max(1) as i32,
         due_ceiling_ms,
     })
@@ -181,16 +195,16 @@ pub struct Fsrs {
     // Recognition decays slower than production, so Recognize runs its own
     // desired retention (ADR 0033); one mechanism, two tunings.
     recognize_fsrs: FSRS,
-    acquire_cooldown_ms: u64,
+    introduction_cooldown_ms: u64,
     due_ceiling_ms: Option<u64>,
 }
 
 impl Fsrs {
-    pub fn new(retention: f64, acquire_cooldown_ms: u64) -> Self {
+    pub fn new(retention: f64, introduction_cooldown_ms: u64) -> Self {
         Self::tuned(
             retention,
             DEFAULT_RECOGNIZE_RETENTION,
-            acquire_cooldown_ms,
+            introduction_cooldown_ms,
             None,
         )
     }
@@ -198,15 +212,21 @@ impl Fsrs {
     pub fn tuned(
         retention: f64,
         recognize_retention: f64,
-        acquire_cooldown_ms: u64,
+        introduction_cooldown_ms: u64,
         deadline: Option<DeadlineTuning>,
     ) -> Self {
         let parameters = fsrs_parameters(retention, deadline);
-        let recognize_parameters = fsrs_parameters(recognize_retention, deadline);
+        let recognize_parameters = fsrs_parameters(
+            recognize_retention,
+            deadline.map(|t| DeadlineTuning {
+                retention: t.retention_for(recognize_retention),
+                ..t
+            }),
+        );
         Self {
             fsrs: FSRS::new(parameters),
             recognize_fsrs: FSRS::new(recognize_parameters),
-            acquire_cooldown_ms,
+            introduction_cooldown_ms,
             due_ceiling_ms: deadline.map(|t| t.due_ceiling_ms),
         }
     }
@@ -230,7 +250,7 @@ fn fsrs_parameters(retention: f64, deadline: Option<DeadlineTuning>) -> Paramete
 
 impl Default for Fsrs {
     fn default() -> Self {
-        Self::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS)
+        Self::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS)
     }
 }
 
@@ -238,7 +258,7 @@ impl Scheduler for Fsrs {
     fn due_at(&self, state: &CardState, depth: Depth) -> u64 {
         match state.schedule(depth) {
             Some(s) => s.due_ms,
-            // Established at another depth: due now, skipping the acquire
+            // Established at another depth: due now, skipping the introduction
             // warm-up (its own schedule is created lazily on the first grade).
             None if state.recognize.is_some()
                 || state.recall.is_some()
@@ -246,20 +266,19 @@ impl Scheduler for Fsrs {
             {
                 0
             }
-            // Anchor the warm-up on the acquire fact, or on the first
-            // presentation for a card that was shown but never acquired (a
-            // failed fresh pick), so it still waits out the cooldown rather than
-            // anchoring at epoch and serving immediately.
+            // Anchor the warm-up on the introduction. An entry with no
+            // timestamp and no schedule cannot arise through the session (the
+            // Seen press writes before departure), so the epoch fallback is
+            // unreachable rather than a serving hazard.
             None => state
-                .acquired_ms
-                .or(state.presented_ms)
+                .introduced_ms
                 .unwrap_or_default()
-                .saturating_add(self.acquire_cooldown_ms),
+                .saturating_add(self.introduction_cooldown_ms),
         }
     }
 
-    fn acquire_cooldown_ms(&self) -> u64 {
-        self.acquire_cooldown_ms
+    fn introduction_cooldown_ms(&self) -> u64 {
+        self.introduction_cooldown_ms
     }
 
     fn apply(
@@ -328,40 +347,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn due_at_for_an_unscheduled_card_is_one_acquire_cooldown_out() {
+    fn due_at_for_an_unscheduled_card_is_one_introduction_cooldown_out() {
         let sched = Fsrs::default();
-        let mut s = CardState::new(1000);
+        let mut s = CardState::introduced_at(1000);
         assert_eq!(
             sched.due_at(&s, Depth::Recall),
-            1000 + DEFAULT_ACQUIRE_COOLDOWN_MS
+            1000 + DEFAULT_INTRODUCTION_COOLDOWN_MS
         );
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 1000, false);
         assert!(s.recall.is_some());
-        assert!(sched.due_at(&s, Depth::Recall) != 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
-    }
-
-    #[test]
-    fn due_at_anchors_the_warm_up_on_first_presentation_when_never_acquired() {
-        // A fresh card shown then failed (a wrong Recognize pick) has a store
-        // entry with a presentation stamp but no acquire fact. The warm-up must
-        // anchor on that stamp, not epoch, so it still waits out the cooldown.
-        let sched = Fsrs::default();
-        let s = CardState {
-            presented_ms: Some(1_000),
-            ..Default::default()
-        };
-        assert_eq!(
-            1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS,
-            sched.due_at(&s, Depth::Recall)
-        );
-        assert!(!sched.is_due(&s, Depth::Recall, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1));
-        assert!(sched.is_due(&s, Depth::Recall, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
+        assert!(sched.due_at(&s, Depth::Recall) != 1000 + DEFAULT_INTRODUCTION_COOLDOWN_MS);
     }
 
     #[test]
     fn due_at_is_immediate_at_a_depth_scheduled_elsewhere() {
         let sched = Fsrs::default();
-        let mut s = CardState::new(1_000);
+        let mut s = CardState::introduced_at(1_000);
         s.recall = Some(FsrsState {
             due_ms: u64::MAX,
             ..Default::default()
@@ -369,9 +370,9 @@ mod tests {
         assert_eq!(0, sched.due_at(&s, Depth::Reconstruct), "immediately due");
         assert!(sched.is_due(&s, Depth::Reconstruct, 1));
         assert_eq!(u64::MAX, sched.due_at(&s, Depth::Recall));
-        let fresh = CardState::new(1_000);
+        let fresh = CardState::introduced_at(1_000);
         assert_eq!(
-            1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS,
+            1_000 + DEFAULT_INTRODUCTION_COOLDOWN_MS,
             sched.due_at(&fresh, Depth::Reconstruct)
         );
     }
@@ -379,7 +380,7 @@ mod tests {
     #[test]
     fn apply_writes_only_the_chosen_depths_schedule() {
         let sched = Fsrs::default();
-        let mut st = CardState::new(0);
+        let mut st = CardState::introduced_at(0);
         sched.apply(&mut st, Depth::Reconstruct, Grade::Pass, 1_000, false);
         assert!(st.schedule(Depth::Reconstruct).is_some());
         assert!(st.schedule(Depth::Recall).is_none(), "no cross-crediting");
@@ -389,7 +390,7 @@ mod tests {
     #[test]
     fn apply_on_recognize_creates_its_own_schedule_and_touches_no_other() {
         let sched = Fsrs::default();
-        let mut st = CardState::new(0);
+        let mut st = CardState::introduced_at(0);
         sched.apply(&mut st, Depth::Recognize, Grade::Pass, 1_000, false);
         assert!(
             st.recognize.is_some(),
@@ -400,12 +401,75 @@ mod tests {
     }
 
     #[test]
+    fn a_cap_only_deadline_does_not_replace_recognize_retention() {
+        // Codex tenth pass, P1: one resolved tuning fed both engines, so any
+        // workspace deadline silently rescheduled Recognize at Recall's
+        // retention. Cap-only tuning (ramp_progress 0) must leave 0.85 alone.
+        let tuned = Fsrs::tuned(
+            0.9,
+            DEFAULT_RECOGNIZE_RETENTION,
+            0,
+            Some(DeadlineTuning {
+                retention: 0.9,
+                ramp_progress: 0.0,
+                max_interval_days: 36500,
+                due_ceiling_ms: u64::MAX,
+            }),
+        );
+        let plain = Fsrs::new(0.9, 0);
+        for sched in [&tuned, &plain] {
+            let mut st = CardState::introduced_at(0);
+            let mut now = 1_000;
+            let mut days = Vec::new();
+            for _ in 0..4 {
+                sched.apply(&mut st, Depth::Recognize, Grade::Pass, now, false);
+                let f = st.recognize.as_ref().unwrap();
+                days.push(f.scheduled_days);
+                now = f.due_ms.max(now + 1);
+            }
+            if std::ptr::eq(sched, &tuned) {
+                assert_eq!(
+                    days,
+                    {
+                        let mut st = CardState::introduced_at(0);
+                        let mut now = 1_000;
+                        let mut d = Vec::new();
+                        for _ in 0..4 {
+                            plain.apply(&mut st, Depth::Recognize, Grade::Pass, now, false);
+                            let f = st.recognize.as_ref().unwrap();
+                            d.push(f.scheduled_days);
+                            now = f.due_ms.max(now + 1);
+                        }
+                        d
+                    },
+                    "deadline_ramp = 0 is cap-only and must not replace the \
+                     Recognize retention"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_ramping_deadline_raises_recognize_from_its_own_base() {
+        // Mid-ramp, recognize tightens from 0.85 toward the deadline
+        // retention, never by inheriting recall's resolved value.
+        let tuning = DeadlineTuning {
+            retention: 0.925,
+            ramp_progress: 0.5,
+            max_interval_days: 36500,
+            due_ceiling_ms: u64::MAX,
+        };
+        assert!((tuning.retention_for(0.85) - 0.9).abs() < 1e-9);
+        assert!((tuning.retention_for(0.9) - 0.925).abs() < 1e-9);
+    }
+
+    #[test]
     fn recognize_runs_its_own_retention_and_schedules_longer() {
         // Same review sequence, laxer desired retention: the recognize engine
         // must produce a longer interval than the recall engine, or the
         // per-depth tuning is wired to nothing.
         let sched = Fsrs::tuned(0.9, 0.7, 0, None);
-        let mut st = CardState::new(0);
+        let mut st = CardState::introduced_at(0);
         let mut now = 1_000;
         for _ in 0..3 {
             sched.apply(&mut st, Depth::Recall, Grade::Pass, now, false);
@@ -427,10 +491,10 @@ mod tests {
     #[test]
     fn apply_stores_the_propagated_marker_on_the_review() {
         let sched = Fsrs::default();
-        let mut direct = CardState::new(0);
+        let mut direct = CardState::introduced_at(0);
         sched.apply(&mut direct, Depth::Recall, Grade::Pass, 1_000, false);
         assert!(!direct.history[0].propagated, "a direct review is unmarked");
-        let mut credited = CardState::new(0);
+        let mut credited = CardState::introduced_at(0);
         sched.apply(&mut credited, Depth::Recall, Grade::Pass, 1_000, true);
         assert!(
             credited.history[0].propagated,
@@ -440,27 +504,27 @@ mod tests {
     }
 
     #[test]
-    fn the_default_acquire_cooldown_is_five_minutes() {
+    fn the_default_introduction_cooldown_is_five_minutes() {
         // Deliberately pinned: raised from the old 1-min gap on 2026-07-14
         // (user request). Changing it changes every default session's rhythm.
-        assert_eq!(5 * 60 * 1000, DEFAULT_ACQUIRE_COOLDOWN_MS);
+        assert_eq!(5 * 60 * 1000, DEFAULT_INTRODUCTION_COOLDOWN_MS);
     }
 
     #[test]
     fn a_configured_cooldown_moves_the_first_quiz_and_the_floor() {
         let sched = Fsrs::new(0.9, 90_000);
-        let fresh = CardState::new(1_000);
+        let fresh = CardState::introduced_at(1_000);
         assert_eq!(1_000 + 90_000, sched.due_at(&fresh, Depth::Recall));
-        assert_eq!(90_000, sched.acquire_cooldown_ms());
+        assert_eq!(90_000, sched.introduction_cooldown_ms());
         assert_eq!(
-            DEFAULT_ACQUIRE_COOLDOWN_MS,
-            Fsrs::default().acquire_cooldown_ms()
+            DEFAULT_INTRODUCTION_COOLDOWN_MS,
+            Fsrs::default().introduction_cooldown_ms()
         );
     }
 
     #[test]
     fn partly_counts_as_a_pass() {
-        let mut s = CardState::new(0);
+        let mut s = CardState::introduced_at(0);
         s.record_review(0, Grade::Pass, Depth::Recall, false);
         assert_eq!(1, s.streak);
         assert_eq!(1, s.total_passes);
@@ -482,8 +546,8 @@ mod tests {
 
     #[test]
     fn fsrs_pass_on_a_new_card_sets_stability_and_schedules_out() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let f = s.recall.expect("fsrs state set");
         assert!(f.stability > 0.0, "stability should be positive");
@@ -497,18 +561,18 @@ mod tests {
 
     #[test]
     fn fsrs_partly_grows_stability_less_than_got_it() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut good = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut good = CardState::introduced_at(0);
         sched.apply(&mut good, Depth::Recall, Grade::Pass, 0, false);
-        let mut hard = CardState::new(0);
+        let mut hard = CardState::introduced_at(0);
         sched.apply(&mut hard, Depth::Recall, Grade::Partial, 0, false);
         assert!(good.recall.unwrap().stability > hard.recall.unwrap().stability);
     }
 
     #[test]
     fn fsrs_a_miss_shortens_the_next_interval() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let pass_interval = sched.due_at(&s, Depth::Recall);
         sched.apply(&mut s, Depth::Recall, Grade::Fail, pass_interval, false);
@@ -524,8 +588,8 @@ mod tests {
 
     #[test]
     fn fsrs_new_card_good_enters_a_learning_step() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let f = s.recall.expect("fsrs state set");
         assert_eq!(1, f.state, "a first Good enters Learning, not Review");
@@ -538,8 +602,8 @@ mod tests {
 
     #[test]
     fn fsrs_two_goods_graduate_to_review() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let step_due = sched.due_at(&s, Depth::Recall);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, step_due, false);
@@ -556,8 +620,8 @@ mod tests {
 
     #[test]
     fn fail_then_one_good_does_not_graduate() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Fail, 0, false);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 60_000, false);
         let f = s.recall.unwrap();
@@ -567,8 +631,8 @@ mod tests {
 
     #[test]
     fn two_goods_after_a_fail_do_graduate() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Fail, 0, false);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 60_000, false);
         assert_eq!(1, s.recall.unwrap().state);
@@ -578,8 +642,8 @@ mod tests {
 
     #[test]
     fn a_fail_resets_graduation_progress() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         sched.apply(&mut s, Depth::Recall, Grade::Fail, 60_000, false);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 120_000, false);
@@ -590,8 +654,8 @@ mod tests {
 
     #[test]
     fn partial_is_neutral_for_graduation() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         sched.apply(&mut s, Depth::Recall, Grade::Partial, 600_000, false);
         assert_eq!(1, s.recall.unwrap().state);
@@ -602,8 +666,8 @@ mod tests {
 
     #[test]
     fn a_lapsed_card_regraduates_on_one_good() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut s = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut s = CardState::introduced_at(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 600_000, false);
         sched.apply(&mut s, Depth::Recall, Grade::Fail, 1_200_000, false);
@@ -614,8 +678,8 @@ mod tests {
 
     #[test]
     fn fsrs_overdue_recall_beats_on_time_recall() {
-        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
-        let mut early = CardState::new(0);
+        let sched = Fsrs::new(0.9, DEFAULT_INTRODUCTION_COOLDOWN_MS);
+        let mut early = CardState::introduced_at(0);
         sched.apply(&mut early, Depth::Recall, Grade::Pass, 0, false);
         let step_due = sched.due_at(&early, Depth::Recall);
         sched.apply(&mut early, Depth::Recall, Grade::Pass, step_due, false);
@@ -717,6 +781,7 @@ mod tests {
             0.83,
             Some(DeadlineTuning {
                 retention: 0.96,
+                ramp_progress: 0.0,
                 max_interval_days: 7,
                 due_ceiling_ms: 9_000,
             }),
@@ -742,11 +807,12 @@ mod tests {
             1_000,
             Some(DeadlineTuning {
                 retention: 0.9,
+                ramp_progress: 0.0,
                 max_interval_days: 3,
                 due_ceiling_ms: ceiling,
             }),
         );
-        let mut st = CardState::new(0);
+        let mut st = CardState::introduced_at(0);
         st.recall = Some(FsrsState {
             stability: 200.0,
             difficulty: 5.0,
@@ -769,7 +835,7 @@ mod tests {
             "scheduled_days consistent with the ceiling"
         );
 
-        let mut free = CardState::new(0);
+        let mut free = CardState::introduced_at(0);
         free.recall = Some(FsrsState {
             stability: 200.0,
             difficulty: 5.0,

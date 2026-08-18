@@ -9,7 +9,7 @@ fn reset_orphans_clears_a_deleted_last_decks_progress() {
     let dir = TempDir::new().unwrap();
     let progress = alix::state::UserFiles::new(dir.path()).progress_for("deck-deleted");
     let mut store = alix::store::Store::open_deck(&progress, "deck-deleted", "deleted.md").unwrap();
-    store.get_or_insert("card-deleted1", 0);
+    store.get_or_insert("card-deleted1");
     store.save().unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_alix"))

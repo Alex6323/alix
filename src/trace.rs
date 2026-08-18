@@ -287,7 +287,7 @@ impl Walk {
             // The walk grades with no Session, so it's itself an
             // entry-creation site: write records before the schedule entry.
             store.ensure_records_raw(&checkpoint.card_id, &[]);
-            let state = store.get_or_insert(&checkpoint.card_id, now_ms);
+            let state = store.get_or_insert(&checkpoint.card_id);
             Fsrs::default().apply(state, Depth::Recall, delta.grade(), now_ms, false);
         }
         self.deltas[self.current] = Some(delta);
@@ -548,7 +548,7 @@ mod tests {
         walk.predict("p".to_string());
         walk.grade(&mut store, Delta::Passed, 1);
         assert_eq!(Phase::Done, walk.phase());
-        if let Some(f) = store.get_or_insert(&card0, 0).recall.as_mut() {
+        if let Some(f) = store.get_or_insert(&card0).recall.as_mut() {
             f.state = 2; // Review state (graduated)
         }
 

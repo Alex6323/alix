@@ -826,7 +826,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
             &std::fs::read_to_string(deck).unwrap(),
         )
         .unwrap();
-        store.get_or_insert(&cards[0].id().unwrap(), 0);
+        store.get_or_insert(&cards[0].id().unwrap());
     }
     store.set_deck_mastered("deck-decka", 0);
     store.save().unwrap();
@@ -883,7 +883,7 @@ fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
     let review_totals = [(2, 1), (3, 2), (1, 0), (4, 4)];
     for ((card, due_ms), (reviews, passes)) in parsed.cards.iter().zip(due_times).zip(review_totals)
     {
-        let state = store.get_or_insert(&card.id().unwrap(), now);
+        let state = store.get_or_insert(&card.id().unwrap());
         state.recall = Some(alix::store::FsrsState {
             state: 2,
             due_ms,
@@ -904,7 +904,7 @@ fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
             &format!("## personal <!-- id: {id} -->\nanswer\n"),
         )
         .unwrap();
-        store.get_or_insert(id, now).recall = Some(alix::store::FsrsState {
+        store.get_or_insert(id).recall = Some(alix::store::FsrsState {
             state: 2,
             due_ms,
             scheduled_days: 1,
@@ -950,7 +950,7 @@ fn reset_all_clears_a_seeded_store() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let state_root = dir.path().join("state");
     let mut store = deck_store(&deck, &state_root);
-    store.get_or_insert("card-math1", 0);
+    store.get_or_insert("card-math1");
     store.save().unwrap();
     let out = alix(&[
         "reset",
@@ -978,7 +978,7 @@ fn reset_all_declined_in_a_terminal_preserves_the_seeded_store() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let state_root = dir.path().join("state");
     let mut store = deck_store(&deck, &state_root);
-    store.get_or_insert("card-math1", 0);
+    store.get_or_insert("card-math1");
     store.save().unwrap();
 
     let runner = dir.path().join("reset.sh");
@@ -1045,7 +1045,7 @@ fn reset_all_clears_a_personal_only_store() {
     let store_path = dir.path().join("state");
     let mut store = deck_store(&deck, &store_path);
     let id = sample_personal_card(&deck, "math.md");
-    store.get_or_insert(&id, 0);
+    store.get_or_insert(&id);
     store.save().unwrap();
 
     let out = alix(&[
@@ -1090,8 +1090,8 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     let store_path = dir.path().join("state");
 
     let mut store = deck_store(&deck, &store_path);
-    store.get_or_insert("card-math1", 0); // the live card
-    store.get_or_insert("orphan1", 0); // an orphaned card key
+    store.get_or_insert("card-math1"); // the live card
+    store.get_or_insert("orphan1"); // an orphaned card key
     store.save().unwrap();
     // A hand-deleted deck's progress document: a deck_id with no matching
     // `.md` file, carrying non-empty deck-level state.
@@ -1176,14 +1176,14 @@ fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
             );
             let mut store = deck_store(&deck, &store_path);
             let card = format!("card-live{index}");
-            store.get_or_insert(&card, 0);
+            store.get_or_insert(&card);
             store.save().unwrap();
             live.push((store.path().to_path_buf(), card));
         }
         let ghost_path = alix::state::UserFiles::new(&store_path).progress_for("deck-ghost");
         let mut ghost =
             alix::store::Store::open_deck(&ghost_path, "deck-ghost", "ghost.md").unwrap();
-        ghost.get_or_insert("card-ghost1", 0);
+        ghost.get_or_insert("card-ghost1");
         ghost.save().unwrap();
 
         let reset = &[
@@ -1248,7 +1248,7 @@ fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read()
         let store_path = dir.path().join("state");
         let live = write(dir.path(), "live.md", VALID_DECK);
         let mut store = deck_store(&live, &store_path);
-        store.get_or_insert("card-math1", 0);
+        store.get_or_insert("card-math1");
         store.save().unwrap();
         let live_progress = store.path().to_path_buf();
         let ghost_path =
@@ -1294,7 +1294,7 @@ fn reset_orphans_spares_the_cards_of_a_deck_that_lost_its_frontmatter_id() {
     let store_path = dir.path().join("state");
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let mut store = deck_store(&deck, &store_path);
-    store.get_or_insert("card-math1", 0);
+    store.get_or_insert("card-math1");
     store.save().unwrap();
     let progress = store.path().to_path_buf();
     write(
@@ -1337,11 +1337,11 @@ fn reset_orphans_on_a_deck_file_spares_a_neighbours_live_progress() {
     );
 
     let mut store = deck_store(&target, &store_path);
-    store.get_or_insert("card-math1", 0);
-    store.get_or_insert("orphan1", 0);
+    store.get_or_insert("card-math1");
+    store.get_or_insert("orphan1");
     store.save().unwrap();
     let mut neighbour_store = deck_store(&neighbour, &store_path);
-    neighbour_store.get_or_insert("card-other1", 0);
+    neighbour_store.get_or_insert("card-other1");
     neighbour_store.save().unwrap();
 
     let out = alix(&[
@@ -1418,11 +1418,11 @@ fn deck_reset_drops_that_decks_personal_schedules() {
 
     let mut store = deck_store(&deck, &store_path);
     let math_id = sample_personal_card(&deck, "deck-mathdeck");
-    store.get_or_insert(&math_id, 0);
+    store.get_or_insert(&math_id);
     store.save().unwrap();
     let mut other_store = deck_store(&other, &store_path);
     let other_id = sample_personal_card(&other, "deck-otherdeck");
-    other_store.get_or_insert(&other_id, 0);
+    other_store.get_or_insert(&other_id);
     other_store.save().unwrap();
 
     let out = alix(&[
@@ -1458,10 +1458,10 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         .id()
         .unwrap();
     let mut store = deck_store(&deck, &store_path);
-    store.get_or_insert(&card_id, 0);
+    store.get_or_insert(&card_id);
     store.set_deck_mastered("deck-mathdeck", 0);
     let personal_id = sample_personal_card(&deck, "deck-mathdeck");
-    store.get_or_insert(&personal_id, 0);
+    store.get_or_insert(&personal_id);
     store.save().unwrap();
     let before = std::fs::read_to_string(store.path()).unwrap();
 
@@ -1523,7 +1523,7 @@ fn targeted_reset_without_confirmation_names_the_card_and_preserves_it() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let state_root = dir.path().join("state");
     let mut store = deck_store(&deck, &state_root);
-    store.get_or_insert("card-math1", alix::time::now_ms());
+    store.get_or_insert("card-math1");
     store.save().unwrap();
 
     let out = alix(&[
@@ -1556,7 +1556,7 @@ fn a_confirmed_personal_only_deck_reset_clears_the_schedule() {
 
     let mut store = deck_store(&deck, &store_path);
     let personal_id = sample_personal_card(&deck, "deck-mathdeck");
-    store.get_or_insert(&personal_id, 0);
+    store.get_or_insert(&personal_id);
     store.save().unwrap();
 
     let out = alix(&[
@@ -1728,7 +1728,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
     let store_path = dir.path().join("state");
     let mut store = deck_store(&deck, &store_path);
     let personal_id = sample_personal_card(&deck, "deck-parts");
-    store.get_or_insert(&personal_id, 0);
+    store.get_or_insert(&personal_id);
     store.save().unwrap();
 
     // The deck's one plain card is warmed at index 0; the deck's one personal
@@ -2115,7 +2115,7 @@ fn doctor_all_backends_probes_each() {
 /// also past-due, and a Recognize schedule in state 2 due in the past.
 fn both_depths_due_card(card_id: &str) -> String {
     format!(
-        r#""{card_id}":{{"acquired_ms":1000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"recognize":{{"stability":9.0,"difficulty":5.0,"reps":2,"lapses":0,"state":2,"scheduled_days":15,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"total_reviews":5,"total_passes":5}}"#
+        r#""{card_id}":{{"introduced_ms":1000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"recognize":{{"stability":9.0,"difficulty":5.0,"reps":2,"lapses":0,"state":2,"scheduled_days":15,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"total_reviews":5,"total_passes":5}}"#
     )
 }
 
@@ -2130,7 +2130,7 @@ fn list_shows_three_per_depth_cells_shallow_to_deep() {
     let (id1, id2) = (cards[0].id().unwrap(), cards[1].id().unwrap());
     let card1 = both_depths_due_card(&id1);
     let card2 = format!(
-        r#""{id2}":{{"acquired_ms":1000,"recall":{{"stability":1.0,"difficulty":5.0,"reps":1,"lapses":0,"state":1,"scheduled_days":0,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"total_reviews":1,"total_passes":1}}"#
+        r#""{id2}":{{"introduced_ms":1000,"recall":{{"stability":1.0,"difficulty":5.0,"reps":1,"lapses":0,"state":1,"scheduled_days":0,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"total_reviews":1,"total_passes":1}}"#
     );
     let state_root = dir.path().join("state");
     write_progress_document(
@@ -2791,7 +2791,7 @@ fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_repl
     std::fs::create_dir(&sender_decks).unwrap();
     let deck = write(&sender_decks, "math.md", VALID_DECK);
     let mut progress = alix::state::open_store(Path::new(&deck), &sender_decks).unwrap();
-    progress.get_or_insert("card-math1", 1);
+    progress.get_or_insert("card-math1");
     progress.save().unwrap();
     let mut augmentation = alix::augment::AugmentCache::open_for_deck(
         &alix::deck::Deck::load(Path::new(&deck)).unwrap(),
@@ -4431,7 +4431,7 @@ fn a_relative_deck_path_resolves_the_same_workspace_as_an_absolute_one() {
     );
 
     let mut store = alix::state::open_store(Path::new(&deck), ws).unwrap();
-    let state = store.get_or_insert("card-relone", alix::time::now_ms());
+    let state = store.get_or_insert("card-relone");
     state.total_reviews = 7;
     state.total_passes = 5;
     store.save().unwrap();
@@ -5107,7 +5107,7 @@ fn reset_by_token_card_id_without_a_target() {
         .id()
         .unwrap();
     let mut store = deck_store(&deck, &store_path);
-    store.get_or_insert(&card_id, 0);
+    store.get_or_insert(&card_id);
     store.save().unwrap();
 
     let out = alix(&[
@@ -5135,7 +5135,7 @@ fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
     let store_path = dir.path().join("state");
     let mut store = deck_store(&deck, &store_path);
     for c in &cards {
-        store.get_or_insert(&c.id().unwrap(), 0);
+        store.get_or_insert(&c.id().unwrap());
     }
     store.save().unwrap();
 
@@ -5343,9 +5343,8 @@ fn selecting_a_card_writes_its_id_and_decision_to_the_normal_log() {
     let log = std::fs::read_to_string(log_path).unwrap();
     assert!(
         log.contains("target=select card=card-math1")
-            && log.contains("tier=untouched")
+            && log.contains("tier=unseen")
             && log.contains("fresh=1")
-            && log.contains("revealed=0")
             && log.contains("due=")
             && log.contains("floor=")
             && log.contains("roster=1"),

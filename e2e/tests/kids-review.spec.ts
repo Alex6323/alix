@@ -3,7 +3,7 @@
 // ../fixtures/decks/animals/decks/wild.md. The fixture deck carries NO progress
 // store (see ../fixtures/README.md) — every run starts from a deck nobody has
 // reviewed yet, so the suite always exercises a real kid's first session, the
-// never-seen (*acquire*) path included.
+// never-seen (*introduction*) path included.
 //
 // This exists because two real bugs shipped past unit tests, code review, and
 // a contract suite, and were only ever found by a human clicking:
@@ -11,7 +11,7 @@
 //   1. The box screen POSTed a *workspace* name to /api/select, which 400s.
 //      `api()` did `(await fetch()).json()`, so the empty error body made
 //      `.json()` throw with no `.catch` — the button silently did nothing.
-//   2. A never-seen (acquire) card skipped the attempt entirely, so the
+//   2. A never-seen (introduction) card skipped the attempt entirely, so the
 //      depth a kid chose ("Tap the answer" vs "Say it yourself") changed
 //      nothing.
 //
@@ -160,11 +160,11 @@ test("tapping an option on a never-seen card records the pick and offers only th
   await expect(page.locator(".rate-again")).toHaveCount(0);
   await expect(page.locator(".rate-quiet")).toHaveCount(0);
 
-  const [acquireResponse] = await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/acquire") && res.request().method() === "POST"),
+  const [introduceResponse] = await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/introduce") && res.request().method() === "POST"),
     page.getByRole("button", { name: "Got it! Next" }).click(),
   ]);
-  expect(acquireResponse.status()).toBe(200);
+  expect(introduceResponse.status()).toBe(200);
 
   // The session actually moves on to the deck's other card, rather than
   // silently sitting on the same unanswered question.
@@ -234,9 +234,9 @@ test("a resynced study response does not close the kids tutor or lose its transc
 test("a wrong Recognize pick can only record failed, never passed", async ({ page }) => {
   test.fixme(
     true,
-    "Needs a card that is PAST acquire (already acknowledged once) AND due " +
-      "again for a real Recognize quiz. The acquire cooldown is a server-side " +
-      "gap (5 min default; [review] acquire_cooldown, '0' = none), so " +
+    "Needs a card that is PAST introduction (already acknowledged once) AND due " +
+      "again for a real Recognize quiz. The introduction cooldown is a server-side " +
+      "gap (5 min default; [review] introduction_cooldown, '0' = none), so " +
       "reaching that state deterministically means either a real ~60s wait " +
       "(this suite avoids real-time waits) or committing pre-warmed progress " +
       "state (forbidden by the fixture contract — see ../README.md). Left " +
@@ -244,7 +244,7 @@ test("a wrong Recognize pick can only record failed, never passed", async ({ pag
       "keeps reporting the gap instead of it rotting in a comment.",
   );
 
-  // The intended flow, once reachable: acquire "wild"'s Giraffe card, wait
+  // The intended flow, once reachable: introduce "wild"'s Giraffe card, wait
   // out the cooldown, come back to a genuine Recognize quiz on it, tap a
   // WRONG option, and assert the fix (c46dad5) still holds — only "Keep
   // going" (.rate-again, grades failed) is offered, never "✅ Got it!"

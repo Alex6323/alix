@@ -15,7 +15,7 @@ fn reset_orphans_refuses_when_a_live_decks_frontmatter_is_malformed() {
     .unwrap();
     let state = dir.path().join("state");
     let mut store = alix::state::open_store(&deck, &state).unwrap();
-    store.get_or_insert("card-live1", 0);
+    store.get_or_insert("card-live1");
     store.save().unwrap();
     let progress = store.path().to_path_buf();
     let before = std::fs::read_to_string(&progress).unwrap();

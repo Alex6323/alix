@@ -121,7 +121,7 @@ so is every client.
    Every `StateDto` carries `study_revision`, the monotonic identity of the
    current review transition. **Echo it in the `X-Alix-Study-Revision`
    header on every card-relative POST** (`/api/grade`, `/api/skip`,
-   `/api/acquire`, `/api/reveal`, `/api/check`, `/api/choose`, `/api/remove`,
+   `/api/introduce`, `/api/check`, `/api/choose`, `/api/remove`,
    `/api/restart`, `/api/ask`, `/api/ask/note`,
    `/api/ask/card/draft`, `/api/ask/card/create`). A missing or malformed
    header is a 400. A stale revision is a 409 and mutates nothing, so
@@ -149,14 +149,9 @@ so is every client.
    the protocol enforces it, which is why it is written down here: a client
    that omits it silently records lucky guesses as knowledge, and the guess
    rate is highest exactly where the option count is lowest.
-   Other transitions: `/api/skip`, `/api/acquire` (acknowledge a new card the
+   Other transitions: `/api/skip`, `/api/introduce` (acknowledge a new card the
    learner has no recorded attempt on), `/api/remove` (mark for deck-file
    removal), `/api/restart`.
-   `POST /api/reveal` is NOT a transition: clients send it when a new card's
-   answer is first shown, and the server records the encounter (the card will
-   not re-introduce as new next session) without advancing the session,
-   bumping the revision, or changing the current card. Leaving before the
-   reveal keeps the card new.
 5. `GET /api/state` re-checks server-side due-ness (a missed card can cool back
    in) — poll it on the summary screen. Session end is `phase:"done"` on the
    same `StateDto`; there is no separate finished flag.
@@ -442,8 +437,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/deselect` | – | `StateDto` | – |
 | POST | `/api/grade` | `{grade}` or `{covered, total}` | `StateDto` | 400 neither shape; 409 no session |
 | POST | `/api/skip` | – | `StateDto` | 409 |
-| POST | `/api/acquire` | – | `StateDto` | 409 |
-| POST | `/api/reveal` | – | `StateDto` (unchanged card, same revision) | 409 |
+| POST | `/api/introduce` | – | `StateDto` | 409 |
 | POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
 | POST | `/api/choose` | `{index, card}` (`card`: the current `card.id`, required) | `ChooseFeedbackDto` | 400 bad body / no question; 409 no session / another card |
 | POST | `/api/remove` | – | `StateDto` | 409 |
@@ -600,15 +594,15 @@ The review-session payload; returned by every review action.
 | `choice_runs` | [[InlineRun]]? | Display projection for `choices`, in exact index lockstep. Null when `choices` is null. |
 | `keypoints` | [string]? | Explain-check rubric lines. |
 | `keypoint_runs` | [[InlineRun]]? | Display projection for `keypoints`, in exact index lockstep. Null when `keypoints` is null. |
-| `acquire` | bool | New card (no attempt or acknowledgment recorded, even if presented before): show, then `/api/acquire`, no grading. |
+| `introducing` | bool | New card (no attempt or acknowledgment recorded, even if presented before): show, then `/api/introduce`, no grading. |
 | `mode` | string | The check being rendered: `flip` \| `typing` \| `typeline` \| `choice` \| `line` \| `explain` (open set). |
 | `depth` | string | `recognize` \| `recall` \| `reconstruct` *(closed)*. |
 | `input` | string | `type` \| `draw`. |
-| `remaining` / `initial` / `reviews` / `passed` / `failed` / `acquired` | number | Session counters; `acquired` counts new cards introduced this sitting (a first pass is acquire-only, so `reviews` alone reads 0). |
+| `remaining` / `initial` / `reviews` / `passed` / `failed` / `introduced` | number | Session counters; `introduced` counts new cards introduced this sitting (a first pass is introduction-only, so `reviews` alone reads 0). |
 | `partial` | number | Partial passes this sitting, at any depth. Recognize grades are ordinary FSRS reviews and land in `reviews`/`passed`/`failed` like every depth; this is the one extra grade nuance a summary may want. |
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything servable right now (would a restart build a non-empty sitting). |
-| `next_due_ms` | number? | Present only at `done`: the soonest epoch-millis instant a card of this sitting becomes servable (acquire floors included; at Recognize this is the only source), falling back to the schedule-wide next due instant, so an empty or cooling sitting can say when to return. Absent on a live session and when nothing is scheduled. Clients format it terse and approximate (e.g. "next due in 4 min"), never ticking. |
+| `next_due_ms` | number? | Present only at `done`: the soonest epoch-millis instant a card of this sitting becomes servable (introduction floors included; at Recognize this is the only source), falling back to the schedule-wide next due instant, so an empty or cooling sitting can say when to return. Absent on a live session and when nothing is scheduled. Clients format it terse and approximate (e.g. "next due in 4 min"), never ticking. |
 | `due_left` / `new_left` | number | Backlog beyond this sitting, computed only at `done` (0 on a live session): how many due and never-met cards a chained sitting would still find, minus what this sitting drilled. Lets the summary say "N still due" or "Start N new" and chain the drain. |
 | `met_total` / `deck_total` | number | The deck's lifetime standing, computed only at `done` (0 on a live session): how many of its cards carry any progress at all, out of how many it holds. Independent of the sitting, so a summary can place today's work against the whole deck. |
 | `recognize_gap` | object? | Present only on a `done` Recognize sitting that excluded cards (Recognize schedules pick-capable cards only, so `due_left`/`new_left` cannot see them): `{recall, unaugmented}` — how many of the deck's cards are workable at Recall right now, and how many can build no pick at all. The summary points at those two exits (continue at Recall / augment choices) instead of claiming nothing is due. Absent everywhere else. |
@@ -754,15 +748,17 @@ never a group.
 
 `preamble: string | null` (the prose under the deck's `#` H1, if any),
 `heatmap: [string]` (one tier per card in file order, from the seven-value
-vocabulary `"untouched"` | `"seen"` | `"acquired"` | `"learned-strong"` |
-`"learned-fading"` | `"learned-weak"` | `"retired"`). The tiers: `untouched`
-was never presented; `seen` was presented at least once but never yet answered
-correctly (correctness of attempts is irrelevant to being seen); `acquired`
-was correct at least once but has not graduated; the three `learned-*` values
-are a graduated card banded by its CURRENT Recall retrievability (strong:
-`>= 0.9`, matching the scheduler's default request retention; weak: `< 0.7`;
-fading between; the thresholds live lib-side, clients only map the strings to
-colors); `retired` is past the retire cap.
+vocabulary `"unseen"` | `"seen"` | `"learning"` | `"learned-strong"` |
+`"learned-fading"` | `"learned-weak"` | `"retired"`). The tiers are a ladder
+of what the learner DID: `unseen` has no store entry; `seen` has one but no
+correct answer yet (a wrong attempt stays `seen`); `learning` was correct at
+least once (`total_passes > 0`) but has not graduated; the three `learned-*`
+values are a graduated card banded by its CURRENT Recall retrievability
+(strong: `>= 0.9`, matching the scheduler's default request retention; weak:
+`< 0.7`; fading between; the thresholds live lib-side, clients only map the
+strings to colors); `retired` is past the retire cap, evaluated before the
+bands because a retired card's long interval decays its retrievability and
+would otherwise paint the best-known cards `learned-weak`.
 `topologies: [{name, principle, regions: [{name, cells: [string]}]}]` (present
 only when the deck has a topology augmentation; `cells` use the same tier
 vocabulary as `heatmap`), and a nested progress funnel `total`, `seen`,

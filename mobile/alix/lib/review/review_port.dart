@@ -24,7 +24,7 @@ abstract interface class ReviewPort {
 
   ReviewCheckFeedbackModel? check(List<String> lines);
 
-  ReviewStateModel acquire();
+  ReviewStateModel introduce();
 
   ReviewStateModel grade(ReviewGrade grade);
 

@@ -1,13 +1,13 @@
 // The badge names what is on screen right now, provenance ("new",
 // "remediation") first, then the interaction. It never names the *scheduled*
 // check: choices on screen are a pick-one whatever the card's schedule will
-// use once acquired. An acquire card runs its own ungraded on-ramp, so it
+// use once introduced. An introduction card runs its own ungraded on-ramp, so it
 // names that on-ramp (pick one, draw, or reveal) rather than the depth's
 // check, which does not run until the card has been met.
-export function modeTag({ acquire, choices, mode, draw }) {
+export function modeTag({ introducing, choices, mode, draw }) {
   const parts = [];
-  if (acquire) parts.push("new");
-  if (acquire) {
+  if (introducing) parts.push("new");
+  if (introducing) {
     parts.push(choices ? "choice" : draw ? "draw" : "reveal");
   } else {
     parts.push(choices ? "choice" : mode === "typeline" ? "typing · line" : mode);
@@ -120,16 +120,16 @@ export function createStudy({
   // instead of silently doing nothing forever.
   function grade(g)  { api("/api/grade", post({ grade: g })).then(apply).catch(() => load()); }
   function skip()    { api("/api/skip", post({})).then(apply).catch(() => load()); }
-  function acquire() { api("/api/acquire", post({})).then(apply).catch(() => load()); }
+  function introduce() { api("/api/introduce", post({})).then(apply).catch(() => load()); }
   function remove()  { api("/api/remove", post({})).then(apply).catch(() => load()); }
   function restart() { api("/api/restart", post({})).then(apply).catch(() => load()); }
 
-  // One heatmap cell's fill: the lib's per-card tier. untouched = neutral,
-  // seen = dim grey (presented, never yet correct), acquired = white (correct
+  // One heatmap cell's fill: the lib's per-card tier. unseen = neutral,
+  // seen = dim grey (presented, never yet correct), introduced = white (correct
   // once, not graduated), learned-strong/-fading/-weak = green/yellow/red by
   // current retrievability, retired = purple.
   function paintHeatCell(cellEl, tier) {
-    cellEl.classList.add(tier === "untouched" ? "empty" : tier);
+    cellEl.classList.add(tier === "unseen" ? "empty" : tier);
   }
   function syncSaveAlert() {
     let a = doc.getElementById("save-alert");
@@ -213,22 +213,22 @@ export function createStudy({
   }
   function hasKeypoints() { return isExplain() && state.keypoints && state.keypoints.length > 0; }
   // A never-seen card: an attempt then reveal, acknowledged with one key (not graded).
-  function isAcquire() { return !!(state && state.acquire); }
+  function isIntroducing() { return !!(state && state.introducing); }
   // First encounter as a recognition question (strictly-augmented atomic card).
-  function isAcquireChoice() { return isAcquire() && !!state.choices; }
+  function isIntroChoice() { return isIntroducing() && !!state.choices; }
   function isChoice() { return state.mode === "choice" && state.choices; }
   function isInput() { return state.mode === "typing"; }
   function isTypeLine() { return state.mode === "typeline"; }
   function isExplain() { return state.mode === "explain"; }
-  // A genuine Recognize-session MC pick (never true for the acquire on-ramp,
+  // A genuine Recognize-session MC pick (never true for the introduction on-ramp,
   // which shows its own recognition question regardless of depth).
-  function isRecognizeMc() { return !isAcquire() && isChoice(); }
+  function isRecognizeMc() { return !isIntroducing() && isChoice(); }
   // The Recognize fallback: the session is Recognize but no MC could be built
   // (too few distractors) — attempt→reveal with a plain Knew-it/Not-yet call,
   // not the generic three-way grade.
-  function isRecognizeFallback() { return !isAcquire() && state.depth === "recognize" && !state.choices; }
+  function isRecognizeFallback() { return !isIntroducing() && state.depth === "recognize" && !state.choices; }
   // Draw is effective when the card is authored draw-only OR the per-device toggle
-  // is on — but only for the self-graded modes L1 supports, and never while acquiring.
+  // is on — but only for the self-graded modes L1 supports, and never while introducing.
   function effectiveDraw() {
     if (!state || !state.card) return false;
     if (state.card.context && state.card.context.length) return false; // cloze cards don't draw in L1 (a mode-less cloze resolves to flip)
@@ -237,7 +237,7 @@ export function createStudy({
   }
   function modeLabel() {
     return modeTag({
-      acquire: isAcquire(),
+      introducing: isIntroducing(),
       choices: !!state.choices,
       mode: state.mode,
       draw: effectiveDraw(),
@@ -245,13 +245,12 @@ export function createStudy({
   }
   // A pick's result is pure evidence (the grade is separate, via /api/grade).
   // Every pick shows its feedback screen (chosen + correct options highlighted).
-  // The acquire on-ramp's is ungraded — any pick just leads to "Seen". A genuine
+  // The introduction on-ramp's is ungraded — any pick just leads to "Seen". A genuine
   // Recognize pick pauses on Continue: "Next" plus the quiet "I guessed"
   // override when correct, a plain "Continue" (grades failed) when wrong — so a
   // miss shows the right answer before the card moves on, same as any other check.
   function choose(i) {
-    // An acquire-card pick reveals its answer feedback: same encounter rule.
-    if (isAcquire() && !feedback) api("/api/reveal", post({})).catch(() => {});
+    // An introduction-card pick reveals its answer feedback: same encounter rule.
     api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
       feedback = f;
       // Only the answer changed. A full rerender() rebuilds the question too, which
@@ -468,21 +467,21 @@ export function createStudy({
       // Source view: all cited excerpts take the answer's place in authored order.
       renderSourceCitations(a, citations);
       setNote(true);
-    } else if (isAcquire()) {
+    } else if (isIntroducing()) {
       if (effectiveDraw()) {
         // Attempt-first, ungraded: draw your answer, then reveal it to compare.
         if (revealed === 0) { renderDrawCanvas(a); setNote(false); }
         else {
           if (drawSnapshot) a.appendChild(frozenDrawImg(drawSnapshot)); // your attempt, kept for comparison
-          fillAcquire(a); setNote(true);         // then the answer (still just "Seen")
+          fillIntroduction(a); setNote(true);         // then the answer (still just "Seen")
         }
-      } else if (isAcquireChoice()) {
+      } else if (isIntroChoice()) {
         if (feedback) renderChoiceFeedback(a); else renderChoices(a);
         setNote(!!feedback);
       } else if (revealed > 0) {
-        fillAcquire(a); setNote(true);          // recall: answer shown after reveal
+        fillIntroduction(a); setNote(true);          // recall: answer shown after reveal
       } else {
-        a.appendChild(el("div", "acquire-hint", "new card: try to recall it, then reveal."));
+        a.appendChild(el("div", "introduction-hint", "new card: try to recall it, then reveal."));
         setNote(false);                          // recall: front only until revealed
       }
     }
@@ -515,15 +514,15 @@ export function createStudy({
       grp.appendChild(el("span", "k", "s"));
       a.appendChild(grp);
     }
-    // Acquire recall: the same corner-cue mechanism as the source swap, here hiding /
+    // Introduction recall: the same corner-cue mechanism as the source swap, here hiding /
     // un-hiding the revealed answer in place so you can self-test the encoding. `h` (or
     // a tap on the region) flips it both ways. Shown only once the answer is revealed
     // (nothing to hide before then), and never on a cited card — citation owns the corner.
-    const hidable = isAcquire() && !effectiveDraw() && !isAcquireChoice() && citations.length === 0 && revealed > 0;
+    const hidable = isIntroducing() && !effectiveDraw() && !isIntroChoice() && citations.length === 0 && revealed > 0;
     a.classList.toggle("hidable", hidable);
     a.classList.toggle("concealed", hidable && answerConcealed);
     if (hidable) {
-      a.onclick = onAcqToggleClick;
+      a.onclick = onIntroToggleClick;
       const grp = el("span", "cite-toggle");
       grp.title = answerConcealed ? "show answer" : "hide the answer to self-test";
       grp.appendChild(el("span", "ci", answerConcealed ? "⊙" : "⊘"));
@@ -1018,11 +1017,11 @@ export function createStudy({
   }
 
   // Fill the answer region for reveal modes (flip / line / choice fallback).
-  // The acquire view: a never-seen card shown answer-first, so you read it before
+  // The introduction view: a never-seen card shown answer-first, so you read it before
   // it's ever quizzed. One key ("Seen") records it; its first quiz comes ~1 min later.
   // Only a reshaped list wants a flush-left block: its lines are steps or bullets.
   function leftAlignAnswer(c) { return isReshapedList(c); }
-  function fillAcquire(a) {
+  function fillIntroduction(a) {
     if (!a) return;
     const c = state.card;
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
@@ -1031,7 +1030,7 @@ export function createStudy({
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
-    a.appendChild(el("div", "acquire-hint", "new card: you'll be quizzed on it in about a minute."));
+    a.appendChild(el("div", "introduction-hint", "new card: you'll be quizzed on it in about a minute."));
   }
 
   function fillAnswer(a) {
@@ -1072,8 +1071,8 @@ export function createStudy({
     legend.innerHTML = "";
     clearLegendSides();
     if (feedback) {
-      if (isAcquire()) {
-        chip("Seen", "primary", acquire, label(keys.reveal)); // a pick acknowledges, never grades
+      if (isIntroducing()) {
+        chip("Seen", "primary", introduce, label(keys.reveal)); // a pick acknowledges, never grades
         chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight); // answer is showing: tutor allowed
       } else if (isRecognizeMc()) {
         if (feedback.passed) {
@@ -1100,19 +1099,19 @@ export function createStudy({
         chip("Got it", "passed", () => grade("passed"), label(keys.passed));
         chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
       }
-    } else if (isAcquire()) {
+    } else if (isIntroducing()) {
       if (effectiveDraw()) {
         if (revealed === 0) {
           chip("Reveal", "primary", drawReveal, label(keys.reveal)); // reveal freezes your attempt
           chip("Skip", "", skip, label(keys.skip));
         } else {
-          chip("Seen", "primary", acquire, label(keys.reveal));      // ungraded acknowledgment
+          chip("Seen", "primary", introduce, label(keys.reveal));      // ungraded acknowledgment
           chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
         }
-      } else if (isAcquireChoice()) {
+      } else if (isIntroChoice()) {
         chip("Skip", "", skip, label(keys.skip));            // options are tappable
       } else if (revealed > 0) {
-        chip("Seen", "primary", acquire, label(keys.reveal)); // hide⟷show is the corner `h` toggle, not a footer button
+        chip("Seen", "primary", introduce, label(keys.reveal)); // hide⟷show is the corner `h` toggle, not a footer button
         chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
       } else {
         chip("Reveal", "primary", reveal, label(keys.reveal));
@@ -1180,18 +1179,18 @@ export function createStudy({
   function renderSummary() {
     const acc = state.reviews > 0 ? Math.round(100 * state.passed / state.reviews) + "%" : "–";
     const wrap = el("div", "summary");
-    // A first pass over a fresh deck is acquire-only: reviews stay 0 while
+    // A first pass over a fresh deck is introduction-only: reviews stay 0 while
     // every card was introduced. Say what actually happened — and when nothing
     // happened (an instant-empty select), don't call it a session at all, and
     // never print a zero-valued row (a done screen must not read as "you did
     // nothing"; user rule).
-    const acquired = state.acquired || 0;
+    const introduced = state.introduced || 0;
     const partial = state.partial || 0;
-    const didSomething = state.reviews > 0 || acquired > 0;
+    const didSomething = state.reviews > 0 || introduced > 0;
     wrap.appendChild(el("div", "lede", didSomething ? "session complete" : "nothing to do here"));
     const gap = state.recognize_gap;
     const headline = state.reviews > 0 ? "Nicely charged."
-      : acquired > 0 ? "New cards planted."
+      : introduced > 0 ? "New cards planted."
       : gap ? "Recognize is drained."
       : "Nothing due.";
     wrap.appendChild(el("h2", null, headline));
@@ -1205,7 +1204,7 @@ export function createStudy({
     // label, so the numeric column stays one number per row.
     const deckTotal = state.deck_total || 0;
     const standing = deckTotal > 0 ? ` (${state.met_total || 0} of ${deckTotal} in the deck)` : "";
-    if (acquired > 0) row("introduced" + standing, `${acquired}`);
+    if (introduced > 0) row("introduced" + standing, `${introduced}`);
     if (state.reviews > 0) {
       row("reviewed", `${state.reviews}`);
       row("passed / failed", `${state.passed} / ${state.failed}`);
@@ -1219,11 +1218,11 @@ export function createStudy({
     // sits open, and a "4 min" printed once would be wrong a minute later.
     const noteText = () => {
       if (summaryReady) return "Ready when you are.";
-      // After a sitting that only acquired cards, "N new waiting" reads as an
+      // After a sitting that only introduced cards, "N new waiting" reads as an
       // endless queue: it never says the cards just met come back shortly.
       const nextDue = !gap ? nextDueNote(state.next_due_ms) : null;
-      const acquiredReturn = acquired > 0 && nextDue
-        ? `${acquired} card${acquired === 1 ? "" : "s"} met. ${nextDue}`
+      const introducedReturn = introduced > 0 && nextDue
+        ? `${introduced} card${introduced === 1 ? "" : "s"} met. ${nextDue}`
         : null;
       // "N still due" beside a disabled Continue is a contradiction: when
       // nothing is servable the cards are cooling, so say when one opens.
@@ -1239,7 +1238,7 @@ export function createStudy({
         if (gap.unaugmented > 0) parts.push(`${gap.unaugmented} need answer choices first (the Augment screen builds them)`);
         return parts.join(" · ") + ".";
       }
-      if (acquiredReturn) return acquiredReturn + (newLeft > 0 ? ` ${newLeft} new waiting.` : "");
+      if (introducedReturn) return introducedReturn + (newLeft > 0 ? ` ${newLeft} new waiting.` : "");
       if (nextDue && !didSomething) return nextDue;
       if (dueSegment) return `${dueSegment}.`;
       if (newLeft > 0) return `${newLeft} new waiting.`;
@@ -1292,28 +1291,27 @@ export function createStudy({
     // Seeing a new card's answer IS the encounter: record it server-side so
     // abandoning the session here does not re-introduce the card as new.
     // Fire-and-forget: a lost mark degrades to the old behavior, nothing worse.
-    if (firstLook && isAcquire()) api("/api/reveal", post({})).catch(() => {});
     fillBottom();
     renderLegend();
   }
-  // Acquire only: hide / un-hide the revealed answer so you can self-test the fresh
+  // Introduction only: hide / un-hide the revealed answer so you can self-test the fresh
   // encoding (conceal it, try to recall, show it to check) before acknowledging with
   // "Seen". Deliberately does ONE thing — flips the answer text's visibility in place.
   // It does NOT re-render: the card stays fully revealed, so the note, the footer, the
   // answer's own box, everything holds its exact position. Nothing reflows or jumps.
   // A first-encounter aid: there's no spaced schedule to lean on yet, so an ordinary
   // review has no such toggle — it drills a card by failing it, which brings it back spaced.
-  function acquireToggle() {
+  function introToggle() {
     if (revealed === 0) { reveal(); return; } // first look: reveal (same as the Reveal key)
     answerConcealed = !answerConcealed;
     const a = doc.getElementById("ansRegion");
     if (!a) return;
     a.classList.toggle("concealed", answerConcealed); // visibility only — no reflow, no movement
-    paintAcqCue(a);
+    paintIntroCue(a);
   }
   // Point the corner cue's glyph/title at what the next press does. A textContent swap
   // only — no layout change.
-  function paintAcqCue(a) {
+  function paintIntroCue(a) {
     const cue = a.querySelector(".cite-toggle");
     if (!cue) return;
     cue.title = answerConcealed ? "show answer" : "hide the answer to self-test";
@@ -1321,9 +1319,9 @@ export function createStudy({
     if (ci) ci.textContent = answerConcealed ? "⊙" : "⊘";
   }
   // A tap on the answer region toggles too, but don't hijack a text-selection drag.
-  function onAcqToggleClick() {
+  function onIntroToggleClick() {
     if (win.getSelection && String(win.getSelection())) return;
-    acquireToggle();
+    introToggle();
   }
 
 
@@ -1399,9 +1397,9 @@ export function createStudy({
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
       }
-      // A never-seen card (acquire): recognition pick or recall reveal, then "Seen".
+      // A never-seen card (introduction): recognition pick or recall reveal, then "Seen".
       // Handled before the feedback/grade paths so a pick never grades the card.
-      if (isAcquire()) {
+      if (isIntroducing()) {
         if (hit(e, keys.remove)) { e.preventDefault(); remove(); return; }
         // Post-reveal only: once the answer shows (revealed, or a pick's feedback),
         // the tutor is allowed here too, matching review's after-reveal rule.
@@ -1411,11 +1409,11 @@ export function createStudy({
             if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
             if (hit(e, keys.reveal)) { e.preventDefault(); drawReveal(); return; }
           } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
-            e.preventDefault(); acquire();
+            e.preventDefault(); introduce();
           }
           return;
         }
-        if (isAcquireChoice()) {
+        if (isIntroChoice()) {
           if (!feedback) {
             if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
             if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
@@ -1426,18 +1424,18 @@ export function createStudy({
               if (i < state.choices.length) { e.preventDefault(); choose(i); }
             }
           } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
-            e.preventDefault(); acquire();
+            e.preventDefault(); introduce();
           }
           return;
         }
         // `h` toggles the answer hidden ⟷ shown, both directions on one key (the
         // source⟷answer swap's principle); space reveals, then acknowledges ("Seen").
-        if (e.key.toLowerCase() === "h" && !e.ctrlKey) { e.preventDefault(); acquireToggle(); return; }
+        if (e.key.toLowerCase() === "h" && !e.ctrlKey) { e.preventDefault(); introToggle(); return; }
         if (revealed === 0) {
           if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
           if (hit(e, keys.reveal)) { e.preventDefault(); reveal(); return; }
         } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
-          e.preventDefault(); acquire();
+          e.preventDefault(); introduce();
         }
         return;
       }

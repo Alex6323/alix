@@ -2,7 +2,7 @@
 // Linux desktop window in CI, an emulator for the on-Android tier), driving
 // picker -> review -> grade against the real core and asserting the store
 // file. A tap opens straight at the deck's remembered depth (T5.1a, item
-// 10): no depth sheet on this path. The acquire is backdated through the
+// 10): no depth sheet on this path. The introduction is backdated through the
 // bridge so the wall-clock UI serves a quiz immediately; nothing sleeps.
 import 'dart:io';
 
@@ -37,7 +37,7 @@ void main() {
       '${root.path}/greek.md',
       '# Greek\n\n## capital of greece?\nAthens\n',
     );
-    // Acquired ten minutes "ago" (past the 5-min default acquire cooldown):
+    // Introduced ten minutes "ago" (past the 5-min default introduction cooldown):
     // the app, on the wall clock, serves the quiz.
     final backdated =
         BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
@@ -45,7 +45,7 @@ void main() {
       deckPath: '${root.path}/greek.md',
       rootDir: root.path,
       nowMs: backdated,
-    ).acquire(nowMs: backdated);
+    ).introduce(nowMs: backdated);
 
     await tester.pumpWidget(AlixApp(
       prepared: Prepared(root: root.path, device: 'e2e-test'),

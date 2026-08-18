@@ -81,7 +81,7 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
       ...choiceState,
       kind: "review",
       phase: "review",
-      acquire: false,
+      introducing: false,
       mode: "fill",
       choices: null,
       card,

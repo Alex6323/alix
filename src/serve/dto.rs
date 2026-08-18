@@ -102,7 +102,7 @@ pub(super) struct StateDto {
     pub(super) choice_runs: Option<Vec<Vec<InlineRun>>>,
     pub(super) keypoints: Option<Vec<String>>,
     pub(super) keypoint_runs: Option<Vec<Vec<InlineRun>>>,
-    pub(super) acquire: bool,
+    pub(super) introducing: bool,
     pub(super) mode: &'static str,
     pub(super) depth: &'static str,
     pub(super) input: &'static str,
@@ -111,7 +111,7 @@ pub(super) struct StateDto {
     pub(super) reviews: u32,
     pub(super) passed: u32,
     pub(super) failed: u32,
-    pub(super) acquired: u32,
+    pub(super) introduced: u32,
     pub(super) partial: u32,
     pub(super) exam_due: Vec<String>,
     pub(super) can_restart: bool,
@@ -969,7 +969,7 @@ pub(super) fn review_state(
             choice_runs: None,
             keypoints: None,
             keypoint_runs: None,
-            acquire: false,
+            introducing: false,
             mode: mode_name(Mode::default()),
             depth: depth_name(Depth::default()),
             input: input_name(Input::default()),
@@ -978,7 +978,7 @@ pub(super) fn review_state(
             reviews: 0,
             passed: 0,
             failed: 0,
-            acquired: 0,
+            introduced: 0,
             partial: 0,
             exam_due: Vec::new(),
             can_restart: false,
@@ -1095,7 +1095,7 @@ pub(super) fn review_state(
         choice_runs: s.choice_runs,
         keypoints: s.keypoints,
         keypoint_runs: s.keypoint_runs,
-        acquire: s.acquire,
+        introducing: s.introducing,
         mode: mode_name(s.mode),
         depth: depth_name(s.depth),
         input: input_name(s.input),
@@ -1104,7 +1104,7 @@ pub(super) fn review_state(
         reviews: s.reviews,
         passed: s.passed,
         failed: s.failed,
-        acquired: s.acquired,
+        introduced: s.introduced,
         partial: s.partial,
         exam_due,
         can_restart: s.can_restart,
@@ -1279,9 +1279,9 @@ mod tests {
 
         // a: untouched (no store entry) → unseen.
         // b: a bare store entry → seen only.
-        store.get_or_insert(&deck.cards[1].id().unwrap(), now);
+        store.get_or_insert(&deck.cards[1].id().unwrap());
         // c: two real Recall Goods → graduated (state 2) at a sub-cap interval.
-        let c = store.get_or_insert(&deck.cards[2].id().unwrap(), now);
+        let c = store.get_or_insert(&deck.cards[2].id().unwrap());
         sched.apply(c, Depth::Recall, Grade::Pass, now, false);
         sched.apply(c, Depth::Recall, Grade::Pass, now, false);
         assert!(
@@ -1289,9 +1289,7 @@ mod tests {
             "two Goods must graduate the card"
         );
         // d: a matured Review state past the retire cap → retired (and graduated).
-        store
-            .get_or_insert(&deck.cards[3].id().unwrap(), now)
-            .recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&deck.cards[3].id().unwrap()).recall = Some(crate::store::FsrsState {
             state: 2,
             stability: 400.0,
             scheduled_days: 400,

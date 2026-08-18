@@ -112,7 +112,7 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
-  ReviewStateModel acquire() => _stateFromBridge(_session.acquire());
+  ReviewStateModel introduce() => _stateFromBridge(_session.introduce());
 
   @override
   ReviewStateModel grade(ReviewGrade grade) {
@@ -169,7 +169,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
     mode: _modeFromBridge(state.mode),
     depth: _depthFromBridge(state.depth),
     input: _inputFromBridge(state.input),
-    acquire: state.acquire,
+    introducing: state.introducing,
     choices: state.choices,
     choiceRuns: state.choiceRuns == null
         ? null
@@ -183,7 +183,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
     reviews: state.reviews,
     passed: state.passed,
     failed: state.failed,
-    acquired: state.acquired,
+    introduced: state.introduced,
     partial: state.partial,
     canRestart: state.canRestart,
     nextDueMs: state.nextDueMs?.toInt(),

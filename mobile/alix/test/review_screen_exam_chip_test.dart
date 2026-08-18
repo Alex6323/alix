@@ -65,7 +65,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // The fixture is a fresh deck's one acquire card: Reveal then Seen
+  // The fixture is a fresh deck's one introduction card: Reveal then Seen
   // finishes the session and lands on the done summary the chip lives on.
   Future<void> finishReview(WidgetTester tester) async {
     await tester.tap(find.text('Reveal'));

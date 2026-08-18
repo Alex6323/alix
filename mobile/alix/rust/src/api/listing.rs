@@ -200,7 +200,7 @@ mod tests {
             .expect("the fixture stamps its own id");
         let store_path = alix::workspace::root_store_path(root);
         let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
-        store.get_or_insert(&base_id, T0).recall = Some(graduated_not_due(T0));
+        store.get_or_insert(&base_id).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000));

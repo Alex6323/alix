@@ -197,8 +197,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _attempt.clear();
   }
 
-  void _acquire() {
-    _controller.acquire();
+  void _introduce() {
+    _controller.introduce();
     _resetInputs();
   }
 
@@ -239,7 +239,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         final nowMs = DateTime.now().millisecondsSinceEpoch;
         final explain =
             state.mode == ReviewMode.explain &&
-            !state.acquire &&
+            !state.introducing &&
             state.keypoints != null;
         return ReviewView(
           state: state,
@@ -274,7 +274,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           onToggleKeypoint: _controller.toggleKeypoint,
           onReveal: _controller.reveal,
           onRevealNextLine: _controller.revealNextLine,
-          onAcquire: _acquire,
+          onIntroduce: _introduce,
           onGrade: _grade,
           onOpenTutor: _openTutor,
           onRestart: _restart,

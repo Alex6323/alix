@@ -1,4 +1,4 @@
-// Regression coverage for trace routing and acquire-only review summaries.
+// Regression coverage for trace routing and introduction-only review summaries.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -77,7 +77,7 @@ void main() {
     },
   );
 
-  testWidgets('an acquire-only first pass says new cards were met, not zeros', (
+  testWidgets('an introduction-only first pass says new cards were met, not zeros', (
     tester,
   ) async {
     final root = traceRoot();
@@ -95,7 +95,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The fresh deck's single card is acquired (Reveal, then Seen).
+    // The fresh deck's single card is introduced (Reveal, then Seen).
     await tester.tap(find.text('Reveal'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Seen'));
@@ -105,7 +105,7 @@ void main() {
     expect(
       find.text('New cards planted.'),
       findsOneWidget,
-      reason: 'an acquire-only sitting is not "Nothing due."',
+      reason: 'an introduction-only sitting is not "Nothing due."',
     );
     expect(find.text('introduced'), findsOneWidget);
     expect(

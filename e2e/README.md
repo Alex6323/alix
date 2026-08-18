@@ -16,7 +16,7 @@ contract suite, and were only ever found by a human clicking:
 1. A button POSTed a *workspace* name to `/api/select` (the server rejects
    that, 400) — and because the client's `api()` helper had no `.catch`, the
    button silently did nothing.
-2. A never-seen (*acquire*) card skipped its attempt entirely, so the depth a
+2. A never-seen (*introduction*) card skipped its attempt entirely, so the depth a
    learner chose changed nothing.
 3. A multi-line answer got flattened into one run-on string
    (`back.join(" ")`), turning an ordered sequence ("Egg / Caterpillar /
@@ -66,9 +66,9 @@ where it is rather than fixed:
 - **The honest-Recognize-grading rule** ("a wrong Recognize pick can only
   record failed, never passed", fix `c46dad5`) has a real test body, but it's
   marked `test.fixme` in `tests/kids-review.spec.ts` (see the annotation
-  there) — reaching it needs a card that is past acquire *and* due again, and
-  the real acquire cooldown is a server-side gap (5 min default; configurable
-  since 2026-07-14 via `[review] acquire_cooldown`, `"0"` = none — a fixture
+  there) — reaching it needs a card that is past introduction *and* due again, and
+  the real introduction cooldown is a server-side gap (5 min default; configurable
+  since 2026-07-14 via `[review] introduction_cooldown`, `"0"` = none — a fixture
   config with a zero cooldown is now the cleanest route to close this gap).
   Reaching that deterministically without the knob
   would mean either a real wait (this suite avoids real-time waits — the
@@ -102,7 +102,7 @@ where it is rather than fixed:
     * `decks/wild.md`: an initialized 2-card L1 deck (a frontmatter `id`,
       `## ` fronts with literal `<!-- id: -->` tokens, and `> ` notes). Both
       cards are always genuinely never-seen at the start of a run, so the
-      suite exercises a real first session, acquire path included.
+      suite exercises a real first session, introduction path included.
     * `decks/cats.md`: one card with a two-line answer ("Lion" / "Tiger"), in
       its own file so editing it can never disturb `wild.md`. Exists solely
       for the multi-line regression test (`tests/kids-multiline.spec.ts`).
@@ -143,7 +143,7 @@ where it is rather than fixed:
   `prepare-fixtures.cjs` refuses to copy private state even if it somehow
   shows up locally. Progress is per-run state, not a
   fixture: every run must start from a deck nobody has reviewed yet, so it
-  actually exercises the never-seen (*acquire*) path. Committing a pre-warmed
+  actually exercises the never-seen (*introduction*) path. Committing a pre-warmed
   store would also be a ticking clock: due-ness is computed against wall
   time, so a frozen timestamp would change the suite's behavior as it ages.
 - **No exceptions, and no synthesising progress at setup either.** Card and

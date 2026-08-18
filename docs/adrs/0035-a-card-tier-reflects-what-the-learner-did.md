@@ -1,6 +1,7 @@
 # 0035: A card tier reflects what the learner did
 
-- Status: Proposed
+- Status: Accepted
+- Evidence: introduced_ms in src/store.rs
 - Recorded: 2026-08-18
 - Retrospective: No
 

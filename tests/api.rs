@@ -441,10 +441,10 @@ fn spawn_full_server_fixture(
         let mut seed = alix::state::open_stores(&deck_paths, &store_path).unwrap();
         let mut aug = AugmentCache::open_for_decks(dir.path(), &decks).unwrap();
         for card in parser::parse_str("choice.md", CHOICE_DECK).unwrap() {
-            seed.get_or_insert(&card.id().unwrap(), 0);
+            seed.get_or_insert(&card.id().unwrap());
         }
         for card in parser::parse_str("choice-armed.md", CHOICE_ARMED_DECK).unwrap() {
-            seed.get_or_insert(&card.id().unwrap(), 0);
+            seed.get_or_insert(&card.id().unwrap());
             aug.set_distractors(
                 &card.id().unwrap(),
                 vec!["wrong a".into(), "wrong b".into(), "wrong c".into()],
@@ -759,8 +759,8 @@ fn a_rejected_exam_start_keeps_the_active_progress_store() {
     let rejected = post_json(&base, "/api/exam/start", r#"{"deck":"animals/one.md"}"#);
     assert_eq!(409, rejected.status);
 
-    let acquired = post_gated(&base, "/api/acquire", "{}");
-    assert_eq!(200, acquired.status);
+    let introduced = post_gated(&base, "/api/introduce", "{}");
+    assert_eq!(200, introduced.status);
 
     let after: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
@@ -794,7 +794,7 @@ fn an_active_workspace_listing_reads_the_progress_owner_projection() {
     let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
     let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
     assert_eq!(200, selected.status);
-    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
 
     let before = member_row(&base);
     let progress = guard.dir().join("animals/progress/deck-animalone.json");
@@ -833,7 +833,7 @@ fn an_inactive_workspace_listing_reads_the_progress_owner_projection() {
     let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
     let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
     assert_eq!(200, selected.status);
-    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
     assert_eq!(200, post_gated(&base, "/api/deselect", "{}").status);
 
     let before = member_row(&base);
@@ -873,13 +873,13 @@ fn a_reset_reaches_the_listing_past_the_retained_workspace_snapshot() {
     let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);
     let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
     assert_eq!(200, selected.status);
-    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
     assert_eq!(200, post_gated(&base, "/api/deselect", "{}").status);
 
     let before = member_row(&base);
     assert_eq!(
         "started", before["state"],
-        "the acquire must be visible pre-reset: {before}"
+        "the introduction must be visible pre-reset: {before}"
     );
 
     let reset = post_json(&base, "/api/reset", r#"{"deck":"animals/one.md"}"#);
@@ -887,7 +887,7 @@ fn a_reset_reaches_the_listing_past_the_retained_workspace_snapshot() {
     let cleared: serde_json::Value = serde_json::from_slice(&reset.body).unwrap();
     assert_eq!(
         1, cleared["cards_cleared"],
-        "the reset must clear the acquired card: {cleared}"
+        "the reset must clear the introduced card: {cleared}"
     );
 
     let after = member_row(&base);
@@ -960,7 +960,7 @@ fn a_folder_members_row_reads_the_served_root_store() {
     });
     let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
     assert_eq!(200, selected.status);
-    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
 
     let response = http(&base, "GET", "/api/decks", &[], &[]);
     assert_eq!(200, response.status);
@@ -1481,7 +1481,7 @@ fn a_concurrent_writer_surfaces_save_error_in_the_review_state() {
 
     let document = state_root(guard.dir.path()).join("progress/deck-sample.json");
     let mut other = Store::open_deck(&document, "deck-sample", "sample.md").unwrap();
-    other.get_or_insert("card-elsewhere", 1);
+    other.get_or_insert("card-elsewhere");
     other.save().unwrap();
 
     let conflicted = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
@@ -1586,9 +1586,9 @@ fn a_failed_flush_refuses_deselect_until_the_store_saves_again() {
     let state_dir = state_root(guard.dir());
     break_state_dir(&state_dir);
 
-    // The acquire itself replies 200 with `save_error` set (existing
+    // The introduce itself replies 200 with `save_error` set (existing
     // contract); the store is now dirty with an unsaved mutation.
-    let resp = post_gated(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/introduce", "{}");
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert!(
@@ -2008,9 +2008,9 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
         "no augmentation was ever generated: body: {body}"
     );
     // Both fixture cards are stamped but never shown (a fresh store), so each
-    // reads as the untouched tier: one heatmap cell per card.
+    // reads as the unseen tier: one heatmap cell per card.
     assert_eq!(
-        serde_json::json!(["untouched", "untouched"]),
+        serde_json::json!(["unseen", "unseen"]),
         body["heatmap"],
         "body: {body}"
     );
@@ -2022,12 +2022,13 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
 }
 
 #[test]
-fn post_api_deck_drawer_tiers_an_acquired_card_above_a_merely_presented_one() {
+fn post_api_deck_drawer_reads_acknowledged_and_shown_cards_both_as_seen() {
+    // The old tier lied: an acknowledged card read `acquired` ("correct at
+    // least once") without any answer. Under ADR 0035 the tier reads what the
+    // learner DID, so with no pass anywhere both cards sit at `seen`.
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
-    // Acknowledge the first card ("Seen"); the second card then becomes the
-    // displayed card, which stamps its presentation but acquires nothing.
-    post_gated(&base, "/api/acquire", "{}");
+    post_gated(&base, "/api/introduce", "{}");
 
     let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"sample.md"}"#);
 
@@ -2035,25 +2036,22 @@ fn post_api_deck_drawer_tiers_an_acquired_card_above_a_merely_presented_one() {
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     let cells = body["heatmap"].as_array().unwrap();
     assert_eq!(2, cells.len(), "one cell per card: {body}");
-    assert!(
-        cells.iter().any(|c| c == &serde_json::json!("acquired")),
-        "the acknowledged card reads as acquired: {body}"
+    assert_eq!(
+        serde_json::json!(["seen", "unseen"]),
+        body["heatmap"],
+        "the acknowledged card is seen; the merely displayed one is nothing: {body}"
     );
-    assert!(
-        cells.iter().any(|c| c == &serde_json::json!("seen")),
-        "the shown-but-unacquired card reads as seen: {body}"
-    );
-    // The nested progress funnel counts both presented cards as seen.
     assert_eq!(2, body["total"], "body: {body}");
-    assert_eq!(2, body["seen"], "both cards were presented: {body}");
+    assert_eq!(1, body["seen"], "only the acknowledgment recorded: {body}");
     assert_eq!(0, body["graduated"], "nothing graduated yet: {body}");
     assert_eq!(0, body["retired"], "nothing retired yet: {body}");
 }
 
 #[test]
-fn post_api_deck_drawer_counts_a_presented_card_as_seen_after_a_bare_select() {
+fn post_api_deck_drawer_counts_nothing_after_a_bare_select() {
+    // Presentation writes nothing (ADR 0035): merely being displayed leaves
+    // no trace, so a bare select changes no tier and no funnel count.
     let (base, _guard) = spawn_test_server();
-    // Selecting shows the first card and nothing else: no grade, no acquire.
     select_fixture(&base);
 
     let resp = post_json(&base, "/api/deck-drawer", r#"{"deck":"sample.md"}"#);
@@ -2061,11 +2059,11 @@ fn post_api_deck_drawer_counts_a_presented_card_as_seen_after_a_bare_select() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(
-        serde_json::json!(["seen", "untouched"]),
+        serde_json::json!(["unseen", "unseen"]),
         body["heatmap"],
-        "only the displayed card is seen: {body}"
+        "being shown a card records nothing: {body}"
     );
-    assert_eq!(1, body["seen"], "body: {body}");
+    assert_eq!(0, body["seen"], "body: {body}");
     let seen = body["seen"].as_u64().unwrap();
     let graduated = body["graduated"].as_u64().unwrap();
     let retired = body["retired"].as_u64().unwrap();
@@ -2112,8 +2110,8 @@ fn post_api_reset_clears_the_fixture_decks_progress() {
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("sample.md", body["deck"], "body: {body}");
     assert_eq!(
-        2, body["cards_cleared"],
-        "the graded card plus the next card's presentation stamp: {body}"
+        1, body["cards_cleared"],
+        "only the graded card has an entry; presentation writes nothing: {body}"
     );
 }
 
@@ -2136,7 +2134,7 @@ fn removal_preview_names_workspace_stakes_without_exposing_host_paths() {
         200,
         post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#).status
     );
-    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
     assert_eq!(200, post_json(&base, "/api/deselect", "{}").status);
 
     let resp = post_json(
@@ -2239,7 +2237,7 @@ fn removing_a_workspace_member_drops_the_retained_progress_snapshot() {
         200,
         post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#).status
     );
-    assert_eq!(200, post_gated(&base, "/api/acquire", "{}").status);
+    assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
     assert_eq!(200, post_json(&base, "/api/deselect", "{}").status);
 
     let removed = post_json(&base, "/api/library/remove", r#"{"name":"animals/one.md"}"#);
@@ -2712,7 +2710,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     // High-fidelity shape of the 2026-07-14 report: a two-hole cloze card whose
     // hole has AI distractors cached, served as a choice, answered, then the
     // state re-pulled (the tutor-close pull). The order must hold on both the
-    // Recognize path (seen card) and the acquire path (unseen card).
+    // Recognize path (seen card) and the introduction path (unseen card).
     const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-frb\"\n---\n## What is frb, in one sentence? <!-- id: card-frb1 -->\n\
         A \\blank{code-generation} tool generating the \\blank{FFI} glue on both sides.\n";
     for seed_store in [true, false] {
@@ -2736,7 +2734,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
                 if seed_store {
                     let mut store = alix::state::open_store(&deck_path, &fixture_state).unwrap();
                     for c in &cards {
-                        store.get_or_insert(&c.id().unwrap(), 0);
+                        store.get_or_insert(&c.id().unwrap());
                     }
                     store.save().unwrap();
                 }
@@ -2793,8 +2791,8 @@ fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
             let fixture_state = state_root(dir);
             let mut store = alix::state::open_store(&deck_path, &fixture_state).unwrap();
             for c in cards.iter().filter(|c| !c.authored_distractors.is_empty()) {
-                let s = store.get_or_insert(&c.id().unwrap(), 1_000);
-                s.acquired_ms = Some(1_000);
+                let s = store.get_or_insert(&c.id().unwrap());
+                s.introduced_ms = Some(1_000);
                 s.recognize = Some(alix::store::FsrsState {
                     stability: 30.0,
                     state: 2,
@@ -2844,8 +2842,36 @@ fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
     );
 }
 
-/// Acquiring every fresh pick of a Recognize sitting parks them behind the
-/// acquire floor: the done summary then shows "N still due" beside a disabled
+/// Revealing was deleted whole (ADR 0035): seeing an answer and leaving
+/// persists nothing, so the card is met as new next sitting, and the endpoint
+/// is gone rather than published as a no-op.
+#[test]
+fn reveal_endpoint_is_gone_and_abandonment_reintroduces_as_new() {
+    let (base, _guard) = spawn_test_server();
+    let resp = select_fixture(&base);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["introducing"], "a fresh card starts new: {body}");
+    let front = body["card"]["front"].as_str().unwrap().to_string();
+
+    let resp = post_gated(&base, "/api/reveal", "{}");
+    assert_eq!(404, resp.status, "the endpoint no longer exists");
+
+    post_json(&base, "/api/deselect", "{}");
+    let resp = select_fixture(&base);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        true, body["introducing"],
+        "nothing persisted: the card re-introduces as new: {body}"
+    );
+    assert_eq!(
+        front,
+        body["card"]["front"].as_str().unwrap_or_default(),
+        "same card, met again from scratch: {body}"
+    );
+}
+
+/// Introducing every fresh pick of a Recognize sitting parks them behind the
+/// introduction floor: the done summary then shows "N still due" beside a disabled
 /// Continue — a contradiction unless the state says when one opens (user
 /// report 2026-08-01). `next_due_ms` must carry the floor-open instant even
 /// at Recognize, where the schedule-wide next-due is undefined.
@@ -2869,17 +2895,17 @@ fn a_recognize_done_with_floored_cards_says_when_one_opens() {
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("review", body["phase"], "two fresh picks serve: {body}");
 
-    post_gated(&base, "/api/acquire", "{}");
-    let resp = post_gated(&base, "/api/acquire", "{}");
+    post_gated(&base, "/api/introduce", "{}");
+    let resp = post_gated(&base, "/api/introduce", "{}");
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
 
     assert_eq!(
         "done", body["phase"],
-        "both picks acquired and floored ends the sitting: {body}"
+        "both picks introduced and floored ends the sitting: {body}"
     );
     assert_eq!(
         0, body["due_left"],
-        "acquired picks cool behind the introduction cooldown like any depth, \
+        "introduced picks cool behind the introduction cooldown like any depth, \
          so nothing is due yet: {body}"
     );
     assert_eq!(
@@ -2889,41 +2915,6 @@ fn a_recognize_done_with_floored_cards_says_when_one_opens() {
     assert!(
         body["next_due_ms"].as_u64().is_some(),
         "the summary must say when a floored card opens: {body}"
-    );
-}
-
-/// Revealing a new card's answer IS the encounter: abandoning the session
-/// after the reveal must not re-introduce the card as new next time (user
-/// rule 2026-08-01). The reveal is reported to the server, which records the
-/// engagement without advancing the session.
-#[test]
-fn a_revealed_then_abandoned_new_card_does_not_return_as_new() {
-    const ONE: &str = "---\nformat-version: 1\nid: \"deck-revealone\"\n---\n\
-        ## the only card <!-- id: card-rv1 -->\nits answer\n";
-    let (base, _guard) = spawn_full_server_fixture(
-        None,
-        |dir| std::fs::write(dir.join("reveal-one.md"), ONE).unwrap(),
-        |_opts| {},
-    );
-
-    let resp = post_json(&base, "/api/select", r#"{"deck":"reveal-one.md"}"#);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("review", body["phase"], "body: {body}");
-    assert_eq!(true, body["acquire"], "a fresh card starts new: {body}");
-
-    let resp = post_gated(&base, "/api/reveal", "{}");
-    assert_eq!(200, resp.status);
-
-    post_json(&base, "/api/deselect", "{}");
-    let resp = post_json(&base, "/api/select", r#"{"deck":"reveal-one.md"}"#);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!(
-        "done", body["phase"],
-        "a revealed card is engaged, not new; it cools instead of re-introducing: {body}"
-    );
-    assert!(
-        body["next_due_ms"].as_u64().is_some(),
-        "the cooling engagement has a next-open instant: {body}"
     );
 }
 
@@ -2945,79 +2936,8 @@ fn an_unrevealed_new_card_stays_new_after_abandoning() {
 
     assert_eq!("review", body["phase"], "body: {body}");
     assert_eq!(
-        true, body["acquire"],
+        true, body["introducing"],
         "merely being shown is not an encounter; the card stays new: {body}"
-    );
-}
-
-/// Within the sitting the revealed card stays current and stays the acquire
-/// card: the engagement is for FUTURE sessions only. If the live
-/// classification flipped, the next state poll would swap the card without a
-/// revision bump (the wrong-card-grading class).
-#[test]
-fn a_reveal_keeps_the_current_card_current_and_new_within_the_sitting() {
-    let (base, _guard) = spawn_test_server();
-    let resp = select_fixture(&base);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    let front = body["card"]["front"].as_str().unwrap().to_string();
-    let revision = body["study_revision"].as_u64().unwrap();
-
-    let resp = post_gated(&base, "/api/reveal", "{}");
-    assert_eq!(200, resp.status);
-
-    for pull in 0..2 {
-        let resp = http(&base, "GET", "/api/state", &[], &[]);
-        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-        assert_eq!(
-            front,
-            body["card"]["front"].as_str().unwrap_or_default(),
-            "pull {pull}: the revealed card must stay current: {body}"
-        );
-        assert_eq!(
-            true, body["acquire"],
-            "pull {pull}: it stays the acquire card this sitting: {body}"
-        );
-        assert_eq!(
-            revision,
-            body["study_revision"].as_u64().unwrap_or(0),
-            "pull {pull}: a reveal is not a transition; the revision holds: {body}"
-        );
-    }
-}
-
-/// The reveal must not flip the acquire question away mid-card: the store now
-/// sees the card engaged, but the recognition pick the client rendered must
-/// stay buildable and answerable this sitting.
-#[test]
-fn a_reveal_keeps_the_acquire_choice_answerable() {
-    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-revealpick\"\n---\n\
-        ## pick me <!-- id: card-rp1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n";
-    let (base, _guard) = spawn_full_server_fixture(
-        None,
-        |dir| std::fs::write(dir.join("reveal-pick.md"), MIXED).unwrap(),
-        |_opts| {},
-    );
-    let resp = post_json(
-        &base,
-        "/api/select",
-        r#"{"deck":"reveal-pick.md","depth":"recall"}"#,
-    );
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!(true, body["acquire"], "body: {body}");
-    assert!(body["choices"].is_array(), "body: {body}");
-
-    let resp = post_gated(&base, "/api/reveal", "{}");
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!(200, resp.status);
-    assert!(
-        body["choices"].is_array(),
-        "the recognition question survives the reveal: {body}"
-    );
-
-    let resp = post_choice(&base, 0);
-    assert_eq!(
-        200, resp.status,
-        "the pick stays answerable after the reveal"
     );
 }
 
@@ -3094,7 +3014,7 @@ fn post_api_choose_naming_another_card_yields_409() {
     );
 }
 
-// ── Skip / acquire / restart / deselect ──────────────────────────────────
+// ── Skip / introduce / restart / deselect ──────────────────────────────────
 
 #[test]
 fn post_api_skip_defers_the_current_card_without_grading_it() {
@@ -3121,46 +3041,46 @@ fn post_api_skip_with_no_active_session_yields_409() {
 }
 
 #[test]
-fn post_api_acquire_acknowledges_a_never_seen_card_without_grading_it() {
+fn post_api_introduce_acknowledges_a_never_seen_card_without_grading_it() {
     let (base, _guard) = spawn_test_server();
     let select_resp = select_fixture(&base);
     let select_body: serde_json::Value = serde_json::from_slice(&select_resp.body).unwrap();
     assert_eq!(
-        true, select_body["acquire"],
+        true, select_body["introducing"],
         "a brand-new store has never seen this card: {select_body}"
     );
 
-    let resp = post_gated(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/introduce", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("review", body["phase"], "body: {body}");
-    // Acquiring records it (cooling ~1 min, floored out of `remaining`) and
+    // Introducing records it (cooling ~1 min, floored out of `remaining`) and
     // moves to the other card, rather than grading it.
     assert_eq!("3 + 3", body["card"]["front"], "body: {body}");
     assert_eq!(0, body["passed"], "body: {body}");
     assert_eq!(0, body["failed"], "body: {body}");
     assert_eq!(
-        1, body["acquired"],
+        1, body["introduced"],
         "the introduced card is counted: {body}"
     );
     assert_eq!(1, body["remaining"], "body: {body}");
 }
 
 #[test]
-fn acquiring_every_card_leaves_a_done_session_reporting_the_next_due_instant() {
+fn introducing_every_card_leaves_a_done_session_reporting_the_next_due_instant() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
-    // Acquire both fixture cards: each records into an acquire cooldown, so the
+    // Introduce both fixture cards: each records into an introduction cooldown, so the
     // sitting finishes with nothing due now but a future next-due instant.
-    post_gated(&base, "/api/acquire", "{}");
-    let resp = post_gated(&base, "/api/acquire", "{}");
+    post_gated(&base, "/api/introduce", "{}");
+    let resp = post_gated(&base, "/api/introduce", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(
         "done", body["phase"],
-        "both cards acquired, none due now: {body}"
+        "both cards introduced, none due now: {body}"
     );
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -3176,10 +3096,10 @@ fn acquiring_every_card_leaves_a_done_session_reporting_the_next_due_instant() {
 }
 
 #[test]
-fn post_api_acquire_with_no_active_session_yields_409() {
+fn post_api_introduce_with_no_active_session_yields_409() {
     let (base, _guard) = spawn_test_server();
 
-    let resp = post_gated(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/introduce", "{}");
 
     assert_eq!(409, resp.status);
 }
@@ -3262,7 +3182,7 @@ fn ending_a_session_flushes_every_session_mutation_kind() {
     select_fixture(&base);
     let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
     assert_eq!(200, resp.status);
-    let resp = post_gated(&base, "/api/acquire", "{}");
+    let resp = post_gated(&base, "/api/introduce", "{}");
     assert_eq!(200, resp.status);
 
     let resp = post_json(&base, "/api/deselect", "{}");
@@ -3272,7 +3192,7 @@ fn ending_a_session_flushes_every_session_mutation_kind() {
     assert_eq!(
         2,
         on_disk.len(),
-        "both the graded and the acquired card must land on disk"
+        "both the graded and the introduced card must land on disk"
     );
     assert!(
         on_disk.last_review_ms().is_some(),
@@ -3315,8 +3235,8 @@ fn an_administrative_mutation_still_writes_immediately() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(
-        2, body["cards_cleared"],
-        "the graded card plus the next card's presentation stamp: {body}"
+        1, body["cards_cleared"],
+        "only the graded card has an entry; presentation writes nothing: {body}"
     );
     let on_disk = open_deck_store(guard.dir(), "sample.md");
     assert_eq!(
@@ -3337,8 +3257,8 @@ fn resetting_mid_session_does_not_resurrect_the_cleared_grade() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(
-        2, body["cards_cleared"],
-        "reset must see the in-flight grade and the presentation stamp: {body}"
+        1, body["cards_cleared"],
+        "reset must see the in-flight grade; presentation stamps nothing: {body}"
     );
 
     let resp = post_json(&base, "/api/deselect", "{}");
@@ -3410,8 +3330,8 @@ fn a_rejected_augment_open_keeps_the_active_progress_store() {
     let rejected = post_json(&base, "/api/augment/open", r#"{"deck":"dupes"}"#);
     assert_eq!(409, rejected.status);
 
-    let acquired = post_gated(&base, "/api/acquire", "{}");
-    assert_eq!(200, acquired.status);
+    let introduced = post_gated(&base, "/api/introduce", "{}");
+    assert_eq!(200, introduced.status);
 
     let after: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
@@ -4202,9 +4122,8 @@ fn every_gated_route_rejects_a_stale_revision_and_mutates_nothing() {
     let gated: &[(&str, &str)] = &[
         ("/api/grade", r#"{"grade":"passed"}"#),
         ("/api/skip", "{}"),
-        ("/api/acquire", "{}"),
+        ("/api/introduce", "{}"),
         ("/api/check", r#"{"lines":["x"]}"#),
-        ("/api/reveal", "{}"),
         ("/api/choose", r#"{"index":0,"card":"CURRENT"}"#),
         ("/api/remove", "{}"),
         ("/api/restart", "{}"),
@@ -4262,7 +4181,7 @@ fn every_accepted_mutation_advances_the_revision() {
     // the earlier routes keep the fixture's full queue.
     for (path, body) in [
         ("/api/skip", "{}"),
-        ("/api/acquire", "{}"),
+        ("/api/introduce", "{}"),
         ("/api/restart", "{}"),
         ("/api/grade", r#"{"grade":"passed"}"#),
         ("/api/remove", "{}"),
@@ -4361,7 +4280,7 @@ fn a_replayed_grade_with_a_stale_revision_conflicts_and_mutates_nothing() {
     let resp = http(
         &base,
         "POST",
-        "/api/acquire",
+        "/api/introduce",
         &[
             ("Content-Type", "application/json"),
             ("X-Alix-Study-Revision", &revision.to_string()),
@@ -4377,7 +4296,7 @@ fn a_replayed_grade_with_a_stale_revision_conflicts_and_mutates_nothing() {
     let resp = http(
         &base,
         "POST",
-        "/api/acquire",
+        "/api/introduce",
         &[
             ("Content-Type", "application/json"),
             ("X-Alix-Study-Revision", &revision.to_string()),
@@ -4433,7 +4352,7 @@ fn a_card_relative_mutation_without_the_revision_header_is_a_400() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);
 
-    let resp = post_json(&base, "/api/acquire", "{}");
+    let resp = post_json(&base, "/api/introduce", "{}");
     assert_eq!(400, resp.status);
 }
 

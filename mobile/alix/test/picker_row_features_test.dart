@@ -2,7 +2,7 @@
 // (depth remembering, workspace icons, the exam-due marker). Driven against
 // the REAL embedded core, mirroring bridge_test.dart's own fixtures/pattern
 // (RustLib.init in setUpAll; real deck files on disk; backdating instead of
-// sleeping for anything that needs the acquire cooldown behind it).
+// sleeping for anything that needs the introduction cooldown behind it).
 import 'dart:convert';
 import 'dart:io';
 
@@ -49,9 +49,9 @@ void main() {
   }
 
   group('item 10: depth remembering', () {
-    /// A deck acquired and backdated ten minutes (past the 5-min acquire
+    /// A deck introduced and backdated ten minutes (past the 5-min introduction
     /// cooldown), so a real "now" open serves it as a genuine due review
-    /// rather than the acquire flow, where tap vs. long-press cannot show
+    /// rather than the introduction flow, where tap vs. long-press cannot show
     /// through (a new card looks the same at any depth).
     Directory dueDeckRoot() {
       final root = tempRoot('alix-picker-depth-');
@@ -60,7 +60,7 @@ void main() {
       final backdated =
           BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated)
-          .acquire(nowMs: backdated);
+          .introduce(nowMs: backdated);
       return root;
     }
 
@@ -226,7 +226,7 @@ void main() {
       );
       final t0 = DateTime.now().millisecondsSinceEpoch - 902000;
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: BigInt.from(t0))
-          .acquire(nowMs: BigInt.from(t0));
+          .introduce(nowMs: BigInt.from(t0));
       ReviewSession.open(
               deckPath: deck, rootDir: root.path, nowMs: BigInt.from(t0 + 301000))
           .grade(grade: Grade.pass, nowMs: BigInt.from(t0 + 301000));

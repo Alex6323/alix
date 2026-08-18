@@ -90,7 +90,7 @@ class ReviewView extends StatelessWidget {
     required this.onToggleKeypoint,
     required this.onReveal,
     required this.onRevealNextLine,
-    required this.onAcquire,
+    required this.onIntroduce,
     required this.onGrade,
     required this.onOpenTutor,
     required this.onRestart,
@@ -128,7 +128,7 @@ class ReviewView extends StatelessWidget {
   final ValueChanged<int> onToggleKeypoint;
   final VoidCallback onReveal;
   final VoidCallback onRevealNextLine;
-  final VoidCallback onAcquire;
+  final VoidCallback onIntroduce;
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
   final VoidCallback onRestart;
@@ -209,7 +209,7 @@ class ReviewView extends StatelessWidget {
                         onToggleKeypoint: onToggleKeypoint,
                         onReveal: onReveal,
                         onRevealNextLine: onRevealNextLine,
-                        onAcquire: onAcquire,
+                        onIntroduce: onIntroduce,
                         onGrade: onGrade,
                         onOpenTutor: onOpenTutor,
                       ),

@@ -26,8 +26,6 @@ void seedChoiceDistractors({
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>>
 abstract class ReviewSession implements RustOpaqueInterface {
-  ReviewState acquire({BigInt? nowMs});
-
   void applyCardNote({required int line, required List<String> notes});
 
   void applyExamPassed({required BigInt nowMs});
@@ -45,6 +43,8 @@ abstract class ReviewSession implements RustOpaqueInterface {
   ForeignWriter? foreignWriter({BigInt? nowMs});
 
   ReviewState grade({required Grade grade, BigInt? nowMs});
+
+  ReviewState introduce({BigInt? nowMs});
 
   String mintTutorCard({
     required String front,
@@ -395,7 +395,7 @@ class ReviewState {
   final CardView? card;
   final Mode mode;
   final Depth depth;
-  final bool acquire;
+  final bool introducing;
   final List<String>? choices;
   final List<List<InlineRun>>? choiceRuns;
   final List<String>? keypoints;
@@ -407,7 +407,7 @@ class ReviewState {
   final int reviews;
   final int passed;
   final int failed;
-  final int acquired;
+  final int introduced;
   final int partial;
   final bool canRestart;
   final BigInt? nextDueMs;
@@ -422,7 +422,7 @@ class ReviewState {
     this.card,
     required this.mode,
     required this.depth,
-    required this.acquire,
+    required this.introducing,
     this.choices,
     this.choiceRuns,
     this.keypoints,
@@ -434,7 +434,7 @@ class ReviewState {
     required this.reviews,
     required this.passed,
     required this.failed,
-    required this.acquired,
+    required this.introduced,
     required this.partial,
     required this.canRestart,
     this.nextDueMs,
@@ -451,7 +451,7 @@ class ReviewState {
       card.hashCode ^
       mode.hashCode ^
       depth.hashCode ^
-      acquire.hashCode ^
+      introducing.hashCode ^
       choices.hashCode ^
       choiceRuns.hashCode ^
       keypoints.hashCode ^
@@ -463,7 +463,7 @@ class ReviewState {
       reviews.hashCode ^
       passed.hashCode ^
       failed.hashCode ^
-      acquired.hashCode ^
+      introduced.hashCode ^
       partial.hashCode ^
       canRestart.hashCode ^
       nextDueMs.hashCode ^
@@ -482,7 +482,7 @@ class ReviewState {
           card == other.card &&
           mode == other.mode &&
           depth == other.depth &&
-          acquire == other.acquire &&
+          introducing == other.introducing &&
           choices == other.choices &&
           choiceRuns == other.choiceRuns &&
           keypoints == other.keypoints &&
@@ -494,7 +494,7 @@ class ReviewState {
           reviews == other.reviews &&
           passed == other.passed &&
           failed == other.failed &&
-          acquired == other.acquired &&
+          introduced == other.introduced &&
           partial == other.partial &&
           canRestart == other.canRestart &&
           nextDueMs == other.nextDueMs &&

@@ -157,7 +157,7 @@ pub struct ReviewState {
     pub card: Option<CardView>,
     pub mode: Mode,
     pub depth: Depth,
-    pub acquire: bool,
+    pub introducing: bool,
     /// The correct index is deliberately absent here: it only travels in
     /// [`ChoiceFeedback`], so this payload can never leak the answer.
     pub choices: Option<Vec<String>>,
@@ -173,9 +173,9 @@ pub struct ReviewState {
     pub reviews: u32,
     pub passed: u32,
     pub failed: u32,
-    // Distinguishes an acquire-only sitting: without it, a first pass over a
+    // Distinguishes an introduction-only sitting: without it, a first pass over a
     // fresh deck reads as "reviewed 0".
-    pub acquired: u32,
+    pub introduced: u32,
     pub partial: u32,
     pub can_restart: bool,
     pub next_due_ms: Option<u64>,
@@ -225,7 +225,7 @@ pub fn state(
     let base_mode = card
         .map(|c| depth::check_for(c.reveal.unwrap_or_default(), depth, c))
         .unwrap_or_default();
-    let acquire = session.current_fresh(store);
+    let introducing = session.current_fresh(store);
     let choices = current_question(session, store, augment).map(|q| q.options);
     // Falls back to Flip when no pick can be built (no distractors): claiming
     // a choice with nothing to choose would strand the card.
@@ -236,7 +236,7 @@ pub fn state(
     };
     // Falls back to the card's AUTHORED back lines, never the reshaped
     // display_back, so the checklist rubric stays truthful.
-    let keypoints = if !acquire && mode == Mode::Explain {
+    let keypoints = if !introducing && mode == Mode::Explain {
         card.map(|c| {
             c.id()
                 .and_then(|id| {
@@ -280,7 +280,7 @@ pub fn state(
         card: card_view,
         mode,
         depth,
-        acquire,
+        introducing,
         choices,
         choice_runs,
         keypoints,
@@ -296,7 +296,7 @@ pub fn state(
         reviews: session.stats.reviews as u32,
         passed: session.stats.passed as u32,
         failed: session.stats.failed as u32,
-        acquired: session.stats.acquired as u32,
+        introduced: session.stats.introduced as u32,
         partial: session.stats.partial as u32,
         can_restart: session.has_due_now(store, now),
         // Both scopes, since a card met in an earlier sitting is not in this
@@ -346,7 +346,7 @@ pub fn current_question(
         return choice::build_sampled(card, seed, session.cards());
     }
     // `current_fresh`, not a bare store check: a card revealed this sitting
-    // is already engaged in the store but keeps its acquire question.
+    // is already engaged in the store but keeps its introduction question.
     if session.current_fresh(store) {
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
@@ -404,10 +404,10 @@ mod tests {
         store::Store,
     };
 
-    // NOW must stay past T0 + the acquire cooldown, or seen cards won't be
+    // NOW must stay past T0 + the introduction cooldown, or seen cards won't be
     // servable.
     const T0: u64 = 1_000_000;
-    const NOW: u64 = T0 + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+    const NOW: u64 = T0 + crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
 
     // Stamps each card with a distinct token (cloze sub-cards share their
     // card's token) so store/augment lookups below key on real ids.
@@ -470,8 +470,8 @@ mod tests {
     fn seen(store: &mut Store, cards: &[Card]) {
         for card in cards {
             store
-                .get_or_insert(&card.id().unwrap(), T0)
-                .acquired_ms
+                .get_or_insert(&card.id().unwrap())
+                .introduced_ms
                 .get_or_insert(T0);
         }
     }
@@ -517,12 +517,12 @@ mod tests {
 
     #[test]
     fn the_next_opening_is_the_decks_earliest_not_this_sittings() {
-        let cooldown = crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        let cooldown = crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS;
         let (mut store, augment, _dir) = fixtures();
         let both = parse("## a\n1\n\n## b\n2\n");
         let earlier = both[0].id().unwrap();
         let later = both[1].id().unwrap();
-        store.get_or_insert(&earlier, T0).acquired_ms = Some(T0);
+        store.get_or_insert(&earlier).introduced_ms = Some(T0);
 
         // A sitting one minute on: the earlier card is still cooling, so only
         // the never-met one is rostered, and it cools a minute behind it.
@@ -533,7 +533,7 @@ mod tests {
             session.current().and_then(Card::id),
             "the cooling card stays out of this sitting"
         );
-        session.acquire_current(&mut store, now);
+        session.introduce_current(&mut store, now);
         assert!(session.is_finished());
 
         assert_eq!(
@@ -544,34 +544,34 @@ mod tests {
     }
 
     #[test]
-    fn acquire_flags_a_first_encounter_only() {
+    fn introducing_flags_a_first_encounter_only() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q\na\n");
         let fresh = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
         assert!(
-            state(&fresh, &store, &augment, Some(NOW)).acquire,
+            state(&fresh, &store, &augment, Some(NOW)).introducing,
             "never-seen card"
         );
 
         seen(&mut store, &cards);
         let again = session_at(cards, &mut store, Depth::Recall, NOW);
         assert!(
-            !state(&again, &store, &augment, Some(NOW)).acquire,
+            !state(&again, &store, &augment, Some(NOW)).introducing,
             "seen card"
         );
     }
 
     #[test]
-    fn a_presented_but_unacknowledged_card_keeps_its_acquire_on_ramp() {
+    fn a_presented_but_unacknowledged_card_keeps_its_introduction_on_ramp() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q\na\n");
         let first = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
-        assert!(state(&first, &store, &augment, Some(NOW)).acquire);
+        assert!(state(&first, &store, &augment, Some(NOW)).introducing);
         drop(first);
 
         let again = session_at(cards, &mut store, Depth::Recall, NOW + 1);
         assert!(
-            state(&again, &store, &augment, Some(NOW + 1)).acquire,
+            state(&again, &store, &augment, Some(NOW + 1)).introducing,
             "the presentation stamp alone must not consume the on-ramp"
         );
     }
@@ -822,7 +822,7 @@ mod tests {
     const FOUR: &str = "## q1\na1\n## q2\na2\n## q3\na3\n## q4\na4\n";
 
     #[test]
-    fn choices_appear_only_at_recognize_or_the_acquire_bar() {
+    fn choices_appear_only_at_recognize_or_the_introduction_bar() {
         let (mut store, mut augment, _dir) = fixtures();
         let cards = parse(FOUR);
         seen(&mut store, &cards);
@@ -839,12 +839,12 @@ mod tests {
 
         let mut fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
         let empty_augment = AugmentCache::open(_dir.path().join("empty.json"));
-        let acquire = session_at(cards.clone(), &mut fresh_store, Depth::Recall, NOW);
-        let bare = state(&acquire, &fresh_store, &empty_augment, Some(NOW));
-        assert!(bare.acquire);
-        assert_eq!(bare.choices, None, "no distractors, no acquire pick");
+        let introduction = session_at(cards.clone(), &mut fresh_store, Depth::Recall, NOW);
+        let bare = state(&introduction, &fresh_store, &empty_augment, Some(NOW));
+        assert!(bare.introducing);
+        assert_eq!(bare.choices, None, "no distractors, no introduction pick");
 
-        let armed = state(&acquire, &fresh_store, &augment, Some(NOW));
+        let armed = state(&introduction, &fresh_store, &augment, Some(NOW));
         assert!(armed.choices.is_some(), "full distractors arm the pick");
     }
 
@@ -942,7 +942,7 @@ mod tests {
 
     #[test]
     fn a_cooled_card_coming_back_cannot_regrade_the_pick_shown_for_another() {
-        use crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        use crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS;
         let (mut store, mut augment, _dir) = fixtures();
         let cards = parse(
             "## The classic test pyramid, bottom to top\n\\blank{Unit} tests, \\blank{integration} tests, \\blank{end-to-end} tests.\n",
@@ -959,8 +959,8 @@ mod tests {
                 card.content_fingerprint,
             );
         }
-        // After the acquire cooldown from `seen`'s T0, so the met cards are due.
-        let now = T0 + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        // After the introduction cooldown from `seen`'s T0, so the met cards are due.
+        let now = T0 + DEFAULT_INTRODUCTION_COOLDOWN_MS + 60_000;
         let mut session = session_at(cards, &mut store, Depth::Recognize, now);
 
         // Miss the first hole, which floors it and moves the learner to the next.
@@ -974,7 +974,7 @@ mod tests {
         // and gets only an index back, so a swap regrades one card's pick
         // against another card's answer key.
         let shown_card = session.current().and_then(|c| c.id());
-        session.poll(&mut store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        session.poll(&mut store, now + DEFAULT_INTRODUCTION_COOLDOWN_MS);
 
         // Asserting on `passed` alone is not enough: two questions can put the
         // answer at the same index, hiding the swap behind a coincidence.
@@ -1082,16 +1082,16 @@ mod tests {
     }
 
     #[test]
-    fn authored_distractors_drive_the_never_seen_acquire_attempt() {
+    fn authored_distractors_drive_the_never_seen_introduction_attempt() {
         let (mut store, mut augment, _dir) = fixtures();
         let cards = parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
         // AI distractors exist in the cache but must be ignored for an authored card.
         arm(&mut augment, &cards);
         // Never seen (no `seen(...)`) and depth is Recall, not Recognize: this is the
-        // first-meeting acquire attempt, which must still use the authored options.
+        // first-meeting introduction attempt, which must still use the authored options.
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
-        let question =
-            current_question(&session, &store, &augment).expect("acquire MC from authored options");
+        let question = current_question(&session, &store, &augment)
+            .expect("introduction MC from authored options");
         assert_eq!(
             3,
             question.options.len(),
@@ -1198,7 +1198,7 @@ mod tests {
     }
 
     #[test]
-    fn keypoints_appear_only_for_an_explain_check_past_acquire() {
+    fn keypoints_appear_only_for_an_explain_check_past_introduction() {
         let (mut store, mut augment, _dir) = fixtures();
         let mut cards = parse("## q\nfirst fact\nsecond fact\n");
         seen(&mut store, &cards);
@@ -1226,10 +1226,10 @@ mod tests {
         assert_eq!(state(&recall, &store, &augment, Some(NOW)).keypoints, None);
 
         let mut fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
-        let acquire = session_at(cards, &mut fresh, Depth::Reconstruct, NOW);
-        let acquired = state(&acquire, &fresh, &augment, Some(NOW));
-        assert!(acquired.acquire);
-        assert_eq!(acquired.keypoints, None);
+        let introduction = session_at(cards, &mut fresh, Depth::Reconstruct, NOW);
+        let introduced = state(&introduction, &fresh, &augment, Some(NOW));
+        assert!(introduced.introducing);
+        assert_eq!(introduced.keypoints, None);
     }
 
     #[test]
@@ -1251,15 +1251,15 @@ mod tests {
     }
 
     #[test]
-    fn an_acquire_only_sitting_reports_its_acquired_count() {
+    fn an_introduction_only_sitting_reports_its_introduced_count() {
         let (_store, augment, _dir) = fixtures();
         let cards = parse(FOUR);
         let mut fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
         let mut session = session_at(cards, &mut fresh, Depth::Recall, NOW);
-        session.acquire_current(&mut fresh, NOW);
-        session.acquire_current(&mut fresh, NOW);
+        session.introduce_current(&mut fresh, NOW);
+        session.introduce_current(&mut fresh, NOW);
         let s = state(&session, &fresh, &augment, Some(NOW));
-        assert_eq!(s.acquired, 2, "the summary must know new cards were met");
+        assert_eq!(s.introduced, 2, "the summary must know new cards were met");
         assert_eq!((s.reviews, s.passed, s.failed), (0, 0, 0));
     }
 
@@ -1270,15 +1270,15 @@ mod tests {
         let sooner = cards[0].id().unwrap();
         let later = cards[1].id().unwrap();
         // Both cards met and still cooling: `sooner` comes due before `later`.
-        store.get_or_insert(&sooner, NOW);
-        store.get_or_insert(&later, NOW + 10_000);
+        store.get_or_insert(&sooner).introduced_ms = Some(NOW);
+        store.get_or_insert(&later).introduced_ms = Some(NOW + 10_000);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert!(
             session.is_finished(),
-            "every card is still inside its acquire cooldown"
+            "every card is still inside its introduction cooldown"
         );
         let s = state(&session, &store, &augment, Some(NOW));
-        let cooldown = crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        let cooldown = crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS;
         assert_eq!(
             s.next_due_ms,
             Some(NOW + cooldown),
@@ -1313,8 +1313,8 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q1\na1\n");
         let id = cards[0].id().unwrap();
-        store.get_or_insert(&id, T0).acquired_ms = Some(T0);
-        let now = T0 + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
+        store.get_or_insert(&id).introduced_ms = Some(T0);
+        let now = T0 + crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS;
         let session = Session::new(
             cards,
             &mut store,
@@ -1347,7 +1347,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sitting_that_only_acquired_reports_when_those_cards_return() {
+    fn a_sitting_that_only_introduced_reports_when_those_cards_return() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse(FOUR);
         let card_count = cards.len();
@@ -1355,20 +1355,20 @@ mod tests {
         for index in 0..card_count {
             assert!(
                 !session.is_finished(),
-                "session finished after only {index} of {card_count} acquisitions"
+                "session finished after only {index} of {card_count} introductions"
             );
-            session.acquire_current(&mut store, NOW);
+            session.introduce_current(&mut store, NOW);
         }
         assert!(
             session.is_finished(),
-            "session did not finish after acquiring all {card_count} cards once"
+            "session did not finish after introducing all {card_count} cards once"
         );
         let s = state(&session, &store, &augment, Some(NOW));
 
-        assert!(s.acquired > 0, "the sitting acquired cards");
+        assert!(s.introduced > 0, "the sitting introduced cards");
         assert_eq!(0, s.reviews, "and graded none");
         assert_eq!(
-            Some(NOW + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS),
+            Some(NOW + crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS),
             s.next_due_ms,
             "the client cannot say when they come back without this"
         );
@@ -1453,7 +1453,7 @@ mod tests {
         assert!(state.finished);
         assert!(state.card.is_none());
         assert_eq!(state.choices, None);
-        assert!(!state.acquire);
+        assert!(!state.introducing);
         assert_eq!(state.remaining, 0);
         assert_eq!(check_typed(&session, &["x".to_string()]), None);
         assert_eq!(choose(&session, &store, &augment, 0), None);

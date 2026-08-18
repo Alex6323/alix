@@ -965,21 +965,21 @@ mod tests {
     }
 
     fn graduate(store: &mut Store, id: &str) {
-        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(id).recall = Some(crate::store::FsrsState {
             state: 2, // Review
             ..Default::default()
         });
     }
 
     fn learning(store: &mut Store, id: &str) {
-        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(id).recall = Some(crate::store::FsrsState {
             state: 1, // Learning
             ..Default::default()
         });
     }
 
     fn retire(store: &mut Store, id: &str) {
-        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(id).recall = Some(crate::store::FsrsState {
             state: 2,                // Review (a year-out card has graduated)
             scheduled_days: 100_000, // well past the retirement cap
             ..Default::default()

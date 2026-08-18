@@ -41,7 +41,7 @@ class ReviewCardView extends StatelessWidget {
     required this.onToggleKeypoint,
     required this.onReveal,
     required this.onRevealNextLine,
-    required this.onAcquire,
+    required this.onIntroduce,
     required this.onGrade,
     required this.onOpenTutor,
   });
@@ -71,7 +71,7 @@ class ReviewCardView extends StatelessWidget {
   final ValueChanged<int> onToggleKeypoint;
   final VoidCallback onReveal;
   final VoidCallback onRevealNextLine;
-  final VoidCallback onAcquire;
+  final VoidCallback onIntroduce;
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
 
@@ -80,7 +80,7 @@ class ReviewCardView extends StatelessWidget {
       state.mode == ReviewMode.typing || state.mode == ReviewMode.typeLine;
   bool get _isExplain =>
       state.mode == ReviewMode.explain &&
-      !state.acquire &&
+      !state.introducing &&
       state.keypoints != null;
 
   bool _lineDone(ReviewCardModel card) {
@@ -111,7 +111,7 @@ class ReviewCardView extends StatelessWidget {
   }
 
   String _modeLabel() {
-    if (state.acquire) return 'new';
+    if (state.introducing) return 'new';
     if (_hasChoices) return 'choice';
     return switch (state.mode) {
       ReviewMode.typeLine => 'typing · line',
@@ -175,7 +175,7 @@ class ReviewCardView extends StatelessWidget {
             const SizedBox(height: 12),
             Image.file(File(image.src), height: 180, semanticLabel: image.alt),
           ],
-        if (state.acquire && !_hasChoices && !revealed) ...[
+        if (state.introducing && !_hasChoices && !revealed) ...[
           const SizedBox(height: 18),
           Text(
             'new card: try to recall it, then reveal.',
@@ -436,8 +436,8 @@ class ReviewCardView extends StatelessWidget {
   Widget _body(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
     if (_hasChoices) return _options(tokens);
     if (_isDrawing) return _sketchBody(context, card, tokens);
-    if (state.mode == ReviewMode.lineByLine && (!state.acquire || revealed)) {
-      final visible = state.acquire ? card.back.length : revealedLines;
+    if (state.mode == ReviewMode.lineByLine && (!state.introducing || revealed)) {
+      final visible = state.introducing ? card.back.length : revealedLines;
       return _revealLines(
         context,
         card.back.take(visible).toList(),
@@ -446,7 +446,7 @@ class ReviewCardView extends StatelessWidget {
         stanza: false,
       );
     }
-    if (_isTyping && !state.acquire) return _typing(context, card, tokens);
+    if (_isTyping && !state.introducing) return _typing(context, card, tokens);
     if (_isExplain) return _explainBody(context, card, tokens);
     if (revealed || checkFeedback != null) {
       if (!card.reshaped) {
@@ -926,7 +926,7 @@ class ReviewCardView extends StatelessWidget {
 
   bool _attempted(ReviewCardModel card) {
     if (_hasChoices) return choice != null;
-    if (state.acquire) return revealed;
+    if (state.introducing) return revealed;
     if (state.mode == ReviewMode.lineByLine) return _lineDone(card);
     if (_isTyping) return checkFeedback != null;
     return revealed;
@@ -948,7 +948,7 @@ class ReviewCardView extends StatelessWidget {
   }
 
   List<Widget> _modeChips(ReviewCardModel card) {
-    if (state.acquire) {
+    if (state.introducing) {
       if (_hasChoices) {
         return choice == null
             ? const []
@@ -956,7 +956,7 @@ class ReviewCardView extends StatelessWidget {
                 ReviewChip(
                   label: 'Seen',
                   kind: ReviewChipKind.primary,
-                  onTap: onAcquire,
+                  onTap: onIntroduce,
                 ),
               ];
       }
@@ -965,7 +965,7 @@ class ReviewCardView extends StatelessWidget {
               ReviewChip(
                 label: 'Seen',
                 kind: ReviewChipKind.primary,
-                onTap: onAcquire,
+                onTap: onIntroduce,
               ),
             ]
           : [

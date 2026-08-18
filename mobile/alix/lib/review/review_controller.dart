@@ -70,7 +70,7 @@ class ReviewController extends ChangeNotifier {
       state.mode == ReviewMode.typing || state.mode == ReviewMode.typeLine;
   bool get isExplain =>
       state.mode == ReviewMode.explain &&
-      !state.acquire &&
+      !state.introducing &&
       state.keypoints != null;
 
   bool lineDone(ReviewCardModel card) {
@@ -159,7 +159,7 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void acquire() => install(_requirePort().acquire());
+  void introduce() => install(_requirePort().introduce());
 
   void grade(ReviewGrade grade) => install(_requirePort().grade(grade));
 

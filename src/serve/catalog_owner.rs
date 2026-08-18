@@ -540,7 +540,7 @@ mod tests {
         let empty = Store::open(dir.path().join("empty.json")).unwrap();
         let mut started = Store::open(dir.path().join("started.json")).unwrap();
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
-        started.get_or_insert(&deck.cards[0].id().unwrap(), now_ms());
+        started.get_or_insert(&deck.cards[0].id().unwrap());
 
         let BuildStart::Lead(mut inputs) = s.begin_list(0) else {
             panic!("the first requester leads");

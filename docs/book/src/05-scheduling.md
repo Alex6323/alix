@@ -65,7 +65,7 @@ Either way a guess never marks it recognized or punishes it, and the first
 *graded* quiz then comes back **later in the same session** (once a settle
 gap passes it resurfaces, interleaved behind the other cards you're seeing),
 so seeing a deck flows straight into drilling it. That gap is
-**`acquire_cooldown`** in the `[review]` config (default `"5m"`); it also
+**`introduction_cooldown`** in the `[review]` config (default `"5m"`); it also
 sets the floor before *any* just-seen card (a miss, a wrong pick) may return,
 so nothing you moved off comes straight back. `"0"` disables both gaps. If the
 gap passes while you are sitting on the session summary, the summary says so
@@ -80,7 +80,7 @@ override them in its `alix.local.toml`), and `--session N` overrides
 `max_session` for one launch. This holds at every depth, Recognize included: a
 Recognize sitting splits the same cap between never-met cards and
 met-but-unrecognized ones, and the met sweep finishes across chained sittings.
-This is the first step of a card's life: *acquire*, then let its depth(s)
+This is the first step of a card's life: *introduce*, then let its depth(s)
 schedule it.
 
 ## Session depths: Recognize, Recall, Reconstruct
@@ -214,7 +214,7 @@ emphasized) so you see *where you are* in the material, not just what's in front
 of you. The names are deliberately coarse: they orient without giving away any
 card's answer. Under each region is a **card-tier heatmap**: one small cell
 per card. Neutral means untouched; grey means **seen** (the card was shown to
-you at least once, right or wrong); white means **acquired** (you got it right
+you at least once, right or wrong); white means **introduced** (you got it right
 at least once); a **learned** (graduated) card is green, yellow, or red by how
 well you'd recall it right now; purple means retired. A region visibly greens
 up as you master it, and the breadcrumb doubles as a progress map.

@@ -24,7 +24,7 @@ on **`b`** opens a read-only, in-page read-through instead: step the cards with
 Prev/Next, Esc to leave. Focusing any deck opens an inline **focus drawer**
 beneath it: it shows the deck's preamble (the prose under its title, if any) and
 a per-card **tier heatmap**: neutral for an untouched card, grey for one merely
-**seen** (shown to you at least once), white once **acquired** (correct at least
+**seen** (shown to you at least once), white once **introduced** (correct at least
 once), green/yellow/red for a **learned** card by how well you'd recall it right
 now, purple once retired. When the deck has a [review order](05-scheduling.md) that
 heatmap splits into named regions you can pick to drill (click one or step

@@ -279,11 +279,7 @@ pub(super) enum StudyCommand {
         expected: u64,
         reply: Reply<Option<StateDto>>,
     },
-    Acquire {
-        expected: u64,
-        reply: Reply<Option<StateDto>>,
-    },
-    Reveal {
+    Introduce {
         expected: u64,
         reply: Reply<Option<StateDto>>,
     },
@@ -445,11 +441,8 @@ impl StudyHandle {
     pub(super) fn skip(&self, expected: u64) -> Option<Option<StateDto>> {
         self.call(|reply| StudyCommand::Skip { expected, reply })
     }
-    pub(super) fn acquire(&self, expected: u64) -> Option<Option<StateDto>> {
-        self.call(|reply| StudyCommand::Acquire { expected, reply })
-    }
-    pub(super) fn reveal(&self, expected: u64) -> Option<Option<StateDto>> {
-        self.call(|reply| StudyCommand::Reveal { expected, reply })
+    pub(super) fn introduce(&self, expected: u64) -> Option<Option<StateDto>> {
+        self.call(|reply| StudyCommand::Introduce { expected, reply })
     }
     pub(super) fn restart(&self, expected: u64) -> Option<Option<StateDto>> {
         self.call(|reply| StudyCommand::Restart { expected, reply })
@@ -679,17 +672,6 @@ pub(super) fn flush_mutation(store: &Store, dirty: &mut bool, save_error: &mut O
     let _ = flush_store(store, dirty, save_error);
 }
 
-fn flush_presented(
-    r: &mut Reviewing,
-    store: &Store,
-    dirty: &mut bool,
-    save_error: &mut Option<String>,
-) {
-    if r.session.take_presented_stamped() {
-        flush_mutation(store, dirty, save_error);
-    }
-}
-
 impl StudyState {
     fn install_store(&mut self, store: Store) {
         let outgoing = std::mem::replace(&mut self.store, store);
@@ -716,12 +698,6 @@ impl StudyState {
                 } else {
                     if let Some(r) = self.reviewing.as_mut() {
                         r.session.poll(&mut self.store, now_ms());
-                        flush_presented(
-                            r,
-                            &self.store,
-                            &mut self.store_dirty,
-                            &mut self.save_error,
-                        );
                         self.writes = self.writes.wrapping_add(1);
                     }
                     SessionSnapshot::Review(Box::new(self.review_dto()))
@@ -783,12 +759,6 @@ impl StudyState {
                     None => None,
                     Some(r) => {
                         r.session.skip(&mut self.store, now_ms());
-                        flush_presented(
-                            r,
-                            &self.store,
-                            &mut self.store_dirty,
-                            &mut self.save_error,
-                        );
                         self.writes = self.writes.wrapping_add(1);
                         r.rotate_variant();
                         self.revision += 1;
@@ -798,38 +768,16 @@ impl StudyState {
                 .map(|()| self.review_dto());
                 let _ = reply.send(dto);
             }
-            StudyCommand::Acquire { expected, reply } => {
+            StudyCommand::Introduce { expected, reply } => {
                 let dto = match self.reviewing.as_mut() {
                     _ if self.revision != expected => None,
                     None => None,
                     Some(r) => {
-                        r.session.acquire_current(&mut self.store, now_ms());
-                        let _ = r.session.take_presented_stamped();
+                        r.session.introduce_current(&mut self.store, now_ms());
                         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
                         self.writes = self.writes.wrapping_add(1);
                         r.rotate_variant();
                         self.revision += 1;
-                        Some(())
-                    }
-                }
-                .map(|()| self.review_dto());
-                let _ = reply.send(dto);
-            }
-            // No revision bump and no variant rotation: a reveal records the
-            // encounter without being a transition — the card stays current.
-            StudyCommand::Reveal { expected, reply } => {
-                let dto = match self.reviewing.as_mut() {
-                    _ if self.revision != expected => None,
-                    None => None,
-                    Some(r) => {
-                        if r.session.reveal_current(&mut self.store, now_ms()) {
-                            flush_mutation(
-                                &self.store,
-                                &mut self.store_dirty,
-                                &mut self.save_error,
-                            );
-                            self.writes = self.writes.wrapping_add(1);
-                        }
                         Some(())
                     }
                 }
@@ -842,12 +790,6 @@ impl StudyState {
                     None => None,
                     Some(r) => {
                         r.session.restart(&mut self.store, now_ms());
-                        flush_presented(
-                            r,
-                            &self.store,
-                            &mut self.store_dirty,
-                            &mut self.save_error,
-                        );
                         self.writes = self.writes.wrapping_add(1);
                         r.rotate_variant();
                         self.revision += 1;
@@ -1263,7 +1205,6 @@ impl StudyState {
                 let record = (!b.session.is_finished()).then_some(recorded_paths);
                 let mut r = Reviewing::new(b);
                 // `assemble::select` already saved the store, stamp included.
-                let _ = r.session.take_presented_stamped();
                 r.rotate_variant();
                 self.reviewing = Some(r);
                 self.walking = None;
@@ -1523,9 +1464,8 @@ impl StudyState {
             .filter(|id| !id.is_empty())
             .cloned()
         {
-            store::note_badges(&mut self.store, &deck_id, r.session.cards(), now);
+            store::record_badges(&mut self.store, &deck_id, r.session.cards(), now);
         }
-        let _ = r.session.take_presented_stamped();
         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
         self.writes = self.writes.wrapping_add(1);
         r.rotate_variant();
@@ -1544,12 +1484,10 @@ impl StudyState {
                     self.store.remove(&id);
                 }
             }
-            let _ = r.session.take_presented_stamped();
             flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
             self.writes = self.writes.wrapping_add(1);
             r.files.remove_block(&deck_id, line);
         }
-        flush_presented(r, &self.store, &mut self.store_dirty, &mut self.save_error);
         self.writes = self.writes.wrapping_add(1);
         self.revision += 1;
         Some(self.review_dto())
@@ -1703,7 +1641,7 @@ mod tests {
         card.deck_id = std::sync::Arc::from(deck_id.as_str());
         let mut store = Store::open(dir.join("progress.json")).unwrap();
         if depth == crate::depth::Depth::Recognize {
-            store.get_or_insert(&card_id, 0).acquired_ms = Some(0);
+            store.get_or_insert(&card_id).introduced_ms = Some(0);
         }
         let session = crate::session::Session::new(
             vec![card],
@@ -1779,33 +1717,11 @@ mod tests {
     }
 
     #[test]
-    fn flushing_a_new_presentation_persists_it_and_clears_the_dirty_latch() {
-        let dir = tempfile::tempdir().unwrap();
-        let (mut reviewing, store, card_id, _deck_id) =
-            review_fixture(dir.path(), crate::depth::Depth::Recall);
-        let store_path = store.path().to_path_buf();
-        let mut dirty = false;
-        let mut save_error = None;
-
-        assert!(Store::open(&store_path).unwrap().get(&card_id).is_none());
-        flush_presented(&mut reviewing, &store, &mut dirty, &mut save_error);
-
-        assert!(!dirty);
-        assert!(save_error.is_none());
-        assert!(
-            Store::open(&store_path)
-                .unwrap()
-                .get(&card_id)
-                .is_some_and(|state| state.presented_ms.is_some())
-        );
-    }
-
-    #[test]
     fn a_single_recognition_pass_no_longer_earns_the_deck_badge() {
         // Under ADR 0033 the recognize badge means mature-at-recognize, the
         // same bar the other depths always had; one pass is a learning-state
         // schedule far below it. The badge write path itself is exercised
-        // through `note_badges`, whose maturity laws live in store tests.
+        // through `record_badges`, whose maturity laws live in store tests.
         let dir = tempfile::tempdir().unwrap();
         let (mut state, deck_id) =
             study_state_with_review(dir.path(), crate::depth::Depth::Recognize);

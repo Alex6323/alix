@@ -769,7 +769,7 @@ mod tests {
         )
         .unwrap();
         let mut progress = crate::state::open_store(&deck_path, &sender).unwrap();
-        progress.get_or_insert("card-card1", 1);
+        progress.get_or_insert("card-card1");
         progress.save().unwrap();
         let mut augmentation = crate::augment::AugmentCache::open_for_deck(
             &crate::deck::Deck::load(&deck_path).unwrap(),

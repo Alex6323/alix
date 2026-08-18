@@ -1,6 +1,4 @@
 {
-  "acquire": false,
-  "acquired": 4,
   "can_restart": true,
   "card": {
     "back": [
@@ -167,6 +165,8 @@
   "failed": 1,
   "initial": 5,
   "input": "type",
+  "introduced": 4,
+  "introducing": false,
   "keypoint_runs": [
     [
       {

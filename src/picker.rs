@@ -242,7 +242,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let progress = dir.path().join("progress/deck-test.json");
         let mut store = crate::store::Store::open_deck(&progress, "deck-test", "test.md").unwrap();
-        store.get_or_insert("card-test", 0).record_review(
+        store.get_or_insert("card-test").record_review(
             1,
             crate::scheduler::Grade::Pass,
             crate::depth::Depth::Recall,

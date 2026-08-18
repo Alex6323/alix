@@ -46,7 +46,7 @@ function review(overrides = {}) {
     kind: "review",
     phase: "review",
     study_revision: 7,
-    acquire: true,
+    introducing: true,
     mode: "fill",
     card: {
       id: "card-1",
@@ -123,7 +123,9 @@ test("kids study owns accepted state publication and revision", () => {
   assert.equal(run.study.revision(), 8);
 });
 
-test("kids acquire reveal reports the encounter once without publishing returned state", async () => {
+test("kids introduction reveal is purely local and reports nothing", async () => {
+  // ADR 0035: revealing persists nothing, so the endpoint is gone and the
+  // client must not call it.
   const original = review();
   const run = harness(original);
   run.study.render();
@@ -135,12 +137,12 @@ test("kids acquire reveal reports the encounter once without publishing returned
   reveal.click();
   await Promise.resolve();
 
-  assert.deepEqual(run.calls.map((call) => call.path), ["/api/reveal"]);
+  assert.deepEqual(run.calls.map((call) => call.path), []);
   assert.equal(run.study.state(), original);
   assert.equal(run.study.revision(), 7);
 });
 
-test("kids acquire choice reports the encounter before choosing", async () => {
+test("kids introduction choice sends only the choose", async () => {
   const original = review({ mode: "choice", choices: ["Answer", "Other"] });
   const run = harness(original);
   run.study.render();
@@ -150,7 +152,30 @@ test("kids acquire choice reports the encounter before choosing", async () => {
   option.click();
   await Promise.resolve();
 
-  assert.deepEqual(run.calls.map((call) => call.path), ["/api/reveal", "/api/choose"]);
+  assert.deepEqual(run.calls.map((call) => call.path), ["/api/choose"]);
   assert.equal(run.study.state(), original);
   assert.equal(run.study.revision(), 7);
+});
+
+test("kids done summary does not call a partial answer right", () => {
+  // `passed` includes partials; the done screen must not praise the same
+  // card as exactly right and so close at once (Codex tenth pass, P1).
+  const done = review({
+    phase: "done",
+    finished: true,
+    reviews: 1,
+    passed: 1,
+    failed: 0,
+    partial: 1,
+    introduced: 0,
+  });
+  const run = harness(done);
+  run.study.render();
+  const praised = find(run.stage, (node) =>
+    (node.textContent || "").includes("right! 👀"));
+  assert.equal(praised, null,
+    "Partial is included in passed, but it is not an exactly-right answer");
+  const close = find(run.stage, (node) =>
+    (node.textContent || "").includes("So close on 1 card."));
+  assert.ok(close, "the almost line still reports the work");
 });

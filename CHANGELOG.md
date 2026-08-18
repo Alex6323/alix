@@ -129,6 +129,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A card's tier now reflects what the learner did (ADR 0035). The published
+  seven-value vocabulary becomes `unseen` | `seen` | `learning`
+  | `learned-weak` | `learned-fading` | `learned-strong` | `retired`, and
+  `learning` means "correct at least once, not yet graduated" instead of the
+  old `acquired`, which a merely acknowledged or peeked card could reach
+  without ever answering. Revealing an answer no longer records anything:
+  `POST /api/reveal` is removed, and revealing then leaving meets the card as
+  new next sitting, reversing the earlier reveal-counts-as-encounter
+  behaviour on Alex's ruling that only the Seen acknowledgment introduces a
+  card. The whole "acquire" vocabulary is renamed to "introduction"
+  (`/api/acquire` → `/api/introduce`, `StateDto` `acquire`/`acquired` →
+  `introducing`/`introduced`, config `acquire_cooldown` →
+  `introduction_cooldown`). This is a breaking, unversioned wire and config
+  change (pre-1.0, no migration).
+
 - Recognize is now an ordinary scheduled depth (ADR 0033). A recognition
   answer creates and extends its own FSRS schedule at a laxer desired
   retention (`[review] recognize_retention`, default 0.85), so recognition

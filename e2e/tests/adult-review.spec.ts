@@ -112,7 +112,7 @@ function longContentState({
     choice_runs: choices?.map((text) => [{ text }]) ?? null,
     keypoints: null,
     keypoint_runs: null,
-    acquire: false,
+    introducing: false,
     mode: choices ? "choice" : "flip",
     depth: "recall",
     input: "type",
@@ -121,7 +121,7 @@ function longContentState({
     reviews: 0,
     passed: 0,
     failed: 0,
-    acquired: 0,
+    introduced: 0,
     exam_due: [],
     can_restart: false,
     promotable: false,
@@ -223,7 +223,7 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
   await expect(page.locator(".note .checklist-row")).toHaveCount(2);
   await expect(page.locator(".note .checklist-box")).toHaveText(["☑", "☐"]);
   await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/acquire")),
+    page.waitForResponse((res) => res.url().includes("/api/introduce")),
     page.getByRole("button", { name: "Seen" }).click(),
   ]);
 
@@ -233,7 +233,7 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
     page.getByRole("button", { name: /Cheetah/ }).click(),
   ]);
   await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/acquire")),
+    page.waitForResponse((res) => res.url().includes("/api/introduce")),
     page.getByRole("button", { name: "Seen" }).click(),
   ]);
 
@@ -372,7 +372,7 @@ test("long answer variants start at the first line and show scroll hints", async
 // quiet line saying when the next scheduled card comes due. The server-side
 // production of `next_due_ms` on the done payload is covered by tests/api.rs;
 // here the payload is mocked (as the tutor tests mock /api/ask) so the exact
-// reviews==0/acquired==0 screen renders regardless of fixture scheduling, and
+// reviews==0/introduced==0 screen renders regardless of fixture scheduling, and
 // the real embedded review.html JS is exercised against a fresh build.
 test("an empty session says when the next card is due", async ({ page }) => {
   const done = {
@@ -383,7 +383,7 @@ test("an empty session says when the next card is due", async ({ page }) => {
     choice_runs: null,
     keypoints: null,
     keypoint_runs: null,
-    acquire: false,
+    introducing: false,
     mode: "flip",
     depth: "recall",
     input: "type",
@@ -392,7 +392,7 @@ test("an empty session says when the next card is due", async ({ page }) => {
     reviews: 0,
     passed: 0,
     failed: 0,
-    acquired: 0,
+    introduced: 0,
     exam_due: [],
     can_restart: false,
     promotable: false,
@@ -502,7 +502,7 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   // tier and the other stays empty; "learned"/"retired" stay hidden at zero.
   await expect(drawer.locator(".drawer-size")).toHaveText("2 cards · 1 seen");
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2); // one per stamped card
-  await expect(drawer.locator(".crumb-cell.acquired")).toHaveCount(1);
+  await expect(drawer.locator(".crumb-cell.learning")).toHaveCount(1);
   await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(0);
   await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(1);
   await expect(page.locator(".drawer-due")).toHaveCount(0); // the old due count is gone
@@ -572,7 +572,7 @@ test("a card merely shown in an earlier session reads as a grey seen cell", asyn
   await expect(drawer.locator(".drawer-size")).toHaveText("1 card · 1 seen");
   await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(1);
   await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(0);
-  await expect(drawer.locator(".crumb-cell.acquired")).toHaveCount(0);
+  await expect(drawer.locator(".crumb-cell.learning")).toHaveCount(0);
 });
 
 // KNOWN GAP: the learned green/yellow/red heatmap bands are unreachable in
@@ -638,17 +638,17 @@ test("library removal requires the exact focused name before posting", async ({ 
 
 // KNOWN GAP — reported as skipped on every run, deliberately.
 //
-// The fixture ships no progress store, so every card is never-seen (`acquire`)
-// and the adult app posts /api/acquire, never /api/grade. Reaching a genuinely
-// graded card needs one past the server's acquire cooldown (5 min default; a
+// The fixture ships no progress store, so every card is never-seen (`introduction`)
+// and the adult app posts /api/introduce, never /api/grade. Reaching a genuinely
+// graded card needs one past the server's introduction cooldown (5 min default; a
 // sleep or a committed pre-warmed store are both banned — see ../README.md,
 // "fixture contract").
 //
 // Two leads worth verifying: (a) since 2026-07-14 the cooldown is configurable
-// (`[review] acquire_cooldown`, "0" = none) — a fixture config with a zero
+// (`[review] introduction_cooldown`, "0" = none) — a fixture config with a zero
 // cooldown would make graded cards reachable in one run. (b) `POST /api/select
 // {cram: true}` is documented to queue cards that are not due; if it bypasses
-// the cooldown for an already-acquired card, this test becomes cheap. Verify
+// the cooldown for an already-introduced card, this test becomes cheap. Verify
 // either with curl before writing the test — do not assume.
 //
 // The same gap blocks the kids honest-grading rule (a wrong Recognize pick must

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 226055941;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1470778072;
 
 // Section: executor
 
@@ -47,58 +47,6 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
-fn wire__crate__api__review__ReviewSession_acquire_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ReviewSession_acquire",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
-            >>::sse_decode(&mut deserializer);
-            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                (move || {
-                    let mut api_that_guard = None;
-                    let decode_indices_ =
-                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                &api_that, 0, true,
-                            ),
-                        ]);
-                    for i in decode_indices_ {
-                        match i {
-                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
-                            _ => unreachable!(),
-                        }
-                    }
-                    let mut api_that_guard = api_that_guard.unwrap();
-                    let output_ok = crate::api::review::ReviewSession::acquire(
-                        &mut *api_that_guard,
-                        api_now_ms,
-                    )?;
-                    Ok(output_ok)
-                })(),
-            )
-        },
-    )
-}
 fn wire__crate__api__review__ReviewSession_apply_card_note_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -552,6 +500,58 @@ fn wire__crate__api__review__ReviewSession_grade_impl(
                     let output_ok = crate::api::review::ReviewSession::grade(
                         &mut *api_that_guard,
                         api_grade,
+                        api_now_ms,
+                    )?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__review__ReviewSession_introduce_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ReviewSession_introduce",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, true,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let mut api_that_guard = api_that_guard.unwrap();
+                    let output_ok = crate::api::review::ReviewSession::introduce(
+                        &mut *api_that_guard,
                         api_now_ms,
                     )?;
                     Ok(output_ok)
@@ -1594,7 +1594,7 @@ const _: fn() = || {
         let _: Option<crate::api::review::CardView> = ReviewState.card;
         let _: crate::api::review::Mode = ReviewState.mode;
         let _: crate::api::review::Depth = ReviewState.depth;
-        let _: bool = ReviewState.acquire;
+        let _: bool = ReviewState.introducing;
         let _: Option<Vec<String>> = ReviewState.choices;
         let _: Option<Vec<Vec<crate::api::review::InlineRun>>> = ReviewState.choice_runs;
         let _: Option<Vec<String>> = ReviewState.keypoints;
@@ -1606,7 +1606,7 @@ const _: fn() = || {
         let _: u32 = ReviewState.reviews;
         let _: u32 = ReviewState.passed;
         let _: u32 = ReviewState.failed;
-        let _: u32 = ReviewState.acquired;
+        let _: u32 = ReviewState.introduced;
         let _: u32 = ReviewState.partial;
         let _: bool = ReviewState.can_restart;
         let _: Option<u64> = ReviewState.next_due_ms;
@@ -2374,7 +2374,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_card = <Option<crate::api::review::CardView>>::sse_decode(deserializer);
         let mut var_mode = <crate::api::review::Mode>::sse_decode(deserializer);
         let mut var_depth = <crate::api::review::Depth>::sse_decode(deserializer);
-        let mut var_acquire = <bool>::sse_decode(deserializer);
+        let mut var_introducing = <bool>::sse_decode(deserializer);
         let mut var_choices = <Option<Vec<String>>>::sse_decode(deserializer);
         let mut var_choiceRuns =
             <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_decode(deserializer);
@@ -2388,7 +2388,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_reviews = <u32>::sse_decode(deserializer);
         let mut var_passed = <u32>::sse_decode(deserializer);
         let mut var_failed = <u32>::sse_decode(deserializer);
-        let mut var_acquired = <u32>::sse_decode(deserializer);
+        let mut var_introduced = <u32>::sse_decode(deserializer);
         let mut var_partial = <u32>::sse_decode(deserializer);
         let mut var_canRestart = <bool>::sse_decode(deserializer);
         let mut var_nextDueMs = <Option<u64>>::sse_decode(deserializer);
@@ -2403,7 +2403,7 @@ impl SseDecode for crate::api::review::ReviewState {
             card: var_card,
             mode: var_mode,
             depth: var_depth,
-            acquire: var_acquire,
+            introducing: var_introducing,
             choices: var_choices,
             choice_runs: var_choiceRuns,
             keypoints: var_keypoints,
@@ -2415,7 +2415,7 @@ impl SseDecode for crate::api::review::ReviewState {
             reviews: var_reviews,
             passed: var_passed,
             failed: var_failed,
-            acquired: var_acquired,
+            introduced: var_introduced,
             partial: var_partial,
             can_restart: var_canRestart,
             next_due_ms: var_nextDueMs,
@@ -2638,32 +2638,32 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__review__ReviewSession_acquire_impl(ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__review__ReviewSession_apply_card_note_impl(
+        1 => wire__crate__api__review__ReviewSession_apply_card_note_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        3 => wire__crate__api__review__ReviewSession_apply_exam_passed_impl(
+        2 => wire__crate__api__review__ReviewSession_apply_exam_passed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        4 => wire__crate__api__review__ReviewSession_apply_remediation_impl(
+        3 => wire__crate__api__review__ReviewSession_apply_remediation_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        5 => wire__crate__api__review__ReviewSession_check_impl(ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__review__ReviewSession_choose_impl(ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__review__ReviewSession_crumb_impl(ptr, rust_vec_len, data_len),
-        8 => {
+        4 => wire__crate__api__review__ReviewSession_check_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__review__ReviewSession_choose_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__review__ReviewSession_crumb_impl(ptr, rust_vec_len, data_len),
+        7 => {
             wire__crate__api__review__ReviewSession_deck_has_exam_impl(ptr, rust_vec_len, data_len)
         }
-        9 => {
+        8 => {
             wire__crate__api__review__ReviewSession_foreign_writer_impl(ptr, rust_vec_len, data_len)
         }
-        10 => wire__crate__api__review__ReviewSession_grade_impl(ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__review__ReviewSession_grade_impl(ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__review__ReviewSession_introduce_impl(ptr, rust_vec_len, data_len),
         11 => wire__crate__api__review__ReviewSession_mint_tutor_card_impl(
             ptr,
             rust_vec_len,
@@ -3143,7 +3143,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.card.into_into_dart().into_dart(),
             self.0.mode.into_into_dart().into_dart(),
             self.0.depth.into_into_dart().into_dart(),
-            self.0.acquire.into_into_dart().into_dart(),
+            self.0.introducing.into_into_dart().into_dart(),
             self.0.choices.into_into_dart().into_dart(),
             self.0.choice_runs.into_into_dart().into_dart(),
             self.0.keypoints.into_into_dart().into_dart(),
@@ -3155,7 +3155,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.reviews.into_into_dart().into_dart(),
             self.0.passed.into_into_dart().into_dart(),
             self.0.failed.into_into_dart().into_dart(),
-            self.0.acquired.into_into_dart().into_dart(),
+            self.0.introduced.into_into_dart().into_dart(),
             self.0.partial.into_into_dart().into_dart(),
             self.0.can_restart.into_into_dart().into_dart(),
             self.0.next_due_ms.into_into_dart().into_dart(),
@@ -3966,7 +3966,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <Option<crate::api::review::CardView>>::sse_encode(self.card, serializer);
         <crate::api::review::Mode>::sse_encode(self.mode, serializer);
         <crate::api::review::Depth>::sse_encode(self.depth, serializer);
-        <bool>::sse_encode(self.acquire, serializer);
+        <bool>::sse_encode(self.introducing, serializer);
         <Option<Vec<String>>>::sse_encode(self.choices, serializer);
         <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(self.choice_runs, serializer);
         <Option<Vec<String>>>::sse_encode(self.keypoints, serializer);
@@ -3981,7 +3981,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <u32>::sse_encode(self.reviews, serializer);
         <u32>::sse_encode(self.passed, serializer);
         <u32>::sse_encode(self.failed, serializer);
-        <u32>::sse_encode(self.acquired, serializer);
+        <u32>::sse_encode(self.introduced, serializer);
         <u32>::sse_encode(self.partial, serializer);
         <bool>::sse_encode(self.can_restart, serializer);
         <Option<u64>>::sse_encode(self.next_due_ms, serializer);

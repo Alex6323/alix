@@ -177,7 +177,7 @@ class ReviewStateModel {
     required this.mode,
     required this.depth,
     this.input = ReviewInput.type,
-    required this.acquire,
+    required this.introducing,
     Iterable<String>? choices,
     Iterable<Iterable<InlineRunModel>>? choiceRuns,
     Iterable<String>? keypoints,
@@ -187,7 +187,7 @@ class ReviewStateModel {
     required this.reviews,
     required this.passed,
     required this.failed,
-    required this.acquired,
+    required this.introduced,
     required this.partial,
     required this.canRestart,
     this.nextDueMs,
@@ -205,7 +205,7 @@ class ReviewStateModel {
   final ReviewMode mode;
   final ReviewDepth depth;
   final ReviewInput input;
-  final bool acquire;
+  final bool introducing;
   final List<String>? choices;
   final List<List<InlineRunModel>>? choiceRuns;
   final List<String>? keypoints;
@@ -215,7 +215,7 @@ class ReviewStateModel {
   final int reviews;
   final int passed;
   final int failed;
-  final int acquired;
+  final int introduced;
   final int partial;
   final bool canRestart;
   final int? nextDueMs;

@@ -14,7 +14,7 @@ fn reset_orphans_does_not_prune_progress_for_a_malformed_live_deck() {
     )
     .unwrap();
     let mut store = alix::state::open_store(&deck, dir.path()).unwrap();
-    store.get_or_insert("card-live1", 0);
+    store.get_or_insert("card-live1");
     store.save().unwrap();
     let progress = store.path().to_path_buf();
     let before = std::fs::read_to_string(&progress).unwrap();

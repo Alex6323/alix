@@ -526,7 +526,7 @@ mod tests {
         augmentation.set_note("card-card1", "note".to_string(), 1);
         augmentation.save().unwrap();
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
-        progress.get_or_insert("card-card1", 1);
+        progress.get_or_insert("card-card1");
         progress.save().unwrap();
 
         let report = transfer(&deck, &destination, TransferMode::Copy).unwrap();
@@ -559,7 +559,7 @@ mod tests {
         workspace(&destination, None, "");
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
-        progress.get_or_insert("card-card1", 1);
+        progress.get_or_insert("card-card1");
         progress.save().unwrap();
         let progress_bytes = std::fs::read(source.join("progress/deck-deck1.json")).unwrap();
 
@@ -587,7 +587,7 @@ mod tests {
         std::fs::write(destination.join("alix.toml"), "store = \"../user\"\n").unwrap();
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &user).unwrap();
-        progress.get_or_insert("card-card1", 1);
+        progress.get_or_insert("card-card1");
         progress.save().unwrap();
 
         let report = transfer(&deck, &destination, TransferMode::Move).unwrap();
@@ -712,7 +712,7 @@ mod tests {
         workspace(&destination, None, "");
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
-        progress.get_or_insert("card-card1", 1);
+        progress.get_or_insert("card-card1");
         progress.save().unwrap();
 
         let error = transfer_with_remove(&deck, &destination, TransferMode::Move, |_| {
@@ -781,7 +781,7 @@ mod tests {
         augmentation.set_note("card-card1", "note".to_string(), 1);
         augmentation.save().unwrap();
         let mut progress = crate::state::open_store(&deck_path, &source).unwrap();
-        progress.get_or_insert("card-card1", 1);
+        progress.get_or_insert("card-card1");
         progress.save().unwrap();
         let assets = source.join("assets/deck-deck1");
         std::fs::create_dir_all(&assets).unwrap();

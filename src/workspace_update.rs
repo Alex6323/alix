@@ -1064,7 +1064,7 @@ mod tests {
         );
         augmentation.save().unwrap();
         let mut progress = crate::state::open_store(&deck, &workspace).unwrap();
-        progress.get_or_insert("card-oldcard", 0);
+        progress.get_or_insert("card-oldcard");
         progress.save().unwrap();
         let command = fake_reply(
             &workspace,

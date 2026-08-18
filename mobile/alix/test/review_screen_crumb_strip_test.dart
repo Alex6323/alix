@@ -101,9 +101,9 @@ void main() {
       cells: List.generate(
         12,
         (_) => const [
-          'untouched',
+          'unseen',
           'seen',
-          'acquired',
+          'learning',
           'learned-strong',
           'learned-fading',
           'learned-weak',

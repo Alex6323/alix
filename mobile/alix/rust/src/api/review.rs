@@ -97,7 +97,7 @@ pub struct _ReviewState {
     pub card: Option<CardView>,
     pub mode: Mode,
     pub depth: Depth,
-    pub acquire: bool,
+    pub introducing: bool,
     pub choices: Option<Vec<String>>,
     pub choice_runs: Option<Vec<Vec<InlineRun>>>,
     pub keypoints: Option<Vec<String>>,
@@ -109,7 +109,7 @@ pub struct _ReviewState {
     pub reviews: u32,
     pub passed: u32,
     pub failed: u32,
-    pub acquired: u32,
+    pub introduced: u32,
     pub partial: u32,
     pub can_restart: bool,
     pub next_due_ms: Option<u64>,
@@ -253,7 +253,7 @@ pub struct TutorCard {
 pub struct CrumbState {
     pub regions: Vec<String>,
     pub current: u32,
-    // Wire names of the lib's `CardTier` (untouched/seen/acquired/
+    // Wire names of the lib's `CardTier` (untouched/seen/introduced/
     // learned-strong/learned-fading/learned-weak/retired).
     pub cells: Vec<Vec<String>>,
 }
@@ -373,9 +373,9 @@ impl ReviewSession {
     }
 
     #[flutter_rust_bridge::frb(sync)]
-    pub fn acquire(&mut self, now_ms: Option<u64>) -> Result<ReviewState> {
+    pub fn introduce(&mut self, now_ms: Option<u64>) -> Result<ReviewState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
-        self.session.acquire_current(&mut self.store, now);
+        self.session.introduce_current(&mut self.store, now);
         self.session.poll(&mut self.store, now);
         self.save_store();
         Ok(self.state(Some(now)))
@@ -803,7 +803,7 @@ mod tests {
     use super::*;
 
     const T0: u64 = 1_000_000;
-    const LATER: u64 = T0 + alix::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
+    const LATER: u64 = T0 + alix::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000;
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();
@@ -814,7 +814,7 @@ mod tests {
         alix::stamp::stamp_deck(path).unwrap();
     }
 
-    fn opened_after_acquire(deck: &Path, root: &Path, depth: Option<Depth>) -> ReviewSession {
+    fn opened_after_introduction(deck: &Path, root: &Path, depth: Option<Depth>) -> ReviewSession {
         alix::stamp::stamp_deck(deck).unwrap();
         let mut s = ReviewSession::open(
             deck.to_string_lossy().into_owned(),
@@ -824,8 +824,8 @@ mod tests {
             None,
         )
         .unwrap();
-        while s.state(Some(T0)).acquire {
-            s.acquire(Some(T0)).unwrap();
+        while s.state(Some(T0)).introducing {
+            s.introduce(Some(T0)).unwrap();
         }
         ReviewSession::open(
             deck.to_string_lossy().into_owned(),
@@ -908,7 +908,7 @@ mod tests {
             &root.join("d.md"),
             "## one? <!-- id: card-one -->\n1\n\n## two? <!-- id: card-two -->\n2\n",
         );
-        let mut s = opened_after_acquire(&root.join("d.md"), root, Some(Depth::Recall));
+        let mut s = opened_after_introduction(&root.join("d.md"), root, Some(Depth::Recall));
         let progress = root.join("progress");
 
         std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o555)).unwrap();
@@ -945,9 +945,9 @@ mod tests {
             (root.join("loose.md"), root.to_path_buf()),
             (root.join("ws/decks/member.md"), root.join("ws")),
         ] {
-            let mut s = opened_after_acquire(&deck, root, None);
+            let mut s = opened_after_introduction(&deck, root, None);
             assert!(
-                !s.state(Some(LATER)).acquire,
+                !s.state(Some(LATER)).introducing,
                 "past the cooldown this is a quiz"
             );
             s.grade(Grade::Pass, Some(LATER)).unwrap();
@@ -1001,7 +1001,7 @@ mod tests {
             .expect("the fixture stamps its own id");
         let store_path = alix::workspace::store_path(&ws);
         let mut store = alix::state::open_store(&deck_path, &store_path).unwrap();
-        store.get_or_insert(&id, T0).recall = Some(alix::store::FsrsState {
+        store.get_or_insert(&id).recall = Some(alix::store::FsrsState {
             stability: 200.0,
             difficulty: 5.0,
             state: 2,
@@ -1055,7 +1055,7 @@ mod tests {
         }
         cache.save().unwrap();
 
-        let s = opened_after_acquire(&root.join("d.md"), root, Some(Depth::Recognize));
+        let s = opened_after_introduction(&root.join("d.md"), root, Some(Depth::Recognize));
         let state = s.state(Some(LATER));
         assert_eq!(state.mode, Mode::Choice);
         let options = state.choices.expect("a recognize pick");
@@ -1087,7 +1087,7 @@ mod tests {
             &root.join("d.md"),
             "## why <!-- id: card-q1 -->\nfirst fact\nsecond fact\n",
         );
-        let s = opened_after_acquire(&root.join("d.md"), root, Some(Depth::Reconstruct));
+        let s = opened_after_introduction(&root.join("d.md"), root, Some(Depth::Reconstruct));
         let state = s.state(Some(LATER));
         assert_eq!(state.mode, Mode::Explain);
         assert_eq!(
@@ -1138,7 +1138,7 @@ mod tests {
         assert!(open_as("phone-1").foreign_writer(None).is_none());
 
         let mut desk = open_as("desk-1");
-        desk.acquire(Some(T0)).unwrap();
+        desk.introduce(Some(T0)).unwrap();
         assert!(
             open_as("desk-1").foreign_writer(None).is_none(),
             "a device's own writes are not foreign"
@@ -1155,7 +1155,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q\nParis\n");
-        let s = opened_after_acquire(&root.join("d.md"), root, None);
+        let s = opened_after_introduction(&root.join("d.md"), root, None);
         let feedback = s.check(vec!["paris".to_string()]).expect("feedback");
         assert!(feedback.passed, "normalized match");
         let wrong = s.check(vec!["london".to_string()]).expect("feedback");
@@ -1203,7 +1203,7 @@ mod tests {
             &root.join("d.md"),
             "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n",
         );
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         let dup = s.mint_tutor_card(
             "capital of france?".to_string(),
             vec!["Paris".to_string()],
@@ -1266,7 +1266,7 @@ mod tests {
         let root = dir.path();
         write(&root.join("d.md"), "## q <!-- id: card-q1 -->\na\n");
 
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         // Read after opening: stamping adds frontmatter, so the card moves.
         let before = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let id_before = before.cards[0].id().expect("the fixture stamps its own id");
@@ -1324,7 +1324,7 @@ mod tests {
         );
         let before_bytes = std::fs::read(root.join("d.md")).unwrap();
 
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         s.apply_card_note(1, Vec::new()).unwrap();
 
         let after_bytes = std::fs::read(root.join("d.md")).unwrap();
@@ -1339,7 +1339,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q\na\n");
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         let line = s.tutor_card().expect("a card is current").line;
 
         assert!(
@@ -1367,7 +1367,7 @@ mod tests {
         let root = dir.path();
         write(&root.join("d.md"), "## q1\na1\n\n## q2\na2\n");
 
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let line1 = loaded.cards[0].line;
         let line2 = loaded.cards[1].line;
@@ -1399,7 +1399,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q\na\n");
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         let deck_id = alix::deck::Deck::load(root.join("d.md"))
             .unwrap()
             .deck_token
@@ -1421,7 +1421,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## capital of france?\nParis\n");
-        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         let deck_id = alix::deck::Deck::load(root.join("d.md"))
             .unwrap()
             .deck_token
@@ -1472,7 +1472,7 @@ mod tests {
         let root = dir.path();
         let deck = alix_test_support::seed(root);
 
-        let mut s = opened_after_acquire(&deck, root, None);
+        let mut s = opened_after_introduction(&deck, root, None);
         let line = s.tutor_card().expect("a card is current").line;
         s.apply_card_note(line as u32, vec![alix_test_support::NOTE.to_string()])
             .unwrap();
@@ -1493,7 +1493,7 @@ mod tests {
         let root = dir.path();
         let deck = alix_test_support::seed(root);
 
-        let mut s = opened_after_acquire(&deck, root, None);
+        let mut s = opened_after_introduction(&deck, root, None);
         s.grade(Grade::Pass, Some(LATER)).unwrap();
 
         assert_eq!(
@@ -1512,7 +1512,7 @@ mod tests {
         let root = dir.path();
         let deck = alix_test_support::seed(root);
 
-        let mut s = opened_after_acquire(&deck, root, None);
+        let mut s = opened_after_introduction(&deck, root, None);
         s.mint_tutor_card(
             alix_test_support::MINTED_FRONT.to_string(),
             vec![alix_test_support::MINTED_BACK.to_string()],
@@ -1537,7 +1537,7 @@ mod tests {
         let deck = root.join("d.md");
         write(&deck, "## q\na\n");
 
-        let mut s = opened_after_acquire(&deck, root, None);
+        let mut s = opened_after_introduction(&deck, root, None);
         let minted = s
             .mint_tutor_card("mine?".to_string(), vec!["my answer".to_string()], LATER)
             .expect("fresh content mints");
@@ -1582,7 +1582,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q\na\n");
-        let s = opened_after_acquire(&root.join("d.md"), root, None);
+        let s = opened_after_introduction(&root.join("d.md"), root, None);
         assert!(
             s.crumb(Some(LATER)).is_none(),
             "no topology cached, so no crumb"
@@ -1637,7 +1637,7 @@ mod tests {
             vec![("Intro", vec![id1.clone()]), ("Body", vec![id2.clone()])],
         );
 
-        let s = opened_after_acquire(&deck, root, None);
+        let s = opened_after_introduction(&deck, root, None);
         let current_front = s.state(Some(LATER)).card.expect("a card is current").front;
         let expected_current = if current_front == "q1" { 0u32 } else { 1u32 };
 
@@ -1671,7 +1671,7 @@ mod tests {
             vec![("Intro", vec![id1.clone()])],
         );
 
-        let s = opened_after_acquire(&deck, root, None);
+        let s = opened_after_introduction(&deck, root, None);
         let current_front = s.state(Some(LATER)).card.expect("a card is current").front;
         assert_eq!(
             current_front, "q2",

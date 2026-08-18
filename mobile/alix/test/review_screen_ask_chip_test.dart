@@ -56,7 +56,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // The fixture card is a fresh deck's acquire card, so "an attempt" is
+  // The fixture card is a fresh deck's introduction card, so "an attempt" is
   // the Reveal tap. The negative cases reveal too: without it, they would
   // pass trivially off the attempt gate rather than the server gate.
   Future<void> reveal(WidgetTester tester) async {

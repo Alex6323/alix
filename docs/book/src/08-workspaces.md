@@ -146,7 +146,7 @@ the same directive system from chapter 3, just sourced from one more place.
 The `alix.toml` is shared: it travels with the workspace when you hand it to
 someone. Your **personal** review pacing doesn't belong there. Drop an
 `alix.local.toml` beside it to override the global `[review]` config (FSRS
-`retention`, `retire_after`, `acquire_cooldown`, and the pacing keys
+`retention`, `retire_after`, `introduction_cooldown`, and the pacing keys
 `max_session` / `new_cards_percent`) for this workspace's decks only:
 
 ```toml

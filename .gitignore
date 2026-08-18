@@ -45,7 +45,7 @@ __pycache__/
 /e2e/shots/.tmp/
 /e2e/shots/.tmp-examples/
 # Progress documents are per-run state, never fixtures — the suite must start
-# from fresh decks to exercise the never-seen/acquire path.
+# from fresh decks to exercise the never-seen/introduction path.
 /e2e/fixtures/decks/**/progress/
 /e2e/fixtures/decks/**/recent.json
 

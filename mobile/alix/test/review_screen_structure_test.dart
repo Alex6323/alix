@@ -65,12 +65,12 @@ void main() {
       nowMs: then,
       device: device,
     );
-    while (session.state(nowMs: then).acquire) {
-      session.acquire(nowMs: then);
+    while (session.state(nowMs: then).introducing) {
+      session.introduce(nowMs: then);
     }
   }
 
-  testWidgets('review tree: cannot-open and fresh-acquire surfaces', (
+  testWidgets('review tree: cannot-open and fresh-introduce surfaces', (
     tester,
   ) async {
     final root = tempDir('alix-review-structure-open-');
@@ -103,14 +103,14 @@ void main() {
     );
     await expectWidgetTree(
       tester,
-      'review_acquire_hidden',
+      'review_introduce_hidden',
       root: find.byType(ReviewScreen),
     );
     await tester.tap(find.text('Reveal'));
     await tester.pump();
     await expectWidgetTree(
       tester,
-      'review_acquire_revealed',
+      'review_introduce_revealed',
       root: find.byType(ReviewScreen),
     );
   });
@@ -366,7 +366,7 @@ void main() {
     await tester.pump();
     await expectWidgetTree(
       tester,
-      'review_summary_acquired',
+      'review_summary_introduced',
       root: find.byType(ReviewScreen),
     );
 

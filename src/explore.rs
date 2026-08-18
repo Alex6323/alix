@@ -1318,7 +1318,7 @@ back a
         .unwrap();
         fs::write(staging.join("decks/01-a.md"), "## new q\nnew ans\n").unwrap();
         let mut store = crate::state::open_store(&dest.join("decks/01-a.md"), &dest).unwrap();
-        store.get_or_insert("card-c1", 0);
+        store.get_or_insert("card-c1");
         store.save().unwrap();
 
         let report = merge_built(&staging, &dest, true, &mut store).unwrap();

@@ -975,23 +975,12 @@ pub fn run_review(
                     Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Post, "/api/acquire") => {
+            (Method::Post, "/api/introduce") => {
                 let Some(expected) = echoed_revision(&request) else {
                     respond_status(request, 400);
                     continue;
                 };
-                match study.acquire(expected) {
-                    None => respond_status(request, 503),
-                    Some(None) => respond_status(request, 409),
-                    Some(Some(dto)) => respond_json(request, &dto),
-                }
-            }
-            (Method::Post, "/api/reveal") => {
-                let Some(expected) = echoed_revision(&request) else {
-                    respond_status(request, 400);
-                    continue;
-                };
-                match study.reveal(expected) {
+                match study.introduce(expected) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),

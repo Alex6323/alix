@@ -37,12 +37,12 @@ void main() {
     expect(notifications, 8);
   });
 
-  test('install resets card interaction state after acquire and grade', () {
+  test('install resets card interaction state after introduce and grade', () {
     final first = _state();
     final second = _state(remaining: 1);
     final done = _state(remaining: 0, finished: true);
     final port = _FakeReviewPort(first)
-      ..acquireResult = second
+      ..introduceResult = second
       ..gradeResult = done;
     final controller = ReviewController(
       factory: _FakeReviewFactory([port]),
@@ -54,7 +54,7 @@ void main() {
     controller.reveal();
     controller.openAttempt();
     controller.toggleKeypoint(0);
-    controller.acquire();
+    controller.introduce();
 
     expect(controller.state, same(second));
     expect(controller.revealed, isFalse);
@@ -114,7 +114,7 @@ ReviewStateModel _state({int remaining = 2, bool finished = false}) {
     ),
     mode: ReviewMode.explain,
     depth: ReviewDepth.recall,
-    acquire: false,
+    introducing: false,
     choices: const ['wrong', 'right'],
     choiceRuns: const [[], []],
     keypoints: const ['point'],
@@ -124,7 +124,7 @@ ReviewStateModel _state({int remaining = 2, bool finished = false}) {
     reviews: 0,
     passed: 0,
     failed: 0,
-    acquired: 0,
+    introduced: 0,
     partial: 0,
     canRestart: true,
     dueLeft: remaining,
@@ -155,7 +155,7 @@ class _FakeReviewPort implements ReviewPort {
   _FakeReviewPort(this._state);
 
   ReviewStateModel _state;
-  ReviewStateModel? acquireResult;
+  ReviewStateModel? introduceResult;
   ReviewStateModel? gradeResult;
   final List<ReviewGrade> grades = [];
 
@@ -167,7 +167,7 @@ class _FakeReviewPort implements ReviewPort {
       const ReviewForeignWriterModel(device: 'laptop', ageMs: 1000);
 
   @override
-  ReviewStateModel acquire() => _state = acquireResult ?? _state;
+  ReviewStateModel introduce() => _state = introduceResult ?? _state;
 
   @override
   ReviewCheckFeedbackModel? check(List<String> lines) {
