@@ -1,6 +1,8 @@
 # 0034: Image region grammar and derived group identity
 
-- Status: Proposed
+- Status: Accepted (NOT yet implemented; the grammar and identity were ruled
+  frozen 2026-08-18 and the base build is next, so this record is binding
+  while its evidence lands with that build)
 - Recorded: 2026-08-18
 - Retrospective: No
 
