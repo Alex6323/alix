@@ -1412,21 +1412,26 @@ fn build_card(
             };
             let hidden = span.hidden.as_deref().unwrap_or_default();
             let whole_word = *boundary == region::Boundary::Word;
+            // Matchability decides acceptance INSIDE the advance loop: a
+            // candidate that cannot bind (crossing, math, unbounded)
+            // advances one scalar and must never consume an overlapping
+            // candidate that can. Its class survives for the diagnostic.
+            let mut rejected: Vec<stream::RangeClass> = Vec::new();
             let candidates = region::occurrences_with(&stream.text, hidden, &mut |start, end| {
-                !whole_word || stream.word_bounded(&(start..end))
+                let range = start..end;
+                let class = stream.classify(&range);
+                let accepted = class == stream::RangeClass::Matchable
+                    && (!whole_word || stream.word_bounded(&range));
+                if !accepted {
+                    rejected.push(class);
+                }
+                accepted
             });
-            let classes: Vec<stream::RangeClass> = candidates
-                .iter()
-                .map(|(start, end)| stream.classify(&(*start..*end)))
-                .collect();
-            let found = classes
-                .iter()
-                .filter(|class| **class == stream::RangeClass::Matchable)
-                .count();
+            let found = candidates.len();
             if found < *n as usize {
-                let message = if classes.contains(&stream::RangeClass::Crossing) {
-                    "the span's hidden text only matches across a style boundary; unstyle the target or split the span".to_string()
-                } else if classes.contains(&stream::RangeClass::Math) {
+                let message = if rejected.contains(&stream::RangeClass::Crossing) {
+                    "the span's hidden text only matches across a masking or style boundary (a hole, a link, or styled text); rephrase the target or split the span".to_string()
+                } else if rejected.contains(&stream::RangeClass::Math) {
                     "a span cannot bind into math source".to_string()
                 } else {
                     format!(
@@ -4513,6 +4518,15 @@ the answer
             panic!("expected InvalidRegion, got {error:?}");
         };
         assert!(message.contains("occurs 0 time(s)"), "{message}");
+    }
+
+    #[test]
+    fn a_crossing_candidate_does_not_consume_an_overlapping_matchable_occurrence() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nba\\blank{{x}}nana\n<!-- cover: span hidden=\"ana\" boundary=char -->\n"
+        ));
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(Some(0), deck.cards[0].hole);
     }
 
     #[test]
