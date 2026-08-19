@@ -1366,6 +1366,34 @@ fn build_card(
         &mut back_media,
         answer_start,
     )?;
+    // Span binding is occurrence-based (ADR 0034, ruled 2026-08-19): the
+    // hidden text must occur at least N times in the answer block, or the
+    // anchor is gone and the deck fails loudly.
+    let answer_text: String = answer
+        .iter()
+        .map(|(_, text)| text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for span in &span_regions {
+        let region::RegionGeometry::Span {
+            occurrence: n,
+            boundary,
+        } = &span.geometry
+        else {
+            continue;
+        };
+        let hidden = span.hidden.as_deref().unwrap_or_default();
+        let whole_word = *boundary == region::Boundary::Word;
+        let found = region::occurrences(&answer_text, hidden, whole_word).len();
+        if found < *n as usize {
+            return Err(ParseError::InvalidRegion {
+                line: span.line,
+                message: format!(
+                    "the span's hidden text occurs {found} time(s) in the answer block, fewer than the {n} its locator names"
+                ),
+            });
+        }
+    }
     let images: Vec<CardImage> = front_media.into_iter().map(|(_, image)| image).collect();
     let images_back: Vec<CardImage> = back_media.into_iter().map(|(_, image)| image).collect();
 
@@ -3974,8 +4002,7 @@ the answer
 
     #[test]
     fn a_span_region_binds_to_the_answer_block_without_any_media() {
-        let deck =
-            parse("## q\nanswer with der Artikel\n<!-- blank: span hidden=\"der\" word=3 -->\n");
+        let deck = parse("## q\nanswer with der Artikel\n<!-- blank: span hidden=\"der\" -->\n");
         let card = &deck.cards[0];
         assert_eq!(1, card.span_regions.len());
         assert!(card.images.is_empty() && card.images_back.is_empty());
@@ -4074,8 +4101,7 @@ the answer
 
     #[test]
     fn a_quoted_hidden_value_accepts_ordinary_non_ascii_text_without_panicking() {
-        let deck =
-            parse("## German noun\nanswer for Bär\n<!-- blank: span hidden=\"Bär\" word=3 -->\n");
+        let deck = parse("## German noun\nanswer for Bär\n<!-- blank: span hidden=\"Bär\" -->\n");
         assert_eq!(Some("Bär"), deck.cards[0].span_regions[0].hidden.as_deref());
     }
 
@@ -4169,7 +4195,7 @@ the answer
     #[test]
     fn a_mixed_shape_group_keeps_its_answers_in_file_order() {
         let deck = parse(
-            "## identify both <!-- id: card-mixed1 -->\n---\nalpha beta\n<!-- blank: span [pair] hidden=\"alpha\" word=1 b:a1b2c3 -->\n![](diagram.png)\n<!-- blank: rect [pair] x=1 y=1 width=2 height=2 hidden=\"diagram\" b:d4e5f6 -->\n",
+            "## identify both <!-- id: card-mixed1 -->\n---\nalpha beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n![](diagram.png)\n<!-- blank: rect [pair] x=1 y=1 width=2 height=2 hidden=\"diagram\" b:d4e5f6 -->\n",
         );
         let group = deck
             .cards

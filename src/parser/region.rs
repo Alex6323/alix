@@ -10,6 +10,15 @@ pub enum RegionKind {
     Cover,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Boundary {
+    /// The match ends at non-alphanumeric characters: whole words, with
+    /// prose punctuation tolerated.
+    Word,
+    /// The match may sit anywhere: sub-word blanks.
+    Char,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RegionGeometry {
     Rect {
@@ -19,9 +28,9 @@ pub enum RegionGeometry {
         height: Num,
     },
     Span {
-        // Exactly one is Some, enforced at parse.
-        word: Option<u32>,
-        char: Option<u32>,
+        /// The Nth occurrence of the hidden text, 1-based; defaults to 1.
+        occurrence: u32,
+        boundary: Boundary,
     },
 }
 
@@ -49,6 +58,10 @@ pub struct RawRegion {
     pub group: Option<String>,
     pub hidden: Option<String>,
     pub stamp: Option<String>,
+    /// The machine-minted anchor offset (`position:<n>`, 1-based char
+    /// offset of the bound occurrence): doctor's drift signal, never read
+    /// for binding.
+    pub minted_position: Option<u32>,
     pub line: usize,
 }
 
@@ -212,10 +225,11 @@ struct Fields {
     shape: Option<String>,
     numbers: Vec<(String, Num)>,
     hidden: Option<String>,
-    word: Option<u32>,
-    char: Option<u32>,
+    occurrence: Option<u32>,
+    boundary: Option<Boundary>,
     group: Option<String>,
     stamp: Option<String>,
+    minted_position: Option<u32>,
 }
 
 /// Tokenizes and classifies a directive body against the frozen grammar.
@@ -226,10 +240,11 @@ fn fields(body: &str, directive: &str, line: usize) -> Result<Fields, ParseError
         shape: None,
         numbers: Vec::new(),
         hidden: None,
-        word: None,
-        char: None,
+        occurrence: None,
+        boundary: None,
         group: None,
         stamp: None,
+        minted_position: None,
     };
     let mut seen: Vec<String> = Vec::new();
     let mut once = |key: &str| -> Result<(), ParseError> {
@@ -243,6 +258,9 @@ fn fields(body: &str, directive: &str, line: usize) -> Result<Fields, ParseError
         if let Some(raw) = token.strip_prefix("b:") {
             once("b")?;
             f.stamp = Some(stamp(raw, line)?);
+        } else if let Some(raw) = token.strip_prefix("position:") {
+            once("position")?;
+            f.minted_position = Some(span_index(raw, "position", line)?);
         } else if token.starts_with('[') && token.ends_with(']') && token.len() >= 2 {
             once("[group]")?;
             f.group = Some(group_name(&token, line)?);
@@ -253,8 +271,19 @@ fn fields(body: &str, directive: &str, line: usize) -> Result<Fields, ParseError
                     f.numbers.push((key.to_string(), number(value, key, line)?));
                 }
                 "hidden" => f.hidden = Some(value.to_string()),
-                "word" => f.word = Some(span_index(value, key, line)?),
-                "char" => f.char = Some(span_index(value, key, line)?),
+                "occurrence" => f.occurrence = Some(span_index(value, key, line)?),
+                "boundary" => {
+                    f.boundary = Some(match value {
+                        "word" => Boundary::Word,
+                        "char" => Boundary::Char,
+                        other => {
+                            return Err(err(
+                                line,
+                                format!("`boundary={other}` is neither `word` nor `char`"),
+                            ));
+                        }
+                    });
+                }
                 "from" | "to" => {
                     return Err(err(
                         line,
@@ -353,8 +382,17 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
     }
     let geometry = match shape {
         "rect" => {
-            if f.word.is_some() || f.char.is_some() {
-                return Err(err(line, "`word=`/`char=` locate a `span`, not a `rect`"));
+            if f.occurrence.is_some() || f.boundary.is_some() {
+                return Err(err(
+                    line,
+                    "`occurrence=`/`boundary=` locate a `span`, not a `rect`",
+                ));
+            }
+            if f.minted_position.is_some() {
+                return Err(err(
+                    line,
+                    "`position:` anchors a `span` and does not apply to `rect`",
+                ));
             }
             rect_geometry(f.numbers, directive, line)?
         }
@@ -368,24 +406,9 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
                     "a `span` requires `hidden=\"...\"`, its anchor and answer",
                 ));
             }
-            match (f.word, f.char) {
-                (Some(_), Some(_)) => {
-                    return Err(err(
-                        line,
-                        "a `span` carries exactly one of `word=` or `char=`, not both",
-                    ));
-                }
-                (None, None) => {
-                    return Err(err(
-                        line,
-                        "a `span` carries exactly one of `word=` or `char=`",
-                    ));
-                }
-                _ => {}
-            }
             RegionGeometry::Span {
-                word: f.word,
-                char: f.char,
+                occurrence: f.occurrence.unwrap_or(1),
+                boundary: f.boundary.unwrap_or(Boundary::Word),
             }
         }
         "ellipse" | "polygon" | "clip" => {
@@ -404,6 +427,7 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
         group: f.group,
         hidden: f.hidden,
         stamp: f.stamp,
+        minted_position: f.minted_position,
         line,
     })
 }
@@ -431,8 +455,9 @@ pub(super) fn parse_crop(body: &str, line: usize) -> Result<RawCrop, ParseError>
     if f.hidden.is_some()
         || f.group.is_some()
         || f.stamp.is_some()
-        || f.word.is_some()
-        || f.char.is_some()
+        || f.occurrence.is_some()
+        || f.boundary.is_some()
+        || f.minted_position.is_some()
     {
         return Err(err(
             line,
@@ -534,6 +559,35 @@ pub(crate) fn validate_media(
     }
 }
 
+/// Byte ranges of the hidden text's occurrences in `text`, in order.
+/// `whole_word` bounds each end at a non-alphanumeric character (so prose
+/// punctuation does not break a match); substring mode counts every match.
+pub(crate) fn occurrences(text: &str, hidden: &str, whole_word: bool) -> Vec<(usize, usize)> {
+    if hidden.is_empty() {
+        return Vec::new();
+    }
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(at) = text[from..].find(hidden) {
+        let start = from + at;
+        let end = start + hidden.len();
+        let bounded = !whole_word
+            || (!text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+                && !text[end..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_alphanumeric));
+        if bounded {
+            found.push((start, end));
+        }
+        from = start + hidden.len().max(1);
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,7 +659,7 @@ mod tests {
             "duplicate key",
         );
         reject(
-            blank("rect x=1 y=1 width=2 height=2 word=1"),
+            blank("rect x=1 y=1 width=2 height=2 occurrence=1"),
             "locate a `span`",
             "span key on rect",
         );
@@ -684,32 +738,38 @@ mod tests {
 
     #[test]
     fn the_span_key_matrix_from_the_adr() {
-        assert!(blank(r#"span hidden="der" word=2"#).is_ok(), "word alone");
-        assert!(blank(r#"span hidden="der" char=9"#).is_ok(), "char alone");
-        reject(
-            blank(r#"span hidden="der""#),
-            "exactly one of `word=` or `char=`",
-            "neither",
+        let span = |body: &str| blank(body).unwrap();
+        let bare = span(r#"span hidden="der""#);
+        assert_eq!(
+            RegionGeometry::Span {
+                occurrence: 1,
+                boundary: Boundary::Word
+            },
+            bare.geometry,
+            "both keys default"
         );
+        assert!(blank(r#"span hidden="der" occurrence=2"#).is_ok());
+        assert!(blank(r#"span hidden="fahr" boundary=char"#).is_ok());
+        assert!(blank(r#"span hidden="fahr" boundary=char occurrence=3"#).is_ok());
         reject(
-            blank(r#"span hidden="der" word=2 char=9"#),
-            "not both",
-            "both",
+            blank(r#"span hidden="x" boundary=line"#),
+            "neither `word` nor `char`",
+            "bad boundary",
         );
         for bad in ["0", "-1", "2.5", "02"] {
             reject(
-                blank(&format!(r#"span hidden="x" word={bad}"#)),
+                blank(&format!(r#"span hidden="x" occurrence={bad}"#)),
                 "1-based positive integer",
                 bad,
             );
         }
         reject(
-            blank("span word=2"),
+            blank("span occurrence=2"),
             "requires `hidden=",
             "span without hidden",
         );
         reject(
-            blank(r#"span hidden="x" word=2 x=4"#),
+            blank(r#"span hidden="x" x=4"#),
             "no geometry keys",
             "geometry on span",
         );
@@ -718,31 +778,31 @@ mod tests {
     #[test]
     fn quoted_values_escape_strictly_and_round_trip() {
         let hidden = |body: &str| blank(body).unwrap().hidden.unwrap();
-        assert_eq!(hidden(r#"span word=1 hidden="\"Ja\"""#), "\"Ja\"");
-        assert_eq!(hidden(r#"span word=1 hidden="a \\ b""#), "a \\ b");
-        assert_eq!(hidden(r#"span word=1 hidden="--\>""#), "-->");
-        assert_eq!(hidden(r#"span word=1 hidden="--!\>""#), "--!>");
+        assert_eq!(hidden(r#"span hidden="\"Ja\"""#), "\"Ja\"");
+        assert_eq!(hidden(r#"span hidden="a \\ b""#), "a \\ b");
+        assert_eq!(hidden(r#"span hidden="--\>""#), "-->");
+        assert_eq!(hidden(r#"span hidden="--!\>""#), "--!>");
         assert_eq!(
-            hidden(r#"span word=1 hidden="a lone > stays bare""#),
+            hidden(r#"span hidden="a lone > stays bare""#),
             "a lone > stays bare"
         );
         reject(
-            blank(r#"span word=1 hidden="a \n b""#),
+            blank(r#"span hidden="a \n b""#),
             "unknown escape",
             "unknown escape",
         );
         reject(
-            blank(r#"span word=1 hidden="open"#),
+            blank(r#"span hidden="open"#),
             "never closes",
             "unterminated",
         );
         reject(
-            blank(r#"span word=1 hidden="trailing \"#),
+            blank(r#"span hidden="trailing \"#),
             "never closes",
             "trailing backslash",
         );
         reject(
-            blank(r#"span word=1 hidden="--!>""#),
+            blank(r#"span hidden="--!>""#),
             "would close the comment",
             "raw comment-end-bang",
         );
@@ -798,7 +858,13 @@ mod tests {
             "takes `rect` only",
             "crop span",
         );
-        for extra in [r#"hidden="x""#, "[g]", "b:a1b2c3", "word=1"] {
+        for extra in [
+            r#"hidden="x""#,
+            "[g]",
+            "b:a1b2c3",
+            "occurrence=1",
+            "position:4",
+        ] {
             reject(
                 parse_crop(&format!("rect x=0 y=0 width=1 height=1 {extra}"), 4),
                 "nothing else",
@@ -844,7 +910,7 @@ mod tests {
     fn a_blank_names_a_shape_or_is_rejected() {
         reject(blank(""), "names no shape", "empty body");
         reject(
-            blank(r#"hidden="x" word=1"#),
+            blank(r#"hidden="x" occurrence=1"#),
             "names no shape",
             "fields without shape",
         );

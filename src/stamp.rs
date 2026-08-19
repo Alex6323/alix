@@ -1670,7 +1670,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\nanswer one\n<!-- blank: span hidden=\"one\" word=2 b:a1b2c3 -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n"
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\nanswer one\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n"
             ),
         );
 
@@ -1679,7 +1679,7 @@ mod tests {
         assert_eq!(1, outcome.minted_regions.len());
         let text = fs::read_to_string(&path).unwrap();
         assert!(
-            text.contains("<!-- blank: span hidden=\"one\" word=2 b:a1b2c3 -->"),
+            text.contains("<!-- blank: span hidden=\"one\" b:a1b2c3 -->"),
             "the earlier region keeps the identity and history it already owned: {text}"
         );
         assert!(
