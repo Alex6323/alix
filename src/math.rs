@@ -372,6 +372,19 @@ mod tests {
         }
     }
 
+    /// The mathspan policy rejects blanks inside phantom arguments because
+    /// the masked formula parses yet draws nothing; this pins that premise.
+    #[test]
+    fn a_masked_phantom_renders_no_visible_path() {
+        let svg = render_svg(r"\phantom{\boxed{?}}").expect("a masked phantom parses");
+        assert!(
+            !svg.contains("<path"),
+            "a blank inside a phantom argument would be invisible: {svg}"
+        );
+        let visible = render_svg(r"\boxed{?}").expect("the bare boxed blank parses");
+        assert!(visible.contains("<path"), "{visible}");
+    }
+
     #[test]
     fn unsafe_svg_features_are_rejected() {
         let unsafe_fragments = [

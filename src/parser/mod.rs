@@ -4894,6 +4894,30 @@ the answer
     }
 
     #[test]
+    fn a_math_comment_does_not_consume_the_first_visible_occurrence() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$a % target$ target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+        ));
+
+        assert_eq!(
+            vec!["$a % target$ ⍰"],
+            deck.cards[0].context,
+            "Ratex does not render source after `%`, so that occurrence is not learner-visible"
+        );
+    }
+
+    #[test]
+    fn a_span_inside_phantom_is_rejected_as_not_learner_visible() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$\\phantom{{target}}$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+        ));
+        assert!(
+            matches!(error, ParseError::InvalidRegion { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[test]
     fn ordinary_atoms_bind_in_inline_and_display_math() {
         for (line, hidden, masked) in [
             (r"$x \leq y$", "y", "$x \\leq \u{2370}$"),

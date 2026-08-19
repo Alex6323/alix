@@ -11,9 +11,11 @@ use std::ops::Range;
 pub(super) enum Violation {
     EndpointInsideControlSequence(String),
     StructuralToken(char),
+    Comment,
     RowBreak,
     GroupSplit,
     ControlSequence(String),
+    NotLearnerVisible(String),
 }
 
 impl Violation {
@@ -25,11 +27,15 @@ impl Violation {
             Violation::StructuralToken(token) => {
                 format!("the match contains the structural token `{token}`")
             }
+            Violation::Comment => "the match lies inside a TeX comment".to_string(),
             Violation::RowBreak => r"the match contains a `\\` row break".to_string(),
             Violation::GroupSplit => "the match splits a brace group".to_string(),
             Violation::ControlSequence(name) => format!(
                 "the match contains the control sequence `{name}`; only a whole-formula blank may contain commands"
             ),
+            Violation::NotLearnerVisible(name) => {
+                format!("the match lies inside the argument of `{name}`, which renders nothing")
+            }
         }
     }
 }
@@ -86,6 +92,53 @@ fn tokens(payload: &str) -> Vec<Token> {
     out
 }
 
+/// The extents (command end through argument end, braces included) whose
+/// contents Ratex lays out but never draws: a blank in there is invisible.
+fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usize>, String)> {
+    let mut extents = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if !matches!(token.kind, Kind::Sequence) {
+            continue;
+        }
+        let name = &payload[token.span.clone()];
+        if !matches!(name, r"\phantom" | r"\hphantom" | r"\vphantom") {
+            continue;
+        }
+        let mut next = index + 1;
+        while next < tokens.len()
+            && matches!(tokens[next].kind, Kind::Other)
+            && payload[tokens[next].span.clone()]
+                .chars()
+                .all(char::is_whitespace)
+        {
+            next += 1;
+        }
+        let Some(argument) = tokens.get(next) else {
+            continue;
+        };
+        let mut end = argument.span.end;
+        if matches!(argument.kind, Kind::Open) {
+            let mut depth = 0i32;
+            for later in &tokens[next..] {
+                match later.kind {
+                    Kind::Open => depth += 1,
+                    Kind::Close => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = later.span.end;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                end = later.span.end;
+            }
+        }
+        extents.push((token.span.end..end, name.to_string()));
+    }
+    extents
+}
+
 fn trim_extent(payload: &str, range: &Range<usize>) -> Range<usize> {
     let slice = &payload[range.clone()];
     let start = range.start + (slice.len() - slice.trim_start().len());
@@ -98,6 +151,17 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
     }
 
     let tokens = tokens(payload);
+    if tokens
+        .iter()
+        .any(|token| matches!(&token.kind, Kind::Structural('%')) && token.span.end <= range.start)
+    {
+        return Err(Violation::Comment);
+    }
+    for (extent, name) in invisible_argument_extents(payload, &tokens) {
+        if range.start < extent.end && extent.start < range.end {
+            return Err(Violation::NotLearnerVisible(name));
+        }
+    }
     let mut depth_before = vec![0i32; payload.len() + 1];
     let mut depth = 0i32;
     for token in &tokens {
@@ -213,6 +277,38 @@ mod tests {
                 "{payload} / {hidden}"
             );
         }
+    }
+
+    #[test]
+    fn source_after_an_unescaped_percent_is_a_comment_not_a_unit() {
+        assert_eq!(Err(Violation::Comment), unit("a % target", "target"));
+        assert_eq!(Ok(()), unit(r"a \% target", "target"));
+    }
+
+    #[test]
+    fn every_phantom_argument_is_invisible_to_matches() {
+        for command in [r"\phantom", r"\hphantom", r"\vphantom"] {
+            assert_eq!(
+                Err(Violation::NotLearnerVisible(command.to_string())),
+                unit(&format!("{command}{{target}} x"), "target"),
+                "{command}"
+            );
+        }
+        assert_eq!(
+            Err(Violation::NotLearnerVisible(r"\phantom".to_string())),
+            unit(r"\phantom{target} x", r"{target}"),
+            "the braces belong to the invisible argument too"
+        );
+        assert_eq!(
+            Err(Violation::NotLearnerVisible(r"\phantom".to_string())),
+            unit(r"\phantom x y", "x"),
+            "a braceless single-token argument is equally invisible"
+        );
+        assert_eq!(
+            Ok(()),
+            unit(r"\phantom{a} target", "target"),
+            "visible text after the phantom stays bindable"
+        );
     }
 
     #[test]
