@@ -284,6 +284,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An unterminated `\verb` in a formula (`\verb|abc` with no closing
+  delimiter) is now a loud math error on every rendered surface instead of
+  silently rendering with the last authored character dropped, which is how
+  the pinned renderer accepts it. Bind-time span validation rejects it the
+  same way.
+
 - A typed card with several expected answers can no longer be passed by
   answering only some of them. Grading returned one result per submitted
   line, so an unanswered line produced no result and the card passed when

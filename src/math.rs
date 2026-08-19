@@ -91,12 +91,14 @@ fn substitute_context_holes(source: &str) -> String {
 
 /// Parse-only Ratex validation for bind-time span checks: no layout, no SVG.
 pub(crate) fn parses(source: &str) -> Result<(), String> {
+    validate_verbatim_delimiters(source)?;
     parse(source).map(|_| ()).map_err(|error| error.to_string())
 }
 
 fn render_svg(source: &str) -> Result<String, String> {
     #[cfg(test)]
     THREAD_RENDER_COUNT.with(|count| count.set(count.get() + 1));
+    validate_verbatim_delimiters(source)?;
     let ast = parse(source).map_err(|error| error.to_string())?;
     let layout_box = layout(&ast, &LayoutOptions::default());
     let display_list = to_display_list(&layout_box);
@@ -112,6 +114,43 @@ fn render_svg(source: &str) -> Result<String, String> {
     } else {
         Err("ratex produced unsupported svg output".to_string())
     }
+}
+
+fn validate_verbatim_delimiters(source: &str) -> Result<(), String> {
+    let mut chars = source.char_indices().peekable();
+    while let Some((at, ch)) = chars.next() {
+        if ch == '%' {
+            while chars.next().is_some_and(|(_, next)| next != '\n') {}
+            continue;
+        }
+        if ch != '\\' {
+            continue;
+        }
+        let mut end = at + 1;
+        while let Some((next_at, next)) = chars.peek().copied() {
+            if !next.is_ascii_alphabetic() {
+                break;
+            }
+            chars.next();
+            end = next_at + 1;
+        }
+        if &source[at..end] != r"\verb" {
+            if end == at + 1 {
+                chars.next();
+            }
+            continue;
+        }
+        if chars.peek().is_some_and(|(_, next)| *next == '*') {
+            chars.next();
+        }
+        let Some((_, delimiter)) = chars.next() else {
+            return Err(r"unterminated `\verb` delimiter".to_string());
+        };
+        if !chars.by_ref().any(|(_, body)| body == delimiter) {
+            return Err(r"unterminated `\verb` delimiter".to_string());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -391,6 +430,11 @@ mod tests {
         assert!(!literal.contains("<rect"), "{literal}");
         let blank = render_svg(r"\boxed{?}").expect("the boxed blank parses");
         assert!(blank.contains("<rect"), "{blank}");
+    }
+
+    #[test]
+    fn an_unterminated_verb_does_not_parse() {
+        assert!(parses(r"\verb|abc").is_err());
     }
 
     #[test]

@@ -4929,6 +4929,17 @@ the answer
     }
 
     #[test]
+    fn an_unterminated_verb_after_a_span_is_a_loud_binding_error() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$target + \\verb|abc$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+        ));
+        assert!(
+            matches!(error, ParseError::InvalidRegion { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[test]
     fn ordinary_atoms_bind_in_inline_and_display_math() {
         for (line, hidden, masked) in [
             (r"$x \leq y$", "y", "$x \\leq \u{2370}$"),
