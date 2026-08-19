@@ -582,8 +582,12 @@ pub(crate) fn occurrences(text: &str, hidden: &str, whole_word: bool) -> Vec<(us
                     .is_some_and(char::is_alphanumeric));
         if bounded {
             found.push((start, end));
+            from = end;
+        } else {
+            // A rejected candidate is not an occurrence, so it must not
+            // consume a later overlapping bounded match.
+            from = start + text[start..].chars().next().map_or(1, char::len_utf8);
         }
-        from = start + hidden.len().max(1);
     }
     found
 }
@@ -591,6 +595,14 @@ pub(crate) fn occurrences(text: &str, hidden: &str, whole_word: bool) -> Vec<(us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_word_candidate_does_not_consume_an_overlapping_bounded_match() {
+        assert_eq!(
+            vec![(13, 22)],
+            occurrences("The password word word is duplicated.", "word word", true)
+        );
+    }
 
     fn blank(body: &str) -> Result<RawRegion, ParseError> {
         parse_blank(body, 7)

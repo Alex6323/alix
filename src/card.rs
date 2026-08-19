@@ -240,6 +240,15 @@ impl Card {
     }
 }
 
+/// Base ids of blank-template blocks (ADR 0034): reserved live identities
+/// while no plain card exists, so every known-id inventory must include them.
+pub fn dormant_base_ids(cards: &[Card]) -> impl Iterator<Item = String> + '_ {
+    cards
+        .iter()
+        .filter(|card| card.region.is_some())
+        .filter_map(|card| card.token.as_deref().map(str::to_string))
+}
+
 impl Eq for Card {}
 // Equality is (token, hole, reversed, region identity) only; unstamped cards (token: None) compare
 // equal, which is harmless since the session/store boundary excludes them first. The region

@@ -770,7 +770,8 @@ pub fn reset_decks<'a>(
             .cards
             .iter()
             .filter_map(crate::card::Card::id)
-            .chain(crate::personal::card_ids(deck));
+            .chain(crate::personal::card_ids(deck))
+            .chain(deck.dormant_base_ids());
         for id in ids {
             if store.get(&id).is_some() {
                 store.remove(&id);

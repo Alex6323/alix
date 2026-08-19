@@ -51,11 +51,10 @@ pub fn read(deck_path: &Path, subject: &str) -> Personal {
 }
 
 pub fn card_ids(deck: &Deck) -> Vec<String> {
-    read(&deck.path, &deck.subject)
-        .cards
-        .iter()
-        .filter_map(Card::id)
-        .collect()
+    let personal = read(&deck.path, &deck.subject);
+    let mut ids: Vec<String> = personal.cards.iter().filter_map(Card::id).collect();
+    ids.extend(crate::card::dormant_base_ids(&personal.cards));
+    ids
 }
 
 pub fn append_note(

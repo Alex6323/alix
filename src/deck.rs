@@ -147,7 +147,11 @@ impl Deck {
         settings.fill_from(defaults);
         for card in &mut cards {
             card.reveal = card.reveal.or(settings.reveal);
-            card.input = card.input.or(settings.input);
+            // A region card takes no input (ADR 0034), so the deck default
+            // must not refill what the template cleared.
+            if card.region.is_none() {
+                card.input = card.input.or(settings.input);
+            }
         }
         // No filesystem check here: a missing image must not stop the deck from loading.
         let base_dir = image_base_dir(&path);
@@ -161,9 +165,9 @@ impl Deck {
             let mut card = card;
             card.sampling = card.sampling.or(settings.sampling);
             let direction = card.direction.or(settings.direction).unwrap_or_default();
-            // Keying on the hole (not direction) stops a deck-wide "both" from reversing cloze
-            // cards.
-            if card.hole.is_some() || direction == Direction::Forward {
+            // Keying on the hole/region (not direction) stops a deck-wide "both" from
+            // reversing cloze or region cards.
+            if card.hole.is_some() || card.region.is_some() || direction == Direction::Forward {
                 expanded.push(card);
             } else {
                 let reversed = card.reversed();
@@ -301,10 +305,7 @@ impl Deck {
     /// while no plain card exists, so orphan inventories must include them or
     /// the supported cleanup prunes a re-exposable plain card's history.
     pub fn dormant_base_ids(&self) -> impl Iterator<Item = String> + '_ {
-        self.cards
-            .iter()
-            .filter(|card| card.region.is_some())
-            .filter_map(|card| card.token.as_deref().map(str::to_string))
+        crate::card::dormant_base_ids(&self.cards)
     }
 }
 
@@ -1989,6 +1990,28 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         assert_eq!(1, deck.cards.len());
         assert_eq!(Some(0), deck.cards[0].hole);
+        assert!(!deck.cards[0].reversed);
+    }
+
+    #[test]
+    fn deck_defaults_never_apply_input_or_direction_to_region_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("regions.md");
+        std::fs::write(
+            &path,
+            "---\ninput: type\ndirection: both\n---\n## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n",
+        )
+        .unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+
+        assert_eq!(
+            1,
+            deck.cards.len(),
+            "a template must still emit exactly one region card under deck defaults"
+        );
+        assert!(deck.cards[0].region.is_some());
+        assert_eq!(None, deck.cards[0].input);
         assert!(!deck.cards[0].reversed);
     }
 

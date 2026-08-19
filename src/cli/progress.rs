@@ -281,8 +281,13 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
             .flat_map(alix::personal::card_ids)
             .filter(|id| store.get(id).is_some())
             .collect();
+        let dormant_ids: Vec<String> = decks_full
+            .iter()
+            .flat_map(Deck::dormant_base_ids)
+            .filter(|id| store.get(id).is_some())
+            .collect();
 
-        if present.is_empty() && !mastered && personal_ids.is_empty() {
+        if present.is_empty() && !mastered && personal_ids.is_empty() && dormant_ids.is_empty() {
             println!("No stored progress to reset in {label}.");
             return Ok(());
         }

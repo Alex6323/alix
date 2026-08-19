@@ -1436,6 +1436,14 @@ fn build_card(
             None => has_other = true,
         }
     }
+    if !task_lines.is_empty()
+        && let Some(line) = first_blank_line
+    {
+        return Err(ParseError::InvalidRegion {
+            line,
+            message: "a `blank:` region cannot share a block with a task-list answer".into(),
+        });
+    }
     if !task_lines.is_empty() && has_other {
         lints.push(Lint {
             line: task_lines[0].0,
@@ -1479,13 +1487,6 @@ fn build_card(
                     kind: LintKind::ChoiceNeedsBothSides,
                 });
             } else if let Some((_, correct)) = options.into_iter().find(|(checked, _)| *checked) {
-                if let Some(line) = first_blank_line {
-                    return Err(ParseError::InvalidRegion {
-                        line,
-                        message: "a `blank:` region cannot share a block with a task-list answer"
-                            .into(),
-                    });
-                }
                 let mut card = Card::plain(Arc::clone(subject), front, vec![correct], note, line);
                 card.deck_id = Arc::clone(deck_id);
                 card.token = directives.token.as_deref().map(Arc::from);
@@ -4356,6 +4357,17 @@ the answer
     fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
         let error = err(&format!(
             "## pick <!-- id: {RTOK} -->\n---\n- [x] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("task-list"), "{message}");
+    }
+
+    #[test]
+    fn an_incomplete_task_list_plus_a_blank_region_is_still_a_composition_error() {
+        let error = err(&format!(
+            "## pick <!-- id: {RTOK} -->\n---\n- [ ] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
