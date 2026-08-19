@@ -33,7 +33,7 @@ struct StreamPiece {
 /// counts anything the learner cannot see and a purely visual edit never
 /// shifts an offset. Fenced interiors
 /// are one matchable piece each, taken verbatim (no inline parsing inside
-/// code); math is visible but never matchable in v1.
+/// code); math is one visible piece, typed for the structural-unit policy.
 /// A piece ready for the join: (visible text, matchable, per-char map).
 type BuiltPiece = (String, bool, Vec<(usize, usize)>);
 
@@ -119,7 +119,7 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RangeClass {
     Matchable,
-    /// Inside one piece, but the piece is visible-unmatchable (math in v1).
+    /// Inside one math piece: bindable only as a complete structural unit.
     Math,
     /// Crosses a piece boundary: a style node edge or a line break.
     Crossing,
@@ -127,13 +127,22 @@ pub(super) enum RangeClass {
 
 impl MaskableStream {
     /// Whether `range` (bytes into the stream text) lies wholly inside one
-    /// matchable piece decides binding: the cross-node and math rules both
-    /// fall out of this classification.
+    /// piece decides binding: prose binds directly, math adds the
+    /// structural-unit policy, and a crossing range never binds.
     pub fn classify(&self, range: &Range<usize>) -> RangeClass {
         match self.locate(range) {
             Some((_, piece)) if piece.matchable => RangeClass::Matchable,
             Some(_) => RangeClass::Math,
             None => RangeClass::Crossing,
+        }
+    }
+
+    /// The stream-text bounds of the math piece containing `range`, when the
+    /// range lies wholly inside one non-matchable (math) piece.
+    pub fn math_piece(&self, range: &Range<usize>) -> Option<Range<usize>> {
+        match self.locate(range) {
+            Some((_, piece)) if !piece.matchable => Some(piece.range.clone()),
+            _ => None,
         }
     }
 
@@ -290,14 +299,16 @@ mod tests {
     }
 
     #[test]
-    fn math_is_visible_but_never_matchable() {
+    fn math_is_visible_and_typed_for_the_unit_policy() {
         let s = stream(&["sum $x+y$ here"]);
         assert_eq!("sum x+y here", s.text);
         assert_eq!(
             RangeClass::Math,
             s.classify(&(4..7)),
-            "math source is visible-unmatchable in v1"
+            "math source is typed so binding applies the structural-unit policy"
         );
+        assert_eq!(Some(4..7), s.math_piece(&(4..5)));
+        assert_eq!(None, s.math_piece(&(0..3)), "prose has no math piece");
         assert_eq!(RangeClass::Matchable, s.classify(&(8..12)));
     }
 

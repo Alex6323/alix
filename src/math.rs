@@ -89,6 +89,11 @@ fn substitute_context_holes(source: &str) -> String {
         .replace(HIDDEN, r"\boxed{\cdots}")
 }
 
+/// Parse-only Ratex validation for bind-time span checks: no layout, no SVG.
+pub(crate) fn parses(source: &str) -> Result<(), String> {
+    parse(source).map(|_| ()).map_err(|error| error.to_string())
+}
+
 fn render_svg(source: &str) -> Result<String, String> {
     #[cfg(test)]
     THREAD_RENDER_COUNT.with(|count| count.set(count.get() + 1));

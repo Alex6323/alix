@@ -13,6 +13,7 @@ mod canonical;
 pub(crate) mod checklist;
 mod cloze;
 mod frontmatter;
+mod mathspan;
 pub mod region;
 mod sidecar;
 mod stream;
@@ -1490,11 +1491,30 @@ fn build_card(
             // advances one scalar and must never consume an overlapping
             // candidate that can. Its class survives for the diagnostic.
             let mut rejected: Vec<stream::RangeClass> = Vec::new();
+            let mut math_violation: Option<mathspan::Violation> = None;
             let candidates = region::occurrences_with(&stream.text, hidden, &mut |start, end| {
                 let range = start..end;
                 let class = stream.classify(&range);
-                let accepted = class == stream::RangeClass::Matchable
-                    && (!whole_word || stream.word_bounded(&range));
+                let unit = match class {
+                    stream::RangeClass::Matchable => true,
+                    stream::RangeClass::Math => {
+                        let piece = stream
+                            .math_piece(&range)
+                            .expect("a math-classed range lies within one piece");
+                        match mathspan::structural_unit(
+                            &stream.text[piece.clone()],
+                            &(start - piece.start..end - piece.start),
+                        ) {
+                            Ok(()) => true,
+                            Err(violation) => {
+                                math_violation.get_or_insert(violation);
+                                false
+                            }
+                        }
+                    }
+                    stream::RangeClass::Crossing => false,
+                };
+                let accepted = unit && (!whole_word || stream.word_bounded(&range));
                 if !accepted {
                     rejected.push(class);
                 }
@@ -1504,8 +1524,11 @@ fn build_card(
             if found < *n as usize {
                 let message = if rejected.contains(&stream::RangeClass::Crossing) {
                     "the span's hidden text only matches across a masking or style boundary (a hole, a link, or styled text); rephrase the target or split the span".to_string()
-                } else if rejected.contains(&stream::RangeClass::Math) {
-                    "a span cannot bind into math source".to_string()
+                } else if let Some(violation) = &math_violation {
+                    format!(
+                        "the span's hidden text is not a complete structural unit of its formula: {}; blank a complete unit or the whole formula",
+                        violation.message()
+                    )
                 } else {
                     format!(
                         "the span's hidden text occurs {found} time(s) in the block's matchable text, fewer than the {n} its locator names"
@@ -1533,9 +1556,43 @@ fn build_card(
                 });
             }
             bound.push((start, end, span.line));
+            if let Some(piece) = stream.math_piece(&(start..end)) {
+                let payload = &stream.text[piece.clone()];
+                if let Err(error) = crate::math::parses(payload) {
+                    return Err(ParseError::InvalidRegion {
+                        line: span.line,
+                        message: format!("the formula under the span does not parse: {error}"),
+                    });
+                }
+                for marker in [r"\boxed{?}", r"\boxed{\cdots}"] {
+                    let mut masked = payload.to_string();
+                    masked.replace_range(start - piece.start..end - piece.start, marker);
+                    if let Err(error) = crate::math::parses(&masked) {
+                        return Err(ParseError::InvalidRegion {
+                            line: span.line,
+                            message: format!(
+                                "masking the span leaves a formula that does not parse: {error}"
+                            ),
+                        });
+                    }
+                }
+                // A typed span answer holding a command asks for its spelling
+                // (cloze's untypable rule; math spans draw unless pinned).
+                if span.kind == region::RegionKind::Blank
+                    && directives.input == Some(Input::Type)
+                    && hidden.contains('\\')
+                {
+                    lints.push(Lint {
+                        line: span.line,
+                        kind: LintKind::UntypableHole {
+                            answer: hidden.to_string(),
+                        },
+                    });
+                }
+            }
             let (answer_index, range) = stream
                 .splice(&(start..end))
-                .expect("an accepted candidate lies within one matchable piece");
+                .expect("an accepted candidate lies within one piece");
             splices.push(SpanSplice {
                 directive_line: span.line,
                 cover: span.kind == region::RegionKind::Cover,
@@ -4684,14 +4741,235 @@ the answer
     }
 
     #[test]
-    fn a_span_cannot_bind_into_math_source() {
-        let error = err(&format!(
+    fn a_whole_math_formula_is_a_legal_span_blank() {
+        let deck = parse(&format!(
             "## q <!-- id: {RTOK} -->\n---\nsum $x+y$ here\n<!-- blank: span hidden=\"x+y\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(
+            vec!["sum $\u{2370}$ here"],
+            deck.cards[0].context,
+            "the whole-piece carve-out masks the formula to the blank marker"
+        );
+    }
+
+    #[test]
+    fn a_partial_match_containing_a_structural_token_is_rejected() {
+        for hidden in ["x^", "^2"] {
+            let error = err(&format!(
+                "## q <!-- id: {RTOK} -->\n---\n$x^2$\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+            ));
+            let ParseError::InvalidRegion { message, .. } = error else {
+                panic!("expected InvalidRegion for {hidden}, got {error:?}");
+            };
+            assert!(
+                message.contains("structural token `^`"),
+                "{hidden}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_matrix_column_separator_is_never_inside_a_span_match() {
+        let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"a &\" boundary=char b:a1b2c3 -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
         };
-        assert!(message.contains("math"), "{message}");
+        assert!(message.contains("structural token `&`"), "{message}");
+    }
+
+    #[test]
+    fn a_span_endpoint_inside_a_control_word_is_rejected_naming_it() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$x \\leq y$\n<!-- blank: span hidden=\"q\" boundary=char b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("\\leq"), "{message}");
+    }
+
+    #[test]
+    fn escaped_braces_are_legal_inside_and_as_a_span_match() {
+        let line = r"$A=\{x\}$";
+        let hidden = r"\\{x\\}";
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+        ));
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["$A=\u{2370}$"], deck.cards[0].context);
+    }
+
+    #[test]
+    fn a_matrix_cell_is_a_complete_structural_unit() {
+        let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"a\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            vec!["$\\begin{pmatrix}\u{2370} & b\\end{pmatrix}$"],
+            deck.cards[0].context
+        );
+    }
+
+    #[test]
+    fn a_group_interior_binds_at_equal_depth_and_a_group_split_is_rejected() {
+        let line = r"$\frac{ab}{cd}$";
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"ab\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            vec!["$\\frac{\u{2370}}{cd}$"],
+            deck.cards[0].context,
+            "the equal-depth interior of one group is a unit"
+        );
+
+        let hidden = r"ab}{cd";
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("brace group"), "{message}");
+    }
+
+    #[test]
+    fn a_partial_match_containing_a_command_is_rejected_in_v1() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$x + \\gamma + y$\n<!-- blank: span hidden=\"\\\\gamma\" boundary=char b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("control sequence `\\gamma`"), "{message}");
+    }
+
+    #[test]
+    fn left_right_and_begin_end_pairs_are_never_split() {
+        for (line, hidden) in [
+            (r"$\left( x \right)$", r"\\left( x"),
+            (r"$\begin{pmatrix}a\end{pmatrix}$", r"\\begin{pmatrix}a"),
+        ] {
+            let error = err(&format!(
+                "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+            ));
+            let ParseError::InvalidRegion { message, .. } = error else {
+                panic!("expected InvalidRegion for {hidden}, got {error:?}");
+            };
+            assert!(message.contains("control sequence"), "{hidden}: {message}");
+        }
+    }
+
+    #[test]
+    fn a_whole_formula_blank_bypasses_the_token_rules() {
+        for (line, hidden) in [
+            (r"$x^2$", r"x^2"),
+            (
+                r"$\begin{pmatrix}a & b\end{pmatrix}$",
+                r"\\begin{pmatrix}a & b\\end{pmatrix}",
+            ),
+        ] {
+            let deck = parse(&format!(
+                "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+            ));
+            assert_eq!(1, deck.cards.len(), "{hidden}");
+            assert_eq!(vec!["$\u{2370}$"], deck.cards[0].context, "{hidden}");
+        }
+    }
+
+    #[test]
+    fn space_padded_dollars_are_prose_so_the_span_binds_as_text() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$ \\gamma $\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            vec!["$ \u{2370} $"],
+            deck.cards[0].context,
+            "whitespace-adjacent dollars never open math, so the token rules do not apply"
+        );
+    }
+
+    #[test]
+    fn ordinary_atoms_bind_in_inline_and_display_math() {
+        for (line, hidden, masked) in [
+            (r"$x \leq y$", "y", "$x \\leq \u{2370}$"),
+            (r"$$a + b$$", "b", "$$a + \u{2370}$$"),
+        ] {
+            let deck = parse(&format!(
+                "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" b:a1b2c3 -->\n"
+            ));
+            assert_eq!(vec![masked.to_string()], deck.cards[0].context, "{line}");
+        }
+    }
+
+    #[test]
+    fn an_authored_malformed_formula_under_a_span_is_a_loud_binding_error() {
+        let line = r"$x^{2$";
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"x\" boundary=char b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("does not parse"), "{message}");
+    }
+
+    #[test]
+    fn a_structurally_legal_mask_that_fails_the_renderer_is_a_loud_binding_error() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$x^2$\n<!-- blank: span hidden=\"2\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(
+            message.contains("masking") && message.contains("does not parse"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_math_span_pinned_to_typing_a_command_is_linted_untypable() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$\\gamma$\n<!-- input: type -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            vec![LintKind::UntypableHole {
+                answer: r"\gamma".to_string()
+            }],
+            deck.lints
+                .iter()
+                .map(|l| l.kind.clone())
+                .collect::<Vec<_>>(),
+            "keyboard pinned, command answer"
+        );
+
+        let contains = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$x \\leq y$\n<!-- input: type -->\n<!-- blank: span hidden=\"x \\\\leq y\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            1,
+            contains
+                .lints
+                .iter()
+                .filter(|l| matches!(l.kind, LintKind::UntypableHole { .. }))
+                .count(),
+            "a command anywhere in the hidden text is untypable: {:?}",
+            contains.lints
+        );
+
+        let drawn = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n"
+        ));
+        assert!(
+            drawn.lints.is_empty(),
+            "unpinned math spans draw by default: {:?}",
+            drawn.lints
+        );
     }
 
     #[test]
