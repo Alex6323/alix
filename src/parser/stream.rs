@@ -137,6 +137,30 @@ impl MaskableStream {
         }
     }
 
+    /// Whether `range`'s word edges are bounded as the learner sees them: a
+    /// neighbor within the same piece must be non-alphanumeric, and a piece
+    /// edge (a hole gap, a link, a style node, a line break) is itself a
+    /// boundary, because the learner sees a mask or a rendering seam there.
+    pub fn word_bounded(&self, range: &Range<usize>) -> bool {
+        let before = match self.locate(&(range.start..range.start + 1)) {
+            Some((_, piece)) if range.start > piece.range.start => !self.text
+                [piece.range.start..range.start]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric),
+            _ => true,
+        };
+        let after = match self.locate(&(range.end.saturating_sub(1)..range.end)) {
+            Some((_, piece)) if range.end < piece.range.end => !self.text
+                [range.end..piece.range.end]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric),
+            _ => true,
+        };
+        before && after
+    }
+
     /// The answer-line index owning the stream byte `at`, by its join slot.
     pub fn line_of(&self, at: usize) -> Option<usize> {
         let slot = self.text[..at].matches('\n').count();

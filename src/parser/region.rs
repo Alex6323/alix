@@ -562,7 +562,32 @@ pub(crate) fn validate_media(
 /// Byte ranges of the hidden text's occurrences in `text`, in order.
 /// `whole_word` bounds each end at a non-alphanumeric character (so prose
 /// punctuation does not break a match); substring mode counts every match.
+// Production always supplies the stream's piece-aware oracle; the plain
+// char-boundary form survives as the test harness for the advance law.
+#[cfg(test)]
 pub(crate) fn occurrences(text: &str, hidden: &str, whole_word: bool) -> Vec<(usize, usize)> {
+    occurrences_with(text, hidden, &mut |start, end| {
+        !whole_word
+            || (!text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+                && !text[end..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_alphanumeric))
+    })
+}
+
+/// The occurrence scan with a caller-supplied word-boundary oracle, so a
+/// stream consumer can treat piece edges (a hole gap, a link, a style node)
+/// as the boundaries the learner sees; the boundary check stays inside the
+/// advance loop so a rejected candidate never consumes an overlapping match.
+pub(crate) fn occurrences_with(
+    text: &str,
+    hidden: &str,
+    bounded: &mut dyn FnMut(usize, usize) -> bool,
+) -> Vec<(usize, usize)> {
     if hidden.is_empty() {
         return Vec::new();
     }
@@ -571,16 +596,7 @@ pub(crate) fn occurrences(text: &str, hidden: &str, whole_word: bool) -> Vec<(us
     while let Some(at) = text[from..].find(hidden) {
         let start = from + at;
         let end = start + hidden.len();
-        let bounded = !whole_word
-            || (!text[..start]
-                .chars()
-                .next_back()
-                .is_some_and(char::is_alphanumeric)
-                && !text[end..]
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_alphanumeric));
-        if bounded {
+        if bounded(start, end) {
             found.push((start, end));
             from = end;
         } else {

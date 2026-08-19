@@ -355,9 +355,23 @@ fn link_syntax_mask(glyphs: &[Glyph]) -> Vec<bool> {
             index = close + 1;
             continue;
         }
-        let Some(close_paren) =
-            (close + 2..glyphs.len()).find(|&at| plain(&glyphs[at]) && glyphs[at].ch == ')')
-        else {
+        let mut depth = 1usize;
+        let Some(close_paren) = (close + 2..glyphs.len()).find(|&at| {
+            if !plain(&glyphs[at]) {
+                return false;
+            }
+            match glyphs[at].ch {
+                '(' => {
+                    depth += 1;
+                    false
+                }
+                ')' => {
+                    depth -= 1;
+                    depth == 0
+                }
+                _ => false,
+            }
+        }) else {
             index = close + 1;
             continue;
         };

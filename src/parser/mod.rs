@@ -1344,8 +1344,7 @@ fn build_card(
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
-        let mut heading_lints = Vec::new();
-        let segments = scan_markers(&heading, line, Side::Front, &mut heading_lints)?;
+        let segments = scan_markers(&heading, line, Side::Front, lints)?;
         if segments.iter().any(|s| matches!(s, Seg::Image { .. })) {
             return Err(ParseError::MixedImageLine(line));
         }
@@ -1413,7 +1412,9 @@ fn build_card(
             };
             let hidden = span.hidden.as_deref().unwrap_or_default();
             let whole_word = *boundary == region::Boundary::Word;
-            let candidates = region::occurrences(&stream.text, hidden, whole_word);
+            let candidates = region::occurrences_with(&stream.text, hidden, &mut |start, end| {
+                !whole_word || stream.word_bounded(&(start..end))
+            });
             let classes: Vec<stream::RangeClass> = candidates
                 .iter()
                 .map(|(start, end)| stream.classify(&(*start..*end)))
@@ -4464,6 +4465,15 @@ the answer
     }
 
     #[test]
+    fn a_cloze_gap_is_a_word_boundary_for_an_adjacent_cover_span() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nleft\\blank{{middle}}right\n<!-- cover: span hidden=\"right\" -->\n"
+        ));
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(Some(0), deck.cards[0].hole);
+    }
+
+    #[test]
     fn a_span_binds_into_styled_contents_over_the_stream() {
         let deck = parse(&format!(
             "## q <!-- id: {RTOK} -->\n---\nthe **lunate** bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
@@ -4487,6 +4497,17 @@ the answer
     fn a_span_cannot_bind_to_a_markdown_link_destination() {
         let error = err(&format!(
             "## q <!-- id: {RTOK} -->\n---\nread [the guide](https://secret.example/path)\n<!-- blank: span hidden=\"secret.example\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("occurs 0 time(s)"), "{message}");
+    }
+
+    #[test]
+    fn a_span_cannot_bind_to_a_balanced_link_destination_suffix() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nread [the article](https://example.test/a(part)suffix) now\n<!-- blank: span hidden=\"suffix\" boundary=char b:a1b2c3 -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -4556,6 +4577,18 @@ the answer
         assert_eq!(
             ParseError::MixedImageLine(1),
             err("## identify ![car](car.png)\nanswer\n")
+        );
+    }
+
+    #[test]
+    fn a_malformed_image_in_the_card_heading_is_linted() {
+        let deck = parse("## identify ![car](car.png\nanswer\n");
+        assert_eq!(
+            vec![Lint {
+                line: 1,
+                kind: LintKind::ImageMalformed,
+            }],
+            deck.lints
         );
     }
 
