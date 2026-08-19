@@ -92,7 +92,7 @@ on one card stays ambiguous under it, while adjacency resolves that for free.
     rect     x=240 y=160 width=600 height=400
     ellipse  cx=500 cy=300 rx=100 ry=60
     polygon  points=10,10 90,10 50,90
-    span     hidden="der" word=2
+    span     hidden="der" occurrence=2 boundary=word
     clip     from= to=
 
 Named fields make order irrelevant, make a transposed pair impossible rather
@@ -113,12 +113,34 @@ on `span`, optional on a geometric `blank:`, and retained but inert on a
 geometric `cover:` so that an authoring tool toggling ask-versus-hide never
 destroys the author's text.
 
-**A `span` carries `hidden=` and exactly one of `word=` or `char=`**, a 1-based
-positive canonical integer. Neither key is a parse error, both together is a
-parse error, and `0`, a negative and a decimal are each rejected. Without this,
-an edit moving a span between a whole word and a sub-word leaves one
-implementation choosing `word=`, another `char=`, and a third discarding both
-and searching.
+**A `span` is located by its hidden text, counted in occurrences** (ruled by
+Alex, 2026-08-19; this replaced the earlier `word=`/`char=` position pair
+before any deck existed, because those names read as positions once the
+integer counted occurrences). Two optional keys refine the match:
+
+- **`occurrence=N`** (default `1`): the span is the Nth occurrence of the
+  hidden text, over the answer block's lines in order. A 1-based positive
+  canonical integer; `0`, a negative and a decimal are each rejected. Fewer
+  than N occurrences in the block is a parse error; nothing silently moves.
+- **`boundary=word|char`** (default `word`): `word` bounds each end of the
+  match at a non-alphanumeric character, so prose punctuation does not break
+  it; `char` matches at any position, which serves sub-word blanks.
+
+Both keys default, so the common span is `hidden="..."` alone. Occurrence
+beats position because v1 authoring is hand-written: counting occurrences of
+the one hidden word is trivial where counting every word is not. Every span
+carries a machine-minted **`position:<n>`** (colon form, like `b:`): the
+1-based character offset where the binding anchored. Review-time binding
+never reads it; it is the REPAIR anchor (Alex, 2026-08-19: no warning where
+a deterministic fix exists). The stamping pass reconciles the two: while the
+hidden text still sits at the minted offset, that occurrence is the author's
+target, and a drifted `occurrence=` is rewritten to its current index, so an
+inserted earlier occurrence cannot retarget the blank; when the offset no
+longer holds the hidden text, the authored occurrence wins and the offset
+refreshes. `doctor`'s only span lint is informational: the hidden text
+occurring more than once in the block. A `matches=` occurrence key was
+considered and rejected as a second locator concept the two keys above
+already express.
 
 **The v1 accepted shape set is `rect` and `span`.** `ellipse`, `polygon` and
 `clip` are reserved words the parser rejects until they are built. `clip` is
@@ -184,6 +206,7 @@ a parse error, never a lint and never silently ignored.
 | `[name]` group  | yes                                    | no                                      | no               |
 | `hidden="…"`    | required on `span`, optional elsewhere | required on `span`, inert elsewhere     | no               |
 | `b:<stamp>`     | yes                                    | no                                      | no               |
+| `position:<n>`  | on `span` (machine-minted anchor offset) | on `span`, same                       | no               |
 | `from=`/`to=`   | yes, on video                          | yes, on video                           | no               |
 | unit            | one per media element                  | same                                    | same             |
 
@@ -368,8 +391,9 @@ that did not before.
 - A test that a reserved shape word (`ellipse`, `polygon`, `clip`) is rejected.
 - A test that a `span` binds without any media element, and that a geometric
   shape without one is rejected.
-- A `span` key matrix: `word=` alone accepted, `char=` alone accepted, neither
-  rejected, both rejected, and `0`, a negative and a decimal rejected.
+- A `span` key matrix: bare `hidden=` accepted (both defaults), `occurrence=`
+  and `boundary=` each accepted alone and together, `boundary` rejects values
+  outside `word|char`, and `occurrence` rejects `0`, a negative and a decimal.
 - A numeric-domain sweep: exponent, leading `+`, negative, each zero size
   component, out-of-range percentage.
 - A unit test that a crop and a region in different units are rejected on one
