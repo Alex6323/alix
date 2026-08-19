@@ -150,6 +150,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- An image now owns its line: prose or a cloze hole sharing a line with an
+  image is a parse error. The display model always tore such lines apart
+  silently (the sentence kept a hole where the image syntax sat, the image
+  moved to the card's media list); the format now says so loudly. Inline
+  images in prose are a named roadmap item.
+
 - A card's tier now reflects what the learner did (ADR 0035). The published
   seven-value vocabulary becomes `unseen` | `seen` | `learning`
   | `learned-weak` | `learned-fading` | `learned-strong` | `retired`, and

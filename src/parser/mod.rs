@@ -152,6 +152,10 @@ pub enum ParseError {
     UnclosedHole(usize),
     #[error("line {0}: empty cloze hole")]
     EmptyHole(usize),
+    #[error(
+        "line {0}: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"
+    )]
+    MixedImageLine(usize),
     #[error("line {0}: a table line must start and end with `|`")]
     TableLineMalformed(usize),
     #[error(
@@ -197,6 +201,7 @@ impl ParseError {
             Self::InvalidHoleName(_) => "invalid_hole_name",
             Self::UnclosedHole(_) => "unclosed_hole",
             Self::EmptyHole(_) => "empty_hole",
+            Self::MixedImageLine(_) => "mixed_image_line",
             Self::TableLineMalformed(_) => "table_line_malformed",
             Self::TableColumns { .. } => "table_columns",
             Self::TableRowWidth { .. } => "table_row_width",
@@ -217,6 +222,7 @@ impl ParseError {
             | Self::InvalidHoleName(line)
             | Self::UnclosedHole(line)
             | Self::EmptyHole(line)
+            | Self::MixedImageLine(line)
             | Self::TableLineMalformed(line)
             | Self::TableCellHole(line)
             | Self::TableCellImage(line)
@@ -1310,6 +1316,15 @@ fn image_only(segments: &[Seg]) -> bool {
     !segments.is_empty() && segments.iter().all(|s| matches!(s, Seg::Image { .. }))
 }
 
+fn mixed_image_line(segments: &[Seg]) -> bool {
+    segments.iter().any(|s| matches!(s, Seg::Image { .. }))
+        && segments.iter().any(|s| match s {
+            Seg::Image { .. } => false,
+            Seg::Hole { .. } => true,
+            Seg::Text(text) => !text.trim().is_empty(),
+        })
+}
+
 fn build_card(
     subject: &Arc<str>,
     deck_id: &Arc<str>,
@@ -1332,6 +1347,9 @@ fn build_card(
         let mut front_lines = vec![heading];
         for (lineno, text) in &front_extra {
             let segments = scan_markers(text, *lineno, Side::Front, lints)?;
+            if mixed_image_line(&segments) {
+                return Err(ParseError::MixedImageLine(*lineno));
+            }
             front_media.extend(card_images(&segments).map(|image| (*lineno, image)));
             if !image_only(&segments) {
                 front_lines.push(seg_display(&segments));
@@ -1347,7 +1365,11 @@ fn build_card(
 
     let mut parsed = Vec::with_capacity(answer.len());
     for (lineno, text) in &answer {
-        parsed.push(scan_markers(text, *lineno, Side::Answer, lints)?);
+        let segments = scan_markers(text, *lineno, Side::Answer, lints)?;
+        if mixed_image_line(&segments) {
+            return Err(ParseError::MixedImageLine(*lineno));
+        }
+        parsed.push(segments);
     }
     let mut back_media: Vec<(usize, CardImage)> = Vec::new();
     for ((lineno, _), segments) in answer.iter().zip(&parsed) {
@@ -4482,6 +4504,22 @@ the answer
             "## q <!-- id: {RTOK} -->\n---\nfill the ____ gap in prose\n"
         ));
         assert_eq!(1, plain.cards.len(), "markers stay legal without spans");
+    }
+
+    #[test]
+    fn an_image_sharing_a_line_with_prose_is_rejected_on_either_side() {
+        let back = err("## q\nthe parts ![x](hand.png) are labeled\n");
+        assert_eq!(ParseError::MixedImageLine(2), back);
+
+        let front = err("## q\npress ![gear](gear.png) now\n---\nanswer\n");
+        assert_eq!(ParseError::MixedImageLine(2), front);
+
+        let indented = parse("## q\n  ![x](hand.png)\nanswer\n");
+        assert_eq!(
+            1,
+            indented.cards[0].images_back.len(),
+            "whitespace around an own-line image is not prose"
+        );
     }
 
     #[test]

@@ -117,9 +117,11 @@ running together.
 
 ## Image cards
 
-Write a standard Markdown image where you want one to appear, and its
-position decides the side: an image in the question is a front image, one
-in the answer is a back image, and a card can carry more than one per side.
+Write a standard Markdown image on its own line, and its position decides
+the side: an image in the question is a front image, one in the answer is a
+back image, and a card can carry more than one per side. An image sharing a
+line with prose is rejected: alix displays images as media beside the text,
+not inline within a sentence, so a mixed line would silently lose its shape.
 
 A one-line front needs a blank line before the `---` divider to carry an
 image (otherwise the divider is just more content, and the image lands on
