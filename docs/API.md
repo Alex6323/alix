@@ -651,14 +651,18 @@ image has no viewport).
 
 ### RegionDto
 
-`{role: "asked"|"mask"|"cover", x: number, y: number, width: number,
-height: number, unit: "px"|"%"}`. Geometry is in the source image's own
-coordinate space (`"px"`) or percentages of the full source (`"%"`); all
-regions and the crop on one image share one unit. Every region is drawn as a
-mask. `"asked"` is the region this card asks: reveal it when the card is
-answered. `"mask"` belongs to a sibling card and never reveals here.
-`"cover"` never reveals anywhere. Masking is client-local view state: no
-endpoint records a reveal.
+`{role: "asked"|"mask"|"cover", reveal_on_answer: bool, x: number, y: number,
+width: number, height: number, unit: "px"|"%"}`. Geometry is in the source
+image's own coordinate space (`"px"`) or percentages of the full source
+(`"%"`); all regions and the crop on one image share one unit. Every region
+is drawn as a mask. `role` names the region's purpose: `"asked"` is the
+region this card asks, `"mask"` belongs to a sibling card, `"cover"` hides
+content that would give an answer away. `reveal_on_answer` alone decides
+unmasking: when true (an asked region, or a cover on an ordinary card with no
+region questions to protect) the client removes the mask on local answer
+reveal; when false (a sibling mask, or a cover on a region card) the mask
+stays on both sides. Clients never infer reveal behavior from `role` or the
+card id. Masking is client-local view state: no endpoint records a reveal.
 
 ### CropDto
 

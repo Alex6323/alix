@@ -91,6 +91,7 @@
         "regions": [
           {
             "height": 400.0,
+            "reveal_on_answer": true,
             "role": "asked",
             "unit": "px",
             "width": 600.0,
@@ -99,6 +100,7 @@
           },
           {
             "height": 40.0,
+            "reveal_on_answer": false,
             "role": "mask",
             "unit": "px",
             "width": 30.0,
@@ -107,6 +109,7 @@
           },
           {
             "height": 60.0,
+            "reveal_on_answer": false,
             "role": "cover",
             "unit": "px",
             "width": 100.0,

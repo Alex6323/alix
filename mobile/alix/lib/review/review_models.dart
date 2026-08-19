@@ -13,6 +13,7 @@ enum ReviewRegionRole { asked, mask, cover }
 class ReviewRegionModel {
   const ReviewRegionModel({
     required this.role,
+    required this.revealOnAnswer,
     required this.x,
     required this.y,
     required this.width,
@@ -21,6 +22,10 @@ class ReviewRegionModel {
   });
 
   final ReviewRegionRole role;
+
+  /// Whether local answer reveal unmasks this region; never inferred from
+  /// [role] (a cover reveals on an ordinary card, never on a region card).
+  final bool revealOnAnswer;
   final double x;
   final double y;
   final double width;

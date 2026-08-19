@@ -142,6 +142,7 @@ fn statedto_review_phase_wire_shape() {
                 regions: vec![
                     crate::review::RegionView {
                         role: crate::review::RegionRole::Asked,
+                        reveal_on_answer: true,
                         x: 240.0,
                         y: 160.0,
                         width: 600.0,
@@ -150,6 +151,7 @@ fn statedto_review_phase_wire_shape() {
                     },
                     crate::review::RegionView {
                         role: crate::review::RegionRole::Mask,
+                        reveal_on_answer: false,
                         x: 10.0,
                         y: 20.0,
                         width: 30.0,
@@ -158,6 +160,7 @@ fn statedto_review_phase_wire_shape() {
                     },
                     crate::review::RegionView {
                         role: crate::review::RegionRole::Cover,
+                        reveal_on_answer: false,
                         x: 700.0,
                         y: 0.0,
                         width: 100.0,
@@ -287,9 +290,9 @@ fn statedto_review_phase_wire_shape() {
                 "images": [
                     {"src": "/img/0123456789abcdef", "alt": "a heap-allocated String",
                      "regions": [
-                        {"role": "asked", "x": 240.0, "y": 160.0, "width": 600.0, "height": 400.0, "unit": "px"},
-                        {"role": "mask", "x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0, "unit": "px"},
-                        {"role": "cover", "x": 700.0, "y": 0.0, "width": 100.0, "height": 60.0, "unit": "px"}
+                        {"role": "asked", "reveal_on_answer": true, "x": 240.0, "y": 160.0, "width": 600.0, "height": 400.0, "unit": "px"},
+                        {"role": "mask", "reveal_on_answer": false, "x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0, "unit": "px"},
+                        {"role": "cover", "reveal_on_answer": false, "x": 700.0, "y": 0.0, "width": 100.0, "height": 60.0, "unit": "px"}
                      ],
                      "crop": {"x": 0.0, "y": 0.0, "width": 800.0, "height": 600.0, "unit": "px"}}
                 ],

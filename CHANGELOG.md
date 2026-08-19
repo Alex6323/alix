@@ -21,8 +21,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   contract's `ImageDto` grows `regions` and `crop` (`docs/API.md`),
   classifying each region as asked, a sibling card's mask, or a cover.
   Clients do not draw masks yet: that lands with the client slice, and no
-  release ships in between. Region cards take no multiple-choice questions
-  until the MC-family design settles.
+  release ships in between. Each region also carries `reveal_on_answer`:
+  true for an asked blank and for a cover on an ordinary card (a cover
+  exists to stop a question-side leak, and an ordinary card has no sibling
+  questions to protect), false for a sibling mask and for a region card's
+  cover; clients never infer reveal behavior from the role. Region cards
+  take no multiple-choice questions until the MC-family design settles.
 
 - `alix bug-report` writes a local, reviewable diagnostics archive, and the
   adult web app offers the same download from About. It includes bounded

@@ -19,15 +19,21 @@ pub enum RegionRole {
     Asked,
     /// Another card's blank on the same media: masked, never revealed here.
     Mask,
-    /// A cover: masked for every card of its media, never revealed at all.
+    /// A cover: masked while its content could give an answer away; whether
+    /// it reveals on answer travels in `reveal_on_answer`, never in the role.
     Cover,
 }
 
 /// One drawable region (ADR 0034). Geometry is JSON numbers in the unit the
-/// author wrote; reveal-on-answer applies only to `Asked`.
+/// author wrote.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RegionView {
     pub role: RegionRole,
+    /// Whether local answer reveal unmasks this region: an asked blank and a
+    /// plain card's cover do, a sibling mask and a region card's cover never
+    /// do. Carried per region because the role alone cannot say (ADR 0034,
+    /// cover reveal split).
+    pub reveal_on_answer: bool,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -82,6 +88,7 @@ pub struct CardView {
 fn image_views(
     images: &[crate::card::CardImage],
     asked: &dyn Fn(Option<&str>) -> bool,
+    covers_reveal: bool,
 ) -> Vec<ImageView> {
     use crate::parser::region::{RegionGeometry, RegionKind};
     let unit = |percent: bool| if percent { "%" } else { "px" }.to_string();
@@ -108,8 +115,14 @@ fn image_views(
                         RegionKind::Blank if asked(region.stamp.as_deref()) => RegionRole::Asked,
                         RegionKind::Blank => RegionRole::Mask,
                     };
+                    let reveal_on_answer = match role {
+                        RegionRole::Asked => true,
+                        RegionRole::Mask => false,
+                        RegionRole::Cover => covers_reveal,
+                    };
                     Some(RegionView {
                         role,
+                        reveal_on_answer,
                         x: x.value,
                         y: y.value,
                         width: width.value,
@@ -176,14 +189,14 @@ impl CardView {
                 let asked = move |stamp: Option<&str>| {
                     stamp.is_some_and(|s| stamps.iter().any(|a| a.as_ref() == s))
                 };
-                image_views(&card.images, &asked)
+                image_views(&card.images, &asked, card.region.is_none())
             },
             images_back: {
                 let stamps = asked_stamps(card);
                 let asked = move |stamp: Option<&str>| {
                     stamp.is_some_and(|s| stamps.iter().any(|a| a.as_ref() == s))
                 };
-                image_views(&card.images_back, &asked)
+                image_views(&card.images_back, &asked, card.region.is_none())
             },
             citations: card
                 .citations
@@ -1581,6 +1594,12 @@ mod tests {
             roles,
             "own blank asked, the sibling's masked, the cover covered"
         );
+        let reveals: Vec<bool> = image.regions.iter().map(|r| r.reveal_on_answer).collect();
+        assert_eq!(
+            vec![true, false, false],
+            reveals,
+            "on a region card only the asked blank reveals; the cover protects siblings"
+        );
         assert_eq!(10.0, image.regions[0].x);
         assert_eq!(40.0, image.regions[0].height);
         assert_eq!("px", image.regions[0].unit);
@@ -1604,6 +1623,24 @@ mod tests {
             vec![RegionRole::Mask, RegionRole::Asked, RegionRole::Cover],
             sibling_roles,
             "each region card asks its own blank and masks the sibling's"
+        );
+    }
+
+    #[test]
+    fn a_plain_cards_cover_reveals_with_the_answer() {
+        let text = "## marque <!-- id: card-autosautosautosautosauto -->\n![](car.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\n\n---\nBMW\n";
+        let cards = crate::parser::parse_str("t.md", text).unwrap();
+        let plain = &cards[0];
+        assert!(
+            plain.region.is_none(),
+            "a cover-only block keeps its plain card"
+        );
+        let view = CardView::from(plain);
+        let cover = &view.images[0].regions[0];
+        assert_eq!(RegionRole::Cover, cover.role);
+        assert!(
+            cover.reveal_on_answer,
+            "a plain card has no sibling questions to protect, so its cover reveals (Alex, 2026-08-19)"
         );
     }
 }

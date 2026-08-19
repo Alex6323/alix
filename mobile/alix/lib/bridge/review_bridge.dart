@@ -227,6 +227,7 @@ ReviewImageModel _imageFromBridge(bridge.ImageView image) {
             bridge.RegionRole.mask => ReviewRegionRole.mask,
             bridge.RegionRole.cover => ReviewRegionRole.cover,
           },
+          revealOnAnswer: region.revealOnAnswer,
           x: region.x,
           y: region.y,
           width: region.width,

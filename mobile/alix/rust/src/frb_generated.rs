@@ -1602,6 +1602,7 @@ const _: fn() = || {
     {
         let RegionView = None::<crate::api::review::RegionView>.unwrap();
         let _: crate::api::review::RegionRole = RegionView.role;
+        let _: bool = RegionView.reveal_on_answer;
         let _: f64 = RegionView.x;
         let _: f64 = RegionView.y;
         let _: f64 = RegionView.width;
@@ -2456,6 +2457,7 @@ impl SseDecode for crate::api::review::RegionView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_role = <crate::api::review::RegionRole>::sse_decode(deserializer);
+        let mut var_revealOnAnswer = <bool>::sse_decode(deserializer);
         let mut var_x = <f64>::sse_decode(deserializer);
         let mut var_y = <f64>::sse_decode(deserializer);
         let mut var_width = <f64>::sse_decode(deserializer);
@@ -2463,6 +2465,7 @@ impl SseDecode for crate::api::review::RegionView {
         let mut var_unit = <String>::sse_decode(deserializer);
         return crate::api::review::RegionView {
             role: var_role,
+            reveal_on_answer: var_revealOnAnswer,
             x: var_x,
             y: var_y,
             width: var_width,
@@ -3293,6 +3296,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::RegionView
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.0.role.into_into_dart().into_dart(),
+            self.0.reveal_on_answer.into_into_dart().into_dart(),
             self.0.x.into_into_dart().into_dart(),
             self.0.y.into_into_dart().into_dart(),
             self.0.width.into_into_dart().into_dart(),
@@ -4198,6 +4202,7 @@ impl SseEncode for crate::api::review::RegionView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::review::RegionRole>::sse_encode(self.role, serializer);
+        <bool>::sse_encode(self.reveal_on_answer, serializer);
         <f64>::sse_encode(self.x, serializer);
         <f64>::sse_encode(self.y, serializer);
         <f64>::sse_encode(self.width, serializer);

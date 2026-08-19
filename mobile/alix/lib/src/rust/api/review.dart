@@ -440,6 +440,7 @@ enum RegionRole { asked, mask, cover }
 
 class RegionView {
   final RegionRole role;
+  final bool revealOnAnswer;
   final double x;
   final double y;
   final double width;
@@ -448,6 +449,7 @@ class RegionView {
 
   const RegionView({
     required this.role,
+    required this.revealOnAnswer,
     required this.x,
     required this.y,
     required this.width,
@@ -458,6 +460,7 @@ class RegionView {
   @override
   int get hashCode =>
       role.hashCode ^
+      revealOnAnswer.hashCode ^
       x.hashCode ^
       y.hashCode ^
       width.hashCode ^
@@ -470,6 +473,7 @@ class RegionView {
       other is RegionView &&
           runtimeType == other.runtimeType &&
           role == other.role &&
+          revealOnAnswer == other.revealOnAnswer &&
           x == other.x &&
           y == other.y &&
           width == other.width &&

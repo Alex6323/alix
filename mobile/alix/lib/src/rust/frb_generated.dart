@@ -1946,15 +1946,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RegionView dco_decode_region_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return RegionView(
       role: dco_decode_region_role(arr[0]),
-      x: dco_decode_f_64(arr[1]),
-      y: dco_decode_f_64(arr[2]),
-      width: dco_decode_f_64(arr[3]),
-      height: dco_decode_f_64(arr[4]),
-      unit: dco_decode_String(arr[5]),
+      revealOnAnswer: dco_decode_bool(arr[1]),
+      x: dco_decode_f_64(arr[2]),
+      y: dco_decode_f_64(arr[3]),
+      width: dco_decode_f_64(arr[4]),
+      height: dco_decode_f_64(arr[5]),
+      unit: dco_decode_String(arr[6]),
     );
   }
 
@@ -3006,6 +3007,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RegionView sse_decode_region_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_role = sse_decode_region_role(deserializer);
+    var var_revealOnAnswer = sse_decode_bool(deserializer);
     var var_x = sse_decode_f_64(deserializer);
     var var_y = sse_decode_f_64(deserializer);
     var var_width = sse_decode_f_64(deserializer);
@@ -3013,6 +3015,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_unit = sse_decode_String(deserializer);
     return RegionView(
       role: var_role,
+      revealOnAnswer: var_revealOnAnswer,
       x: var_x,
       y: var_y,
       width: var_width,
@@ -4072,6 +4075,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_region_view(RegionView self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_region_role(self.role, serializer);
+    sse_encode_bool(self.revealOnAnswer, serializer);
     sse_encode_f_64(self.x, serializer);
     sse_encode_f_64(self.y, serializer);
     sse_encode_f_64(self.width, serializer);

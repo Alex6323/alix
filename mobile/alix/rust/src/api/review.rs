@@ -78,6 +78,7 @@ pub enum _RegionRole {
 #[flutter_rust_bridge::frb(mirror(RegionView))]
 pub struct _RegionView {
     pub role: RegionRole,
+    pub reveal_on_answer: bool,
     pub x: f64,
     pub y: f64,
     pub width: f64,
