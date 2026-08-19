@@ -113,7 +113,7 @@ class InlineRuns extends StatelessWidget {
 
   List<InlineSpan> _contextSpans(InlineRunModel run) {
     final spans = <InlineSpan>[];
-    final marker = RegExp(r'____|\[…]');
+    final marker = RegExp('⍰|⬚');
     var start = 0;
     for (final match in marker.allMatches(run.text)) {
       if (match.start > start) {
@@ -129,8 +129,8 @@ class InlineRuns extends StatelessWidget {
         TextSpan(
           text: text,
           style: _runStyle(run).copyWith(
-            color: text == '____' ? holeColor : mutedHoleColor,
-            fontWeight: text == '____'
+            color: text == '⍰' ? holeColor : mutedHoleColor,
+            fontWeight: text == '⍰'
                 ? FontWeight.w700
                 : _runStyle(run).fontWeight,
           ),

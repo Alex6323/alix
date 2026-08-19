@@ -18,7 +18,7 @@ let \blank{mut} x: \blank{u64} = 0;
 ```
 
 This makes two cards. One blanks `mut` and shows the rest; the other blanks `u64`.
-The asked blank shows as `____`; the *other* blanks are hidden as `[…]`, so no card
+The asked blank shows as `⍰` (a boxed question mark, styled by every client); the *other* blanks are hidden as `⬚`, so no card
 gives away its siblings' answers. You only produce the hidden text.
 
 Braces outside a `\blank{}` are ordinary text, so `let p = Foo {};` is fine in a
@@ -75,7 +75,7 @@ of two cards each asking half a fact:
 ```
 
 That is two cards, not three: one asking `SYN` and `SYN-ACK` together, one
-asking `ACK`. Both spans show as `____` on the merged card, and you answer them
+asking `ACK`. Both spans show as `⍰` on the merged card, and you answer them
 as a list, one line per span. They don't have to sit next to each other or even
 on the same line, so `\blank[c]{Berlin} is the capital of \blank[c]{Germany}`
 groups too.

@@ -134,6 +134,8 @@ pub enum ParseError {
     NonIntegerVersion { line: usize, found: &'static str },
     #[error("line {line}: control character {found} outside the whitespace set")]
     ControlChar { line: usize, found: String },
+    #[error("line {0}: `⍰` and `⬚` are the mask markers and cannot appear in authored text")]
+    ReservedMarker(usize),
     #[error("line {0}: card front is empty")]
     EmptyFront(usize),
     #[error("line {0}: card front without an answer")]
@@ -194,6 +196,7 @@ impl ParseError {
             Self::UnsupportedDeckVersion { .. } => "unsupported_deck_version",
             Self::NonIntegerVersion { .. } => "non_integer_version",
             Self::ControlChar { .. } => "control_character",
+            Self::ReservedMarker(_) => "reserved_marker",
             Self::EmptyFront(_) => "empty_front",
             Self::FrontWithoutAnswer(_) => "front_without_answer",
             Self::InvalidLocator { .. } => "invalid_locator",
@@ -223,6 +226,7 @@ impl ParseError {
             | Self::UnclosedHole(line)
             | Self::EmptyHole(line)
             | Self::MixedImageLine(line)
+            | Self::ReservedMarker(line)
             | Self::TableLineMalformed(line)
             | Self::TableCellHole(line)
             | Self::TableCellImage(line)
@@ -499,6 +503,9 @@ fn prepare(text: &str) -> Result<Vec<&str>, ParseError> {
                 line: idx + 1,
                 found: format!("U+{:04X}", ch as u32),
             });
+        }
+        if line.contains(cloze::BLANK) || line.contains(cloze::HIDDEN) {
+            return Err(ParseError::ReservedMarker(idx + 1));
         }
         lines.push(line);
     }
@@ -1022,9 +1029,6 @@ fn build_region_cards(
         // The effective question includes the masked context (ADR 0034): two
         // spans over the same word in different sentences are different
         // questions, so cached AI artifacts stale when the context moves.
-        // The effective question includes the masked context (ADR 0034): two
-        // spans over the same word in different sentences are different
-        // questions, so cached AI artifacts stale when the context moves.
         let mut question = card.context.clone();
         question.extend(card.back.iter().cloned());
         card.content_fingerprint = content_fingerprint(&card.front, &question);
@@ -1468,6 +1472,7 @@ fn build_card(
     // anchor is gone and the deck fails loudly. Plain blocks never pay for
     // the stream.
     let mut splices: Vec<SpanSplice> = Vec::new();
+    let mut bound: Vec<(usize, usize, usize)> = Vec::new();
     if !span_regions.is_empty() {
         let stream = stream::maskable_stream(&answer, &parsed);
         for span in &span_regions {
@@ -1512,6 +1517,22 @@ fn build_card(
                 });
             }
             let (start, end) = candidates[*n as usize - 1];
+            // The block invariant (ADR 0034): no two spans may resolve to
+            // the same or overlapping stream range, atomically, before any
+            // splice runs on it.
+            if let Some((_, _, other)) = bound
+                .iter()
+                .find(|(from, to, _)| start < *to && *from < end)
+            {
+                return Err(ParseError::InvalidRegion {
+                    line: span.line,
+                    message: format!(
+                        "two spans resolve to overlapping text (lines {other} and {}); retarget or remove one",
+                        span.line
+                    ),
+                });
+            }
+            bound.push((start, end, span.line));
             let (answer_index, range) = stream
                 .splice(&(start..end))
                 .expect("an accepted candidate lies within one matchable piece");
@@ -1521,21 +1542,6 @@ fn build_card(
                 answer_index,
                 range: (range.start, range.end),
             });
-        }
-        for marker in [cloze::BLANK, cloze::HIDDEN] {
-            if let Some(at) = stream.text.find(marker) {
-                let line = stream
-                    .line_of(at)
-                    .and_then(|index| answer.get(index))
-                    .map(|(lineno, _)| *lineno)
-                    .unwrap_or(line);
-                return Err(ParseError::InvalidRegion {
-                    line,
-                    message: format!(
-                        "a span-bearing block cannot contain the literal mask marker `{marker}`; move it to a block without spans"
-                    ),
-                });
-            }
         }
     }
 
@@ -1854,31 +1860,88 @@ fn build_card(
     }
     let token: Option<Arc<str>> = directives.token.as_deref().map(Arc::from);
     let structure: Vec<String> = parsed.iter().map(|segments| hash_repr(segments)).collect();
-    // Raw (unmasked) answer lines, so `\blank{...}` markers count as literal
-    // text and this can't collide with a plain card repeating the hidden text.
-    let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
-    let block_fingerprint = content_fingerprint(&front, &raw_answer);
+    // Raw answer lines (so `\blank{...}` markers count as literal text and
+    // this can't collide with a plain card repeating the hidden text), with
+    // cover spans cut: moving a cover changes the effective question and must
+    // stale cached AI artifacts. The fingerprint stays BLOCK-level because
+    // remediation groups a block's holes by shared fingerprint.
+    let masked_answer: Vec<String> = answer
+        .iter()
+        .enumerate()
+        .map(|(index, (_, text))| {
+            let mut cuts: Vec<&SpanSplice> = splices
+                .iter()
+                .filter(|splice| splice.answer_index == index)
+                .collect();
+            cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
+            let mut line = text.clone();
+            for cut in cuts {
+                line.replace_range(cut.range.0..cut.range.1, HIDDEN);
+            }
+            line
+        })
+        .collect();
+    let block_fingerprint = content_fingerprint(&front, &masked_answer);
     let block_holes = hole_fingerprints(&parsed, &holes, &groups);
     for (n, group) in groups.iter().enumerate() {
         let asked: Vec<&Hole<'_>> = group.iter().map(|h| &holes[*h]).collect();
-        let context: Vec<String> = parsed
-            .iter()
-            .enumerate()
-            .filter(|(_, segments)| !image_only(segments))
-            .map(|(li, segments)| {
-                let mut rendered = String::new();
-                for (si, segment) in segments.iter().enumerate() {
-                    let asked_here = asked.iter().any(|hole| hole.line == li && hole.seg == si);
-                    match segment {
-                        Seg::Text(text) => rendered.push_str(text),
-                        Seg::Hole { .. } if asked_here => rendered.push_str(BLANK),
-                        Seg::Hole { .. } => rendered.push_str(HIDDEN),
-                        Seg::Image { .. } => {}
+        // Cover-free blocks keep the seg rendering verbatim (escapes display
+        // unescaped), so no existing deck's context changes; a cover forces
+        // the raw-splice path, where covers and hole footprints cut the
+        // authored line together and the leak the cover exists for dies.
+        let context: Vec<String> = if splices.is_empty() {
+            parsed
+                .iter()
+                .enumerate()
+                .filter(|(_, segments)| !image_only(segments))
+                .map(|(li, segments)| {
+                    let mut rendered = String::new();
+                    for (si, segment) in segments.iter().enumerate() {
+                        let asked_here = asked.iter().any(|hole| hole.line == li && hole.seg == si);
+                        match segment {
+                            Seg::Text(text) => rendered.push_str(text),
+                            Seg::Hole { .. } if asked_here => rendered.push_str(BLANK),
+                            Seg::Hole { .. } => rendered.push_str(HIDDEN),
+                            Seg::Image { .. } => {}
+                        }
                     }
-                }
-                rendered
-            })
-            .collect();
+                    rendered
+                })
+                .collect()
+        } else {
+            answer
+                .iter()
+                .zip(&parsed)
+                .enumerate()
+                .filter(|(_, (_, segments))| !image_only(segments))
+                .map(|(li, ((_, raw), _))| {
+                    let line_holes: Vec<&Hole<'_>> =
+                        holes.iter().filter(|hole| hole.line == li).collect();
+                    let mut cuts: Vec<(usize, usize, &str)> = splices
+                        .iter()
+                        .filter(|splice| splice.answer_index == li)
+                        .map(|splice| (splice.range.0, splice.range.1, HIDDEN))
+                        .collect();
+                    for (footprint, hole) in cloze::hole_footprints(raw).into_iter().zip(line_holes)
+                    {
+                        let asked_here = asked
+                            .iter()
+                            .any(|it| it.line == hole.line && it.seg == hole.seg);
+                        cuts.push((
+                            footprint.start,
+                            footprint.end,
+                            if asked_here { BLANK } else { HIDDEN },
+                        ));
+                    }
+                    cuts.sort_by_key(|(start, ..)| std::cmp::Reverse(*start));
+                    let mut rendered = raw.clone();
+                    for (start, end, marker) in cuts {
+                        rendered.replace_range(start..end, marker);
+                    }
+                    rendered
+                })
+                .collect()
+        };
         let mut hash_lines = structure.clone();
         hash_lines.push(format!("#cloze:{n}"));
         let mut card = Card::plain(
@@ -2399,7 +2462,7 @@ mod tests {
         assert_eq!(1, deck.cards.len());
         assert_eq!(Some(0), deck.cards[0].hole);
         assert_eq!(vec!["5"], deck.cards[0].back);
-        assert_eq!(vec!["```", "let x = ____;", "```"], deck.cards[0].context);
+        assert_eq!(vec!["```", "let x = ⍰;", "```"], deck.cards[0].context);
     }
 
     #[test]
@@ -3026,11 +3089,11 @@ mod tests {
         assert_eq!("fill", deck.cards[0].front);
         assert_eq!(Some(0), deck.cards[0].hole);
         assert_eq!(vec!["quick"], deck.cards[0].back);
-        assert_eq!(vec!["the ____ fox", "jumps […]"], deck.cards[0].context);
+        assert_eq!(vec!["the ⍰ fox", "jumps ⬚"], deck.cards[0].context);
 
         assert_eq!(Some(1), deck.cards[1].hole);
         assert_eq!(vec!["over"], deck.cards[1].back);
-        assert_eq!(vec!["the […] fox", "jumps ____"], deck.cards[1].context);
+        assert_eq!(vec!["the ⬚ fox", "jumps ⍰"], deck.cards[1].context);
     }
 
     /// A hole cut out of a formula is a piece of that formula, so it has to
@@ -3137,7 +3200,7 @@ mod tests {
         assert_eq!(vec!["quick"], deck.cards[0].back);
         assert_eq!(None, deck.cards[1].hole_name.as_deref());
         assert_eq!(vec!["fox"], deck.cards[1].back);
-        assert_eq!(vec!["the ____ […]"], deck.cards[0].context);
+        assert_eq!(vec!["the ⍰ ⬚"], deck.cards[0].context);
     }
 
     /// A name is an address, never an identity (ADR 0032): naming a hole an
@@ -3208,9 +3271,9 @@ mod tests {
         assert_eq!(2, deck.cards.len(), "the group is one card, `ACK` another");
         assert_eq!(vec!["SYN", "SYN-ACK"], deck.cards[0].back);
         assert_eq!(Some("hs"), deck.cards[0].hole_name.as_deref());
-        assert_eq!(vec!["____, ____, […]"], deck.cards[0].context);
+        assert_eq!(vec!["⍰, ⍰, ⬚"], deck.cards[0].context);
         assert_eq!(vec!["ACK"], deck.cards[1].back);
-        assert_eq!(vec!["[…], […], ____"], deck.cards[1].context);
+        assert_eq!(vec!["⬚, ⬚, ⍰"], deck.cards[1].context);
         assert_eq!(Some(0), deck.cards[0].hole);
         assert_eq!(Some(1), deck.cards[1].hole);
     }
@@ -3220,10 +3283,7 @@ mod tests {
         let deck = parse("## q\n---\n\\blank[c]{Berlin} is the capital\nof \\blank[c]{Germany}\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["Berlin", "Germany"], deck.cards[0].back);
-        assert_eq!(
-            vec!["____ is the capital", "of ____"],
-            deck.cards[0].context
-        );
+        assert_eq!(vec!["⍰ is the capital", "of ⍰"], deck.cards[0].context);
     }
 
     #[test]
@@ -3306,11 +3366,11 @@ mod tests {
         let deck = parse("## q\n---\nw \\blank{a \\{b\\} c} z\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["a {b} c"], deck.cards[0].back);
-        assert_eq!(vec!["w ____ z"], deck.cards[0].context);
+        assert_eq!(vec!["w ⍰ z"], deck.cards[0].context);
 
         let deck = parse("## q\n---\nw \\blank{a \\{b} c\n");
         assert_eq!(vec!["a {b"], deck.cards[0].back);
-        assert_eq!(vec!["w ____ c"], deck.cards[0].context);
+        assert_eq!(vec!["w ⍰ c"], deck.cards[0].context);
     }
 
     #[test]
@@ -4641,19 +4701,21 @@ the answer
     }
 
     #[test]
-    fn a_literal_mask_marker_is_rejected_only_beside_spans() {
-        let error = err(&format!(
+    fn the_mask_codepoints_are_rejected_in_authored_text_anywhere() {
+        assert_eq!(ParseError::ReservedMarker(2), err("## q\na ⍰ b\n"));
+        assert_eq!(ParseError::ReservedMarker(1), err("## q ⬚\nanswer\n"));
+    }
+
+    #[test]
+    fn literal_underscores_and_bracket_dots_are_ordinary_prose_beside_spans() {
+        let deck = parse(&format!(
             "## q <!-- id: {RTOK} -->\n---\nfill the ____ gap in prose\n<!-- blank: span hidden=\"prose\" b:a1b2c3 -->\n"
         ));
-        let ParseError::InvalidRegion { message, .. } = error else {
-            panic!("expected InvalidRegion, got {error:?}");
-        };
-        assert!(message.contains("literal mask marker"), "{message}");
-
-        let plain = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nfill the ____ gap in prose\n"
-        ));
-        assert_eq!(1, plain.cards.len(), "markers stay legal without spans");
+        assert_eq!(
+            vec!["fill the ____ gap in ⍰"],
+            deck.cards[0].context,
+            "an authored marker lookalike is text; only the reserved codepoint masks"
+        );
     }
 
     #[test]
@@ -4760,13 +4822,13 @@ the answer
         ));
         assert_eq!(2, deck.cards.len());
         assert_eq!(
-            vec!["the ____ sits beside the […] […]"],
+            vec!["the ⍰ sits beside the ⬚ ⬚"],
             deck.cards[0].context,
             "own blank asked, sibling and cover hidden"
         );
         assert!(deck.cards[0].context_leads);
         assert_eq!(
-            vec!["the […] sits beside the ____ […]"],
+            vec!["the ⬚ sits beside the ⍰ ⬚"],
             deck.cards[1].context,
             "each card asks its own span"
         );
@@ -4783,7 +4845,7 @@ the answer
             .find(|card| card.back.is_empty())
             .expect("the unlabelled rect card");
         assert_eq!(
-            vec!["the […] sits center"],
+            vec!["the ⬚ sits center"],
             rect.context,
             "prose is context on a rect card: every span is hidden"
         );
@@ -4795,7 +4857,7 @@ the answer
             "## q <!-- id: {RTOK} -->\n---\n**New** York is big\n<!-- blank: span hidden=\"New\" b:a1b2c3 -->\n"
         ));
         assert_eq!(
-            vec!["**____** York is big"],
+            vec!["**⍰** York is big"],
             deck.cards[0].context,
             "the splice lands inside the markers, so the bold survives"
         );
@@ -4807,7 +4869,7 @@ the answer
             "## q <!-- id: {RTOK} -->\n---\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n"
         ));
         assert_eq!(1, deck.cards.len(), "one group card");
-        assert_eq!(vec!["____ then ____"], deck.cards[0].context);
+        assert_eq!(vec!["⍰ then ⍰"], deck.cards[0].context);
     }
 
     #[test]
@@ -4834,11 +4896,46 @@ the answer
             "## q <!-- id: {RTOK} -->\n---\nthe lunate sits center\n![](hand.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
         ));
         assert_eq!(
-            vec!["the ____ sits center"],
+            vec!["the ⍰ sits center"],
             deck.cards[0].context,
             "the image rides images_back, never the prose context"
         );
         assert_eq!(1, deck.cards[0].images_back.len());
+    }
+
+    #[test]
+    fn overlapping_span_ranges_are_rejected_before_masking() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nNew York City Hall\n<!-- blank: span hidden=\"New York City Hall\" boundary=char b:a1b2c3 -->\n<!-- blank: span hidden=\"York City Hall\" boundary=char b:d4e5f6 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("overlap"), "{message}");
+    }
+
+    #[test]
+    fn a_cover_span_masks_answer_giving_prose_in_cloze_context() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nthe legend says alpha; fill \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n"
+        ));
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(Some(0), deck.cards[0].hole);
+        assert_eq!(vec!["the legend says ⬚; fill ⍰"], deck.cards[0].context);
+    }
+
+    #[test]
+    fn moving_a_cloze_cover_span_changes_the_fingerprint() {
+        let first = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" -->\n"
+        ));
+        let second = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" occurrence=2 -->\n"
+        ));
+        assert_ne!(
+            first.cards[0].content_fingerprint,
+            second.cards[0].content_fingerprint
+        );
     }
 
     #[test]
@@ -4870,15 +4967,25 @@ the answer
                 .expect("a valid regex literal"),
                 1..5,
             ),
-            span in proptest::bool::ANY,
+            spans in proptest::collection::vec(
+                (
+                    proptest::sample::select(vec!["a", "b", "ab", "ba"]),
+                    1..3u32,
+                    proptest::bool::ANY,
+                ),
+                0..3,
+            ),
         ) {
             let mut deck = String::from("## q <!-- id: card-proptok -->\n---\n");
             for line in &lines {
                 deck.push_str(line);
                 deck.push('\n');
             }
-            if span {
-                deck.push_str("<!-- blank: span hidden=\"ab\" b:a1b2c3 -->\n");
+            for (hidden, occurrence, cover) in &spans {
+                let keyword = if *cover { "cover" } else { "blank" };
+                deck.push_str(&format!(
+                    "<!-- {keyword}: span hidden=\"{hidden}\" occurrence={occurrence} boundary=char -->\n"
+                ));
             }
             // Ok or Err are both fine; only a panic fails the property.
             let _ = super::parse("deck.md", &deck);

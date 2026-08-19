@@ -161,12 +161,6 @@ impl MaskableStream {
         before && after
     }
 
-    /// The answer-line index owning the stream byte `at`, by its join slot.
-    pub fn line_of(&self, at: usize) -> Option<usize> {
-        let slot = self.text[..at].matches('\n').count();
-        self.lines.get(slot).map(|line| line.answer_index)
-    }
-
     /// The authored location of `range`: the answer-line index and the
     /// authored byte range a masking splice replaces. None when the range
     /// crosses piece boundaries or lands outside any visible piece.

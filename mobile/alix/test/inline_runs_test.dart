@@ -164,7 +164,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       testApp([
-        textRun('the ____ term and […] sibling '),
+        textRun('the ⍰ term and ⬚ sibling '),
         mathRun(r'x = \underline{\hspace{2em}} + \cdots'),
       ], contextHoles: true),
     );
@@ -177,8 +177,8 @@ void main() {
       ),
     );
     final spans = textSpans(richText.text).toList();
-    final active = spans.singleWhere((span) => span.text == '____');
-    final hidden = spans.singleWhere((span) => span.text == '[…]');
+    final active = spans.singleWhere((span) => span.text == '⍰');
+    final hidden = spans.singleWhere((span) => span.text == '⬚');
     expect(active.style!.color, const Color(0xFF00AA44));
     expect(active.style!.fontWeight, FontWeight.w700);
     expect(hidden.style!.color, const Color(0xFF777777));

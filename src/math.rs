@@ -85,8 +85,8 @@ impl MathRenderer {
 
 fn substitute_context_holes(source: &str) -> String {
     source
-        .replace(BLANK, r"\underline{\hspace{2em}}")
-        .replace(HIDDEN, r"{\cdots}")
+        .replace(BLANK, r"\boxed{?}")
+        .replace(HIDDEN, r"\boxed{\cdots}")
 }
 
 fn render_svg(source: &str) -> Result<String, String> {
@@ -324,9 +324,9 @@ mod tests {
 
     #[test]
     fn context_holes_render_without_source_answers() {
-        let source = r"x = ____ + […]";
+        let source = "x = ⍰ + ⬚";
         let substituted = substitute_context_holes(source);
-        assert_eq!(substituted, r"x = \underline{\hspace{2em}} + {\cdots}");
+        assert_eq!(substituted, r"x = \boxed{?} + \boxed{\cdots}");
         let mut renderer = MathRenderer::default();
         let view = renderer.view(source, false, true);
         assert!(view.svg.is_some(), "{}", view.error.unwrap_or_default());
@@ -339,10 +339,10 @@ mod tests {
     /// hole. Authoring `\blank{n}x^{...}` is an ordinary thing to write.
     #[test]
     fn a_hidden_hole_against_the_next_token_still_renders() {
-        let source = r"\frac{d}{dx}x^n = […]x^{____}";
+        let source = "\\frac{d}{dx}x^n = ⬚x^{⍰}";
         assert_eq!(
             substitute_context_holes(source),
-            r"\frac{d}{dx}x^n = {\cdots}x^{\underline{\hspace{2em}}}"
+            r"\frac{d}{dx}x^n = \boxed{\cdots}x^{\boxed{?}}"
         );
         let mut renderer = MathRenderer::default();
         let view = renderer.view(source, true, true);

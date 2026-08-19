@@ -153,6 +153,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The mask markers are now reserved codepoints: an asked blank shows as `⍰`
+  and a hidden one as `⬚` (matching the boxed-`?` a masked formula renders),
+  and authored deck text may not contain either character, the same way
+  control characters are rejected. In exchange, literal `____` and `[…]` are
+  ordinary prose everywhere, including beside blanks: a mask can no longer
+  be counterfeited by text, so nothing needs rejecting.
+
 - An image now owns its line: prose or a cloze hole sharing a line with an
   image is a parse error. The display model always tore such lines apart
   silently (the sentence kept a hole where the image syntax sat, the image

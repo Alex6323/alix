@@ -196,8 +196,8 @@ void main() {
     final clozeRun = cloze.contextRuns.single.firstWhere(
       (run) => run.math != null,
     );
-    expect(clozeRun.text, contains('____'));
-    expect(clozeRun.text, contains('[…]'));
+    expect(clozeRun.text, contains('⍰'));
+    expect(clozeRun.text, contains('⬚'));
     expect(clozeRun.text, isNot(contains('alpha')));
     expect(clozeRun.text, isNot(contains('beta')));
     expect(clozeRun.math!.svg, contains('<path'));

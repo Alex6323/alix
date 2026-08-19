@@ -64,11 +64,11 @@ function isStandaloneInlineMath(runs) {
 }
 
 function appendContextText(parent, run) {
-  const parts = String(run.text).split(/(____|\[…\])/);
+  const parts = String(run.text).split(/(⍰|⬚)/);
   for (const part of parts) {
     if (!part) continue;
-    if (part === "____" || part === "[…]") {
-      const marker = el("span", part === "____" ? "hole" : "muted-hole");
+    if (part === "⍰" || part === "⬚") {
+      const marker = el("span", part === "⍰" ? "hole" : "muted-hole");
       marker.appendChild(styledRunNode(run, part));
       parent.appendChild(marker);
     } else {

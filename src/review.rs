@@ -719,7 +719,7 @@ mod tests {
             .card
             .expect("a card");
         assert!(
-            card.context.iter().any(|l| l.contains("____")),
+            card.context.iter().any(|l| l.contains("⍰")),
             "cloze context blanks the hole: {:?}",
             card.context
         );
@@ -830,17 +830,17 @@ mod tests {
             Some("Remember $x^2$.".to_string()),
             1,
         );
-        card.context = vec!["Use $____ + […]$".to_string()];
+        card.context = vec!["Use $⍰ + ⬚$".to_string()];
 
         let view = CardView::from(&card);
         assert_eq!(view.front, "Find x^2");
         assert!(view.front_runs[1].math.is_some());
-        assert_eq!(view.context, ["Use $____ + […]$"]);
+        assert_eq!(view.context, ["Use $⍰ + ⬚$"]);
         let context_math = view.context_runs[0]
             .iter()
             .find(|run| run.math.is_some())
             .unwrap();
-        assert_eq!(context_math.text, "____ + […]");
+        assert_eq!(context_math.text, "⍰ + ⬚");
         assert!(context_math.math.as_ref().unwrap().svg.is_some());
         assert_eq!(view.back[0], "x^2");
         assert!(view.back_runs[0][0].math.as_ref().unwrap().display);

@@ -510,24 +510,24 @@ mod tests {
         use ContextSpan::*;
         assert_eq!(context_spans("plain text"), vec![Text("plain text".into())]);
         assert_eq!(
-            context_spans("To ____ or not to […]"),
+            context_spans("To ⍰ or not to ⬚"),
             vec![
                 Text("To ".into()),
-                Blank("____".into()),
+                Blank("⍰".into()),
                 Text(" or not to ".into()),
-                Hidden("[…]".into()),
+                Hidden("⬚".into()),
             ]
         );
         assert_eq!(
-            context_spans("____ here"),
-            vec![Blank("____".into()), Text(" here".into())]
+            context_spans("⍰ here"),
+            vec![Blank("⍰".into()), Text(" here".into())]
         );
         assert_eq!(
-            context_spans("[…] before ____"),
+            context_spans("⬚ before ⍰"),
             vec![
-                Hidden("[…]".into()),
+                Hidden("⬚".into()),
                 Text(" before ".into()),
-                Blank("____".into()),
+                Blank("⍰".into()),
             ]
         );
     }
