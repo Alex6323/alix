@@ -1320,7 +1320,7 @@ pub fn mint_tutor_card(
     let id = card
         .id()
         .ok_or_else(|| MintError::Malformed("the minted card has no identity token".to_string()))?;
-    let fingerprint = card.content_fingerprint;
+    let fingerprint = card.block_fingerprint;
     if deck_fingerprints.contains(&fingerprint)
         || !personal_ids_with_content(deck_path, deck_id, fingerprint).is_empty()
     {
@@ -1431,9 +1431,10 @@ pub fn store_remediation_cards(
         let Some(first) = cards.first() else {
             continue;
         };
-        // Fingerprint includes the literal `\blank{}` markers, so a plain card
-        // repeating a hole's hidden text can't collide with it.
-        let fingerprint = first.content_fingerprint;
+        // The BLOCK key (literal `\blank{}` markers count as text, so a plain
+        // card repeating a hole's hidden text can't collide): one sidecar
+        // block is created or revived as a unit, whatever its hole count.
+        let fingerprint = first.block_fingerprint;
         if deck_fingerprints.contains(&fingerprint) {
             continue;
         }
@@ -1475,7 +1476,7 @@ fn personal_ids_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) 
     };
     cards
         .iter()
-        .filter(|card| card.content_fingerprint == fingerprint)
+        .filter(|card| card.block_fingerprint == fingerprint)
         .filter_map(|card| card.id())
         .collect()
 }
@@ -2755,8 +2756,12 @@ mod tests {
             "distinct ids for the two holes"
         );
         assert_eq!(
-            holes[0].content_fingerprint, holes[1].content_fingerprint,
+            holes[0].block_fingerprint, holes[1].block_fingerprint,
             "one block in the sidecar, two holes out of it"
+        );
+        assert_ne!(
+            holes[0].content_fingerprint, holes[1].content_fingerprint,
+            "each hole is its own effective question"
         );
     }
 
@@ -2811,7 +2816,7 @@ mod tests {
             crate::parser::parse_str("d.md", "## Complete the quote <!-- id: card-p1 -->\nbe\n")
                 .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
-            plain.iter().map(|c| c.content_fingerprint).collect();
+            plain.iter().map(|c| c.block_fingerprint).collect();
 
         let deck = dir.path().join("d.md");
         let cloze = "## Complete the quote\nTo \\blank{be} or not to \\blank{bee}\n";

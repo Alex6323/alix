@@ -332,7 +332,7 @@ impl Sitting {
             subject: deck.subject.clone(),
             deck_token: deck.deck_token.clone().unwrap_or_default(),
             deck_path: Some(deck.path.clone()),
-            deck_fingerprints: deck.cards.iter().map(|c| c.content_fingerprint).collect(),
+            deck_fingerprints: deck.cards.iter().map(|c| c.block_fingerprint).collect(),
             strictness,
             cfg,
             ask_cfg,

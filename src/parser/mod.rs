@@ -1561,6 +1561,29 @@ fn build_card(
         .map(|region| region.line)
         .min();
 
+    // The block-level dedup key: front + cover-masked RAW answer lines
+    // (literal `\blank{...}` markers count as text, so a plain card
+    // repeating a hole's hidden text cannot collide; cover cuts make a
+    // moved cover change the key). Every card of the block carries it,
+    // while content_fingerprint stays the card's own effective question.
+    let masked_answer: Vec<String> = answer
+        .iter()
+        .enumerate()
+        .map(|(index, (_, text))| {
+            let mut cuts: Vec<&SpanSplice> = splices
+                .iter()
+                .filter(|splice| splice.answer_index == index)
+                .collect();
+            cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
+            let mut line = text.clone();
+            for cut in cuts {
+                line.replace_range(cut.range.0..cut.range.1, cloze::HIDDEN);
+            }
+            line
+        })
+        .collect();
+    let block_key = content_fingerprint(&front, &masked_answer);
+
     let mut task_lines = Vec::new();
     let mut has_other = false;
     let mut fence = None;
@@ -1645,6 +1668,7 @@ fn build_card(
                 card.citations = directives.citations;
                 card.givens = directives.givens;
                 card.authored_distractors = distractors;
+                card.block_fingerprint = block_key;
                 cards.push(card);
                 return Ok(None);
             }
@@ -1808,6 +1832,7 @@ fn build_card(
         card.span_regions = span_regions;
         card.citations = directives.citations;
         card.givens = directives.givens;
+        card.block_fingerprint = block_key;
         cards.push(card);
         let prose = first_blank_line.is_some().then(|| BlockProse {
             lines: answer
@@ -1860,28 +1885,6 @@ fn build_card(
     }
     let token: Option<Arc<str>> = directives.token.as_deref().map(Arc::from);
     let structure: Vec<String> = parsed.iter().map(|segments| hash_repr(segments)).collect();
-    // Raw answer lines (so `\blank{...}` markers count as literal text and
-    // this can't collide with a plain card repeating the hidden text), with
-    // cover spans cut: moving a cover changes the effective question and must
-    // stale cached AI artifacts. The fingerprint stays BLOCK-level because
-    // remediation groups a block's holes by shared fingerprint.
-    let masked_answer: Vec<String> = answer
-        .iter()
-        .enumerate()
-        .map(|(index, (_, text))| {
-            let mut cuts: Vec<&SpanSplice> = splices
-                .iter()
-                .filter(|splice| splice.answer_index == index)
-                .collect();
-            cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
-            let mut line = text.clone();
-            for cut in cuts {
-                line.replace_range(cut.range.0..cut.range.1, HIDDEN);
-            }
-            line
-        })
-        .collect();
-    let block_fingerprint = content_fingerprint(&front, &masked_answer);
     let block_holes = hole_fingerprints(&parsed, &holes, &groups);
     for (n, group) in groups.iter().enumerate() {
         let asked: Vec<&Hole<'_>> = group.iter().map(|h| &holes[*h]).collect();
@@ -1994,7 +1997,13 @@ fn build_card(
         card.images = images.clone();
         card.images_back = images_back.clone();
         card.span_regions = span_regions.clone();
-        card.content_fingerprint = block_fingerprint;
+        // The effective question (ADR 0034): this card's own masked context
+        // and back, so editing a hidden sibling never stales this card's
+        // cached AI artifacts; the block key above addresses the block.
+        let mut question = card.context.clone();
+        question.extend(card.back.iter().cloned());
+        card.content_fingerprint = content_fingerprint(&front, &question);
+        card.block_fingerprint = block_key;
         // A cloze sub-card never reverses and keeps no direction: only the
         // per-card `input:` still applies here.
         card.input = directives.input;
@@ -4935,6 +4944,44 @@ the answer
         assert_ne!(
             first.cards[0].content_fingerprint,
             second.cards[0].content_fingerprint
+        );
+    }
+
+    #[test]
+    fn each_cloze_card_fingerprints_its_effective_masked_question() {
+        let deck = parse("## q\n---\nfirst \\blank{alpha}; second \\blank{beta}\n");
+        assert_eq!(2, deck.cards.len());
+        for card in &deck.cards {
+            let mut effective_question = card.context.clone();
+            effective_question.extend(card.back.iter().cloned());
+            assert_eq!(
+                content_fingerprint(&card.front, &effective_question),
+                card.content_fingerprint,
+                "card back {:?} must hash front, its masked context, and its answer",
+                card.back
+            );
+        }
+    }
+
+    #[test]
+    fn editing_a_hidden_sibling_preserves_the_unchanged_cloze_cards_fingerprint() {
+        let before = parse("## q\n---\nfirst \\blank{alpha}; second \\blank{beta}\n");
+        let after = parse("## q\n---\nfirst \\blank{alpha}; second \\blank{gamma}\n");
+        let alpha_before = before
+            .cards
+            .iter()
+            .find(|card| card.back == ["alpha"])
+            .unwrap();
+        let alpha_after = after
+            .cards
+            .iter()
+            .find(|card| card.back == ["alpha"])
+            .unwrap();
+        assert_eq!(alpha_before.context, alpha_after.context);
+        assert_eq!(alpha_before.back, alpha_after.back);
+        assert_eq!(
+            alpha_before.content_fingerprint, alpha_after.content_fingerprint,
+            "a hidden sibling edit did not change this card's effective question"
         );
     }
 

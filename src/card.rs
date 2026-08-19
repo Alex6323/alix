@@ -124,6 +124,11 @@ pub struct Card {
     pub block_holes: Vec<crate::store::HoleFingerprint>,
     pub reversed: bool,
     pub content_fingerprint: u64,
+    /// The block-level dedup key (front + cover-masked raw answer lines):
+    /// every card of one authored block shares it, so remediation and
+    /// personal-sidecar dedup can address the block while
+    /// `content_fingerprint` stays the card's own effective question.
+    pub block_fingerprint: u64,
     pub authored_distractors: Vec<String>,
     /// `span`-shaped regions bound to the answer block (ADR 0034), in file
     /// order; geometric regions ride their media element in `images`.
@@ -143,6 +148,7 @@ impl Card {
         // The parser overrides this for cloze sub-cards with a shared block-level fingerprint; this
         // default fits every other card.
         let content_fingerprint = crate::parser::content_fingerprint(&front, &back);
+        let block_fingerprint = content_fingerprint;
         Self {
             subject,
             deck_id: Arc::from(""),
@@ -170,6 +176,7 @@ impl Card {
             block_holes: Vec::new(),
             reversed: false,
             content_fingerprint,
+            block_fingerprint,
             authored_distractors: Vec::new(),
             span_regions: Vec::new(),
             region: None,
@@ -204,6 +211,7 @@ impl Card {
         // Reuses the forward card's fingerprint instead of recomputing over swapped sides: one
         // authored card is one content unit.
         card.content_fingerprint = self.content_fingerprint;
+        card.block_fingerprint = self.block_fingerprint;
         card
     }
 
