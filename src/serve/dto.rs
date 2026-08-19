@@ -51,6 +51,10 @@ pub(super) struct CitationDto {
 pub(super) struct ImageDto {
     pub(super) src: String,
     pub(super) alt: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) regions: Vec<review::RegionView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) crop: Option<review::CropView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1188,6 +1192,8 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
     let img_dto = |i: &review::ImageView| ImageDto {
         src: format!("/img/{}", img_key(Path::new(&i.src))),
         alt: i.alt.clone(),
+        regions: i.regions.clone(),
+        crop: i.crop.clone(),
     };
     CardDto {
         id,

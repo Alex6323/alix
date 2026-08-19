@@ -96,6 +96,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback dco_decode_box_autoadd_choice_feedback(dynamic raw);
 
   @protected
+  CropView dco_decode_box_autoadd_crop_view(dynamic raw);
+
+  @protected
   CrumbState dco_decode_box_autoadd_crumb_state(dynamic raw);
 
   @protected
@@ -138,6 +141,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback dco_decode_choice_feedback(dynamic raw);
 
   @protected
+  CropView dco_decode_crop_view(dynamic raw);
+
+  @protected
   CrumbState dco_decode_crumb_state(dynamic raw);
 
   @protected
@@ -148,6 +154,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth dco_decode_depth(dynamic raw);
+
+  @protected
+  double dco_decode_f_64(dynamic raw);
 
   @protected
   ForeignWriter dco_decode_foreign_writer(dynamic raw);
@@ -201,6 +210,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<RegionView> dco_decode_list_region_view(dynamic raw);
+
+  @protected
   List<TypedResult> dco_decode_list_typed_result(dynamic raw);
 
   @protected
@@ -226,6 +238,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ChoiceFeedback? dco_decode_opt_box_autoadd_choice_feedback(dynamic raw);
+
+  @protected
+  CropView? dco_decode_opt_box_autoadd_crop_view(dynamic raw);
 
   @protected
   CrumbState? dco_decode_opt_box_autoadd_crumb_state(dynamic raw);
@@ -271,6 +286,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecognizeGap dco_decode_recognize_gap(dynamic raw);
+
+  @protected
+  RegionRole dco_decode_region_role(dynamic raw);
+
+  @protected
+  RegionView dco_decode_region_view(dynamic raw);
 
   @protected
   ReviewState dco_decode_review_state(dynamic raw);
@@ -385,6 +406,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  CropView sse_decode_box_autoadd_crop_view(SseDeserializer deserializer);
+
+  @protected
   CrumbState sse_decode_box_autoadd_crumb_state(SseDeserializer deserializer);
 
   @protected
@@ -431,6 +455,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback sse_decode_choice_feedback(SseDeserializer deserializer);
 
   @protected
+  CropView sse_decode_crop_view(SseDeserializer deserializer);
+
+  @protected
   CrumbState sse_decode_crumb_state(SseDeserializer deserializer);
 
   @protected
@@ -441,6 +468,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth sse_decode_depth(SseDeserializer deserializer);
+
+  @protected
+  double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
   ForeignWriter sse_decode_foreign_writer(SseDeserializer deserializer);
@@ -498,6 +528,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<RegionView> sse_decode_list_region_view(SseDeserializer deserializer);
+
+  @protected
   List<TypedResult> sse_decode_list_typed_result(SseDeserializer deserializer);
 
   @protected
@@ -527,6 +560,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback? sse_decode_opt_box_autoadd_choice_feedback(
     SseDeserializer deserializer,
   );
+
+  @protected
+  CropView? sse_decode_opt_box_autoadd_crop_view(SseDeserializer deserializer);
 
   @protected
   CrumbState? sse_decode_opt_box_autoadd_crumb_state(
@@ -586,6 +622,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecognizeGap sse_decode_recognize_gap(SseDeserializer deserializer);
+
+  @protected
+  RegionRole sse_decode_region_role(SseDeserializer deserializer);
+
+  @protected
+  RegionView sse_decode_region_view(SseDeserializer deserializer);
 
   @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer);
@@ -716,6 +758,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_crop_view(
+    CropView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_crumb_state(
     CrumbState self,
     SseSerializer serializer,
@@ -782,6 +830,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_crop_view(CropView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_crumb_state(CrumbState self, SseSerializer serializer);
 
   @protected
@@ -792,6 +843,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_depth(Depth self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
   void sse_encode_foreign_writer(ForeignWriter self, SseSerializer serializer);
@@ -869,6 +923,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_region_view(
+    List<RegionView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_typed_result(
     List<TypedResult> self,
     SseSerializer serializer,
@@ -904,6 +964,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_choice_feedback(
     ChoiceFeedback? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_crop_view(
+    CropView? self,
     SseSerializer serializer,
   );
 
@@ -984,6 +1050,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_recognize_gap(RecognizeGap self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_region_role(RegionRole self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_region_view(RegionView self, SseSerializer serializer);
 
   @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer);

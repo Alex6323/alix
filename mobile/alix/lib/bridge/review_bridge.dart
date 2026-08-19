@@ -210,14 +210,39 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
     backUnits: [for (final unit in card.backUnits) _noteFromBridge(unit)],
     reshaped: card.reshaped,
     note: [for (final unit in card.note) _noteFromBridge(unit)],
-    images: [
-      for (final image in card.images)
-        ReviewImageModel(src: image.src, alt: image.alt),
+    images: [for (final image in card.images) _imageFromBridge(image)],
+    imagesBack: [for (final image in card.imagesBack) _imageFromBridge(image)],
+  );
+}
+
+ReviewImageModel _imageFromBridge(bridge.ImageView image) {
+  return ReviewImageModel(
+    src: image.src,
+    alt: image.alt,
+    regions: [
+      for (final region in image.regions)
+        ReviewRegionModel(
+          role: switch (region.role) {
+            bridge.RegionRole.asked => ReviewRegionRole.asked,
+            bridge.RegionRole.mask => ReviewRegionRole.mask,
+            bridge.RegionRole.cover => ReviewRegionRole.cover,
+          },
+          x: region.x,
+          y: region.y,
+          width: region.width,
+          height: region.height,
+          unit: region.unit,
+        ),
     ],
-    imagesBack: [
-      for (final image in card.imagesBack)
-        ReviewImageModel(src: image.src, alt: image.alt),
-    ],
+    crop: image.crop == null
+        ? null
+        : ReviewCropModel(
+            x: image.crop!.x,
+            y: image.crop!.y,
+            width: image.crop!.width,
+            height: image.crop!.height,
+            unit: image.crop!.unit,
+          ),
   );
 }
 

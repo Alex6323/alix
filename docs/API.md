@@ -645,7 +645,26 @@ never returns newly addressed source lines. Exactly one of `excerpt` and
 ### ImageDto
 
 `src: string` (a `/img/<key>` URL, see §5), `alt: string?` (the `![alt](src)`
-embed's alt text, null when the embed set none).
+embed's alt text, null when the embed set none), `regions: [RegionDto]?`
+(omitted when the image carries none), `crop: CropDto?` (omitted when the
+image has no viewport).
+
+### RegionDto
+
+`{role: "asked"|"mask"|"cover", x: number, y: number, width: number,
+height: number, unit: "px"|"%"}`. Geometry is in the source image's own
+coordinate space (`"px"`) or percentages of the full source (`"%"`); all
+regions and the crop on one image share one unit. Every region is drawn as a
+mask. `"asked"` is the region this card asks: reveal it when the card is
+answered. `"mask"` belongs to a sibling card and never reveals here.
+`"cover"` never reveals anywhere. Masking is client-local view state: no
+endpoint records a reveal.
+
+### CropDto
+
+`{x: number, y: number, width: number, height: number, unit: "px"|"%"}`. The
+visible viewport onto the source: clients render the crop window, not the
+full image. Region coordinates stay in full-source space, never crop space.
 
 ### InlineRun
 

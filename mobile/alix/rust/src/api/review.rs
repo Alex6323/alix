@@ -9,7 +9,7 @@ pub use alix::{
     inline::InlineRun,
     math::MathView,
     render::{ChecklistItem, NoteUnit},
-    review::{CardView, CheckFeedback, ChoiceFeedback, ImageView, ReviewState},
+    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
     trace::Phase as WalkPhase,
 };
@@ -68,10 +68,38 @@ pub enum _NoteUnit {
     Checklist { items: Vec<ChecklistItem> },
 }
 
+#[flutter_rust_bridge::frb(mirror(RegionRole))]
+pub enum _RegionRole {
+    Asked,
+    Mask,
+    Cover,
+}
+
+#[flutter_rust_bridge::frb(mirror(RegionView))]
+pub struct _RegionView {
+    pub role: RegionRole,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub unit: String,
+}
+
+#[flutter_rust_bridge::frb(mirror(CropView))]
+pub struct _CropView {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub unit: String,
+}
+
 #[flutter_rust_bridge::frb(mirror(ImageView))]
 pub struct _ImageView {
     pub src: String,
     pub alt: Option<String>,
+    pub regions: Vec<RegionView>,
+    pub crop: Option<CropView>,
 }
 
 #[flutter_rust_bridge::frb(mirror(CardView))]

@@ -12,13 +12,50 @@ use crate::{
     store::Store,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RegionRole {
+    /// A region THIS card asks: masked until answered, then revealed.
+    Asked,
+    /// Another card's blank on the same media: masked, never revealed here.
+    Mask,
+    /// A cover: masked for every card of its media, never revealed at all.
+    Cover,
+}
+
+/// One drawable region (ADR 0034). Geometry is JSON numbers in the unit the
+/// author wrote; reveal-on-answer applies only to `Asked`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct RegionView {
+    pub role: RegionRole,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// `"px"` or `"%"`, one per region by the per-media unit law.
+    pub unit: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CropView {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub unit: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ImageView {
     pub src: String,
     pub alt: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<RegionView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop: Option<CropView>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardView {
     pub front: String,
     #[serde(default)]
@@ -42,14 +79,66 @@ pub struct CardView {
     pub citations: Vec<String>,
 }
 
-fn image_views(images: &[crate::card::CardImage]) -> Vec<ImageView> {
+fn image_views(
+    images: &[crate::card::CardImage],
+    asked: &dyn Fn(Option<&str>) -> bool,
+) -> Vec<ImageView> {
+    use crate::parser::region::{RegionGeometry, RegionKind};
+    let unit = |percent: bool| if percent { "%" } else { "px" }.to_string();
     images
         .iter()
-        .map(|i| ImageView {
-            src: i.src.display().to_string(),
-            alt: i.alt.clone(),
+        .map(|image| ImageView {
+            src: image.src.display().to_string(),
+            alt: image.alt.clone(),
+            regions: image
+                .regions
+                .iter()
+                .filter_map(|region| {
+                    let RegionGeometry::Rect {
+                        x,
+                        y,
+                        width,
+                        height,
+                    } = &region.geometry
+                    else {
+                        return None;
+                    };
+                    let role = match region.kind {
+                        RegionKind::Cover => RegionRole::Cover,
+                        RegionKind::Blank if asked(region.stamp.as_deref()) => RegionRole::Asked,
+                        RegionKind::Blank => RegionRole::Mask,
+                    };
+                    Some(RegionView {
+                        role,
+                        x: x.value,
+                        y: y.value,
+                        width: width.value,
+                        height: height.value,
+                        unit: unit(x.percent),
+                    })
+                })
+                .collect(),
+            crop: image.crop.as_ref().map(|crop| CropView {
+                x: crop.x.value,
+                y: crop.y.value,
+                width: crop.width.value,
+                height: crop.height.value,
+                unit: unit(crop.x.percent),
+            }),
         })
         .collect()
+}
+
+/// Which stamps the projected card asks: a single region's own stamp, a
+/// group's member stamps, and none for an ordinary card.
+fn asked_stamps(card: &Card) -> Vec<std::sync::Arc<str>> {
+    match &card.region {
+        None => Vec::new(),
+        Some(crate::card::RegionSlot::Single { stamp, .. }) => stamp.iter().cloned().collect(),
+        Some(crate::card::RegionSlot::Group { members, .. }) => {
+            members.iter().filter_map(|m| m.stamp.clone()).collect()
+        }
+    }
 }
 
 impl From<&Card> for CardView {
@@ -82,8 +171,20 @@ impl CardView {
             back_units,
             reshaped: card.display_back.is_some(),
             note: render::note_units_with(card, projector),
-            images: image_views(&card.images),
-            images_back: image_views(&card.images_back),
+            images: {
+                let stamps = asked_stamps(card);
+                let asked = move |stamp: Option<&str>| {
+                    stamp.is_some_and(|s| stamps.iter().any(|a| a.as_ref() == s))
+                };
+                image_views(&card.images, &asked)
+            },
+            images_back: {
+                let stamps = asked_stamps(card);
+                let asked = move |stamp: Option<&str>| {
+                    stamp.is_some_and(|s| stamps.iter().any(|a| a.as_ref() == s))
+                };
+                image_views(&card.images_back, &asked)
+            },
             citations: card
                 .citations
                 .iter()
@@ -152,7 +253,7 @@ fn literal_runs(text: &str) -> Vec<InlineRun> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ReviewState {
     pub card: Option<CardView>,
     pub mode: Mode,
@@ -1461,5 +1562,43 @@ mod tests {
         assert_eq!(state.remaining, 0);
         assert_eq!(check_typed(&session, &["x".to_string()]), None);
         assert_eq!(choose(&session, &store, &augment, 0), None);
+    }
+
+    #[test]
+    fn a_region_cards_view_classifies_asked_sibling_and_cover_masks() {
+        let text = "## bones <!-- id: card-bonesbonesbonesbonesbones -->\n![](hand.png)\n                    <!-- blank: rect x=10 y=20 width=30 height=40 hidden=\"lunate\" b:a1b2c3 -->\n                    <!-- blank: rect x=50 y=60 width=30 height=40 hidden=\"hamate\" b:d4e5f6 -->\n                    <!-- cover: rect x=1 y=2 width=3 height=4 -->\n                    <!-- crop: rect x=0 y=0 width=90 height=90 -->\n\n---\nthe carpals\n";
+        let cards = crate::parser::parse_str("t.md", text).unwrap();
+        let lunate_card = cards
+            .iter()
+            .find(|card| card.back == vec!["lunate".to_string()])
+            .expect("the first blank produced a card");
+        let view = CardView::from(lunate_card);
+        let image = &view.images[0];
+
+        let roles: Vec<RegionRole> = image.regions.iter().map(|r| r.role).collect();
+        assert_eq!(
+            vec![RegionRole::Asked, RegionRole::Mask, RegionRole::Cover],
+            roles,
+            "own blank asked, the sibling's masked, the cover covered"
+        );
+        assert_eq!(10.0, image.regions[0].x);
+        assert_eq!(40.0, image.regions[0].height);
+        assert_eq!("px", image.regions[0].unit);
+        let crop = image.crop.as_ref().expect("the crop rides the view");
+        assert_eq!(90.0, crop.width);
+
+        let parent = &cards[0];
+        assert!(parent.region.is_none(), "cards[0] is the authored parent");
+        let parent_view = CardView::from(parent);
+        let parent_roles: Vec<RegionRole> = parent_view.images[0]
+            .regions
+            .iter()
+            .map(|r| r.role)
+            .collect();
+        assert_eq!(
+            vec![RegionRole::Mask, RegionRole::Mask, RegionRole::Cover],
+            parent_roles,
+            "the parent asks no region: every blank is a mask on its view"
+        );
     }
 }

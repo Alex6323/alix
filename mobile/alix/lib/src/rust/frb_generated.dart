@@ -1422,6 +1422,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CropView dco_decode_box_autoadd_crop_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_crop_view(raw);
+  }
+
+  @protected
   CrumbState dco_decode_box_autoadd_crumb_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_crumb_state(raw);
@@ -1544,6 +1550,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CropView dco_decode_crop_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return CropView(
+      x: dco_decode_f_64(arr[0]),
+      y: dco_decode_f_64(arr[1]),
+      width: dco_decode_f_64(arr[2]),
+      height: dco_decode_f_64(arr[3]),
+      unit: dco_decode_String(arr[4]),
+    );
+  }
+
+  @protected
   CrumbState dco_decode_crumb_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1602,6 +1623,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  double dco_decode_f_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as double;
+  }
+
+  @protected
   ForeignWriter dco_decode_foreign_writer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1635,11 +1662,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ImageView dco_decode_image_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ImageView(
       src: dco_decode_String(arr[0]),
       alt: dco_decode_opt_String(arr[1]),
+      regions: dco_decode_list_region_view(arr[2]),
+      crop: dco_decode_opt_box_autoadd_crop_view(arr[3]),
     );
   }
 
@@ -1725,6 +1754,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RegionView> dco_decode_list_region_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_region_view).toList();
+  }
+
+  @protected
   List<TypedResult> dco_decode_list_typed_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_typed_result).toList();
@@ -1797,6 +1832,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ChoiceFeedback? dco_decode_opt_box_autoadd_choice_feedback(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_choice_feedback(raw);
+  }
+
+  @protected
+  CropView? dco_decode_opt_box_autoadd_crop_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_crop_view(raw);
   }
 
   @protected
@@ -1892,6 +1933,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return RecognizeGap(
       recall: dco_decode_u_32(arr[0]),
       unaugmented: dco_decode_u_32(arr[1]),
+    );
+  }
+
+  @protected
+  RegionRole dco_decode_region_role(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RegionRole.values[raw as int];
+  }
+
+  @protected
+  RegionView dco_decode_region_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return RegionView(
+      role: dco_decode_region_role(arr[0]),
+      x: dco_decode_f_64(arr[1]),
+      y: dco_decode_f_64(arr[2]),
+      width: dco_decode_f_64(arr[3]),
+      height: dco_decode_f_64(arr[4]),
+      unit: dco_decode_String(arr[5]),
     );
   }
 
@@ -2209,6 +2272,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CropView sse_decode_box_autoadd_crop_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_crop_view(deserializer));
+  }
+
+  @protected
   CrumbState sse_decode_box_autoadd_crumb_state(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_crumb_state(deserializer));
@@ -2342,6 +2411,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CropView sse_decode_crop_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_x = sse_decode_f_64(deserializer);
+    var var_y = sse_decode_f_64(deserializer);
+    var var_width = sse_decode_f_64(deserializer);
+    var var_height = sse_decode_f_64(deserializer);
+    var var_unit = sse_decode_String(deserializer);
+    return CropView(
+      x: var_x,
+      y: var_y,
+      width: var_width,
+      height: var_height,
+      unit: var_unit,
+    );
+  }
+
+  @protected
   CrumbState sse_decode_crumb_state(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_regions = sse_decode_list_String(deserializer);
@@ -2414,6 +2500,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  double sse_decode_f_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getFloat64();
+  }
+
+  @protected
   ForeignWriter sse_decode_foreign_writer(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_device = sse_decode_String(deserializer);
@@ -2445,7 +2537,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_src = sse_decode_String(deserializer);
     var var_alt = sse_decode_opt_String(deserializer);
-    return ImageView(src: var_src, alt: var_alt);
+    var var_regions = sse_decode_list_region_view(deserializer);
+    var var_crop = sse_decode_opt_box_autoadd_crop_view(deserializer);
+    return ImageView(
+      src: var_src,
+      alt: var_alt,
+      regions: var_regions,
+      crop: var_crop,
+    );
   }
 
   @protected
@@ -2587,6 +2686,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RegionView> sse_decode_list_region_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RegionView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_region_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<TypedResult> sse_decode_list_typed_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -2690,6 +2801,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_choice_feedback(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  CropView? sse_decode_opt_box_autoadd_crop_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_crop_view(deserializer));
     } else {
       return null;
     }
@@ -2871,6 +2993,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_recall = sse_decode_u_32(deserializer);
     var var_unaugmented = sse_decode_u_32(deserializer);
     return RecognizeGap(recall: var_recall, unaugmented: var_unaugmented);
+  }
+
+  @protected
+  RegionRole sse_decode_region_role(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RegionRole.values[inner];
+  }
+
+  @protected
+  RegionView sse_decode_region_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_role = sse_decode_region_role(deserializer);
+    var var_x = sse_decode_f_64(deserializer);
+    var var_y = sse_decode_f_64(deserializer);
+    var var_width = sse_decode_f_64(deserializer);
+    var var_height = sse_decode_f_64(deserializer);
+    var var_unit = sse_decode_String(deserializer);
+    return RegionView(
+      role: var_role,
+      x: var_x,
+      y: var_y,
+      width: var_width,
+      height: var_height,
+      unit: var_unit,
+    );
   }
 
   @protected
@@ -3243,6 +3391,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_crop_view(
+    CropView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_crop_view(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_crumb_state(
     CrumbState self,
     SseSerializer serializer,
@@ -3372,6 +3529,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_crop_view(CropView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.x, serializer);
+    sse_encode_f_64(self.y, serializer);
+    sse_encode_f_64(self.width, serializer);
+    sse_encode_f_64(self.height, serializer);
+    sse_encode_String(self.unit, serializer);
+  }
+
+  @protected
   void sse_encode_crumb_state(CrumbState self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_String(self.regions, serializer);
@@ -3415,6 +3582,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_f_64(double self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putFloat64(self);
+  }
+
+  @protected
   void sse_encode_foreign_writer(ForeignWriter self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.device, serializer);
@@ -3444,6 +3617,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.src, serializer);
     sse_encode_opt_String(self.alt, serializer);
+    sse_encode_list_region_view(self.regions, serializer);
+    sse_encode_opt_box_autoadd_crop_view(self.crop, serializer);
   }
 
   @protected
@@ -3576,6 +3751,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_region_view(
+    List<RegionView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_region_view(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_typed_result(
     List<TypedResult> self,
     SseSerializer serializer,
@@ -3676,6 +3863,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_choice_feedback(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_crop_view(
+    CropView? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_crop_view(self, serializer);
     }
   }
 
@@ -3860,6 +4060,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.recall, serializer);
     sse_encode_u_32(self.unaugmented, serializer);
+  }
+
+  @protected
+  void sse_encode_region_role(RegionRole self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_region_view(RegionView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_region_role(self.role, serializer);
+    sse_encode_f_64(self.x, serializer);
+    sse_encode_f_64(self.y, serializer);
+    sse_encode_f_64(self.width, serializer);
+    sse_encode_f_64(self.height, serializer);
+    sse_encode_String(self.unit, serializer);
   }
 
   @protected

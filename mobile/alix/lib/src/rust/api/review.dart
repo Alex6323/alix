@@ -237,6 +237,41 @@ class ChoiceFeedback {
           passed == other.passed;
 }
 
+class CropView {
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String unit;
+
+  const CropView({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.unit,
+  });
+
+  @override
+  int get hashCode =>
+      x.hashCode ^
+      y.hashCode ^
+      width.hashCode ^
+      height.hashCode ^
+      unit.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CropView &&
+          runtimeType == other.runtimeType &&
+          x == other.x &&
+          y == other.y &&
+          width == other.width &&
+          height == other.height &&
+          unit == other.unit;
+}
+
 class CrumbState {
   final List<String> regions;
   final int current;
@@ -286,11 +321,19 @@ enum Grade { fail, partial, pass }
 class ImageView {
   final String src;
   final String? alt;
+  final List<RegionView> regions;
+  final CropView? crop;
 
-  const ImageView({required this.src, this.alt});
+  const ImageView({
+    required this.src,
+    this.alt,
+    required this.regions,
+    this.crop,
+  });
 
   @override
-  int get hashCode => src.hashCode ^ alt.hashCode;
+  int get hashCode =>
+      src.hashCode ^ alt.hashCode ^ regions.hashCode ^ crop.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -298,7 +341,9 @@ class ImageView {
       other is ImageView &&
           runtimeType == other.runtimeType &&
           src == other.src &&
-          alt == other.alt;
+          alt == other.alt &&
+          regions == other.regions &&
+          crop == other.crop;
 }
 
 class InlineRun {
@@ -389,6 +434,47 @@ class RecognizeGap {
           runtimeType == other.runtimeType &&
           recall == other.recall &&
           unaugmented == other.unaugmented;
+}
+
+enum RegionRole { asked, mask, cover }
+
+class RegionView {
+  final RegionRole role;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String unit;
+
+  const RegionView({
+    required this.role,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.unit,
+  });
+
+  @override
+  int get hashCode =>
+      role.hashCode ^
+      x.hashCode ^
+      y.hashCode ^
+      width.hashCode ^
+      height.hashCode ^
+      unit.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RegionView &&
+          runtimeType == other.runtimeType &&
+          role == other.role &&
+          x == other.x &&
+          y == other.y &&
+          width == other.width &&
+          height == other.height &&
+          unit == other.unit;
 }
 
 class ReviewState {

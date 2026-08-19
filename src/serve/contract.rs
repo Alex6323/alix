@@ -139,15 +139,52 @@ fn statedto_review_phase_wire_shape() {
             images: vec![ImageDto {
                 src: "/img/0123456789abcdef".to_string(),
                 alt: Some("a heap-allocated String".to_string()),
+                regions: vec![
+                    crate::review::RegionView {
+                        role: crate::review::RegionRole::Asked,
+                        x: 240.0,
+                        y: 160.0,
+                        width: 600.0,
+                        height: 400.0,
+                        unit: "px".to_string(),
+                    },
+                    crate::review::RegionView {
+                        role: crate::review::RegionRole::Mask,
+                        x: 10.0,
+                        y: 20.0,
+                        width: 30.0,
+                        height: 40.0,
+                        unit: "px".to_string(),
+                    },
+                    crate::review::RegionView {
+                        role: crate::review::RegionRole::Cover,
+                        x: 700.0,
+                        y: 0.0,
+                        width: 100.0,
+                        height: 60.0,
+                        unit: "px".to_string(),
+                    },
+                ],
+                crop: Some(crate::review::CropView {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 800.0,
+                    height: 600.0,
+                    unit: "px".to_string(),
+                }),
             }],
             images_back: vec![
                 ImageDto {
                     src: "/img/0123456789abcdef".to_string(),
                     alt: Some("the stack pointer".to_string()),
+                    regions: Vec::new(),
+                    crop: None,
                 },
                 ImageDto {
                     src: "/img/fedcba9876543210".to_string(),
                     alt: None,
+                    regions: Vec::new(),
+                    crop: None,
                 },
             ],
             citations: vec![CitationDto {
@@ -248,7 +285,13 @@ fn statedto_review_phase_wire_shape() {
                     }
                 ],
                 "images": [
-                    {"src": "/img/0123456789abcdef", "alt": "a heap-allocated String"}
+                    {"src": "/img/0123456789abcdef", "alt": "a heap-allocated String",
+                     "regions": [
+                        {"role": "asked", "x": 240.0, "y": 160.0, "width": 600.0, "height": 400.0, "unit": "px"},
+                        {"role": "mask", "x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0, "unit": "px"},
+                        {"role": "cover", "x": 700.0, "y": 0.0, "width": 100.0, "height": 60.0, "unit": "px"}
+                     ],
+                     "crop": {"x": 0.0, "y": 0.0, "width": 800.0, "height": 600.0, "unit": "px"}}
                 ],
                 "images_back": [
                     {"src": "/img/0123456789abcdef", "alt": "the stack pointer"},

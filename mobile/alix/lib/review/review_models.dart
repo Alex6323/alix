@@ -6,11 +6,58 @@ enum ReviewMode { flip, typing, typeLine, choice, lineByLine, explain }
 
 enum ReviewGrade { fail, partial, pass }
 
+enum ReviewRegionRole { asked, mask, cover }
+
+/// One drawable mask on an image (ADR 0034). Geometry is in the source
+/// image's own pixels or percentages of the full source, per [unit].
+class ReviewRegionModel {
+  const ReviewRegionModel({
+    required this.role,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.unit,
+  });
+
+  final ReviewRegionRole role;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String unit;
+}
+
+/// The visible viewport onto a source image; region coordinates stay in
+/// full-source space.
+class ReviewCropModel {
+  const ReviewCropModel({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.unit,
+  });
+
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String unit;
+}
+
 class ReviewImageModel {
-  const ReviewImageModel({required this.src, this.alt});
+  const ReviewImageModel({
+    required this.src,
+    this.alt,
+    this.regions = const [],
+    this.crop,
+  });
 
   final String src;
   final String? alt;
+  final List<ReviewRegionModel> regions;
+  final ReviewCropModel? crop;
 }
 
 class ReviewChecklistItemModel {

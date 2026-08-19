@@ -1554,9 +1554,19 @@ const _: fn() = || {
         let _: bool = ChoiceFeedback.passed;
     }
     {
+        let CropView = None::<crate::api::review::CropView>.unwrap();
+        let _: f64 = CropView.x;
+        let _: f64 = CropView.y;
+        let _: f64 = CropView.width;
+        let _: f64 = CropView.height;
+        let _: String = CropView.unit;
+    }
+    {
         let ImageView = None::<crate::api::review::ImageView>.unwrap();
         let _: String = ImageView.src;
         let _: Option<String> = ImageView.alt;
+        let _: Vec<crate::api::review::RegionView> = ImageView.regions;
+        let _: Option<crate::api::review::CropView> = ImageView.crop;
     }
     {
         let InlineRun = None::<crate::api::review::InlineRun>.unwrap();
@@ -1588,6 +1598,15 @@ const _: fn() = || {
         let RecognizeGap = None::<crate::api::review::RecognizeGap>.unwrap();
         let _: u32 = RecognizeGap.recall;
         let _: u32 = RecognizeGap.unaugmented;
+    }
+    {
+        let RegionView = None::<crate::api::review::RegionView>.unwrap();
+        let _: crate::api::review::RegionRole = RegionView.role;
+        let _: f64 = RegionView.x;
+        let _: f64 = RegionView.y;
+        let _: f64 = RegionView.width;
+        let _: f64 = RegionView.height;
+        let _: String = RegionView.unit;
     }
     {
         let ReviewState = None::<crate::api::review::ReviewState>.unwrap();
@@ -1777,6 +1796,24 @@ impl SseDecode for crate::api::review::ChoiceFeedback {
     }
 }
 
+impl SseDecode for crate::api::review::CropView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_x = <f64>::sse_decode(deserializer);
+        let mut var_y = <f64>::sse_decode(deserializer);
+        let mut var_width = <f64>::sse_decode(deserializer);
+        let mut var_height = <f64>::sse_decode(deserializer);
+        let mut var_unit = <String>::sse_decode(deserializer);
+        return crate::api::review::CropView {
+            x: var_x,
+            y: var_y,
+            width: var_width,
+            height: var_height,
+            unit: var_unit,
+        };
+    }
+}
+
 impl SseDecode for crate::api::review::CrumbState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1858,6 +1895,13 @@ impl SseDecode for crate::api::review::Depth {
     }
 }
 
+impl SseDecode for f64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_f64::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for crate::api::review::ForeignWriter {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1902,9 +1946,13 @@ impl SseDecode for crate::api::review::ImageView {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_src = <String>::sse_decode(deserializer);
         let mut var_alt = <Option<String>>::sse_decode(deserializer);
+        let mut var_regions = <Vec<crate::api::review::RegionView>>::sse_decode(deserializer);
+        let mut var_crop = <Option<crate::api::review::CropView>>::sse_decode(deserializer);
         return crate::api::review::ImageView {
             src: var_src,
             alt: var_alt,
+            regions: var_regions,
+            crop: var_crop,
         };
     }
 }
@@ -2063,6 +2111,18 @@ impl SseDecode for Vec<u8> {
     }
 }
 
+impl SseDecode for Vec<crate::api::review::RegionView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::review::RegionView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::review::TypedResult> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2188,6 +2248,17 @@ impl SseDecode for Option<crate::api::review::ChoiceFeedback> {
             return Some(<crate::api::review::ChoiceFeedback>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::review::CropView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::CropView>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -2364,6 +2435,39 @@ impl SseDecode for crate::api::review::RecognizeGap {
         return crate::api::review::RecognizeGap {
             recall: var_recall,
             unaugmented: var_unaugmented,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::RegionRole {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::review::RegionRole::Asked,
+            1 => crate::api::review::RegionRole::Mask,
+            2 => crate::api::review::RegionRole::Cover,
+            _ => unreachable!("Invalid variant for RegionRole: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::RegionView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_role = <crate::api::review::RegionRole>::sse_decode(deserializer);
+        let mut var_x = <f64>::sse_decode(deserializer);
+        let mut var_y = <f64>::sse_decode(deserializer);
+        let mut var_width = <f64>::sse_decode(deserializer);
+        let mut var_height = <f64>::sse_decode(deserializer);
+        let mut var_unit = <String>::sse_decode(deserializer);
+        return crate::api::review::RegionView {
+            role: var_role,
+            x: var_x,
+            y: var_y,
+            width: var_width,
+            height: var_height,
+            unit: var_unit,
         };
     }
 }
@@ -2834,6 +2938,30 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ChoiceFeed
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CropView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.x.into_into_dart().into_dart(),
+            self.0.y.into_into_dart().into_dart(),
+            self.0.width.into_into_dart().into_dart(),
+            self.0.height.into_into_dart().into_dart(),
+            self.0.unit.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::CropView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::CropView>>
+    for crate::api::review::CropView
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::CropView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::review::CrumbState {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2975,6 +3103,8 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ImageView>
         [
             self.0.src.into_into_dart().into_dart(),
             self.0.alt.into_into_dart().into_dart(),
+            self.0.regions.into_into_dart().into_dart(),
+            self.0.crop.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3133,6 +3263,53 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::RecognizeG
     for crate::api::review::RecognizeGap
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::RecognizeGap> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::RegionRole> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::review::RegionRole::Asked => 0.into_dart(),
+            crate::api::review::RegionRole::Mask => 1.into_dart(),
+            crate::api::review::RegionRole::Cover => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::RegionRole>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::RegionRole>>
+    for crate::api::review::RegionRole
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::RegionRole> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::RegionView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.role.into_into_dart().into_dart(),
+            self.0.x.into_into_dart().into_dart(),
+            self.0.y.into_into_dart().into_dart(),
+            self.0.width.into_into_dart().into_dart(),
+            self.0.height.into_into_dart().into_dart(),
+            self.0.unit.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::RegionView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::RegionView>>
+    for crate::api::review::RegionView
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::RegionView> {
         self.into()
     }
 }
@@ -3468,6 +3645,17 @@ impl SseEncode for crate::api::review::ChoiceFeedback {
     }
 }
 
+impl SseEncode for crate::api::review::CropView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.x, serializer);
+        <f64>::sse_encode(self.y, serializer);
+        <f64>::sse_encode(self.width, serializer);
+        <f64>::sse_encode(self.height, serializer);
+        <String>::sse_encode(self.unit, serializer);
+    }
+}
+
 impl SseEncode for crate::api::review::CrumbState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3525,6 +3713,13 @@ impl SseEncode for crate::api::review::Depth {
     }
 }
 
+impl SseEncode for f64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
+    }
+}
+
 impl SseEncode for crate::api::review::ForeignWriter {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3569,6 +3764,8 @@ impl SseEncode for crate::api::review::ImageView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.src, serializer);
         <Option<String>>::sse_encode(self.alt, serializer);
+        <Vec<crate::api::review::RegionView>>::sse_encode(self.regions, serializer);
+        <Option<crate::api::review::CropView>>::sse_encode(self.crop, serializer);
     }
 }
 
@@ -3699,6 +3896,16 @@ impl SseEncode for Vec<u8> {
     }
 }
 
+impl SseEncode for Vec<crate::api::review::RegionView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::review::RegionView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::review::TypedResult> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3808,6 +4015,16 @@ impl SseEncode for Option<crate::api::review::ChoiceFeedback> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::review::ChoiceFeedback>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::review::CropView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::CropView>::sse_encode(value, serializer);
         }
     }
 }
@@ -3957,6 +4174,35 @@ impl SseEncode for crate::api::review::RecognizeGap {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.recall, serializer);
         <u32>::sse_encode(self.unaugmented, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::RegionRole {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::review::RegionRole::Asked => 0,
+                crate::api::review::RegionRole::Mask => 1,
+                crate::api::review::RegionRole::Cover => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::review::RegionView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::review::RegionRole>::sse_encode(self.role, serializer);
+        <f64>::sse_encode(self.x, serializer);
+        <f64>::sse_encode(self.y, serializer);
+        <f64>::sse_encode(self.width, serializer);
+        <f64>::sse_encode(self.height, serializer);
+        <String>::sse_encode(self.unit, serializer);
     }
 }
 
