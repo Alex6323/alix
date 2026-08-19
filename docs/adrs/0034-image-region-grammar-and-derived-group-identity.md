@@ -157,18 +157,24 @@ Both keys default, so the common span is `hidden="..."` alone. Occurrence
 beats position because v1 authoring is hand-written: counting occurrences of
 the one hidden word is trivial where counting every word is not. Every span
 carries a machine-minted **`position:<n>`** (colon form, like `b:`): the
-1-based UTF-8 BYTE offset where the binding anchored, into the block's
-canonical maskable stream (amended 2026-08-19 from "character offset": bytes
-are the one unit every consumer indexes without a scalar walk; readers
-reject an offset that is out of bounds, not on a scalar boundary, or not
-followed by the exact hidden bytes). Review-time binding never reads it; it
+1-based GRAPHEME index where the binding anchored, into the block's
+canonical maskable stream (amended 2026-08-20, superseding the one-day byte
+amendment; ruled by Alex: authors hand-check a position against what they
+see, and a grapheme is what they see in every script, CJK and emoji
+included; readers reject an index that is out of bounds, not on a grapheme
+boundary, or not followed by the exact hidden text). Grapheme boundaries
+follow the pinned unicode-segmentation version; a segmentation upgrade that
+moves a boundary surfaces as an ordinary loud divergence, and doctor's
+repair flag re-anchors it. Review-time binding never reads it; it
 is the repair anchor. Repair is CERTAIN-ONLY (amended 2026-08-19, replacing
 the reconciliation first recorded here, whose both rewrite branches were
 shown to retarget silently on indistinguishable evidence): the stamper mints
 into an unminted span, leaves a span whose offset holds the exact hidden
 bytes at the authored occurrence untouched as a byte no-op, and rewrites
 nothing else; every diverged state is loud, with `doctor` reporting both
-readings and the concrete edit that resolves each. `doctor` keeps its
+readings and the concrete edit that resolves each, and doctor's explicit
+repair flag applying the keep-authored-occurrence resolution on demand
+(author-invoked, never silent; the author never has to hand-delete a key). `doctor` keeps its
 informational lint: the hidden text occurring more than once in the block. A `matches=` occurrence key was
 considered and rejected as a second locator concept the two keys above
 already express.
