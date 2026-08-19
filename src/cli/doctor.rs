@@ -643,6 +643,7 @@ fn workspace_findings(dir: &Path) -> Report {
                         }
                     }
                     known_cards.extend(alix::personal::card_ids(&deck));
+                    known_cards.extend(deck.dormant_base_ids());
                 }
             }
             let orphans = store.orphans(&known_cards, &known_deck_ids);
@@ -2069,6 +2070,40 @@ printf ']}}'
                 .any(|warning| warning.contains("dangling prerequisite")),
             "{:#?}",
             report.warnings
+        );
+    }
+
+    #[test]
+    fn a_dormant_template_base_id_is_not_an_orphan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let decks = dir.join("decks");
+        std::fs::create_dir(&decks).unwrap();
+        w(dir, "alix.toml", "title = \"Regions\"\n");
+        w(
+            &decks,
+            "regions.md",
+            "---\nformat-version: 1\nid: deck-regiondoc\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
+        );
+        let mut store = alix::store::Store::open_deck(
+            dir.join("progress/deck-regiondoc.json"),
+            "deck-regiondoc",
+            "regions.md",
+        )
+        .unwrap();
+        store.get_or_insert("card-parent1");
+        store.save().unwrap();
+
+        let report = workspace_findings(dir);
+        assert!(
+            report.errors.is_empty(),
+            "the fixture itself must be clean: {:?}",
+            report.errors
+        );
+        let warnings = report.warnings.join("\n");
+        assert!(
+            !warnings.contains("orphaned store key (card) `card-parent1`"),
+            "a blank template's base id is a reserved live identity: {warnings}"
         );
     }
 

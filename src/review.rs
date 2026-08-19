@@ -1587,18 +1587,23 @@ mod tests {
         let crop = image.crop.as_ref().expect("the crop rides the view");
         assert_eq!(90.0, crop.width);
 
-        let parent = &cards[0];
-        assert!(parent.region.is_none(), "cards[0] is the authored parent");
-        let parent_view = CardView::from(parent);
-        let parent_roles: Vec<RegionRole> = parent_view.images[0]
+        assert!(
+            cards.iter().all(|card| card.region.is_some()),
+            "a blank-bearing block is a template: no plain card exists"
+        );
+        let hamate_card = cards
+            .iter()
+            .find(|card| card.back == vec!["hamate".to_string()])
+            .expect("the second blank produced a card");
+        let sibling_roles: Vec<RegionRole> = CardView::from(hamate_card).images[0]
             .regions
             .iter()
             .map(|r| r.role)
             .collect();
         assert_eq!(
-            vec![RegionRole::Mask, RegionRole::Mask, RegionRole::Cover],
-            parent_roles,
-            "the parent asks no region: every blank is a mask on its view"
+            vec![RegionRole::Mask, RegionRole::Asked, RegionRole::Cover],
+            sibling_roles,
+            "each region card asks its own blank and masks the sibling's"
         );
     }
 }

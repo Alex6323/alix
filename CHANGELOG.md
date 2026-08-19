@@ -13,11 +13,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a closed named-field grammar with per-region minted stamps; a stamped
   blank is a reviewable card, a named group is one card asking every member
   (its id derived from the member stamps), and a cover masks without ever
-  asking. The review contract's `ImageDto` grows `regions` and `crop`
-  (`docs/API.md`), classifying each region as asked, a sibling card's mask,
-  or a cover. Clients do not draw masks yet: that lands with the client
-  slice, and no release ships in between. Region cards take no
-  multiple-choice questions until the MC-family design settles.
+  asking. A block carrying a `blank:` is a template, exactly like cloze: it
+  produces only its region cards (the block's note rides each one), while
+  `cover:`/`crop:` alone keep the ordinary card; removing the last `blank:`
+  re-exposes that card with its review history intact, and text holes or a
+  task-list answer beside a `blank:` are a parse error. The review
+  contract's `ImageDto` grows `regions` and `crop` (`docs/API.md`),
+  classifying each region as asked, a sibling card's mask, or a cover.
+  Clients do not draw masks yet: that lands with the client slice, and no
+  release ships in between. Region cards take no multiple-choice questions
+  until the MC-family design settles.
 
 - `alix bug-report` writes a local, reviewable diagnostics archive, and the
   adult web app offers the same download from About. It includes bounded

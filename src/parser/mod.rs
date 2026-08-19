@@ -912,8 +912,9 @@ fn extract_row_stamp(line: &str) -> Option<(String, String)> {
 
 /// Synthesizes the region cards a block's blanks ask (ADR 0034): a named
 /// group is one card asking every member, an ungrouped blank one card each,
-/// a cover no card. Runs after `build_card`, using the first card the block
-/// pushed as the template all its sub-cards already share.
+/// a cover no card. A blank-bearing block is a template: its region cards
+/// REPLACE the cards `build_card` pushed, so no plain card exists beside
+/// them; cover/crop-only blocks keep theirs.
 fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), ParseError> {
     use region::{RawRegion, RegionKind};
 
@@ -942,7 +943,6 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
         let mut card = template.clone();
         card.back = back;
         card.display_back = None;
-        card.note = None;
         // card.line stays the authored block line: card_front_lines exposes
         // every distinct line as a Markdown block boundary, and a directive
         // line there once let removal truncate the parent's answer.
@@ -1015,6 +1015,7 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
             .map(crate::card::RegionSlot::first_line)
             .unwrap_or(0)
     });
+    cards.truncate(block_start);
     cards.extend(new_cards);
     Ok(())
 }
@@ -1394,8 +1395,22 @@ fn build_card(
             });
         }
     }
+
     let images: Vec<CardImage> = front_media.into_iter().map(|(_, image)| image).collect();
     let images_back: Vec<CardImage> = back_media.into_iter().map(|(_, image)| image).collect();
+    // A blank makes the block a template producing only region cards, so a
+    // second card family on the same block has no coherent card set.
+    let first_blank_line = span_regions
+        .iter()
+        .chain(
+            images
+                .iter()
+                .chain(images_back.iter())
+                .flat_map(|image| image.regions.iter()),
+        )
+        .filter(|region| region.kind == region::RegionKind::Blank)
+        .map(|region| region.line)
+        .min();
 
     let mut task_lines = Vec::new();
     let mut has_other = false;
@@ -1464,6 +1479,13 @@ fn build_card(
                     kind: LintKind::ChoiceNeedsBothSides,
                 });
             } else if let Some((_, correct)) = options.into_iter().find(|(checked, _)| *checked) {
+                if let Some(line) = first_blank_line {
+                    return Err(ParseError::InvalidRegion {
+                        line,
+                        message: "a `blank:` region cannot share a block with a task-list answer"
+                            .into(),
+                    });
+                }
                 let mut card = Card::plain(Arc::clone(subject), front, vec![correct], note, line);
                 card.deck_id = Arc::clone(deck_id);
                 card.token = directives.token.as_deref().map(Arc::from);
@@ -1638,6 +1660,13 @@ fn build_card(
         card.givens = directives.givens;
         cards.push(card);
         return Ok(());
+    }
+
+    if let Some(line) = first_blank_line {
+        return Err(ParseError::InvalidRegion {
+            line,
+            message: "a `blank:` region cannot share a block with `\\blank{}` text holes".into(),
+        });
     }
 
     // A cloze card. `reveal:` is retired here: the holes are the trigger.
@@ -4151,8 +4180,12 @@ the answer
         let deck = parse(&region_deck(
             r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" b:a1b2c3 -->"#,
         ));
-        assert_eq!(2, deck.cards.len(), "the parent card plus one region card");
-        let region_card = &deck.cards[1];
+        assert_eq!(
+            1,
+            deck.cards.len(),
+            "the template produces only its region card"
+        );
+        let region_card = &deck.cards[0];
         assert_eq!(Some(format!("{RTOK}-ba1b2c3")), region_card.id());
         assert_eq!(vec!["lunate"], region_card.back);
         assert_eq!("name the parts", region_card.front);
@@ -4171,8 +4204,8 @@ the answer
             )))
         };
         let deck = two("a1b2c3", "d4e5f6");
-        assert_eq!(2, deck.cards.len(), "one group card, not one per member");
-        let group = &deck.cards[1];
+        assert_eq!(1, deck.cards.len(), "one group card, not one per member");
+        let group = &deck.cards[0];
         assert_eq!(
             Some(format!("{RTOK}-gchsbz14b1a30x")),
             group.id(),
@@ -4186,8 +4219,8 @@ the answer
 
         let swapped = two("d4e5f6", "a1b2c3");
         assert_eq!(
-            deck.cards[1].id(),
-            swapped.cards[1].id(),
+            deck.cards[0].id(),
+            swapped.cards[0].id(),
             "member order in the file never changes the id"
         );
     }
@@ -4218,7 +4251,7 @@ the answer
         let grown = parse(&region_deck(
             "<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"a\" b:a1b2c3 -->\n<!-- blank: rect [g] x=5 y=5 width=2 height=2 hidden=\"b\" b:d4e5f6 -->",
         ));
-        assert_ne!(deck.cards[1].id(), grown.cards[1].id());
+        assert_ne!(deck.cards[0].id(), grown.cards[0].id());
     }
 
     #[test]
@@ -4250,7 +4283,7 @@ the answer
         let deck = parse(&region_deck(
             r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" -->"#,
         ));
-        let region_card = &deck.cards[1];
+        let region_card = &deck.cards[0];
         assert_eq!(
             None,
             region_card.id(),
@@ -4264,11 +4297,104 @@ the answer
         let deck = parse(&region_deck(
             "<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->",
         ));
-        let region_card = &deck.cards[1];
+        let region_card = &deck.cards[0];
         assert_eq!(Some(format!("{RTOK}-ba1b2c3")), region_card.id());
         assert!(
             region_card.back.is_empty(),
             "the reveal is visual: unmasking is the answer"
+        );
+    }
+    #[test]
+    fn a_blank_bearing_block_is_a_template_producing_only_its_region_cards() {
+        let deck = parse(&region_deck(
+            "<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->",
+        ));
+        assert_eq!(2, deck.cards.len(), "two blanks, two region cards");
+        assert!(
+            deck.cards.iter().all(|card| card.region.is_some()),
+            "no plain card exists beside a template's region cards"
+        );
+    }
+
+    #[test]
+    fn notes_ride_every_region_card() {
+        let deck = parse(&format!(
+            "## name the parts <!-- id: {RTOK} -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->\n\n---\nthe parts\n> the lunate sits center\n"
+        ));
+        for card in &deck.cards {
+            assert_eq!(
+                Some("the lunate sits center"),
+                card.note.as_deref(),
+                "the block's note rides every region card, as cloze notes do"
+            );
+        }
+    }
+
+    #[test]
+    fn a_text_hole_plus_a_blank_span_is_a_composition_error() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nalpha \\blank{{beta}}\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("text holes"), "{message}");
+    }
+
+    #[test]
+    fn a_text_hole_plus_a_blank_rect_is_a_composition_error() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nalpha \\blank{{beta}}\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("text holes"), "{message}");
+    }
+
+    #[test]
+    fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
+        let error = err(&format!(
+            "## pick <!-- id: {RTOK} -->\n---\n- [x] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("task-list"), "{message}");
+    }
+
+    #[test]
+    fn covers_and_crops_stay_legal_beside_holes_and_task_lists() {
+        let cloze = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n\n---\nw \\blank{{z}} y\n"
+        ));
+        assert!(
+            cloze.cards[0].hole.is_some(),
+            "a cover is a display transform, not a template: the hole cards stand"
+        );
+        assert_eq!(1, cloze.cards[0].images[0].regions.len());
+
+        let choice = parse(&format!(
+            "## pick <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n"
+        ));
+        assert_eq!(1, choice.cards.len());
+        assert!(!choice.cards[0].authored_distractors.is_empty());
+    }
+
+    #[test]
+    fn removing_the_last_blank_directive_re_exposes_the_plain_card_with_its_token() {
+        let template = parse(&region_deck(
+            r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" b:a1b2c3 -->"#,
+        ));
+        assert_eq!(Some(format!("{RTOK}-ba1b2c3")), template.cards[0].id());
+
+        let plain = parse(&region_deck(""));
+        assert_eq!(1, plain.cards.len());
+        assert!(plain.cards[0].region.is_none());
+        assert_eq!(
+            Some(RTOK.to_string()),
+            plain.cards[0].id(),
+            "the block token is the plain card's identity, so its history resumes"
         );
     }
 }

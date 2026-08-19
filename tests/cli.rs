@@ -1157,6 +1157,43 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
 }
 
 #[test]
+fn a_dormant_template_base_id_survives_reset_orphans() {
+    // ADR 0034: a block that gains a `blank:` stops emitting its plain card,
+    // but the base id keeps its history; the supported cleanup must not
+    // judge it orphaned during the template interval.
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "regions.md",
+        "---\nformat-version: 1\nid: \"deck-regiondoc\"\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
+    );
+    let store_path = dir.path().join("state");
+    let mut store = deck_store(&deck, &store_path);
+    store.get_or_insert("card-parent1"); // history from before the blank existed
+    store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        "--orphans",
+        dir.path().to_str().unwrap(),
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("No orphaned progress to reset."),
+        "the dormant base id must stay in the known set: {}",
+        stdout(&out)
+    );
+    let after = std::fs::read_to_string(store.path()).unwrap();
+    assert!(
+        after.contains("card-parent1"),
+        "the base card's history was pruned: {after}"
+    );
+}
+
+#[test]
 fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
     // `doctor` scans the target root's whole aggregate, so `reset --orphans`
     // must too: reading only the named deck's own document hides the orphan

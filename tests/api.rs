@@ -3859,8 +3859,8 @@ fn remove_drops_the_current_card_from_the_session_and_the_deck_file() {
 }
 
 /// The sixteenth review pass's P1, at the user's own route: removing a
-/// REGION card deletes exactly its directive line; the parent's divider and
-/// answer stay in the file, and the parent card survives the session.
+/// REGION card deletes exactly its directive line; the block's heading,
+/// divider, and answer stay in the file for the re-exposed plain card.
 #[test]
 fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
@@ -3876,17 +3876,13 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
     let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
     assert_eq!(
         "anatomy", body["card"]["front"],
-        "the parent serves first: {body}"
-    );
-
-    // Leave the parent (introduce it), so the region card becomes current.
-    let resp = post_gated(&base, "/api/introduce", "{}");
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!(
-        "anatomy", body["card"]["front"],
-        "the region card shares the parent's front: {body}"
+        "the template's region card serves first and shares the block front: {body}"
     );
     let removed_region_id = body["card"]["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        "card-regionfixture000000000000-ba1b2c3", removed_region_id,
+        "the only card is the region card: no plain card exists beside a template: {body}"
+    );
 
     let resp = post_gated(&base, "/api/remove", "{}");
     assert_eq!(200, resp.status);
@@ -3920,47 +3916,65 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
 }
 
 #[test]
-fn removing_a_parent_in_recognize_clears_excluded_region_progress() {
+fn removing_a_recognizable_cloze_hole_clears_excluded_sibling_progress() {
+    // Removing one hole removes the shared source block, so the sibling a
+    // Recognize session excluded (no cached distractors) must lose its
+    // progress too; per-card augmentation makes this mixed state ordinary.
+    const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-clozefixture00000000000\"\n---\n\n## ports <!-- id: card-clozefixture0000000000000 -->\nSSH is \\blank{22}; HTTPS is \\blank{443}.\n";
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
-        std::fs::write(
-            dir.join("regions.md"),
-            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## anatomy <!-- id: card-regionfixture000000000000 -->\n- [x] carpals\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n- [ ] tarsals\n- [ ] phalanges\n",
-        )
-        .unwrap();
+        std::fs::write(dir.join("ports.md"), CLOZE_DECK).unwrap();
+        let cards = parser::parse_str("ports.md", CLOZE_DECK).unwrap();
+        let deck = alix::deck::Deck::load(dir.join("ports.md")).unwrap();
+        let mut cache = alix::augment::AugmentCache::open_for_deck(&deck).unwrap();
+        let first = &cards[0];
+        cache.set_distractors(
+            &first.id().unwrap(),
+            vec!["21".into(), "23".into(), "80".into()],
+            first.content_fingerprint,
+        );
+        cache.save().unwrap();
     });
+    let cards = parser::parse_str("ports.md", CLOZE_DECK).unwrap();
+    let augmented_id = cards[0].id().unwrap();
+    let excluded_id = cards[1].id().unwrap();
 
     post_json(
         &base,
         "/api/select",
-        r#"{"deck":"regions.md","depth":"recall"}"#,
+        r#"{"deck":"ports.md","depth":"recall"}"#,
     );
-    let resp = post_gated(&base, "/api/introduce", "{}");
-    let region: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    let region_id = region["card"]["id"].as_str().unwrap().to_string();
+    post_gated(&base, "/api/introduce", "{}");
     post_gated(&base, "/api/introduce", "{}");
     post_json(&base, "/api/deselect", "{}");
+    assert!(
+        open_instance_store(guard.dir())
+            .progress(&excluded_id)
+            .is_some(),
+        "the recall pass must leave progress on the soon-excluded sibling, or the final assert is vacuous"
+    );
 
     let selected = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"regions.md","depth":"recognize","cram":true}"#,
+        r#"{"deck":"ports.md","depth":"recognize","cram":true}"#,
     );
     let selected: serde_json::Value = serde_json::from_slice(&selected.body).unwrap();
     assert_eq!(
-        "anatomy", selected["card"]["front"],
-        "the recognizable parent is current while the region is depth-excluded: {selected}"
+        Some(augmented_id.as_str()),
+        selected["card"]["id"].as_str(),
+        "the augmented hole is current while its sibling is depth-excluded: {selected}"
     );
     assert!(
         selected["choices"].is_array(),
-        "the parent has authored choices"
+        "the augmented hole has cached distractors: {selected}"
     );
 
     let removed = post_gated(&base, "/api/remove", "{}");
     assert_eq!(200, removed.status);
     let store = open_instance_store(guard.dir());
     assert!(
-        store.progress(&region_id).is_none(),
-        "parent removal must clear progress for the region excluded from the Recognize session"
+        store.progress(&excluded_id).is_none(),
+        "removing one hole removes the source block, so the excluded sibling's progress must clear"
     );
 }
 

@@ -296,6 +296,16 @@ impl Deck {
                 .any(|citation| citation.asset.is_some())
         })
     }
+
+    /// Base ids of blank-template blocks (ADR 0034): reserved live identities
+    /// while no plain card exists, so orphan inventories must include them or
+    /// the supported cleanup prunes a re-exposable plain card's history.
+    pub fn dormant_base_ids(&self) -> impl Iterator<Item = String> + '_ {
+        self.cards
+            .iter()
+            .filter(|card| card.region.is_some())
+            .filter_map(|card| card.token.as_deref().map(str::to_string))
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1555,6 +1565,38 @@ mod tests {
             text,
             remove_card_blocks(text, &fronts(text), &[3]),
             "a directive line is never a block boundary, so the block path cannot truncate through it"
+        );
+    }
+
+    #[test]
+    fn a_blank_templates_base_id_is_reserved_while_dormant() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "regions.md",
+            "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+        assert!(
+            deck.cards.iter().all(|card| card.region.is_some()),
+            "the template emits no plain card"
+        );
+        assert_eq!(
+            vec!["card-parent1".to_string()],
+            deck.dormant_base_ids().collect::<Vec<_>>(),
+            "the base id stays a live identity for orphan inventories"
+        );
+
+        let plain = write_deck(
+            dir.path(),
+            "plain.md",
+            "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n\n---\ncarpals\n",
+        );
+        let deck = Deck::load(&plain).unwrap();
+        assert_eq!(
+            0,
+            deck.dormant_base_ids().count(),
+            "a plain card's id is already in the inventory; nothing is reserved"
         );
     }
 

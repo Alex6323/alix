@@ -1999,18 +1999,15 @@ mod tests {
     }
 
     #[test]
-    fn removing_a_parent_drops_region_siblings_outside_the_session_cap() {
+    fn removing_a_cloze_hole_drops_siblings_outside_the_session_cap() {
         let (mut store, _dir) = empty_store();
-        let parent = card("deck.md", 1);
-        let mut region = parent.clone();
-        region.region = Some(crate::card::RegionSlot::Single {
-            stamp: Some(Arc::from("a1b2c3")),
-            hidden: Some("lunate".into()),
-            line: 3,
-        });
-        let region_id = region.id().unwrap();
+        let mut current = card("deck.md", 1);
+        current.hole = Some(0);
+        let mut sibling = card("deck.md", 1);
+        sibling.hole = Some(1);
+        let sibling_id = sibling.id().unwrap();
         let mut session = Session::new(
-            vec![parent, region],
+            vec![current, sibling],
             &mut store,
             sched(),
             SessionOptions {
@@ -2024,25 +2021,22 @@ mod tests {
         assert!(
             removed
                 .iter()
-                .any(|card| card.id().as_deref() == Some(region_id.as_str())),
-            "removing the parent block must drop its region sibling even when the cap kept that sibling out of the roster"
+                .any(|card| card.id().as_deref() == Some(sibling_id.as_str())),
+            "removing one hole removes its source block, so a sibling the cap kept out of the roster must go too"
         );
     }
 
     #[test]
-    fn removing_a_parent_returns_depth_excluded_regions_for_store_cleanup() {
+    fn removing_a_cloze_hole_returns_depth_excluded_siblings_for_store_cleanup() {
         let (mut store, _dir) = empty_store();
-        let parent = card("deck.md", 1);
-        let mut region = parent.clone();
-        region.region = Some(crate::card::RegionSlot::Single {
-            stamp: Some(Arc::from("a1b2c3")),
-            hidden: Some("lunate".into()),
-            line: 3,
-        });
-        let region_id = region.id().unwrap();
-        store.get_or_insert(&region_id).introduced_ms = Some(0);
+        let mut current = card("deck.md", 1);
+        current.hole = Some(0);
+        let mut sibling = card("deck.md", 1);
+        sibling.hole = Some(1);
+        let sibling_id = sibling.id().unwrap();
+        store.get_or_insert(&sibling_id).introduced_ms = Some(0);
         let mut session = Session::new(
-            vec![parent],
+            vec![current],
             &mut store,
             sched(),
             SessionOptions {
@@ -2051,7 +2045,7 @@ mod tests {
             },
             0,
         );
-        session.set_depth_excluded(vec![region]);
+        session.set_depth_excluded(vec![sibling]);
 
         let removed = session.remove_current(&mut store, 0);
         for card in removed {
@@ -2061,8 +2055,8 @@ mod tests {
         }
 
         assert!(
-            store.progress(&region_id).is_none(),
-            "removing the parent block must return its depth-excluded region so the serve layer clears that region's progress"
+            store.progress(&sibling_id).is_none(),
+            "removing one hole removes its source block, so a depth-excluded sibling must come back for the serve layer to clear its progress"
         );
     }
 

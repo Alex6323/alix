@@ -352,6 +352,7 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
         known_deck_tokens.extend(deck.deck_token.clone());
         known_cards.extend(deck.cards.iter().filter_map(Card::id));
         known_cards.extend(alix::personal::card_ids(&deck));
+        known_cards.extend(deck.dormant_base_ids());
     }
 
     let mut store = match args.target.as_deref() {
