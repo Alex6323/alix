@@ -250,7 +250,7 @@ pub(crate) struct LinePiece {
     pub math: bool,
 }
 
-pub(crate) fn line_pieces(text: &str) -> Vec<LinePiece> {
+pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Vec<LinePiece> {
     let LineClassification {
         glyphs,
         bold,
@@ -258,57 +258,116 @@ pub(crate) fn line_pieces(text: &str) -> Vec<LinePiece> {
         removed,
         ..
     } = classify_line(text);
+    let linked = link_syntax_mask(&glyphs);
+    let byte_at: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
     let mut pieces: Vec<LinePiece> = Vec::new();
-    let mut index = 0;
-    while index < glyphs.len() {
-        if let Some(span_index) = glyphs[index].math {
-            let start = index;
-            while index < glyphs.len() && glyphs[index].math == Some(span_index) {
-                index += 1;
-            }
-            pieces.push(LinePiece {
-                text: glyphs[start..index].iter().map(|glyph| glyph.ch).collect(),
-                starts: glyphs[start..index]
-                    .iter()
-                    .map(|glyph| glyph.raw_index)
-                    .collect(),
-                ends: glyphs[start..index]
-                    .iter()
-                    .map(|glyph| glyph.raw_index + 1)
-                    .collect(),
-                bold: false,
-                italic: false,
-                code: false,
-                math: true,
-            });
+    // A dropped glyph (link syntax, or an excluded authored range such as a
+    // cloze hole footprint) splits the surrounding text into separate
+    // pieces, so no match and no splice can quietly span the gap.
+    let mut gap = false;
+    // The math span the last pushed piece belongs to, so one formula stays
+    // one piece while a gap still splits it.
+    let mut last_math: Option<usize> = None;
+    for (index, glyph) in glyphs.iter().enumerate() {
+        if glyph.math.is_none() && removed[index] {
             continue;
         }
-        if removed[index] {
-            index += 1;
+        if linked[index]
+            || excluded
+                .iter()
+                .any(|range| range.contains(&byte_at[glyph.raw_index]))
+        {
+            gap = true;
             continue;
         }
-        let glyph = glyphs[index];
-        let style = (bold[index], italic[index], glyph.code);
         let splice_start = glyph.raw_index - usize::from(glyph.escaped && !glyph.code);
+        if let Some(span_index) = glyph.math {
+            match pieces.last_mut() {
+                Some(piece) if piece.math && last_math == Some(span_index) && !gap => {
+                    piece.text.push(glyph.ch);
+                    piece.starts.push(glyph.raw_index);
+                    piece.ends.push(glyph.raw_index + 1);
+                }
+                _ => {
+                    pieces.push(LinePiece {
+                        text: glyph.ch.to_string(),
+                        starts: vec![glyph.raw_index],
+                        ends: vec![glyph.raw_index + 1],
+                        bold: false,
+                        italic: false,
+                        code: false,
+                        math: true,
+                    });
+                    last_math = Some(span_index);
+                }
+            }
+            gap = false;
+            continue;
+        }
+        let style = (bold[index], italic[index], glyph.code);
         match pieces.last_mut() {
-            Some(piece) if !piece.math && (piece.bold, piece.italic, piece.code) == style => {
+            Some(piece)
+                if !piece.math && (piece.bold, piece.italic, piece.code) == style && !gap =>
+            {
                 piece.text.push(glyph.ch);
                 piece.starts.push(splice_start);
                 piece.ends.push(glyph.raw_index + 1);
             }
-            _ => pieces.push(LinePiece {
-                text: glyph.ch.to_string(),
-                starts: vec![splice_start],
-                ends: vec![glyph.raw_index + 1],
-                bold: style.0,
-                italic: style.1,
-                code: style.2,
-                math: false,
-            }),
+            _ => {
+                pieces.push(LinePiece {
+                    text: glyph.ch.to_string(),
+                    starts: vec![splice_start],
+                    ends: vec![glyph.raw_index + 1],
+                    bold: style.0,
+                    italic: style.1,
+                    code: style.2,
+                    math: false,
+                });
+                last_math = None;
+            }
         }
-        index += 1;
+        gap = false;
     }
     pieces
+}
+
+/// Marks the glyphs of every complete `[label](destination)` link: the
+/// brackets, the parentheses, and the destination drop from the maskable
+/// stream while the label stays visible text. An incomplete pattern is
+/// ordinary prose. Display projection never consults this: clients still
+/// receive the raw syntax until link styling lands.
+fn link_syntax_mask(glyphs: &[Glyph]) -> Vec<bool> {
+    let plain = |glyph: &Glyph| !glyph.escaped && !glyph.code && glyph.math.is_none();
+    let mut mask = vec![false; glyphs.len()];
+    let mut index = 0;
+    while index < glyphs.len() {
+        if !(plain(&glyphs[index]) && glyphs[index].ch == '[') {
+            index += 1;
+            continue;
+        }
+        let close = (index + 1..glyphs.len())
+            .find(|&at| plain(&glyphs[at]) && matches!(glyphs[at].ch, ']' | '['));
+        let Some(close) = close.filter(|&at| glyphs[at].ch == ']') else {
+            index += 1;
+            continue;
+        };
+        if glyphs.get(close + 1).map(|glyph| glyph.ch) != Some('(') {
+            index = close + 1;
+            continue;
+        }
+        let Some(close_paren) =
+            (close + 2..glyphs.len()).find(|&at| plain(&glyphs[at]) && glyphs[at].ch == ')')
+        else {
+            index = close + 1;
+            continue;
+        };
+        mask[index] = true;
+        mask[close..=close_paren]
+            .iter_mut()
+            .for_each(|dropped| *dropped = true);
+        index = close_paren + 1;
+    }
+    mask
 }
 
 fn append_runs(target: &mut Vec<InlineRun>, source: &mut Vec<InlineRun>) {
@@ -601,7 +660,7 @@ mod tests {
 
     #[test]
     fn line_pieces_map_plain_text_identically() {
-        let pieces = line_pieces("plain text");
+        let pieces = line_pieces("plain text", &[]);
         assert_eq!(1, pieces.len());
         assert_eq!("plain text", pieces[0].text);
         assert_eq!((0..10).collect::<Vec<_>>(), pieces[0].starts);
@@ -611,7 +670,7 @@ mod tests {
 
     #[test]
     fn line_pieces_split_styled_from_plain_and_skip_the_markers() {
-        let pieces = line_pieces("**New** York");
+        let pieces = line_pieces("**New** York", &[]);
         assert_eq!(2, pieces.len());
         assert_eq!(("New", true), (pieces[0].text.as_str(), pieces[0].bold));
         assert_eq!(vec![2, 3, 4], pieces[0].starts);
@@ -621,7 +680,7 @@ mod tests {
 
     #[test]
     fn line_pieces_anchor_an_escaped_char_at_its_backslash() {
-        let pieces = line_pieces("a\\*b");
+        let pieces = line_pieces("a\\*b", &[]);
         assert_eq!(1, pieces.len(), "{pieces:?}");
         assert_eq!("a*b", pieces[0].text);
         assert_eq!(
@@ -633,8 +692,40 @@ mod tests {
     }
 
     #[test]
+    fn line_pieces_drop_link_syntax_and_keep_the_label_as_its_own_piece() {
+        let pieces = line_pieces("see [the RFC](https://x) now", &[]);
+        assert_eq!(3, pieces.len(), "{pieces:?}");
+        assert_eq!("see ", pieces[0].text);
+        assert_eq!("the RFC", pieces[1].text);
+        assert_eq!(
+            vec![5, 6, 7, 8, 9, 10, 11],
+            pieces[1].starts,
+            "the label maps to its authored bytes inside the brackets"
+        );
+        assert_eq!(
+            " now", pieces[2].text,
+            "the destination and parens are gone"
+        );
+    }
+
+    #[test]
+    fn an_incomplete_link_pattern_stays_ordinary_prose() {
+        let pieces = line_pieces("just [brackets] here", &[]);
+        assert_eq!(1, pieces.len(), "{pieces:?}");
+        assert_eq!("just [brackets] here", pieces[0].text);
+    }
+
+    #[test]
+    fn an_excluded_range_splits_the_piece_at_the_gap() {
+        let pieces = line_pieces("aa XX bb", std::slice::from_ref(&(3..5)));
+        assert_eq!(2, pieces.len(), "{pieces:?}");
+        assert_eq!("aa ", pieces[0].text);
+        assert_eq!(" bb", pieces[1].text, "no match or splice may span the gap");
+    }
+
+    #[test]
     fn line_pieces_mark_code_contents_and_exclude_backticks() {
-        let pieces = line_pieces("a `code` b");
+        let pieces = line_pieces("a `code` b", &[]);
         assert_eq!(3, pieces.len(), "{pieces:?}");
         assert_eq!(("code", true), (pieces[1].text.as_str(), pieces[1].code));
         assert_eq!(vec![3, 4, 5, 6], pieces[1].starts);
@@ -642,7 +733,7 @@ mod tests {
 
     #[test]
     fn line_pieces_mark_math_source_and_exclude_dollar_delimiters() {
-        let pieces = line_pieces("sum $x+y$ here");
+        let pieces = line_pieces("sum $x+y$ here", &[]);
         assert_eq!(3, pieces.len(), "{pieces:?}");
         assert_eq!(("x+y", true), (pieces[1].text.as_str(), pieces[1].math));
         assert_eq!(vec![5, 6, 7], pieces[1].starts);

@@ -1343,6 +1343,13 @@ fn build_card(
         directives,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
+    {
+        let mut heading_lints = Vec::new();
+        let segments = scan_markers(&heading, line, Side::Front, &mut heading_lints)?;
+        if segments.iter().any(|s| matches!(s, Seg::Image { .. })) {
+            return Err(ParseError::MixedImageLine(line));
+        }
+    }
     let (front, answer) = if divided {
         let mut front_lines = vec![heading];
         for (lineno, text) in &front_extra {
@@ -4446,6 +4453,17 @@ the answer
     }
 
     #[test]
+    fn a_cover_span_cannot_bind_to_text_inside_a_cloze_hole() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nthe first is \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("occurs 0 time(s)"), "{message}");
+    }
+
+    #[test]
     fn a_span_binds_into_styled_contents_over_the_stream() {
         let deck = parse(&format!(
             "## q <!-- id: {RTOK} -->\n---\nthe **lunate** bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
@@ -4463,6 +4481,17 @@ the answer
             panic!("expected InvalidRegion, got {error:?}");
         };
         assert!(message.contains("style boundary"), "{message}");
+    }
+
+    #[test]
+    fn a_span_cannot_bind_to_a_markdown_link_destination() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nread [the guide](https://secret.example/path)\n<!-- blank: span hidden=\"secret.example\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("occurs 0 time(s)"), "{message}");
     }
 
     #[test]
@@ -4520,6 +4549,75 @@ the answer
             indented.cards[0].images_back.len(),
             "whitespace around an own-line image is not prose"
         );
+    }
+
+    #[test]
+    fn an_image_sharing_the_card_heading_with_prose_is_rejected() {
+        assert_eq!(
+            ParseError::MixedImageLine(1),
+            err("## identify ![car](car.png)\nanswer\n")
+        );
+    }
+
+    #[test]
+    fn occurrence_counting_skips_hole_answers_and_link_destinations() {
+        let beside_hole = err(&format!(
+            "## ports <!-- id: {RTOK} -->\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" occurrence=2 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = beside_hole else {
+            panic!("expected InvalidRegion, got {beside_hole:?}");
+        };
+        assert!(
+            message.contains("occurs 1 time(s)"),
+            "the hole's answer is invisible, so only the visible 22 counts: {message}"
+        );
+
+        let beside_link = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://rfc.example/22) for port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = beside_link else {
+            panic!("expected InvalidRegion, got {beside_link:?}");
+        };
+        assert!(
+            message.contains("occurs 1 time(s)"),
+            "the destination is invisible, so only the visible 22 counts: {message}"
+        );
+    }
+
+    #[test]
+    fn prose_beside_holes_and_links_stays_blankable() {
+        let beside_hole = parse(&format!(
+            "## ports <!-- id: {RTOK} -->\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" -->\n"
+        ));
+        assert!(
+            beside_hole.cards.iter().all(|card| card.region.is_none()),
+            "a cover makes no card; the cloze cards stand"
+        );
+
+        let beside_link = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"port\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(vec!["port"], beside_link.cards[0].back);
+
+        let label = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"RFC\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            vec!["RFC"],
+            label.cards[0].back,
+            "the label is matchable text"
+        );
+    }
+
+    #[test]
+    fn a_match_crossing_a_link_label_edge_is_a_style_boundary_error() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://x) now\n<!-- blank: span hidden=\"see the\" boundary=char b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("style boundary"), "{message}");
     }
 
     #[test]

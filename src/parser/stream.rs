@@ -86,12 +86,17 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
         if segments.iter().any(|seg| matches!(seg, Seg::Image { .. })) {
             continue;
         }
+        let holes = if segments.iter().any(|seg| matches!(seg, Seg::Hole { .. })) {
+            super::cloze::hole_footprints(raw)
+        } else {
+            Vec::new()
+        };
         let byte_of: Vec<usize> = raw
             .char_indices()
             .map(|(byte, _)| byte)
             .chain([raw.len()])
             .collect();
-        let built: Vec<BuiltPiece> = line_pieces(raw)
+        let built: Vec<BuiltPiece> = line_pieces(raw, &holes)
             .into_iter()
             .map(|piece| {
                 let map = piece

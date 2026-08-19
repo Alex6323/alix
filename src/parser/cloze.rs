@@ -286,6 +286,49 @@ fn scan_hole_name(after_bracket: &str) -> Option<(String, &str)> {
     is_hole_name(name).then(|| (name.to_string(), &after_bracket[close + 1..]))
 }
 
+/// Byte ranges of every `\blank{...}` footprint in a line, for the maskable
+/// stream: hole source syntax and answers never enter context text. Mirrors
+/// `scan_markers`'s escape and hole branches via the same primitives; images
+/// need no mirroring because an image never shares a line with a hole (the
+/// mixed-image guard rejects the line first). Runs only on lines that
+/// already parsed, so a malformed hole here just ends the scan.
+pub(super) fn hole_footprints(line_text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut footprints = Vec::new();
+    let mut rest = line_text;
+    let offset = |rest: &str| line_text.len() - rest.len();
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("\\\\blank") {
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix("\\![") {
+            rest = after;
+        } else if rest.starts_with("\\blank") {
+            let start = offset(rest);
+            let after = &rest["\\blank".len()..];
+            let (named, after_name) = match after.strip_prefix('[') {
+                Some(bracketed) => match scan_hole_name(bracketed) {
+                    Some((name, rest_after)) => (Some(name), rest_after),
+                    None => return footprints,
+                },
+                None => (None, after),
+            };
+            if let Some(arg) = after_name.strip_prefix('{') {
+                let Ok((_, after_hole)) = scan_group(arg, 0) else {
+                    return footprints;
+                };
+                footprints.push(start..offset(after_hole));
+                rest = after_hole;
+            } else if named.is_some() {
+                return footprints;
+            } else {
+                rest = after;
+            }
+        } else if let Some(ch) = rest.chars().next() {
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    footprints
+}
+
 fn scan_group(arg: &str, lineno: usize) -> Result<(String, &str), ParseError> {
     let mut content = String::new();
     let mut depth = 1usize;
