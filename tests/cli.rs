@@ -1223,6 +1223,58 @@ fn a_full_deck_reset_clears_dormant_template_base_history() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn a_dormant_only_deck_reset_prompt_counts_the_schedule_it_will_delete() {
+    use std::{io::Write, os::unix::fs::PermissionsExt, process::Stdio};
+
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "regions.md",
+        "---\nformat-version: 1\nid: \"deck-regiondoc\"\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
+    );
+    let store_path = dir.path().join("state");
+    let mut store = deck_store(&deck, &store_path);
+    store.get_or_insert("card-parent1");
+    store.save().unwrap();
+
+    let runner = dir.path().join("reset.sh");
+    std::fs::write(
+        &runner,
+        "#!/bin/sh\nexec \"$ALIX_BIN\" reset \"$ALIX_DECK\" --store \"$ALIX_STORE\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut child = Command::new("script")
+        .args(["-q", "-e", "-c", runner.to_str().unwrap(), "/dev/null"])
+        .env("ALIX_BIN", env!("CARGO_BIN_EXE_alix"))
+        .env("ALIX_DECK", &deck)
+        .env("ALIX_STORE", &store_path)
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("XDG_DATA_HOME", dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"no\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset progress for 1 card(s)"),
+        "the confirmation must count the dormant schedule it will wipe: {}",
+        stdout(&out)
+    );
+    assert!(
+        deck_store(&deck, &store_path).get("card-parent1").is_some(),
+        "a declined reset removed the dormant schedule"
+    );
+}
+
 #[test]
 fn a_personal_templates_dormant_base_id_survives_reset_orphans() {
     let dir = TempDir::new().unwrap();

@@ -292,7 +292,15 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
             return Ok(());
         }
 
-        let n = present.len();
+        // The prompt must count what reset_decks will actually remove: the
+        // deduplicated union of stored live, personal, and dormant ids.
+        let n = present
+            .iter()
+            .map(|(id, _)| id.as_str())
+            .chain(personal_ids.iter().map(String::as_str))
+            .chain(dormant_ids.iter().map(String::as_str))
+            .collect::<HashSet<&str>>()
+            .len();
         if !confirm(
             &format!("Reset progress for {n} card(s) in {label}?"),
             args.yes,
