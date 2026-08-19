@@ -658,10 +658,10 @@ image's own coordinate space (`"px"`) or percentages of the full source
 is drawn as a mask. `role` names the region's purpose: `"asked"` is the
 region this card asks, `"mask"` belongs to a sibling card, `"cover"` hides
 content that would give an answer away. `reveal_on_answer` alone decides
-unmasking: when true (an asked region, or a cover on an ordinary card with no
-region questions to protect) the client removes the mask on local answer
-reveal; when false (a sibling mask, or a cover on a region card) the mask
-stays on both sides. Clients never infer reveal behavior from `role` or the
+unmasking: when true (an asked region, or a cover on a card whose block poses
+no sibling questions) the client removes the mask on local answer reveal;
+when false (a sibling mask, or a cover on a region or cloze card, whose
+content could give a sibling's answer away) the mask stays on both sides. Clients never infer reveal behavior from `role` or the
 card id. Masking is client-local view state: no endpoint records a reveal.
 
 ### CropDto

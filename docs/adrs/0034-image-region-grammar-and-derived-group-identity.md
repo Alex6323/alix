@@ -63,13 +63,14 @@ Three keywords, and no fourth is implied:
   answer was overloaded: an unlabelled region has no natural text and still
   wants asking, while a legend that gives answers away wants hiding and never
   asking. A cover is scoped to the media element rather than to a card, takes no
-  group name and carries no stamp. On a region card it never reveals, because
-  its content gives away sibling cards on the same picture and that reason
-  does not expire when one card is answered; on a plain card there are no
-  sibling questions to protect, so it reveals with the answer (amended
-  2026-08-19, replacing the unconditional never-reveals rule; ruled by Alex:
-  the emblem that leaks the answer needs hiding only until the learner
-  answers). Which behavior applies travels in the wire contract
+  group name and carries no stamp. On a region card or a cloze
+  sub-card it never reveals, because its content gives away sibling cards of
+  the same block and that reason does not expire when one card is answered;
+  on a card whose block poses no sibling questions (neither region nor hole)
+  it reveals with the answer (amended 2026-08-19, replacing the unconditional
+  never-reveals rule; ruled by Alex twice: the emblem that leaks the answer
+  needs hiding only until the learner answers, and a cloze legend cover
+  never reveals). Which behavior applies travels in the wire contract
   (`reveal_on_answer`), never inferred by a client from role or card id.
 - **`crop:`** is a viewport onto the media element, so one large source serves
   many cards without being cut into files. Region coordinates remain absolute in

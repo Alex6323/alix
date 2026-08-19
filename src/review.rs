@@ -142,6 +142,13 @@ fn image_views(
         .collect()
 }
 
+/// A cover reveals with the answer only on a card whose block poses no
+/// sibling questions the cover could give away: neither a region card nor a
+/// cloze sub-card (Alex, 2026-08-19; the cloze ruling closes the step-B gap).
+fn covers_reveal(card: &Card) -> bool {
+    card.region.is_none() && card.hole.is_none()
+}
+
 /// Which stamps the projected card asks: a single region's own stamp, a
 /// group's member stamps, and none for an ordinary card.
 fn asked_stamps(card: &Card) -> Vec<std::sync::Arc<str>> {
@@ -189,14 +196,14 @@ impl CardView {
                 let asked = move |stamp: Option<&str>| {
                     stamp.is_some_and(|s| stamps.iter().any(|a| a.as_ref() == s))
                 };
-                image_views(&card.images, &asked, card.region.is_none())
+                image_views(&card.images, &asked, covers_reveal(card))
             },
             images_back: {
                 let stamps = asked_stamps(card);
                 let asked = move |stamp: Option<&str>| {
                     stamp.is_some_and(|s| stamps.iter().any(|a| a.as_ref() == s))
                 };
-                image_views(&card.images_back, &asked, card.region.is_none())
+                image_views(&card.images_back, &asked, covers_reveal(card))
             },
             citations: card
                 .citations
@@ -1642,5 +1649,26 @@ mod tests {
             cover.reveal_on_answer,
             "a plain card has no sibling questions to protect, so its cover reveals (Alex, 2026-08-19)"
         );
+    }
+
+    #[test]
+    fn a_cloze_cards_cover_stays_masked_to_protect_its_sibling_question() {
+        let text = "## diagram\n![](parts.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\n\n---\nThe first is \\blank{alpha}; the second is \\blank{beta}.\n";
+        let cards = crate::parser::parse_str("t.md", text).unwrap();
+        assert_eq!(2, cards.len(), "the block produces sibling hole cards");
+
+        for card in &cards {
+            assert!(
+                card.hole.is_some(),
+                "this is a cloze card, not a plain card"
+            );
+            assert!(card.region.is_none(), "a text hole is not an image region");
+            let cover = &CardView::from(card).images[0].regions[0];
+            assert_eq!(RegionRole::Cover, cover.role);
+            assert!(
+                !cover.reveal_on_answer,
+                "answering one hole must not uncover material that protects its sibling hole"
+            );
+        }
     }
 }
