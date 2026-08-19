@@ -386,6 +386,14 @@ mod tests {
     }
 
     #[test]
+    fn a_boxed_marker_inside_verb_renders_as_literal_text_not_a_box() {
+        let literal = render_svg(r"\verb|\boxed{?}|").expect("the verbatim form parses");
+        assert!(!literal.contains("<rect"), "{literal}");
+        let blank = render_svg(r"\boxed{?}").expect("the boxed blank parses");
+        assert!(blank.contains("<rect"), "{blank}");
+    }
+
+    #[test]
     fn unsafe_svg_features_are_rejected() {
         let unsafe_fragments = [
             r#"<div xmlns="http://www.w3.org/2000/svg"><path/></div>"#,

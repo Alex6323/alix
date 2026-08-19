@@ -69,6 +69,21 @@ fn tokens(payload: &str) -> Vec<Token> {
                     word = true;
                     end = next_at + 1;
                 }
+                if &payload[at..end] == r"\verb" {
+                    if let Some((next_at, '*')) = chars.peek().copied() {
+                        chars.next();
+                        end = next_at + 1;
+                    }
+                    if let Some((delimiter_at, delimiter)) = chars.next() {
+                        end = delimiter_at + delimiter.len_utf8();
+                        for (body_at, body) in chars.by_ref() {
+                            end = body_at + body.len_utf8();
+                            if body == delimiter {
+                                break;
+                            }
+                        }
+                    }
+                }
                 if !word && let Some((next_at, next)) = chars.peek().copied() {
                     chars.next();
                     end = next_at + next.len_utf8();
@@ -259,6 +274,20 @@ mod tests {
                 "{hidden}"
             );
         }
+    }
+
+    #[test]
+    fn verbatim_math_is_one_indivisible_sequence() {
+        for payload in [r"\verb|target| x", r"\verb*étargeté x"] {
+            assert!(
+                matches!(
+                    unit(payload, "target"),
+                    Err(Violation::EndpointInsideControlSequence(_))
+                ),
+                "{payload}"
+            );
+        }
+        assert_eq!(Ok(()), unit(r"\verb|a| target", "target"));
     }
 
     #[test]

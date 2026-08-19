@@ -4918,6 +4918,17 @@ the answer
     }
 
     #[test]
+    fn a_span_inside_math_verb_is_rejected_because_the_blank_stays_literal() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n$\\verb|target|$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+        ));
+        assert!(
+            matches!(error, ParseError::InvalidRegion { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[test]
     fn ordinary_atoms_bind_in_inline_and_display_math() {
         for (line, hidden, masked) in [
             (r"$x \leq y$", "y", "$x \\leq \u{2370}$"),
