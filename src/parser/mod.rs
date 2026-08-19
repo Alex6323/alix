@@ -256,8 +256,8 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
         match block {
             RawBlock::Card(raw) => {
                 let block_start = cards.len();
-                build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?;
-                build_region_cards(block_start, &mut cards)?;
+                let prose = build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?;
+                build_region_cards(block_start, &mut cards, prose.as_ref())?;
             }
             RawBlock::Table(raw) => {
                 tables.push(TableStamping {
@@ -917,12 +917,33 @@ fn extract_row_stamp(line: &str) -> Option<(String, String)> {
     (key == "r").then(|| (trim_ws(&prefix[..start]).to_string(), value))
 }
 
+/// One span's bound authored location, carried from binding to masking so
+/// both speak the same occurrence (the canonical stream resolved it once).
+struct SpanSplice {
+    directive_line: usize,
+    cover: bool,
+    answer_index: usize,
+    range: (usize, usize),
+}
+
+/// The prose a blank-bearing block hands its region cards: raw answer lines
+/// (None where a line is image-only and rides the media list instead) plus
+/// every span's bound splice.
+struct BlockProse {
+    lines: Vec<Option<String>>,
+    splices: Vec<SpanSplice>,
+}
+
 /// Synthesizes the region cards a block's blanks ask (ADR 0034): a named
 /// group is one card asking every member, an ungrouped blank one card each,
 /// a cover no card. A blank-bearing block is a template: its region cards
 /// REPLACE the cards `build_card` pushed, so no plain card exists beside
 /// them; cover/crop-only blocks keep theirs.
-fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), ParseError> {
+fn build_region_cards(
+    block_start: usize,
+    cards: &mut Vec<Card>,
+    prose: Option<&BlockProse>,
+) -> Result<(), ParseError> {
     use region::{RawRegion, RegionKind};
 
     use crate::card::{GroupMember, RegionSlot};
@@ -946,6 +967,38 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
         return Ok(());
     }
 
+    // The block's prose rides every region card as context, its own span as
+    // the blank marker, sibling and cover spans as the hidden marker; a rect
+    // card masks every span. Splices land on authored bytes, so styling and
+    // escapes survive around the markers.
+    let masked_context = |own: &[usize]| -> Vec<String> {
+        let Some(prose) = prose else {
+            return Vec::new();
+        };
+        prose
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(index, line)| {
+                let mut line = line.clone()?;
+                let mut cuts: Vec<&SpanSplice> = prose
+                    .splices
+                    .iter()
+                    .filter(|splice| splice.answer_index == index)
+                    .collect();
+                cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
+                for cut in cuts {
+                    let marker = if !cut.cover && own.contains(&cut.directive_line) {
+                        cloze::BLANK
+                    } else {
+                        cloze::HIDDEN
+                    };
+                    line.replace_range(cut.range.0..cut.range.1, marker);
+                }
+                Some(line)
+            })
+            .collect()
+    };
     let region_card = |slot: RegionSlot, back: Vec<String>| {
         let mut card = template.clone();
         card.back = back;
@@ -953,6 +1006,12 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
         // card.line stays the authored block line: card_front_lines exposes
         // every distinct line as a Markdown block boundary, and a directive
         // line there once let removal truncate the parent's answer.
+        let own: Vec<usize> = match &slot {
+            RegionSlot::Single { line, .. } => vec![*line],
+            RegionSlot::Group { members, .. } => members.iter().map(|m| m.line).collect(),
+        };
+        card.context = masked_context(&own);
+        card.context_leads = !card.context.is_empty();
         card.region = Some(slot);
         card.hole = None;
         card.hole_name = None;
@@ -960,7 +1019,15 @@ fn build_region_cards(block_start: usize, cards: &mut Vec<Card>) -> Result<(), P
         card.direction = None;
         card.input = None;
         card.row = None;
-        card.content_fingerprint = content_fingerprint(&card.front, &card.back);
+        // The effective question includes the masked context (ADR 0034): two
+        // spans over the same word in different sentences are different
+        // questions, so cached AI artifacts stale when the context moves.
+        // The effective question includes the masked context (ADR 0034): two
+        // spans over the same word in different sentences are different
+        // questions, so cached AI artifacts stale when the context moves.
+        let mut question = card.context.clone();
+        question.extend(card.back.iter().cloned());
+        card.content_fingerprint = content_fingerprint(&card.front, &question);
         card
     };
 
@@ -1331,7 +1398,7 @@ fn build_card(
     raw: RawCard,
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
-) -> Result<(), ParseError> {
+) -> Result<Option<BlockProse>, ParseError> {
     let RawCard {
         line,
         front: heading,
@@ -1400,6 +1467,7 @@ fn build_card(
     // hidden text must occur at least N times in its MATCHABLE text, or the
     // anchor is gone and the deck fails loudly. Plain blocks never pay for
     // the stream.
+    let mut splices: Vec<SpanSplice> = Vec::new();
     if !span_regions.is_empty() {
         let stream = stream::maskable_stream(&answer, &parsed);
         for span in &span_regions {
@@ -1443,6 +1511,16 @@ fn build_card(
                     message,
                 });
             }
+            let (start, end) = candidates[*n as usize - 1];
+            let (answer_index, range) = stream
+                .splice(&(start..end))
+                .expect("an accepted candidate lies within one matchable piece");
+            splices.push(SpanSplice {
+                directive_line: span.line,
+                cover: span.kind == region::RegionKind::Cover,
+                answer_index,
+                range: (range.start, range.end),
+            });
         }
         for marker in [cloze::BLANK, cloze::HIDDEN] {
             if let Some(at) = stream.text.find(marker) {
@@ -1562,7 +1640,7 @@ fn build_card(
                 card.givens = directives.givens;
                 card.authored_distractors = distractors;
                 cards.push(card);
-                return Ok(());
+                return Ok(None);
             }
         }
     }
@@ -1725,7 +1803,15 @@ fn build_card(
         card.citations = directives.citations;
         card.givens = directives.givens;
         cards.push(card);
-        return Ok(());
+        let prose = first_blank_line.is_some().then(|| BlockProse {
+            lines: answer
+                .iter()
+                .zip(&parsed)
+                .map(|((_, text), segments)| (!image_only(segments)).then(|| text.clone()))
+                .collect(),
+            splices,
+        });
+        return Ok(prose);
     }
 
     if let Some(line) = first_blank_line {
@@ -1851,7 +1937,7 @@ fn build_card(
         card.input = directives.input;
         cards.push(card);
     }
-    Ok(())
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -4668,6 +4754,94 @@ the answer
     }
 
     #[test]
+    fn a_span_cards_context_masks_own_as_blank_and_siblings_as_hidden() {
+        let deck = parse(&format!(
+            "## anatomy <!-- id: {RTOK} -->\n---\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n"
+        ));
+        assert_eq!(2, deck.cards.len());
+        assert_eq!(
+            vec!["the ____ sits beside the […] […]"],
+            deck.cards[0].context,
+            "own blank asked, sibling and cover hidden"
+        );
+        assert!(deck.cards[0].context_leads);
+        assert_eq!(
+            vec!["the […] sits beside the ____ […]"],
+            deck.cards[1].context,
+            "each card asks its own span"
+        );
+    }
+
+    #[test]
+    fn a_rect_cards_context_masks_every_span_as_hidden() {
+        let deck = parse(&format!(
+            "## anatomy <!-- id: {RTOK} -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:d4e5f6 -->\n"
+        ));
+        let rect = deck
+            .cards
+            .iter()
+            .find(|card| card.back.is_empty())
+            .expect("the unlabelled rect card");
+        assert_eq!(
+            vec!["the […] sits center"],
+            rect.context,
+            "prose is context on a rect card: every span is hidden"
+        );
+    }
+
+    #[test]
+    fn masking_splices_authored_bytes_so_styling_survives() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n**New** York is big\n<!-- blank: span hidden=\"New\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            vec!["**____** York is big"],
+            deck.cards[0].context,
+            "the splice lands inside the markers, so the bold survives"
+        );
+    }
+
+    #[test]
+    fn a_group_card_blanks_every_member_in_context() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n"
+        ));
+        assert_eq!(1, deck.cards.len(), "one group card");
+        assert_eq!(vec!["____ then ____"], deck.cards[0].context);
+    }
+
+    #[test]
+    fn moving_a_span_to_another_occurrence_changes_the_fingerprint() {
+        let one = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" b:a1b2c3 -->\n"
+        ));
+        let two = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n"
+        ));
+        assert_ne!(
+            one.cards[0].content_fingerprint, two.cards[0].content_fingerprint,
+            "the same word in a different sentence position is a different question"
+        );
+        assert_ne!(
+            one.cards[0].context, two.cards[0].context,
+            "the mask sits on a different occurrence"
+        );
+    }
+
+    #[test]
+    fn image_only_lines_stay_out_of_region_context() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nthe lunate sits center\n![](hand.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(
+            vec!["the ____ sits center"],
+            deck.cards[0].context,
+            "the image rides images_back, never the prose context"
+        );
+        assert_eq!(1, deck.cards[0].images_back.len());
+    }
+
+    #[test]
     fn removing_the_last_blank_directive_re_exposes_the_plain_card_with_its_token() {
         let template = parse(&region_deck(
             r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" b:a1b2c3 -->"#,
@@ -4682,5 +4856,32 @@ the answer
             plain.cards[0].id(),
             "the block token is the plain card's identity, so its history resumes"
         );
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig { cases: 64, ..proptest::prelude::ProptestConfig::default() })]
+
+        #[test]
+        fn the_parser_never_panics_on_arbitrary_block_text(
+            lines in proptest::collection::vec(
+                proptest::string::string_regex(
+                    "[a-zA-Zäö✓ *_`$\\\\\\[\\]()!{}#>|.0-9-]{0,24}"
+                )
+                .expect("a valid regex literal"),
+                1..5,
+            ),
+            span in proptest::bool::ANY,
+        ) {
+            let mut deck = String::from("## q <!-- id: card-proptok -->\n---\n");
+            for line in &lines {
+                deck.push_str(line);
+                deck.push('\n');
+            }
+            if span {
+                deck.push_str("<!-- blank: span hidden=\"ab\" b:a1b2c3 -->\n");
+            }
+            // Ok or Err are both fine; only a panic fails the property.
+            let _ = super::parse("deck.md", &deck);
+        }
     }
 }

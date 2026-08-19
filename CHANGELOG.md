@@ -14,7 +14,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   blank is a reviewable card, a named group is one card asking every member
   (its id derived from the member stamps), and a cover masks without ever
   asking. A block carrying a `blank:` is a template, exactly like cloze: it
-  produces only its region cards (the block's note rides each one), while
+  produces only its region cards, and the block's note and prose ride each
+  one, the prose as context with the card's own span shown as the blank
+  marker and every sibling or cover span hidden (styling survives around
+  the masks), while
   `cover:`/`crop:` alone keep the ordinary card; removing the last `blank:`
   re-exposes that card with its review history intact, and text holes or a
   task-list answer beside a `blank:` are a parse error. The review

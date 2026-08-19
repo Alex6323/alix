@@ -200,6 +200,8 @@ impl MaskableStream {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     fn stream(lines: &[&str]) -> MaskableStream {
@@ -324,5 +326,164 @@ mod tests {
             "an author counting positions never counts a line they cannot see"
         );
         assert_eq!(Some((3, 0..1)), s.splice(&(2..3)));
+    }
+
+    // A dense two-letter alphabet with structural tokens, so overlapping
+    // occurrences straddling hole gaps and style edges are COMMON, not
+    // needle-rare: the differential property must be able to reach the
+    // shadowing shapes it guards against.
+    fn arbitrary_lines() -> impl Strategy<Value = Vec<String>> {
+        let token = prop_oneof![
+            Just("a".to_string()),
+            Just("b".to_string()),
+            Just("ab".to_string()),
+            Just("ba".to_string()),
+            Just(" ".to_string()),
+            Just("\\blank{ab}".to_string()),
+            Just("\\blank{a}".to_string()),
+            Just("**a**".to_string()),
+            Just("**ab**".to_string()),
+            Just("`ab`".to_string()),
+            Just("[a](b)".to_string()),
+            Just("$ab$".to_string()),
+            Just("ä".to_string()),
+        ];
+        proptest::collection::vec(
+            proptest::collection::vec(token, 0..8).prop_map(|tokens| tokens.concat()),
+            1..4,
+        )
+    }
+
+    type ParsedBlock = (Vec<(usize, String)>, Vec<Vec<Seg>>);
+
+    fn parsed_or_skip(lines: &[String]) -> Option<ParsedBlock> {
+        let answer: Vec<(usize, String)> = lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| (index + 1, line.clone()))
+            .collect();
+        let mut lints = Vec::new();
+        let parsed: Result<Vec<Vec<Seg>>, _> = answer
+            .iter()
+            .map(|(lineno, line)| {
+                super::super::cloze::scan_markers(
+                    line,
+                    *lineno,
+                    super::super::cloze::Side::Answer,
+                    &mut lints,
+                )
+            })
+            .collect();
+        parsed.ok().map(|parsed| (answer, parsed))
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+        #[test]
+        fn stream_text_is_the_concatenation_of_piece_texts(lines in arbitrary_lines()) {
+            let Some((answer, parsed)) = parsed_or_skip(&lines) else {
+                return Ok(());
+            };
+            let s = maskable_stream(&answer, &parsed);
+            let mut rebuilt = String::new();
+            for (slot, line) in s.lines.iter().enumerate() {
+                if slot > 0 {
+                    rebuilt.push('\n');
+                }
+                for piece in &line.pieces {
+                    rebuilt.push_str(&s.text[piece.range.clone()]);
+                }
+            }
+            prop_assert_eq!(&rebuilt, &s.text, "lines: {:?}", lines);
+        }
+
+        #[test]
+        fn every_piece_char_splices_char_aligned_into_its_authored_line(
+            lines in arbitrary_lines()
+        ) {
+            let Some((answer, parsed)) = parsed_or_skip(&lines) else {
+                return Ok(());
+            };
+            let s = maskable_stream(&answer, &parsed);
+            for line in &s.lines {
+                let raw = &answer[line.answer_index].1;
+                for piece in &line.pieces {
+                    for (start, end) in &piece.map {
+                        prop_assert!(
+                            start < end && *end <= raw.len(),
+                            "map {start}..{end} outside {raw:?}"
+                        );
+                        prop_assert!(
+                            raw.is_char_boundary(*start) && raw.is_char_boundary(*end),
+                            "map {start}..{end} splits a char in {raw:?}"
+                        );
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn accepted_occurrences_match_a_greedy_scan_over_matchable_text(
+            lines in arbitrary_lines(),
+            pick in any::<(u16, u16)>(),
+        ) {
+            let Some((answer, parsed)) = parsed_or_skip(&lines) else {
+                return Ok(());
+            };
+            let s = maskable_stream(&answer, &parsed);
+            if s.text.is_empty() {
+                return Ok(());
+            }
+            let starts: Vec<usize> = s
+                .text
+                .char_indices()
+                .map(|(byte, _)| byte)
+                .collect();
+            let start = starts[pick.0 as usize % starts.len()];
+            let rest: Vec<usize> = s.text[start..]
+                .char_indices()
+                .skip(1)
+                .map(|(byte, _)| start + byte)
+                .chain([s.text.len()])
+                .collect();
+            let end = rest[pick.1 as usize % rest.len()];
+            let hidden = &s.text[start..end];
+            if hidden.is_empty() || hidden.contains('\n') {
+                return Ok(());
+            }
+
+            let accepted = super::super::region::occurrences_with(
+                &s.text,
+                hidden,
+                &mut |from, to| s.classify(&(from..to)) == RangeClass::Matchable,
+            );
+
+            // The independent oracle: greedy left-to-right over ONLY the
+            // matchable text occurrences, so a crossing candidate can never
+            // shadow an overlapping matchable one.
+            let mut expected = Vec::new();
+            let mut at = 0;
+            while at + hidden.len() <= s.text.len() {
+                if !s.text.is_char_boundary(at) || !s.text[at..].starts_with(hidden) {
+                    at += 1;
+                    continue;
+                }
+                let range = at..at + hidden.len();
+                if s.classify(&range) == RangeClass::Matchable {
+                    expected.push((range.start, range.end));
+                    at += hidden.len();
+                } else {
+                    at += 1;
+                }
+            }
+            prop_assert_eq!(
+                &accepted, &expected,
+                "hidden {:?} in {:?}", hidden, s.text
+            );
+            for pair in accepted.windows(2) {
+                prop_assert!(pair[0].1 <= pair[1].0, "overlap: {accepted:?}");
+            }
+        }
     }
 }
