@@ -104,11 +104,15 @@ fn project_text(
     runs
 }
 
-fn project_line(
-    text: &str,
-    mut renderer: Option<&mut MathRenderer>,
-    context: bool,
-) -> Vec<InlineRun> {
+struct LineClassification {
+    spans: Vec<MathSpan>,
+    glyphs: Vec<Glyph>,
+    bold: Vec<bool>,
+    italic: Vec<bool>,
+    removed: Vec<bool>,
+}
+
+fn classify_line(text: &str) -> LineClassification {
     let chars: Vec<char> = text.chars().collect();
     let spans = math_spans(&chars);
     let glyphs = scan_glyphs(&chars, &spans);
@@ -164,7 +168,27 @@ fn project_line(
             open.push(delimiter_index);
         }
     }
+    LineClassification {
+        spans,
+        glyphs,
+        bold,
+        italic,
+        removed,
+    }
+}
 
+fn project_line(
+    text: &str,
+    mut renderer: Option<&mut MathRenderer>,
+    context: bool,
+) -> Vec<InlineRun> {
+    let LineClassification {
+        spans,
+        glyphs,
+        bold,
+        italic,
+        removed,
+    } = classify_line(text);
     let mut runs = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
@@ -206,6 +230,85 @@ fn project_line(
         index += 1;
     }
     runs
+}
+
+/// One visible piece of a line for the canonical maskable stream (ADR 0034):
+/// maximal same-style visible text carrying, per visible char, the authored
+/// char range a masking splice must replace (an escaped char's range starts
+/// at its backslash, or the splice would leave a stray escape before the
+/// mask marker).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct LinePiece {
+    pub text: String,
+    /// Authored char index where each visible char's splice starts.
+    pub starts: Vec<usize>,
+    /// Authored char index one past each visible char.
+    pub ends: Vec<usize>,
+    pub bold: bool,
+    pub italic: bool,
+    pub code: bool,
+    pub math: bool,
+}
+
+pub(crate) fn line_pieces(text: &str) -> Vec<LinePiece> {
+    let LineClassification {
+        glyphs,
+        bold,
+        italic,
+        removed,
+        ..
+    } = classify_line(text);
+    let mut pieces: Vec<LinePiece> = Vec::new();
+    let mut index = 0;
+    while index < glyphs.len() {
+        if let Some(span_index) = glyphs[index].math {
+            let start = index;
+            while index < glyphs.len() && glyphs[index].math == Some(span_index) {
+                index += 1;
+            }
+            pieces.push(LinePiece {
+                text: glyphs[start..index].iter().map(|glyph| glyph.ch).collect(),
+                starts: glyphs[start..index]
+                    .iter()
+                    .map(|glyph| glyph.raw_index)
+                    .collect(),
+                ends: glyphs[start..index]
+                    .iter()
+                    .map(|glyph| glyph.raw_index + 1)
+                    .collect(),
+                bold: false,
+                italic: false,
+                code: false,
+                math: true,
+            });
+            continue;
+        }
+        if removed[index] {
+            index += 1;
+            continue;
+        }
+        let glyph = glyphs[index];
+        let style = (bold[index], italic[index], glyph.code);
+        let splice_start = glyph.raw_index - usize::from(glyph.escaped && !glyph.code);
+        match pieces.last_mut() {
+            Some(piece) if !piece.math && (piece.bold, piece.italic, piece.code) == style => {
+                piece.text.push(glyph.ch);
+                piece.starts.push(splice_start);
+                piece.ends.push(glyph.raw_index + 1);
+            }
+            _ => pieces.push(LinePiece {
+                text: glyph.ch.to_string(),
+                starts: vec![splice_start],
+                ends: vec![glyph.raw_index + 1],
+                bold: style.0,
+                italic: style.1,
+                code: style.2,
+                math: false,
+            }),
+        }
+        index += 1;
+    }
+    pieces
 }
 
 fn append_runs(target: &mut Vec<InlineRun>, source: &mut Vec<InlineRun>) {
@@ -495,6 +598,56 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn line_pieces_map_plain_text_identically() {
+        let pieces = line_pieces("plain text");
+        assert_eq!(1, pieces.len());
+        assert_eq!("plain text", pieces[0].text);
+        assert_eq!((0..10).collect::<Vec<_>>(), pieces[0].starts);
+        assert_eq!((1..11).collect::<Vec<_>>(), pieces[0].ends);
+        assert!(!pieces[0].bold && !pieces[0].code && !pieces[0].math);
+    }
+
+    #[test]
+    fn line_pieces_split_styled_from_plain_and_skip_the_markers() {
+        let pieces = line_pieces("**New** York");
+        assert_eq!(2, pieces.len());
+        assert_eq!(("New", true), (pieces[0].text.as_str(), pieces[0].bold));
+        assert_eq!(vec![2, 3, 4], pieces[0].starts);
+        assert_eq!((" York", false), (pieces[1].text.as_str(), pieces[1].bold));
+        assert_eq!(vec![7, 8, 9, 10, 11], pieces[1].starts);
+    }
+
+    #[test]
+    fn line_pieces_anchor_an_escaped_char_at_its_backslash() {
+        let pieces = line_pieces("a\\*b");
+        assert_eq!(1, pieces.len(), "{pieces:?}");
+        assert_eq!("a*b", pieces[0].text);
+        assert_eq!(
+            vec![0, 1, 3],
+            pieces[0].starts,
+            "the * splices from its backslash"
+        );
+        assert_eq!(vec![1, 3, 4], pieces[0].ends);
+    }
+
+    #[test]
+    fn line_pieces_mark_code_contents_and_exclude_backticks() {
+        let pieces = line_pieces("a `code` b");
+        assert_eq!(3, pieces.len(), "{pieces:?}");
+        assert_eq!(("code", true), (pieces[1].text.as_str(), pieces[1].code));
+        assert_eq!(vec![3, 4, 5, 6], pieces[1].starts);
+    }
+
+    #[test]
+    fn line_pieces_mark_math_source_and_exclude_dollar_delimiters() {
+        let pieces = line_pieces("sum $x+y$ here");
+        assert_eq!(3, pieces.len(), "{pieces:?}");
+        assert_eq!(("x+y", true), (pieces[1].text.as_str(), pieces[1].math));
+        assert_eq!(vec![5, 6, 7], pieces[1].starts);
+        assert!(!pieces[0].math && !pieces[2].math);
+    }
     use proptest::prelude::*;
 
     use super::*;

@@ -15,6 +15,7 @@ mod cloze;
 mod frontmatter;
 pub mod region;
 mod sidecar;
+mod stream;
 
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
@@ -1367,32 +1368,61 @@ fn build_card(
         &mut back_media,
         answer_start,
     )?;
-    // Span binding is occurrence-based (ADR 0034, ruled 2026-08-19): the
-    // hidden text must occur at least N times in the answer block, or the
-    // anchor is gone and the deck fails loudly.
-    let answer_text: String = answer
-        .iter()
-        .map(|(_, text)| text.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    for span in &span_regions {
-        let region::RegionGeometry::Span {
-            occurrence: n,
-            boundary,
-        } = &span.geometry
-        else {
-            continue;
-        };
-        let hidden = span.hidden.as_deref().unwrap_or_default();
-        let whole_word = *boundary == region::Boundary::Word;
-        let found = region::occurrences(&answer_text, hidden, whole_word).len();
-        if found < *n as usize {
-            return Err(ParseError::InvalidRegion {
-                line: span.line,
-                message: format!(
-                    "the span's hidden text occurs {found} time(s) in the answer block, fewer than the {n} its locator names"
-                ),
-            });
+    // Span binding consumes the canonical maskable stream (ADR 0034): the
+    // hidden text must occur at least N times in its MATCHABLE text, or the
+    // anchor is gone and the deck fails loudly. Plain blocks never pay for
+    // the stream.
+    if !span_regions.is_empty() {
+        let stream = stream::maskable_stream(&answer, &parsed);
+        for span in &span_regions {
+            let region::RegionGeometry::Span {
+                occurrence: n,
+                boundary,
+            } = &span.geometry
+            else {
+                continue;
+            };
+            let hidden = span.hidden.as_deref().unwrap_or_default();
+            let whole_word = *boundary == region::Boundary::Word;
+            let candidates = region::occurrences(&stream.text, hidden, whole_word);
+            let classes: Vec<stream::RangeClass> = candidates
+                .iter()
+                .map(|(start, end)| stream.classify(&(*start..*end)))
+                .collect();
+            let found = classes
+                .iter()
+                .filter(|class| **class == stream::RangeClass::Matchable)
+                .count();
+            if found < *n as usize {
+                let message = if classes.contains(&stream::RangeClass::Crossing) {
+                    "the span's hidden text only matches across a style boundary; unstyle the target or split the span".to_string()
+                } else if classes.contains(&stream::RangeClass::Math) {
+                    "a span cannot bind into math source".to_string()
+                } else {
+                    format!(
+                        "the span's hidden text occurs {found} time(s) in the block's matchable text, fewer than the {n} its locator names"
+                    )
+                };
+                return Err(ParseError::InvalidRegion {
+                    line: span.line,
+                    message,
+                });
+            }
+        }
+        for marker in [cloze::BLANK, cloze::HIDDEN] {
+            if let Some(at) = stream.text.find(marker) {
+                let line = stream
+                    .line_of(at)
+                    .and_then(|index| answer.get(index))
+                    .map(|(lineno, _)| *lineno)
+                    .unwrap_or(line);
+                return Err(ParseError::InvalidRegion {
+                    line,
+                    message: format!(
+                        "a span-bearing block cannot contain the literal mask marker `{marker}`; move it to a block without spans"
+                    ),
+                });
+            }
         }
     }
 
@@ -4391,6 +4421,67 @@ the answer
         ));
         assert_eq!(1, choice.cards.len());
         assert!(!choice.cards[0].authored_distractors.is_empty());
+    }
+
+    #[test]
+    fn a_span_binds_into_styled_contents_over_the_stream() {
+        let deck = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nthe **lunate** bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
+        ));
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(vec!["lunate"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn a_span_crossing_a_style_boundary_is_rejected_naming_it() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\n**New** York is big\n<!-- blank: span hidden=\"New York\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("style boundary"), "{message}");
+    }
+
+    #[test]
+    fn a_span_cannot_bind_into_math_source() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nsum $x+y$ here\n<!-- blank: span hidden=\"x+y\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("math"), "{message}");
+    }
+
+    #[test]
+    fn image_syntax_is_invisible_to_span_binding() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nprose here\n![lunate](lunate.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(
+            message.contains("occurs 0 time(s)"),
+            "the alt text and destination are not learner prose: {message}"
+        );
+    }
+
+    #[test]
+    fn a_literal_mask_marker_is_rejected_only_beside_spans() {
+        let error = err(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nfill the ____ gap in prose\n<!-- blank: span hidden=\"prose\" b:a1b2c3 -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("literal mask marker"), "{message}");
+
+        let plain = parse(&format!(
+            "## q <!-- id: {RTOK} -->\n---\nfill the ____ gap in prose\n"
+        ));
+        assert_eq!(1, plain.cards.len(), "markers stay legal without spans");
     }
 
     #[test]
