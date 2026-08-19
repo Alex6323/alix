@@ -1,8 +1,9 @@
 # 0034: Image region grammar and derived group identity
 
-- Status: Accepted (NOT yet implemented; the grammar and identity were ruled
-  frozen 2026-08-18 and the base build is next, so this record is binding
-  while its evidence lands with that build)
+- Status: Accepted (partially implemented; the grammar and identity were
+  ruled frozen 2026-08-18, the base build's first four slices are committed,
+  and the span semantics and template correction build from the span-masking
+  spec signed off 2026-08-19)
 - Recorded: 2026-08-18
 - Retrospective: No
 
@@ -62,9 +63,14 @@ Three keywords, and no fourth is implied:
   answer was overloaded: an unlabelled region has no natural text and still
   wants asking, while a legend that gives answers away wants hiding and never
   asking. A cover is scoped to the media element rather than to a card, takes no
-  group name, carries no stamp, and never reveals, because its content gives
-  away other cards on the same picture and that reason does not expire when one
-  card is answered.
+  group name and carries no stamp. On a region card it never reveals, because
+  its content gives away sibling cards on the same picture and that reason
+  does not expire when one card is answered; on a plain card there are no
+  sibling questions to protect, so it reveals with the answer (amended
+  2026-08-19, replacing the unconditional never-reveals rule; ruled by Alex:
+  the emblem that leaks the answer needs hiding only until the learner
+  answers). Which behavior applies travels in the wire contract
+  (`reveal_on_answer`), never inferred by a client from role or card id.
 - **`crop:`** is a viewport onto the media element, so one large source serves
   many cards without being cut into files. Region coordinates remain absolute in
   full-source space, never crop space, so adjusting a crop does not invalidate
@@ -86,6 +92,26 @@ to a media element, hiding its span for every card in that passage.
 
 An explicit `image="hand.png"` key was rejected: the same source appearing twice
 on one card stays ambiguous under it, while adjacency resolves that for free.
+
+### A blank-bearing block is a template, and its base id stays live
+
+(Amended 2026-08-19 with the span-masking spec sign-off: this pins vocabulary
+the record already used and adds one persistence rule.)
+
+"Parent card" in this record is token ownership: the block's minted token
+prefixes every region id. It is not a session card. A block carrying at least
+one `blank:` is a TEMPLATE, exactly like a cloze block: it produces its
+region cards and nothing else, and an author who wants a full-recall card
+writes one. `cover:` and `crop:` alone do not make a template; they are
+display transforms on the ordinary plain card, which remains.
+
+While a block is a template, its base card id (`card-<token>`) is a RESERVED
+LIVE persistence identity: every known-id and orphan inventory includes it,
+and no progress row is ever minted to reserve it. Without this rule the
+supported orphan cleanup would prune the plain card's history during a
+template interval, and removing the last `blank:` (which re-exposes the
+plain card, schedule preserved, from the next source-backed deck load) would
+break its promise.
 
 ### Coordinates are named fields with SVG names
 
@@ -130,15 +156,19 @@ Both keys default, so the common span is `hidden="..."` alone. Occurrence
 beats position because v1 authoring is hand-written: counting occurrences of
 the one hidden word is trivial where counting every word is not. Every span
 carries a machine-minted **`position:<n>`** (colon form, like `b:`): the
-1-based character offset where the binding anchored. Review-time binding
-never reads it; it is the REPAIR anchor (Alex, 2026-08-19: no warning where
-a deterministic fix exists). The stamping pass reconciles the two: while the
-hidden text still sits at the minted offset, that occurrence is the author's
-target, and a drifted `occurrence=` is rewritten to its current index, so an
-inserted earlier occurrence cannot retarget the blank; when the offset no
-longer holds the hidden text, the authored occurrence wins and the offset
-refreshes. `doctor`'s only span lint is informational: the hidden text
-occurring more than once in the block. A `matches=` occurrence key was
+1-based UTF-8 BYTE offset where the binding anchored, into the block's
+canonical maskable stream (amended 2026-08-19 from "character offset": bytes
+are the one unit every consumer indexes without a scalar walk; readers
+reject an offset that is out of bounds, not on a scalar boundary, or not
+followed by the exact hidden bytes). Review-time binding never reads it; it
+is the repair anchor. Repair is CERTAIN-ONLY (amended 2026-08-19, replacing
+the reconciliation first recorded here, whose both rewrite branches were
+shown to retarget silently on indistinguishable evidence): the stamper mints
+into an unminted span, leaves a span whose offset holds the exact hidden
+bytes at the authored occurrence untouched as a byte no-op, and rewrites
+nothing else; every diverged state is loud, with `doctor` reporting both
+readings and the concrete edit that resolves each. `doctor` keeps its
+informational lint: the hidden text occurring more than once in the block. A `matches=` occurrence key was
 considered and rejected as a second locator concept the two keys above
 already express.
 
@@ -372,7 +402,8 @@ Taking `blank:` means the parser must stop treating a `blank:` directive as
 unknown. `occlude:` keeps behaving as an ordinary unknown directive name, which
 is a decision rather than an omission: it is released, not reserved.
 
-The review data transfer object grows a region list, which is a documented API
+The review data transfer object grows a region list carrying each region's
+role and its reveal behavior (`reveal_on_answer`), which is a documented API
 contract change and a contract snapshot change, and every client moves with it.
 
 ## Security
@@ -414,6 +445,15 @@ that did not before.
   as a literal.
 - A stamping test that an unstamped region is minted into on the first pass, and
   that an unreconciled card has no usable id and is excluded from the session.
+- Template tests: a blank-bearing block yields exactly its region cards; a
+  cover-only or crop-only block yields exactly its plain card; removing the
+  last `blank:` re-exposes the plain card from the next source-backed load
+  with its prior history.
+- Liveness tests: neither `doctor` nor `reset --orphans` judges a template's
+  dormant base id orphaned, and no progress row is minted to reserve it.
+- Repair tests: the certain case is a byte no-op, every diverged state is
+  loud with both readings reported, and a second stamping pass over an
+  untouched file is a byte no-op.
 
 ## Reversal
 
