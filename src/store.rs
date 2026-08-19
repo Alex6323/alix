@@ -2740,6 +2740,58 @@ mod tests {
     }
 
     #[test]
+    fn remediation_keeps_distinct_answers_in_matching_span_blank_contexts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = dir.path().join("d.md");
+        let lunate = "## Which bone sits in the center?\nThe lunate sits in the center\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n";
+        let hamate = "## Which bone sits in the center?\nThe hamate sits in the center\n<!-- blank: span hidden=\"hamate\" b:a1b2c3 -->\n";
+
+        let first = store_remediation(&mut store, &deck, "d.md", lunate, 1_000, None).unwrap();
+        assert_eq!(1, first, "the first missed fact becomes a region card");
+        let second = store_remediation(&mut store, &deck, "d.md", hamate, 2_000, None).unwrap();
+        assert_eq!(
+            1, second,
+            "a different answer in the same sentence shape is a distinct gap"
+        );
+        assert_eq!(2, sidecar_cards(&deck, "d.md").len());
+    }
+
+    #[test]
+    fn remediation_does_not_duplicate_an_authored_choice_cards_fact() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let authored = crate::parser::parse_str(
+            "d.md",
+            "## Capital of France? <!-- id: card-france -->\n- [x] Paris\n- [ ] Lyon\n",
+        )
+        .unwrap();
+        let deck_fingerprints: std::collections::HashSet<u64> =
+            authored.iter().map(|card| card.block_fingerprint).collect();
+        let deck = dir.path().join("d.md");
+
+        let created = store_remediation_cards(
+            &mut store,
+            Some(&deck),
+            "d.md",
+            &deck_fingerprints,
+            "## Capital of France?\nParis\n",
+            1_000,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            0, created,
+            "the same canonical question and answer already exist in the authored deck"
+        );
+        assert!(
+            !crate::personal::sidecar_path(&deck).exists(),
+            "a duplicate must not create a personal file"
+        );
+    }
+
+    #[test]
     fn distinct_answer_cloze_holes_stay_distinct() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();

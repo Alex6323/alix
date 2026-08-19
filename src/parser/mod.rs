@@ -1572,7 +1572,7 @@ fn build_card(
         .map(|(index, (_, text))| {
             let mut cuts: Vec<&SpanSplice> = splices
                 .iter()
-                .filter(|splice| splice.answer_index == index)
+                .filter(|splice| splice.cover && splice.answer_index == index)
                 .collect();
             cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
             let mut line = text.clone();
@@ -1668,7 +1668,6 @@ fn build_card(
                 card.citations = directives.citations;
                 card.givens = directives.givens;
                 card.authored_distractors = distractors;
-                card.block_fingerprint = block_key;
                 cards.push(card);
                 return Ok(None);
             }
