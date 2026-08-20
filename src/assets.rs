@@ -613,9 +613,15 @@ fn freeze_diagrams(
                     || text.as_bytes().get(fence.insert_at - 1) == Some(&b'\n');
                 // The inserted line copies the fence close line's terminator
                 // style, so freezing a CRLF deck cannot introduce mixed
-                // endings once the byte-preserving rewrite lands.
-                let crlf = fence.insert_at >= 2
-                    && &text.as_bytes()[fence.insert_at - 2..fence.insert_at] == b"\r\n";
+                // endings once the byte-preserving rewrite lands. An
+                // unterminated close line at EOF has no terminator to copy,
+                // so the document's own first terminator decides.
+                let crlf = if after_newline {
+                    fence.insert_at >= 2
+                        && &text.as_bytes()[fence.insert_at - 2..fence.insert_at] == b"\r\n"
+                } else {
+                    text.contains("\r\n")
+                };
                 let ending = if crlf { "\r\n" } else { "\n" };
                 let line = if after_newline {
                     format!("{stamp}{ending}")
@@ -1911,6 +1917,33 @@ mod tests {
         assert!(
             inserted.contains(&crate::diagram::fingerprint("flowchart LR\n A-->B")),
             "the fingerprint is the LF-normalized one: {inserted:?}"
+        );
+    }
+
+    #[test]
+    fn a_crlf_text_with_a_close_at_eof_gets_a_crlf_terminated_stamp() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        let text = "## q\r\n```mermaid\r\nflowchart LR\r\n A-->B\r\n```";
+        let outcome = freeze_diagrams(
+            directory.path(),
+            "deck-deck1",
+            text,
+            None,
+            Some(cli.to_str().unwrap()),
+        )
+        .unwrap();
+        assert_eq!(1, outcome.frozen, "{:?}", outcome.warnings);
+        let (_, inserted) = &outcome.replacements[0];
+        assert!(
+            inserted.starts_with("\r\n<!-- diagram:") && inserted.ends_with("-->\r\n"),
+            "a CRLF deck without a final newline must not gain LF endings: {inserted:?}"
         );
     }
 
