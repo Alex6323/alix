@@ -119,6 +119,19 @@ test("the cropped-image path clips a pixel region at the source edge", async ({ 
   );
 });
 
+test("a tall crop keeps its aspect while shrinking under the kids height cap", async ({ page }) => {
+  await openSyntheticCard(
+    page,
+    [{ role: "asked", reveal_on_answer: true, x: 10, y: 10, width: 10, height: 10, unit: "px" }],
+    { x: 0, y: 0, width: 20, height: 60, unit: "px" },
+  );
+
+  const box = await page.locator(".rev-img-box").boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width / box!.height).toBeCloseTo(1 / 3, 2);
+  expect(box!.height, "the crop must shrink under the kids image cap").toBeLessThanOrEqual(220.5);
+});
+
 test("an asked pixel region wholly outside the source fails loudly", async ({ page }) => {
   await openSyntheticCard(page, [
     { role: "asked", reveal_on_answer: true, x: 120, y: 10, width: 20, height: 20, unit: "px" },

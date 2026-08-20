@@ -113,3 +113,33 @@ test("an asked pixel region wholly outside the source fails loudly", async ({ pa
     "ADR 0034 requires a loud render failure instead of silently exposing an unmasked question",
   ).toBeVisible();
 });
+
+test("a tall crop shrinks into the question region without making it scroll", async ({ page, request }) => {
+  await openSyntheticCard(
+    page,
+    request,
+    [{ role: "asked", reveal_on_answer: true, x: 10, y: 10, width: 10, height: 10, unit: "px" }],
+    { x: 0, y: 0, width: 20, height: 60, unit: "px" },
+  );
+
+  const box = page.locator(".img-box");
+  await expect(box).toBeVisible();
+  const geometry = await box.evaluate((node) => {
+    const crop = node.getBoundingClientRect();
+    const region = node.closest(".region")!;
+    const regionBox = region.getBoundingClientRect();
+    return {
+      ratio: crop.width / crop.height,
+      cropTop: crop.top,
+      cropBottom: crop.bottom,
+      regionTop: regionBox.top,
+      regionBottom: regionBox.bottom,
+      scrolls: region.scrollHeight > region.clientHeight + 1,
+    };
+  });
+
+  expect(geometry.ratio).toBeCloseTo(1 / 3, 2);
+  expect(geometry.cropTop).toBeGreaterThanOrEqual(geometry.regionTop - 0.5);
+  expect(geometry.cropBottom).toBeLessThanOrEqual(geometry.regionBottom + 0.5);
+  expect(geometry.scrolls, "the crop must resize instead of turning its region into a scroller").toBe(false);
+});
