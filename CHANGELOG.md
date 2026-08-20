@@ -45,8 +45,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the bound occurrence in the block's visible text: never read for
   binding, it is the drift signal that lets `alix doctor` say exactly
   where a span used to point after the text moves. The stamper only ever
-  mints a missing anchor; a divergent one is left untouched for doctor to
-  report, and restamping an untouched file never rewrites a byte.
+  mints a missing anchor; a divergent one is left untouched, restamping an
+  untouched file never rewrites a byte, and `alix doctor` reports each
+  divergence with its two concrete edits (keep the authored occurrence, or
+  keep the old target via `occurrence=` when the anchor still starts one).
+  `alix doctor --repair-positions` applies the keep-authored edit on
+  demand, rewriting each diverged anchor to where the span binds today.
 
 - `alix bug-report` writes a local, reviewable diagnostics archive, and the
   adult web app offers the same download from About. It includes bounded

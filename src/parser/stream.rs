@@ -144,6 +144,16 @@ impl MaskableStream {
         self.text[..byte].graphemes(true).count() as u32 + 1
     }
 
+    /// The byte offset where the 1-based grapheme `position` starts, when it
+    /// is in bounds: the reverse of `grapheme_position`.
+    pub fn grapheme_byte(&self, position: u32) -> Option<usize> {
+        use unicode_segmentation::UnicodeSegmentation;
+        (position > 0)
+            .then(|| self.text.grapheme_indices(true).nth(position as usize - 1))
+            .flatten()
+            .map(|(byte, _)| byte)
+    }
+
     /// The stream-text bounds of the math piece containing `range`, when the
     /// range lies wholly inside one non-matchable (math) piece.
     pub fn math_piece(&self, range: &Range<usize>) -> Option<Range<usize>> {

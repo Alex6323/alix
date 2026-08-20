@@ -232,6 +232,11 @@ struct DoctorArgs {
     #[arg(long)]
     repair_source_locators: bool,
 
+    /// Rewrite each diverged span `position:` anchor to where the span's
+    /// authored occurrence binds today (the keep-authored-occurrence edit).
+    #[arg(long)]
+    repair_positions: bool,
+
     /// Delete every backup (`*.bak`) file under the checked folder, after one
     /// confirmation. The backups are what `alix deck restore` swaps in.
     #[arg(long)]

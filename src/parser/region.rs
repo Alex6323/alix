@@ -66,6 +66,10 @@ pub struct RawRegion {
     /// same grapheme coordinates `position:` uses. The stamper mints it when
     /// `position:` is absent and leaves any divergence for doctor.
     pub bound_position: Option<u32>,
+    /// Computed at bind, never parsed: when a divergent `position:` still
+    /// starts a bindable occurrence of the hidden text, its 1-based
+    /// occurrence index, doctor's keep-the-old-target edit.
+    pub minted_occurrence: Option<u32>,
     pub line: usize,
 }
 
@@ -433,6 +437,7 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
         stamp: f.stamp,
         minted_position: f.minted_position,
         bound_position: None,
+        minted_occurrence: None,
         line,
     })
 }

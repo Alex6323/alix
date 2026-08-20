@@ -1475,6 +1475,7 @@ fn build_card(
     let mut splices: Vec<SpanSplice> = Vec::new();
     let mut bound: Vec<(usize, usize, usize)> = Vec::new();
     let mut bound_positions: Vec<(usize, u32)> = Vec::new();
+    let mut minted_occurrences: Vec<(usize, u32)> = Vec::new();
     if !span_regions.is_empty() {
         let stream = stream::maskable_stream(&answer, &parsed);
         for (span_index, span) in span_regions.iter().enumerate() {
@@ -1558,6 +1559,13 @@ fn build_card(
             }
             bound.push((start, end, span.line));
             bound_positions.push((span_index, stream.grapheme_position(start)));
+            if let Some(minted) = span.minted_position
+                && minted != stream.grapheme_position(start)
+                && let Some(byte) = stream.grapheme_byte(minted)
+                && let Some(index) = candidates.iter().position(|(from, _)| *from == byte)
+            {
+                minted_occurrences.push((span_index, index as u32 + 1));
+            }
             if let Some(piece) = stream.math_piece(&(start..end)) {
                 let payload = &stream.text[piece.clone()];
                 if let Err(error) = crate::math::parses(payload) {
@@ -1604,6 +1612,9 @@ fn build_card(
         }
         for (span_index, position) in bound_positions {
             span_regions[span_index].bound_position = Some(position);
+        }
+        for (span_index, occurrence) in minted_occurrences {
+            span_regions[span_index].minted_occurrence = Some(occurrence);
         }
     }
 

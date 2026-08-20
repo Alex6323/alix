@@ -113,6 +113,7 @@ fn deck_findings(path: &Path, report: &mut Report) {
         report.warn(format!("{}: {diagnostic}", path.display()));
     }
     inline_emphasis_findings(&deck.cards, report);
+    span_anchor_findings(path, &deck.cards, report);
 
     for lint in &deck.lints {
         let msg = lint_message(path, lint);
@@ -181,6 +182,35 @@ fn deck_findings(path: &Path, report: &mut Report) {
 
     if let Ok(deck) = Deck::load(path) {
         deck_resource_findings(&deck, report);
+    }
+}
+
+fn span_anchor_findings(path: &Path, cards: &[alix::card::Card], report: &mut Report) {
+    let mut seen = HashSet::new();
+    for card in cards {
+        for region in &card.span_regions {
+            let (Some(minted), Some(bound)) = (region.minted_position, region.bound_position)
+            else {
+                continue;
+            };
+            if minted == bound || !seen.insert(region.line) {
+                continue;
+            }
+            let hidden = region.hidden.as_deref().unwrap_or_default();
+            let keep_old = match region.minted_occurrence {
+                Some(occurrence) => {
+                    format!("; to keep the old target instead, set `occurrence={occurrence}`")
+                }
+                None => String::new(),
+            };
+            report.warn(format!(
+                "{}:{} the span `{hidden}` binds at position:{bound} but its anchor says \
+                 position:{minted}; keep the authored occurrence with `alix doctor \
+                 --repair-positions` or set position:{bound} yourself{keep_old}",
+                path.display(),
+                region.line,
+            ));
+        }
     }
 }
 
@@ -794,6 +824,56 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+fn repair_positions(paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        let deck = Deck::load(path)?;
+        let mut edits: Vec<(usize, u32, u32)> = Vec::new();
+        let mut seen = HashSet::new();
+        for card in &deck.cards {
+            for region in &card.span_regions {
+                if let (Some(minted), Some(bound)) = (region.minted_position, region.bound_position)
+                    && minted != bound
+                    && seen.insert(region.line)
+                {
+                    edits.push((region.line, minted, bound));
+                }
+            }
+        }
+        if edits.is_empty() {
+            continue;
+        }
+        let text = std::fs::read_to_string(path)?;
+        let mut lines: Vec<String> = text.split_inclusive('\n').map(str::to_string).collect();
+        for (line, minted, bound) in &edits {
+            let Some(raw) = lines.get_mut(line - 1) else {
+                bail!("{}:{line} disappeared while repairing", path.display());
+            };
+            let old_token = format!("position:{minted}");
+            if !raw.contains(&old_token) {
+                bail!(
+                    "{}:{line} lost `{old_token}` while repairing",
+                    path.display()
+                );
+            }
+            *raw = raw.replacen(&old_token, &format!("position:{bound}"), 1);
+            println!(
+                "rebased {}:{line} position:{minted} -> position:{bound}",
+                path.display()
+            );
+        }
+        let repaired: String = lines.concat();
+        alix::parser::parse(
+            path.file_stem().and_then(|s| s.to_str()).unwrap_or("deck"),
+            &repaired,
+        )
+        .with_context(|| format!("{}: the repair would not parse", path.display()))?;
+        let tmp = path.with_extension("md.tmp");
+        std::fs::write(&tmp, &repaired)?;
+        std::fs::rename(&tmp, path)?;
+    }
+    Ok(())
+}
+
 fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
     let mut unresolved = 0;
     for path in paths {
@@ -906,11 +986,17 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             if args.repair_source_locators {
                 repair_source_locators(std::slice::from_ref(path))?;
             }
+            if args.repair_positions {
+                repair_positions(std::slice::from_ref(path))?;
+            }
             return check(vec![path.clone()]);
         }
         if alix::workspace::is_workspace(path) {
             if args.repair_source_locators {
                 repair_source_locators(&alix::workspace::deck_files(path))?;
+            }
+            if args.repair_positions {
+                repair_positions(&alix::workspace::deck_files(path))?;
             }
             check(vec![path.clone()])?;
         }
@@ -935,6 +1021,14 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             .is_some_and(alix::workspace::is_workspace)
     {
         repair_source_locators(&alix::workspace::deck_files(&decks_dir))?;
+    }
+    if args.repair_positions
+        && !args
+            .dir
+            .as_deref()
+            .is_some_and(alix::workspace::is_workspace)
+    {
+        repair_positions(&alix::workspace::deck_files(&decks_dir))?;
     }
     if args.remove_backup_files {
         let baks = doctor::backup_files(&decks_dir);
@@ -1060,6 +1154,106 @@ fn grading_spot_check(config: &alix::config::Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ANCHOR_DECK_HEAD: &str =
+        "---\nformat-version: 1\nid: \"deck-regionregionregionregion\"\n---\n\n";
+
+    fn anchor_deck(dir: &tempfile::TempDir, body: &str) -> PathBuf {
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            format!(
+                "{ANCHOR_DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\n{body}"
+            ),
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn a_diverged_anchor_is_reported_with_both_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "target and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
+        );
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        let warning = report
+            .warnings
+            .iter()
+            .find(|w| w.contains("--repair-positions"))
+            .expect("the divergence warns");
+        assert!(warning.contains("position:12"), "{warning}");
+        assert!(
+            warning.contains("`occurrence=1`"),
+            "the anchor still starts occurrence 1, so the keep-old-target edit prints: {warning}"
+        );
+    }
+
+    #[test]
+    fn a_stale_anchor_offers_only_the_keep_authored_edit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "alpha target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:2 -->\n",
+        );
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        let warning = report
+            .warnings
+            .iter()
+            .find(|w| w.contains("--repair-positions"))
+            .expect("the stale anchor warns");
+        assert!(
+            !warning.contains("occurrence="),
+            "a stale offset has no old target to keep: {warning}"
+        );
+    }
+
+    #[test]
+    fn an_aligned_anchor_is_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "prose target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:7 -->\n",
+        );
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.contains("--repair-positions")),
+            "{:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn repair_positions_applies_the_keep_authored_edit_and_settles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "target and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
+        );
+        repair_positions(std::slice::from_ref(&path)).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("occurrence=2 b:a1b2c3 position:12 -->"),
+            "{text}"
+        );
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.contains("--repair-positions")),
+            "repair settles the anchor: {:?}",
+            report.warnings
+        );
+    }
 
     #[test]
     fn value_names_are_the_documented_clap_spellings() {
@@ -1567,6 +1761,7 @@ printf ']}}'
         );
         let before = std::fs::read_to_string(&deck).unwrap();
         let args = |repair_source_locators| DoctorArgs {
+            repair_positions: false,
             dir: Some(dir.path().to_path_buf()),
             backends: false,
             all_backends: false,
