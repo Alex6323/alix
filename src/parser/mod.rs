@@ -1516,7 +1516,9 @@ fn build_card(
                     }
                     stream::RangeClass::Crossing => false,
                 };
-                let accepted = unit && (!whole_word || stream.word_bounded(&range));
+                let accepted = unit
+                    && (!whole_word || stream.word_bounded(&range))
+                    && stream.grapheme_bounded(&range);
                 if !accepted {
                     rejected.push(class);
                 }

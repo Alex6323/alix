@@ -1713,6 +1713,26 @@ mod tests {
     }
 
     #[test]
+    fn a_span_starting_inside_one_grapheme_is_rejected_before_minting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\ne\u{301}x\n<!-- blank: span hidden=\"\u{301}\" boundary=char b:a1b2c3 -->\n"
+            ),
+        );
+        let before = fs::read_to_string(&path).unwrap();
+        let result = stamp_deck(&path);
+        let after = fs::read_to_string(&path).unwrap();
+        assert!(
+            result.is_err(),
+            "a non-boundary span was accepted and persisted: {after}"
+        );
+        assert_eq!(before, after, "a rejected span must not alter the deck");
+    }
+
+    #[test]
     fn a_cover_span_gets_a_position_but_never_a_stamp() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(

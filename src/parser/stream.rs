@@ -144,6 +144,18 @@ impl MaskableStream {
         self.text[..byte].graphemes(true).count() as u32 + 1
     }
 
+    /// Whether both endpoints of `range` are grapheme boundaries of the
+    /// stream text: anything else cannot be represented by the `position:`
+    /// coordinate system and never binds.
+    pub fn grapheme_bounded(&self, range: &Range<usize>) -> bool {
+        use unicode_segmentation::GraphemeCursor;
+        [range.start, range.end].iter().all(|&at| {
+            GraphemeCursor::new(at, self.text.len(), true)
+                .is_boundary(&self.text, 0)
+                .unwrap_or(false)
+        })
+    }
+
     /// The byte offset where the 1-based grapheme `position` starts, when it
     /// is in bounds: the reverse of `grapheme_position`.
     pub fn grapheme_byte(&self, position: u32) -> Option<usize> {
