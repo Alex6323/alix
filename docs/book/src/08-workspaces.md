@@ -5,6 +5,50 @@ your Spanish decks, or every deck about one codebase. A **workspace** is that
 unit: a folder of decks reviewed together, sharing settings and a name, with its
 own progress.
 
+## Do you need one?
+
+**For a single deck you study yourself, no.** A plain `.md` file in your decks
+folder is a complete deck: it reviews, schedules, grades, and takes
+[the exam](12-the-ai-exam.md) the same way a workspace member does. A
+workspace adds settings and files *around* a group of decks; around one deck
+there is nothing for it to do.
+
+Reach for a workspace when one of these becomes true:
+
+- **Several decks belong together and should share settings.** The
+  `[defaults]` table is written once and every member inherits it, instead of
+  the same `direction:` or `reveal:` line at the top of six files.
+- **One deck should come before another.** `requires` only means something
+  between members: it decides which decks are unlocked yet, and draws the
+  [dependency tree](09-dependencies.md) in the picker.
+- **The material has a source you want to keep.** Only a workspace member can
+  **freeze** its evidence: initializing one copies each cited source excerpt
+  and each local image into `assets/deck-<token>/`, so the deck still shows
+  them when the original file has moved on, and still shows them on a machine
+  that never had the source at all. A deck outside a workspace keeps its images
+  beside it and its citations live, so if the cited file moves or changes, the
+  card shows a warning in place of the quoted lines.
+- **You want to hand the whole cluster to someone else.** Sharing a workspace
+  carries its members with their frozen assets and generated augmentation, and
+  strips your progress. A loose deck has nothing frozen to carry, so what
+  arrives is the file itself and whatever the recipient can still resolve.
+- **There is a date you are working toward.** A `deadline` and the pacing ramp
+  it drives are read only inside a real workspace; see [Personal
+  pacing](#personal-pacing-alixlocaltoml).
+
+What it costs: a folder with an `alix.toml` instead of a single file, and
+members living in a `decks/` subfolder rather than loose.
+
+**Changing your mind later is a manual move, not a command.** `alix deck
+copy`/`move` transfer *between* workspaces: both the source and the
+destination have to be workspaces already (see [Moving decks between
+workspaces](#moving-decks-between-workspaces)), so neither promoting a loose
+deck nor demoting a member is covered. Promoting one means creating the
+workspace and moving the file into its `decks/` yourself. The ids inside the
+file are untouched by that, but where your progress is stored depends on the
+workspace's own settings, so run [`alix doctor`](17-command-reference.md) on
+the result and check that the deck still reports the history you expect.
+
 ## Making a workspace
 
 A workspace has an **`alix.toml`** at its root and its initialized `.md` decks
