@@ -128,15 +128,21 @@ fn validate_verbatim_delimiters(source: &str) -> Result<(), String> {
         }
         let mut end = at + 1;
         while let Some((next_at, next)) = chars.peek().copied() {
-            if !next.is_ascii_alphabetic() {
+            if !next.is_ascii_alphabetic() && next != '@' {
                 break;
             }
             chars.next();
             end = next_at + 1;
         }
-        if &source[at..end] != r"\verb" {
+        let word = &source[at..end];
+        if word != r"\verb" {
             if end == at + 1 {
                 chars.next();
+            }
+            // The pinned renderer strip-prefixes `\verb` off every control
+            // word, silently treating the remainder as delimiter and body.
+            if word.starts_with(r"\verb") {
+                return Err(format!("malformed verbatim command `{word}`"));
             }
             continue;
         }
@@ -435,6 +441,18 @@ mod tests {
     #[test]
     fn an_unterminated_verb_does_not_parse() {
         assert!(parses(r"\verb|abc").is_err());
+    }
+
+    #[test]
+    fn a_longer_control_word_starting_with_verb_fails_loudly() {
+        let source = r"\verbfoo";
+        let parsed = ratex_parser::parser::parse(source).expect("Ratex accepts the source");
+        let view = MathRenderer::default().view(source, false, false);
+        assert!(
+            view.svg.is_none() && view.error.is_some(),
+            "expected a loud error; Ratex parsed {parsed:?}, rendered_svg={}",
+            view.svg.is_some()
+        );
     }
 
     #[test]
