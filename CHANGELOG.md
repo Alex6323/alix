@@ -23,16 +23,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   task-list answer beside a `blank:` are a parse error. The review
   contract's `ImageDto` grows `regions` and `crop` (`docs/API.md`),
   classifying each region as asked, a sibling card's mask, or a cover.
-  Both web clients draw the masks: flat overlays carrying the same
+  All three clients draw the masks: flat overlays carrying the same
   reserved-codepoint vocabulary as text blanks (the asked region shows the
-  blank glyph, sibling masks and covers the hidden glyph), positioned over
+  blank glyph, a sibling card's mask the hidden glyph, and a cover stays a
+  plain glyphless fill), positioned over
   the image's painted rectangle so they track every resize, lifting on
   reveal exactly per `reveal_on_answer`; a cropped image renders as the
   crop viewport with regions kept in full-source space. A region reaching
   past the source edge is clipped at it, and an asked region that clips to
   nothing raises the client's error surface instead of silently showing
-  the unmasked question. The mobile client
-  does not draw masks yet: that lands before any release ships. Each region also carries `reveal_on_answer`:
+  the unmasked question. Each region also carries `reveal_on_answer`:
   true for an asked blank and for a cover on a card whose block poses no
   sibling questions (a cover exists to stop a question-side leak), false
   for a sibling mask and for a cover on a region or cloze card, whose

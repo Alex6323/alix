@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:alix_mobile/review/masked_image.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/review/sketch_canvas.dart';
@@ -152,7 +153,7 @@ class ReviewCardView extends StatelessWidget {
         _front(context, card, tokens),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
-          Image.file(File(image.src), height: 180, semanticLabel: image.alt),
+          _cardImage(context, image, answered),
         ],
         if (card.contextLeads)
           for (final (index, line) in card.context.indexed) ...[
@@ -173,7 +174,7 @@ class ReviewCardView extends StatelessWidget {
         if (answered)
           for (final image in card.imagesBack) ...[
             const SizedBox(height: 12),
-            Image.file(File(image.src), height: 180, semanticLabel: image.alt),
+            _cardImage(context, image, answered),
           ],
         if (state.introducing && !_hasChoices && !revealed) ...[
           const SizedBox(height: 18),
@@ -189,6 +190,29 @@ class ReviewCardView extends StatelessWidget {
         ],
         if (answered && card.note.isNotEmpty) _note(card, tokens),
       ],
+    );
+  }
+
+  Widget _cardImage(
+    BuildContext context,
+    ReviewImageModel image,
+    bool answered,
+  ) {
+    if (image.regions.isEmpty && image.crop == null) {
+      return Image.file(File(image.src), height: 180, semanticLabel: image.alt);
+    }
+    return MaskedCardImage(
+      provider: FileImage(File(image.src)),
+      image: image,
+      answered: answered,
+      height: 180,
+      onAskedGone: () => ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'a blank lies outside the image, so its question cannot be drawn',
+          ),
+        ),
+      ),
     );
   }
 
@@ -357,7 +381,11 @@ class ReviewCardView extends StatelessWidget {
 
   /// Above `_isTyping`: a draw card would otherwise take the typing branch and
   /// ask for the thing the deck says cannot be typed.
-  Widget _sketchBody(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
+  Widget _sketchBody(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens,
+  ) {
     final ink = Theme.of(context).colorScheme.onSurface;
     final canvas = DecoratedBox(
       decoration: BoxDecoration(
@@ -397,11 +425,7 @@ class ReviewCardView extends StatelessWidget {
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        box,
-        const SizedBox(height: 8),
-        _sketchTools(tokens),
-      ],
+      children: [box, const SizedBox(height: 8), _sketchTools(tokens)],
     );
   }
 
@@ -417,16 +441,26 @@ class ReviewCardView extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             minimumSize: const Size(0, 36),
           ),
-          child: Text(label, style: const TextStyle(fontFamily: _sans, fontSize: 13)),
+          child: Text(
+            label,
+            style: const TextStyle(fontFamily: _sans, fontSize: 13),
+          ),
         ),
       );
     }
 
     return Row(
       children: [
-        tool('Pen', () => onSketchTool(SketchTool.pen), on: sketch.tool == SketchTool.pen),
-        tool('Eraser', () => onSketchTool(SketchTool.eraser),
-            on: sketch.tool == SketchTool.eraser),
+        tool(
+          'Pen',
+          () => onSketchTool(SketchTool.pen),
+          on: sketch.tool == SketchTool.pen,
+        ),
+        tool(
+          'Eraser',
+          () => onSketchTool(SketchTool.eraser),
+          on: sketch.tool == SketchTool.eraser,
+        ),
         tool('Undo', onSketchUndo),
         tool('Clear', onSketchClear),
       ],
@@ -436,7 +470,8 @@ class ReviewCardView extends StatelessWidget {
   Widget _body(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
     if (_hasChoices) return _options(tokens);
     if (_isDrawing) return _sketchBody(context, card, tokens);
-    if (state.mode == ReviewMode.lineByLine && (!state.introducing || revealed)) {
+    if (state.mode == ReviewMode.lineByLine &&
+        (!state.introducing || revealed)) {
       final visible = state.introducing ? card.back.length : revealedLines;
       return _revealLines(
         context,
@@ -1221,7 +1256,8 @@ class _ScrollWithMoreHintState extends State<ScrollWithMoreHint> {
   }
 
   void _update(ScrollMetrics metrics) {
-    final more = metrics.hasContentDimensions &&
+    final more =
+        metrics.hasContentDimensions &&
         metrics.maxScrollExtent > 4 &&
         metrics.pixels < metrics.maxScrollExtent - 4;
     if (more != _moreBelow) setState(() => _moreBelow = more);
@@ -1256,9 +1292,13 @@ class _ScrollWithMoreHintState extends State<ScrollWithMoreHint> {
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 3),
+                          horizontal: 10,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.surface.withValues(alpha: 0.9),
+                          color: theme.colorScheme.surface.withValues(
+                            alpha: 0.9,
+                          ),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: theme.dividerColor),
                         ),
