@@ -438,6 +438,7 @@ export function createStudy({
     a.appendChild(sec);
     appendImages(a, c.images_back);
     a.classList.add("has-body"); // browse always shows the full answer
+    card.classList.add("answered"); // and reveal-on-answer masks lift with it
 
     if (hasNote) {
       card.appendChild(el("div", "divider"));
@@ -497,6 +498,8 @@ export function createStudy({
     }
     else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
     else { fillAnswer(a); setNote(fullyRevealed()); }
+    const cardEl = doc.getElementById("card");
+    if (cardEl) cardEl.classList.toggle("answered", isAnswered());
     // A cited card: the whole region toggles answer ⟷ source (click it, or `s`).
     // The pill both marks the card as having a source and labels where it is.
     a.classList.toggle("citable", citable);
@@ -1062,7 +1065,82 @@ export function createStudy({
     const img = el("img", "card-img");
     img.src = im.src;
     img.alt = im.alt || "";
-    return img;
+    const regions = im.regions || [];
+    if (!regions.length && !im.crop) return img;
+    if (!im.crop) return maskedImage(img, regions, "img");
+    // Region and crop geometry live in the source image's own space (px of
+    // the source, or % of it), never in crop space: the crop is a viewport,
+    // so the full-image sheet shifts inside it and masks sit on the sheet.
+    const box = el("div", "img-box");
+    const sheet = el("div", "img-sheet");
+    sheet.appendChild(img);
+    box.appendChild(sheet);
+    for (const r of regions) {
+      const mask = el("div", "img-mask" + (r.reveal_on_answer ? " reveals" : ""));
+      mask.appendChild(el("span", "img-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+      mask.dataset.region = JSON.stringify(r);
+      sheet.appendChild(mask);
+    }
+    box.style.display = "none"; // nothing to show until the source's size is known
+    const place = () => {
+      const sw = img.naturalWidth, sh = img.naturalHeight;
+      if (!sw || !sh) return;
+      box.style.display = "";
+      const pct = (r) => r.unit === "%"
+        ? { x: r.x, y: r.y, w: r.width, h: r.height }
+        : { x: (r.x / sw) * 100, y: (r.y / sh) * 100, w: (r.width / sw) * 100, h: (r.height / sh) * 100 };
+      const crop = im.crop ? pct(im.crop) : { x: 0, y: 0, w: 100, h: 100 };
+      box.style.aspectRatio = `${(crop.w / 100) * sw} / ${(crop.h / 100) * sh}`;
+      sheet.style.width = `${(100 / crop.w) * 100}%`;
+      sheet.style.height = `${(100 / crop.h) * 100}%`;
+      sheet.style.left = `${(-crop.x / crop.w) * 100}%`;
+      sheet.style.top = `${(-crop.y / crop.h) * 100}%`;
+      for (const mask of sheet.querySelectorAll(".img-mask")) {
+        const g = pct(JSON.parse(mask.dataset.region));
+        mask.style.left = `${g.x}%`;
+        mask.style.top = `${g.y}%`;
+        mask.style.width = `${g.w}%`;
+        mask.style.height = `${g.h}%`;
+      }
+    };
+    if (img.complete) place(); else img.addEventListener("load", place);
+    return box;
+  }
+
+  // Masks over an uncropped image ride the standard card image: the img
+  // keeps its shrink-to-fit layout and each mask is positioned in px over
+  // the PAINTED rect (object-fit contain letterboxes, so the element box
+  // and the picture disagree), re-synced whenever the img resizes.
+  function maskedImage(img, regions, prefix) {
+    const wrap = el("div", prefix + "-wrap");
+    wrap.appendChild(img);
+    for (const r of regions) {
+      const mask = el("div", prefix + "-mask" + (r.reveal_on_answer ? " reveals" : ""));
+      mask.appendChild(el("span", prefix + "-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+      mask.dataset.region = JSON.stringify(r);
+      wrap.appendChild(mask);
+    }
+    const sync = () => {
+      const sw = img.naturalWidth, sh = img.naturalHeight;
+      const w = img.clientWidth, h = img.clientHeight;
+      if (!sw || !sh || !w || !h) return;
+      const scale = Math.min(w / sw, h / sh);
+      const ox = img.offsetLeft + (w - sw * scale) / 2;
+      const oy = img.offsetTop + (h - sh * scale) / 2;
+      for (const mask of wrap.querySelectorAll("[data-region]")) {
+        const r = JSON.parse(mask.dataset.region);
+        const g = r.unit === "%"
+          ? { x: (r.x / 100) * sw, y: (r.y / 100) * sh, w: (r.width / 100) * sw, h: (r.height / 100) * sh }
+          : { x: r.x, y: r.y, w: r.width, h: r.height };
+        mask.style.left = `${ox + g.x * scale}px`;
+        mask.style.top = `${oy + g.y * scale}px`;
+        mask.style.width = `${g.w * scale}px`;
+        mask.style.height = `${g.h * scale}px`;
+      }
+    };
+    new ResizeObserver(sync).observe(img);
+    if (img.complete) sync(); else img.addEventListener("load", sync);
+    return wrap;
   }
 
   function renderLegend() {

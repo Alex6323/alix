@@ -86,7 +86,7 @@ function renderReview() {
   for (let i = 0; i < (card.context || []).length; i++) {
     cardEl.appendChild(contextLine(card.context[i], card.context_runs && card.context_runs[i]));
   }
-  appendImages(cardEl, card.images);
+  appendImages(cardEl, card.images, done);
 
   if (choiceMode) {
     cardEl.appendChild(renderOptions());
@@ -96,7 +96,7 @@ function renderReview() {
     // Fill-in-the-blank: a blank before reveal, the green answer after.
     cardEl.appendChild(done ? answerFill(card) : blankEl());
   }
-  if (done) appendImages(cardEl, card.images_back);
+  if (done) appendImages(cardEl, card.images_back, done);
 
   // Reserve the why-slot whenever the card has a note, so filling it on reveal
   // doesn't resize the card (the shell must not jump).
@@ -121,16 +121,96 @@ function eyebrowFor(s, introducing) {
 
 // Each side's images render as ordered blocks; `im` is a `{ src, alt }` from
 // the card's `images` / `images_back` list.
-function appendImages(parent, images) {
-  for (const im of (images || [])) parent.appendChild(cardImg(im));
+function appendImages(parent, images, done) {
+  for (const im of (images || [])) parent.appendChild(cardImg(im, done));
 }
 
-function cardImg(im) {
+// A done card lifts its reveal-on-answer masks; sibling masks stay.
+function keptRegions(regions, done) {
+  return regions.filter((r) => !(done && r.reveal_on_answer));
+}
+
+// Masks over an uncropped image ride the standard card image: the img keeps
+// its shrink-to-fit layout and each mask is positioned in px over the PAINTED
+// rect, re-synced whenever the img resizes.
+function maskedImage(img, regions, prefix) {
+  const wrap = el("div", prefix + "-wrap");
+  wrap.appendChild(img);
+  for (const r of regions) {
+    const mask = el("div", prefix + "-mask");
+    mask.appendChild(el("span", prefix + "-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+    mask.dataset.region = JSON.stringify(r);
+    wrap.appendChild(mask);
+  }
+  const sync = () => {
+    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const w = img.clientWidth, h = img.clientHeight;
+    if (!sw || !sh || !w || !h) return;
+    const scale = Math.min(w / sw, h / sh);
+    const ox = img.offsetLeft + (w - sw * scale) / 2;
+    const oy = img.offsetTop + (h - sh * scale) / 2;
+    for (const mask of wrap.querySelectorAll("[data-region]")) {
+      const r = JSON.parse(mask.dataset.region);
+      const g = r.unit === "%"
+        ? { x: (r.x / 100) * sw, y: (r.y / 100) * sh, w: (r.width / 100) * sw, h: (r.height / 100) * sh }
+        : { x: r.x, y: r.y, w: r.width, h: r.height };
+      mask.style.left = `${ox + g.x * scale}px`;
+      mask.style.top = `${oy + g.y * scale}px`;
+      mask.style.width = `${g.w * scale}px`;
+      mask.style.height = `${g.h * scale}px`;
+    }
+  };
+  new ResizeObserver(sync).observe(img);
+  if (img.complete) sync(); else img.addEventListener("load", sync);
+  return wrap;
+}
+
+function cardImg(im, done) {
   const img = doc.createElement("img");
   img.className = "rev-img";
   img.src = im.src;
   img.alt = im.alt || "";
-  return img;
+  const regions = im.regions || [];
+  if (!regions.length && !im.crop) return img;
+  if (!im.crop) return maskedImage(img, keptRegions(regions, done), "rev-img");
+  // Region and crop geometry live in the source image's own space, never in
+  // crop space: the crop is a viewport, the full-image sheet shifts inside
+  // it, and masks sit on the sheet. A reveal-on-answer mask lifts once the
+  // card is done; sibling masks stay both sides.
+  const box = el("div", "rev-img-box");
+  const sheet = el("div", "rev-img-sheet");
+  sheet.appendChild(img);
+  box.appendChild(sheet);
+  for (const r of keptRegions(regions, done)) {
+    const mask = el("div", "rev-img-mask");
+    mask.appendChild(el("span", "rev-img-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+    mask.dataset.region = JSON.stringify(r);
+    sheet.appendChild(mask);
+  }
+  box.style.display = "none"; // nothing to show until the source's size is known
+  const place = () => {
+    const sw = img.naturalWidth, sh = img.naturalHeight;
+    if (!sw || !sh) return;
+    box.style.display = "";
+    const pct = (r) => r.unit === "%"
+      ? { x: r.x, y: r.y, w: r.width, h: r.height }
+      : { x: (r.x / sw) * 100, y: (r.y / sh) * 100, w: (r.width / sw) * 100, h: (r.height / sh) * 100 };
+    const crop = im.crop ? pct(im.crop) : { x: 0, y: 0, w: 100, h: 100 };
+    box.style.aspectRatio = `${(crop.w / 100) * sw} / ${(crop.h / 100) * sh}`;
+    sheet.style.width = `${(100 / crop.w) * 100}%`;
+    sheet.style.height = `${(100 / crop.h) * 100}%`;
+    sheet.style.left = `${(-crop.x / crop.w) * 100}%`;
+    sheet.style.top = `${(-crop.y / crop.h) * 100}%`;
+    for (const mask of sheet.querySelectorAll(".rev-img-mask")) {
+      const g = pct(JSON.parse(mask.dataset.region));
+      mask.style.left = `${g.x}%`;
+      mask.style.top = `${g.y}%`;
+      mask.style.width = `${g.w}%`;
+      mask.style.height = `${g.h}%`;
+    }
+  };
+  if (img.complete) place(); else img.addEventListener("load", place);
+  return box;
 }
 
 // The green-filled answer. A multi-line answer keeps its lines -- joining them
