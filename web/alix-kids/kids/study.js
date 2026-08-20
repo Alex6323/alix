@@ -138,6 +138,14 @@ function keptRegions(regions, done) {
   return regions.filter((r) => !(done && r.reveal_on_answer));
 }
 
+// An asked region clipping to nothing is a broken question and fails loud;
+// an empty sibling mask or cover hides nothing that exists, so those stay
+// silently dropped. No detail: bad deck data is reported on the surface,
+// not as a console error (the adult client's notice names the cause).
+function askedGone() {
+  reportError();
+}
+
 // Masks over an uncropped image ride the standard card image: the img keeps
 // its shrink-to-fit layout and each mask is positioned in px over the PAINTED
 // rect, re-synced whenever the img resizes.
@@ -150,6 +158,7 @@ function maskedImage(img, regions, prefix) {
     mask.dataset.region = JSON.stringify(r);
     wrap.appendChild(mask);
   }
+  let warned = false; // sync re-runs on every resize; the error fires once
   const sync = () => {
     const sw = img.naturalWidth, sh = img.naturalHeight;
     const w = img.clientWidth, h = img.clientHeight;
@@ -166,7 +175,12 @@ function maskedImage(img, regions, prefix) {
       // source edge instead of floating over neighboring content.
       const x0 = Math.max(0, g.x), y0 = Math.max(0, g.y);
       const x1 = Math.min(sw, g.x + g.w), y1 = Math.min(sh, g.y + g.h);
-      mask.style.display = x1 > x0 && y1 > y0 ? "" : "none";
+      const visible = x1 > x0 && y1 > y0;
+      if (!visible && r.role === "asked" && !warned) {
+        warned = true;
+        askedGone();
+      }
+      mask.style.display = visible ? "" : "none";
       mask.style.left = `${ox + x0 * scale}px`;
       mask.style.top = `${oy + y0 * scale}px`;
       mask.style.width = `${(x1 - x0) * scale}px`;
@@ -215,11 +229,17 @@ function cardImg(im, done) {
     sheet.style.left = `${(-crop.x / crop.w) * 100}%`;
     sheet.style.top = `${(-crop.y / crop.h) * 100}%`;
     for (const mask of sheet.querySelectorAll(".rev-img-mask")) {
-      const g = pct(JSON.parse(mask.dataset.region));
-      mask.style.left = `${g.x}%`;
-      mask.style.top = `${g.y}%`;
-      mask.style.width = `${g.w}%`;
-      mask.style.height = `${g.h}%`;
+      const r = JSON.parse(mask.dataset.region);
+      const g = pct(r);
+      const x0 = Math.max(0, g.x), y0 = Math.max(0, g.y);
+      const x1 = Math.min(100, g.x + g.w), y1 = Math.min(100, g.y + g.h);
+      const visible = x1 > x0 && y1 > y0;
+      if (!visible && r.role === "asked") askedGone();
+      mask.style.display = visible ? "" : "none";
+      mask.style.left = `${x0}%`;
+      mask.style.top = `${y0}%`;
+      mask.style.width = `${x1 - x0}%`;
+      mask.style.height = `${y1 - y0}%`;
     }
   };
   if (img.complete) place(); else img.addEventListener("load", place);

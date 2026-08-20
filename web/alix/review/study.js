@@ -28,6 +28,7 @@ export function createStudy({
   openTutor,
   startExam,
   closeMenu,
+  notice,
   timers,
   ui,
 }) {
@@ -1096,10 +1097,13 @@ export function createStudy({
       sheet.style.left = `${(-crop.x / crop.w) * 100}%`;
       sheet.style.top = `${(-crop.y / crop.h) * 100}%`;
       for (const mask of sheet.querySelectorAll(".img-mask")) {
-        const g = pct(JSON.parse(mask.dataset.region));
+        const r = JSON.parse(mask.dataset.region);
+        const g = pct(r);
         const x0 = Math.max(0, g.x), y0 = Math.max(0, g.y);
         const x1 = Math.min(100, g.x + g.w), y1 = Math.min(100, g.y + g.h);
-        mask.style.display = x1 > x0 && y1 > y0 ? "" : "none";
+        const visible = x1 > x0 && y1 > y0;
+        if (!visible && r.role === "asked") askedGone();
+        mask.style.display = visible ? "" : "none";
         mask.style.left = `${x0}%`;
         mask.style.top = `${y0}%`;
         mask.style.width = `${x1 - x0}%`;
@@ -1108,6 +1112,13 @@ export function createStudy({
     };
     if (img.complete) place(); else img.addEventListener("load", place);
     return box;
+  }
+
+  // An asked region clipping to nothing is a broken question and fails loud;
+  // an empty sibling mask or cover hides nothing that exists, so those stay
+  // silently dropped.
+  function askedGone() {
+    notice("a blank lies outside the image, so its question cannot be drawn");
   }
 
   // The three-role vocabulary: an asked region shows the blank glyph, a
@@ -1131,6 +1142,7 @@ export function createStudy({
       mask.dataset.region = JSON.stringify(r);
       wrap.appendChild(mask);
     }
+    let warned = false; // sync re-runs on every resize; the notice fires once
     const sync = () => {
       const sw = img.naturalWidth, sh = img.naturalHeight;
       const w = img.clientWidth, h = img.clientHeight;
@@ -1147,7 +1159,12 @@ export function createStudy({
         // source edge instead of floating over neighboring content.
         const x0 = Math.max(0, g.x), y0 = Math.max(0, g.y);
         const x1 = Math.min(sw, g.x + g.w), y1 = Math.min(sh, g.y + g.h);
-        mask.style.display = x1 > x0 && y1 > y0 ? "" : "none";
+        const visible = x1 > x0 && y1 > y0;
+        if (!visible && r.role === "asked" && !warned) {
+          warned = true;
+          askedGone();
+        }
+        mask.style.display = visible ? "" : "none";
         mask.style.left = `${ox + x0 * scale}px`;
         mask.style.top = `${oy + y0 * scale}px`;
         mask.style.width = `${(x1 - x0) * scale}px`;

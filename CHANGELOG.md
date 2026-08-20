@@ -28,7 +28,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   blank glyph, sibling masks and covers the hidden glyph), positioned over
   the image's painted rectangle so they track every resize, lifting on
   reveal exactly per `reveal_on_answer`; a cropped image renders as the
-  crop viewport with regions kept in full-source space. The mobile client
+  crop viewport with regions kept in full-source space. A region reaching
+  past the source edge is clipped at it, and an asked region that clips to
+  nothing raises the client's error surface instead of silently showing
+  the unmasked question. The mobile client
   does not draw masks yet: that lands before any release ships. Each region also carries `reveal_on_answer`:
   true for an asked blank and for a cover on a card whose block poses no
   sibling questions (a cover exists to stop a question-side leak), false
@@ -298,6 +301,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+
+- The kids web app handed its error toast and its tutor unbound
+  `setTimeout`/`setInterval` references, which browsers reject with
+  `Illegal invocation` when called as plain object methods: the error
+  toast never armed its auto-dismiss and the tutor's answer polling never
+  started. Both timer sets are now bound to `window`.
 
 - An unterminated `\verb` in a formula (`\verb|abc` with no closing
   delimiter) is now a loud math error on every rendered surface instead of

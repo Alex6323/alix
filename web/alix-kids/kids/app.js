@@ -46,7 +46,10 @@ document.addEventListener("contextmenu", (e) => {
 
 const errorReporter = createKidsErrorReporter({
   console,
-  timers: { setTimeout, clearTimeout },
+  timers: {
+    setTimeout: window.setTimeout.bind(window),
+    clearTimeout: window.clearTimeout.bind(window),
+  },
   ui: { oops: document.getElementById("oops") },
 });
 function showOops(detail) { errorReporter.show(detail); }
@@ -101,7 +104,10 @@ tutor = createKidsTutor({
   api,
   post,
   resyncStudy: study.resync,
-  timers: { setInterval, clearInterval },
+  timers: {
+    setInterval: window.setInterval.bind(window),
+    clearInterval: window.clearInterval.bind(window),
+  },
   ui: {
     mascot: mascotEl,
     input: askInput,

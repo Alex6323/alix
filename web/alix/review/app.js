@@ -76,6 +76,7 @@ study = createStudy({
   openTutor: () => tutor.show(),
   startExam: (deck) => exam.start(deck),
   closeMenu: () => menu.classList.remove("open"),
+  notice,
   timers: {
     setInterval: window.setInterval.bind(window),
     clearInterval: window.clearInterval.bind(window),

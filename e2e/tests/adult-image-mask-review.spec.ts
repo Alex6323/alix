@@ -13,7 +13,7 @@ const regions = [
   { role: "mask", reveal_on_answer: false, x: 90, y: 70, width: 20, height: 20, unit: "%" },
 ];
 
-function state() {
+function state(imageRegions = regions, crop = null) {
   return {
     kind: "review",
     study_revision: 1,
@@ -30,7 +30,7 @@ function state() {
       back_units: [{ kind: "sentence", text: "answer" }],
       reshaped: false,
       note: [],
-      images: [{ src: IMAGE, alt: "mask geometry probe", regions }],
+      images: [{ src: IMAGE, alt: "mask geometry probe", regions: imageRegions, crop }],
       images_back: [],
       citations: [],
       crumb: null,
@@ -72,14 +72,15 @@ async function visualSignature(locator: Locator) {
   });
 }
 
-test.beforeEach(async ({ page, request }) => {
+async function openSyntheticCard(page, request, imageRegions = regions, crop = null) {
   await request.post("/api/deselect", { data: {} });
-  await page.route("**/api/state", (route) => route.fulfill({ json: state() }));
+  await page.route("**/api/state", (route) => route.fulfill({ json: state(imageRegions, crop) }));
   await openApp(page);
-  await expect(page.locator(".img-mask")).toHaveCount(4);
-});
+  await expect(page.locator(".img-mask")).toHaveCount(imageRegions.length);
+}
 
-test("asked, sibling, and cover masks have three distinct visual treatments", async ({ page }) => {
+test("asked, sibling, and cover masks have three distinct visual treatments", async ({ page, request }) => {
+  await openSyntheticCard(page, request);
   const byRole = (role: string) => page.locator(`.img-mask[data-region*='"role":"${role}"']`).first();
 
   const asked = await visualSignature(byRole("asked"));
@@ -91,7 +92,8 @@ test("asked, sibling, and cover masks have three distinct visual treatments", as
   expect(sibling, "a sibling mask and a cover must remain visually distinguishable").not.toEqual(cover);
 });
 
-test("a valid region extending past the source edge is clipped to the image", async ({ page }) => {
+test("a valid region extending past the source edge is clipped to the image", async ({ page, request }) => {
+  await openSyntheticCard(page, request);
   const image = await page.locator("img[alt='mask geometry probe']").boundingBox();
   const region = await page.locator(`.img-mask[data-region*='"x":90']`).boundingBox();
   expect(image).not.toBeNull();
@@ -99,4 +101,15 @@ test("a valid region extending past the source edge is clipped to the image", as
   expect(region!.x + region!.width, "the mask must not paint to the right of the source").toBeLessThanOrEqual(
     image!.x + image!.width + 0.5,
   );
+});
+
+test("an asked pixel region wholly outside the source fails loudly", async ({ page, request }) => {
+  await openSyntheticCard(page, request, [
+    { role: "asked", reveal_on_answer: true, x: 120, y: 10, width: 20, height: 20, unit: "px" },
+  ]);
+
+  await expect(
+    page.locator("#notice.show"),
+    "ADR 0034 requires a loud render failure instead of silently exposing an unmasked question",
+  ).toBeVisible();
 });
