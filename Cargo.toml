@@ -52,6 +52,7 @@ qrcodegen = { version = "1.8.0", optional = true } # zero-dep QR encoder for the
 ratex-layout = "=0.1.13"
 ratex-parser = "=0.1.13"
 ratex-svg = { version = "=0.1.13", features = ["standalone", "embed-fonts"] }
+resvg = { version = "0.47", default-features = false, features = ["text", "system-fonts", "memmap-fonts"], optional = true } # rasterize frozen mermaid SVGs into maskable PNG assets
 rs-fsrs = { version = "1.2.1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -72,7 +73,7 @@ default = ["full"]
 # `full` is every non-core capability: the web server, the AI backend and all its
 # consumers, and sharing. `--no-default-features` builds the lean core the mobile
 # client cross-compiles. See CONTRIBUTING.md.
-full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:clap", "dep:ctrlc"]
+full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:clap", "dep:ctrlc", "dep:resvg"]
 
 [dev-dependencies]
 # The cross-client parity fixture; the mobile bridge is a separate crate and

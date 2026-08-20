@@ -8,6 +8,8 @@ rand@0.8 x1
 rand@0.9 x1
 rand_core@0.6 x1
 rand_core@0.9 x1
+roxmltree@0.20 x1
+roxmltree@0.21 x1
 thiserror-impl@1 x1
 thiserror-impl@2 x1
 thiserror@1 x1

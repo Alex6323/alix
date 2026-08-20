@@ -12,11 +12,26 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use resvg::usvg;
 use twox_hash::XxHash64;
 
 /// The CLI alix shells out to. Named here rather than configured: a second
 /// renderer would produce different pictures for the same deck.
 pub const COMMAND: &str = "sekien";
+
+/// Checked before the pixmap is allocated, so a huge graph fails as one
+/// authoring error instead of an unbounded allocation. 4096 squared.
+const PIXEL_CAP: u64 = 4096 * 4096;
+
+/// A long `flowchart LR` grows in one dimension and can pass the area cap
+/// while exceeding mobile decoder and GPU texture limits, so each side is
+/// bounded independently.
+const SIDE_CAP: u32 = 8192;
+
+/// The ground for diagrams whose root style declares a light base fill:
+/// mermaid's dark themes assume a dark page and their `background` theme
+/// variable is this value.
+const DARK_GROUND: (u8, u8, u8) = (0x33, 0x33, 0x33);
 
 /// One fence's outcome: the SVG, or the renderer's own message for it.
 pub type Rendered = Result<String, String>;
@@ -91,6 +106,152 @@ pub fn fingerprint(source: &str) -> String {
     let mut hasher = XxHash64::default();
     hasher.write(source.as_bytes());
     format!("xxh64-{:016x}", hasher.finish())
+}
+
+/// Rasterizes a rendered SVG to PNG bytes at `zoom` times its intrinsic size.
+///
+/// PNG rather than SVG is load-bearing: a mermaid SVG carries every label as
+/// selectable `<text>`, so an overlay on it hides nothing (view-source,
+/// Ctrl+F and screen readers all read the answer). Pixels under an overlay
+/// are the trust model image occlusion already ships.
+///
+/// `family` must name a concrete font that both this rasterizer and the
+/// renderer measured with; a text-bearing SVG whose family is missing fails
+/// loudly here, because usvg would otherwise drop every label and freeze a
+/// silently textless diagram.
+pub fn rasterize(svg: &str, family: &str, zoom: f32) -> Result<Vec<u8>> {
+    raster(svg, family, zoom)?
+        .encode_png()
+        .context("the PNG cannot be encoded")
+}
+
+fn raster(svg: &str, family: &str, zoom: f32) -> Result<resvg::tiny_skia::Pixmap> {
+    let mut db = system_fonts().clone();
+    db.set_sans_serif_family(family);
+    let query = usvg::fontdb::Query {
+        families: &[usvg::fontdb::Family::Name(family)],
+        ..Default::default()
+    };
+    if svg.contains("<text") && db.query(&query).is_none() {
+        bail!("font family '{family}' is not installed, so the diagram's text cannot be drawn");
+    }
+    let options = usvg::Options {
+        font_family: family.to_string(),
+        fontdb: std::sync::Arc::new(db),
+        ..Default::default()
+    };
+    let tree = usvg::Tree::from_str(svg, &options).context("the SVG cannot be parsed")?;
+    let width = (tree.size().width() * zoom).ceil() as u32;
+    let height = (tree.size().height() * zoom).ceil() as u32;
+    if width > SIDE_CAP || height > SIDE_CAP {
+        bail!(
+            "the diagram would rasterize to {width}x{height} pixels, over the {SIDE_CAP} per-side cap"
+        );
+    }
+    if u64::from(width) * u64::from(height) > PIXEL_CAP {
+        bail!("the diagram would rasterize to {width}x{height} pixels, over the {PIXEL_CAP} cap");
+    }
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .with_context(|| format!("the diagram has no drawable size at zoom {zoom}"))?;
+    let (red, green, blue) = ground(svg)?;
+    pixmap.fill(resvg::tiny_skia::Color::from_rgba8(red, green, blue, 255));
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(zoom, zoom),
+        &mut pixmap.as_mut(),
+    );
+    Ok(pixmap)
+}
+
+/// The opaque ground the SVG is composited onto, derived from the diagram's
+/// own theme: every mermaid theme declares its base text fill in the root
+/// style rule (`#d1{...fill:#ccc}` for dark themes, `fill:#333` for light),
+/// and the ground with the higher WCAG contrast against that fill wins
+/// (channel-mean thresholds put bright saturated ink on the wrong ground). A
+/// marker this derivation cannot read is an error, never a silent white:
+/// sekien is not version-pinned, and a CSS serialization change in an
+/// upgrade must fail the freeze loudly instead of erasing content.
+fn ground(svg: &str) -> Result<(u8, u8, u8)> {
+    let style = svg
+        .split_once("<style")
+        .and_then(|(_, rest)| rest.split_once('>'))
+        .and_then(|(_, rest)| rest.split_once("</style").map(|(inner, _)| inner));
+    let Some(style) = style else {
+        bail!("the diagram carries no theme marker (no style block), so no safe ground exists");
+    };
+    let Some(fill) = fill_declaration(style) else {
+        bail!("the diagram's theme declares no base fill, so no safe ground exists");
+    };
+    let Some(fill) = hex_color(fill) else {
+        bail!("the theme's base fill '{fill}' is not a color the ground derivation recognizes");
+    };
+    let ink = relative_luminance(fill);
+    let dark = relative_luminance(DARK_GROUND);
+    Ok(if contrast(ink, dark) > contrast(ink, 1.0) {
+        DARK_GROUND
+    } else {
+        (255, 255, 255)
+    })
+}
+
+/// WCAG sRGB relative luminance: channel mean misclassifies saturated ink
+/// (`#00ff00` has mean 85 yet is among the brightest colors there are), and
+/// the gamma linearization matters even for grays.
+fn relative_luminance((red, green, blue): (u8, u8, u8)) -> f64 {
+    let linear = |channel: u8| {
+        let c = f64::from(channel) / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+}
+
+fn contrast(a: f64, b: f64) -> f64 {
+    let (lighter, darker) = if a > b { (a, b) } else { (b, a) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+/// The value of the first `fill:` declaration, tolerating whitespace around
+/// the colon. Skips property names that merely start with `fill`
+/// (`fill-opacity`), whose next non-space character is not a colon.
+fn fill_declaration(style: &str) -> Option<&str> {
+    let mut rest = style;
+    while let Some(at) = rest.find("fill") {
+        let after = &rest[at + "fill".len()..];
+        if let Some(value) = after.trim_start().strip_prefix(':') {
+            let value = value.trim_start();
+            let end = value.find([';', '}']).unwrap_or(value.len());
+            return Some(value[..end].trim_end());
+        }
+        rest = after;
+    }
+    None
+}
+
+fn hex_color(value: &str) -> Option<(u8, u8, u8)> {
+    let hex = value.strip_prefix('#')?.as_bytes();
+    let expand = |part: &[u8]| u8::from_str_radix(std::str::from_utf8(part).ok()?, 16).ok();
+    match hex.len() {
+        3 => Some((
+            expand(&hex[..1])? * 17,
+            expand(&hex[1..2])? * 17,
+            expand(&hex[2..3])? * 17,
+        )),
+        6 => Some((expand(&hex[..2])?, expand(&hex[2..4])?, expand(&hex[4..6])?)),
+        _ => None,
+    }
+}
+
+fn system_fonts() -> &'static usvg::fontdb::Database {
+    static FONTS: std::sync::OnceLock<usvg::fontdb::Database> = std::sync::OnceLock::new();
+    FONTS.get_or_init(|| {
+        let mut db = usvg::fontdb::Database::new();
+        db.load_system_fonts();
+        db
+    })
 }
 
 /// Renders `sources` in one long-lived process, returning one outcome per
@@ -399,6 +560,226 @@ mod tests {
             "{message}"
         );
         assert!(message.contains("is it installed?"), "{message}");
+    }
+
+    /// PNG magic plus IHDR dimensions, read raw so the tests need no decoder.
+    fn png_size(bytes: &[u8]) -> (u32, u32) {
+        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n", "not a PNG");
+        let word = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap());
+        (word(16), word(20))
+    }
+
+    const RECT_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="8" viewBox="0 0 10 8"><style>#d1{fill:#333;}</style><rect width="10" height="8" fill="#ff0000"/></svg>"##;
+
+    #[test]
+    fn a_text_free_svg_rasterizes_at_the_requested_scale_with_any_family() {
+        let png = rasterize(RECT_SVG, "no-such-family-xyz", 1.0).unwrap();
+        assert_eq!((10, 8), png_size(&png), "zoom 1 keeps intrinsic size");
+        let png = rasterize(RECT_SVG, "no-such-family-xyz", 2.5).unwrap();
+        assert_eq!((25, 20), png_size(&png), "zoom scales both dimensions");
+    }
+
+    fn pixel(pixmap: &resvg::tiny_skia::Pixmap, x: u32, y: u32) -> (u8, u8, u8, u8) {
+        let p = pixmap.pixel(x, y).unwrap();
+        (p.red(), p.green(), p.blue(), p.alpha())
+    }
+
+    /// The content must scale WITH the canvas: a mutant that grows the
+    /// pixmap but draws at 1x leaves the far corner background-colored.
+    #[test]
+    fn zoom_scales_the_drawing_not_just_the_canvas() {
+        let pixmap = raster(RECT_SVG, "any", 2.5).unwrap();
+        assert_eq!(
+            (255, 0, 0, 255),
+            pixel(&pixmap, 24, 19),
+            "the rect must cover the far corner at zoom 2.5"
+        );
+    }
+
+    /// Real dark-theme sekien output with its `<text>` elements stripped so
+    /// no host font is needed; the light `#ccc` strokes remain, which is the
+    /// ink a white ground would erase.
+    const DARK_THEME_SEKIEN: &str = include_str!("../tests/fixtures/dark-theme-sekien.svg");
+
+    /// The ground must follow the diagram's theme: composited onto white,
+    /// a dark theme's light strokes vanish into the ground (Codex's P1).
+    #[test]
+    fn a_dark_theme_render_sits_on_the_dark_ground_not_white() {
+        let pixmap = raster(DARK_THEME_SEKIEN, "any", 1.0).unwrap();
+        assert_eq!(
+            (0x33, 0x33, 0x33, 255),
+            pixel(&pixmap, 0, 0),
+            "the uncovered corner must be the dark ground"
+        );
+        let side = pixmap.width() * pixmap.height();
+        let light = (0..side)
+            .map(|i| {
+                pixmap
+                    .pixel(i % pixmap.width(), i / pixmap.width())
+                    .unwrap()
+            })
+            .filter(|p| p.red() > 150 && p.green() > 150 && p.blue() > 150)
+            .count();
+        assert!(light > 0, "the #ccc strokes must survive as light ink");
+    }
+
+    /// The marker is load-bearing, so its recognition must survive the
+    /// serializations an unpinned sekien could drift to (Codex's narrowed
+    /// P1): whitespace around the colon, case, short and long hex, and a
+    /// preceding `fill-opacity` that must not be mistaken for `fill`.
+    #[test]
+    fn every_root_fill_serialization_variant_finds_the_dark_ground() {
+        let variants = [
+            "fill:#ccc",
+            "fill: #ccc",
+            "fill : #CCC",
+            "fill:#cccccc",
+            "fill-opacity:1;fill:#ccc",
+        ];
+        for variant in variants {
+            let svg = format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><style>#d1{{{variant};}}</style></svg>"##
+            );
+            let pixmap = raster(&svg, "any", 1.0).unwrap();
+            assert_eq!(
+                (0x33, 0x33, 0x33, 255),
+                pixel(&pixmap, 0, 0),
+                "variant {variant:?} must be recognized as a dark theme"
+            );
+        }
+    }
+
+    /// Ground choice follows WCAG contrast, not channel mean: bright green
+    /// has channel mean 85 ("dark") yet reads at only 1.37:1 on white and
+    /// 9.2:1 on the dark ground; mid-gray is the case where skipping the
+    /// gamma linearization flips the answer.
+    #[test]
+    fn ground_choice_follows_contrast_not_channel_mean() {
+        let cases = [
+            (
+                "#00ff00",
+                (0x33, 0x33, 0x33, 255),
+                "bright saturated green needs the dark ground",
+            ),
+            (
+                "#00008b",
+                (255, 255, 255, 255),
+                "dark blue needs the white ground",
+            ),
+            (
+                "#808080",
+                (255, 255, 255, 255),
+                "mid-gray contrasts better with white after linearization",
+            ),
+        ];
+        for (fill, expected, why) in cases {
+            let svg = format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><style>#d1{{fill:{fill};}}</style></svg>"##
+            );
+            let pixmap = raster(&svg, "any", 1.0).unwrap();
+            assert_eq!(expected, pixel(&pixmap, 0, 0), "{why}");
+        }
+    }
+
+    /// White is only for an explicitly recognized light theme: a marker the
+    /// derivation cannot read errors instead of silently choosing the
+    /// ground that erases light ink.
+    #[test]
+    fn an_unreadable_theme_marker_is_a_loud_error_never_a_white_ground() {
+        let cases = [
+            (
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>"##.to_string(),
+                "no style block",
+            ),
+            (
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><style>#d1{stroke:#000;}</style></svg>"##.to_string(),
+                "no fill declaration",
+            ),
+            (
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><style>#d1{fill:rgb(204, 204, 204);}</style></svg>"##.to_string(),
+                "unrecognized color spelling",
+            ),
+        ];
+        for (svg, case) in cases {
+            let message = rasterize(&svg, "any", 1.0).unwrap_err().to_string();
+            assert!(
+                message.contains("ground") || message.contains("theme"),
+                "{case}: the error must be actionable, got: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn light_ink_under_a_dark_theme_marker_stays_distinguishable() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="4"><style>#d1{fill:#ccc;}</style><path d="M 0 2 H 4" stroke="#ffffff" stroke-width="2"/></svg>"##;
+        let pixmap = raster(svg, "any", 1.0).unwrap();
+        assert_ne!(
+            pixel(&pixmap, 1, 1),
+            pixel(&pixmap, 7, 1),
+            "a white stroke must not blend into the ground of a dark-themed diagram"
+        );
+    }
+
+    /// The area cap alone admits this: 100000x1 is only 100k pixels, but a
+    /// side that long breaks mobile decoders and GPU texture limits
+    /// (Codex's P2).
+    #[test]
+    fn a_long_thin_diagram_is_refused_per_side_even_under_the_area_cap() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100000" height="1"><rect width="100000" height="1" fill="#ff0000"/></svg>"##;
+        let message = rasterize(svg, "any", 1.0).unwrap_err().to_string();
+        assert!(message.contains("100000x1"), "{message}");
+        assert!(message.contains("per-side"), "{message}");
+    }
+
+    /// Frozen rasters sit on an opaque ground: a transparent PNG would
+    /// show the page theme through the diagram and make dark-theme review
+    /// unreadable with the default mermaid colors.
+    #[test]
+    fn uncovered_canvas_is_opaque_white_not_transparent() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="8"><style>#d1{fill:#333;}</style><rect width="2" height="2" fill="#ff0000"/></svg>"##;
+        let pixmap = raster(svg, "any", 1.0).unwrap();
+        assert_eq!((255, 255, 255, 255), pixel(&pixmap, 9, 7));
+        assert_eq!(
+            (255, 0, 0, 255),
+            pixel(&pixmap, 0, 0),
+            "the rect itself still draws"
+        );
+    }
+
+    /// The trap this guard exists for: usvg drops ALL text when the family
+    /// is missing, so without the error a host without the chosen font would
+    /// freeze a silently textless diagram.
+    #[test]
+    fn a_text_bearing_svg_with_a_missing_family_fails_loudly_not_textless() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="8"><text x="1" y="6">hi</text></svg>"#;
+        let message = rasterize(svg, "no-such-family-xyz", 1.0)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("no-such-family-xyz"), "{message}");
+        assert!(message.contains("not installed"), "{message}");
+    }
+
+    #[test]
+    fn a_malformed_svg_is_an_error_not_a_panic() {
+        assert!(rasterize("<svg", "any", 1.0).is_err());
+        assert!(rasterize("plain text", "any", 1.0).is_err());
+    }
+
+    /// The cap must fire BEFORE allocation: without it this test would try
+    /// to allocate a multi-gigabyte pixmap instead of returning an error.
+    #[test]
+    fn an_oversized_render_is_refused_before_allocation() {
+        let message = rasterize(RECT_SVG, "any", 10_000.0)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("100000x80000"), "{message}");
+        assert!(message.contains("cap"), "{message}");
+    }
+
+    #[test]
+    fn a_zero_sized_render_is_an_error_naming_the_zoom() {
+        let message = rasterize(RECT_SVG, "any", 0.0).unwrap_err().to_string();
+        assert!(message.contains("zoom 0"), "{message}");
     }
 
     #[test]
