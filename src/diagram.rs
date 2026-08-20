@@ -119,10 +119,20 @@ pub fn fingerprint(source: &str) -> String {
 /// renderer measured with; a text-bearing SVG whose family is missing fails
 /// loudly here, because usvg would otherwise drop every label and freeze a
 /// silently textless diagram.
-pub fn rasterize(svg: &str, family: &str, zoom: f32) -> Result<Vec<u8>> {
-    raster(svg, family, zoom)?
-        .encode_png()
-        .context("the PNG cannot be encoded")
+#[derive(Debug)]
+pub struct Raster {
+    pub png: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+pub fn rasterize(svg: &str, family: &str, zoom: f32) -> Result<Raster> {
+    let pixmap = raster(svg, family, zoom)?;
+    Ok(Raster {
+        width: pixmap.width(),
+        height: pixmap.height(),
+        png: pixmap.encode_png().context("the PNG cannot be encoded")?,
+    })
 }
 
 fn raster(svg: &str, family: &str, zoom: f32) -> Result<resvg::tiny_skia::Pixmap> {
@@ -245,6 +255,679 @@ fn hex_color(value: &str) -> Option<(u8, u8, u8)> {
     }
 }
 
+/// One authoring batch gets this budget; ~1.3s startup plus ~19ms per
+/// diagram measured, so a minute covers decks far past any real size.
+pub const RENDER_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// One remedy string, shared by the doctor row and the freeze warning so
+/// "the same message doctor shows" holds by construction.
+pub const REMEDY: &str =
+    "install sekien (`cargo install sekien`); on Linux it also needs webkit2gtk, gtk3 and xvfb";
+
+/// A mermaid fence found in a whole deck document, with the byte offsets a
+/// stamp rewrite needs.
+#[derive(Debug, PartialEq)]
+pub struct RawFence {
+    pub source: String,
+    /// Byte offset where a new stamp line is inserted: the start of the line
+    /// after the fence's closing delimiter.
+    pub insert_at: usize,
+    /// An existing stamp on the next line: its byte range (without the
+    /// trailing newline) and its fingerprint field.
+    pub stamp: Option<(std::ops::Range<usize>, String)>,
+}
+
+#[derive(Debug, Default)]
+pub struct DocumentFences {
+    pub fences: Vec<RawFence>,
+    /// True when a mermaid fence never closed; it is skipped, and the caller
+    /// warns rather than stamping a guess.
+    pub unclosed: bool,
+}
+
+/// Every closed mermaid fence in a deck document, in order, with any stamp
+/// already on the line after it. Frontmatter lines are skipped.
+pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> DocumentFences {
+    let mut found = DocumentFences::default();
+    let mut open: Option<(char, Option<Vec<String>>)> = None;
+    let mut pending: Option<RawFence> = None;
+    let mut offset = 0;
+    for (index, raw_line) in text.split_inclusive('\n').enumerate() {
+        let line_number = index + 1;
+        let line_start = offset;
+        offset += raw_line.len();
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        if let Some((open_line, close_line)) = frontmatter
+            && line_number >= open_line
+            && line_number <= close_line
+        {
+            continue;
+        }
+        if let Some(mut fence) = pending.take() {
+            // The next line counts as this fence's stamp ONLY when the card
+            // parser would produce the same DiagramStamp from it: a looser
+            // rule here would let a malformed near-stamp with a current
+            // fingerprint silently suppress freezing. The range stays the
+            // whole original line, so a rewrite normalizes it.
+            if let Some(stamp) = crate::parser::diagram_stamp_on_line(line) {
+                fence.stamp = Some((line_start..line_start + line.len(), stamp.fingerprint));
+                found.fences.push(fence);
+                continue;
+            }
+            found.fences.push(fence);
+        }
+        match &mut open {
+            Some((ch, body)) => {
+                if crate::parser::closes_fence(line, *ch) {
+                    let (_, body) = open.take().expect("the fence is open");
+                    if let Some(body) = body {
+                        pending = Some(RawFence {
+                            source: body.join("\n"),
+                            insert_at: line_start + raw_line.len(),
+                            stamp: None,
+                        });
+                    }
+                } else if let Some(body) = body {
+                    body.push(line.to_string());
+                }
+            }
+            None => {
+                if let Some(ch) = crate::parser::fence_opener(line) {
+                    let info = line.trim_start_matches(ch).trim();
+                    let body = info.eq_ignore_ascii_case(LANGUAGE).then(Vec::new);
+                    open = Some((ch, body));
+                }
+            }
+        }
+    }
+    if let Some(fence) = pending {
+        found.fences.push(fence);
+    }
+    if let Some((_, body)) = open {
+        found.unclosed = body.is_some();
+    }
+    found
+}
+
+/// The full freeze computation for one rendered fence: extract the label
+/// map, rasterize at ZOOM, and prove every label's ink lies inside its
+/// emitted box (a per-label render diff, failing closed on any miss).
+pub fn freeze_fence(svg: &str, family: &str) -> Result<FrozenDiagram> {
+    let found = geometry(svg)?;
+    let full = raster(svg, family, ZOOM)?;
+    let raster_size = (full.width(), full.height());
+    let mut labels = Vec::with_capacity(found.labels.len());
+    for label in &found.labels {
+        let bounds = pixel_box(label, found.view_box, ZOOM, raster_size);
+        let stripped = raster(&strip_label_texts(svg, &label.id)?, family, ZOOM)?;
+        ink_within(&full, &stripped, bounds)
+            .with_context(|| format!("label '{}' failed the ink-containment check", label.id))?;
+        labels.push(ManifestLabel {
+            id: label.id.clone(),
+            text: label.text.clone(),
+            bounds,
+        });
+    }
+    let png = full.encode_png().context("the PNG cannot be encoded")?;
+    let manifest = DiagramManifest {
+        png: crate::assets::object_name(&png, "png"),
+        raster_width: full.width(),
+        raster_height: full.height(),
+        logical_width: found.view_box.width.ceil() as u32,
+        logical_height: found.view_box.height.ceil() as u32,
+        labels,
+    };
+    Ok(FrozenDiagram { png, manifest })
+}
+
+pub struct FrozenDiagram {
+    pub png: Vec<u8>,
+    pub manifest: DiagramManifest,
+}
+
+/// The scale frozen rasters render at; the manifest records both raster and
+/// logical dimensions so clients display at logical size.
+pub const ZOOM: f32 = 2.0;
+
+/// Emitted boxes are inflated by this many SVG units per side: measured ink
+/// margins are ~3 units on edge labels, and the pad insures against fonts
+/// with slightly wider metrics than the measured corpus.
+const BOX_PAD: f32 = 2.0;
+
+/// Families tried in order for the freeze; sekien measures and resvg draws
+/// with the same one, and the ink-containment check verifies the result.
+const FAMILIES: &[&str] = &[
+    "DejaVu Sans",
+    "Liberation Sans",
+    "Noto Sans",
+    "Arial",
+    "Helvetica",
+];
+
+/// The first preference-list family the system fontdb can resolve.
+pub fn available_family() -> Result<&'static str> {
+    let db = system_fonts();
+    FAMILIES
+        .iter()
+        .copied()
+        .find(|family| {
+            let query = usvg::fontdb::Query {
+                families: &[usvg::fontdb::Family::Name(family)],
+                ..Default::default()
+            };
+            db.query(&query).is_some()
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "none of the diagram font families ({}) is installed",
+                FAMILIES.join(", ")
+            )
+        })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewBox {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// One bindable label: a flowchart node (`id` is the mermaid node id) or an
+/// edge label (`id` is the renderer's stable `L_<src>_<tgt>_<n>`).
+/// Coordinates are absolute SVG units after transform accumulation.
+#[derive(Debug, PartialEq)]
+pub struct Label {
+    pub id: String,
+    pub text: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug)]
+pub struct Geometry {
+    pub view_box: ViewBox,
+    pub labels: Vec<Label>,
+}
+
+/// Every bindable label in a rendered SVG, with the root viewBox needed to
+/// map SVG units into raster pixels. Only translate() transforms are
+/// accepted: any other transform above a label would silently misplace its
+/// box, so it fails closed instead.
+pub fn geometry(svg: &str) -> Result<Geometry> {
+    let document =
+        usvg::roxmltree::Document::parse(svg).context("the SVG cannot be parsed as XML")?;
+    let root = document.root_element();
+    let view_box = parse_view_box(root.attribute("viewBox"))?;
+    let mut labels = Vec::new();
+    collect_labels(root, 0.0, 0.0, &mut labels)?;
+    Ok(Geometry { view_box, labels })
+}
+
+fn parse_view_box(attribute: Option<&str>) -> Result<ViewBox> {
+    let raw = attribute.unwrap_or_default();
+    let parts: Vec<f32> = raw
+        .split_whitespace()
+        .filter_map(|part| part.parse().ok())
+        .collect();
+    let [x, y, width, height] = parts[..] else {
+        bail!("the SVG root has no usable viewBox ('{raw}')");
+    };
+    Ok(ViewBox {
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
+fn translation(node: usvg::roxmltree::Node) -> Result<(f32, f32)> {
+    let Some(raw) = node.attribute("transform") else {
+        return Ok((0.0, 0.0));
+    };
+    let inner = raw
+        .trim()
+        .strip_prefix("translate(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .ok_or_else(|| anyhow::anyhow!("unsupported transform '{raw}' above a diagram label"))?;
+    let mut parts = inner.split([',', ' ']).filter(|part| !part.is_empty());
+    let x: f32 = parts
+        .next()
+        .and_then(|part| part.parse().ok())
+        .ok_or_else(|| anyhow::anyhow!("unsupported transform '{raw}' above a diagram label"))?;
+    let y: f32 = match parts.next() {
+        Some(part) => part
+            .parse()
+            .map_err(|_| anyhow::anyhow!("unsupported transform '{raw}' above a diagram label"))?,
+        None => 0.0,
+    };
+    Ok((x, y))
+}
+
+fn text_of(node: usvg::roxmltree::Node) -> String {
+    node.descendants()
+        .filter(|child| child.is_text())
+        .filter_map(|child| child.text())
+        .collect()
+}
+
+fn element_class<'a>(node: usvg::roxmltree::Node<'a, 'a>) -> &'a str {
+    node.attribute("class").unwrap_or_default()
+}
+
+fn collect_labels(
+    node: usvg::roxmltree::Node,
+    x: f32,
+    y: f32,
+    labels: &mut Vec<Label>,
+) -> Result<()> {
+    let (dx, dy) = translation(node)?;
+    let (x, y) = (x + dx, y + dy);
+    let class = element_class(node);
+    if class.split_whitespace().any(|word| word == "node")
+        && let Some(id) = node.attribute("id").and_then(flowchart_node_id)
+    {
+        let container = node
+            .children()
+            .filter(|child| child.is_element())
+            .find(|child| {
+                element_class(*child)
+                    .split_whitespace()
+                    .any(|word| word == "label-container")
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!("node '{id}' has no label-container this extraction recognizes")
+            })?;
+        let (left, top, width, height) = container_bounds(container)
+            .with_context(|| format!("node '{id}' has an unmeasurable label-container"))?;
+        labels.push(Label {
+            id,
+            text: text_of(node).trim().to_string(),
+            x: x + left,
+            y: y + top,
+            width,
+            height,
+        });
+        return Ok(());
+    }
+    if class == "edgeLabel" {
+        for child in node.children() {
+            if element_class(child) == "label"
+                && let Some(id) = child.attribute("data-id")
+            {
+                let (lx, ly) = translation(child)?;
+                let Some(rect) = descendant_rect(child, |rect| element_class(rect) == "background")
+                else {
+                    continue;
+                };
+                labels.push(label_from_rect(
+                    id.to_string(),
+                    text_of(child),
+                    rect,
+                    x + lx,
+                    y + ly,
+                )?);
+            }
+        }
+        return Ok(());
+    }
+    for child in node.children().filter(|child| child.is_element()) {
+        collect_labels(child, x, y, labels)?;
+    }
+    Ok(())
+}
+
+/// `d1-flowchart-A-0` -> `A`; the leading svg id varies per render and the
+/// trailing counter is the renderer's, so neither is part of the identity.
+fn flowchart_node_id(raw: &str) -> Option<String> {
+    let (_, tail) = raw.split_once("-flowchart-")?;
+    let (id, counter) = tail.rsplit_once('-')?;
+    counter
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+        .then(|| id.to_string())
+}
+
+/// The bounding box of one label-container shape, in its parent node's
+/// frame (the shape's own translate included). Mermaid draws nodes as
+/// rects, circles, ellipses, polygons, paths (`[(db)]`), or groups of
+/// paths (`([stadium])` in some looks); anything else fails closed so a
+/// future shape errors instead of silently vanishing from the map.
+fn container_bounds(shape: usvg::roxmltree::Node) -> Result<(f32, f32, f32, f32)> {
+    let (dx, dy) = translation(shape)?;
+    let attr = |name: &str| -> Result<f32> {
+        shape
+            .attribute(name)
+            .and_then(|value| value.parse().ok())
+            .ok_or_else(|| anyhow::anyhow!("missing numeric '{name}'"))
+    };
+    let optional = |name: &str| shape.attribute(name).and_then(|value| value.parse().ok());
+    let from_extent = |bounds: (f32, f32, f32, f32)| {
+        let (min_x, min_y, max_x, max_y) = bounds;
+        (dx + min_x, dy + min_y, max_x - min_x, max_y - min_y)
+    };
+    Ok(match shape.tag_name().name() {
+        "rect" => (
+            dx + optional("x").unwrap_or(0.0),
+            dy + optional("y").unwrap_or(0.0),
+            attr("width")?,
+            attr("height")?,
+        ),
+        "circle" => {
+            let r = attr("r")?;
+            (
+                dx + optional("cx").unwrap_or(0.0) - r,
+                dy + optional("cy").unwrap_or(0.0) - r,
+                2.0 * r,
+                2.0 * r,
+            )
+        }
+        "ellipse" => {
+            let (rx, ry) = (attr("rx")?, attr("ry")?);
+            (
+                dx + optional("cx").unwrap_or(0.0) - rx,
+                dy + optional("cy").unwrap_or(0.0) - ry,
+                2.0 * rx,
+                2.0 * ry,
+            )
+        }
+        "polygon" => {
+            let points = shape.attribute("points").unwrap_or_default();
+            let values: Vec<f32> = points
+                .split([',', ' '])
+                .filter(|part| !part.is_empty())
+                .map(|part| part.parse::<f32>())
+                .collect::<Result<_, _>>()
+                .map_err(|_| anyhow::anyhow!("unparseable polygon points '{points}'"))?;
+            from_extent(extent_of_pairs(&values)?)
+        }
+        "path" => from_extent(path_extent(
+            shape
+                .attribute("d")
+                .ok_or_else(|| anyhow::anyhow!("path without 'd'"))?,
+        )?),
+        "g" => {
+            let mut children = shape.children().filter(|child| child.is_element());
+            let mut union = children
+                .next()
+                .map(container_bounds)
+                .transpose()?
+                .ok_or_else(|| anyhow::anyhow!("empty label-container group"))?;
+            for child in children {
+                let (x, y, width, height) = container_bounds(child)?;
+                let right = (union.0 + union.2).max(x + width);
+                let bottom = (union.1 + union.3).max(y + height);
+                union.0 = union.0.min(x);
+                union.1 = union.1.min(y);
+                union.2 = right - union.0;
+                union.3 = bottom - union.1;
+            }
+            (dx + union.0, dy + union.1, union.2, union.3)
+        }
+        other => bail!("unsupported label-container shape <{other}>"),
+    })
+}
+
+fn extent_of_pairs(values: &[f32]) -> Result<(f32, f32, f32, f32)> {
+    if values.len() < 2 || !values.len().is_multiple_of(2) {
+        bail!("expected coordinate pairs, got {} values", values.len());
+    }
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for pair in values.chunks(2) {
+        min_x = min_x.min(pair[0]);
+        max_x = max_x.max(pair[0]);
+        min_y = min_y.min(pair[1]);
+        max_y = max_y.max(pair[1]);
+    }
+    Ok((min_x, min_y, max_x, max_y))
+}
+
+/// A path's extent over every visited point (endpoints and curve control
+/// points; arc endpoints only, so an arc's bulge can undershoot by its
+/// radius). Good enough for a mask box: the ink-containment proof measures
+/// the TEXT, which sits well inside every mermaid shape, and refuses the
+/// freeze if it ever does not.
+fn path_extent(d: &str) -> Result<(f32, f32, f32, f32)> {
+    let mut numbers: Vec<f32> = Vec::new();
+    let mut command = None;
+    let mut points: Vec<f32> = Vec::new();
+    let mut cursor = (0.0f32, 0.0f32);
+    let mut start = (0.0f32, 0.0f32);
+    let mut buffer = String::new();
+    let flush = |buffer: &mut String, numbers: &mut Vec<f32>| -> Result<()> {
+        if !buffer.is_empty() {
+            numbers.push(
+                buffer
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("unparseable path number '{buffer}'"))?,
+            );
+            buffer.clear();
+        }
+        Ok(())
+    };
+    let mut apply = |command: char, numbers: &mut Vec<f32>| -> Result<()> {
+        let relative = command.is_ascii_lowercase();
+        let arity = match command.to_ascii_uppercase() {
+            'M' | 'L' | 'T' => 2,
+            'H' | 'V' => 1,
+            'C' => 6,
+            'S' | 'Q' => 4,
+            'A' => 7,
+            'Z' => 0,
+            other => bail!("unsupported path command '{other}'"),
+        };
+        if command.eq_ignore_ascii_case(&'Z') {
+            cursor = start;
+            return Ok(());
+        }
+        if numbers.is_empty() || !numbers.len().is_multiple_of(arity) {
+            bail!("path command '{command}' with {} numbers", numbers.len());
+        }
+        for group in numbers.chunks(arity) {
+            let base = if relative { cursor } else { (0.0, 0.0) };
+            match command.to_ascii_uppercase() {
+                'H' => cursor.0 = base.0 + group[0],
+                'V' => cursor.1 = base.1 + group[0],
+                'A' => {
+                    cursor = (base.0 + group[5], base.1 + group[6]);
+                }
+                _ => {
+                    for pair in group.chunks(2) {
+                        cursor = (base.0 + pair[0], base.1 + pair[1]);
+                        points.push(cursor.0);
+                        points.push(cursor.1);
+                    }
+                }
+            }
+            points.push(cursor.0);
+            points.push(cursor.1);
+            if command.eq_ignore_ascii_case(&'M') {
+                start = cursor;
+            }
+        }
+        numbers.clear();
+        Ok(())
+    };
+    for character in d.chars() {
+        let is_command = character.is_ascii_alphabetic() && character != 'e' && character != 'E';
+        if is_command {
+            flush(&mut buffer, &mut numbers)?;
+            if let Some(previous) = command {
+                apply(previous, &mut numbers)?;
+            }
+            command = Some(character);
+        } else if character == ',' || character.is_whitespace() {
+            flush(&mut buffer, &mut numbers)?;
+        } else if character == '-' && !buffer.is_empty() && !buffer.ends_with('e') {
+            flush(&mut buffer, &mut numbers)?;
+            buffer.push(character);
+        } else {
+            buffer.push(character);
+        }
+    }
+    flush(&mut buffer, &mut numbers)?;
+    if let Some(previous) = command {
+        apply(previous, &mut numbers)?;
+    }
+    if points.is_empty() {
+        bail!("path with no coordinates");
+    }
+    extent_of_pairs(&points)
+}
+
+fn descendant_rect<'a>(
+    node: usvg::roxmltree::Node<'a, 'a>,
+    keep: impl Fn(usvg::roxmltree::Node) -> bool,
+) -> Option<usvg::roxmltree::Node<'a, 'a>> {
+    node.descendants()
+        .find(|child| child.has_tag_name("rect") && keep(*child))
+}
+
+fn label_from_rect(
+    id: String,
+    text: String,
+    rect: usvg::roxmltree::Node,
+    x: f32,
+    y: f32,
+) -> Result<Label> {
+    let field = |name: &str| -> Result<f32> {
+        rect.attribute(name)
+            .and_then(|value| value.parse().ok())
+            .ok_or_else(|| anyhow::anyhow!("label '{id}' has a rect without a numeric '{name}'"))
+    };
+    Ok(Label {
+        x: x + field("x")?,
+        y: y + field("y")?,
+        width: field("width")?,
+        height: field("height")?,
+        id,
+        text: text.trim().to_string(),
+    })
+}
+
+/// A label's box in raster pixel space: shifted by the viewBox origin,
+/// inflated by BOX_PAD per side, scaled by `zoom`, rounded outward, and
+/// clamped to the raster.
+pub fn pixel_box(label: &Label, view_box: ViewBox, zoom: f32, raster: (u32, u32)) -> PixelBox {
+    let scale = |value: f32| value * zoom;
+    let left = scale(label.x - view_box.x - BOX_PAD).floor().max(0.0) as u32;
+    let top = scale(label.y - view_box.y - BOX_PAD).floor().max(0.0) as u32;
+    let right = scale(label.x - view_box.x + label.width + BOX_PAD).ceil() as u32;
+    let bottom = scale(label.y - view_box.y + label.height + BOX_PAD).ceil() as u32;
+    let (raster_width, raster_height) = raster;
+    let right = right.min(raster_width);
+    let bottom = bottom.min(raster_height);
+    PixelBox {
+        x: left,
+        y: top,
+        width: right.saturating_sub(left),
+        height: bottom.saturating_sub(top),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PixelBox {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// The persisted half of a frozen diagram: the PNG's object name, both
+/// dimension pairs, and the complete bindable-label map. Complete rather
+/// than selected-only: retargeting a span is an ordinary edit that must not
+/// invalidate the frozen pair.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiagramManifest {
+    pub png: String,
+    pub raster_width: u32,
+    pub raster_height: u32,
+    pub logical_width: u32,
+    pub logical_height: u32,
+    pub labels: Vec<ManifestLabel>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestLabel {
+    pub id: String,
+    pub text: String,
+    #[serde(flatten)]
+    pub bounds: PixelBox,
+}
+
+/// The SVG with the given label's `<text>` elements removed, for the
+/// ink-containment diff. The target is a node's `id` or an edge label's
+/// `data-id`.
+pub(crate) fn strip_label_texts(svg: &str, label_id: &str) -> Result<String> {
+    let document =
+        usvg::roxmltree::Document::parse(svg).context("the SVG cannot be parsed as XML")?;
+    let target = document
+        .descendants()
+        .find(|node| {
+            node.attribute("id")
+                .and_then(flowchart_node_id)
+                .is_some_and(|id| id == label_id)
+                || (node.attribute("data-id") == Some(label_id) && element_class(*node) == "label")
+        })
+        .ok_or_else(|| anyhow::anyhow!("label '{label_id}' is not in the SVG"))?;
+    let mut ranges: Vec<std::ops::Range<usize>> = target
+        .descendants()
+        .filter(|node| node.has_tag_name("text"))
+        .map(|node| node.range())
+        .collect();
+    if ranges.is_empty() {
+        bail!("label '{label_id}' has no text to strip");
+    }
+    ranges.sort_by_key(|range| range.start);
+    let mut stripped = String::with_capacity(svg.len());
+    let mut cursor = 0;
+    for range in ranges {
+        stripped.push_str(&svg[cursor..range.start]);
+        cursor = range.end;
+    }
+    stripped.push_str(&svg[cursor..]);
+    Ok(stripped)
+}
+
+/// The containment law: the label must leave ink (a fontless or dropped
+/// render is a corrupt freeze), and every pixel it changes must lie inside
+/// its emitted box (ink outside would survive the mask).
+pub(crate) fn ink_within(
+    full: &resvg::tiny_skia::Pixmap,
+    stripped: &resvg::tiny_skia::Pixmap,
+    bounds: PixelBox,
+) -> Result<()> {
+    if full.width() != stripped.width() || full.height() != stripped.height() {
+        bail!("the stripped render changed size, so the diff is meaningless");
+    }
+    let mut changed = 0u32;
+    for y in 0..full.height() {
+        for x in 0..full.width() {
+            if full.pixel(x, y) != stripped.pixel(x, y) {
+                changed += 1;
+                let inside = x >= bounds.x
+                    && x < bounds.x + bounds.width
+                    && y >= bounds.y
+                    && y < bounds.y + bounds.height;
+                if !inside {
+                    bail!(
+                        "label ink at {x},{y} falls outside its box, where a mask cannot cover it"
+                    );
+                }
+            }
+        }
+    }
+    if changed == 0 {
+        bail!("the label left no ink in the render, so its text was dropped");
+    }
+    Ok(())
+}
+
 fn system_fonts() -> &'static usvg::fontdb::Database {
     static FONTS: std::sync::OnceLock<usvg::fontdb::Database> = std::sync::OnceLock::new();
     FONTS.get_or_init(|| {
@@ -262,12 +945,21 @@ fn system_fonts() -> &'static usvg::fontdb::Database {
 /// SVGs cannot be paired positionally, and the process exits 0 even when
 /// diagrams fail, so the exit code is never a per-diagram verdict. Both
 /// streams are therefore correlated by the `--meta` id.
-pub fn render_batch(command: &str, sources: &[String], timeout: Duration) -> Result<Vec<Rendered>> {
+pub fn render_batch(
+    command: &str,
+    font: Option<&str>,
+    sources: &[String],
+    timeout: Duration,
+) -> Result<Vec<Rendered>> {
     if sources.is_empty() {
         return Ok(Vec::new());
     }
-    let mut child = Command::new(command)
-        .arg("--meta")
+    let mut command_line = Command::new(command);
+    command_line.arg("--meta");
+    if let Some(font) = font {
+        command_line.args(["--font", font]);
+    }
+    let mut child = command_line
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -478,8 +1170,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let stdout = [meta(1, "<svg>one</svg>"), meta(2, "<svg>two</svg>")].join("\0");
         let cli = fake_sekien(dir.path(), &stdout, "");
-        let out =
-            render_batch(cli.to_str().unwrap(), &sources(2), Duration::from_secs(10)).unwrap();
+        let out = render_batch(
+            cli.to_str().unwrap(),
+            None,
+            &sources(2),
+            Duration::from_secs(10),
+        )
+        .unwrap();
         assert_eq!(2, out.len());
         assert_eq!(Ok("<svg>one</svg>".to_string()), out[0]);
         assert_eq!(Ok("<svg>two</svg>".to_string()), out[1]);
@@ -495,8 +1192,13 @@ mod tests {
         let stdout = [meta(1, "<svg>first</svg>"), meta(3, "<svg>third</svg>")].join("\0");
         let stderr = meta(2, "Parse error on line 2");
         let cli = fake_sekien(dir.path(), &stdout, &stderr);
-        let out =
-            render_batch(cli.to_str().unwrap(), &sources(3), Duration::from_secs(10)).unwrap();
+        let out = render_batch(
+            cli.to_str().unwrap(),
+            None,
+            &sources(3),
+            Duration::from_secs(10),
+        )
+        .unwrap();
         assert_eq!(
             vec![
                 Ok("<svg>first</svg>".to_string()),
@@ -519,8 +1221,13 @@ mod tests {
         ]
         .join("");
         let cli = fake_sekien(dir.path(), "", &stderr);
-        let out =
-            render_batch(cli.to_str().unwrap(), &sources(2), Duration::from_secs(10)).unwrap();
+        let out = render_batch(
+            cli.to_str().unwrap(),
+            None,
+            &sources(2),
+            Duration::from_secs(10),
+        )
+        .unwrap();
         assert!(out.iter().all(|outcome| outcome.is_err()), "{out:?}");
         assert_eq!(Err("No diagram type detected".to_string()), out[0]);
     }
@@ -530,8 +1237,13 @@ mod tests {
         let _guard = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_sekien(dir.path(), "", "");
-        let out =
-            render_batch(cli.to_str().unwrap(), &sources(2), Duration::from_secs(10)).unwrap();
+        let out = render_batch(
+            cli.to_str().unwrap(),
+            None,
+            &sources(2),
+            Duration::from_secs(10),
+        )
+        .unwrap();
         assert_eq!(2, out.len());
         assert!(out.iter().all(|outcome| outcome.is_err()));
     }
@@ -541,6 +1253,7 @@ mod tests {
         // A missing binary would fail the spawn, so reaching Ok proves no spawn.
         let out = render_batch(
             "definitely-not-a-real-binary-xyz",
+            None,
             &[],
             Duration::from_secs(1),
         );
@@ -551,6 +1264,7 @@ mod tests {
     fn a_missing_renderer_names_the_command() {
         let out = render_batch(
             "definitely-not-a-real-binary-xyz",
+            None,
             &sources(1),
             Duration::from_secs(1),
         );
@@ -573,10 +1287,23 @@ mod tests {
 
     #[test]
     fn a_text_free_svg_rasterizes_at_the_requested_scale_with_any_family() {
-        let png = rasterize(RECT_SVG, "no-such-family-xyz", 1.0).unwrap();
-        assert_eq!((10, 8), png_size(&png), "zoom 1 keeps intrinsic size");
-        let png = rasterize(RECT_SVG, "no-such-family-xyz", 2.5).unwrap();
-        assert_eq!((25, 20), png_size(&png), "zoom scales both dimensions");
+        let raster = rasterize(RECT_SVG, "no-such-family-xyz", 1.0).unwrap();
+        assert_eq!(
+            (10, 8),
+            png_size(&raster.png),
+            "zoom 1 keeps intrinsic size"
+        );
+        assert_eq!(
+            (raster.width, raster.height),
+            png_size(&raster.png),
+            "reported size is the IHDR size"
+        );
+        let raster = rasterize(RECT_SVG, "no-such-family-xyz", 2.5).unwrap();
+        assert_eq!(
+            (25, 20),
+            png_size(&raster.png),
+            "zoom scales both dimensions"
+        );
     }
 
     fn pixel(pixmap: &resvg::tiny_skia::Pixmap, x: u32, y: u32) -> (u8, u8, u8, u8) {
@@ -782,6 +1509,397 @@ mod tests {
         assert!(message.contains("zoom 0"), "{message}");
     }
 
+    const LABELED_SEKIEN: &str = include_str!("../tests/fixtures/labeled-sekien.svg");
+    const SHAPES_SEKIEN: &str = include_str!("../tests/fixtures/shapes-sekien.svg");
+
+    /// Codex's P1: shaped nodes are ordinary flowchart syntax, and a map
+    /// that silently drops them is incomplete where completeness is the
+    /// whole point. Real sekien output, every node-label spelling.
+    #[test]
+    fn every_node_shape_spelling_is_in_the_complete_label_map() {
+        let found = geometry(SHAPES_SEKIEN).unwrap();
+        let expected = [
+            ("A", "Rect"),
+            ("B", "Round"),
+            ("C", "Decision"),
+            ("D", "Circle"),
+            ("E", "Database"),
+            ("F", "Stadium"),
+        ];
+        for (id, text) in expected {
+            let label = found
+                .labels
+                .iter()
+                .find(|label| label.id == id)
+                .unwrap_or_else(|| panic!("node {id} ({text}) missing from the map"));
+            assert_eq!(text, label.text, "{id}");
+            assert!(
+                label.width > 10.0 && label.height > 10.0,
+                "{id} box degenerate: {label:?}"
+            );
+        }
+        let circle = found.labels.iter().find(|label| label.id == "D").unwrap();
+        assert!(
+            (circle.width - circle.height).abs() < 0.01,
+            "a circle's box is square: {circle:?}"
+        );
+    }
+
+    #[test]
+    fn a_path_container_node_is_measured_with_its_own_transform() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80">
+          <g class="nodes">
+            <g class="node default" id="d1-flowchart-DB-5" transform="translate(50, 40)">
+              <path d="M0,10 a38,10 0,0,0 76,0 a38,10 0,0,0 -76,0 l0,40 a38,10 0,0,0 76,0 l0,-40"
+                    class="basic label-container outer-path" transform="translate(-38, -30)"/>
+              <g class="label" transform="translate(0, -2)">
+                <text><tspan>Postgres</tspan></text>
+              </g>
+            </g>
+          </g>
+        </svg>"##;
+        let found = geometry(svg).unwrap();
+        let label = found
+            .labels
+            .iter()
+            .find(|label| label.id == "DB")
+            .expect("the shaped node is in the map");
+        assert_eq!("Postgres", label.text);
+        assert!(
+            (label.x - 12.0).abs() < 0.01 && label.width >= 76.0,
+            "50 - 38 = 12 with the path's translate applied: {label:?}"
+        );
+    }
+
+    /// Fail closed on shapes this extraction has never seen: a silent skip
+    /// would repeat the exact defect the shape generalization fixed.
+    #[test]
+    fn an_unrecognized_node_container_fails_closed_naming_the_node() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g class="node" id="d1-flowchart-X-0"><image class="label-container" href="x"/></g></svg>"##;
+        let message = geometry(svg).unwrap_err().to_string();
+        assert!(message.contains("'X'"), "{message}");
+        let none = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g class="node" id="d1-flowchart-X-0"><text>hi</text></g></svg>"##;
+        let message = geometry(none).unwrap_err().to_string();
+        assert!(message.contains("no label-container"), "{message}");
+    }
+
+    /// The equivalence law, both directions: what the parser rejects, the
+    /// scanner must too. A nonbreaking space makes the line card CONTENT to
+    /// the parser's closed whitespace set, and a truncated comment is a
+    /// lint, not a directive; a scanner accepting either would count a
+    /// malformed near-stamp as current and silently suppress freezing.
+    #[test]
+    fn the_scanner_rejects_every_near_stamp_the_parser_rejects() {
+        let source = "flowchart LR\n A-->B";
+        let print = fingerprint(source);
+        let object = |ext: &str| format!("sha256-{}.{ext}", "a".repeat(64));
+        let cases = [
+            (
+                format!(
+                    "## q\n```mermaid\n{source}\n```\n{nbsp}<!-- diagram: fingerprint: {print} asset: {} manifest: {} -->\nanswer\n",
+                    object("png"),
+                    object("json"),
+                    nbsp = '\u{00a0}',
+                ),
+                "a nonbreaking space is content, not indentation",
+            ),
+            (
+                format!(
+                    "## q\n```mermaid\n{source}\n```\n<!-- diagram: fingerprint: {print}\nanswer\n"
+                ),
+                "a truncated comment is a lint, not a stamp",
+            ),
+        ];
+        for (text, why) in cases {
+            let parsed = crate::parser::parse("deck.md", &text).unwrap();
+            assert!(
+                parsed.cards[0].diagrams.is_empty(),
+                "{why}: parser baseline"
+            );
+            let found = fences_in_document(&text, None);
+            assert!(
+                found.fences[0].stamp.is_none(),
+                "{why}: the scanner must agree with the parser"
+            );
+        }
+    }
+
+    /// Codex's P3: the parser trims before matching, so the scanner must
+    /// agree or an indented valid stamp re-freezes and stacks.
+    #[test]
+    fn an_indented_valid_stamp_is_attached_to_its_fence() {
+        let source = "flowchart LR\n A-->B";
+        let print = fingerprint(source);
+        let text = format!(
+            "## q\n```mermaid\n{source}\n```\n  <!-- diagram: fingerprint: {print} asset: sha256-{0}.png manifest: sha256-{0}.json -->\nanswer\n",
+            "a".repeat(64)
+        );
+        let found = fences_in_document(&text, None);
+        assert_eq!(
+            Some(print.as_str()),
+            found.fences[0]
+                .stamp
+                .as_ref()
+                .map(|(_, value)| value.as_str())
+        );
+    }
+
+    #[test]
+    fn document_fences_carry_insert_offsets_and_existing_stamps() {
+        let text = format!(
+            "---\nid: x\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n```mermaid\nsecond\n```\n<!-- diagram: fingerprint: xxh64-00000000000000ff asset: sha256-{0}.png manifest: sha256-{0}.json -->\nmore\n",
+            "a".repeat(64)
+        );
+        let text = text.as_str();
+        let found = fences_in_document(text, Some((1, 3)));
+        assert!(!found.unclosed);
+        assert_eq!(2, found.fences.len());
+        let first = &found.fences[0];
+        assert_eq!("flowchart LR\n A-->B", first.source);
+        assert_eq!(None, first.stamp);
+        assert!(
+            text[first.insert_at..].starts_with("answer"),
+            "a new stamp lands at the start of the line after the close"
+        );
+        let second = &found.fences[1];
+        let (range, fingerprint) = second.stamp.as_ref().unwrap();
+        assert_eq!("xxh64-00000000000000ff", fingerprint);
+        assert!(
+            text[range.clone()].starts_with("<!-- diagram:")
+                && text[range.clone()].ends_with("-->"),
+            "the stamp range is the whole line without its newline"
+        );
+    }
+
+    #[test]
+    fn frontmatter_lines_never_open_a_document_fence() {
+        let text = "---\nnote: |\n  ```mermaid\n  x\n---\n## q\na\n";
+        let found = fences_in_document(text, Some((1, 5)));
+        assert_eq!(0, found.fences.len());
+        assert!(!found.unclosed);
+    }
+
+    #[test]
+    fn an_unclosed_mermaid_fence_is_flagged_and_yields_nothing_to_stamp() {
+        let found = fences_in_document("## q\n```mermaid\nflowchart LR\n", None);
+        assert!(found.unclosed);
+        assert_eq!(0, found.fences.len());
+    }
+
+    #[test]
+    fn every_bindable_label_is_extracted_with_identity_text_and_box() {
+        let found = geometry(LABELED_SEKIEN).unwrap();
+        assert_eq!(
+            ViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 375.65625,
+                height: 237.0
+            },
+            found.view_box
+        );
+        let ids: Vec<(&str, &str)> = found
+            .labels
+            .iter()
+            .map(|label| (label.id.as_str(), label.text.as_str()))
+            .collect();
+        assert_eq!(
+            vec![
+                ("L_A_B_0", "fills"),
+                ("L_C_B_0", "reads"),
+                ("A", "Cache"),
+                ("B", "Store"),
+                ("C", "Cache"),
+            ],
+            ids,
+            "duplicate 'Cache' labels must stay distinct by semantic identity"
+        );
+        let node_a = found.labels.iter().find(|label| label.id == "A").unwrap();
+        assert!(
+            (node_a.x - 43.0).abs() < 0.01
+                && (node_a.y - 33.0).abs() < 0.01
+                && (node_a.width - 110.0).abs() < 0.01
+                && (node_a.height - 49.0).abs() < 0.01,
+            "node A box moved: {node_a:?}"
+        );
+        let edge = found
+            .labels
+            .iter()
+            .find(|label| label.id == "L_C_B_0")
+            .unwrap();
+        assert!(
+            (edge.x - 164.274_96).abs() < 0.01 && (edge.y - 94.71779).abs() < 0.01,
+            "edge label box moved: {edge:?}"
+        );
+    }
+
+    #[test]
+    fn a_non_translate_transform_above_a_label_fails_closed() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g transform="scale(2)"><g class="node" id="d1-flowchart-A-0"><rect x="0" y="0" width="4" height="4"/></g></g></svg>"##;
+        let message = geometry(svg).unwrap_err().to_string();
+        assert!(message.contains("unsupported transform"), "{message}");
+        assert!(message.contains("scale(2)"), "{message}");
+    }
+
+    #[test]
+    fn a_render_without_flowchart_labels_yields_an_empty_map() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g class="actor"><rect x="1" y="1" width="4" height="4"/></g></svg>"##;
+        assert!(geometry(svg).unwrap().labels.is_empty());
+    }
+
+    /// The dark fixture's viewBox starts at -8,-8: a box at SVG 0,0 sits 8
+    /// units into the raster, and forgetting the origin shifts every mask.
+    #[test]
+    fn a_negative_viewbox_origin_shifts_pixel_boxes() {
+        let view_box = ViewBox {
+            x: -8.0,
+            y: -8.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let label = Label {
+            id: "A".into(),
+            text: "hi".into(),
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 5.0,
+        };
+        let bounds = pixel_box(&label, view_box, 2.0, (200, 100));
+        assert_eq!(
+            PixelBox {
+                x: 12,
+                y: 12,
+                width: 28,
+                height: 18
+            },
+            bounds,
+            "(0 - -8 - pad) * zoom = 12; (10 + 2*pad + 8 - -8)... width = (8+10+2)*2 - 12 = 28"
+        );
+    }
+
+    #[test]
+    fn pixel_boxes_are_padded_outward_and_clamped_to_the_raster() {
+        let view_box = ViewBox {
+            x: 0.0,
+            y: 0.0,
+            width: 20.0,
+            height: 10.0,
+        };
+        let label = Label {
+            id: "A".into(),
+            text: "hi".into(),
+            x: 0.5,
+            y: 0.5,
+            width: 19.5,
+            height: 9.5,
+        };
+        let bounds = pixel_box(&label, view_box, 1.0, (20, 10));
+        assert_eq!(
+            PixelBox {
+                x: 0,
+                y: 0,
+                width: 20,
+                height: 10
+            },
+            bounds,
+            "the pad pushes past both edges and clamps to the raster"
+        );
+    }
+
+    #[test]
+    fn stripping_removes_exactly_the_targeted_labels_text() {
+        let full_count = LABELED_SEKIEN.matches("Cache").count();
+        let stripped = strip_label_texts(LABELED_SEKIEN, "A").unwrap();
+        assert_eq!(
+            full_count - 1,
+            stripped.matches("Cache").count(),
+            "only node A's text goes; node C keeps its own 'Cache'"
+        );
+        assert!(stripped.contains("Store"), "other labels stay");
+        usvg::roxmltree::Document::parse(&stripped).expect("stripping must keep the XML valid");
+        let edge = strip_label_texts(LABELED_SEKIEN, "L_A_B_0").unwrap();
+        assert!(!edge.contains("fills"), "edge label text goes");
+        assert!(edge.contains("reads"), "the other edge label stays");
+        assert!(
+            strip_label_texts(LABELED_SEKIEN, "nope")
+                .unwrap_err()
+                .to_string()
+                .contains("not in the SVG")
+        );
+    }
+
+    fn plain_pixmap(width: u32, height: u32) -> resvg::tiny_skia::Pixmap {
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height).unwrap();
+        pixmap.fill(resvg::tiny_skia::Color::WHITE);
+        pixmap
+    }
+
+    #[test]
+    fn ink_containment_rejects_stray_and_absent_ink() {
+        let full = {
+            let mut pixmap = plain_pixmap(4, 4);
+            pixmap.pixels_mut()[5] =
+                resvg::tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 0, 255).unwrap();
+            pixmap
+        };
+        let stripped = plain_pixmap(4, 4);
+        let covering = PixelBox {
+            x: 1,
+            y: 1,
+            width: 1,
+            height: 1,
+        };
+        ink_within(&full, &stripped, covering).expect("ink at (1,1) inside its box");
+        let elsewhere = PixelBox {
+            x: 2,
+            y: 2,
+            width: 2,
+            height: 2,
+        };
+        let message = ink_within(&full, &stripped, elsewhere)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("outside its box"), "{message}");
+        let none = ink_within(&stripped, &stripped, covering)
+            .unwrap_err()
+            .to_string();
+        assert!(none.contains("no ink"), "{message}");
+    }
+
+    #[test]
+    fn the_manifest_round_trips_and_rejects_unknown_fields() {
+        let manifest = DiagramManifest {
+            png: "sha256-ab.png".into(),
+            raster_width: 200,
+            raster_height: 100,
+            logical_width: 100,
+            logical_height: 50,
+            labels: vec![ManifestLabel {
+                id: "A".into(),
+                text: "Cache".into(),
+                bounds: PixelBox {
+                    x: 1,
+                    y: 2,
+                    width: 3,
+                    height: 4,
+                },
+            }],
+        };
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert!(
+            json.contains(r#""x":1"#),
+            "bounds must flatten into the label entry: {json}"
+        );
+        let back: DiagramManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(manifest.labels[0].bounds, back.labels[0].bounds);
+        let unknown = json.replace(r#""png""#, r#""theme":"dark","png""#);
+        assert!(
+            serde_json::from_str::<DiagramManifest>(&unknown).is_err(),
+            "an unknown field must fail loud, never be silently dropped"
+        );
+    }
+
     #[test]
     fn a_hanging_renderer_is_killed_at_the_timeout() {
         let _guard = exec_lock();
@@ -790,6 +1908,7 @@ mod tests {
         let started = std::time::Instant::now();
         let out = render_batch(
             cli.to_str().unwrap(),
+            None,
             &sources(1),
             Duration::from_millis(300),
         );

@@ -473,7 +473,66 @@ struct CardDirectives {
     input: Option<Input>,
     direction: Option<Direction>,
     citations: Vec<crate::card::SourceCitation>,
+    diagrams: Vec<crate::card::DiagramStamp>,
     givens: Vec<String>,
+}
+
+/// `fingerprint: xxh64-<16 hex> asset: <object>.png manifest: <object>.json`,
+/// exactly these three fields in order; anything else is invalid input.
+fn parse_diagram_stamp(value: &str, line: usize) -> Result<crate::card::DiagramStamp, String> {
+    let mut rest = value.trim();
+    let mut field = |key: &str| -> Result<String, String> {
+        rest = rest
+            .strip_prefix(key)
+            .ok_or_else(|| format!("`diagram:` needs `{key}` here, got `{rest}`"))?
+            .trim_start();
+        let (value, tail) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+        let value = value.to_string();
+        rest = tail.trim_start();
+        Ok(value)
+    };
+    let fingerprint = field("fingerprint:")?;
+    let hex = fingerprint.strip_prefix("xxh64-").unwrap_or_default();
+    if hex.len() != 16 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!(
+            "fingerprint `{fingerprint}` is not `xxh64-` plus 16 hex digits"
+        ));
+    }
+    let asset = field("asset:")?;
+    let manifest = field("manifest:")?;
+    for (name, extension) in [(&asset, ".png"), (&manifest, ".json")] {
+        if !crate::assets::is_object_name(name) {
+            return Err(format!("`{name}` is not a content-addressed object name"));
+        }
+        if !name.ends_with(extension) {
+            return Err(format!(
+                "`{name}` is not a `{extension}` object for its role"
+            ));
+        }
+    }
+    if !rest.is_empty() {
+        return Err(format!("unexpected trailing `{rest}`"));
+    }
+    Ok(crate::card::DiagramStamp {
+        fingerprint,
+        asset,
+        manifest,
+        line,
+    })
+}
+
+/// Exactly the recognition `parse_document` applies to a `diagram:` stamp
+/// line. The freeze scanner must agree with the parser in BOTH directions:
+/// a looser scanner rule lets a malformed near-stamp with a current
+/// fingerprint silently suppress freezing, a stricter one re-freezes valid
+/// decks. One function, one language.
+pub(crate) fn diagram_stamp_on_line(line: &str) -> Option<crate::card::DiagramStamp> {
+    let trimmed = trim_ws(line);
+    let body = trimmed.strip_prefix("<!--")?.strip_suffix("-->")?;
+    let (key, value) = directive(body)?;
+    (key == "diagram")
+        .then(|| parse_diagram_stamp(&value, 0).ok())
+        .flatten()
 }
 
 fn parse_document(text: &str) -> Result<Document, ParseError> {
@@ -1144,6 +1203,7 @@ fn build_table_cards(
         card.direction = raw.directives.direction;
         card.sampling = raw.directives.sampling;
         card.citations = raw.directives.citations.clone();
+        card.diagrams = raw.directives.diagrams.clone();
         card.givens = raw.directives.givens.clone();
         cards.push(card);
     }
@@ -1296,6 +1356,12 @@ fn apply_directive(
                 asset: fields.asset,
                 line,
             });
+        }
+        "diagram" => {
+            let bad = |message: String| ParseError::InvalidLocator { line, message };
+            directives
+                .diagrams
+                .push(parse_diagram_stamp(&value, line).map_err(bad)?);
         }
         "sampling" => match parse_sampling(&value) {
             Some(sampling) => directives.sampling = Some(sampling),
@@ -1750,6 +1816,7 @@ fn build_card(
                 card.images_back = images_back;
                 card.span_regions = span_regions;
                 card.citations = directives.citations;
+                card.diagrams = directives.diagrams;
                 card.givens = directives.givens;
                 card.authored_distractors = distractors;
                 cards.push(card);
@@ -1914,6 +1981,7 @@ fn build_card(
         card.images_back = images_back;
         card.span_regions = span_regions;
         card.citations = directives.citations;
+        card.diagrams = directives.diagrams;
         card.givens = directives.givens;
         card.block_fingerprint = block_key;
         cards.push(card);
@@ -3786,6 +3854,7 @@ the answer
                     asset: Some("sha256-abc123.rs".into()),
                     line: 32,
                 }],
+                diagrams: Vec::new(),
                 givens: vec![
                     "state - the parser position".into(),
                     "partial - the card".into(),
@@ -5386,6 +5455,73 @@ the answer
             }
             // Ok or Err are both fine; only a panic fails the property.
             let _ = super::parse("deck.md", &deck);
+        }
+    }
+    #[test]
+    fn a_diagram_stamp_parses_onto_the_card() {
+        let object = |ext: &str| format!("sha256-{}.{ext}", "a".repeat(64));
+        let text = format!(
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\n<!-- diagram: fingerprint: xxh64-0011223344556677 asset: {} manifest: {} -->\nanswer\n",
+            object("png"),
+            object("json"),
+        );
+        let deck = parse(&text);
+        assert_eq!(1, deck.cards[0].diagrams.len());
+        let stamp = &deck.cards[0].diagrams[0];
+        assert_eq!("xxh64-0011223344556677", stamp.fingerprint);
+        assert_eq!(object("png"), stamp.asset);
+        assert_eq!(object("json"), stamp.manifest);
+        assert!(
+            !deck.cards[0]
+                .back
+                .iter()
+                .any(|line| line.contains("diagram:")),
+            "the stamp is a directive, never answer content"
+        );
+    }
+
+    #[test]
+    fn malformed_diagram_stamps_fail_as_invalid_input() {
+        let png = format!("sha256-{}.png", "a".repeat(64));
+        let json = format!("sha256-{}.json", "a".repeat(64));
+        let cases = [
+            (
+                "fingerprint: xxh64-00112233 asset: a manifest: b".to_string(),
+                "short fingerprint hex",
+            ),
+            (
+                format!("fingerprint: 0011223344556677 asset: {png} manifest: {json}"),
+                "missing xxh64 prefix",
+            ),
+            (
+                format!("fingerprint: xxh64-0011223344556677 asset: nope.png manifest: {json}"),
+                "asset is not an object name",
+            ),
+            (
+                format!("fingerprint: xxh64-0011223344556677 asset: {json} manifest: {png}"),
+                "swapped artifact roles: a json asset or png manifest is a later decode failure",
+            ),
+            (
+                format!("fingerprint: xxh64-0011223344556677 asset: {png} manifest: {png}"),
+                "the manifest role requires a json object",
+            ),
+            (
+                format!("fingerprint: xxh64-0011223344556677 manifest: {json} asset: {png}"),
+                "fields out of order",
+            ),
+            (
+                format!(
+                    "fingerprint: xxh64-0011223344556677 asset: {png} manifest: {json} extra: 1"
+                ),
+                "trailing junk",
+            ),
+        ];
+        for (stamp, why) in cases {
+            let text = format!("## q\na\n<!-- diagram: {stamp} -->\n");
+            assert!(
+                super::parse("deck.md", &text).is_err(),
+                "{why}: `{stamp}` must be rejected as invalid input"
+            );
         }
     }
 }

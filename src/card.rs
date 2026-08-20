@@ -76,6 +76,16 @@ pub struct CardImage {
     pub crop: Option<crate::parser::region::RawCrop>,
 }
 
+/// A frozen diagram's stamp: the fence's fingerprint plus the two
+/// content-addressed artifacts (raster and manifest) minted at freeze time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagramStamp {
+    pub fingerprint: String,
+    pub asset: String,
+    pub manifest: String,
+    pub line: usize,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceCitation {
     /// The `at:` field: the real source path and lines, never an asset name.
@@ -108,6 +118,7 @@ pub struct Card {
     pub images: Vec<CardImage>,
     pub images_back: Vec<CardImage>,
     pub citations: Vec<SourceCitation>,
+    pub diagrams: Vec<DiagramStamp>,
     pub givens: Vec<String>,
     pub display_back: Option<Vec<String>>,
     pub token: Option<Arc<str>>,
@@ -165,6 +176,7 @@ impl Card {
             images: Vec::new(),
             images_back: Vec::new(),
             citations: Vec::new(),
+            diagrams: Vec::new(),
             givens: Vec::new(),
             display_back: None,
             token: None,
@@ -201,6 +213,7 @@ impl Card {
         card.images = self.images_back.clone();
         card.images_back = self.images.clone();
         card.citations = self.citations.clone();
+        card.diagrams = self.diagrams.clone();
         // The reversed half keeps the same token so id() can compose the "-r" suffix from it.
         card.token = self.token.clone();
         card.row = self.row.clone();

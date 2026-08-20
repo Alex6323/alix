@@ -80,6 +80,11 @@ pub enum InitializeError {
 pub struct FreezeReport {
     pub evidence: usize,
     pub images: usize,
+    pub diagrams: usize,
+    /// Loud deferrals: a missing renderer or a fence that failed to render
+    /// or validate leaves the deck reviewable (masked source fallback), but
+    /// never silently.
+    pub diagram_warnings: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -154,6 +159,23 @@ pub fn write_object(
 }
 
 pub fn freeze_member(path: &Path) -> Result<FreezeReport, AssetError> {
+    freeze_member_with(path, default_diagram_command())
+}
+
+#[cfg(feature = "full")]
+fn default_diagram_command() -> Option<&'static str> {
+    Some(crate::diagram::COMMAND)
+}
+
+#[cfg(not(feature = "full"))]
+fn default_diagram_command() -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn freeze_member_with(
+    path: &Path,
+    diagram_command: Option<&str>,
+) -> Result<FreezeReport, AssetError> {
     let workspace_root = crate::workspace::root_for_deck(path)
         .ok_or_else(|| AssetError::NotWorkspaceMember(path.to_path_buf()))?;
     let (_, _, defaults, _) =
@@ -169,7 +191,7 @@ pub fn freeze_member(path: &Path) -> Result<FreezeReport, AssetError> {
     let owned_dir = deck_dir(&workspace_root, deck_id)?;
     let owned_dir_existed = owned_dir.exists();
     let root_existed = workspace_root.join(ROOT).exists();
-    let result = freeze_member_inner(&workspace_root, &deck);
+    let result = freeze_member_inner(&workspace_root, &deck, diagram_command);
     if result.is_err() && !owned_dir_existed {
         let _ = std::fs::remove_dir_all(&owned_dir);
         if !root_existed {
@@ -214,7 +236,11 @@ pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
     Ok(InitializeReport { stamp, freeze })
 }
 
-fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeReport, AssetError> {
+fn freeze_member_inner(
+    workspace_root: &Path,
+    deck: &Deck,
+    diagram_command: Option<&str>,
+) -> Result<FreezeReport, AssetError> {
     let text = read_text(&deck.path)?;
     let parsed = crate::parser::parse(&deck.subject, &text).map_err(|source| AssetError::Deck {
         path: deck.path.clone(),
@@ -302,17 +328,38 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
         path: deck.path.clone(),
         source,
     })?;
-    let verified =
-        crate::parser::parse(&deck.subject, &rewritten).map_err(|source| AssetError::Deck {
-            path: deck.path.clone(),
+    let parse = |stage: &str, text: &str| {
+        crate::parser::parse(&deck.subject, text).map_err(|source| AssetError::Deck {
+            path: deck.path.with_extension(format!("md ({stage})")),
             source: DeckError::Parse {
                 path: deck.path.clone(),
                 source,
             },
-        })?;
+        })
+    };
+    let verified = parse("frozen", &rewritten)?;
     if verified.deck_token.as_deref() != Some(deck_id) {
         return Err(AssetError::MissingDeckId(deck.path.clone()));
     }
+    let diagram = freeze_diagrams(
+        workspace_root,
+        deck_id,
+        &rewritten,
+        verified.frontmatter_span,
+        diagram_command,
+    )?;
+    let rewritten = if diagram.replacements.is_empty() {
+        rewritten
+    } else {
+        let stamped = apply_stamp_edits(&rewritten, &diagram.replacements).map_err(|error| {
+            AssetError::Io {
+                path: deck.path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+            }
+        })?;
+        parse("diagram-stamped", &stamped)?;
+        stamped
+    };
     crate::deck::write_deck_text(&deck.path, &rewritten).map_err(|source| AssetError::Deck {
         path: deck.path.clone(),
         source,
@@ -320,7 +367,167 @@ fn freeze_member_inner(workspace_root: &Path, deck: &Deck) -> Result<FreezeRepor
     Ok(FreezeReport {
         evidence: evidence.len(),
         images: image_objects.len(),
+        diagrams: diagram.frozen,
+        diagram_warnings: diagram.warnings,
     })
+}
+
+/// Stamp edits are whole added or replaced lines, so unlike
+/// `deck::replace_ranges` they legitimately contain newlines; the ordering
+/// and boundary checks stay.
+fn apply_stamp_edits(
+    text: &str,
+    edits: &[(std::ops::Range<usize>, String)],
+) -> Result<String, String> {
+    let mut edits = edits.to_vec();
+    edits.sort_by_key(|(range, _)| range.start);
+    let mut previous_end = 0;
+    for (range, _) in &edits {
+        if range.start < previous_end
+            || range.start > range.end
+            || range.end > text.len()
+            || !text.is_char_boundary(range.start)
+            || !text.is_char_boundary(range.end)
+        {
+            return Err(format!(
+                "invalid stamp edit at {}..{}",
+                range.start, range.end
+            ));
+        }
+        previous_end = range.end.max(range.start + 1);
+    }
+    let mut out = text.to_string();
+    for (range, replacement) in edits.into_iter().rev() {
+        out.replace_range(range, &replacement);
+    }
+    Ok(out)
+}
+
+#[derive(Default)]
+struct DiagramOutcome {
+    replacements: Vec<(std::ops::Range<usize>, String)>,
+    warnings: Vec<String>,
+    frozen: usize,
+}
+
+#[cfg(not(feature = "full"))]
+fn freeze_diagrams(
+    _workspace_root: &Path,
+    _deck_id: &str,
+    _text: &str,
+    _frontmatter: Option<(usize, usize)>,
+    _command: Option<&str>,
+) -> Result<DiagramOutcome, AssetError> {
+    Ok(DiagramOutcome::default())
+}
+
+/// Opportunistic and loud: a fence that cannot be frozen (renderer absent,
+/// render error, containment failure) becomes a warning and the deck stays
+/// reviewable on the masked-source fallback; only object-store failures are
+/// hard errors.
+#[cfg(feature = "full")]
+fn freeze_diagrams(
+    workspace_root: &Path,
+    deck_id: &str,
+    text: &str,
+    frontmatter: Option<(usize, usize)>,
+    command: Option<&str>,
+) -> Result<DiagramOutcome, AssetError> {
+    use crate::diagram;
+    let mut outcome = DiagramOutcome::default();
+    let Some(command) = command else {
+        return Ok(outcome);
+    };
+    let found = diagram::fences_in_document(text, frontmatter);
+    if found.unclosed {
+        outcome
+            .warnings
+            .push("an unclosed mermaid fence cannot be frozen".to_string());
+    }
+    let stale: Vec<&diagram::RawFence> = found
+        .fences
+        .iter()
+        .filter(|fence| {
+            fence
+                .stamp
+                .as_ref()
+                .is_none_or(|(_, fingerprint)| *fingerprint != diagram::fingerprint(&fence.source))
+        })
+        .collect();
+    if stale.is_empty() {
+        return Ok(outcome);
+    }
+    let family = match diagram::available_family() {
+        Ok(family) => family,
+        Err(error) => {
+            outcome
+                .warnings
+                .push(format!("diagrams not frozen: {error:#}"));
+            return Ok(outcome);
+        }
+    };
+    let sources: Vec<String> = stale.iter().map(|fence| fence.source.clone()).collect();
+    let rendered =
+        match diagram::render_batch(command, Some(family), &sources, diagram::RENDER_TIMEOUT) {
+            Ok(rendered) => rendered,
+            Err(error) => {
+                outcome.warnings.push(format!(
+                    "diagrams not frozen: {error:#}; {}",
+                    diagram::REMEDY
+                ));
+                return Ok(outcome);
+            }
+        };
+    for (fence, rendered) in stale.iter().zip(rendered) {
+        let fingerprint = diagram::fingerprint(&fence.source);
+        let svg = match rendered {
+            Ok(svg) => svg,
+            Err(message) => {
+                outcome
+                    .warnings
+                    .push(format!("diagram {fingerprint} did not render: {message}"));
+                continue;
+            }
+        };
+        let frozen = match diagram::freeze_fence(&svg, family) {
+            Ok(frozen) => frozen,
+            Err(error) => {
+                outcome
+                    .warnings
+                    .push(format!("diagram {fingerprint} not frozen: {error:#}"));
+                continue;
+            }
+        };
+        let manifest_bytes =
+            serde_json::to_vec(&frozen.manifest).map_err(|source| AssetError::Io {
+                path: workspace_root.to_path_buf(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+            })?;
+        write_object(workspace_root, deck_id, &frozen.png, "png")?;
+        let manifest_object = write_object(workspace_root, deck_id, &manifest_bytes, "json")?;
+        let stamp = format!(
+            "<!-- diagram: fingerprint: {fingerprint} asset: {} manifest: {} -->",
+            frozen.manifest.png,
+            file_name(&manifest_object)?,
+        );
+        match &fence.stamp {
+            Some((range, _)) => outcome.replacements.push((range.clone(), stamp)),
+            None => {
+                let after_newline = fence.insert_at == 0
+                    || text.as_bytes().get(fence.insert_at - 1) == Some(&b'\n');
+                let line = if after_newline {
+                    format!("{stamp}\n")
+                } else {
+                    format!("\n{stamp}\n")
+                };
+                outcome
+                    .replacements
+                    .push((fence.insert_at..fence.insert_at, line));
+            }
+        }
+        outcome.frozen += 1;
+    }
+    Ok(outcome)
 }
 
 // A URL source grounds the exam and tutor but holds no freezable bytes;
@@ -751,7 +958,9 @@ mod tests {
         assert_eq!(
             FreezeReport {
                 evidence: 1,
-                images: 1
+                images: 1,
+                diagrams: 0,
+                diagram_warnings: Vec::new(),
             },
             report
         );
@@ -856,7 +1065,9 @@ mod tests {
         assert_eq!(
             FreezeReport {
                 evidence: 1,
-                images: 0
+                images: 0,
+                diagrams: 0,
+                diagram_warnings: Vec::new(),
             },
             report
         );
@@ -989,7 +1200,9 @@ mod tests {
         assert_eq!(
             FreezeReport {
                 evidence: 0,
-                images: 0
+                images: 0,
+                diagrams: 0,
+                diagram_warnings: Vec::new(),
             },
             report
         );
@@ -1024,7 +1237,9 @@ mod tests {
         assert_eq!(
             Some(FreezeReport {
                 evidence: 1,
-                images: 0
+                images: 0,
+                diagrams: 0,
+                diagram_warnings: Vec::new(),
             }),
             report.freeze
         );
@@ -1205,7 +1420,9 @@ mod tests {
         assert_eq!(
             FreezeReport {
                 evidence: 1,
-                images: 0
+                images: 0,
+                diagrams: 0,
+                diagram_warnings: Vec::new(),
             },
             report
         );
@@ -1221,9 +1438,401 @@ mod tests {
         assert_eq!(
             Some(FreezeReport {
                 evidence: 0,
-                images: 0
+                images: 0,
+                diagrams: 0,
+                diagram_warnings: Vec::new(),
             }),
             report.freeze
+        );
+    }
+    fn fixture_svg() -> String {
+        std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/labeled-sekien.svg"),
+        )
+        .unwrap()
+    }
+
+    /// A fake sekien: drains stdin, then emits the prepared meta-id stream.
+    fn fake_sekien(dir: &Path, stdout: &str, stderr: &str) -> std::path::PathBuf {
+        let out = dir.join("sekien-out");
+        let err = dir.join("sekien-err");
+        std::fs::write(&out, stdout).unwrap();
+        std::fs::write(&err, stderr).unwrap();
+        crate::testutil::fake_cli(
+            dir,
+            &format!(
+                "cat >/dev/null; cat {}; cat {} >&2; exit 0",
+                out.display(),
+                err.display()
+            ),
+        )
+    }
+
+    fn diagram_deck(directory: &Path, body: &str) -> std::path::PathBuf {
+        let path = directory.join("decks/graphs.md");
+        std::fs::write(
+            &path,
+            format!("---\nformat-version: 1\nid: \"deck-deck1\"\n---\n{body}"),
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn freezing_a_member_stamps_a_mermaid_fence_and_writes_the_asset_pair() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+
+        let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+        assert_eq!(1, report.diagrams, "{:?}", report.diagram_warnings);
+        assert!(
+            report.diagram_warnings.is_empty(),
+            "{:?}",
+            report.diagram_warnings
+        );
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        let fingerprint = crate::diagram::fingerprint("flowchart LR\n A-->B");
+        let stamp_line = frozen
+            .lines()
+            .find(|line| line.starts_with("<!-- diagram:"))
+            .expect("a stamp line exists");
+        assert!(stamp_line.contains(&fingerprint), "{stamp_line}");
+        let after_close = frozen.split("```\n").nth(1).unwrap();
+        assert!(
+            after_close.starts_with("<!-- diagram:"),
+            "the stamp sits on the line after the fence close: {after_close}"
+        );
+        let deck = Deck::load(&path).unwrap();
+        let stamp = &deck.cards[0].diagrams[0];
+        assert_eq!(fingerprint, stamp.fingerprint);
+        let owned = directory.path().join("assets/deck-deck1");
+        let manifest_bytes = std::fs::read(owned.join(&stamp.manifest)).unwrap();
+        let manifest: crate::diagram::DiagramManifest =
+            serde_json::from_slice(&manifest_bytes).unwrap();
+        assert_eq!(
+            stamp.asset, manifest.png,
+            "the stamp and manifest agree on the raster"
+        );
+        assert!(owned.join(&stamp.asset).is_file(), "the PNG object exists");
+        assert_eq!(5, manifest.labels.len(), "three nodes and two edge labels");
+        assert_eq!(
+            (manifest.logical_width * 2, manifest.logical_height * 2),
+            (manifest.raster_width, manifest.raster_height),
+            "raster is the logical size at ZOOM"
+        );
+        validate_member(&deck).expect("both objects verify");
+    }
+
+    /// The containment gate: shrink node A's label-container so its text
+    /// ink escapes the emitted box. On a host with fonts the ink lands
+    /// outside; on a fontless host the text drops and leaves no ink. Both
+    /// are freeze refusals, so the law holds everywhere.
+    #[test]
+    fn a_label_whose_ink_escapes_its_box_warns_and_does_not_freeze() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg =
+            fixture_svg().replacen("width=\"110\" height=\"49\"", "width=\"1\" height=\"1\"", 1);
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+
+        let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+        assert_eq!(0, report.diagrams);
+        assert_eq!(1, report.diagram_warnings.len());
+        assert!(
+            report.diagram_warnings[0].contains("ink-containment")
+                || report.diagram_warnings[0].contains("no ink"),
+            "{}",
+            report.diagram_warnings[0]
+        );
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("<!-- diagram:"),
+            "a failed validation freezes nothing"
+        );
+        assert!(
+            !directory.path().join("assets/deck-deck1").exists(),
+            "no objects are written for a refused fence"
+        );
+    }
+
+    #[test]
+    fn a_fence_closing_at_eof_without_a_newline_still_gets_a_wellformed_stamp() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\nanswer\n```mermaid\nflowchart LR\n A-->B\n```",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+
+        let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+        assert_eq!(1, report.diagrams, "{:?}", report.diagram_warnings);
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(
+            1,
+            deck.cards[0].diagrams.len(),
+            "a glued stamp would unclose the fence and never parse as a directive"
+        );
+    }
+
+    #[test]
+    fn refreezing_needs_no_renderer_and_rewrites_nothing() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        let first = std::fs::read_to_string(&path).unwrap();
+
+        let report = freeze_member_with(&path, Some("definitely-not-a-real-binary-xyz")).unwrap();
+
+        assert_eq!(0, report.diagrams);
+        assert!(
+            report.diagram_warnings.is_empty(),
+            "a fully stamped deck never invokes the renderer: {:?}",
+            report.diagram_warnings
+        );
+        assert_eq!(first, std::fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn an_edited_fence_replaces_its_stamp_in_place() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        let stamped = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, stamped.replace("A-->B", "A-->C")).unwrap();
+
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+        let refrozen = std::fs::read_to_string(&path).unwrap();
+        let stamps: Vec<&str> = refrozen
+            .lines()
+            .filter(|line| line.starts_with("<!-- diagram:"))
+            .collect();
+        assert_eq!(1, stamps.len(), "replaced, never stacked: {stamps:?}");
+        assert!(
+            stamps[0].contains(&crate::diagram::fingerprint("flowchart LR\n A-->C")),
+            "the stamp follows the edited fence: {}",
+            stamps[0]
+        );
+    }
+
+    /// Codex's P3 regression: an indented stamp is valid to the parser, so
+    /// the scanner must honor it (idempotent) and normalize it on a stale
+    /// replacement, never stack a second stamp beside it.
+    #[test]
+    fn an_indented_stamp_stays_idempotent_and_a_stale_one_replaces_cleanly() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        let indented = frozen.replace("<!-- diagram:", "  <!-- diagram:");
+        std::fs::write(&path, &indented).unwrap();
+
+        let report = freeze_member_with(&path, Some("definitely-not-a-real-binary-xyz")).unwrap();
+        assert_eq!(0, report.diagrams, "an indented matching stamp is honored");
+        assert!(
+            report.diagram_warnings.is_empty(),
+            "{:?}",
+            report.diagram_warnings
+        );
+        assert_eq!(indented, std::fs::read_to_string(&path).unwrap());
+
+        std::fs::write(&path, indented.replace("A-->B", "A-->C")).unwrap();
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        let refrozen = std::fs::read_to_string(&path).unwrap();
+        let stamps: Vec<&str> = refrozen
+            .lines()
+            .filter(|line| line.trim_start().starts_with("<!-- diagram:"))
+            .collect();
+        assert_eq!(1, stamps.len(), "replaced, never stacked: {stamps:?}");
+        assert!(
+            stamps[0].starts_with("<!-- diagram:"),
+            "the rewrite normalizes the indentation: {:?}",
+            stamps[0]
+        );
+        assert!(
+            stamps[0].contains(&crate::diagram::fingerprint("flowchart LR\n A-->C")),
+            "{}",
+            stamps[0]
+        );
+    }
+
+    /// A malformed near-stamp carrying the CURRENT fingerprint must never
+    /// make freezing a silent zero-warning no-op: the fence counts as
+    /// unstamped, renders, and gains a real stamp; the junk line stays
+    /// visible as content for the author.
+    #[test]
+    fn a_malformed_near_stamp_never_suppresses_freezing() {
+        let _guard = crate::testutil::exec_lock();
+        for junk in ["\u{00a0}{stamp}", "<!-- diagram: fingerprint: {print}"] {
+            let directory = workspace();
+            let svg = fixture_svg();
+            let cli = fake_sekien(
+                directory.path(),
+                &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+                "",
+            );
+            let path = diagram_deck(
+                directory.path(),
+                "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+            );
+            freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+            let frozen = std::fs::read_to_string(&path).unwrap();
+            let stamp_line = frozen
+                .lines()
+                .find(|line| line.starts_with("<!-- diagram:"))
+                .unwrap()
+                .to_string();
+            let print = crate::diagram::fingerprint("flowchart LR\n A-->B");
+            let junk_line = junk
+                .replace("{stamp}", &stamp_line)
+                .replace("{print}", &print);
+            std::fs::write(&path, frozen.replace(&stamp_line, &junk_line)).unwrap();
+
+            let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+            assert_eq!(
+                1, report.diagrams,
+                "{junk_line}: re-freezes, never a silent no-op"
+            );
+            let repaired = std::fs::read_to_string(&path).unwrap();
+            let deck = Deck::load(&path).unwrap();
+            assert_eq!(
+                1,
+                deck.cards[0].diagrams.len(),
+                "{junk_line}: a real stamp exists again"
+            );
+            assert!(
+                repaired.contains(junk_line.trim_end_matches('\n')),
+                "{junk_line}: the junk stays visible for the author"
+            );
+        }
+    }
+
+    #[test]
+    fn a_missing_renderer_warns_with_the_doctor_remedy_and_freezes_the_rest() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let source = directory.path().join("notes.md");
+        std::fs::write(&source, "one\ntwo\n").unwrap();
+        let path = directory.path().join("decks/graphs.md");
+        std::fs::write(
+            &path,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\na\n<!-- at: notes.md:2 -->\n",
+                crate::parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+
+        let report = freeze_member_with(&path, Some("definitely-not-a-real-binary-xyz")).unwrap();
+
+        assert_eq!(1, report.evidence, "the citation still froze");
+        assert_eq!(0, report.diagrams);
+        assert_eq!(1, report.diagram_warnings.len());
+        assert!(
+            report.diagram_warnings[0].contains(crate::diagram::REMEDY),
+            "the warning carries the doctor remedy: {}",
+            report.diagram_warnings[0]
+        );
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("<!-- diagram:")
+        );
+    }
+
+    #[test]
+    fn a_failed_diagram_warns_while_the_healthy_one_freezes() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nnot a diagram\n```\nanswer\n## q2\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 2}} -->\n{svg}"),
+            "<!-- {\"id\": 1} -->\nNo diagram type detected",
+        );
+
+        let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+        assert_eq!(1, report.diagrams);
+        assert_eq!(1, report.diagram_warnings.len());
+        assert!(
+            report.diagram_warnings[0].contains("did not render")
+                && report.diagram_warnings[0]
+                    .contains(&crate::diagram::fingerprint("not a diagram")),
+            "{}",
+            report.diagram_warnings[0]
+        );
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            1,
+            frozen
+                .lines()
+                .filter(|line| line.starts_with("<!-- diagram:"))
+                .count(),
+            "only the healthy fence is stamped"
         );
     }
 }

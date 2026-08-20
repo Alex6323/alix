@@ -169,6 +169,14 @@ pub(crate) fn init_cmd(args: DeckInitArgs) -> Result<()> {
         args.deck.display(),
         outcome.stamp.minted_cards.len()
     );
+    if let Some(freeze) = &outcome.freeze {
+        if freeze.diagrams > 0 {
+            println!("Frozen {} diagram(s)", freeze.diagrams);
+        }
+        for warning in &freeze.diagram_warnings {
+            eprintln!("warning: {warning}");
+        }
+    }
     Ok(())
 }
 

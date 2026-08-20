@@ -1102,7 +1102,7 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         "diagrams",
         alix::diagram::COMMAND,
         "rendering mermaid diagrams into decks",
-        "install sekien (`cargo install sekien`); on Linux it also needs webkit2gtk, gtk3 and xvfb",
+        alix::diagram::REMEDY,
     ));
     let mut failed = false;
     for f in &findings {
