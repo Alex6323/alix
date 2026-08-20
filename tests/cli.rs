@@ -2735,6 +2735,40 @@ fn doctor_bare_reports_config_store_and_decks_sections() {
     );
 }
 
+/// Every optional external tool alix shells out to reports the same way when
+/// it is absent: named, warned (never failed), with a remedy naming the tool.
+/// A new tool is a new row here, not a new test.
+#[test]
+fn every_optional_external_tool_warns_with_its_remedy_when_absent() {
+    let home = tempfile::tempdir().unwrap();
+    // An empty PATH makes every external dependency deterministically absent
+    // without touching this process's environment.
+    let out = alix_env(&["doctor"], home.path(), &[("PATH", "")]);
+    let text = format!("{}{}", stdout(&out), stderr(&out));
+
+    // The remedy fragment must be text that appears ONLY in the remedy, never
+    // in the tool's own name or purpose line, or the assertion passes on the
+    // wrong evidence (caught by mutating a remedy and watching this stay green).
+    for (label, remedy_fragment) in [
+        ("share", "pipx install magic-wormhole"),
+        ("diagrams", "cargo install sekien"),
+    ] {
+        assert!(
+            text.contains(label),
+            "doctor never names the `{label}` tool, got:\n{text}"
+        );
+        assert!(
+            text.contains(remedy_fragment),
+            "doctor's `{label}` row omits its remedy `{remedy_fragment}`, got:\n{text}"
+        );
+    }
+    assert!(
+        out.status.success(),
+        "a missing optional tool must warn, never fail the run; stderr: {}",
+        stderr(&out)
+    );
+}
+
 #[test]
 fn bare_and_rooted_doctor_share_the_in_folder_store() {
     let decks = tempfile::tempdir().unwrap();

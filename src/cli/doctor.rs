@@ -1098,6 +1098,12 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         "sharing (`alix share`/`receive`)",
         "install magic-wormhole (e.g. `pipx install magic-wormhole`, or your package manager)",
     ));
+    findings.push(doctor::check_binary(
+        "diagrams",
+        "sekien",
+        "rendering mermaid diagrams into decks",
+        "install sekien (`cargo install sekien`); on Linux it also needs webkit2gtk, gtk3 and xvfb",
+    ));
     let mut failed = false;
     for f in &findings {
         let glyph = match f.status {
