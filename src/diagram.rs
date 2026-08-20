@@ -5,12 +5,14 @@
 //! during review.
 
 use std::{
+    hash::Hasher,
     io::{Read, Write},
     process::{Command, Stdio},
     time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
+use twox_hash::XxHash64;
 
 /// The CLI alix shells out to. Named here rather than configured: a second
 /// renderer would produce different pictures for the same deck.
@@ -18,6 +20,78 @@ pub const COMMAND: &str = "sekien";
 
 /// One fence's outcome: the SVG, or the renderer's own message for it.
 pub type Rendered = Result<String, String>;
+
+/// The info string that marks a fence as a diagram.
+const LANGUAGE: &str = "mermaid";
+
+/// A mermaid fence inside one block.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Fence {
+    /// The interior, verbatim and without the delimiter lines. This is the
+    /// renderer's input and the whole fingerprint preimage.
+    pub source: String,
+    /// Index into the block's lines of the opening delimiter.
+    pub opener: usize,
+}
+
+/// Every mermaid fence in `lines`, in document order.
+///
+/// The info string is compared case-insensitively after trimming, so
+/// ```` ```mermaid ````, ```` ``` mermaid ```` and ```` ~~~MERMAID ```` all
+/// count; any other language does not. An unclosed fence runs to the end of
+/// the block, matching how the stream already treats fenced interiors.
+pub fn fences(lines: &[String]) -> Vec<Fence> {
+    let mut found = Vec::new();
+    // `opener` is None while a NON-mermaid fence is open: such a fence still
+    // has to be consumed, or its interior could be read as a diagram, but it
+    // never yields one. An Option carries that where a magic index would not:
+    // both exit paths must handle it, so neither can drop the distinction.
+    let mut open: Option<(char, Option<usize>, Vec<String>)> = None;
+    let close = |opener: Option<usize>, body: Vec<String>, found: &mut Vec<Fence>| {
+        if let Some(opener) = opener {
+            found.push(Fence {
+                source: body.join("\n"),
+                opener,
+            });
+        }
+    };
+    for (index, line) in lines.iter().enumerate() {
+        match &mut open {
+            Some((ch, _, body)) => {
+                if crate::parser::closes_fence(line, *ch) {
+                    let (_, opener, body) = open.take().expect("the fence is open");
+                    close(opener, body, &mut found);
+                } else {
+                    body.push(line.clone());
+                }
+            }
+            None => {
+                if let Some(ch) = crate::parser::fence_opener(line) {
+                    let info = line.trim_start_matches(ch).trim();
+                    let opener = info.eq_ignore_ascii_case(LANGUAGE).then_some(index);
+                    open = Some((ch, opener, Vec::new()));
+                }
+            }
+        }
+    }
+    if let Some((_, opener, body)) = open {
+        close(opener, body, &mut found);
+    }
+    found
+}
+
+/// The frozen-forever preimage: the fence's interior bytes and nothing else.
+///
+/// Deliberately excludes the renderer version, the mermaid version, and the
+/// theme. A frozen SVG is evidence, not a cache: putting a version in here
+/// would invalidate every diagram in every shared deck on any upgrade, for a
+/// recipient who may not even have the renderer installed. Re-rendering stays
+/// a deliberate authoring act.
+pub fn fingerprint(source: &str) -> String {
+    let mut hasher = XxHash64::default();
+    hasher.write(source.as_bytes());
+    format!("xxh64-{:016x}", hasher.finish())
+}
 
 /// Renders `sources` in one long-lived process, returning one outcome per
 /// input in input order.
@@ -145,6 +219,90 @@ mod tests {
 
     fn meta(id: usize, body: &str) -> String {
         format!("<!-- {{\"id\": {id}}} -->\n{body}")
+    }
+
+    fn lines(text: &str) -> Vec<String> {
+        text.lines().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn only_a_mermaid_fence_is_found_whatever_spells_it() {
+        let cases = [
+            ("```mermaid", true),
+            ("``` mermaid", true),
+            ("```MERMaid", true),
+            ("~~~mermaid", true),
+            ("```mermaid   ", true),
+            ("```rust", false),
+            ("```", false),
+            ("```mermaidish", false),
+        ];
+        for (opener, expected) in cases {
+            let block = lines(&format!("{opener}\nflowchart LR\n A-->B\n```"));
+            let found = fences(&block);
+            assert_eq!(
+                expected,
+                !found.is_empty(),
+                "opener {opener:?} should {}be a diagram",
+                if expected { "" } else { "not " }
+            );
+        }
+    }
+
+    #[test]
+    fn a_fence_yields_its_interior_verbatim_without_the_delimiters() {
+        let block = lines("prose\n```mermaid\nflowchart LR\n  A[hi] --> B\n```\nmore");
+        let found = fences(&block);
+        assert_eq!(1, found.len());
+        assert_eq!("flowchart LR\n  A[hi] --> B", found[0].source);
+        assert_eq!(1, found[0].opener, "the opener line index");
+    }
+
+    /// A non-mermaid fence must be consumed, not skipped: otherwise its
+    /// interior can be read as a later mermaid fence's content.
+    #[test]
+    fn a_mermaid_line_inside_another_fence_is_not_a_diagram() {
+        let block = lines("```text\n```mermaid\nflowchart LR\n A-->B\n```\n```");
+        assert_eq!(Vec::<Fence>::new(), fences(&block));
+    }
+
+    #[test]
+    fn several_fences_come_back_in_document_order() {
+        let block =
+            lines("```mermaid\nfirst\n```\n```rust\nlet x = 1;\n```\n```mermaid\nsecond\n```");
+        let found = fences(&block);
+        assert_eq!(
+            vec!["first".to_string(), "second".to_string()],
+            found.iter().map(|f| f.source.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn an_unclosed_fence_runs_to_the_end_of_the_block() {
+        let block = lines("```mermaid\nflowchart LR\n A-->B");
+        let found = fences(&block);
+        assert_eq!(1, found.len());
+        assert_eq!("flowchart LR\n A-->B", found[0].source);
+    }
+
+    /// The preimage is the interior alone: the same diagram written with a
+    /// different fence character or info-string casing is the same picture and
+    /// must reuse the same frozen asset.
+    #[test]
+    fn the_fingerprint_covers_the_interior_and_nothing_else() {
+        let backtick = fences(&lines("```mermaid\nflowchart LR\n A-->B\n```"));
+        let tilde = fences(&lines("~~~MERMAID\nflowchart LR\n A-->B\n~~~"));
+        assert_eq!(
+            fingerprint(&backtick[0].source),
+            fingerprint(&tilde[0].source),
+            "the fence syntax is not part of the picture"
+        );
+        assert_ne!(
+            fingerprint("flowchart LR\n A-->B"),
+            fingerprint("flowchart LR\n A-->C"),
+            "an edited diagram must miss its old asset"
+        );
+        assert!(fingerprint("x").starts_with("xxh64-"));
     }
 
     fn sources(n: usize) -> Vec<String> {
