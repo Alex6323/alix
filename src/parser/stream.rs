@@ -137,6 +137,13 @@ impl MaskableStream {
         }
     }
 
+    /// The 1-based grapheme index of `byte` in the stream text, the
+    /// coordinate system of minted `position:` anchors.
+    pub fn grapheme_position(&self, byte: usize) -> u32 {
+        use unicode_segmentation::UnicodeSegmentation;
+        self.text[..byte].graphemes(true).count() as u32 + 1
+    }
+
     /// The stream-text bounds of the math piece containing `range`, when the
     /// range lies wholly inside one non-matchable (math) piece.
     pub fn math_piece(&self, range: &Range<usize>) -> Option<Range<usize>> {

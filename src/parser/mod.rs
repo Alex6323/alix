@@ -1461,7 +1461,7 @@ fn build_card(
     } else {
         0
     };
-    let span_regions = bind_regions(
+    let mut span_regions = bind_regions(
         directives.regions,
         directives.crops,
         &mut front_media,
@@ -1474,9 +1474,10 @@ fn build_card(
     // the stream.
     let mut splices: Vec<SpanSplice> = Vec::new();
     let mut bound: Vec<(usize, usize, usize)> = Vec::new();
+    let mut bound_positions: Vec<(usize, u32)> = Vec::new();
     if !span_regions.is_empty() {
         let stream = stream::maskable_stream(&answer, &parsed);
-        for span in &span_regions {
+        for (span_index, span) in span_regions.iter().enumerate() {
             let region::RegionGeometry::Span {
                 occurrence: n,
                 boundary,
@@ -1556,6 +1557,7 @@ fn build_card(
                 });
             }
             bound.push((start, end, span.line));
+            bound_positions.push((span_index, stream.grapheme_position(start)));
             if let Some(piece) = stream.math_piece(&(start..end)) {
                 let payload = &stream.text[piece.clone()];
                 if let Err(error) = crate::math::parses(payload) {
@@ -1599,6 +1601,9 @@ fn build_card(
                 answer_index,
                 range: (range.start, range.end),
             });
+        }
+        for (span_index, position) in bound_positions {
+            span_regions[span_index].bound_position = Some(position);
         }
     }
 

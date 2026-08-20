@@ -63,6 +63,7 @@ tempfile = "3" # scratch dirs for staging `alix share` and landing `alix receive
 toml = "1"
 toml_edit = "0.25" # comment-preserving edits of alix.local.toml
 twox-hash = "2"
+unicode-segmentation = "=1.12.0" # grapheme indexing for minted span `position:` anchors
 yaml-rust2 = "0.11" # YAML frontmatter parsing
 zip = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true } # `alix share --zip` / `alix receive`
 

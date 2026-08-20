@@ -58,10 +58,14 @@ pub struct RawRegion {
     pub group: Option<String>,
     pub hidden: Option<String>,
     pub stamp: Option<String>,
-    /// The machine-minted anchor offset (`position:<n>`, 1-based char
-    /// offset of the bound occurrence): doctor's drift signal, never read
-    /// for binding.
+    /// The machine-minted anchor offset (`position:<n>`, 1-based grapheme
+    /// index of the bound occurrence in the block's context text): doctor's
+    /// drift signal, never read for binding.
     pub minted_position: Option<u32>,
+    /// Computed at bind, never parsed: where the span actually bound, in the
+    /// same grapheme coordinates `position:` uses. The stamper mints it when
+    /// `position:` is absent and leaves any divergence for doctor.
+    pub bound_position: Option<u32>,
     pub line: usize,
 }
 
@@ -428,6 +432,7 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
         hidden: f.hidden,
         stamp: f.stamp,
         minted_position: f.minted_position,
+        bound_position: None,
         line,
     })
 }

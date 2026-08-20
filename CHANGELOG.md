@@ -40,7 +40,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the blank as a boxed form instead of the text markers, the same forms
   cloze holes in formulas already use. A math span whose hidden text
   carries a LaTeX command while the block pins `input: type` gets the
-  untypable-answer lint, exactly like cloze holes.
+  untypable-answer lint, exactly like cloze holes. Opening a deck mints a
+  `position:` anchor into each span directive, the 1-based grapheme index
+  of the bound occurrence in the block's visible text: never read for
+  binding, it is the drift signal that lets `alix doctor` say exactly
+  where a span used to point after the text moves. The stamper only ever
+  mints a missing anchor; a divergent one is left untouched for doctor to
+  report, and restamping an untouched file never rewrites a byte.
 
 - `alix bug-report` writes a local, reviewable diagnostics archive, and the
   adult web app offers the same download from About. It includes bounded

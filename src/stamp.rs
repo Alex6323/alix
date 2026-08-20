@@ -182,8 +182,9 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     // by their unique file line while uniqueness stays scoped to the block.
     let mut region_mints: Vec<(usize, String)> = Vec::new();
     let mut region_remints: Vec<(usize, String, String)> = Vec::new();
+    let mut position_mints: Vec<(usize, u32)> = Vec::new();
     {
-        use crate::parser::region::{RawRegion, RegionKind};
+        use crate::parser::region::{RawRegion, RegionGeometry, RegionKind};
         // (region line, its authored stamp) per parent block, in file order.
         type BlockRegions = Vec<(usize, Option<String>)>;
         let mut seen_lines: HashSet<usize> = HashSet::new();
@@ -227,6 +228,24 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
                 }
             }
         }
+        // Span anchors: mint `position:` where absent; a minted value that
+        // no longer matches the bound occurrence is doctor's divergence to
+        // report, never the stamper's to rewrite.
+        let mut position_lines = HashSet::new();
+        for card in &deck.cards {
+            for region in &card.span_regions {
+                if !matches!(region.geometry, RegionGeometry::Span { .. })
+                    || !position_lines.insert(region.line)
+                    || region.minted_position.is_some()
+                {
+                    continue;
+                }
+                if let Some(position) = region.bound_position {
+                    position_mints.push((region.line, position));
+                }
+            }
+        }
+        position_mints.sort_by_key(|(line, _)| *line);
     }
 
     let deck_action = if deck.deck_token.is_some() {
@@ -249,6 +268,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         && container_mints.is_empty()
         && region_mints.is_empty()
         && region_remints.is_empty()
+        && position_mints.is_empty()
         && matches!(deck_action, DeckAction::None)
     {
         return Ok(StampOutcome::default());
@@ -302,6 +322,14 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         let terminator = raw.find("-->").ok_or(StampError::MissingLine(*line))?;
         let end = raw[..terminator].trim_end().len();
         inserts.push((start + end, WITHIN_LINE, 0, format!(" b:{stamp}")));
+    }
+    for (line, position) in &position_mints {
+        let start = nth_line_start(body, *line).ok_or(StampError::MissingLine(*line))?;
+        let rest = &body[start..];
+        let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
+        let terminator = raw.find("-->").ok_or(StampError::MissingLine(*line))?;
+        let end = raw[..terminator].trim_end().len();
+        inserts.push((start + end, WITHIN_LINE, 0, format!(" position:{position}")));
     }
     for (line, old, new) in &region_remints {
         let start = nth_line_start(body, *line).ok_or(StampError::MissingLine(*line))?;
@@ -1639,6 +1667,135 @@ mod tests {
     }
 
     #[test]
+    fn an_unminted_span_position_is_minted_as_a_grapheme_index_then_stable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\n日本語 target here\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+            ),
+        );
+        stamp_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("b:a1b2c3 position:5 -->"),
+            "three CJK graphemes and a space precede the match: {text}"
+        );
+        stamp_deck(&path).unwrap();
+        assert_eq!(
+            text,
+            fs::read_to_string(&path).unwrap(),
+            "the second pass is a byte no-op"
+        );
+    }
+
+    #[test]
+    fn a_raw_blank_span_mints_stamp_and_position_in_one_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nprose target\n<!-- blank: span hidden=\"target\" -->\n"
+            ),
+        );
+        stamp_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains(" position:7"), "{text}");
+        assert!(text.contains(" b:"), "{text}");
+        stamp_deck(&path).unwrap();
+        assert_eq!(
+            text,
+            fs::read_to_string(&path).unwrap(),
+            "the second pass is a byte no-op"
+        );
+    }
+
+    #[test]
+    fn a_cover_span_gets_a_position_but_never_a_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nprose target\n<!-- cover: span hidden=\"target\" -->\n"
+            ),
+        );
+        stamp_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("hidden=\"target\" position:7 -->"), "{text}");
+        assert!(!text.contains(" b:"), "a cover carries no stamp: {text}");
+    }
+
+    #[test]
+    fn a_position_matching_the_bound_occurrence_is_a_byte_no_op() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nprose target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:7 -->\n"
+            ),
+        );
+        let before = fs::read_to_string(&path).unwrap();
+        stamp_deck(&path).unwrap();
+        assert_eq!(before, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn a_divergent_position_is_left_for_doctor_not_rewritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nalpha target beta target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:1 -->\n"
+            ),
+        );
+        let before = fs::read_to_string(&path).unwrap();
+        stamp_deck(&path).unwrap();
+        assert_eq!(
+            before,
+            fs::read_to_string(&path).unwrap(),
+            "the stamper rewrites neither key on divergence; doctor owns the report"
+        );
+    }
+
+    #[test]
+    fn a_second_occurrence_span_mints_that_occurrences_position() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 -->\n"
+            ),
+        );
+        stamp_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("b:a1b2c3 position:12 -->"), "{text}");
+    }
+
+    #[test]
+    fn a_combining_cluster_counts_as_one_grapheme_for_position() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            &format!(
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\néx target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+            ),
+        );
+        stamp_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("b:a1b2c3 position:4 -->"),
+            "e+combining-acute is one grapheme: {text}"
+        );
+    }
+
+    #[test]
     fn a_duplicate_stamp_within_one_parent_card_is_reminted_not_fused() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(
@@ -1679,8 +1836,8 @@ mod tests {
         assert_eq!(1, outcome.minted_regions.len());
         let text = fs::read_to_string(&path).unwrap();
         assert!(
-            text.contains("<!-- blank: span hidden=\"one\" b:a1b2c3 -->"),
-            "the earlier region keeps the identity and history it already owned: {text}"
+            text.contains("<!-- blank: span hidden=\"one\" b:a1b2c3 position:8 -->"),
+            "the earlier region keeps the identity it owned, gaining only its anchor: {text}"
         );
         assert!(
             text.contains(&format!(
