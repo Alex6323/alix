@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -77,6 +78,22 @@ class SyncImage extends ImageProvider<SyncImage> {
       OneFrameImageStreamCompleter(
         SynchronousFuture(ImageInfo(image: image.clone())),
       );
+}
+
+/// Holds a replacement source unresolved so a widget update can be inspected
+/// before the new image dimensions arrive.
+class DeferredImage extends ImageProvider<DeferredImage> {
+  final completer = Completer<ImageInfo>();
+
+  @override
+  Future<DeferredImage> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    DeferredImage key,
+    ImageDecoderCallback decode,
+  ) => OneFrameImageStreamCompleter(completer.future);
 }
 
 void main() {
@@ -312,6 +329,85 @@ void main() {
       await tester.pump();
       expect(fired, 1, reason: 'and never repeats');
       source.dispose();
+    });
+
+    testWidgets(
+      'a reused source rechecks an out-of-source asked region on the next card',
+      (tester) async {
+        final source = await whiteSource(100, 100);
+        final provider = SyncImage(source);
+        var fired = 0;
+
+        Widget card(ReviewImageModel image) => MaterialApp(
+          home: Scaffold(
+            body: MaskedCardImage(
+              provider: provider,
+              image: image,
+              answered: false,
+              height: 180,
+              onAskedGone: () => fired += 1,
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(
+          card(ReviewImageModel(src: 'same', regions: [region(x: 10)])),
+        );
+        await tester.pump();
+        expect(fired, 0, reason: 'the first card has visible asked geometry');
+
+        await tester.pumpWidget(
+          card(ReviewImageModel(src: 'same', regions: [region(x: 120)])),
+        );
+        await tester.pump();
+        expect(
+          fired,
+          1,
+          reason:
+              'the next derived card can reuse the same image provider but has its own regions',
+        );
+        source.dispose();
+      },
+    );
+
+    testWidgets('a replacement source hides the previous image while loading', (
+      tester,
+    ) async {
+      final first = await whiteSource(100, 100);
+      final second = await whiteSource(200, 100);
+      final replacement = DeferredImage();
+
+      Widget card(ImageProvider provider) => MaterialApp(
+        home: Scaffold(
+          body: MaskedCardImage(
+            provider: provider,
+            image: ReviewImageModel(src: 'unused', regions: [region()]),
+            answered: false,
+            height: 180,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(card(SyncImage(first)));
+      await tester.pump();
+      final maskPaint = find.byWidgetPredicate(
+        (w) => w is CustomPaint && w.painter is MaskPainter,
+      );
+      expect(maskPaint, findsOneWidget);
+
+      await tester.pumpWidget(card(replacement));
+      await tester.pump();
+      expect(
+        maskPaint,
+        findsNothing,
+        reason:
+            'the previous card image must not remain under the next card while its source resolves',
+      );
+
+      replacement.completer.complete(ImageInfo(image: second.clone()));
+      await tester.pump();
+      first.dispose();
+      second.dispose();
     });
 
     testWidgets('an in-source asked region never reports', (tester) async {

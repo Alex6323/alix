@@ -50,8 +50,18 @@ class _MaskedCardImageState extends State<MaskedCardImage> {
   void didUpdateWidget(MaskedCardImage old) {
     super.didUpdateWidget(old);
     if (old.provider != widget.provider) {
+      // The old card's pixels must not paint under the new card's masks:
+      // back to the empty pre-size state until the new source resolves.
       _reported = false;
+      _info?.dispose();
+      _info = null;
       _resolve();
+    } else if (!identical(old.image, widget.image)) {
+      // Same source, next derived card: its own regions need their own
+      // asked-gone check against the already resolved image.
+      _reported = false;
+      final info = _info;
+      if (info != null) _checkAskedGone(info.image);
     }
   }
 
