@@ -611,10 +611,16 @@ fn freeze_diagrams(
             None => {
                 let after_newline = fence.insert_at == 0
                     || text.as_bytes().get(fence.insert_at - 1) == Some(&b'\n');
+                // The inserted line copies the fence close line's terminator
+                // style, so freezing a CRLF deck cannot introduce mixed
+                // endings once the byte-preserving rewrite lands.
+                let crlf = fence.insert_at >= 2
+                    && &text.as_bytes()[fence.insert_at - 2..fence.insert_at] == b"\r\n";
+                let ending = if crlf { "\r\n" } else { "\n" };
                 let line = if after_newline {
-                    format!("{stamp}\n")
+                    format!("{stamp}{ending}")
                 } else {
-                    format!("\n{stamp}\n")
+                    format!("{ending}{stamp}{ending}")
                 };
                 outcome
                     .replacements
@@ -1873,6 +1879,41 @@ mod tests {
     /// Both halves of the stamped pair ride the existence sweep: losing
     /// either the raster or the manifest is a validation error, not a
     /// surprise at review time.
+    /// Direct freeze_diagrams-level law (the citation rewrite above it
+    /// still normalizes whole decks, the named follow-up): a CRLF text's
+    /// inserted stamp carries CRLF, so the diagram pass itself can never
+    /// be the one introducing mixed endings.
+    #[test]
+    fn a_crlf_text_gets_a_crlf_terminated_stamp() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        let text = "## q\r\n```mermaid\r\nflowchart LR\r\n A-->B\r\n```\r\nanswer\r\n";
+        let outcome = freeze_diagrams(
+            directory.path(),
+            "deck-deck1",
+            text,
+            None,
+            Some(cli.to_str().unwrap()),
+        )
+        .unwrap();
+        assert_eq!(1, outcome.frozen, "{:?}", outcome.warnings);
+        let (_, inserted) = &outcome.replacements[0];
+        assert!(
+            inserted.ends_with("-->\r\n"),
+            "the stamp inherits the CRLF terminator: {inserted:?}"
+        );
+        assert!(
+            inserted.contains(&crate::diagram::fingerprint("flowchart LR\n A-->B")),
+            "the fingerprint is the LF-normalized one: {inserted:?}"
+        );
+    }
+
     #[test]
     fn validation_requires_both_stamped_objects() {
         let _guard = crate::testutil::exec_lock();

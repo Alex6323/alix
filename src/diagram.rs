@@ -102,9 +102,14 @@ pub fn fences(lines: &[String]) -> Vec<Fence> {
 /// would invalidate every diagram in every shared deck on any upgrade, for a
 /// recipient who may not even have the renderer installed. Re-rendering stays
 /// a deliberate authoring act.
+/// CRLF terminators are normalized to LF before hashing (Alex's ruling,
+/// 2026-08-20): the scanner reads raw lines and the parser reads
+/// terminator-stripped ones, so a byte-sensitive preimage would give one
+/// fence two fingerprints depending on who asked. A lone CR is NOT
+/// normalized: it is content, deliberately.
 pub fn fingerprint(source: &str) -> String {
     let mut hasher = XxHash64::default();
-    hasher.write(source.as_bytes());
+    hasher.write(source.replace("\r\n", "\n").as_bytes());
     format!("xxh64-{:016x}", hasher.finish())
 }
 
@@ -297,6 +302,7 @@ pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> Do
         let line_start = offset;
         offset += raw_line.len();
         let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
         if let Some((open_line, close_line)) = frontmatter
             && line_number >= open_line
             && line_number <= close_line
@@ -1141,6 +1147,23 @@ mod tests {
     /// The preimage is the interior alone: the same diagram written with a
     /// different fence character or info-string casing is the same picture and
     /// must reuse the same frozen asset.
+    /// One fence, one fingerprint, whoever asks: the scanner sees raw CRLF
+    /// bytes, the parser sees stripped lines, and the preimage must not
+    /// split them. A lone CR stays content (pinned as deliberate).
+    #[test]
+    fn the_fingerprint_is_line_ending_insensitive_but_lone_cr_is_content() {
+        assert_eq!(
+            fingerprint("flowchart LR\r\n A-->B"),
+            fingerprint("flowchart LR\n A-->B"),
+            "CRLF and LF spellings are the same picture"
+        );
+        assert_ne!(
+            fingerprint("flowchart LR\r A-->B"),
+            fingerprint("flowchart LR\n A-->B"),
+            "a lone CR is content, not a terminator"
+        );
+    }
+
     #[test]
     fn the_fingerprint_covers_the_interior_and_nothing_else() {
         let backtick = fences(&lines("```mermaid\nflowchart LR\n A-->B\n```"));
