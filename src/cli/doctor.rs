@@ -1100,7 +1100,7 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     ));
     findings.push(doctor::check_binary(
         "diagrams",
-        "sekien",
+        alix::diagram::COMMAND,
         "rendering mermaid diagrams into decks",
         "install sekien (`cargo install sekien`); on Linux it also needs webkit2gtk, gtk3 and xvfb",
     ));

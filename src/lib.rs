@@ -31,6 +31,10 @@ pub mod deck;
 pub mod deck_transfer;
 pub mod dedup;
 pub mod depth;
+// Authoring-time only: the lean core and the mobile bridge display frozen
+// SVGs and never shell out to a renderer.
+#[cfg(feature = "full")]
+pub mod diagram;
 #[cfg(feature = "full")]
 pub mod doctor;
 #[cfg(feature = "full")]
