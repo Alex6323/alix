@@ -1072,7 +1072,9 @@ export function createStudy({
     // Region and crop geometry live in the source image's own space (px of
     // the source, or % of it), never in crop space: the crop is a viewport,
     // so the full-image sheet shifts inside it and masks sit on the sheet.
+    const wrap = el("div", "img-fit");
     const box = el("div", "img-box");
+    wrap.appendChild(box);
     const sheet = el("div", "img-sheet");
     sheet.appendChild(img);
     box.appendChild(sheet);
@@ -1091,7 +1093,21 @@ export function createStudy({
         ? { x: r.x, y: r.y, w: r.width, h: r.height }
         : { x: (r.x / sw) * 100, y: (r.y / sh) * 100, w: (r.width / sw) * 100, h: (r.height / sh) * 100 };
       const crop = im.crop ? pct(im.crop) : { x: 0, y: 0, w: 100, h: 100 };
-      box.style.aspectRatio = `${(crop.w / 100) * sw} / ${(crop.h / 100) * sh}`;
+      const vw = (crop.w / 100) * sw, vh = (crop.h / 100) * sh;
+      box.style.aspectRatio = `${vw} / ${vh}`;
+      // The viewport shrinks to fit its bounded region instead of scrolling:
+      // the wrap's basis is the natural (uncapped) height, flex squeezes it,
+      // and the box contain-fits the squeezed wrap keeping the crop's aspect,
+      // which the sheet's percentage math depends on.
+      const fit = () => {
+        const naturalW = Math.min(wrap.clientWidth, 480);
+        if (!naturalW) return;
+        wrap.style.flexBasis = `${(naturalW * vh) / vw}px`;
+        const w = Math.min(naturalW, (wrap.clientHeight * vw) / vh);
+        box.style.width = `${w}px`;
+      };
+      new ResizeObserver(fit).observe(wrap);
+      fit();
       sheet.style.width = `${(100 / crop.w) * 100}%`;
       sheet.style.height = `${(100 / crop.h) * 100}%`;
       sheet.style.left = `${(-crop.x / crop.w) * 100}%`;
@@ -1111,7 +1127,7 @@ export function createStudy({
       }
     };
     if (img.complete) place(); else img.addEventListener("load", place);
-    return box;
+    return wrap;
   }
 
   // An asked region clipping to nothing is a broken question and fails loud;

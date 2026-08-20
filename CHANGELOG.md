@@ -29,7 +29,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   plain glyphless fill), positioned over
   the image's painted rectangle so they track every resize, lifting on
   reveal exactly per `reveal_on_answer`; a cropped image renders as the
-  crop viewport with regions kept in full-source space. A region reaching
+  crop viewport with regions kept in full-source space, shrinking to fit
+  its bounded region with the crop's aspect kept instead of scrolling. A
+  region reaching
   past the source edge is clipped at it, and an asked region that clips to
   nothing raises the client's error surface instead of silently showing
   the unmasked question. Each region also carries `reveal_on_answer`:
