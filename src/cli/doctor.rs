@@ -824,6 +824,34 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// The parsed `position:` token's byte offset in a directive line: outside
+/// quoted values (a hidden answer may look exactly like the token) and
+/// bounded so `position:1` never matches inside `position:13`.
+fn anchor_token_offset(line: &str, token: &str) -> Option<usize> {
+    let mut in_quote = false;
+    let mut escaped = false;
+    for (at, ch) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_quote => escaped = true,
+            '"' => in_quote = !in_quote,
+            _ if in_quote => {}
+            _ => {
+                if line[at..].starts_with(token)
+                    && (at == 0 || line[..at].ends_with(|c: char| c.is_ascii_whitespace()))
+                    && !line[at + token.len()..].starts_with(|c: char| c.is_ascii_digit())
+                {
+                    return Some(at);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn repair_positions(paths: &[PathBuf]) -> Result<()> {
     for path in paths {
         let deck = Deck::load(path)?;
@@ -849,13 +877,13 @@ fn repair_positions(paths: &[PathBuf]) -> Result<()> {
                 bail!("{}:{line} disappeared while repairing", path.display());
             };
             let old_token = format!("position:{minted}");
-            if !raw.contains(&old_token) {
+            let Some(at) = anchor_token_offset(raw, &old_token) else {
                 bail!(
                     "{}:{line} lost `{old_token}` while repairing",
                     path.display()
                 );
-            }
-            *raw = raw.replacen(&old_token, &format!("position:{bound}"), 1);
+            };
+            raw.replace_range(at..at + old_token.len(), &format!("position:{bound}"));
             println!(
                 "rebased {}:{line} position:{minted} -> position:{bound}",
                 path.display()
@@ -1253,6 +1281,48 @@ mod tests {
             "repair settles the anchor: {:?}",
             report.warnings
         );
+    }
+
+    #[test]
+    fn repair_positions_rewrites_only_the_anchor_token_when_hidden_contains_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "position:13 position:1\n<!-- blank: span hidden=\"position:1\" b:a1b2c3 position:1 -->\n",
+        );
+
+        repair_positions(std::slice::from_ref(&path)).unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("<!-- blank: span hidden=\"position:1\" b:a1b2c3 position:13 -->"),
+            "repair must preserve the authored hidden text and rewrite the parsed anchor: {text}"
+        );
+    }
+
+    #[test]
+    fn every_offered_keep_old_target_edit_keeps_the_deck_parseable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "target and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n<!-- blank: span hidden=\"target\" occurrence=1 b:d4e5f6 position:1 -->\n",
+        );
+        let mut report = Report::default();
+
+        deck_findings(&path, &mut report);
+
+        let warning = report
+            .warnings
+            .iter()
+            .find(|warning| warning.contains("--repair-positions"))
+            .expect("the first span diverges");
+        if warning.contains("set `occurrence=1`") {
+            let text = std::fs::read_to_string(&path).unwrap();
+            let edited = text.replacen("occurrence=2", "occurrence=1", 1);
+            alix::parser::parse("d", &edited).expect(
+                "an edit doctor offers as the keep-old-target resolution must keep the deck parseable",
+            );
+        }
     }
 
     #[test]

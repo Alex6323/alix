@@ -1475,7 +1475,7 @@ fn build_card(
     let mut splices: Vec<SpanSplice> = Vec::new();
     let mut bound: Vec<(usize, usize, usize)> = Vec::new();
     let mut bound_positions: Vec<(usize, u32)> = Vec::new();
-    let mut minted_occurrences: Vec<(usize, u32)> = Vec::new();
+    let mut minted_occurrences: Vec<(usize, u32, usize, usize, usize)> = Vec::new();
     if !span_regions.is_empty() {
         let stream = stream::maskable_stream(&answer, &parsed);
         for (span_index, span) in span_regions.iter().enumerate() {
@@ -1566,7 +1566,8 @@ fn build_card(
                 && let Some(byte) = stream.grapheme_byte(minted)
                 && let Some(index) = candidates.iter().position(|(from, _)| *from == byte)
             {
-                minted_occurrences.push((span_index, index as u32 + 1));
+                let (from, to) = candidates[index];
+                minted_occurrences.push((span_index, index as u32 + 1, from, to, span.line));
             }
             if let Some(piece) = stream.math_piece(&(start..end)) {
                 let payload = &stream.text[piece.clone()];
@@ -1615,8 +1616,16 @@ fn build_card(
         for (span_index, position) in bound_positions {
             span_regions[span_index].bound_position = Some(position);
         }
-        for (span_index, occurrence) in minted_occurrences {
-            span_regions[span_index].minted_occurrence = Some(occurrence);
+        // Keep-old-target is only offered when taking it would keep the
+        // block invariant: an alternate range another span owns stays a
+        // stale anchor, never doctor advice that breaks the deck.
+        for (span_index, occurrence, from, to, line) in minted_occurrences {
+            let taken = bound.iter().any(|(other_from, other_to, other_line)| {
+                *other_line != line && from < *other_to && *other_from < to
+            });
+            if !taken {
+                span_regions[span_index].minted_occurrence = Some(occurrence);
+            }
         }
     }
 
