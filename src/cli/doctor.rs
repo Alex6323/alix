@@ -841,7 +841,7 @@ fn anchor_token_offset(line: &str, token: &str) -> Option<usize> {
             _ if in_quote => {}
             _ => {
                 if line[at..].starts_with(token)
-                    && (at == 0 || line[..at].ends_with(|c: char| c.is_ascii_whitespace()))
+                    && (at == 0 || line[..at].ends_with(char::is_whitespace))
                     && !line[at + token.len()..].starts_with(|c: char| c.is_ascii_digit())
                 {
                     return Some(at);
@@ -1298,6 +1298,20 @@ mod tests {
             text.contains("<!-- blank: span hidden=\"position:1\" b:a1b2c3 position:13 -->"),
             "repair must preserve the authored hidden text and rewrite the parsed anchor: {text}"
         );
+    }
+
+    #[test]
+    fn repair_positions_accepts_the_same_unicode_whitespace_as_region_parser() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "target and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3\u{a0}position:1 -->\n",
+        );
+
+        repair_positions(std::slice::from_ref(&path)).unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("b:a1b2c3\u{a0}position:12 -->"), "{text}");
     }
 
     #[test]
