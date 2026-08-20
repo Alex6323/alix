@@ -125,6 +125,14 @@ function appendImages(parent, images, done) {
   for (const im of (images || [])) parent.appendChild(cardImg(im, done));
 }
 
+// The three-role vocabulary: an asked region shows the blank glyph, a
+// sibling card's mask the hidden glyph, and a cover stays a plain fill:
+// it hides answer-giving content and is never a question.
+function maskGlyph(mask, r, prefix) {
+  if (r.role === "cover") return;
+  mask.appendChild(el("span", prefix + "-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+}
+
 // A done card lifts its reveal-on-answer masks; sibling masks stay.
 function keptRegions(regions, done) {
   return regions.filter((r) => !(done && r.reveal_on_answer));
@@ -138,7 +146,7 @@ function maskedImage(img, regions, prefix) {
   wrap.appendChild(img);
   for (const r of regions) {
     const mask = el("div", prefix + "-mask");
-    mask.appendChild(el("span", prefix + "-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+    maskGlyph(mask, r, prefix);
     mask.dataset.region = JSON.stringify(r);
     wrap.appendChild(mask);
   }
@@ -154,10 +162,15 @@ function maskedImage(img, regions, prefix) {
       const g = r.unit === "%"
         ? { x: (r.x / 100) * sw, y: (r.y / 100) * sh, w: (r.width / 100) * sw, h: (r.height / 100) * sh }
         : { x: r.x, y: r.y, w: r.width, h: r.height };
-      mask.style.left = `${ox + g.x * scale}px`;
-      mask.style.top = `${oy + g.y * scale}px`;
-      mask.style.width = `${g.w * scale}px`;
-      mask.style.height = `${g.h * scale}px`;
+      // Partial overlap is valid geometry; the painted mask clips at the
+      // source edge instead of floating over neighboring content.
+      const x0 = Math.max(0, g.x), y0 = Math.max(0, g.y);
+      const x1 = Math.min(sw, g.x + g.w), y1 = Math.min(sh, g.y + g.h);
+      mask.style.display = x1 > x0 && y1 > y0 ? "" : "none";
+      mask.style.left = `${ox + x0 * scale}px`;
+      mask.style.top = `${oy + y0 * scale}px`;
+      mask.style.width = `${(x1 - x0) * scale}px`;
+      mask.style.height = `${(y1 - y0) * scale}px`;
     }
   };
   new ResizeObserver(sync).observe(img);
@@ -183,7 +196,7 @@ function cardImg(im, done) {
   box.appendChild(sheet);
   for (const r of keptRegions(regions, done)) {
     const mask = el("div", "rev-img-mask");
-    mask.appendChild(el("span", "rev-img-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+    maskGlyph(mask, r, "rev-img");
     mask.dataset.region = JSON.stringify(r);
     sheet.appendChild(mask);
   }
