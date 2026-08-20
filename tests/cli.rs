@@ -6093,3 +6093,258 @@ fn a_failed_prerequisite_never_reaches_the_backend() {
         );
     }
 }
+
+/// One law over every diagram inconsistency doctor can name: each row is a
+/// deck manufactured into exactly one bad state (objects are content-addressed
+/// by the lib, no renderer involved), and each expected fragment must appear.
+#[test]
+fn doctor_reports_every_diagram_inconsistency() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+
+    let fence = "```mermaid\nflowchart LR\n A-->B\n```";
+    let print = alix::diagram::fingerprint("flowchart LR\n A-->B");
+    let png_bytes = b"not-really-png".to_vec();
+    let png = alix::assets::object_name(&png_bytes, "png");
+    let manifest_for = |raster: &str| {
+        serde_json::to_vec(&alix::diagram::DiagramManifest {
+            png: raster.to_string(),
+            raster_width: 2,
+            raster_height: 2,
+            logical_width: 1,
+            logical_height: 1,
+            labels: Vec::new(),
+        })
+        .unwrap()
+    };
+    let good_manifest_bytes = manifest_for(&png);
+    let good_manifest = alix::assets::object_name(&good_manifest_bytes, "json");
+    let other_png = alix::assets::object_name(b"other", "png");
+    let bad_manifest_bytes = manifest_for(&other_png);
+    let bad_manifest = alix::assets::object_name(&bad_manifest_bytes, "json");
+
+    let stamp = |print: &str, manifest: &str| {
+        format!("<!-- diagram: fingerprint: {print} asset: {png} manifest: {manifest} -->")
+    };
+    let orphan_stamp = stamp(&alix::diagram::fingerprint("gone"), &good_manifest);
+    let current_stamp = stamp(&print, &good_manifest);
+    let disagree_stamp = stamp(&print, &bad_manifest);
+
+    let rows: [(&str, String, &str); 6] = [
+        (
+            "orphan",
+            format!("## q\nanswer\n{orphan_stamp}\n"),
+            "attached to no fence",
+        ),
+        (
+            "stale",
+            format!("## q\n```mermaid\nflowchart LR\n A-->EDITED\n```\n{current_stamp}\nanswer\n"),
+            "is stale",
+        ),
+        (
+            "disagree",
+            format!("## q\n{fence}\n{disagree_stamp}\nanswer\n"),
+            "the manifest names raster",
+        ),
+        ("unfrozen", format!("## q\n{fence}\nanswer\n"), "not frozen"),
+        (
+            "unclosed",
+            "## q\nanswer\n```mermaid\nflowchart LR\n".to_string(),
+            "unclosed mermaid fence",
+        ),
+        (
+            "missing",
+            format!("## q\n{fence}\n{current_stamp}\nanswer\n"),
+            "raster `sha256-",
+        ),
+    ];
+    for (name, body, _) in &rows {
+        write(
+            &decks,
+            &format!("{name}.md"),
+            &format!("---\nformat-version: 1\nid: \"deck-{name}\"\n---\n{body}"),
+        );
+        let owned = ws.join(format!("assets/deck-{name}"));
+        std::fs::create_dir_all(&owned).unwrap();
+        if *name != "missing" {
+            std::fs::write(owned.join(&png), &png_bytes).unwrap();
+        }
+        std::fs::write(owned.join(&good_manifest), &good_manifest_bytes).unwrap();
+        std::fs::write(owned.join(&bad_manifest), &bad_manifest_bytes).unwrap();
+    }
+
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+    let err = stderr(&out);
+    for (name, _, fragment) in &rows {
+        assert!(
+            err.contains(fragment),
+            "row {name}: expected `{fragment}` in doctor output:\n{err}"
+        );
+    }
+    assert!(
+        !out.status.success(),
+        "the inconsistency and missing-raster rows are errors"
+    );
+}
+
+/// The repair flag's binary contract: an orphan stamp is deleted, the file
+/// stays parseable, and a second run has nothing to do. No renderer exists
+/// on PATH, proving a fully repaired deck never needs one.
+#[test]
+fn doctor_repair_diagrams_removes_orphans_idempotently() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    let png_bytes = b"png-bytes".to_vec();
+    let png = alix::assets::object_name(&png_bytes, "png");
+    let manifest_bytes = serde_json::to_vec(&alix::diagram::DiagramManifest {
+        png: png.clone(),
+        raster_width: 2,
+        raster_height: 2,
+        logical_width: 1,
+        logical_height: 1,
+        labels: Vec::new(),
+    })
+    .unwrap();
+    let manifest = alix::assets::object_name(&manifest_bytes, "json");
+    let deck = write(
+        &decks,
+        "orphan.md",
+        &format!(
+            "---\nformat-version: 1\nid: \"deck-orphan\"\n---\n## q\nanswer\n<!-- diagram: fingerprint: {} asset: {png} manifest: {manifest} -->\n",
+            alix::diagram::fingerprint("gone")
+        ),
+    );
+    let owned = ws.join("assets/deck-orphan");
+    std::fs::create_dir_all(&owned).unwrap();
+    std::fs::write(owned.join(&png), &png_bytes).unwrap();
+    std::fs::write(owned.join(&manifest), &manifest_bytes).unwrap();
+
+    let out = alix(&["doctor", "--repair-diagrams", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("removed 1 orphan diagram stamp"),
+        "{}",
+        stdout(&out)
+    );
+    let repaired = std::fs::read_to_string(&deck).unwrap();
+    assert!(!repaired.contains("<!-- diagram:"), "{repaired}");
+
+    let out = alix(&["doctor", "--repair-diagrams", &deck]);
+    assert!(out.status.success());
+    assert!(
+        !stdout(&out).contains("removed"),
+        "a second run has nothing to remove: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn doctor_rejects_corrupt_diagram_objects_in_a_sourceless_deck() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    let token = "00000000000000000000000000";
+    let expected_png = b"expected-png";
+    let png = alix::assets::object_name(expected_png, "png");
+    let manifest_bytes = serde_json::to_vec(&alix::diagram::DiagramManifest {
+        png: png.clone(),
+        raster_width: 2,
+        raster_height: 2,
+        logical_width: 1,
+        logical_height: 1,
+        labels: Vec::new(),
+    })
+    .unwrap();
+    let manifest = alix::assets::object_name(&manifest_bytes, "json");
+    let source = "flowchart LR\n A-->B";
+    write(
+        &decks,
+        "corrupt.md",
+        &format!(
+            "---\nformat-version: 1\nid: \"deck-{token}\"\n---\n## q\n```mermaid\n{source}\n```\n<!-- diagram: fingerprint: {} asset: {png} manifest: {manifest} -->\nanswer\n<!-- id: card-{token} -->\n",
+            alix::diagram::fingerprint(source),
+        ),
+    );
+    let owned = ws.join(format!("assets/deck-{token}"));
+    std::fs::create_dir_all(&owned).unwrap();
+    std::fs::write(owned.join(&png), b"corrupt-png").unwrap();
+    std::fs::write(owned.join(&manifest), &manifest_bytes).unwrap();
+
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+
+    assert!(
+        !out.status.success(),
+        "doctor accepted bytes that do not match the stamped content address:\n{}",
+        stderr(&out)
+    );
+    assert!(
+        stderr(&out).contains("does not match its content address"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn doctor_repair_diagrams_preserves_every_non_orphan_byte() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let decks = ws.join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    let token = "00000000000000000000000000";
+    let png = alix::assets::object_name(b"png", "png");
+    let manifest = alix::assets::object_name(b"manifest", "json");
+    let stamp = format!(
+        "<!-- diagram: fingerprint: {} asset: {png} manifest: {manifest} -->",
+        alix::diagram::fingerprint("gone")
+    );
+    let before = format!(
+        "---\r\nformat-version: 1\r\nid: \"deck-{token}\"\r\n---\r\n## q\r\nanswer\r\n{stamp}\r\n<!-- id: card-{token} -->\r\n"
+    );
+    let deck = decks.join("crlf.md");
+    std::fs::write(&deck, &before).unwrap();
+
+    let out = alix(&["doctor", "--repair-diagrams", deck.to_str().unwrap()]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let expected = before.replace(&format!("{stamp}\r\n"), "");
+    assert_eq!(
+        expected.as_bytes(),
+        std::fs::read(&deck).unwrap(),
+        "repair must delete exactly the orphan line and preserve CRLF bytes"
+    );
+}
+
+#[test]
+fn doctor_repair_diagrams_refuses_to_modify_a_standalone_deck() {
+    let dir = TempDir::new().unwrap();
+    let token = "00000000000000000000000000";
+    let png = alix::assets::object_name(b"png", "png");
+    let manifest = alix::assets::object_name(b"manifest", "json");
+    let before = format!(
+        "---\nformat-version: 1\nid: \"deck-{token}\"\n---\n## q\nanswer\n<!-- diagram: fingerprint: {} asset: {png} manifest: {manifest} -->\n<!-- id: card-{token} -->\n",
+        alix::diagram::fingerprint("gone")
+    );
+    let deck = dir.path().join("standalone.md");
+    std::fs::write(&deck, &before).unwrap();
+
+    let out = alix(&["doctor", "--repair-diagrams", deck.to_str().unwrap()]);
+
+    assert_eq!(
+        before,
+        std::fs::read_to_string(&deck).unwrap(),
+        "refusing an unsupported repair must leave the standalone deck untouched"
+    );
+    assert!(
+        !out.status.success(),
+        "the workspace-only repair unexpectedly accepted a standalone deck"
+    );
+}

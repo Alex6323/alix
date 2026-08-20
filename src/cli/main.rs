@@ -237,6 +237,12 @@ struct DoctorArgs {
     #[arg(long)]
     repair_positions: bool,
 
+    /// Remove diagram stamps whose fence is gone, then re-freeze any stale
+    /// or unfrozen mermaid fences. Workspace members only: standalone decks
+    /// never freeze diagrams.
+    #[arg(long)]
+    repair_diagrams: bool,
+
     /// Delete every backup (`*.bak`) file under the checked folder, after one
     /// confirmation. The backups are what `alix deck restore` swaps in.
     #[arg(long)]

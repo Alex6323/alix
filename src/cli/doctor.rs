@@ -180,6 +180,14 @@ fn deck_findings(path: &Path, report: &mut Report) {
         ));
     }
 
+    deck_diagram_findings(
+        path,
+        deck.deck_token.as_deref(),
+        &deck.cards,
+        &text,
+        deck.frontmatter_span,
+        report,
+    );
     if let Ok(deck) = Deck::load(path) {
         deck_resource_findings(&deck, report);
     }
@@ -245,6 +253,123 @@ fn source_points_into_assets(source: &str) -> bool {
     let root = format!("{}/", alix::assets::ROOT);
     let source = source.trim();
     source.starts_with(&root) || source.contains(&format!("/{root}"))
+}
+
+/// Diagram stamps and fences must agree with each other and with their
+/// frozen objects. Standalone decks are exempt: they never freeze, and a
+/// bare fence there is the designed fallback, not a finding.
+fn deck_diagram_findings(
+    path: &Path,
+    deck_token: Option<&str>,
+    cards: &[alix::card::Card],
+    text: &str,
+    frontmatter_span: Option<(usize, usize)>,
+    report: &mut Report,
+) {
+    let Some(deck_token) = deck_token else {
+        return;
+    };
+    if workspace::root_for_deck(path).is_none() {
+        return;
+    }
+    let found = alix::diagram::fences_in_document(text, frontmatter_span);
+    if found.unclosed {
+        report.warn(format!(
+            "{}: an unclosed mermaid fence cannot be frozen",
+            path.display()
+        ));
+    }
+    // A stamp ATTACHED to a fence belongs to it (freeze replaces it in
+    // place when stale); a stamp attached to nothing is an orphan only
+    // `--repair-diagrams` can remove.
+    let attached: std::collections::HashMap<usize, bool> = found
+        .fences
+        .iter()
+        .filter_map(|fence| {
+            let (range, fingerprint) = fence.stamp.as_ref()?;
+            let line = text[..range.start]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1;
+            Some((
+                line,
+                *fingerprint == alix::diagram::fingerprint(&fence.source),
+            ))
+        })
+        .collect();
+    for stamp in cards.iter().flat_map(|card| &card.diagrams) {
+        match attached.get(&stamp.line) {
+            None => report.warn(format!(
+                "{}:{}: diagram stamp `{}` is attached to no fence; `alix doctor --repair-diagrams` removes it",
+                path.display(),
+                stamp.line,
+                stamp.fingerprint
+            )),
+            Some(false) => report.warn(format!(
+                "{}:{}: diagram stamp `{}` is stale (its fence was edited); re-run `alix deck init {}` to re-freeze",
+                path.display(),
+                stamp.line,
+                stamp.fingerprint,
+                path.display()
+            )),
+            Some(true) => {
+                if let Err(error) = manifest_agreement(path, deck_token, stamp) {
+                    report.error(format!(
+                        "{}:{}: frozen diagram is inconsistent: {error:#}",
+                        path.display(),
+                        stamp.line
+                    ));
+                }
+            }
+        }
+    }
+    let unfrozen = found
+        .fences
+        .iter()
+        .filter(|fence| fence.stamp.is_none())
+        .count();
+    if unfrozen > 0 {
+        report.warn(format!(
+            "{}: {unfrozen} mermaid fence(s) not frozen; run `alix deck init {}` (needs {})",
+            path.display(),
+            path.display(),
+            alix::diagram::COMMAND
+        ));
+    }
+}
+
+/// The stamp names the raster twice: directly (`asset:`) and through the
+/// manifest's `png` field. Both routes must name the same object, and the
+/// manifest must parse, or serving would pair a raster with the wrong map.
+fn manifest_agreement(
+    path: &Path,
+    deck_id: &str,
+    stamp: &alix::card::DiagramStamp,
+) -> anyhow::Result<()> {
+    let root = workspace::root_for_deck(path).context("not a workspace member")?;
+    let owned = alix::assets::deck_dir(&root, deck_id)?;
+    if !owned.join(&stamp.asset).is_file() {
+        anyhow::bail!("raster `{}` is missing from the deck's assets", stamp.asset);
+    }
+    // Content addressing is only a guarantee if someone re-hashes: existence
+    // and name agreement pass for an object whose bytes were replaced.
+    for name in [&stamp.asset, &stamp.manifest] {
+        alix::assets::verify_object(&owned.join(name))
+            .with_context(|| format!("object `{name}`"))?;
+    }
+    let bytes = std::fs::read(owned.join(&stamp.manifest))
+        .with_context(|| format!("manifest `{}` cannot be read", stamp.manifest))?;
+    let manifest: alix::diagram::DiagramManifest = serde_json::from_slice(&bytes)
+        .with_context(|| format!("manifest `{}` does not parse", stamp.manifest))?;
+    if manifest.png != stamp.asset {
+        anyhow::bail!(
+            "the manifest names raster `{}` but the stamp says `{}`",
+            manifest.png,
+            stamp.asset
+        );
+    }
+    Ok(())
 }
 
 fn deck_resource_findings(deck: &Deck, report: &mut Report) {
@@ -902,6 +1027,29 @@ fn repair_positions(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+fn repair_diagrams(paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        let (removed, report) = alix::assets::repair_diagrams(path)?;
+        if removed > 0 {
+            println!(
+                "removed {removed} orphan diagram stamp(s) from {}",
+                path.display()
+            );
+        }
+        if report.diagrams > 0 {
+            println!(
+                "re-froze {} diagram(s) in {}",
+                report.diagrams,
+                path.display()
+            );
+        }
+        for warning in &report.diagram_warnings {
+            eprintln!("warning: {}: {warning}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
     let mut unresolved = 0;
     for path in paths {
@@ -1017,6 +1165,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             if args.repair_positions {
                 repair_positions(std::slice::from_ref(path))?;
             }
+            if args.repair_diagrams {
+                repair_diagrams(std::slice::from_ref(path))?;
+            }
             return check(vec![path.clone()]);
         }
         if alix::workspace::is_workspace(path) {
@@ -1025,6 +1176,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             }
             if args.repair_positions {
                 repair_positions(&alix::workspace::deck_files(path))?;
+            }
+            if args.repair_diagrams {
+                repair_diagrams(&alix::workspace::deck_files(path))?;
             }
             check(vec![path.clone()])?;
         }
@@ -1057,6 +1211,14 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             .is_some_and(alix::workspace::is_workspace)
     {
         repair_positions(&alix::workspace::deck_files(&decks_dir))?;
+    }
+    if args.repair_diagrams
+        && !args
+            .dir
+            .as_deref()
+            .is_some_and(alix::workspace::is_workspace)
+    {
+        repair_diagrams(&alix::workspace::deck_files(&decks_dir))?;
     }
     if args.remove_backup_files {
         let baks = doctor::backup_files(&decks_dir);
@@ -1852,6 +2014,7 @@ printf ']}}'
         let before = std::fs::read_to_string(&deck).unwrap();
         let args = |repair_source_locators| DoctorArgs {
             repair_positions: false,
+            repair_diagrams: false,
             dir: Some(dir.path().to_path_buf()),
             backends: false,
             all_backends: false,

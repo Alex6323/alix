@@ -403,6 +403,102 @@ fn apply_stamp_edits(
     Ok(out)
 }
 
+/// The doctor repair: delete diagram stamps whose fence is gone (freeze
+/// only ever adds or replaces BESIDE an existing fence, so an orphan stamp
+/// is unreachable by re-freezing), then freeze whatever is stale. Returns
+/// the orphan count with the freeze report.
+#[cfg(feature = "full")]
+pub fn repair_diagrams(path: &Path) -> Result<(usize, FreezeReport), AssetError> {
+    repair_diagrams_with(path, default_diagram_command())
+}
+
+#[cfg(feature = "full")]
+pub(crate) fn repair_diagrams_with(
+    path: &Path,
+    diagram_command: Option<&str>,
+) -> Result<(usize, FreezeReport), AssetError> {
+    // The boundary FIRST, before anything is classified or written: the
+    // freeze call used to be the membership check, and gating it made a
+    // standalone deck silently repairable, which is data loss.
+    crate::workspace::root_for_deck(path)
+        .ok_or_else(|| AssetError::NotWorkspaceMember(path.to_path_buf()))?;
+    // One snapshot: a single read and a single parse feed both the stamp
+    // list and the fence scan, so an edit between reads cannot produce a
+    // mixed diagnosis.
+    let subject = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AssetError::InvalidName(path.display().to_string()))?;
+    let text = read_text(path)?;
+    let parsed = crate::parser::parse(subject, &text).map_err(|source| AssetError::Deck {
+        path: path.to_path_buf(),
+        source: DeckError::Parse {
+            path: path.to_path_buf(),
+            source,
+        },
+    })?;
+    if parsed.deck_token.is_none() {
+        return Err(AssetError::MissingDeckId(path.to_path_buf()));
+    }
+    let found = crate::diagram::fences_in_document(&text, parsed.frontmatter_span);
+    // Orphanhood is ATTACHMENT, not fingerprint: a stamp beside its (possibly
+    // edited) fence is freeze's to replace in place; only a stamp adjacent to
+    // no fence at all is unreachable by freezing and must be deleted here.
+    let attached: HashSet<usize> = found
+        .fences
+        .iter()
+        .filter_map(|fence| fence.stamp.as_ref())
+        .map(|(range, _)| line_of_offset(&text, range.start))
+        .collect();
+    let orphan_lines: HashSet<usize> = parsed
+        .cards
+        .iter()
+        .flat_map(|card| &card.diagrams)
+        .filter(|stamp| !attached.contains(&stamp.line))
+        .map(|stamp| stamp.line)
+        .collect();
+    if !orphan_lines.is_empty() {
+        // Exact whole-line byte ranges, terminators included: rebuilding via
+        // lines() would silently rewrite every CRLF in the deck, changing
+        // fence bytes and so every frozen fingerprint.
+        let mut kept = String::with_capacity(text.len());
+        for (index, line) in text.split_inclusive('\n').enumerate() {
+            if !orphan_lines.contains(&(index + 1)) {
+                kept.push_str(line);
+            }
+        }
+        crate::deck::write_deck_text(path, &kept).map_err(|source| AssetError::Deck {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    // Freezing rewrites the whole deck (the citation rewrite is not
+    // byte-preserving), so it runs only when a fence actually needs it; a
+    // repair that only removed orphans must touch nothing else.
+    let needs_freeze = found.fences.iter().any(|fence| {
+        fence
+            .stamp
+            .as_ref()
+            .is_none_or(|(_, print)| *print != crate::diagram::fingerprint(&fence.source))
+    });
+    let report = if needs_freeze {
+        freeze_member_with(path, diagram_command)?
+    } else {
+        FreezeReport {
+            evidence: 0,
+            images: 0,
+            diagrams: 0,
+            diagram_warnings: Vec::new(),
+        }
+    };
+    Ok((orphan_lines.len(), report))
+}
+
+#[cfg(feature = "full")]
+fn line_of_offset(text: &str, offset: usize) -> usize {
+    text[..offset].bytes().filter(|byte| *byte == b'\n').count() + 1
+}
+
 #[derive(Default)]
 struct DiagramOutcome {
     replacements: Vec<(std::ops::Range<usize>, String)>,
@@ -676,6 +772,14 @@ pub fn validate_at_root(deck: &Deck, root: &Path) -> Result<(), AssetError> {
         for citation in &card.citations {
             if let Some(asset) = citation.asset.as_deref() {
                 let path = owned.join(asset);
+                if !path.is_file() {
+                    return Err(AssetError::MissingAsset(path));
+                }
+            }
+        }
+        for stamp in &card.diagrams {
+            for name in [&stamp.asset, &stamp.manifest] {
+                let path = owned.join(name);
                 if !path.is_file() {
                     return Err(AssetError::MissingAsset(path));
                 }
@@ -1764,6 +1868,93 @@ mod tests {
                 "{junk_line}: the junk stays visible for the author"
             );
         }
+    }
+
+    /// Both halves of the stamped pair ride the existence sweep: losing
+    /// either the raster or the manifest is a validation error, not a
+    /// surprise at review time.
+    #[test]
+    fn validation_requires_both_stamped_objects() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let stamp = deck.cards[0].diagrams[0].clone();
+        let owned = directory.path().join("assets/deck-deck1");
+        for name in [&stamp.asset, &stamp.manifest] {
+            let object = owned.join(name);
+            let bytes = std::fs::read(&object).unwrap();
+            std::fs::remove_file(&object).unwrap();
+            assert!(
+                matches!(
+                    validate_member(&deck),
+                    Err(AssetError::MissingAsset(missing)) if missing == object
+                ),
+                "deleting {name} must fail validation"
+            );
+            std::fs::write(&object, bytes).unwrap();
+        }
+        validate_member(&deck).expect("restored objects validate again");
+    }
+
+    #[test]
+    fn repair_removes_orphan_stamps_and_refreezes_stale_fences() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        let stale = frozen.replace("A-->B", "A-->C");
+        std::fs::write(&path, &stale).unwrap();
+        let (removed, report) = repair_diagrams_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        assert_eq!(
+            (0, 1),
+            (removed, report.diagrams),
+            "a stale fence re-freezes"
+        );
+
+        let orphaned = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .filter(|line| !line.starts_with("```") && !line.contains("A-->C"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        std::fs::write(&path, &orphaned).unwrap();
+        let (removed, report) =
+            repair_diagrams_with(&path, Some("definitely-not-a-real-binary-xyz")).unwrap();
+        assert_eq!(1, removed, "the fence is gone, so its stamp goes too");
+        assert_eq!(0, report.diagrams);
+        assert!(
+            report.diagram_warnings.is_empty(),
+            "{:?}",
+            report.diagram_warnings
+        );
+        let repaired = std::fs::read_to_string(&path).unwrap();
+        assert!(!repaired.contains("<!-- diagram:"), "{repaired}");
+        let (removed, _) =
+            repair_diagrams_with(&path, Some("definitely-not-a-real-binary-xyz")).unwrap();
+        assert_eq!(0, removed, "the repair is idempotent");
     }
 
     #[test]
