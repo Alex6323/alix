@@ -97,6 +97,23 @@ class ReviewCodeModel extends ReviewNoteUnitModel {
   final List<String> lines;
 }
 
+class ReviewDiagramModel extends ReviewNoteUnitModel {
+  ReviewDiagramModel({
+    required this.src,
+    required this.width,
+    required this.height,
+    required this.alt,
+  });
+
+  /// An absolute file path: the lean core serves diagrams from disk.
+  final String src;
+
+  /// Logical pixels; the raster behind [src] is 2x.
+  final int width;
+  final int height;
+  final String alt;
+}
+
 class ReviewChecklistModel extends ReviewNoteUnitModel {
   ReviewChecklistModel(Iterable<ReviewChecklistItemModel> items)
     : items = List.unmodifiable(items);

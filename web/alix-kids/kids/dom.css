@@ -50,3 +50,11 @@
 .mascot.mascot-lg .eye.l { left: 28px; }
 .mascot.mascot-lg .eye.r { right: 28px; }
 .mascot.mascot-lg .smile { top: 58px; width: 26px; height: 13px; border-bottom-width: 3.5px; }
+
+/* A rendered mermaid diagram in the unit stream: width/height attrs are
+   its logical size; never wider than the column. */
+img.diagram {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}

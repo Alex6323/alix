@@ -179,3 +179,37 @@ test("kids done summary does not call a partial answer right", () => {
     (node.textContent || "").includes("So close on 1 card."));
   assert.ok(close, "the almost line still reports the work");
 });
+
+test("kids renders a diagram unit on answer reveal", () => {
+  const original = review({
+    card: {
+      id: "card-1",
+      front: "Question",
+      back: ["```mermaid", "flowchart LR", " A-->B", "```"],
+      back_runs: [],
+      back_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "flowchart LR\n A-->B",
+      }],
+      context: [],
+      images: [],
+      images_back: [],
+      note: [],
+    },
+  });
+  const run = harness(original);
+  run.study.render();
+
+  const reveal = find(run.actionbar, (node) => node.textContent === "Show me 👀");
+  assert.ok(reveal, "the fill card offers reveal");
+  reveal.click();
+  run.study.render();
+
+  const image = find(run.stage, (node) =>
+    node.tag === "img" && node.className === "diagram");
+  assert.equal(image?.src, "/img/0123456789abcdef");
+  assert.equal(image?.alt, "flowchart LR\n A-->B");
+});

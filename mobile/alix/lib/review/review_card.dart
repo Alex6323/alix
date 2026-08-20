@@ -283,8 +283,23 @@ class ReviewCardView extends StatelessWidget {
         lines,
         style.color ?? tokens.text,
       ),
+      ReviewDiagramModel(:final src, :final width, :final height, :final alt) =>
+        _diagram(src, width, height, alt),
       ReviewChecklistModel(:final items) => _checklist(items, tokens, style),
     };
+  }
+
+  Widget _diagram(String src, int width, int height, String alt) {
+    return Semantics(
+      label: alt,
+      image: true,
+      child: Image.file(
+        File(src),
+        width: width.toDouble(),
+        fit: BoxFit.scaleDown,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      ),
+    );
   }
 
   Widget _codeBlock(List<String> lines, Color foreground) {
@@ -479,6 +494,7 @@ class ReviewCardView extends StatelessWidget {
         card.backRuns.take(visible).toList(),
         tokens,
         stanza: false,
+        units: card.backUnits,
       );
     }
     if (_isTyping && !state.introducing) return _typing(context, card, tokens);
@@ -487,7 +503,13 @@ class ReviewCardView extends StatelessWidget {
       if (!card.reshaped) {
         return _answerUnits(context, card.backUnits, tokens);
       }
-      return _revealLines(context, card.back, card.backRuns, tokens);
+      return _revealLines(
+        context,
+        card.back,
+        card.backRuns,
+        tokens,
+        units: card.backUnits,
+      );
     }
     return const SizedBox.shrink();
   }
@@ -520,6 +542,7 @@ class ReviewCardView extends StatelessWidget {
     List<List<InlineRunModel>> runLines,
     AlixTokens tokens, {
     bool stanza = true,
+    List<ReviewNoteUnitModel> units = const [],
   }) {
     final style = TextStyle(
       fontFamily: _mono,
@@ -529,19 +552,57 @@ class ReviewCardView extends StatelessWidget {
       color: Theme.of(context).colorScheme.onSurface,
     );
     final gap = stanza && lines.length > 1 ? 22.0 : 6.0;
-    return Column(
-      children: [
-        for (final (index, line) in lines.indexed) ...[
-          if (index > 0) SizedBox(height: gap),
-          _runsOrText(
-            index < runLines.length ? runLines[index] : null,
-            line,
-            textAlign: TextAlign.center,
-            style: style,
-          ),
-        ],
-      ],
-    );
+    // Fence-shaped units arrive in the same document order as the raw
+    // fences: the nth fence consumes the nth unit, and a resolved diagram
+    // replaces its fence only once the closing marker is revealed; a
+    // partial fence stays a code block.
+    final fenceUnits = [
+      for (final unit in units)
+        if (unit is ReviewCodeModel || unit is ReviewDiagramModel) unit,
+    ];
+    var fenceIndex = 0;
+    final children = <Widget>[];
+    var index = 0;
+    while (index < lines.length) {
+      final trimmed = lines[index].trim();
+      final marker = trimmed.startsWith('```')
+          ? '```'
+          : trimmed.startsWith('~~~')
+          ? '~~~'
+          : null;
+      if (marker != null) {
+        final code = <String>[];
+        index++;
+        while (index < lines.length && lines[index].trim() != marker) {
+          code.add(lines[index]);
+          index++;
+        }
+        final closed = index < lines.length;
+        if (closed) index++;
+        final unit = fenceIndex < fenceUnits.length
+            ? fenceUnits[fenceIndex]
+            : null;
+        fenceIndex++;
+        if (children.isNotEmpty) children.add(SizedBox(height: gap));
+        if (closed && unit is ReviewDiagramModel) {
+          children.add(_diagram(unit.src, unit.width, unit.height, unit.alt));
+        } else {
+          children.add(_codeBlock(code, style.color ?? tokens.text));
+        }
+        continue;
+      }
+      if (children.isNotEmpty) children.add(SizedBox(height: gap));
+      children.add(
+        _runsOrText(
+          index < runLines.length ? runLines[index] : null,
+          lines[index],
+          textAlign: TextAlign.center,
+          style: style,
+        ),
+      );
+      index++;
+    }
+    return Column(children: children);
   }
 
   Widget _options(AlixTokens tokens) {
@@ -814,7 +875,14 @@ class ReviewCardView extends StatelessWidget {
         ],
         _explainLabel('the answer', tokens.dim),
         const SizedBox(height: 6),
-        _revealLines(context, card.back, card.backRuns, tokens, stanza: false),
+        _revealLines(
+          context,
+          card.back,
+          card.backRuns,
+          tokens,
+          stanza: false,
+          units: card.backUnits,
+        ),
         const SizedBox(height: 16),
         _explainLabel('did your answer cover these?', tokens.good, small: true),
         const SizedBox(height: 6),
@@ -924,6 +992,13 @@ class ReviewCardView extends StatelessWidget {
                     lines,
                     tokens.text,
                   ),
+                  ReviewDiagramModel(
+                    :final src,
+                    :final width,
+                    :final height,
+                    :final alt,
+                  ) =>
+                    _diagram(src, width, height, alt),
                   ReviewChecklistModel(:final items) => _checklist(
                     items,
                     tokens,

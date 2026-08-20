@@ -124,6 +124,11 @@ function frontPrompt(card) {
       const pre = el("pre", "why-code");
       pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
       prompt.appendChild(pre);
+    } else if (unit.kind === "diagram") {
+      const img = el("img", "diagram");
+      img.src = unit.src; img.alt = unit.alt || "";
+      img.width = unit.width; img.height = unit.height;
+      prompt.appendChild(img);
     } else if (unit.kind === "checklist") {
       appendChecklist(prompt, unit.items);
     }

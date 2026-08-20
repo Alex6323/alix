@@ -18,6 +18,17 @@ pub enum NoteUnit {
     Code {
         lines: Vec<String>,
     },
+    /// A frozen mermaid fence, rendered: occupies the fence's own slot in
+    /// the stream. `src` is an absolute file path in the library projection;
+    /// the HTTP layer rewrites it to a `/img/<key>` URL. `width`/`height`
+    /// are LOGICAL pixels (the raster is 2x); `alt` carries the fence
+    /// source, the accessible representation while nothing is masked.
+    Diagram {
+        src: String,
+        width: u32,
+        height: u32,
+        alt: String,
+    },
     Checklist {
         items: Vec<ChecklistItem>,
     },
@@ -63,43 +74,74 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
 pub(crate) fn note_units_with(card: &Card, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
     card.note
         .as_deref()
-        .map(|note| text_units_with(note, projector, true))
+        .map(|note| text_units_with(note, projector, true, &card.resolved_diagrams))
         .unwrap_or_default()
 }
 
 pub(crate) fn answer_units_with(
     lines: &[String],
     projector: &mut DisplayProjector,
+    diagrams: &[crate::card::ResolvedDiagram],
 ) -> Vec<NoteUnit> {
-    text_units_with(&lines.join("\n"), projector, false)
+    text_units_with(&lines.join("\n"), projector, false, diagrams)
+}
+
+/// The fence's own slot gets the rendered diagram when (and only when) a
+/// resolved stamp fingerprints to the fence's interior; everything else
+/// stays a Code unit, so an unfrozen or stale fence falls back to source
+/// in place, never somewhere else.
+fn fence_unit(
+    info: &str,
+    lines: Vec<String>,
+    diagrams: &[crate::card::ResolvedDiagram],
+) -> NoteUnit {
+    if info.eq_ignore_ascii_case("mermaid") && !lines.is_empty() {
+        let source = lines.join("\n");
+        let print = crate::diagram::fingerprint(&source);
+        if let Some(resolved) = diagrams.iter().find(|d| d.fingerprint == print) {
+            return NoteUnit::Diagram {
+                src: resolved.png.display().to_string(),
+                width: resolved.manifest.logical_width,
+                height: resolved.manifest.logical_height,
+                alt: source,
+            };
+        }
+    }
+    NoteUnit::Code { lines }
 }
 
 fn text_units_with(
     text: &str,
     projector: &mut DisplayProjector,
     split_prose_sentences: bool,
+    diagrams: &[crate::card::ResolvedDiagram],
 ) -> Vec<NoteUnit> {
     let mut units = Vec::new();
-    let mut code_fence = None;
+    let mut code_fence: Option<(char, String)> = None;
     let mut code: Vec<String> = Vec::new();
     let mut prose = String::new();
     let mut checklist = Vec::new();
 
     for logical in text.lines() {
         if let Some(marker) = fence_marker(logical) {
-            if code_fence == Some(marker) {
-                let block = std::mem::take(&mut code);
-                if !block.is_empty() {
-                    units.push(NoteUnit::Code { lines: block });
+            match &code_fence {
+                Some((open_marker, info)) if *open_marker == marker => {
+                    let block = std::mem::take(&mut code);
+                    if !block.is_empty() {
+                        units.push(fence_unit(info, block, diagrams));
+                    }
+                    code_fence = None;
                 }
-                code_fence = None;
-            } else if code_fence.is_none() {
-                flush_checklist(&mut checklist, &mut units);
-                flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
-                code_fence = Some(marker);
-                code.clear();
-            } else {
-                code.push(logical.to_string());
+                None => {
+                    flush_checklist(&mut checklist, &mut units);
+                    flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+                    let info = logical.trim_start().trim_start_matches(marker).trim();
+                    code_fence = Some((marker, info.to_string()));
+                    code.clear();
+                }
+                Some(_) => {
+                    code.push(logical.to_string());
+                }
             }
             continue;
         }
@@ -137,21 +179,23 @@ fn text_units_with(
     flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
-        units.push(NoteUnit::Code { lines: code });
+        let info = code_fence.map(|(_, info)| info).unwrap_or_default();
+        units.push(fence_unit(&info, code, diagrams));
     }
     units
 }
 
 pub fn front_units(front: &str) -> Option<Vec<NoteUnit>> {
     let mut projector = DisplayProjector::default();
-    front_units_with(front, &mut projector)
+    front_units_with(front, &mut projector, &[])
 }
 
 pub(crate) fn front_units_with(
     front: &str,
     projector: &mut DisplayProjector,
+    diagrams: &[crate::card::ResolvedDiagram],
 ) -> Option<Vec<NoteUnit>> {
-    let units = text_units_with(front, projector, true);
+    let units = text_units_with(front, projector, true, diagrams);
     units
         .iter()
         .any(|unit| match unit {
@@ -159,7 +203,7 @@ pub(crate) fn front_units_with(
             NoteUnit::Sentence { runs, .. } => runs
                 .iter()
                 .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
-            NoteUnit::Code { .. } => true,
+            NoteUnit::Code { .. } | NoteUnit::Diagram { .. } => true,
         })
         .then_some(units)
 }
@@ -324,7 +368,7 @@ mod tests {
             "stable deck ID, and opens the document.".to_string(),
         ];
         assert_eq!(
-            answer_units_with(&lines, &mut projector),
+            answer_units_with(&lines, &mut projector, &[]),
             vec![sentence(
                 "`state::open_store` loads the initialized deck, requires its stable deck ID, and opens the document."
             )]
@@ -530,5 +574,81 @@ mod tests {
                 Blank("⍰".into()),
             ]
         );
+    }
+
+    fn resolved(source: &str) -> Vec<crate::card::ResolvedDiagram> {
+        vec![crate::card::ResolvedDiagram {
+            fingerprint: crate::diagram::fingerprint(source),
+            png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+            manifest: crate::diagram::DiagramManifest {
+                png: "sha256-aa.png".to_string(),
+                raster_width: 376,
+                raster_height: 228,
+                logical_width: 188,
+                logical_height: 114,
+                labels: Vec::new(),
+            },
+        }]
+    }
+
+    /// Ruling 3's slot law: the rendered diagram replaces its own fence in
+    /// the ordered stream; surrounding prose keeps its position, and only
+    /// a matching resolved stamp swaps.
+    #[test]
+    fn a_resolved_mermaid_fence_becomes_a_diagram_unit_in_its_own_slot() {
+        let source = "flowchart LR\n A-->B";
+        let text = "before\n```mermaid\nflowchart LR\n A-->B\n```\nafter";
+        let mut projector = DisplayProjector::default();
+        let units = text_units_with(text, &mut projector, false, &resolved(source));
+        assert_eq!(3, units.len(), "{units:?}");
+        assert!(matches!(&units[0], NoteUnit::Sentence { text, .. } if text == "before"));
+        let NoteUnit::Diagram {
+            src,
+            width,
+            height,
+            alt,
+        } = &units[1]
+        else {
+            panic!("the fence slot holds the diagram: {units:?}");
+        };
+        assert_eq!("/ws/assets/deck-x/sha256-aa.png", src);
+        assert_eq!(
+            (&188, &114),
+            (width, height),
+            "logical, not raster, dimensions"
+        );
+        assert_eq!(source, alt, "the fence source is the accessible text");
+        assert!(matches!(&units[2], NoteUnit::Sentence { text, .. } if text == "after"));
+    }
+
+    /// The server resolves availability: no resolved stamp, a stale
+    /// fingerprint, or a non-mermaid fence all stay code units in place.
+    #[test]
+    fn unresolved_stale_and_foreign_fences_stay_code_units() {
+        let mut projector = DisplayProjector::default();
+        let cases: [(&str, Vec<crate::card::ResolvedDiagram>, &str); 3] = [
+            (
+                "```mermaid\nflowchart LR\n A-->B\n```",
+                Vec::new(),
+                "unfrozen",
+            ),
+            (
+                "```mermaid\nflowchart LR\n A-->B\n```",
+                resolved("flowchart LR\n A-->EDITED"),
+                "stale fingerprint",
+            ),
+            (
+                "```rust\nflowchart LR\n A-->B\n```",
+                resolved("flowchart LR\n A-->B"),
+                "non-mermaid fence",
+            ),
+        ];
+        for (text, diagrams, why) in cases {
+            let units = text_units_with(text, &mut projector, false, &diagrams);
+            assert!(
+                matches!(&units[0], NoteUnit::Code { .. }),
+                "{why}: must stay a code unit, got {units:?}"
+            );
+        }
     }
 }

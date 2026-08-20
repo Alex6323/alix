@@ -434,7 +434,7 @@ export function createStudy({
     appendImages(q, c.images);
 
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
-    if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true);
+    if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true, c.back_units);
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
@@ -820,12 +820,7 @@ export function createStudy({
       // claims it makes — the key points are a decomposition, not a replacement.
       a.appendChild(el("div", "explain-label", "the answer"));
       const ans = el("div", "reveal");
-      for (let i = 0; i < state.card.back.length; i++) {
-        const answer = el("div", "answer");
-        if (state.card.back_runs && state.card.back_runs[i]) appendRuns(answer, state.card.back_runs[i]);
-        else answer.textContent = state.card.back[i];
-        ans.appendChild(answer);
-      }
+      appendReveal(ans, state.card.back, state.card.back_runs, false, state.card.back_units);
       a.appendChild(ans);
       appendKeypointList(a, {
         keypoints: state.keypoints,
@@ -838,13 +833,7 @@ export function createStudy({
     }
     a.appendChild(el("div", "explain-label", "your answer should cover"));
     const pts = el("div", "reveal");
-    for (let i = 0; i < state.card.back.length; i++) {
-      const point = el("div", "answer");
-      point.appendChild(doc.createTextNode("• "));
-      if (state.card.back_runs && state.card.back_runs[i]) appendRuns(point, state.card.back_runs[i]);
-      else point.appendChild(doc.createTextNode(state.card.back[i]));
-      pts.appendChild(point);
-    }
+    appendReveal(pts, state.card.back, state.card.back_runs, true, state.card.back_units);
     a.appendChild(pts);
   }
   // Walk the key-point list: mark the current point yes/no and advance; move the
@@ -1012,6 +1001,11 @@ export function createStudy({
         const pre = el("pre", "code-block");
         pre.textContent = (unit.lines || []).join("\n");
         sec.appendChild(pre);
+      } else if (unit.kind === "diagram") {
+        const img = el("img", "diagram");
+        img.src = unit.src; img.alt = unit.alt || "";
+        img.width = unit.width; img.height = unit.height;
+        sec.appendChild(img);
       } else if (unit.kind === "checklist") {
         appendChecklist(sec, unit.items);
       }
@@ -1027,8 +1021,8 @@ export function createStudy({
     if (!a) return;
     const c = state.card;
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
-    if (state.mode === "line") appendReveal(sec, c.back, c.back_runs, false);
-    else if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true);
+    if (state.mode === "line") appendReveal(sec, c.back, c.back_runs, false, c.back_units);
+    else if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true, c.back_units);
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
@@ -1044,9 +1038,9 @@ export function createStudy({
     const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
     if (state.mode === "line") {
-      appendReveal(sec, c.back.slice(0, shown), c.back_runs && c.back_runs.slice(0, shown), false);
+      appendReveal(sec, c.back.slice(0, shown), c.back_runs && c.back_runs.slice(0, shown), false, c.back_units);
     } else if (isReshapedList(c)) {
-      appendReveal(sec, c.back, c.back_runs, true);
+      appendReveal(sec, c.back, c.back_runs, true, c.back_units);
     } else {
       appendAnswerUnits(sec, c.back_units);
     }

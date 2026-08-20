@@ -160,6 +160,7 @@ impl Deck {
                 image.src = resolve_image(&base_dir, std::mem::take(&mut image.src));
             }
         }
+        crate::assets::resolve_diagrams(&path, deck_token.as_deref(), &mut cards);
         let mut expanded = Vec::with_capacity(cards.len());
         for card in cards {
             let mut card = card;

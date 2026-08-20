@@ -4,14 +4,17 @@
 //! deck-owned asset and every client just displays an SVG. Nothing here runs
 //! during review.
 
+use std::hash::Hasher;
+#[cfg(feature = "full")]
 use std::{
-    hash::Hasher,
     io::{Read, Write},
     process::{Command, Stdio},
     time::Duration,
 };
 
+#[cfg(feature = "full")]
 use anyhow::{Context, Result, bail};
+#[cfg(feature = "full")]
 use resvg::usvg;
 use twox_hash::XxHash64;
 
@@ -19,20 +22,24 @@ use twox_hash::XxHash64;
 /// renderer would produce different pictures for the same deck.
 pub const COMMAND: &str = "sekien";
 
+#[cfg(feature = "full")]
 /// Checked before the pixmap is allocated, so a huge graph fails as one
 /// authoring error instead of an unbounded allocation. 4096 squared.
 const PIXEL_CAP: u64 = 4096 * 4096;
 
+#[cfg(feature = "full")]
 /// A long `flowchart LR` grows in one dimension and can pass the area cap
 /// while exceeding mobile decoder and GPU texture limits, so each side is
 /// bounded independently.
 const SIDE_CAP: u32 = 8192;
 
+#[cfg(feature = "full")]
 /// The ground for diagrams whose root style declares a light base fill:
 /// mermaid's dark themes assume a dark page and their `background` theme
 /// variable is this value.
 const DARK_GROUND: (u8, u8, u8) = (0x33, 0x33, 0x33);
 
+#[cfg(feature = "full")]
 /// One fence's outcome: the SVG, or the renderer's own message for it.
 pub type Rendered = Result<String, String>;
 
@@ -113,6 +120,7 @@ pub fn fingerprint(source: &str) -> String {
     format!("xxh64-{:016x}", hasher.finish())
 }
 
+#[cfg(feature = "full")]
 /// Rasterizes a rendered SVG to PNG bytes at `zoom` times its intrinsic size.
 ///
 /// PNG rather than SVG is load-bearing: a mermaid SVG carries every label as
@@ -131,6 +139,7 @@ pub struct Raster {
     pub height: u32,
 }
 
+#[cfg(feature = "full")]
 pub fn rasterize(svg: &str, family: &str, zoom: f32) -> Result<Raster> {
     let pixmap = raster(svg, family, zoom)?;
     Ok(Raster {
@@ -140,6 +149,7 @@ pub fn rasterize(svg: &str, family: &str, zoom: f32) -> Result<Raster> {
     })
 }
 
+#[cfg(feature = "full")]
 fn raster(svg: &str, family: &str, zoom: f32) -> Result<resvg::tiny_skia::Pixmap> {
     let mut db = system_fonts().clone();
     db.set_sans_serif_family(family);
@@ -178,6 +188,7 @@ fn raster(svg: &str, family: &str, zoom: f32) -> Result<resvg::tiny_skia::Pixmap
     Ok(pixmap)
 }
 
+#[cfg(feature = "full")]
 /// The opaque ground the SVG is composited onto, derived from the diagram's
 /// own theme: every mermaid theme declares its base text fill in the root
 /// style rule (`#d1{...fill:#ccc}` for dark themes, `fill:#333` for light),
@@ -209,6 +220,7 @@ fn ground(svg: &str) -> Result<(u8, u8, u8)> {
     })
 }
 
+#[cfg(feature = "full")]
 /// WCAG sRGB relative luminance: channel mean misclassifies saturated ink
 /// (`#00ff00` has mean 85 yet is among the brightest colors there are), and
 /// the gamma linearization matters even for grays.
@@ -224,11 +236,13 @@ fn relative_luminance((red, green, blue): (u8, u8, u8)) -> f64 {
     0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
 }
 
+#[cfg(feature = "full")]
 fn contrast(a: f64, b: f64) -> f64 {
     let (lighter, darker) = if a > b { (a, b) } else { (b, a) };
     (lighter + 0.05) / (darker + 0.05)
 }
 
+#[cfg(feature = "full")]
 /// The value of the first `fill:` declaration, tolerating whitespace around
 /// the colon. Skips property names that merely start with `fill`
 /// (`fill-opacity`), whose next non-space character is not a colon.
@@ -246,6 +260,7 @@ fn fill_declaration(style: &str) -> Option<&str> {
     None
 }
 
+#[cfg(feature = "full")]
 fn hex_color(value: &str) -> Option<(u8, u8, u8)> {
     let hex = value.strip_prefix('#')?.as_bytes();
     let expand = |part: &[u8]| u8::from_str_radix(std::str::from_utf8(part).ok()?, 16).ok();
@@ -260,6 +275,7 @@ fn hex_color(value: &str) -> Option<(u8, u8, u8)> {
     }
 }
 
+#[cfg(feature = "full")]
 /// One authoring batch gets this budget; ~1.3s startup plus ~19ms per
 /// diagram measured, so a minute covers decks far past any real size.
 pub const RENDER_TIMEOUT: Duration = Duration::from_secs(60);
@@ -355,6 +371,7 @@ pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> Do
     found
 }
 
+#[cfg(feature = "full")]
 /// The full freeze computation for one rendered fence: extract the label
 /// map, rasterize at ZOOM, and prove every label's ink lies inside its
 /// emitted box (a per-label render diff, failing closed on any miss).
@@ -386,20 +403,24 @@ pub fn freeze_fence(svg: &str, family: &str) -> Result<FrozenDiagram> {
     Ok(FrozenDiagram { png, manifest })
 }
 
+#[cfg(feature = "full")]
 pub struct FrozenDiagram {
     pub png: Vec<u8>,
     pub manifest: DiagramManifest,
 }
 
+#[cfg(feature = "full")]
 /// The scale frozen rasters render at; the manifest records both raster and
 /// logical dimensions so clients display at logical size.
 pub const ZOOM: f32 = 2.0;
 
+#[cfg(feature = "full")]
 /// Emitted boxes are inflated by this many SVG units per side: measured ink
 /// margins are ~3 units on edge labels, and the pad insures against fonts
 /// with slightly wider metrics than the measured corpus.
 const BOX_PAD: f32 = 2.0;
 
+#[cfg(feature = "full")]
 /// Families tried in order for the freeze; sekien measures and resvg draws
 /// with the same one, and the ink-containment check verifies the result.
 const FAMILIES: &[&str] = &[
@@ -410,6 +431,7 @@ const FAMILIES: &[&str] = &[
     "Helvetica",
 ];
 
+#[cfg(feature = "full")]
 /// The first preference-list family the system fontdb can resolve.
 pub fn available_family() -> Result<&'static str> {
     let db = system_fonts();
@@ -431,6 +453,7 @@ pub fn available_family() -> Result<&'static str> {
         })
 }
 
+#[cfg(feature = "full")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewBox {
     pub x: f32,
@@ -439,6 +462,7 @@ pub struct ViewBox {
     pub height: f32,
 }
 
+#[cfg(feature = "full")]
 /// One bindable label: a flowchart node (`id` is the mermaid node id) or an
 /// edge label (`id` is the renderer's stable `L_<src>_<tgt>_<n>`).
 /// Coordinates are absolute SVG units after transform accumulation.
@@ -452,12 +476,14 @@ pub struct Label {
     pub height: f32,
 }
 
+#[cfg(feature = "full")]
 #[derive(Debug)]
 pub struct Geometry {
     pub view_box: ViewBox,
     pub labels: Vec<Label>,
 }
 
+#[cfg(feature = "full")]
 /// Every bindable label in a rendered SVG, with the root viewBox needed to
 /// map SVG units into raster pixels. Only translate() transforms are
 /// accepted: any other transform above a label would silently misplace its
@@ -472,6 +498,7 @@ pub fn geometry(svg: &str) -> Result<Geometry> {
     Ok(Geometry { view_box, labels })
 }
 
+#[cfg(feature = "full")]
 fn parse_view_box(attribute: Option<&str>) -> Result<ViewBox> {
     let raw = attribute.unwrap_or_default();
     let parts: Vec<f32> = raw
@@ -489,6 +516,7 @@ fn parse_view_box(attribute: Option<&str>) -> Result<ViewBox> {
     })
 }
 
+#[cfg(feature = "full")]
 fn translation(node: usvg::roxmltree::Node) -> Result<(f32, f32)> {
     let Some(raw) = node.attribute("transform") else {
         return Ok((0.0, 0.0));
@@ -512,6 +540,7 @@ fn translation(node: usvg::roxmltree::Node) -> Result<(f32, f32)> {
     Ok((x, y))
 }
 
+#[cfg(feature = "full")]
 fn text_of(node: usvg::roxmltree::Node) -> String {
     node.descendants()
         .filter(|child| child.is_text())
@@ -519,10 +548,12 @@ fn text_of(node: usvg::roxmltree::Node) -> String {
         .collect()
 }
 
+#[cfg(feature = "full")]
 fn element_class<'a>(node: usvg::roxmltree::Node<'a, 'a>) -> &'a str {
     node.attribute("class").unwrap_or_default()
 }
 
+#[cfg(feature = "full")]
 fn collect_labels(
     node: usvg::roxmltree::Node,
     x: f32,
@@ -585,6 +616,7 @@ fn collect_labels(
     Ok(())
 }
 
+#[cfg(feature = "full")]
 /// `d1-flowchart-A-0` -> `A`; the leading svg id varies per render and the
 /// trailing counter is the renderer's, so neither is part of the identity.
 fn flowchart_node_id(raw: &str) -> Option<String> {
@@ -596,6 +628,7 @@ fn flowchart_node_id(raw: &str) -> Option<String> {
         .then(|| id.to_string())
 }
 
+#[cfg(feature = "full")]
 /// The bounding box of one label-container shape, in its parent node's
 /// frame (the shape's own translate included). Mermaid draws nodes as
 /// rects, circles, ellipses, polygons, paths (`[(db)]`), or groups of
@@ -676,6 +709,7 @@ fn container_bounds(shape: usvg::roxmltree::Node) -> Result<(f32, f32, f32, f32)
     })
 }
 
+#[cfg(feature = "full")]
 fn extent_of_pairs(values: &[f32]) -> Result<(f32, f32, f32, f32)> {
     if values.len() < 2 || !values.len().is_multiple_of(2) {
         bail!("expected coordinate pairs, got {} values", values.len());
@@ -690,6 +724,7 @@ fn extent_of_pairs(values: &[f32]) -> Result<(f32, f32, f32, f32)> {
     Ok((min_x, min_y, max_x, max_y))
 }
 
+#[cfg(feature = "full")]
 /// A path's extent over every visited point (endpoints and curve control
 /// points; arc endpoints only, so an arc's bulge can undershoot by its
 /// radius). Good enough for a mask box: the ink-containment proof measures
@@ -783,6 +818,7 @@ fn path_extent(d: &str) -> Result<(f32, f32, f32, f32)> {
     extent_of_pairs(&points)
 }
 
+#[cfg(feature = "full")]
 fn descendant_rect<'a>(
     node: usvg::roxmltree::Node<'a, 'a>,
     keep: impl Fn(usvg::roxmltree::Node) -> bool,
@@ -791,6 +827,7 @@ fn descendant_rect<'a>(
         .find(|child| child.has_tag_name("rect") && keep(*child))
 }
 
+#[cfg(feature = "full")]
 fn label_from_rect(
     id: String,
     text: String,
@@ -813,6 +850,7 @@ fn label_from_rect(
     })
 }
 
+#[cfg(feature = "full")]
 /// A label's box in raster pixel space: shifted by the viewBox origin,
 /// inflated by BOX_PAD per side, scaled by `zoom`, rounded outward, and
 /// clamped to the raster.
@@ -846,7 +884,7 @@ pub struct PixelBox {
 /// dimension pairs, and the complete bindable-label map. Complete rather
 /// than selected-only: retargeting a span is an ordinary edit that must not
 /// invalidate the frozen pair.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiagramManifest {
     pub png: String,
@@ -857,7 +895,7 @@ pub struct DiagramManifest {
     pub labels: Vec<ManifestLabel>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestLabel {
     pub id: String,
@@ -866,6 +904,7 @@ pub struct ManifestLabel {
     pub bounds: PixelBox,
 }
 
+#[cfg(feature = "full")]
 /// The SVG with the given label's `<text>` elements removed, for the
 /// ink-containment diff. The target is a node's `id` or an edge label's
 /// `data-id`.
@@ -900,6 +939,7 @@ pub(crate) fn strip_label_texts(svg: &str, label_id: &str) -> Result<String> {
     Ok(stripped)
 }
 
+#[cfg(feature = "full")]
 /// The containment law: the label must leave ink (a fontless or dropped
 /// render is a corrupt freeze), and every pixel it changes must lie inside
 /// its emitted box (ink outside would survive the mask).
@@ -934,6 +974,7 @@ pub(crate) fn ink_within(
     Ok(())
 }
 
+#[cfg(feature = "full")]
 fn system_fonts() -> &'static usvg::fontdb::Database {
     static FONTS: std::sync::OnceLock<usvg::fontdb::Database> = std::sync::OnceLock::new();
     FONTS.get_or_init(|| {
@@ -943,6 +984,7 @@ fn system_fonts() -> &'static usvg::fontdb::Database {
     })
 }
 
+#[cfg(feature = "full")]
 /// Renders `sources` in one long-lived process, returning one outcome per
 /// input in input order.
 ///
@@ -1018,12 +1060,14 @@ pub fn render_batch(
     Ok(outcomes)
 }
 
+#[cfg(feature = "full")]
 fn drain<R: Read>(mut pipe: R) -> String {
     let mut buffer = Vec::new();
     let _ = pipe.read_to_end(&mut buffer);
     String::from_utf8_lossy(&buffer).into_owned()
 }
 
+#[cfg(feature = "full")]
 /// Splits a `--meta` stream into `(id, body)` pairs. The marker is
 /// `<!-- {"id": N} -->`; anything before the first marker is renderer preamble
 /// and is dropped.

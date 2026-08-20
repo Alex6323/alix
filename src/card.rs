@@ -86,6 +86,16 @@ pub struct DiagramStamp {
     pub line: usize,
 }
 
+/// A stamp whose frozen pair checked out at deck load: both objects
+/// present, the manifest parses, and it names the stamp's raster. Only
+/// resolution this shallow runs on the load path; doctor re-hashes bytes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedDiagram {
+    pub fingerprint: String,
+    pub png: std::path::PathBuf,
+    pub manifest: crate::diagram::DiagramManifest,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceCitation {
     /// The `at:` field: the real source path and lines, never an asset name.
@@ -119,6 +129,7 @@ pub struct Card {
     pub images_back: Vec<CardImage>,
     pub citations: Vec<SourceCitation>,
     pub diagrams: Vec<DiagramStamp>,
+    pub resolved_diagrams: Vec<ResolvedDiagram>,
     pub givens: Vec<String>,
     pub display_back: Option<Vec<String>>,
     pub token: Option<Arc<str>>,
@@ -177,6 +188,7 @@ impl Card {
             images_back: Vec::new(),
             citations: Vec::new(),
             diagrams: Vec::new(),
+            resolved_diagrams: Vec::new(),
             givens: Vec::new(),
             display_back: None,
             token: None,
@@ -214,6 +226,7 @@ impl Card {
         card.images_back = self.images.clone();
         card.citations = self.citations.clone();
         card.diagrams = self.diagrams.clone();
+        card.resolved_diagrams = self.resolved_diagrams.clone();
         // The reversed half keeps the same token so id() can compose the "-r" suffix from it.
         card.token = self.token.clone();
         card.row = self.row.clone();

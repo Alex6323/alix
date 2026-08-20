@@ -1590,6 +1590,17 @@ const _: fn() = || {
         crate::api::review::NoteUnit::Code { lines } => {
             let _: Vec<String> = lines;
         }
+        crate::api::review::NoteUnit::Diagram {
+            src,
+            width,
+            height,
+            alt,
+        } => {
+            let _: String = src;
+            let _: u32 = width;
+            let _: u32 = height;
+            let _: String = alt;
+        }
         crate::api::review::NoteUnit::Checklist { items } => {
             let _: Vec<crate::api::review::ChecklistItem> = items;
         }
@@ -2196,6 +2207,18 @@ impl SseDecode for crate::api::review::NoteUnit {
                 return crate::api::review::NoteUnit::Code { lines: var_lines };
             }
             2 => {
+                let mut var_src = <String>::sse_decode(deserializer);
+                let mut var_width = <u32>::sse_decode(deserializer);
+                let mut var_height = <u32>::sse_decode(deserializer);
+                let mut var_alt = <String>::sse_decode(deserializer);
+                return crate::api::review::NoteUnit::Diagram {
+                    src: var_src,
+                    width: var_width,
+                    height: var_height,
+                    alt: var_alt,
+                };
+            }
+            3 => {
                 let mut var_items =
                     <Vec<crate::api::review::ChecklistItem>>::sse_decode(deserializer);
                 return crate::api::review::NoteUnit::Checklist { items: var_items };
@@ -3228,8 +3251,21 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::NoteUnit> 
             crate::api::review::NoteUnit::Code { lines } => {
                 [1.into_dart(), lines.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::review::NoteUnit::Diagram {
+                src,
+                width,
+                height,
+                alt,
+            } => [
+                2.into_dart(),
+                src.into_into_dart().into_dart(),
+                width.into_into_dart().into_dart(),
+                height.into_into_dart().into_dart(),
+                alt.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::review::NoteUnit::Checklist { items } => {
-                [2.into_dart(), items.into_into_dart().into_dart()].into_dart()
+                [3.into_dart(), items.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -3972,8 +4008,20 @@ impl SseEncode for crate::api::review::NoteUnit {
                 <i32>::sse_encode(1, serializer);
                 <Vec<String>>::sse_encode(lines, serializer);
             }
-            crate::api::review::NoteUnit::Checklist { items } => {
+            crate::api::review::NoteUnit::Diagram {
+                src,
+                width,
+                height,
+                alt,
+            } => {
                 <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(src, serializer);
+                <u32>::sse_encode(width, serializer);
+                <u32>::sse_encode(height, serializer);
+                <String>::sse_encode(alt, serializer);
+            }
+            crate::api::review::NoteUnit::Checklist { items } => {
+                <i32>::sse_encode(3, serializer);
                 <Vec<crate::api::review::ChecklistItem>>::sse_encode(items, serializer);
             }
             _ => {

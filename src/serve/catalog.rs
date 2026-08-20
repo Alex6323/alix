@@ -684,6 +684,11 @@ pub(super) fn collect_images(cards: &[Card]) -> HashMap<String, PathBuf> {
         for image in card.images.iter().chain(&card.images_back) {
             images.insert(img_key(&image.src), image.src.clone());
         }
+        // Frozen diagram rasters ride the same allowlist, or their
+        // /img/<key> URLs would 404: nothing else registers them.
+        for diagram in &card.resolved_diagrams {
+            images.insert(img_key(&diagram.png), diagram.png.clone());
+        }
     }
     images
 }

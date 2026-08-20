@@ -31,9 +31,8 @@ pub mod deck;
 pub mod deck_transfer;
 pub mod dedup;
 pub mod depth;
-// Authoring-time only: the lean core and the mobile bridge display frozen
-// SVGs and never shell out to a renderer.
-#[cfg(feature = "full")]
+// The fence grammar, fingerprint, and manifest types are lean (the mobile
+// core reads frozen diagrams); only the renderer half is full-gated inside.
 pub mod diagram;
 #[cfg(feature = "full")]
 pub mod doctor;

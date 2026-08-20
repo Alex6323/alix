@@ -1802,6 +1802,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 1:
         return NoteUnit_Code(lines: dco_decode_list_String(raw[1]));
       case 2:
+        return NoteUnit_Diagram(
+          src: dco_decode_String(raw[1]),
+          width: dco_decode_u_32(raw[2]),
+          height: dco_decode_u_32(raw[3]),
+          alt: dco_decode_String(raw[4]),
+        );
+      case 3:
         return NoteUnit_Checklist(
           items: dco_decode_list_checklist_item(raw[1]),
         );
@@ -2752,6 +2759,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_lines = sse_decode_list_String(deserializer);
         return NoteUnit_Code(lines: var_lines);
       case 2:
+        var var_src = sse_decode_String(deserializer);
+        var var_width = sse_decode_u_32(deserializer);
+        var var_height = sse_decode_u_32(deserializer);
+        var var_alt = sse_decode_String(deserializer);
+        return NoteUnit_Diagram(
+          src: var_src,
+          width: var_width,
+          height: var_height,
+          alt: var_alt,
+        );
+      case 3:
         var var_items = sse_decode_list_checklist_item(deserializer);
         return NoteUnit_Checklist(items: var_items);
       default:
@@ -3814,8 +3832,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case NoteUnit_Code(lines: final lines):
         sse_encode_i_32(1, serializer);
         sse_encode_list_String(lines, serializer);
-      case NoteUnit_Checklist(items: final items):
+      case NoteUnit_Diagram(
+        src: final src,
+        width: final width,
+        height: final height,
+        alt: final alt,
+      ):
         sse_encode_i_32(2, serializer);
+        sse_encode_String(src, serializer);
+        sse_encode_u_32(width, serializer);
+        sse_encode_u_32(height, serializer);
+        sse_encode_String(alt, serializer);
+      case NoteUnit_Checklist(items: final items):
+        sse_encode_i_32(3, serializer);
         sse_encode_list_checklist_item(items, serializer);
     }
   }

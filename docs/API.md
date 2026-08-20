@@ -570,8 +570,9 @@ first, same as a double `POST`.
 | GET | `/img/<key>` | image bytes (content type by extension); 404 unknown key |
 
 `<key>` is an opaque 16-hex hash; the URLs arrive inside `CardDto.images[]` /
-`images_back[]` `src` and `DeckItemDto.icon`. Unauthenticated (see §2). Part of
-the contract. Native clients need it to show card images.
+`images_back[]` `src`, in `diagram` content units' `src` (see NoteUnitDto),
+and `DeckItemDto.icon`. Unauthenticated (see §2). Part of the contract.
+Native clients need it to show card images.
 
 ## 6. DTO reference
 
@@ -695,11 +696,24 @@ LaTeX renderer.
 ### NoteUnitDto *(tagged union — its `kind` is unrelated to StateDto's)*
 
 `{"kind":"sentence", "text": string, "runs": [InlineRun]}`,
-`{"kind":"code", "lines": [string]}`, or
+`{"kind":"code", "lines": [string]}`,
+`{"kind":"diagram", "src": string, "width": number, "height": number,
+"alt": string}`, or
 `{"kind":"checklist", "items": [ChecklistItemDto]}`. Sentence `text` remains
 the authored text; `runs` is its display projection. `ChecklistItemDto` is
 `{checked: bool, text: string, runs: [InlineRun]}`; `text` is the content
 projection and `runs` preserves inline formatting for display.
+
+A `diagram` unit is a frozen mermaid fence, rendered: it occupies the
+fence's own position in the unit stream. `src` is a `/img/<key>` URL (see
+§5 Images); `width`/`height` are LOGICAL pixels — the raster behind the
+URL is larger (2x), so clients size the element from these fields, never
+from the image's natural size. `alt` carries the fence's mermaid source,
+the accessible representation of the diagram. The server resolves
+availability: a fence that is not frozen, whose stamp is stale, or whose
+frozen objects are missing arrives as a plain `code` unit in the same
+position instead — clients never decide fallback. Example payload:
+`tests/contracts/CardDto.diagram.json`.
 
 ### ExcerptDto / LineDto
 

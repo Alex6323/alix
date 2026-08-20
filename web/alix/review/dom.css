@@ -124,3 +124,11 @@
   .kp-list li.pt.yes::before { content: "✓"; color: var(--good); }
   .kp-list li.pt.no { color: var(--dim); }
   .kp-list li.pt.no::before { content: "✗"; color: var(--again); }
+
+/* A rendered mermaid diagram in the unit stream: width/height attrs are
+   its logical size; never wider than the column. */
+img.diagram {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}

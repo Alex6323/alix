@@ -768,6 +768,48 @@ fn resolve_image_source(workspace_root: &Path, source: &str) -> Result<PathBuf, 
         .map_err(|_| AssetError::MissingImage(path))
 }
 
+/// Load-time resolution of diagram stamps: shape checks only (both objects
+/// present, manifest parses, names agree); byte verification is doctor's.
+/// Anything unresolved simply stays a code fence at review, by design.
+pub fn resolve_diagrams(
+    deck_path: &Path,
+    deck_token: Option<&str>,
+    cards: &mut [crate::card::Card],
+) {
+    let Some(root) = crate::workspace::root_for_deck(deck_path) else {
+        return;
+    };
+    let Some(deck_id) = deck_token else {
+        return;
+    };
+    let Ok(owned) = deck_dir(&root, deck_id) else {
+        return;
+    };
+    for card in cards {
+        for stamp in &card.diagrams {
+            let png = owned.join(&stamp.asset);
+            if !png.is_file() {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(owned.join(&stamp.manifest)) else {
+                continue;
+            };
+            let Ok(manifest) = serde_json::from_slice::<crate::diagram::DiagramManifest>(&bytes)
+            else {
+                continue;
+            };
+            if manifest.png != stamp.asset {
+                continue;
+            }
+            card.resolved_diagrams.push(crate::card::ResolvedDiagram {
+                fingerprint: stamp.fingerprint.clone(),
+                png,
+                manifest,
+            });
+        }
+    }
+}
+
 pub fn validate_member(deck: &Deck) -> Result<(), AssetError> {
     let workspace_root = crate::workspace::root_for_deck(&deck.path)
         .ok_or_else(|| AssetError::NotWorkspaceMember(deck.path.clone()))?;
@@ -1944,6 +1986,58 @@ mod tests {
         assert!(
             inserted.starts_with("\r\n<!-- diagram:") && inserted.ends_with("-->\r\n"),
             "a CRLF deck without a final newline must not gain LF endings: {inserted:?}"
+        );
+    }
+
+    /// The load-time resolution law: a freshly frozen deck loads with its
+    /// stamp RESOLVED (both objects present, manifest naming the raster),
+    /// and a manifest that stops naming the raster unresolves the stamp so
+    /// review falls back to the fence, never serves a mismatched pair.
+    #[test]
+    fn a_frozen_deck_loads_with_resolved_diagrams_and_a_mismatch_unresolves() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let path = diagram_deck(
+            directory.path(),
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+        );
+        let svg = fixture_svg();
+        let cli = fake_sekien(
+            directory.path(),
+            &format!("<!-- {{\"id\": 1}} -->\n{svg}"),
+            "",
+        );
+        freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(1, deck.cards[0].resolved_diagrams.len());
+        let resolved = &deck.cards[0].resolved_diagrams[0];
+        assert!(
+            resolved.png.is_file(),
+            "the resolved path points at the raster"
+        );
+        assert_eq!(resolved.manifest.png, deck.cards[0].diagrams[0].asset);
+        assert_eq!(
+            (
+                resolved.manifest.logical_width * 2,
+                resolved.manifest.logical_height * 2
+            ),
+            (
+                resolved.manifest.raster_width,
+                resolved.manifest.raster_height
+            ),
+        );
+
+        let owned = directory.path().join("assets/deck-deck1");
+        let manifest_path = owned.join(&deck.cards[0].diagrams[0].manifest);
+        let mut manifest: crate::diagram::DiagramManifest =
+            serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+        manifest.png = format!("sha256-{}.png", "b".repeat(64));
+        std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert!(
+            deck.cards[0].resolved_diagrams.is_empty(),
+            "a manifest naming a different raster must not resolve"
         );
     }
 

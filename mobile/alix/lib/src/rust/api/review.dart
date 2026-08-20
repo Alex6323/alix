@@ -414,6 +414,12 @@ sealed class NoteUnit with _$NoteUnit {
     required List<InlineRun> runs,
   }) = NoteUnit_Sentence;
   const factory NoteUnit.code({required List<String> lines}) = NoteUnit_Code;
+  const factory NoteUnit.diagram({
+    required String src,
+    required int width,
+    required int height,
+    required String alt,
+  }) = NoteUnit_Diagram;
   const factory NoteUnit.checklist({required List<ChecklistItem> items}) =
       NoteUnit_Checklist;
 }

@@ -2386,3 +2386,60 @@ fn an_unparseable_config_keeps_the_current_dir() {
     let dir = effective_decks_dir(false, Some(&cfg), current.path());
     assert_eq!(current.path(), dir);
 }
+
+/// The reachability law (ruling 3's serving half): the diagram unit's
+/// /img/<key> URL and the session image allowlist must agree on the key,
+/// or the PNG 404s: nothing else registers frozen rasters.
+#[test]
+fn a_frozen_diagram_is_reachable_through_the_image_allowlist() {
+    let _lock = crate::testutil::exec_lock();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+    std::fs::create_dir(dir.path().join("decks")).unwrap();
+    let deck_path = dir.path().join("decks/d.md");
+    std::fs::write(
+        &deck_path,
+        "---\nformat-version: 1\nid: \"deck-diagram1\"\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+    )
+    .unwrap();
+    let svg = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/labeled-sekien.svg"),
+    )
+    .unwrap();
+    let out = dir.path().join("sekien-out");
+    std::fs::write(&out, format!("<!-- {{\"id\": 1}} -->\n{svg}")).unwrap();
+    let cli = crate::testutil::fake_cli(
+        dir.path(),
+        &format!("cat >/dev/null; cat {}; exit 0", out.display()),
+    );
+    crate::assets::freeze_member_with(&deck_path, Some(cli.to_str().unwrap())).unwrap();
+    let deck = crate::deck::Deck::load(&deck_path).unwrap();
+    let card = &deck.cards[0];
+    assert_eq!(1, card.resolved_diagrams.len(), "precondition: resolved");
+
+    let images = super::catalog::collect_images(&deck.cards);
+    let png = &card.resolved_diagrams[0].png;
+    let key = super::catalog::img_key(png);
+    assert_eq!(
+        Some(png),
+        images.get(&key),
+        "the allowlist carries the raster under its key"
+    );
+
+    let view =
+        crate::review::CardView::project(card, &mut crate::inline::DisplayProjector::default());
+    let dto = super::dto::card_dto(view, None);
+    let unit = dto
+        .back_units
+        .iter()
+        .find_map(|unit| match unit {
+            crate::render::NoteUnit::Diagram { src, .. } => Some(src.clone()),
+            _ => None,
+        })
+        .expect("the fence slot holds the diagram unit");
+    assert_eq!(
+        format!("/img/{key}"),
+        unit,
+        "the served URL and the allowlist agree on the key"
+    );
+}

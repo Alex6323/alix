@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Mermaid diagrams render into decks: a ```` ```mermaid ```` fence in a
+  workspace member freezes at `alix deck init` time into a deck-owned PNG
+  plus a label manifest (rendering shells out to the optional `sekien`
+  CLI; without it the deck still initializes and warns). At review the
+  rendered diagram appears in the fence's own position on every client,
+  and an unfrozen or stale fence falls back to its source in place. The
+  diagram's authored theme (mermaid init directives and frontmatter,
+  including the dark themes) decides its baked colors and compositing
+  ground. `alix doctor` diagnoses missing, stale, orphaned, or corrupt
+  frozen diagrams, and `alix doctor --repair-diagrams` removes orphaned
+  stamps and re-freezes what needs it.
+
 - Image regions (ADR 0034): a deck can hide a region of a picture and ask
   what is under it. `blank:`, `cover:`, and `crop:` directive comments carry
   a closed named-field grammar with per-region minted stamps; a stamped

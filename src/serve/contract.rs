@@ -2036,3 +2036,68 @@ fn remotegeneratedto_error_wire_shape() {
         }),
     );
 }
+
+/// The rendered-diagram unit occupies the fence's slot in the unit stream
+/// (maintainer ruling, 2026-08-20): src is the opaque /img/<key> URL,
+/// width/height are LOGICAL pixels (the raster is 2x), alt carries the
+/// fence source while nothing is masked. The server resolves availability:
+/// an unfrozen or stale fence arrives as a plain code unit instead, in the
+/// same slot.
+#[test]
+fn carddto_diagram_wire_shape() {
+    let view = crate::review::CardView::project(
+        &diagram_card(),
+        &mut crate::inline::DisplayProjector::default(),
+    );
+    let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
+    let NoteUnit::Diagram { src, .. } = &dto.back_units[0] else {
+        panic!(
+            "the fence slot holds the diagram unit: {:?}",
+            dto.back_units
+        );
+    };
+    let src = src.clone();
+    assert!(src.starts_with("/img/"), "{src}");
+    pin(
+        "CardDto.diagram",
+        &dto.back_units,
+        serde_json::json!([
+            {
+                "kind": "diagram",
+                "src": src,
+                "width": 188,
+                "height": 114,
+                "alt": "flowchart LR\n A-->B"
+            }
+        ]),
+    );
+}
+
+fn diagram_card() -> crate::card::Card {
+    let source = "flowchart LR\n A-->B";
+    let mut card = crate::card::Card::plain(
+        std::sync::Arc::from("deck.md"),
+        "q".to_string(),
+        vec![
+            "```mermaid".to_string(),
+            source.split('\n').next().unwrap().to_string(),
+            source.split('\n').nth(1).unwrap().to_string(),
+            "```".to_string(),
+        ],
+        None,
+        1,
+    );
+    card.resolved_diagrams.push(crate::card::ResolvedDiagram {
+        fingerprint: crate::diagram::fingerprint(source),
+        png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+        manifest: crate::diagram::DiagramManifest {
+            png: "sha256-aa.png".to_string(),
+            raster_width: 376,
+            raster_height: 228,
+            logical_width: 188,
+            logical_height: 114,
+            labels: Vec::new(),
+        },
+    });
+    card
+}

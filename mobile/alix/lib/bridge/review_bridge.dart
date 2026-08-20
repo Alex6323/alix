@@ -254,6 +254,8 @@ ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
       runs: inlineRunsFromBridge(runs),
     ),
     bridge.NoteUnit_Code(:final lines) => ReviewCodeModel(lines),
+    bridge.NoteUnit_Diagram(:final src, :final width, :final height, :final alt) =>
+      ReviewDiagramModel(src: src, width: width, height: height, alt: alt),
     bridge.NoteUnit_Checklist(:final items) => ReviewChecklistModel([
       for (final item in items)
         ReviewChecklistItemModel(

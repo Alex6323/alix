@@ -368,6 +368,82 @@ test("long answer variants start at the first line and show scroll hints", async
   }
 });
 
+test("line reveal replaces a complete Mermaid fence with its rendered diagram", async ({ page }) => {
+  const back = ["```mermaid", "flowchart LR", " A-->B", "```"];
+  const original = longContentState({ answerLines: back });
+  const state = {
+    ...original,
+    mode: "line",
+    card: {
+      ...original.card,
+      back_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "flowchart LR\n A-->B",
+      }],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  // The fabricated key must serve bytes once the swap works, or the img's
+  // fetch 404s and trips the no-console-errors harness invariant.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABXvMqOgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await page.route("**/img/0123456789abcdef", (route) =>
+    route.fulfill({ body: png, contentType: "image/png" }),
+  );
+  await openApp(page);
+
+  const reveal = page.getByRole("button", { name: /^Reveal/ });
+  await reveal.click();
+  await reveal.click();
+  await reveal.click();
+  await expect(page.locator(".region.a img.diagram")).toHaveCount(0);
+
+  await reveal.click();
+  const diagram = page.locator(".region.a img.diagram");
+  await expect(diagram).toHaveAttribute("src", "/img/0123456789abcdef");
+  await expect(diagram).toHaveAttribute("alt", "flowchart LR\n A-->B");
+});
+
+test("explain reveal renders the resolved diagram in the authored answer", async ({ page }) => {
+  const back = ["```mermaid", "flowchart LR", " A-->B", "```"];
+  const original = longContentState({ answerLines: back });
+  const state = {
+    ...original,
+    mode: "explain",
+    keypoints: ["A reaches B"],
+    keypoint_runs: [[{ text: "A reaches B" }]],
+    card: {
+      ...original.card,
+      back_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "flowchart LR\n A-->B",
+      }],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABXvMqOgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await page.route("**/img/0123456789abcdef", (route) =>
+    route.fulfill({ body: png, contentType: "image/png" }),
+  );
+  await openApp(page);
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  const diagram = page.locator(".region.a img.diagram");
+  await expect(diagram).toHaveAttribute("src", "/img/0123456789abcdef");
+  await expect(diagram).toHaveAttribute("alt", "flowchart LR\n A-->B");
+});
+
 // The empty "Nothing due." summary (nothing reviewed or introduced) shows one
 // quiet line saying when the next scheduled card comes due. The server-side
 // production of `next_due_ms` on the done payload is covered by tests/api.rs;

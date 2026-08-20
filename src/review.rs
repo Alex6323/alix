@@ -171,14 +171,15 @@ impl From<&Card> for CardView {
 impl CardView {
     pub fn project(card: &Card, projector: &mut DisplayProjector) -> Self {
         let (front, front_runs) = project_block(&card.front, projector);
-        let front_units = render::front_units_with(&card.front, projector);
+        let front_units = render::front_units_with(&card.front, projector, &card.resolved_diagrams);
         let context_runs = card
             .context
             .iter()
             .map(|line| projector.project_context(line))
             .collect();
         let (back, back_runs) = project_lines(card.back_for_display(), projector);
-        let back_units = render::answer_units_with(card.back_for_display(), projector);
+        let back_units =
+            render::answer_units_with(card.back_for_display(), projector, &card.resolved_diagrams);
         CardView {
             front,
             front_runs,

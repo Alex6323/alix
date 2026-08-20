@@ -282,6 +282,15 @@ function renderLines(card) {
 function appendBackLines(parent, card, shown, tag, cls) {
   const lines = card.back || [];
   const runs = card.back_runs || [];
+  // Fence-shaped units (code or a rendered diagram) arrive in the same
+  // document order as the raw fences, so the nth fence consumes the nth
+  // such unit: a resolved diagram replaces its fence in place, and only
+  // once the fence is fully revealed (line mode shows partial fences as
+  // code until their closing marker is shown).
+  const fenceUnits = (card.back_units || []).filter(
+    (u) => u.kind === "code" || u.kind === "diagram"
+  );
+  let fenceIndex = 0;
   let i = 0;
   while (i < shown) {
     const fence = lines[i].trim().match(/^(```|~~~)/);
@@ -293,7 +302,17 @@ function appendBackLines(parent, card, shown, tag, cls) {
         code.push(lines[i]);
         i++;
       }
-      if (i < shown) i++;
+      const closed = i < shown;
+      if (closed) i++;
+      const unit = fenceUnits[fenceIndex];
+      fenceIndex++;
+      if (closed && unit && unit.kind === "diagram") {
+        const img = el("img", "diagram");
+        img.src = unit.src; img.alt = unit.alt || "";
+        img.width = unit.width; img.height = unit.height;
+        parent.appendChild(img);
+        continue;
+      }
       const pre = el("pre", "why-code");
       pre.appendChild(el("code", null, code.join("\n")));
       parent.appendChild(pre);
@@ -349,6 +368,12 @@ function renderWhy(parent, card) {
       const pre = el("pre", "why-code");
       pre.appendChild(el("code", null, (u.lines || []).join("\n")));
       txt.appendChild(pre);
+    }
+    else if (u.kind === "diagram") {
+      const img = el("img", "diagram");
+      img.src = u.src; img.alt = u.alt || "";
+      img.width = u.width; img.height = u.height;
+      txt.appendChild(img);
     }
     else if (u.kind === "checklist") appendChecklist(txt, u.items);
   }

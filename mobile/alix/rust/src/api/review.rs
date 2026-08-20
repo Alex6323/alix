@@ -65,6 +65,7 @@ pub struct _ChecklistItem {
 pub enum _NoteUnit {
     Sentence { text: String, runs: Vec<InlineRun> },
     Code { lines: Vec<String> },
+    Diagram { src: String, width: u32, height: u32, alt: String },
     Checklist { items: Vec<ChecklistItem> },
 }
 
@@ -929,7 +930,7 @@ mod tests {
                 NoteUnit::Checklist { items } => {
                     items.iter().flat_map(|item| item.runs.iter()).collect()
                 }
-                NoteUnit::Code { .. } => Vec::new(),
+                NoteUnit::Code { .. } | NoteUnit::Diagram { .. } => Vec::new(),
             })
             .collect();
         assert!(note_runs.iter().any(|run| run.text == "E = mc^2"));

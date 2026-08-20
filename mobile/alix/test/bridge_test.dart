@@ -159,6 +159,7 @@ void main() {
         case NoteUnit_Checklist(:final items):
           noteRuns.addAll(items.expand((item) => item.runs));
         case NoteUnit_Code():
+        case NoteUnit_Diagram():
           break;
       }
     }

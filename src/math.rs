@@ -225,7 +225,7 @@ pub fn diagnostics(cards: &[Card], augment: Option<&AugmentCache>) -> Vec<MathDi
                         );
                     }
                 }
-                NoteUnit::Code { .. } => {}
+                NoteUnit::Code { .. } | NoteUnit::Diagram { .. } => {}
             }
         }
         for distractor in &card.authored_distractors {

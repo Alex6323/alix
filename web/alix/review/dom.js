@@ -105,6 +105,11 @@ export function frontEl(text, runs, units) {
         if (unit.runs) appendRuns(line, unit.runs);
         else line.textContent = unit.text || "";
         wrap.appendChild(line);
+      } else if (unit.kind === "diagram") {
+        const img = el("img", "diagram");
+        img.src = unit.src; img.alt = unit.alt || "";
+        img.width = unit.width; img.height = unit.height;
+        wrap.appendChild(img);
       } else if (unit.kind === "code") {
         const pre = el("pre");
         pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
@@ -145,7 +150,15 @@ export function frontEl(text, runs, units) {
   return wrap;
 }
 
-export function appendReveal(parent, lines, runs, isList) {
+export function appendReveal(parent, lines, runs, isList, units) {
+  // Fence-shaped units (code or a rendered diagram) arrive in the same
+  // document order as the raw fences: the nth fence consumes the nth unit,
+  // and a resolved diagram replaces its fence only once the closing marker
+  // is within the revealed lines; a partial fence stays code.
+  const fenceUnits = (units || []).filter(
+    (u) => u.kind === "code" || u.kind === "diagram"
+  );
+  let fenceIndex = 0;
   let index = 0;
   while (index < lines.length) {
     const fence = lines[index].trim().match(/^(```|~~~)/);
@@ -157,7 +170,17 @@ export function appendReveal(parent, lines, runs, isList) {
         code.push(lines[index]);
         index++;
       }
-      if (index < lines.length) index++;
+      const closed = index < lines.length;
+      if (closed) index++;
+      const unit = fenceUnits[fenceIndex];
+      fenceIndex++;
+      if (closed && unit && unit.kind === "diagram") {
+        const img = el("img", "diagram");
+        img.src = unit.src; img.alt = unit.alt || "";
+        img.width = unit.width; img.height = unit.height;
+        parent.appendChild(img);
+        continue;
+      }
       const pre = el("pre", "code-block");
       pre.textContent = code.join("\n");
       parent.appendChild(pre);
@@ -214,6 +237,11 @@ export function renderNote(parent, units) {
       if (unit.runs) appendRuns(paragraph, unit.runs);
       else paragraph.textContent = unit.text;
       note.appendChild(paragraph);
+    } else if (unit.kind === "diagram") {
+      const img = el("img", "diagram");
+      img.src = unit.src; img.alt = unit.alt || "";
+      img.width = unit.width; img.height = unit.height;
+      note.appendChild(img);
     } else if (unit.kind === "code") {
       const pre = el("pre");
       pre.appendChild(el("code", null, unit.lines.join("\n")));

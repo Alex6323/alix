@@ -1188,6 +1188,29 @@ pub(super) fn deck_drawer_dto(
     }
 }
 
+/// A Diagram unit's lib-side `src` is an absolute file path (the mobile
+/// projection reads it directly); over HTTP it becomes the same opaque
+/// `/img/<key>` URL every card image uses.
+fn web_units(units: Vec<crate::render::NoteUnit>) -> Vec<crate::render::NoteUnit> {
+    units
+        .into_iter()
+        .map(|unit| match unit {
+            crate::render::NoteUnit::Diagram {
+                src,
+                width,
+                height,
+                alt,
+            } => crate::render::NoteUnit::Diagram {
+                src: format!("/img/{}", img_key(Path::new(&src))),
+                width,
+                height,
+                alt,
+            },
+            other => other,
+        })
+        .collect()
+}
+
 pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
     let img_dto = |i: &review::ImageView| ImageDto {
         src: format!("/img/{}", img_key(Path::new(&i.src))),
@@ -1201,15 +1224,15 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
         images_back: view.images_back.iter().map(&img_dto).collect(),
         front: view.front,
         front_runs: view.front_runs,
-        front_units: view.front_units,
+        front_units: view.front_units.map(web_units),
         context: view.context,
         context_leads: view.context_leads,
         context_runs: view.context_runs,
         back: view.back,
         back_runs: view.back_runs,
-        back_units: view.back_units,
+        back_units: web_units(view.back_units),
         reshaped: view.reshaped,
-        note: view.note,
+        note: web_units(view.note),
         citations: view
             .citations
             .into_iter()
