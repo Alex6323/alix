@@ -30,6 +30,9 @@ taking precedence. Each links to the chapter that explains it in full.
 | `trace` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
 | `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen; a range-less path or URL cites the whole source): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
+| `blank` | card | Masks and asks: a region of the preceding image (`rect x= y= width= height= hidden="..."`, optional `[group]`) or a stored text blank in the answer block (`span hidden="..."`, optional `occurrence=`/`boundary=`). Carries a minted `b:` stamp (and `position:` anchor on a span), maintained by alix like ids. [→ ch 6](06-cloze-direction-images.md) |
+| `cover` | card | Masks without ever asking, for legends and labels that give answers away: `rect` on the preceding image or `span` in the answer block. No group, no stamp, no card. [→ ch 6](06-cloze-direction-images.md) |
+| `crop` | card | A viewport onto the preceding image (`rect x= y= width= height=`, at most one per image); region coordinates stay in full-source space. [→ ch 6](06-cloze-direction-images.md) |
 
 Media (images, and later audio/video) isn't a directive: write a standard
 Markdown `![alt](src)` where you want one to appear, and its position decides

@@ -247,6 +247,12 @@ notes it.
   matching excerpts remain untouched and make the command fail, because whether
   such a card still teaches the truth is a reader's call. Deck and card IDs are
   preserved.
+- `alix doctor [dir-or-deck] --repair-positions`: after you review the
+  reported [span anchor divergences](06-cloze-direction-images.md), rewrite
+  each diverged `position:` anchor to where its span binds today (the
+  keep-what-you-authored resolution). To keep an anchor's old target
+  instead, set `occurrence=` yourself; doctor never retargets a span on its
+  own.
 - Folder and workspace runs also count accumulated `.bak` backup files
   (overwrite leftovers) with their total size, naming both remedies:
   `alix deck restore <deck>` swaps one back,

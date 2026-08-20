@@ -151,6 +151,115 @@ the web app and in any Markdown viewer that opens the file directly (GitHub,
 Obsidian, a plain preview pane). `alix doctor` warns about an image file it
 can't find, but doesn't fail on it.
 
+## Image occlusion: `blank:`, `cover:` & `crop:`
+
+A card can hide a region of its picture and ask what is under it. A region is
+a directive comment on its own line beneath the image it marks, so any other
+Markdown viewer still shows the plain picture:
+
+```
+## Name the quadrant colors
+![four quadrants](quadrants.png)
+<!-- blank: rect x=10% y=10% width=35% height=35% hidden="red" -->
+<!-- blank: rect x=55% y=10% width=35% height=35% hidden="green" -->
+<!-- cover: rect x=10% y=60% width=35% height=35% -->
+```
+
+Each directive names its shape first: `rect` is the shape word, and the only
+image shape today (`span`, below, is the text shape). Three keywords, one
+concept each:
+
+- **`blank:`** masks a region and asks about it, the same idea as a text
+  `\blank{...}` in picture form. `hidden="..."` is the expected answer.
+- **`cover:`** masks a region and never asks: for a legend or label that would
+  give an answer away. It creates no card; a `hidden=` on it is kept but
+  inert, so switching a region between `blank:` and `cover:` never loses
+  your answer text.
+- **`crop:`** shows only a viewport of the source, so one large picture can
+  serve many cards without being cut into files:
+  `<!-- crop: rect x=50% y=0% width=50% height=100% -->` shows the right
+  half. At most one per image, and region coordinates stay in the *full
+  source's* space, never crop space, so adjusting the crop moves no region.
+
+Fields are named, so their order never matters. Bare numbers are pixels in the
+source image's own coordinates (what a paint tool hands you); a `%` suffix on
+a number makes it a percentage of the full source. Every region and the crop
+on one image must agree on the unit. A region may reach past the image's edge
+and is clipped there when drawn; only a `blank:` whose region contains nothing
+visible at all is refused, because a question about nothing visible is broken
+(percentage geometry is checked when the deck loads, pixel geometry at render
+time, since only the app showing the file knows its size).
+
+**A block with a `blank:` is a template, exactly like a cloze block**: it
+produces one card per blank and nothing else, and each sibling card masks the
+others' regions so no answer leaks. In review the roles look different on
+purpose: the region you are asked about shows the `⍰` blank marker, a sibling
+card's masked region shows `⬚`, and a cover is a plain fill with no marker,
+telling you it is never a question. Masks lift on reveal exactly like text
+blanks; a cover keeps hiding on region and cloze cards (its content could give
+a sibling's answer away), and reveals with the answer on an ordinary card that
+poses no such sibling questions. Removing the last `blank:` turns the block
+back into its plain card, review history intact. `cover:` or `crop:` alone
+change only the display; the ordinary card remains.
+
+Blanks that belong together take a bracketed group name, the same idea as
+cloze groups and with the same warning, a regrouped card starts its history
+over:
+
+```
+<!-- blank: rect x=10 y=40 width=80 height=30 hidden="mitochondrion" [organelles] -->
+<!-- blank: rect x=10 y=90 width=80 height=30 hidden="nucleus" [organelles] -->
+```
+
+When you open a deck for review, alix stamps each region with a short
+`b:<tag>` mark, exactly like the card ids from
+[the deck format](03-the-deck-format.md): minted once, never hand-written,
+and what keeps a region's review history attached while you nudge its
+coordinates or reword its answer.
+
+## Stored text blanks: `blank: span`
+
+The same directive blanks *text* without touching the sentence. Where an
+inline `\blank{...}` rewrites the answer line, a `span` names its target from
+a comment below the block, so the text stays clean for every other reader:
+
+```
+## The powerhouse line
+The mitochondrion is the powerhouse of the cell.
+<!-- blank: span hidden="mitochondrion" -->
+```
+
+`hidden="..."` is both the anchor and the answer: alix finds that text in the
+block and masks it. `cover: span hidden="..."` hides its text the same way
+without ever asking. Two optional keys refine the match:
+
+- **`occurrence=N`** (default 1): mask the Nth occurrence of the hidden text,
+  counted over the block in order. Fewer than N occurrences is an error;
+  nothing silently moves.
+- **`boundary=word|char`** (default `word`): `word` requires the match to
+  stand alone (punctuation next to it is fine); `char` matches anywhere, for
+  sub-word blanks like `hidden="mito"`.
+
+On first review alix also mints a `position:<n>` anchor into the directive,
+the point where the span bound (counted in characters as you see them, so the
+number survives any script). Review never reads it; it is the drift signal.
+When you later edit the block and the hidden text moves, `alix doctor`
+reports the divergence with both readings and the exact edit for each: keep
+the text you authored (run `alix doctor <deck> --repair-positions` and the
+anchor is rewritten to where the span binds today), or keep the old target by
+setting `occurrence=` yourself. Doctor never rewrites a diverged span on its
+own.
+
+A span may sit inside a formula. Its hidden text must then be a complete
+structural unit of the math: no half of a `\command`, no split `{...}` group,
+no structural characters inside the match (`&` and `\\`, LaTeX's column and
+row separators), and alix proves the formula still renders with the span
+masked; a violation is a loud error naming the offending piece of the
+formula when the deck loads. A masked formula draws the blank as a boxed
+hole (the same form cloze holes in math already use), and a span whose
+answer needs LaTeX to type gets the same doctor warning a cloze hole gets
+when the block pins `input: type`.
+
 ## Source citations
 
 A plain fact card can show *where its answer comes from*. Declare the deck's source

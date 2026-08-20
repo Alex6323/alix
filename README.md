@@ -109,6 +109,9 @@ Each links to its chapter in the manual:
 
 - **Reveal methods and session depths** (Recognize / Recall / Reconstruct),
   picked per session. → [Reveal & session depths](docs/book/src/04-review-modes.md)
+- **Image occlusion and stored text blanks**: mask a region of a picture or a
+  span of text from a directive comment and be asked what's under it.
+  → [Cloze, direction & images](docs/book/src/06-cloze-direction-images.md)
 - **FSRS scheduling**, with card retirement and per-deck completion states.
   → [Scheduling](docs/book/src/05-scheduling.md)
 - **A tutor** you can ask "why is that the answer?" without leaving review.
