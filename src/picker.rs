@@ -453,6 +453,7 @@ mod tests {
             badge_depth: None,
             badge_dotted: false,
             new_cards: false,
+            crammable: false,
             progress_error: false,
         }
     }

@@ -224,6 +224,13 @@ export function createPicker({
     const DEPTH_FIELD = { recognize: "reviewable_recognize", recall: "reviewable_recall", reconstruct: "reviewable_reconstruct" };
     const canStartAt = (it, gated, depth) =>
       it.state !== "error" && (it[DEPTH_FIELD[depth]] || !gated);
+    // The depth menu opens for a CRAM even when no depth is due: cram serves
+    // cards that aren't due, and a deck whose every card sits in the
+    // introduction cooldown is exactly when it is wanted. The menu itself
+    // then offers only the cram tick-box until it is on (each depth chip
+    // keeps its own honest gate), and the plain Learn button stays dead.
+    const canOpenDepths = (it, gated) =>
+      canStart(it, gated) || (it.state !== "error" && !!it.crammable);
     // Recognize is pick-only: it can only run on a deck with cached choice
     // distractors (`can_recognize`) — an un-augmented deck greys it out even under
     // cram (which re-serves recognized cards). Recall/Reconstruct are never gated
@@ -582,7 +589,7 @@ export function createPicker({
           const lv = el("button", "chip split", "Depth…");
           lv.title = "choose a depth";
           lv.appendChild(el("span", "k", label(keys.depth)));
-          lv.disabled = !canStart(it, f._gated);
+          lv.disabled = !canOpenDepths(it, f._gated);
           // Keep focus on the deck row (see the depth menu above): the click
           // rebuilds the footer, which would otherwise strand focus on <body>.
           lv.addEventListener("mousedown", e => e.preventDefault());
@@ -931,7 +938,7 @@ export function createPicker({
         else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browse(cur._item, cur._wsName); }
         else if (e.key === "a" && cur && (cur._item || cur._open)) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item ? cur._item.name : cur._open.name); }
         else if (e.key === "d" && cur && cur._open && cur._open.state === "workspace") { e.preventDefault(); deadlinePromptOpen = true; syncPrimary(); }
-        else if (hit(e, keys.depth) && hasDepthSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; syncPrimary(); }
+        else if (hit(e, keys.depth) && hasDepthSplit(cur) && canOpenDepths(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; syncPrimary(); }
         else if (e.key === "r") { e.preventDefault(); refresh(); } // re-scan the decks (also the ⟳ nav button)
         else if (opts.allowMastered && hit(e, keys.mastered)) { e.preventDefault(); renderMastered(); }
         else if (e.key === "x" && cur && cur._item && cur._item.examable) {

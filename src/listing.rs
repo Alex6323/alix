@@ -417,6 +417,7 @@ pub struct DeckStatus {
     pub badge_depth: Option<Depth>,
     pub badge_dotted: bool,
     pub new_cards: bool,
+    pub crammable: bool,
     pub progress_error: bool,
 }
 
@@ -450,6 +451,9 @@ pub fn deck_status(
         .iter()
         .filter(|card| session::is_retired(card, store, review.retire_after_days))
         .count();
+    // The selected session appends the deck's personal cards, so read the
+    // sidecar once and share it between recall due-ness and crammability.
+    let personal = crate::personal::read(&deck.path, &deck.subject).cards;
     // "mastered" is reserved for passing the exam; a deck without exam
     // grounding that's merely fully drilled stays "done".
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
@@ -500,7 +504,7 @@ pub fn deck_status(
         now,
         review.retire_after_days,
     ) || session::has_reviewable(
-        &crate::personal::read(&deck.path, &deck.subject).cards,
+        &personal,
         store,
         &scheduler,
         Depth::Recall,
@@ -549,6 +553,12 @@ pub fn deck_status(
         badge_depth: badge_depth.filter(|_| !progress_error),
         badge_dotted: badge_dotted && !progress_error,
         new_cards: new_cards && !progress_error,
+        crammable: deck
+            .cards
+            .iter()
+            .chain(personal.iter())
+            .any(|card| !session::is_retired(card, store, review.retire_after_days))
+            && !progress_error,
         progress_error,
     }
 }
@@ -827,6 +837,113 @@ mod tests {
         assert!(b.progress_error);
     }
 
+    /// Cram serves cards regardless of due-ness, so a deck settled or in
+    /// cooldown at every depth stays crammable; only having no servable card
+    /// left (every card retired, or none at all) ends it.
+    #[test]
+    fn crammable_tracks_servable_cards_not_due_ness() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let review = ReviewConfig::default();
+        let now = session::now_ms();
+        let card_id = deck.cards[0].id().unwrap();
+
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
+        let status = deck_status(&deck, &store, &no_augment(), None, false, review);
+        assert!(status.crammable, "an untouched deck can be crammed");
+
+        let entry = store.get_or_insert(&card_id);
+        entry.recognize = Some(graduated_not_due(now));
+        entry.recall = Some(graduated_not_due(now));
+        entry.reconstruct = Some(graduated_not_due(now));
+        let status = deck_status(&deck, &store, &no_augment(), None, false, review);
+        assert!(!status.reviewable, "precondition: nothing is due");
+        assert!(
+            status.crammable,
+            "nothing due is exactly when cram is the point"
+        );
+
+        let cap = review.retire_after_days.expect("a default cap");
+        let entry = store.get_or_insert(&card_id);
+        if let Some(recall) = entry.recall.as_mut() {
+            recall.scheduled_days = cap;
+        }
+        let status = deck_status(&deck, &store, &no_augment(), None, false, review);
+        assert!(
+            !status.crammable,
+            "a fully retired deck has no card cram could serve"
+        );
+    }
+
+    /// The selected session appends the deck's personal sidecar cards, so a
+    /// capability computed from authored cards alone lies on a mature deck
+    /// whose authored cards have all retired.
+    #[test]
+    fn crammable_counts_a_personal_card_when_authored_cards_are_retired() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n## authored <!-- id: card-authored -->\nanswer\n",
+        )
+        .unwrap();
+        crate::personal::append_cards(
+            &deck_path,
+            "deck-rust",
+            "## personal <!-- id: card-personal -->\nanswer\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let review = ReviewConfig::default();
+        let now = session::now_ms();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
+
+        let cap = review.retire_after_days.expect("a default cap");
+        store.get_or_insert("card-authored").recall = Some(crate::store::FsrsState {
+            state: 2,
+            scheduled_days: cap,
+            due_ms: now + 30 * 86_400_000,
+            ..Default::default()
+        });
+        store.get_or_insert("card-personal").introduced_ms = Some(now);
+
+        let personal = crate::personal::read(&deck_path, &deck.subject).cards;
+        let cram = session::Session::new(
+            personal,
+            &mut store,
+            Box::new(crate::scheduler::Fsrs::new(
+                review.retention,
+                review.introduction_cooldown_ms,
+            )),
+            session::SessionOptions {
+                cram: true,
+                retire_after_days: review.retire_after_days,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(
+            1, cram.initial_size,
+            "precondition: cram really can serve it"
+        );
+
+        let status = deck_status(&deck, &store, &no_augment(), None, false, review);
+        assert!(
+            !status.reviewable,
+            "precondition: the personal card is cooling"
+        );
+        assert!(
+            status.crammable,
+            "the selected session appends the non-retired personal card, so a cram can serve it"
+        );
+    }
+
     #[test]
     fn a_deck_status_over_an_unreadable_document_voids_every_progress_claim() {
         let dir = tempfile::tempdir().unwrap();
@@ -861,6 +978,10 @@ mod tests {
         assert!(!status.badge_dotted);
         assert!(!status.mastered);
         assert!(!status.examable);
+        assert!(
+            !status.crammable,
+            "an unreadable document must not invite a cram either"
+        );
     }
 
     #[test]

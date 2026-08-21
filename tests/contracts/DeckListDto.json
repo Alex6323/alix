@@ -5,6 +5,7 @@
       "badge_depth": null,
       "badge_dotted": false,
       "can_recognize": true,
+      "crammable": true,
       "deadline": null,
       "description": null,
       "examable": false,
@@ -37,6 +38,7 @@
       "badge_depth": "recall",
       "badge_dotted": true,
       "can_recognize": false,
+      "crammable": true,
       "deadline": {
         "date": "2026-09-01",
         "days_left": 23,
@@ -60,6 +62,7 @@
           "badge_depth": null,
           "badge_dotted": false,
           "can_recognize": true,
+          "crammable": true,
           "examable": true,
           "has_exam": true,
           "has_topology": false,

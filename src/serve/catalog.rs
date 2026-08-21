@@ -194,6 +194,7 @@ pub(super) fn deck_item_dto(
                 badge_depth: s.badge_depth.map(depth_name),
                 badge_dotted: s.badge_dotted,
                 new_cards: s.new_cards,
+                crammable: s.crammable,
                 last_depth,
                 deadline: None, // a deadline is a workspace-level setting, not a deck's
             }
@@ -228,6 +229,7 @@ pub(super) fn deck_item_dto(
             badge_depth: None,
             badge_dotted: false,
             new_cards: false,
+            crammable: false,
             last_depth: depth_name(Depth::default()),
             deadline: None,
         },
@@ -395,6 +397,7 @@ pub(super) fn workspace_members(
                     badge_depth: s.badge_depth.map(depth_name),
                     badge_dotted: s.badge_dotted,
                     new_cards: s.new_cards,
+                    crammable: s.crammable,
                     last_depth,
                 },
                 // Mirrors deck_item_dto's failed-load fallback: still
@@ -422,6 +425,7 @@ pub(super) fn workspace_members(
                     badge_depth: None,
                     badge_dotted: false,
                     new_cards: false,
+                    crammable: false,
                     last_depth,
                 },
             }
@@ -546,6 +550,7 @@ pub(super) fn deck_catalog(
                 badge_depth: None,
                 badge_dotted: false,
                 new_cards: false,
+                crammable: false,
                 last_depth: depth_name(Depth::default()),
                 deadline,
             };

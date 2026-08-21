@@ -327,6 +327,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A deck whose cards are all inside the introduction cooldown can be
+  crammed again from the **web** picker: the depth control stayed
+  disabled once nothing was due, so the deck could not be reopened at
+  all until the cooldown passed. The control now opens whenever a cram
+  is possible (counting the deck's personal cards, which a session
+  serves alongside the authored ones) and offers the cram tick-box;
+  each depth still gates on its own due-ness unless cram is on, and the
+  plain Learn button is unchanged. The mobile client has no cram
+  control and is unaffected.
+
 - Resetting one workspace deck's progress now reaches the picker
   immediately even when a workspace-wide augment view had been opened in
   the same run: the listing previously kept serving the pre-reset

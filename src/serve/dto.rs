@@ -184,6 +184,7 @@ pub(super) struct DeckItemDto {
     pub(super) badge_depth: Option<&'static str>,
     pub(super) badge_dotted: bool,
     pub(super) new_cards: bool,
+    pub(super) crammable: bool,
     pub(super) last_depth: &'static str,
     pub(super) deadline: Option<DeadlineDto>,
 }
@@ -219,6 +220,7 @@ pub(super) struct MemberDto {
     pub(super) badge_depth: Option<&'static str>,
     pub(super) badge_dotted: bool,
     pub(super) new_cards: bool,
+    pub(super) crammable: bool,
     pub(super) last_depth: &'static str,
 }
 

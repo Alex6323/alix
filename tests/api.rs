@@ -918,6 +918,15 @@ fn a_reset_reaches_the_listing_past_the_retained_workspace_snapshot() {
         "started", before["state"],
         "the introduction must be visible pre-reset: {before}"
     );
+    assert_eq!(
+        false, before["reviewable"],
+        "precondition: the introduction cooldown leaves nothing due: {before}"
+    );
+    assert_eq!(
+        true, before["crammable"],
+        "a deck whose cards are all in cooldown still offers a cram, which is \
+         what keeps the picker's depth control reachable: {before}"
+    );
 
     let reset = post_json(&base, "/api/reset", r#"{"deck":"animals/one.md"}"#);
     assert_eq!(200, reset.status);
