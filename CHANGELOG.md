@@ -327,6 +327,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Resetting one workspace deck's progress now reaches the picker
+  immediately even when a workspace-wide augment view had been opened in
+  the same run: the listing previously kept serving the pre-reset
+  progress from a retained in-memory snapshot until the server
+  restarted, so a successful reset looked like it had done nothing.
+
 - A deck whose own progress document cannot be read now shows as a red
   `error` row in the picker (web, and a red `error` marker on mobile)
   with a generic explanation line pointing at `alix doctor`, makes no

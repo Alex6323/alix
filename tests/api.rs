@@ -894,6 +894,25 @@ fn a_reset_reaches_the_listing_past_the_retained_workspace_snapshot() {
     assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
     assert_eq!(200, post_gated(&base, "/api/deselect", "{}").status);
 
+    // Park the WORKSPACE AGGREGATE, not just the member document: a
+    // workspace augment open installs the aggregate and its close retains
+    // it under the progress directory, the key a member reset's document
+    // eviction cannot reach.
+    let opened = post_json(&base, "/api/augment/open", r#"{"deck":"animals"}"#);
+    assert_eq!(
+        200,
+        opened.status,
+        "body: {}",
+        String::from_utf8_lossy(&opened.body)
+    );
+    let closed = post_json(&base, "/api/augment/close", "{}");
+    assert_eq!(
+        200,
+        closed.status,
+        "body: {}",
+        String::from_utf8_lossy(&closed.body)
+    );
+
     let before = member_row(&base);
     assert_eq!(
         "started", before["state"],

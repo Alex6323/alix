@@ -1476,10 +1476,14 @@ impl StudyState {
             self.install_store(s);
             self.writes = self.writes.wrapping_add(1);
         }
-        // Projections prefer a retained snapshot over disk, so the snapshot
+        // Projections prefer a retained snapshot over disk, so every snapshot
         // covering the store this reset just rewrote must go, or listings
-        // keep serving the pre-reset records.
-        self.retained.remove(scoped.path());
+        // keep serving the pre-reset records. A member reset rewrites one
+        // document, but a parked WORKSPACE AGGREGATE covers it from the
+        // progress directory above it, so both keys are evicted.
+        let progress_root = progress_root_for_store(scoped.path());
+        self.retained
+            .retain(|path, _| path != scoped.path() && progress_root.as_deref() != Some(path));
         Transition::Done(ResetDto {
             deck: name,
             cards_cleared: cleared,
