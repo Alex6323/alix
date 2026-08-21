@@ -683,6 +683,12 @@ fn collect_labels(
     y: f32,
     labels: &mut Vec<Label>,
 ) -> Result<()> {
+    // <defs> content renders only through <use>, never in place, so its
+    // transforms (sequence actor icons keep scale()d paths there) cannot
+    // sit above a rendered label; everything rendered stays fail-closed.
+    if node.tag_name().name() == "defs" {
+        return Ok(());
+    }
     let (dx, dy) = translation(node)?;
     let (x, y) = (x + dx, y + dy);
     let class = element_class(node);
@@ -1842,7 +1848,31 @@ mod tests {
     }
 
     const LABELED_SEKIEN: &str = include_str!("../tests/fixtures/labeled-sekien.svg");
+    const SEQUENCE_SEKIEN: &str = include_str!("../tests/fixtures/sequence-sekien.svg");
+
     const SHAPES_SEKIEN: &str = include_str!("../tests/fixtures/shapes-sekien.svg");
+
+    /// Real sekien sequence output keeps its scale()d actor icons under
+    /// <defs>. Definitions do not render in place, so ignoring them cannot
+    /// discard a rendered label, while rendered geometry stays fail-closed.
+    #[test]
+    fn definition_only_transforms_do_not_fail_the_fence() {
+        let found = geometry(SEQUENCE_SEKIEN)
+            .expect("a sequence diagram must stay freezable despite scale() decorations");
+        assert!(
+            found.labels.is_empty(),
+            "sequence output carries no flowchart-shaped labels: {:?}",
+            found.labels
+        );
+        let frozen = freeze_fence(
+            SEQUENCE_SEKIEN,
+            available_family().expect("a system font"),
+            &std::collections::HashMap::new(),
+        )
+        .expect("the full freeze succeeds with an empty label map");
+        assert!(frozen.manifest.labels.is_empty());
+        assert!(frozen.manifest.raster_width > 0);
+    }
 
     /// Codex's P1: shaped nodes are ordinary flowchart syntax, and a map
     /// that silently drops them is incomplete where completeness is the
@@ -2070,6 +2100,15 @@ mod tests {
         let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g transform="scale(2)"><g class="node" id="d1-flowchart-A-0"><rect x="0" y="0" width="4" height="4"/></g></g></svg>"##;
         let message = geometry(svg).unwrap_err().to_string();
         assert!(message.contains("unsupported transform"), "{message}");
+        assert!(message.contains("scale(2)"), "{message}");
+    }
+
+    #[test]
+    fn unsupported_transform_is_ignored_only_when_its_subtree_has_no_label() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><path transform="scale(.5)" d="M0 0h1v1z"/></defs><g transform="scale(2)"><g class="node" id="d1-flowchart-A-0"><rect class="label-container" x="0" y="0" width="4" height="4"/><g class="label"><text>Hi</text></g></g></g></svg>"##;
+        let message = geometry(svg)
+            .expect_err("a transform above a recognized label must still fail closed")
+            .to_string();
         assert!(message.contains("scale(2)"), "{message}");
     }
 
