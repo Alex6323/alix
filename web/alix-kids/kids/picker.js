@@ -61,7 +61,14 @@ function boxCard(b) {
   card.type = "button";
   card.appendChild(iconEl(b, "box-icon", "box-emoji"));
   card.appendChild(el("div", "box-name", b.label || b.name || "Box"));
-  card.appendChild(el("div", "box-ready", b.reviewable ? "ready to practise" : "all caught up 🌱"));
+  // A damaged member is deliberately non-reviewable, so plain
+  // !reviewable would tell the kid a broken box is complete.
+  const damaged = !b.reviewable
+    && (b.members || []).some((m) => m.state === "error");
+  const ready = b.reviewable ? "ready to practise"
+    : damaged ? "needs a grown-up 🔧"
+    : "all caught up 🌱";
+  card.appendChild(el("div", "box-ready", ready));
   card.addEventListener("click", () => openBox(b));
   return card;
 }
@@ -140,12 +147,18 @@ function renderDeckLaunch() {
   const sub = el("div", "deck-sub");
   sub.appendChild(masteryEl(m));
   wrap.appendChild(sub);
-  wrap.appendChild(el("div", "soft", "How do you want to practise?"));
+  if (m.state === "error") {
+    // An unreadable progress document: honest and calm, no alarm, and no
+    // buttons that the server would refuse anyway.
+    wrap.appendChild(el("div", "soft", "This one needs a grown-up's help before practising. 🔧"));
+  } else {
+    wrap.appendChild(el("div", "soft", "How do you want to practise?"));
 
-  const choices = el("div", "depth-choices launch-choices");
-  choices.appendChild(depthBtn("👆 Tap the answer", "recognize", m.reviewable_recognize, m.name));
-  choices.appendChild(depthBtn("🗣️ Say it yourself", "recall", m.reviewable_recall, m.name));
-  wrap.appendChild(choices);
+    const choices = el("div", "depth-choices launch-choices");
+    choices.appendChild(depthBtn("👆 Tap the answer", "recognize", m.reviewable_recognize, m.name));
+    choices.appendChild(depthBtn("🗣️ Say it yourself", "recall", m.reviewable_recall, m.name));
+    wrap.appendChild(choices);
+  }
 
   if (selectError) wrap.appendChild(el("div", "select-error", "Hmm, that didn't start. Want to try again? 🌱"));
   stage.appendChild(wrap);
@@ -169,6 +182,7 @@ function deckRow(m) {
 // Otherwise one ⭐ per badged depth (recognize→1, recall→2, reconstruct→3);
 // a lapsed badge (`badge_dotted`) hollows out just the highest star.
 function masteryEl(m) {
+  if (m.state === "error") return el("span", "pill-new", "needs a grown-up 🔧");
   if (!m.badge_depth || m.state === "new") return el("span", "pill-new", "New");
   const n = m.badge_depth === "reconstruct" ? 3 : m.badge_depth === "recall" ? 2 : 1;
   let stars = "";

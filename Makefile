@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
+.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
 
 # Compile the workspace.
 build:
@@ -20,6 +20,12 @@ build:
 # CONTRIBUTING.md).
 build-core:
 	cargo build --no-default-features --lib
+
+# Deny warnings on the lean feature shape the mobile core builds with: a
+# serve-only helper left ungated compiles clean under `make check`'s full
+# features and still fails this exact CI job shape.
+lean-check:
+	cargo rustc --no-default-features --lib -- -Dwarnings
 
 # Run the test suite — the primary gate.
 test:
@@ -157,7 +163,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: fmt-check pre-1-0-check deps-check changelog-check adr-check lint test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
+check: fmt-check pre-1-0-check deps-check changelog-check adr-check lint lean-check test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
 
 # Bump the Rust toolchain across the repo
 bump-rust:
@@ -242,6 +248,7 @@ preflight:
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	RUSTFLAGS="-Dwarnings" cargo test --manifest-path mobile/alix/rust/Cargo.toml
+	$(MAKE) mobile-unit
 	$(MAKE) frb-check
 	$(MAKE) package-check
 	@test -z "$$(git status --porcelain)" || { \
@@ -354,6 +361,14 @@ mobile-test:
 	cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
 	cd mobile/alix && flutter test
 	cd mobile/alix && flutter test integration_test -d linux
+
+# The Dart unit/widget half of mobile-test alone: host dylib + `flutter test
+# test/`, no emulator and no integration window. Part of preflight, so a
+# mobile-visible lib change cannot pass the pre-push gate with a red Dart
+# suite again (it did once: a stale line-number pin sat red on main unnoticed).
+mobile-unit:
+	cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
+	cd mobile/alix && flutter test test/
 
 # The release APK (one arm64 artifact, matching the mobile-release workflow);
 # debug-signed unless android/key.properties exists. Smoke-install this on a

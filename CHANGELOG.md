@@ -332,6 +332,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a generic explanation line pointing at `alix doctor`, makes no
   progress claims, and refuses to start a review, exam, or browse: a
   fresh session would write new progress over the unreadable document.
+  The kids app shows such a deck as "needs a grown-up" instead of a
+  false "New", with no practise buttons.
   The damage is scoped to that one document: sibling decks in the same
   store keep their real progress, listings and the web server no longer
   fail wholesale over one damaged file (the server boots and lists over

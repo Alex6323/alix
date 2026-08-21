@@ -119,7 +119,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make fmt-check` | Verify formatting without writing. |
 | `make fmt-changelog` | Normalize `CHANGELOG.md` (~80-column wrap, one blank line between entries; idempotent), then run `changelog-check`. |
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, standard subsection names under Unreleased, count never decreases vs HEAD); part of `make check`. |
-| `make check` | The inner-loop gate bundle (`fmt-check`, `pre-1-0-check`, `deps-check`, `changelog-check`, `lint`, `test`, `site-media-check`, `docs-audit-manifest-check`, `toolchain-check`), cheap checks first; run before considering work done. Lenient on rustc warnings (no `-Dwarnings`); `make ci` / `make preflight` reproduce CI's strict gate. |
+| `make check` | The inner-loop gate bundle (`fmt-check`, `pre-1-0-check`, `deps-check`, `changelog-check`, `lint`, `lean-check`, `test`, `site-media-check`, `docs-audit-manifest-check`, `toolchain-check`), cheap checks first; run before considering work done. `lean-check` denies warnings on the no-default-features lib, the mobile core's build shape. Lenient on rustc warnings (no `-Dwarnings`); `make ci` / `make preflight` reproduce CI's strict gate. |
 | `make mutants` | What the CI mutation workflows invoke (`GATE_JOBS` parallelism, `MUTANTS_BASE` diff base, `MUTANTS_SHARD` one 0-indexed shard such as `0/6`; misses reconcile against `scripts/mutants-allowlist.txt`). Refuses to start while another cargo-mutants runs anywhere on the machine. **Not for local use**: it saturates the machine for hours. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
@@ -132,6 +132,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make frb-check` | Assert the frb toolchain-alignment invariants (version pins, template patches, NDK); fails on drift. |
 | `make push-decks DIR=~/decks` | One-way copy of a host decks folder into the running emulator's app (dev-only; restart the app to re-list). |
 | `make mobile-test` | Mobile suite vs the real core, no emulator: Dart unit/widget tests on the host dylib + the full-app integration test in a Linux window. |
+| `make mobile-unit` | The Dart unit/widget half alone (host dylib + `flutter test test/`), no integration window; part of `make preflight`. Run it after any lib change a mobile surface consumes (listing, review state, bridge API). |
 | `make apk` | The arm64 release APK (debug-signed while `android/key.properties` is absent); smoke-install it before a `mobile-vX.Y.Z` tag (RELEASING.md). |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
