@@ -55,7 +55,8 @@ deps-check:
 # advisory-drift workflow backstops it between releases.
 audit:
 	@if command -v cargo-audit >/dev/null 2>&1; then \
-		cargo audit && cargo audit --file mobile/alix/rust/Cargo.lock; \
+		cargo audit --deny unsound --deny yanked && \
+		cargo audit --file mobile/alix/rust/Cargo.lock --deny unsound --deny yanked; \
 	else \
 		echo "audit: cargo-audit not found; install with: cargo install cargo-audit --locked"; exit 1; \
 	fi
