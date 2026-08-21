@@ -92,6 +92,7 @@ export function createPicker({
   }
 
   function browse(item, workspaceName) {
+    if (item.state === "error") return; // the server refuses: progress unreadable
     rememberLaunch(item.name);
     lastWorkspace = workspaceName || null;
     return openBrowse(item);
@@ -210,7 +211,9 @@ export function createPicker({
     // the per-depth due-ness, so this reads as "any depth (or the trace/exam)
     // is startable" — the gate for the ▾ split button. The Mastered window is
     // ungated — a finished deck can be reopened to cram or re-examine.
-    const canStart = (it, gated) => it.reviewable || !gated;
+    // An "error" row (unreadable progress document) is never startable, even
+    // ungated: the server refuses the select, so offering it is a dead click.
+    const canStart = (it, gated) => it.state !== "error" && (it.reviewable || !gated);
 
     // Maps a depth name to its own due-ness field (`picker::DeckStatus`'s
     // per-depth split), so each depth chip — and the plain Learn button, which
@@ -219,7 +222,8 @@ export function createPicker({
     // just because Reconstruct is due).
     const DEPTHS = ["recognize", "recall", "reconstruct"]; // menu/keys order — 1/2/3
     const DEPTH_FIELD = { recognize: "reviewable_recognize", recall: "reviewable_recall", reconstruct: "reviewable_reconstruct" };
-    const canStartAt = (it, gated, depth) => it[DEPTH_FIELD[depth]] || !gated;
+    const canStartAt = (it, gated, depth) =>
+      it.state !== "error" && (it[DEPTH_FIELD[depth]] || !gated);
     // Recognize is pick-only: it can only run on a deck with cached choice
     // distractors (`can_recognize`) — an un-augmented deck greys it out even under
     // cram (which re-serves recognized cards). Recall/Reconstruct are never gated
@@ -589,7 +593,8 @@ export function createPicker({
         if (f && f._item) {
           const br = el("button", "chip", "Browse");
           br.appendChild(el("span", "k", "b"));
-          br.addEventListener("click", () => browse(f._item, f._wsName));
+          if (f._item.state === "error") br.disabled = true;
+          else br.addEventListener("click", () => browse(f._item, f._wsName));
           legend.appendChild(br);
         }
         // Augment the focused deck, workspace, or folder (key a): add / remove

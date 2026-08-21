@@ -27,6 +27,10 @@ use crate::{
     store::Store,
 };
 
+/// The generic red-row line: the real failure detail belongs to `alix
+/// doctor`, not a picker row.
+const PROGRESS_ERROR_META: &str = "progress for this deck cannot be read; run alix doctor";
+
 /// Per-deck IO routing, keyed by each deck's stable id, not its filename.
 pub(super) struct DeckFiles {
     pub(super) paths: HashMap<String, PathBuf>,
@@ -159,8 +163,16 @@ pub(super) fn deck_item_dto(
                 name: e.name.clone(),
                 selectable: assemble::selectable(&e.path),
                 label: e.label.clone(),
-                meta: (!s.badge.is_empty()).then_some(s.badge),
-                state: state_name(s.state),
+                meta: if s.progress_error {
+                    Some(PROGRESS_ERROR_META.to_string())
+                } else {
+                    (!s.badge.is_empty()).then_some(s.badge)
+                },
+                state: if s.progress_error {
+                    "error"
+                } else {
+                    state_name(s.state)
+                },
                 locked: s.locked,
                 reviewable: s.reviewable,
                 reviewable_recognize: s.reviewable_recognize,
@@ -236,26 +248,58 @@ pub(super) fn workspace_members(
     let review = review.for_workspace(&e.path);
     let is_ws = cache.is_workspace(&e.path);
     // The owner's projection is authoritative for every document it has
-    // owned, active or retained: opening such a store from disk here could
-    // resurrect members as new while the owner holds unflushed truth or the
-    // document is briefly unavailable (an editor or sync tool mid-rename).
+    // ATTEMPTED, active or retained: opening such a store from disk here
+    // could resurrect members as new while the owner holds unflushed truth
+    // or the document is briefly unavailable (an editor or sync tool
+    // mid-rename). A member session's single-document store attempted only
+    // its own document, so it must not stand in for the whole workspace (a
+    // damaged sibling would resurrect as startable): the workspace view is
+    // the retained or freshly opened workspace store with the owner's held
+    // document OVERLAID, so sibling truth comes from disk while the owner's
+    // document, and any dependency gate reading it, keeps the owner's
+    // authoritative verdicts.
     let ws_store_root = crate::workspace::store_path(&e.path);
-    let projection_covers = is_ws && instance_store.path().starts_with(&ws_store_root);
+    let active_in_root = instance_store.path().starts_with(&ws_store_root);
+    let projection_covers = is_ws && active_in_root && instance_store.is_aggregate();
     let retained_store = (is_ws && !projection_covers)
         .then(|| {
             retained
                 .iter()
-                .find(|(path, _)| path.starts_with(&ws_store_root))
+                .find(|(path, store)| path.starts_with(&ws_store_root) && store.is_aggregate())
                 .map(|(_, store)| Arc::clone(store))
         })
         .flatten();
+    // A whole-root failure (the progress root exists but is not a usable
+    // directory) is the AllFailed case, matching the listing path: no store,
+    // every member red. Flattening it to None would fabricate fresh rows.
     let own_workspace_store = (is_ws && !projection_covers && retained_store.is_none())
-        .then(|| crate::state::open_aggregate_store(&ws_store_root).ok())
+        .then(|| crate::state::open_aggregate_store_tolerant(&ws_store_root));
+    let root_failed = matches!(own_workspace_store, Some(Err(_)));
+    let own_workspace_store = own_workspace_store.and_then(Result::ok);
+    let fallback = retained_store.as_deref().or(own_workspace_store.as_ref());
+    // Every owner-held document store overlays the base: the retained ones
+    // (their document may be mid-rename on disk, or awaiting a save retry)
+    // and the active session's last, so the newest verdicts win.
+    let overlaid = (is_ws && !projection_covers)
+        .then(|| {
+            fallback.map(|base| {
+                let mut view = base.clone();
+                for (path, held) in retained {
+                    if path.starts_with(&ws_store_root) {
+                        view.overlay_owner(held);
+                    }
+                }
+                if active_in_root {
+                    view.overlay_owner(instance_store);
+                }
+                view
+            })
+        })
         .flatten();
     let store: Option<&Store> = if !is_ws || projection_covers {
         Some(instance_store)
     } else {
-        retained_store.as_deref().or(own_workspace_store.as_ref())
+        overlaid.as_ref().or(fallback)
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
     let augment = AugmentCache::open_for_workspace(&e.path).ok();
@@ -265,8 +309,6 @@ pub(super) fn workspace_members(
         .iter()
         .map(|p| {
             let deck = cache.load(p).ok();
-            // `augment` is `Some` exactly when `store` is, so gating on all
-            // three keeps that pairing intact.
             let status = match (store, augment.as_ref(), deck.as_ref()) {
                 (Some(st), Some(a), Some(d)) => Some(picker::deck_status(
                     d,
@@ -327,8 +369,16 @@ pub(super) fn workspace_members(
                     name: m.name.clone(),
                     selectable: assemble::selectable(&m.path),
                     label: m.label.clone(),
-                    meta: (!s.badge.is_empty()).then(|| s.badge.clone()),
-                    state: state_name(s.state),
+                    meta: if s.progress_error {
+                        Some(PROGRESS_ERROR_META.to_string())
+                    } else {
+                        (!s.badge.is_empty()).then(|| s.badge.clone())
+                    },
+                    state: if s.progress_error {
+                        "error"
+                    } else {
+                        state_name(s.state)
+                    },
                     locked: s.locked,
                     reviewable: s.reviewable,
                     reviewable_recognize: s.reviewable_recognize,
@@ -348,13 +398,14 @@ pub(super) fn workspace_members(
                     last_depth,
                 },
                 // Mirrors deck_item_dto's failed-load fallback: still
-                // selectable, nothing reviewable.
+                // selectable, nothing reviewable. Whole-root store damage
+                // reds the member instead of faking a fresh one.
                 None => MemberDto {
                     name: m.name.clone(),
                     selectable: true,
                     label: m.label.clone(),
-                    meta: None,
-                    state: "new",
+                    meta: root_failed.then(|| PROGRESS_ERROR_META.to_string()),
+                    state: if root_failed { "error" } else { "new" },
                     locked: false,
                     reviewable: false,
                     reviewable_recognize: false,

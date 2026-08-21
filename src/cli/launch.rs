@@ -5,12 +5,7 @@ use std::{
 };
 
 use alix::{
-    assemble::{self, open_store},
-    config::Config,
-    recent::RecentDecks,
-    serve,
-    state::UserFiles,
-    tutorial, workspace,
+    assemble, config::Config, recent::RecentDecks, serve, state::UserFiles, tutorial, workspace,
 };
 use anyhow::{Context, Result, bail};
 
@@ -80,7 +75,7 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
     };
     let recent = RecentDecks::load(UserFiles::new(&user_root).recent());
     let instance_store = Some(user_root);
-    let store = open_store(instance_store.clone())?;
+    let store = assemble::open_store_tolerant(instance_store.clone())?;
     let addr = serve_addr(args.port, args.lan, &config);
     // Bind before announcing: a taken port errors here rather than after printing a success URL.
     // `Arc`-shared so `run_review` can be stopped from outside its own thread.

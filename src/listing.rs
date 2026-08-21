@@ -216,10 +216,10 @@ impl ProgressHealth {
 
 fn open_listing_store(path: &Path) -> (Option<Store>, ProgressHealth) {
     match crate::state::open_aggregate_store_tolerant(path) {
-        Ok((store, failed)) => (
-            Some(store),
-            ProgressHealth::PerDeck(failed.into_iter().collect()),
-        ),
+        Ok(store) => {
+            let failed = store.failed_decks().keys().cloned().collect();
+            (Some(store), ProgressHealth::PerDeck(failed))
+        }
         Err(_) => (None, ProgressHealth::AllFailed),
     }
 }
@@ -417,6 +417,7 @@ pub struct DeckStatus {
     pub badge_depth: Option<Depth>,
     pub badge_dotted: bool,
     pub new_cards: bool,
+    pub progress_error: bool,
 }
 
 fn badge_depth_for(deck_id: &str, cards: &[Card], store: &Store) -> (Option<Depth>, bool) {
@@ -528,22 +529,27 @@ pub fn deck_status(
         .cards
         .iter()
         .any(|card| card.id().and_then(|id| store.progress(&id)).is_none());
+    // An unreadable progress document voids every progress-derived claim:
+    // the empty view would otherwise read as fresh-and-due, and any session
+    // or exam it invites would mint fresh progress over the damaged file.
+    let progress_error = store.progress_error(deck_id);
     DeckStatus {
         state,
-        badge,
+        badge: if progress_error { String::new() } else { badge },
         locked,
-        reviewable,
-        reviewable_recognize,
+        reviewable: reviewable && !progress_error,
+        reviewable_recognize: reviewable_recognize && !progress_error,
         can_recognize,
-        reviewable_recall,
-        reviewable_reconstruct,
-        mastered,
+        reviewable_recall: reviewable_recall && !progress_error,
+        reviewable_reconstruct: reviewable_reconstruct && !progress_error,
+        mastered: mastered && !progress_error,
         is_trace: deck.is_trace(),
-        examable,
+        examable: examable && !progress_error,
         has_exam,
-        badge_depth,
-        badge_dotted,
-        new_cards,
+        badge_depth: badge_depth.filter(|_| !progress_error),
+        badge_dotted: badge_dotted && !progress_error,
+        new_cards: new_cards && !progress_error,
+        progress_error,
     }
 }
 
@@ -819,6 +825,42 @@ mod tests {
             "the bad later document must not erase the healthy sibling's loaded progress"
         );
         assert!(b.progress_error);
+    }
+
+    #[test]
+    fn a_deck_status_over_an_unreadable_document_voids_every_progress_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("a.md"), "## qa <!-- id: card-qa1 -->\nans-a\n");
+        let progress = root.join("progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(progress.join("deck-a.json"), "{ not json").unwrap();
+
+        let store = crate::state::open_aggregate_store_tolerant(root).unwrap();
+        let deck = Deck::load(root.join("a.md")).unwrap();
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            true,
+            ReviewConfig::default(),
+        );
+
+        assert!(status.progress_error);
+        assert!(!status.reviewable, "an error status makes no due claim");
+        assert!(!status.reviewable_recognize);
+        assert!(!status.reviewable_recall);
+        assert!(!status.reviewable_reconstruct);
+        assert!(
+            !status.new_cards,
+            "a fabricated 'new' reading is still a progress claim"
+        );
+        assert!(status.badge.is_empty());
+        assert!(status.badge_depth.is_none());
+        assert!(!status.badge_dotted);
+        assert!(!status.mastered);
+        assert!(!status.examable);
     }
 
     #[test]

@@ -32,6 +32,18 @@ pub fn open_store(path: Option<PathBuf>) -> Result<Store> {
     state::open_aggregate_store(&path).context("cannot open the progress store")
 }
 
+/// The server-boot open: an unreadable document must not keep the picker
+/// from serving (its deck reds out per document instead), while a command
+/// that operates on the whole store (`reset --all`) keeps the strict
+/// [`open_store`] and fails loud on the same damage.
+pub fn open_store_tolerant(path: Option<PathBuf>) -> Result<Store> {
+    let path = match path {
+        Some(path) => path,
+        None => default_store_path().context("cannot determine the data directory")?,
+    };
+    state::open_aggregate_store_tolerant(&path).context("cannot open the progress store")
+}
+
 pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<PathBuf> {
     if let Some(path) = cli_override {
         return Some(path.to_path_buf());

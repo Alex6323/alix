@@ -1014,6 +1014,175 @@ fn workspace_members_prefer_a_retained_store_over_reopening_from_disk() {
 }
 
 #[test]
+fn a_members_unreadable_document_reds_out_that_member_row_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("animals");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
+    write_initialized(&ws.join("decks/two.md"), "## q2 <!-- id: card-qb -->\na2\n");
+    let progress = crate::workspace::store_path(&ws).join("progress");
+    std::fs::create_dir_all(&progress).unwrap();
+    std::fs::write(progress.join("deck-two.json"), "{ corrupt").unwrap();
+
+    // No projection covers the workspace and nothing is retained, so the
+    // catalog's own ad-hoc workspace open must carry the damage per member.
+    let global_store = Store::open(dir.path().join("global.json")).unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let mut icons = HashMap::new();
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &global_store,
+        &HashMap::new(),
+        true,
+        &mut icons,
+        ReviewConfig::default(),
+        &mut DeckCache::default(),
+    )
+    .unwrap();
+
+    let animals = dto
+        .workspaces
+        .iter()
+        .find(|w| w.name == "animals")
+        .expect("animals workspace row");
+    let member = |name: &str| {
+        animals
+            .members
+            .iter()
+            .find(|m| m.name.ends_with(name))
+            .unwrap_or_else(|| panic!("{name} member row: {animals:?}"))
+    };
+    let two = member("two.md");
+    assert_eq!("error", two.state, "member: {two:?}");
+    assert_eq!(
+        Some("progress for this deck cannot be read; run alix doctor".to_string()),
+        two.meta,
+        "member: {two:?}"
+    );
+    assert!(!two.reviewable, "member: {two:?}");
+    let one = member("one.md");
+    assert_ne!(
+        "error", one.state,
+        "the sibling member must not red out: {one:?}"
+    );
+}
+
+/// Split member stores must not re-lock a passed dependency: the active
+/// owner is authoritative for the document it holds, so a dependent member
+/// evaluates its prerequisite's mastery against the owner's projection even
+/// while sibling rows read the workspace store from disk.
+#[test]
+fn a_dependent_member_reads_its_prerequisites_active_owner_projection() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("animals");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    std::fs::write(
+        ws.join("decks/base.md"),
+        "---\nformat-version: 1\nid: \"deck-base\"\nsource: https://example.org\n---\n## q1 <!-- id: card-qa -->\na1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        ws.join("decks/advanced.md"),
+        "---\nformat-version: 1\nid: \"deck-adv\"\nrequires: base\n---\n## q2 <!-- id: card-qb -->\na2\n",
+    )
+    .unwrap();
+
+    // The owner holds base.md's document with an unsaved mastered verdict:
+    // disk stays older on purpose (the failed-save retry contract).
+    let mut owner = crate::state::open_store(
+        &ws.join("decks/base.md"),
+        &crate::workspace::store_path(&ws),
+    )
+    .unwrap();
+    owner.set_deck_mastered("deck-base", now_ms());
+
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &owner,
+        &HashMap::new(),
+        true,
+        &mut HashMap::new(),
+        ReviewConfig::default(),
+        &mut DeckCache::default(),
+    )
+    .unwrap();
+
+    let animals = dto
+        .workspaces
+        .iter()
+        .find(|row| row.name == "animals")
+        .expect("animals workspace row");
+    let advanced = animals
+        .members
+        .iter()
+        .find(|member| member.name.ends_with("advanced.md"))
+        .unwrap_or_else(|| panic!("advanced member row: {animals:?}"));
+    assert!(
+        !advanced.locked,
+        "the prerequisite's owner-held mastery must unlock its dependent: {advanced:?}"
+    );
+    assert!(
+        advanced.examable == advanced.has_exam,
+        "an unlocked dependent's exam follows has_exam: {advanced:?}"
+    );
+    let base = animals
+        .members
+        .iter()
+        .find(|member| member.name.ends_with("base.md"))
+        .unwrap_or_else(|| panic!("base member row: {animals:?}"));
+    assert!(
+        base.mastered,
+        "the owner's unsaved verdict must reach the prerequisite's own row: {base:?}"
+    );
+}
+
+#[test]
+fn a_foreign_workspace_with_a_damaged_progress_root_reds_every_member() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("animals");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
+    write_initialized(&ws.join("decks/two.md"), "## q2 <!-- id: card-qb -->\na2\n");
+    let store_root = crate::workspace::store_path(&ws);
+    std::fs::create_dir_all(&store_root).unwrap();
+    std::fs::write(store_root.join("progress"), "not a directory").unwrap();
+
+    let global_store = Store::open(dir.path().join("global.json")).unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &global_store,
+        &HashMap::new(),
+        true,
+        &mut HashMap::new(),
+        ReviewConfig::default(),
+        &mut DeckCache::default(),
+    )
+    .unwrap();
+
+    let animals = dto
+        .workspaces
+        .iter()
+        .find(|row| row.name == "animals")
+        .expect("animals workspace row");
+    assert_eq!(2, animals.members.len());
+    assert!(
+        animals
+            .members
+            .iter()
+            .all(|member| member.state == "error" && !member.reviewable),
+        "whole-root damage must red every affected member: {animals:#?}"
+    );
+}
+
+#[test]
 fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("animals");
@@ -1185,6 +1354,63 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     assert!(!dto.reviewable_recognize, "row: {dto:?}");
     assert!(!dto.reviewable_recall, "row: {dto:?}");
     assert!(!dto.reviewable_reconstruct, "row: {dto:?}");
+}
+
+#[test]
+fn a_deck_with_an_unreadable_progress_document_reds_out_alone_in_the_catalog() {
+    let dir = tempfile::tempdir().unwrap();
+    write_initialized(
+        &dir.path().join("good.md"),
+        "## q <!-- id: card-qg -->\na\n",
+    );
+    write_initialized(&dir.path().join("bad.md"), "## q <!-- id: card-qb -->\na\n");
+    let progress = dir.path().join("progress");
+    std::fs::create_dir(&progress).unwrap();
+    std::fs::write(progress.join("deck-bad.json"), "{ corrupt").unwrap();
+
+    let store = crate::state::open_aggregate_store_tolerant(dir.path()).unwrap();
+    let augment = AugmentCache::open_for_workspace(dir.path()).unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let entries = picker::catalog(dir.path(), &recent, &mut DeckCache::default()).unwrap();
+    let row_for = |name: &str| {
+        let entry = entries
+            .iter()
+            .find(|e| e.name == name)
+            .unwrap_or_else(|| panic!("catalog lists {name}"));
+        deck_item_dto(
+            entry,
+            &store,
+            dir.path(),
+            true,
+            &augment,
+            ReviewConfig::default(),
+            &mut DeckCache::default(),
+        )
+    };
+
+    let bad = row_for("bad.md");
+    assert_eq!("error", bad.state, "row: {bad:?}");
+    assert_eq!(
+        Some("progress for this deck cannot be read; run alix doctor".to_string()),
+        bad.meta,
+        "the red row explains itself with the generic line"
+    );
+    assert!(
+        bad.selectable,
+        "the deck stays visible and selectable: {bad:?}"
+    );
+    assert!(!bad.reviewable, "row: {bad:?}");
+    assert!(!bad.reviewable_recognize, "row: {bad:?}");
+    assert!(!bad.reviewable_recall, "row: {bad:?}");
+    assert!(!bad.reviewable_reconstruct, "row: {bad:?}");
+    assert!(!bad.examable, "an exam would also write progress: {bad:?}");
+    assert!(!bad.mastered, "row: {bad:?}");
+
+    let good = row_for("good.md");
+    assert_ne!(
+        "error", good.state,
+        "the sibling must not red out: {good:?}"
+    );
 }
 
 #[test]

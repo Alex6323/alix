@@ -42,6 +42,13 @@ inside the last week or past due; the same readout sits inline behind the
 title once you drill in. Press **`d`** (or the row's **Ready by…** action) to
 set, move, or clear it from an inline date prompt.
 
+A deck whose own progress document cannot be read shows a red **error** line
+and refuses to start: reviewing it would write fresh progress over the
+document alix could not read. Its siblings are unaffected. `alix doctor`
+names the damaged file; fix or remove it (`alix reset <deck>` removes an
+unparseable document after confirming) and the row heals on the next
+listing.
+
 ## Library actions
 
 The picker's **☰ menu** carries five actions that used to be terminal-only:

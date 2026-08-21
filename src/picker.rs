@@ -97,7 +97,7 @@ fn file_name(path: &Path) -> String {
 }
 
 pub fn workspace_last_progress(folder: &Path) -> Option<String> {
-    let ts = crate::state::open_aggregate_store(&workspace::store_path(folder))
+    let ts = crate::state::open_aggregate_store_tolerant(&workspace::store_path(folder))
         .ok()?
         .last_review_ms()?;
     let now = crate::time::now_ms();
@@ -453,6 +453,7 @@ mod tests {
             badge_depth: None,
             badge_dotted: false,
             new_cards: false,
+            progress_error: false,
         }
     }
 

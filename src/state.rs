@@ -91,12 +91,13 @@ pub fn open_aggregate_store(user_root: &Path) -> Result<Store, StateError> {
     Ok(store)
 }
 
-/// The listing-side open: per-document read granularity, failed deck ids
-/// collected instead of failing the store (see Store::open_aggregate_tolerant).
-pub fn open_aggregate_store_tolerant(user_root: &Path) -> Result<(Store, Vec<String>), StateError> {
-    let (mut store, failed) = Store::open_aggregate_tolerant(UserFiles::new(user_root).progress())?;
+/// The viewing-side open (listings, the server boot): per-document read
+/// granularity, failed deck ids collected into the store instead of failing
+/// it (see Store::open_aggregate_tolerant).
+pub fn open_aggregate_store_tolerant(user_root: &Path) -> Result<Store, StateError> {
+    let mut store = Store::open_aggregate_tolerant(UserFiles::new(user_root).progress())?;
     store.device = store::device_label();
-    Ok((store, failed))
+    Ok(store)
 }
 
 pub fn prepare(
@@ -317,6 +318,56 @@ mod tests {
 
         assert_ne!(std::fs::read(first).unwrap(), second_before);
         assert_eq!(std::fs::read(second).unwrap(), second_before);
+    }
+
+    #[test]
+    fn a_corrupt_sibling_document_never_blocks_opening_for_other_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_path = dir.path().join("first.md");
+        let second_path = dir.path().join("second.md");
+        deck(&first_path, "deck1", "card1");
+        deck(&second_path, "deck2", "card2");
+        let paths = [first_path, second_path];
+        let mut aggregate = open_stores(&paths, dir.path()).unwrap();
+        aggregate.get_or_insert("card-card1");
+        aggregate.save().unwrap();
+        std::fs::write(dir.path().join("progress/deck-other.json"), "{ corrupt").unwrap();
+
+        let reopened = open_stores(&paths, dir.path()).unwrap();
+        assert!(
+            reopened.get("card-card1").is_some(),
+            "the expected decks' progress must survive a damaged sibling"
+        );
+        assert!(
+            reopened.progress_error("deck-other"),
+            "the skipped sibling must be reported, not silently absent"
+        );
+        assert!(!reopened.progress_error("deck-deck1"));
+    }
+
+    #[test]
+    fn tolerance_never_extends_to_the_decks_the_open_is_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_path = dir.path().join("first.md");
+        let second_path = dir.path().join("second.md");
+        deck(&first_path, "deck1", "card1");
+        deck(&second_path, "deck2", "card2");
+        let paths = [first_path, second_path];
+        let mut aggregate = open_stores(&paths, dir.path()).unwrap();
+        aggregate.get_or_insert("card-card1");
+        aggregate.save().unwrap();
+        std::fs::write(dir.path().join("progress/deck-deck1.json"), "{ corrupt").unwrap();
+
+        let error = match open_stores(&paths, dir.path()) {
+            Ok(_) => panic!("an expected deck's own corrupt document must fail the open"),
+            Err(error) => error,
+        };
+        match error {
+            StateError::Store(crate::store::StoreError::Format { path, .. }) => {
+                assert!(path.ends_with("deck-deck1.json"), "{}", path.display());
+            }
+            other => panic!("expected a Format error naming the document, got {other:?}"),
+        }
     }
 
     #[test]

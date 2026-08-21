@@ -71,3 +71,39 @@ test("an unreadable decks root shows a calm retryable notice, and retry recovers
   expect(expected.length).toBeGreaterThan(0);
   for (const entry of expected) pageErrors.splice(pageErrors.indexOf(entry), 1);
 });
+
+test("an unreadable progress row offers no browse action", async ({ page }) => {
+  // A deck whose progress document cannot be read serves as state "error"
+  // with every reviewable flag false, and the server refuses select AND
+  // browse for it, so neither may render as an enabled action. The row is
+  // fabricated by intercepting /api/decks, so no store on disk is damaged.
+  await page.route("**/api/decks", async (route) => {
+    const response = await route.fetch();
+    const catalog = await response.json();
+    const rows = [
+      ...catalog.recent,
+      ...catalog.workspaces.flatMap((row) => row.members),
+      ...catalog.folders.flatMap((row) => row.members),
+    ];
+    const wild = rows.find((row) => row.name.endsWith("wild.md"));
+    Object.assign(wild, {
+      state: "error",
+      meta: "progress for this deck cannot be read; run alix doctor",
+      reviewable: false,
+      reviewable_recognize: false,
+      reviewable_recall: false,
+      reviewable_reconstruct: false,
+      examable: false,
+      mastered: false,
+      new_cards: false,
+    });
+    await route.fulfill({ response, json: catalog });
+  });
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+
+  await expect(page.getByRole("button", { name: "Learn" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Browse" })).toBeDisabled();
+});

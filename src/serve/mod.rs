@@ -223,6 +223,7 @@ pub fn run_review(
             store,
             retained: HashMap::new(),
             store_dirty: false,
+            progress_stamp: None,
             save_error: None,
             reviewing: None,
             revision: 0,

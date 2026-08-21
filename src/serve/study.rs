@@ -41,6 +41,12 @@ pub(super) struct StudyState {
     pub(super) retained: HashMap<PathBuf, Arc<Store>>,
     pub(super) store_dirty: bool,
     pub(super) save_error: Option<String>,
+    // The instance progress directory's last observed (name, len, mtime)
+    // stamp: a cheap stat scan per idle listing detects documents that
+    // changed, appeared, or vanished after the store was opened, and any
+    // change triggers a flush + tolerant reopen, which both discovers new
+    // damage and heals repaired documents. None forces one initial scan.
+    pub(super) progress_stamp: Option<u64>,
     pub(super) reviewing: Option<Reviewing>,
     // Monotonic identity of the review transition: bumped whenever the
     // current card can change, checked against every card-relative
@@ -673,7 +679,34 @@ pub(super) fn flush_mutation(store: &Store, dirty: &mut bool, save_error: &mut O
 }
 
 impl StudyState {
-    fn install_store(&mut self, store: Store) {
+    /// The listing-time health check: repaired or removed damaged documents
+    /// heal, and damage arriving after boot reds out, both on the next
+    /// listing. Only the idle owner reopens (an active session's store is
+    /// never replaced), only when the progress directory's stat stamp
+    /// actually moved, and through the same flush + tolerant reopen as
+    /// session teardown, so healthy and dirty state keep their
+    /// owner-projection guarantees. A quiet directory costs one stat scan
+    /// per listing, never a read.
+    fn revalidate_progress_view(&mut self) {
+        if !self.idle() || !self.store.is_aggregate() {
+            return;
+        }
+        let stamp = crate::store::progress_dir_stamp(self.store.path());
+        if self.progress_stamp == Some(stamp) {
+            return;
+        }
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return;
+        }
+        if let Ok(store) = assemble::store_for(&[], self.config.cfg.instance_store.as_deref()) {
+            self.install_store(store);
+            self.writes = self.writes.wrapping_add(1);
+            self.progress_stamp = Some(crate::store::progress_dir_stamp(self.store.path()));
+        }
+    }
+
+    fn install_store(&mut self, mut store: Store) {
+        store.carry_failed_decks(&self.store);
         let outgoing = std::mem::replace(&mut self.store, store);
         self.retained
             .insert(outgoing.path().to_path_buf(), Arc::new(outgoing));
@@ -1116,6 +1149,7 @@ impl StudyState {
                 let _ = reply.send(self.store.path().to_path_buf());
             }
             StudyCommand::Projection(reply) => {
+                self.revalidate_progress_view();
                 let _ = reply.send(StudyProjection {
                     store: Arc::new(self.store.clone()),
                     retained: self.retained.clone(),
@@ -1698,6 +1732,7 @@ mod tests {
                 store,
                 retained: HashMap::new(),
                 store_dirty: false,
+                progress_stamp: None,
                 save_error: None,
                 reviewing: Some(reviewing),
                 revision: 0,
@@ -1824,6 +1859,7 @@ mod tests {
             store: crate::state::open_aggregate_store(&active_root).unwrap(),
             retained: HashMap::new(),
             store_dirty: false,
+            progress_stamp: None,
             save_error: None,
             reviewing: None,
             revision: 0,

@@ -327,6 +327,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A deck whose own progress document cannot be read now shows as a red
+  `error` row in the picker (web, and a red `error` marker on mobile)
+  with a generic explanation line pointing at `alix doctor`, makes no
+  progress claims, and refuses to start a review, exam, or browse: a
+  fresh session would write new progress over the unreadable document.
+  The damage is scoped to that one document: sibling decks in the same
+  store keep their real progress, listings and the web server no longer
+  fail wholesale over one damaged file (the server boots and lists over
+  it), and a multi-deck or workspace session still refuses when one of
+  the decks it is actually opening is the damaged one. Previously one
+  unreadable document could empty the whole listing's progress or block
+  the server outright.
+
 - A full-target `alix reset` no longer parses the progress it is about
   to discard: each target deck's document is opened alone (sibling
   documents in the same store are never read), a readable document

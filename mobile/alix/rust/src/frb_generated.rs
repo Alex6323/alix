@@ -1878,6 +1878,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_examDue = <bool>::sse_decode(deserializer);
         let mut var_hasExam = <bool>::sse_decode(deserializer);
         let mut var_locked = <bool>::sse_decode(deserializer);
+        let mut var_progressError = <bool>::sse_decode(deserializer);
         let mut var_icon = <Option<String>>::sse_decode(deserializer);
         let mut var_indent = <u32>::sse_decode(deserializer);
         let mut var_tree = <String>::sse_decode(deserializer);
@@ -1894,6 +1895,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
             exam_due: var_examDue,
             has_exam: var_hasExam,
             locked: var_locked,
+            progress_error: var_progressError,
             icon: var_icon,
             indent: var_indent,
             tree: var_tree,
@@ -3060,6 +3062,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.exam_due.into_into_dart().into_dart(),
             self.has_exam.into_into_dart().into_dart(),
             self.locked.into_into_dart().into_dart(),
+            self.progress_error.into_into_dart().into_dart(),
             self.icon.into_into_dart().into_dart(),
             self.indent.into_into_dart().into_dart(),
             self.tree.into_into_dart().into_dart(),
@@ -3751,6 +3754,7 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <bool>::sse_encode(self.exam_due, serializer);
         <bool>::sse_encode(self.has_exam, serializer);
         <bool>::sse_encode(self.locked, serializer);
+        <bool>::sse_encode(self.progress_error, serializer);
         <Option<String>>::sse_encode(self.icon, serializer);
         <u32>::sse_encode(self.indent, serializer);
         <String>::sse_encode(self.tree, serializer);

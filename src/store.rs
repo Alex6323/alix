@@ -353,6 +353,7 @@ pub struct Store {
     // don't masquerade as a device).
     pub device: Option<String>,
     last_writer: Option<Writer>,
+    failed_decks: HashMap<String, PathBuf>,
     backing: StoreBacking,
 }
 
@@ -482,6 +483,46 @@ fn write_deck_data(
     write_json_atomic(path, &file)
 }
 
+/// A cheap change stamp over the progress directory: file names, lengths,
+/// and modification times of the documents an aggregate open would read,
+/// no contents. In-process comparison only; never persisted.
+#[cfg(feature = "full")]
+pub(crate) fn progress_dir_stamp(progress_dir: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut names: Vec<(String, u64, u128)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(progress_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_document = path.is_file()
+                && path.extension().is_some_and(|ext| ext == "json")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_none_or(|name| !crate::workspace::is_conflict_name(name));
+            if !is_document {
+                continue;
+            }
+            let (len, mtime) = entry
+                .metadata()
+                .map(|meta| {
+                    let mtime = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_nanos())
+                        .unwrap_or_default();
+                    (meta.len(), mtime)
+                })
+                .unwrap_or_default();
+            names.push((entry.file_name().to_string_lossy().into_owned(), len, mtime));
+        }
+    }
+    names.sort();
+    let mut hasher = std::hash::DefaultHasher::new();
+    names.hash(&mut hasher);
+    hasher.finish()
+}
+
 pub(crate) fn read_deck_data(
     path: &Path,
     expected_deck_id: &str,
@@ -600,6 +641,7 @@ impl Store {
                 records: HashMap::new(),
                 device: None,
                 last_writer: None,
+                failed_decks: HashMap::new(),
                 backing: StoreBacking::Deck {
                     deck_id,
                     subject,
@@ -644,6 +686,7 @@ impl Store {
             records: file.records,
             device: None,
             last_writer: file.writer,
+            failed_decks: HashMap::new(),
             backing: StoreBacking::Deck {
                 deck_id,
                 subject,
@@ -653,31 +696,30 @@ impl Store {
     }
 
     pub fn open_for_decks(path: impl AsRef<Path>, decks: &[Deck]) -> Result<Self, StoreError> {
-        Self::open_aggregate_impl(path.as_ref().to_path_buf(), decks, None)
+        Self::open_aggregate_impl(path.as_ref().to_path_buf(), decks, true)
     }
 
     /// The aggregate open with per-document read granularity: a document
-    /// that fails to read is SKIPPED and its deck id collected, instead of
-    /// failing the whole store, so one damaged member cannot silence its
-    /// siblings' progress. Directory-level failures and cross-document
-    /// ownership conflicts still fail the open: tolerance of a damaged
-    /// file is never tolerance of a duplicate-key conflict.
-    pub fn open_aggregate_tolerant(
-        path: impl AsRef<Path>,
-    ) -> Result<(Self, Vec<String>), StoreError> {
-        let mut failed = Vec::new();
-        let store = Self::open_aggregate_impl(path.as_ref().to_path_buf(), &[], Some(&mut failed))?;
-        Ok((store, failed))
+    /// that fails to read is SKIPPED and its deck id collected into
+    /// [`Store::progress_error`], instead of failing the whole store, so one
+    /// damaged member cannot silence its siblings' progress. Tolerance never
+    /// extends to the decks an open is for: an expected deck's own corrupt
+    /// document still fails the open, or a session on it would mint fresh
+    /// progress over the damaged file. Directory-level failures and
+    /// cross-document ownership conflicts still fail the open: tolerance of
+    /// a damaged file is never tolerance of a duplicate-key conflict.
+    pub fn open_aggregate_tolerant(path: impl AsRef<Path>) -> Result<Self, StoreError> {
+        Self::open_aggregate_impl(path.as_ref().to_path_buf(), &[], true)
     }
 
     fn open_aggregate_for(path: PathBuf, expected_decks: &[Deck]) -> Result<Self, StoreError> {
-        Self::open_aggregate_impl(path, expected_decks, None)
+        Self::open_aggregate_impl(path, expected_decks, false)
     }
 
     fn open_aggregate_impl(
         path: PathBuf,
         expected_decks: &[Deck],
-        mut tolerated: Option<&mut Vec<String>>,
+        tolerant: bool,
     ) -> Result<Self, StoreError> {
         // The promised distinction: an ABSENT root is a fresh store; an
         // existing non-directory root is damage and must fail loud, or the
@@ -749,6 +791,7 @@ impl Store {
         let mut documents = Vec::new();
         let mut loaded_decks = HashSet::new();
         let mut last_writer: Option<Writer> = None;
+        let mut failed_decks = HashMap::new();
         for document_path in document_paths {
             let Some(deck_id) =
                 crate::state::deck_id_from_document(&document_path).map(str::to_string)
@@ -759,13 +802,13 @@ impl Store {
             let (revision, subject, data) =
                 match read_deck_data(&document_path, &deck_id, current_subject) {
                     Ok(read) => read,
-                    Err(error) => match tolerated.as_deref_mut() {
-                        Some(failed) => {
-                            failed.push(deck_id);
+                    Err(error) => {
+                        if tolerant && !expected.contains_key(&deck_id) {
+                            failed_decks.insert(deck_id, document_path);
                             continue;
                         }
-                        None => return Err(error),
-                    },
+                        return Err(error);
+                    }
                 };
             merge_owned(&mut cards, &mut owners.cards, &data.cards, &deck_id, "card")?;
             merge_owned(
@@ -815,11 +858,73 @@ impl Store {
             records,
             device: None,
             last_writer,
+            failed_decks,
             backing: StoreBacking::Aggregate {
                 documents: Mutex::new(documents),
                 owners,
             },
         })
+    }
+
+    /// True when a tolerant open skipped the deck's progress document as
+    /// unreadable: the deck has stored progress that this view cannot see,
+    /// so no progress claim about it is honest and no session may write it.
+    pub fn progress_error(&self, deck_id: &str) -> bool {
+        self.failed_decks.contains_key(deck_id)
+    }
+
+    pub fn failed_decks(&self) -> &HashMap<String, PathBuf> {
+        &self.failed_decks
+    }
+
+    /// Carries the replaced view's damage knowledge into this store for
+    /// every document this store's own open did not attempt: a deck store
+    /// attempted exactly its own document and an aggregate its own progress
+    /// directory, so those verdicts stand (a re-read heals or re-confirms),
+    /// while damage seen elsewhere would otherwise vanish from view the
+    /// moment a session installs a narrower store.
+    pub fn carry_failed_decks(&mut self, from: &Store) {
+        for (deck_id, document_path) in &from.failed_decks {
+            if self.attempted(document_path) {
+                continue;
+            }
+            self.failed_decks
+                .insert(deck_id.clone(), document_path.clone());
+        }
+    }
+
+    fn attempted(&self, document_path: &Path) -> bool {
+        match &self.backing {
+            StoreBacking::Deck { .. } => self.path == *document_path,
+            StoreBacking::Aggregate { .. } => document_path.parent() == Some(self.path.as_path()),
+        }
+    }
+
+    /// Overlays the owner's actively held document onto this view: the
+    /// owner is authoritative for the deck it holds (its unflushed truth
+    /// beats the disk copy), so its cards, records, and deck progress
+    /// replace this store's, and its deck sheds any failed entry. View
+    /// only: an overlaid store is for row building, never for saving.
+    #[cfg(feature = "full")]
+    pub(crate) fn overlay_owner(&mut self, owner: &Store) {
+        let StoreBacking::Deck { deck_id, .. } = &owner.backing else {
+            return;
+        };
+        for (key, value) in &owner.cards {
+            self.cards.insert(key.clone(), value.clone());
+        }
+        for (key, value) in &owner.records {
+            self.records.insert(key.clone(), value.clone());
+        }
+        for (key, value) in &owner.decks {
+            self.decks.insert(key.clone(), *value);
+        }
+        self.failed_decks.remove(deck_id);
+    }
+
+    #[cfg(feature = "full")]
+    pub(crate) fn is_aggregate(&self) -> bool {
+        matches!(&self.backing, StoreBacking::Aggregate { .. })
     }
 
     pub fn save(&self) -> Result<(), StoreError> {

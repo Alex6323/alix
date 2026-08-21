@@ -501,4 +501,31 @@ void main() {
       expect(tester.getSize(row).height, lessThan(70));
     });
   });
+
+  testWidgets('a progress-error row does not open a review', (tester) async {
+    final root = tempRoot('alix-picker-progress-error-');
+    File('${root.path}/damaged.md').writeAsStringSync(
+      '---\nformat-version: 1\nid: "deck-00000000000000000000000000"\n---\n'
+      '# Damaged\n\n## q <!-- id: card-11111111111111111111111111 -->\na\n',
+    );
+    Directory('${root.path}/progress').createSync();
+    File('${root.path}/progress/deck-00000000000000000000000000.json')
+        .writeAsStringSync('{ corrupt');
+
+    await tester.pumpWidget(MaterialApp(
+      theme: alixDark(),
+      home: PickerScreen(root: root.path),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('error'), findsOneWidget);
+    await tester.tap(find.text('Damaged'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(ReviewScreen),
+      findsNothing,
+      reason: 'the red row is a diagnostic state, not a dead review action',
+    );
+  });
 }

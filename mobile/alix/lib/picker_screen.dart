@@ -252,6 +252,9 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 
   void _openEntry(PickerEntry entry) {
+    // A progress-error row is a diagnostic, not an action: the core refuses
+    // the open, so navigating would only strand the user in a dead screen.
+    if (entry.progressError && !entry.isWorkspace) return;
     if (entry.isWorkspace) {
       _drillInto(entry);
     } else if (entry.isTrace) {
@@ -262,6 +265,7 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 
   void _longPressEntry(PickerEntry entry) {
+    if (entry.progressError && !entry.isWorkspace) return;
     if (entry.isWorkspace) {
       _deadlineSheet(entry);
     } else if (!entry.isTrace) {

@@ -76,6 +76,7 @@ PickerEntry _entry(listing_bridge.DeckEntry entry) {
     examDue: entry.examDue,
     hasExam: entry.hasExam,
     locked: entry.locked,
+    progressError: entry.progressError,
     icon: entry.icon,
     indent: entry.indent,
     tree: entry.tree,

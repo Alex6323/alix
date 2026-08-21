@@ -105,6 +105,7 @@ PickerEntry _entry(String title, {bool mastered = false}) {
     examDue: false,
     hasExam: false,
     locked: false,
+    progressError: false,
     indent: 0,
     tree: '',
   );

@@ -698,6 +698,19 @@ Color pickerDeadlineTint(PickerDeadline deadline, AlixTokens tokens) {
 
 List<Widget> pickerTrailingMarker(ThemeData theme, PickerEntry entry) {
   final tokens = theme.alix;
+  if (entry.progressError) {
+    return [
+      const SizedBox(width: 12),
+      Text(
+        'error',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: tokens.again,
+          fontFamily: 'monospace',
+          letterSpacing: 1.2,
+        ),
+      ),
+    ];
+  }
   if (entry.isTrace) {
     return [
       const SizedBox(width: 12),

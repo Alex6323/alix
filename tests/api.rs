@@ -270,12 +270,30 @@ fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
 /// lets a test add its own fixture files (e.g. a workspace folder) alongside
 /// `sample.md`.
 fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> (String, Guard) {
+    spawn_test_server_impl(token, extra, open_instance_store)
+}
+
+/// Like [`spawn_test_server_fixture`], but opens the instance store the way
+/// `src/cli/launch.rs` boots it (`assemble::open_store_tolerant`: an aggregate open
+/// tolerant of unreadable documents), not for the fixture decks, for tests
+/// whose fixture damages a progress document before the server starts.
+fn spawn_test_server_booted(extra: impl FnOnce(&Path)) -> (String, Guard) {
+    spawn_test_server_impl(None, extra, |dir| {
+        alix::assemble::open_store_tolerant(Some(state_root(dir))).unwrap()
+    })
+}
+
+fn spawn_test_server_impl(
+    token: Option<&str>,
+    extra: impl FnOnce(&Path),
+    open: impl FnOnce(&Path) -> Store,
+) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     let deck_path = dir.path().join("sample.md");
     std::fs::write(&deck_path, FIXTURE_DECK).unwrap();
     extra(dir.path());
     let store_path = state_root(dir.path());
-    let store = open_instance_store(dir.path());
+    let store = open(dir.path());
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let decks_dir = dir.path().to_path_buf();
 
@@ -981,6 +999,282 @@ fn a_folder_members_row_reads_the_served_root_store() {
         "started", member["state"],
         "a folder member's progress lives in the root store; member: {member}"
     );
+}
+
+/// A select on the damaged deck must be rejected because a fresh session
+/// would mint new progress over the unreadable document; the damage is
+/// scoped per document, so the sibling row and its session stay untouched.
+#[test]
+fn an_unreadable_progress_document_reds_out_its_row_and_review_is_refused() {
+    let (base, _guard) = spawn_test_server_booted(|dir| {
+        std::fs::write(
+            dir.join("other.md"),
+            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1 <!-- id: card-o1 -->\n2\n",
+        )
+        .unwrap();
+        let progress = state_root(dir).join("progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(progress.join("deck-other.json"), "{ corrupt").unwrap();
+    });
+
+    let response = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(
+        200, response.status,
+        "the server must boot and list over the damaged document"
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let row = |name: &str| {
+        body["recent"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|deck| deck["name"] == name)
+            .unwrap_or_else(|| panic!("{name} row missing; body: {body}"))
+            .clone()
+    };
+    let other = row("other.md");
+    assert_eq!("error", other["state"], "row: {other}");
+    assert_eq!(
+        "progress for this deck cannot be read; run alix doctor", other["meta"],
+        "row: {other}"
+    );
+    assert_eq!(false, other["reviewable"], "row: {other}");
+    let sample = row("sample.md");
+    assert_ne!(
+        "error", sample["state"],
+        "the sibling must not red out: {sample}"
+    );
+    assert_eq!(true, sample["reviewable"], "row: {sample}");
+
+    let refused = post_json(&base, "/api/select", r#"{"deck":"other.md"}"#);
+    assert_eq!(
+        400, refused.status,
+        "review on the damaged deck must be refused"
+    );
+    assert_eq!(
+        200,
+        select_fixture(&base).status,
+        "the sibling must still start a session"
+    );
+
+    let after_select = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, after_select.status);
+    let body: serde_json::Value = serde_json::from_slice(&after_select.body).unwrap();
+    let other = body["recent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|deck| deck["name"] == "other.md")
+        .unwrap_or_else(|| panic!("other.md row missing after sibling select; body: {body}"));
+    assert_eq!(
+        "error", other["state"],
+        "selecting a healthy sibling must not erase the damaged row: {other}"
+    );
+    assert_eq!(false, other["reviewable"], "row: {other}");
+
+    // The documented recovery: remove the unreadable document. The strict
+    // per-deck open then sees a fresh deck, the select succeeds, and the
+    // carried damage for that exact document must drop rather than stick.
+    std::fs::remove_file(state_root(_guard.dir()).join("progress/deck-other.json")).unwrap();
+    let recovered = post_json(&base, "/api/select", r#"{"deck":"other.md"}"#);
+    assert_eq!(
+        200, recovered.status,
+        "a removed damaged document unblocks its deck"
+    );
+    let after_recover = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&after_recover.body).unwrap();
+    let other = body["recent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|deck| deck["name"] == "other.md")
+        .unwrap_or_else(|| panic!("other.md row missing after recovery; body: {body}"));
+    assert_ne!(
+        "error", other["state"],
+        "carried damage must not outlive its document: {other}"
+    );
+}
+
+/// The member-path variant of the row-erasure bug: a member session installs
+/// that member's single-document store, whose path sits under the workspace
+/// store root, and a bare path-prefix cover test would let it stand in for
+/// every member row; the boot aggregate never attempted the workspace's
+/// documents, so carried damage cannot save the sibling here.
+#[test]
+fn a_member_sessions_store_does_not_erase_a_damaged_siblings_error_row() {
+    let (base, _guard) = spawn_test_server_booted(|dir| {
+        write_animals_workspace(dir);
+        let progress = dir.join("animals/progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(progress.join("deck-animaltwo.json"), "{ corrupt").unwrap();
+    });
+
+    let member_two = |body: &serde_json::Value| {
+        body["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|workspace| workspace["name"] == "animals")
+            .unwrap_or_else(|| panic!("animals workspace row; body: {body}"))["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|member| member["name"] == "animals/two.md")
+            .unwrap_or_else(|| panic!("two.md member row; body: {body}"))
+            .clone()
+    };
+
+    let response = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, response.status);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let two = member_two(&body);
+    assert_eq!("error", two["state"], "member: {two}");
+    assert_eq!(false, two["reviewable"], "member: {two}");
+
+    let selected = post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(
+        200, selected.status,
+        "the healthy sibling member must start"
+    );
+
+    let response = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, response.status);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let two = member_two(&body);
+    assert_eq!(
+        "error", two["state"],
+        "a member session must not erase the damaged sibling's row: {two}"
+    );
+    assert_eq!(false, two["reviewable"], "member: {two}");
+}
+
+/// Damage can arrive while the server runs (a sync tool or editor replaces
+/// a document): the next ordinary listing must red the row, exactly like a
+/// boot over the same damage, or the row offers a dead select.
+#[test]
+fn progress_damage_arriving_after_boot_reds_the_row_on_the_next_listing() {
+    let (base, _guard) = spawn_test_server_booted(|_| {});
+
+    let row = |body: &serde_json::Value| {
+        body["recent"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|deck| deck["name"] == "sample.md")
+            .unwrap_or_else(|| panic!("sample.md row missing; body: {body}"))
+            .clone()
+    };
+
+    let before = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, before.status);
+    let before: serde_json::Value = serde_json::from_slice(&before.body).unwrap();
+    assert_ne!("error", row(&before)["state"], "fixture must boot healthy");
+
+    let progress = state_root(_guard.dir()).join("progress");
+    std::fs::create_dir_all(&progress).unwrap();
+    std::fs::write(progress.join("deck-sample.json"), "{ corrupt").unwrap();
+
+    let after = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, after.status);
+    let after: serde_json::Value = serde_json::from_slice(&after.body).unwrap();
+    let sample = row(&after);
+    assert_eq!(
+        "error", sample["state"],
+        "post-boot damage must red the row on the next listing: {sample}"
+    );
+    assert_eq!(false, sample["reviewable"], "row: {sample}");
+}
+
+/// The documented recovery contract: repair or remove the damaged document
+/// and the row heals on the next listing, with no select (the picker blocks
+/// it while red) and no restart.
+#[test]
+fn removing_a_damaged_document_heals_its_row_on_the_next_listing() {
+    let (base, _guard) = spawn_test_server_booted(|dir| {
+        std::fs::write(
+            dir.join("other.md"),
+            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1 <!-- id: card-o1 -->\n2\n",
+        )
+        .unwrap();
+        let progress = state_root(dir).join("progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(progress.join("deck-other.json"), "{ corrupt").unwrap();
+    });
+
+    let row = |body: &serde_json::Value| {
+        body["recent"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|deck| deck["name"] == "other.md")
+            .unwrap_or_else(|| panic!("other.md row missing; body: {body}"))
+            .clone()
+    };
+
+    let before = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, before.status);
+    let before: serde_json::Value = serde_json::from_slice(&before.body).unwrap();
+    assert_eq!("error", row(&before)["state"], "fixture must start red");
+
+    std::fs::remove_file(state_root(_guard.dir()).join("progress/deck-other.json")).unwrap();
+
+    let after = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, after.status);
+    let after: serde_json::Value = serde_json::from_slice(&after.body).unwrap();
+    let other = row(&after);
+    assert_ne!(
+        "error", other["state"],
+        "a removed damaged document must heal on the very next listing: {other}"
+    );
+    assert_eq!(
+        true, other["reviewable"],
+        "the healed deck is fresh and reviewable: {other}"
+    );
+}
+
+#[test]
+fn a_foreign_workspaces_damaged_sibling_stays_red_after_selecting_a_healthy_member() {
+    let (base, _guard) = spawn_test_server_booted(|dir| {
+        write_animals_workspace(dir);
+        let progress = dir.join("animals/progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(progress.join("deck-animaltwo.json"), "{ corrupt").unwrap();
+    });
+
+    let member = |body: &serde_json::Value, name: &str| {
+        body["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|workspace| workspace["name"] == "animals")
+            .unwrap()["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|member| member["name"] == name)
+            .unwrap()
+            .clone()
+    };
+
+    let before = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, before.status);
+    let before: serde_json::Value = serde_json::from_slice(&before.body).unwrap();
+    assert_eq!("error", member(&before, "animals/two.md")["state"]);
+
+    assert_eq!(
+        200,
+        post_json(&base, "/api/select", r#"{"deck":"animals/one.md"}"#).status
+    );
+
+    let after = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, after.status);
+    let after: serde_json::Value = serde_json::from_slice(&after.body).unwrap();
+    let two = member(&after, "animals/two.md");
+    assert_eq!(
+        "error", two["state"],
+        "the workspace sibling health must survive active-store replacement: {two}"
+    );
+    assert_eq!(false, two["reviewable"], "row: {two}");
 }
 
 /// Selecting a workspace member records it in the recent list (loose decks

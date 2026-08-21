@@ -62,6 +62,7 @@
   .deckrow .meta { margin-left: auto; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; }
   .deckrow .meta.state-finished { color: var(--good); }
   .deckrow .meta.state-examdue { color: var(--warn); }
+  .deckrow .meta.state-error { color: var(--again); }
   /* a workspace row's "ready by" readout ({#deadlines}): dim, fixed-form, never
      wraps or reflows the row — past due tints the same as an exam-due meta. */
   /* Right-aligned as a column next to the meta: the chip does the flex

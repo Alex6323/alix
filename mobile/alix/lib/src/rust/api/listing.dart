@@ -80,6 +80,7 @@ class DeckEntry {
   final bool examDue;
   final bool hasExam;
   final bool locked;
+  final bool progressError;
   final String? icon;
   final int indent;
   final String tree;
@@ -97,6 +98,7 @@ class DeckEntry {
     required this.examDue,
     required this.hasExam,
     required this.locked,
+    required this.progressError,
     this.icon,
     required this.indent,
     required this.tree,
@@ -116,6 +118,7 @@ class DeckEntry {
       examDue.hashCode ^
       hasExam.hashCode ^
       locked.hashCode ^
+      progressError.hashCode ^
       icon.hashCode ^
       indent.hashCode ^
       tree.hashCode ^
@@ -137,6 +140,7 @@ class DeckEntry {
           examDue == other.examDue &&
           hasExam == other.hasExam &&
           locked == other.locked &&
+          progressError == other.progressError &&
           icon == other.icon &&
           indent == other.indent &&
           tree == other.tree &&
