@@ -55,7 +55,7 @@ void main() {
         reason: 'a fresh add must stamp, or the deck never lists');
     final stranded = File('${root.path}/stranded/tutorial.md')
       ..parent.createSync(recursive: true);
-    stranded.writeAsStringSync('# The alix tutorial\n\n## q\na\n');
+    stranded.writeAsStringSync('---\ntitle: The alix tutorial\n---\n## q\na\n');
     await addTutorialDeck('${root.path}/stranded');
     expect(stranded.readAsStringSync(), matches(RegExp(r'id: "deck-')),
         reason: 'an existing unstamped copy must be healed, not skipped');

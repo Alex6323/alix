@@ -35,7 +35,7 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
     writeTestDeck(
       '${root.path}/greek.md',
-      '# Greek\n\n## capital of greece?\nAthens\n',
+      '---\ntitle: Greek\n---\n## capital of greece?\nAthens\n',
     );
     // Introduced ten minutes "ago" (past the 5-min default introduction cooldown):
     // the app, on the wall clock, serves the quiz.

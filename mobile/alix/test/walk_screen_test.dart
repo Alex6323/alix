@@ -487,9 +487,8 @@ void main() {
           '---\n'
           'trace: a picker-launched walk\n'
           'source: source.txt\n'
+          'title: T\n'
           '---\n'
-          '# T\n'
-          '\n'
           '## Predict\n'
           'it reads line one\n'
           '<!-- at: 1 -->\n',

@@ -199,7 +199,7 @@ void main() {
     );
 
     final invalid = tempDir('alix-walk-structure-invalid-');
-    writeTestDeck('${invalid.path}/trace.md', '# Facts\n\n## q?\na\n');
+    writeTestDeck('${invalid.path}/trace.md', '---\ntitle: Facts\n---\n## q?\na\n');
     await tester.pumpWidget(
       MaterialApp(
         theme: alixDark(),

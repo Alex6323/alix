@@ -128,7 +128,7 @@ void main() {
 
   Directory plainDeckRoot() {
     final root = Directory.systemTemp.createTempSync('alix-crumb-decks-');
-    writeTestDeck('${root.path}/facts.md', '# Facts\n\n## q?\na\n');
+    writeTestDeck('${root.path}/facts.md', '---\ntitle: Facts\n---\n## q?\na\n');
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }

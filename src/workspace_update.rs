@@ -959,7 +959,6 @@ mod tests {
         )
     }
 
-    #[cfg(unix)]
     /// Done-list law: the metadata guard covers BOTH frozen keys. An AI
     /// source refresh may rewrite cards; it may never rename the deck or
     /// rewrite the drawer description while reporting success.
@@ -1004,6 +1003,7 @@ mod tests {
         assert!(UPDATE_PROMPT.contains("`description`"), "{UPDATE_PROMPT}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn changed_learning_content_cannot_keep_the_old_card_id() {
         let _lock = exec_lock();

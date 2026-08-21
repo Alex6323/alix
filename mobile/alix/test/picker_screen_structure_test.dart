@@ -83,12 +83,12 @@ void main() {
       final root = tempDir('alix-picker-structure-active-');
       writeTestDeck(
         '${root.path}/due.md',
-        '# Due\n\n## q <!-- id: card-due -->\na\n',
+        '---\ntitle: Due\n---\n## q <!-- id: card-due -->\na\n',
       );
       final exam = '${root.path}/exam.md';
       writeTestDeck(
         exam,
-        '---\nsource: https://example.com\n---\n# Exam\n\n## q?\na\n',
+        '---\nsource: https://example.com\ntitle: Exam\n---\n## q?\na\n',
       );
       final now = DateTime.now().millisecondsSinceEpoch;
       final t0 = now - 902000;
@@ -110,7 +110,7 @@ void main() {
 
       writeTestDeck(
         '${root.path}/mastered.md',
-        '# Mastered\n\n## q <!-- id: card-mastered -->\na\n',
+        '---\ntitle: Mastered\n---\n## q <!-- id: card-mastered -->\na\n',
         id: 'mastered',
       );
       Directory('${root.path}/progress').createSync();
@@ -130,7 +130,7 @@ void main() {
       ).writeAsStringSync('title = "Workspace"\n');
       writeTestDeck(
         '${root.path}/workspace/decks/member.md',
-        '# Member\n\n## q\na\n',
+        '---\ntitle: Member\n---\n## q\na\n',
       );
 
       await pumpPicker(tester, root: root);
@@ -154,7 +154,7 @@ void main() {
     tester,
   ) async {
     final root = tempDir('alix-picker-structure-conflict-');
-    writeTestDeck('${root.path}/deck.md', '# Deck\n\n## q\na\n');
+    writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
     Directory('${root.path}/progress').createSync();
     File(
       '${root.path}/progress/deck.sync-conflict-20260801.json',
@@ -189,15 +189,15 @@ void main() {
     );
     writeTestDeck(
       '${decks.path}/base.md',
-      '---\nsource: https://example.com\n---\n# Base\n\n## q?\na\n',
+      '---\nsource: https://example.com\ntitle: Base\n---\n## q?\na\n',
     );
     writeTestDeck(
       '${decks.path}/mid.md',
-      '---\nrequires: base\n---\n# Mid\n\n## q?\na\n',
+      '---\nrequires: base\ntitle: Mid\n---\n## q?\na\n',
     );
     writeTestDeck(
       '${decks.path}/tip.md',
-      '---\nrequires: mid\n---\n# Tip\n\n## q?\na\n',
+      '---\nrequires: mid\ntitle: Tip\n---\n## q?\na\n',
     );
     await pumpPicker(tester, root: root, dir: workspace.path, title: 'Path');
     await expectWidgetTree(
@@ -212,14 +212,14 @@ void main() {
     (tester) async {
       final root = tempDir('alix-picker-structure-settings-');
       final support = tempDir('alix-picker-structure-settings-support-');
-      writeTestDeck('${root.path}/deck.md', '# Deck\n\n## q\na\n');
+      writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
       Directory('${root.path}/workspace/decks').createSync(recursive: true);
       File(
         '${root.path}/workspace/alix.toml',
       ).writeAsStringSync('title = "Workspace"\n');
       writeTestDeck(
         '${root.path}/workspace/decks/member.md',
-        '# Member\n\n## q\na\n',
+        '---\ntitle: Member\n---\n## q\na\n',
       );
       await pumpPicker(
         tester,

@@ -56,7 +56,7 @@ void main() {
     Directory dueDeckRoot() {
       final root = tempRoot('alix-picker-depth-');
       final deck = '${root.path}/d.md';
-      writeTestDeck(deck, '# D\n\n## capital of testland?\nTestville\n');
+      writeTestDeck(deck, '---\ntitle: D\n---\n## capital of testland?\nTestville\n');
       final backdated =
           BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated)
@@ -149,7 +149,7 @@ void main() {
           .writeAsStringSync('title = "WsNone"\n');
       writeTestDeck('${root.path}/wsNone/decks/m.md', '## q\na\n');
 
-      writeTestDeck('${root.path}/loose.md', '# Loose\n\n## q\na\n');
+      writeTestDeck('${root.path}/loose.md', '---\ntitle: Loose\n---\n## q\na\n');
       return root;
     }
 
@@ -222,7 +222,7 @@ void main() {
       final deck = '${root.path}/base.md';
       writeTestDeck(
         deck,
-        '---\nsource: https://example.com\n---\n# Base\n\n## q?\na\n',
+        '---\nsource: https://example.com\ntitle: Base\n---\n## q?\na\n',
       );
       final t0 = DateTime.now().millisecondsSinceEpoch - 902000;
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: BigInt.from(t0))
@@ -260,7 +260,7 @@ void main() {
       // needs an explicit id to count as due.
       writeTestDeck(
         '${root.path}/plain.md',
-        '# Plain\n\n## q <!-- id: card-q1 -->\na\n',
+        '---\ntitle: Plain\n---\n## q <!-- id: card-q1 -->\na\n',
       );
 
       await tester.pumpWidget(MaterialApp(
@@ -289,15 +289,15 @@ void main() {
     Directory mixedRoot() {
       final root = tempRoot('alix-picker-mastered-');
       File('${root.path}/a-active.md').writeAsStringSync(
-        '---\nformat-version: 1\nid: "deck-activea"\n---\n# Active A\n\n'
+        '---\nformat-version: 1\nid: "deck-activea"\ntitle: Active A\n---\n'
         '## q <!-- id: card-activeaq -->\na\n',
       );
       File('${root.path}/b-active.md').writeAsStringSync(
-        '---\nformat-version: 1\nid: "deck-activeb"\n---\n# Active B\n\n'
+        '---\nformat-version: 1\nid: "deck-activeb"\ntitle: Active B\n---\n'
         '## q <!-- id: card-activebq -->\na\n',
       );
       File('${root.path}/z-mastered.md').writeAsStringSync(
-        '---\nformat-version: 1\nid: "deck-masteredz"\n---\n# Mastered Z\n\n'
+        '---\nformat-version: 1\nid: "deck-masteredz"\ntitle: Mastered Z\n---\n'
         '## q <!-- id: card-masteredzq -->\na\n',
       );
       Directory('${root.path}/progress').createSync();
@@ -345,7 +345,7 @@ void main() {
 
     testWidgets('no mastered decks means no affordance', (tester) async {
       final root = tempRoot('alix-picker-no-mastered-');
-      writeTestDeck('${root.path}/a.md', '# A\n\n## q\na\n');
+      writeTestDeck('${root.path}/a.md', '---\ntitle: A\n---\n## q\na\n');
 
       await tester.pumpWidget(MaterialApp(
         theme: alixDark(),
@@ -372,17 +372,17 @@ void main() {
       File('${ws.path}/alix.toml').writeAsStringSync('');
       writeTestDeck(
         '${decks.path}/base.md',
-        '---\nsource: https://example.com\n---\n# Base\n\n## q?\na\n',
+        '---\nsource: https://example.com\ntitle: Base\n---\n## q?\na\n',
       );
       writeTestDeck(
         '${decks.path}/mid.md',
-        '---\nrequires: base\n---\n# Mid\n\n## q?\na\n',
+        '---\nrequires: base\ntitle: Mid\n---\n## q?\na\n',
       );
       writeTestDeck(
         '${decks.path}/tip.md',
-        '---\nrequires: mid\n---\n# Tip\n\n## q?\na\n',
+        '---\nrequires: mid\ntitle: Tip\n---\n## q?\na\n',
       );
-      writeTestDeck('${decks.path}/other.md', '# Other\n\n## q?\na\n');
+      writeTestDeck('${decks.path}/other.md', '---\ntitle: Other\n---\n## q?\na\n');
       return root;
     }
 
@@ -469,17 +469,17 @@ void main() {
       final ws = Directory('${root.path}/ws')..createSync();
       final decks = Directory('${ws.path}/decks')..createSync();
       File('${ws.path}/alix.toml').writeAsStringSync('');
-      writeTestDeck('${decks.path}/base.md', '# Base\n\n## q?\na\n');
+      writeTestDeck('${decks.path}/base.md', '---\ntitle: Base\n---\n## q?\na\n');
       writeTestDeck(
         '${decks.path}/mid.md',
-        '---\nrequires: base\n---\n# Mid\n\n## q?\na\n',
+        '---\nrequires: base\ntitle: Mid\n---\n## q?\na\n',
       );
       const longTitle = 'A very long member deck title that would wrap onto '
           'more than one line if the row were not truncating it with an '
           'ellipsis instead';
       writeTestDeck(
         '${decks.path}/deep.md',
-        '---\nrequires: mid\n---\n# $longTitle\n\n## q?\na\n',
+        '---\nrequires: mid\ntitle: $longTitle\n---\n## q?\na\n',
       );
 
       await tester.pumpWidget(MaterialApp(
@@ -505,8 +505,8 @@ void main() {
   testWidgets('a progress-error row does not open a review', (tester) async {
     final root = tempRoot('alix-picker-progress-error-');
     File('${root.path}/damaged.md').writeAsStringSync(
-      '---\nformat-version: 1\nid: "deck-00000000000000000000000000"\n---\n'
-      '# Damaged\n\n## q <!-- id: card-11111111111111111111111111 -->\na\n',
+      '---\nformat-version: 1\nid: "deck-00000000000000000000000000"\ntitle: Damaged\n---\n'
+      '## q <!-- id: card-11111111111111111111111111 -->\na\n',
     );
     Directory('${root.path}/progress').createSync();
     File('${root.path}/progress/deck-00000000000000000000000000.json')

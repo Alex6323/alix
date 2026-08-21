@@ -124,7 +124,7 @@ mod tests {
         let root = dir.path();
         write_deck(
             root.join("loose.md"),
-            "# Loose\n\n## q <!-- id: card-q1 -->\na\n",
+            "---\ntitle: Loose\n---\n## q <!-- id: card-q1 -->\na\n",
         );
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         std::fs::write(root.join("ws/alix.toml"), "title = \"Ws\"\n").unwrap();

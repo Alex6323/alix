@@ -20,7 +20,7 @@ void main() {
     final root = Directory.systemTemp.createTempSync('alix-leave-');
     writeTestDeck(
         '${root.path}/facts.md',
-        '# Facts\n\n## q? <!-- id: card-q1 -->\na\n\n## q2? <!-- id: card-q2 -->\nb\n');
+        '---\ntitle: Facts\n---\n## q? <!-- id: card-q1 -->\na\n\n## q2? <!-- id: card-q2 -->\nb\n');
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }

@@ -58,7 +58,7 @@ Directory makeRoot() {
   final root = Directory.systemTemp.createTempSync('alix-decks-');
   writeTestDeck(
     '${root.path}/loose.md',
-    '# Loose\n\n## capital of france? <!-- id: card-capital -->\nParis\n',
+    '---\ntitle: Loose\n---\n## capital of france? <!-- id: card-capital -->\nParis\n',
   );
   Directory('${root.path}/ws/decks').createSync(recursive: true);
   File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
@@ -382,7 +382,7 @@ void main() {
     addTearDown(() => rootA.deleteSync(recursive: true));
     final rootB = Directory.systemTemp.createTempSync('alix-shared-');
     addTearDown(() => rootB.deleteSync(recursive: true));
-    writeTestDeck('${rootB.path}/shared.md', '# Shared Deck\n\n## q\na\n');
+    writeTestDeck('${rootB.path}/shared.md', '---\ntitle: Shared Deck\n---\n## q\na\n');
 
     await tester.pumpWidget(
       AlixApp(

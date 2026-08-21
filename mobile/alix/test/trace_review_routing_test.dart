@@ -33,7 +33,7 @@ Directory traceRoot() {
     '${root.path}/source.txt',
   ).writeAsStringSync('parse_cloze_cards evidence\nbyte offsets evidence\n');
   writeTestDeck('${root.path}/trace.md', traceDeck);
-  writeTestDeck('${root.path}/facts.md', '# Facts\n\n## q?\na\n');
+  writeTestDeck('${root.path}/facts.md', '---\ntitle: Facts\n---\n## q?\na\n');
   return root;
 }
 
@@ -58,10 +58,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Parser walk'), findsOneWidget);
+      expect(find.text('Parser Walk'), findsOneWidget);
       expect(find.text('trace'), findsOneWidget, reason: 'the row is marked');
 
-      await tester.tap(find.text('Parser walk'));
+      await tester.tap(find.text('Parser Walk'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(
