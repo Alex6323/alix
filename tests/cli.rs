@@ -885,6 +885,85 @@ fn a_target_reset_ignores_an_unreadable_default_store() {
 }
 
 #[test]
+fn a_corrupt_progress_document_cannot_block_its_own_reset() {
+    // Reset discards progress; a progress document that fails to read is
+    // exactly what reset exists to remove, so it must not block the command.
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+    let a = write(
+        &members,
+        "a.md",
+        "---\nformat-version: 1\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
+    );
+    let b = write(
+        &members,
+        "b.md",
+        "---\nformat-version: 1\nid: deck-deckb\n---\n## qb <!-- id: card-qb1 -->\nans-b\n",
+    );
+    let mut store = decks_store(&[&a], &ws);
+    let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
+    store.get_or_insert(&cards[0].id().unwrap());
+    store.save().unwrap();
+    let garbage = ws.join("progress").join("deck-deckb.json");
+    std::fs::write(&garbage, "{ not json").unwrap();
+
+    let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
+    assert!(
+        out.status.success(),
+        "a member's unreadable progress must not block the workspace reset; stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !garbage.exists(),
+        "reset removes the unreadable target document"
+    );
+    assert_eq!(
+        0,
+        decks_store(&[&a], &ws).len(),
+        "the readable member resets surgically"
+    );
+    let _ = b;
+}
+
+#[test]
+fn a_corrupt_sibling_outside_the_target_is_never_parsed_or_touched() {
+    // A single-deck target opens only its own document; a garbage sibling
+    // in the same store stays unread AND unremoved.
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+    let a = write(
+        &members,
+        "a.md",
+        "---\nformat-version: 1\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
+    );
+    let mut store = decks_store(&[&a], &ws);
+    let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
+    store.get_or_insert(&cards[0].id().unwrap());
+    store.save().unwrap();
+    let sibling = ws.join("progress").join("deck-unrelated.json");
+    std::fs::write(&sibling, "{ not json").unwrap();
+
+    let out = alix(&["reset", &a, "--yes"]);
+    assert!(
+        out.status.success(),
+        "a sibling outside the target must never gate the reset; stderr: {}",
+        stderr(&out)
+    );
+    assert_eq!(
+        "{ not json",
+        std::fs::read_to_string(&sibling).unwrap(),
+        "the sibling document is untouched"
+    );
+    assert_eq!(0, decks_store(&[&a], &ws).len(), "the target resets");
+}
+
+#[test]
 fn stats_reports_a_fresh_deck_against_an_empty_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
@@ -1056,6 +1135,166 @@ fn reset_all_declined_in_a_terminal_preserves_the_seeded_store() {
         deck_store(&deck, &state_root).get("card-math1").is_some(),
         "a declined reset removed the stored card"
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_declined_reset_keeps_the_unreadable_document_it_would_have_removed() {
+    use std::{io::Write, os::unix::fs::PermissionsExt, process::Stdio};
+
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+    let a = write(
+        &members,
+        "a.md",
+        "---\nformat-version: 1\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
+    );
+    let mut store = decks_store(&[&a], &ws);
+    let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
+    store.get_or_insert(&cards[0].id().unwrap());
+    store.save().unwrap();
+    let b = write(
+        &members,
+        "b.md",
+        "---\nformat-version: 1\nid: deck-deckb\n---\n## qb <!-- id: card-qb1 -->\nans-b\n",
+    );
+    let garbage = ws.join("progress").join("deck-deckb.json");
+    std::fs::write(&garbage, "{ not json").unwrap();
+
+    let runner = dir.path().join("reset.sh");
+    std::fs::write(
+        &runner,
+        "#!/bin/sh\nexec \"$ALIX_BIN\" reset \"$ALIX_TARGET\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut child = Command::new("script")
+        .args(["-q", "-e", "-c", runner.to_str().unwrap(), "/dev/null"])
+        .env("ALIX_BIN", env!("CARGO_BIN_EXE_alix"))
+        .env("ALIX_TARGET", &ws)
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("XDG_DATA_HOME", dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"no\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("1 unreadable progress document"),
+        "the prompt must disclose the removal it asks to confirm: {}",
+        stdout(&out)
+    );
+    assert!(
+        stdout(&out).contains("Cancelled."),
+        "a declined reset must report cancellation: {}",
+        stdout(&out)
+    );
+    assert!(
+        garbage.exists(),
+        "a declined reset must not remove the unreadable document"
+    );
+    assert!(
+        decks_store(&[&a], &ws)
+            .get(&cards[0].id().unwrap())
+            .is_some(),
+        "a declined reset must leave the readable member untouched"
+    );
+    let _ = b;
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_failed_unreadable_document_removal_does_not_partially_reset_readable_members() {
+    use std::{
+        io::{Read, Write},
+        os::unix::fs::PermissionsExt,
+        process::Stdio,
+    };
+
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+    let a = write(
+        &members,
+        "a.md",
+        "---\nformat-version: 1\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
+    );
+    let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
+    let card_id = cards[0].id().unwrap();
+    let mut store = decks_store(&[&a], &ws);
+    store.get_or_insert(&card_id);
+    store.save().unwrap();
+    let b = write(
+        &members,
+        "b.md",
+        "---\nformat-version: 1\nid: deck-deckb\n---\n## qb <!-- id: card-qb1 -->\nans-b\n",
+    );
+    let garbage = ws.join("progress").join("deck-deckb.json");
+    std::fs::write(&garbage, "{ not json").unwrap();
+
+    let runner = dir.path().join("reset.sh");
+    std::fs::write(
+        &runner,
+        "#!/bin/sh\nexec \"$ALIX_BIN\" reset \"$ALIX_TARGET\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut child = Command::new("script")
+        .args(["-q", "-e", "-c", runner.to_str().unwrap(), "/dev/null"])
+        .env("ALIX_BIN", env!("CARGO_BIN_EXE_alix"))
+        .env("ALIX_TARGET", &ws)
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("XDG_DATA_HOME", dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let mut seen = Vec::new();
+    let prompt = b"unreadable progress document";
+    let mut byte = [0_u8; 1];
+    while !seen.windows(prompt.len()).any(|window| window == prompt) {
+        assert_eq!(
+            1,
+            stdout.read(&mut byte).unwrap(),
+            "reset exited before prompting"
+        );
+        seen.push(byte[0]);
+    }
+
+    // Simulate a sync tool replacing the damaged path while the user is
+    // reading the confirmation. remove_file must now fail after confirmation.
+    std::fs::remove_file(&garbage).unwrap();
+    std::fs::create_dir(&garbage).unwrap();
+    stdin.write_all(b"yes\n").unwrap();
+    drop(stdin);
+    stdout.read_to_end(&mut seen).unwrap();
+    let status = child.wait().unwrap();
+
+    assert!(
+        !status.success(),
+        "the forced removal failure must be reported"
+    );
+    assert!(
+        decks_store(&[&a], &ws).get(&card_id).is_some(),
+        "a reset that reports failure must not have erased the readable member"
+    );
+    let _ = b;
 }
 
 /// Writes a minimal personal card into the sidecar beside `deck` and returns

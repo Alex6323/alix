@@ -70,6 +70,9 @@ relevant documents in memory without creating an authoritative combined file.
 - `alix reset <target>`: clear progress (`--card`, `--all`; `-y` to
   skip the prompt). On a workspace it also clears the mastered flags and
   personal-card schedules in the workspace's own store, after one confirmation.
+  A target progress document that does not parse is removed with the rest,
+  and the prompt says so first; documents outside the target are never
+  opened, and an I/O failure stops the reset before anything is erased.
 - `alix reset --orphans [target]` clears only **orphaned** progress: store
   keys that match no card or deck in the scanned decks (a stripped
   `<!-- id: … -->` comment, a hand-deleted deck, a double-mint).

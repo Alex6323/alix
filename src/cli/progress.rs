@@ -253,8 +253,6 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         .or_else(|| target.default_store.clone())
         .or_else(alix::store::default_store_path)
         .context("cannot determine the data directory")?;
-    let mut store = state::open_stores(&deck_paths, &store_path)?;
-
     let (cards, label, _, _) = load_decks(&deck_paths, &HashMap::new())?;
 
     // A full-deck reset (no `--card` subset) resets authored-card progress,
@@ -270,57 +268,85 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
             .map(Deck::load)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let present: Vec<(String, String)> = decks_full
-            .iter()
-            .flat_map(|deck| &deck.cards)
-            .filter_map(|c| Some((c.id()?, c)))
-            .filter(|(id, _)| store.get(id).is_some())
-            .map(|(id, c)| (id, c.front.clone()))
-            .collect();
+        // A full reset discards per-document state, so each TARGET document
+        // opens alone and siblings are never parsed: a readable one resets
+        // surgically (orphans keep their opt-in-only rule) and an unreadable
+        // one is removed after the confirm, because the discard command must
+        // not be blocked by the damage it discards.
+        let mut readable: Vec<(Store, &Deck)> = Vec::new();
+        let mut unreadable: Vec<PathBuf> = Vec::new();
+        for (deck_path, deck) in deck_paths.iter().zip(&decks_full) {
+            match state::open_store(deck_path, &store_path) {
+                Ok(store) => readable.push((store, deck)),
+                Err(state::StateError::Store(alix::store::StoreError::Format { path, .. })) => {
+                    unreadable.push(path)
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+
         fn deck_id(deck: &Deck) -> &str {
             deck.deck_token.as_deref().unwrap_or_default()
         }
-        let mastered = decks_full
-            .iter()
-            .any(|deck| store.deck_mastered(deck_id(deck)));
-        let personal_ids: Vec<String> = decks_full
-            .iter()
-            .flat_map(alix::personal::card_ids)
-            .filter(|id| store.get(id).is_some())
-            .collect();
-        let dormant_ids: Vec<String> = decks_full
-            .iter()
-            .flat_map(Deck::dormant_base_ids)
-            .filter(|id| store.get(id).is_some())
-            .collect();
+        // The prompt must count what reset_decks will actually remove: the
+        // deduplicated union of stored live, personal, and dormant ids.
+        let mut ids: HashSet<String> = HashSet::new();
+        let mut mastered = false;
+        for (store, deck) in &readable {
+            mastered |= store.deck_mastered(deck_id(deck));
+            let deck_ids = deck
+                .cards
+                .iter()
+                .filter_map(Card::id)
+                .chain(alix::personal::card_ids(deck))
+                .chain(deck.dormant_base_ids());
+            for id in deck_ids {
+                if store.get(&id).is_some() {
+                    ids.insert(id);
+                }
+            }
+        }
 
-        if present.is_empty() && !mastered && personal_ids.is_empty() && dormant_ids.is_empty() {
+        if ids.is_empty() && !mastered && unreadable.is_empty() {
             println!("No stored progress to reset in {label}.");
             return Ok(());
         }
 
-        // The prompt must count what reset_decks will actually remove: the
-        // deduplicated union of stored live, personal, and dormant ids.
-        let n = present
-            .iter()
-            .map(|(id, _)| id.as_str())
-            .chain(personal_ids.iter().map(String::as_str))
-            .chain(dormant_ids.iter().map(String::as_str))
-            .collect::<HashSet<&str>>()
-            .len();
-        if !confirm(
-            &format!("Reset progress for {n} card(s) in {label}?"),
-            args.yes,
-        )? {
+        let n = ids.len();
+        let prompt = if unreadable.is_empty() {
+            format!("Reset progress for {n} card(s) in {label}?")
+        } else {
+            format!(
+                "Reset progress for {n} card(s) in {label} and remove {} unreadable progress document(s)?",
+                unreadable.len()
+            )
+        };
+        if !confirm(&prompt, args.yes)? {
             println!("Cancelled.");
             return Ok(());
         }
 
-        let wiped = alix::library::reset_decks(&mut store, decks_full.iter())?;
+        // Removal precedes every readable reset: a removal failure must
+        // abort while nothing destructive has committed yet.
+        for path in &unreadable {
+            std::fs::remove_file(path)
+                .with_context(|| format!("cannot remove `{}`", path.display()))?;
+        }
+        let mut wiped = 0;
+        for (mut store, deck) in readable {
+            wiped += alix::library::reset_decks(&mut store, std::iter::once(deck))?;
+        }
         println!("Reset {wiped} card(s).");
+        if !unreadable.is_empty() {
+            println!(
+                "Removed {} unreadable progress document(s).",
+                unreadable.len()
+            );
+        }
         return Ok(());
     }
 
+    let mut store = state::open_stores(&deck_paths, &store_path)?;
     let targets = select_reset_ids(&cards, args.card.as_deref());
     reset_ids(
         &mut store,

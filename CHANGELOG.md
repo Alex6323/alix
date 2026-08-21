@@ -327,6 +327,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A full-target `alix reset` no longer parses the progress it is about
+  to discard: each target deck's document is opened alone (sibling
+  documents in the same store are never read), a readable document
+  still resets surgically with orphaned schedules preserved, and a
+  target document that does not parse as a progress document is removed
+  after the confirm prompt discloses it (removal happens first, so a
+  removal failure aborts before anything else is erased; I/O and other
+  non-parse failures still stop the command). Previously one corrupt
+  document blocked the exact command that removes it.
+
 - `alix reset <target>` opened the configured decks folder's progress
   store before looking at the target, so one unreadable file there
   blocked resetting an unrelated deck or workspace. The store is now
