@@ -112,6 +112,10 @@ Each links to its chapter in the manual:
 - **Image occlusion and stored text blanks**: mask a region of a picture or a
   span of text from a directive comment and be asked what's under it.
   → [Cloze, direction & images](docs/book/src/06-cloze-direction-images.md)
+- **Mermaid diagrams, rendered and maskable**: a ```` ```mermaid ```` fence
+  freezes into an image at deck init (via the optional sekien renderer), and
+  a span over a label masks it on the rendered diagram.
+  → [Mermaid diagrams](docs/book/src/06-cloze-direction-images.md)
 - **FSRS scheduling**, with card retirement and per-deck completion states.
   → [Scheduling](docs/book/src/05-scheduling.md)
 - **A tutor** you can ask "why is that the answer?" without leaving review.

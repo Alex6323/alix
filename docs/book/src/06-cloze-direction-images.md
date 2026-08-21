@@ -1,4 +1,4 @@
-# 6 · Cloze, dual-direction & image cards
+# 6 · Cloze, dual-direction, image & diagram cards
 
 Three extensions to the basic card, each a small addition on top of the format
 from chapter 3.
@@ -259,6 +259,114 @@ formula when the deck loads. A masked formula draws the blank as a boxed
 hole (the same form cloze holes in math already use), and a span whose
 answer needs LaTeX to type gets the same doctor warning a cloze hole gets
 when the block pins `input: type`.
+
+## Mermaid diagrams
+
+A fenced ```` ```mermaid ```` block in a card renders as a diagram. alix does
+not draw mermaid itself: when a **workspace member** is initialized
+(`alix deck init`, the same step that freezes local images and cited source
+excerpts, both covered below and in [Workspaces](08-workspaces.md)), each
+fence is rendered once through **sekien**, an optional external CLI that
+runs real mermaid.js (`cargo install sekien`), rasterized, and stored in the
+deck's asset folder (`assets/deck-<token>/` under the workspace) as a
+content-addressed image plus a label map: where every node and edge label
+sits in the picture, which is what masking uses later. A machine-managed
+stamp comment lands on the line after the fence, tying the fence text to
+those two frozen files:
+
+```
+<!-- diagram: fingerprint: xxh64-… asset: sha256-….png manifest: sha256-….json -->
+```
+
+From then on every client shows the image, including the mobile app
+offline; the mermaid source stays the only thing you edit.
+
+````
+## the request path
+```mermaid
+flowchart LR
+  Client --> LB[Load Balancer] --> API --> DB[(Postgres)]
+```
+````
+
+Diagrams never make `deck init` fail. Whatever goes wrong, initializing
+finishes and tells you: without sekien installed the deck initializes and
+warns, and the fence shows as a plain code block until you install the
+renderer and re-run `alix deck init`; a fence sekien cannot render, or a
+theme whose colors alix cannot read (below), is reported the same way and
+that one diagram stays unfrozen. A standalone deck (no workspace) always
+shows source: freezing needs the workspace's asset store.
+
+Editing a frozen fence makes its stamp stale, and the fence falls back to
+its source until the next `deck init` re-freezes it. Fallback always means
+the same thing: the fence displays as a code block instead of a picture;
+on a masking card (below) the hidden text inside it is blanked, so the
+card stays reviewable either way. When a session opens on a deck with a
+stamped diagram that cannot be loaded (a stale stamp, a missing frozen
+file, or a manifest that does not read back), the app shows a one-line
+warning so the fallback is never mistaken for a successful freeze. One
+kind of damage is deliberately outside that check: loading verifies
+shapes, not bytes, so a frozen file whose content was corrupted in place
+(bytes that no longer match their content-addressed name, after a faulty
+copy or restore) still serves. `alix doctor` is what re-hashes every
+frozen object and names such a file. `alix doctor <deck>
+--repair-diagrams` removes stamps that lost their fence and re-freezes
+stale or unfrozen ones; the corrupt-bytes case is repaired by deleting
+the stamp line and re-running `alix deck init`.
+
+### Theming
+
+The diagram's colors are decided by its **own source**, at freeze time:
+
+- an init directive on the fence's first line:
+  `%%{init: {"theme": "dark"}}%%`, or
+- mermaid's YAML frontmatter at the top of the fence:
+
+  ```
+  ---
+  config:
+    theme: forest
+  ---
+  ```
+
+An in-fence theme wins over anything set outside the fence (sekien's own
+`--theme` flag included), so a shared deck renders the same everywhere.
+alix reads the rendered theme's text color and puts the raster on
+whichever background, light or dark, keeps that text readable. The
+trade-off to know about: colors are **baked in when you freeze**. A frozen
+diagram does not follow the app's light/dark theme, and re-theming means
+editing the fence and re-freezing.
+
+### Masking diagram labels
+
+The span directives from the previous section work on diagram source, and
+on a frozen diagram they mask **on the rendered image**:
+
+````
+## the request path
+```mermaid
+flowchart LR
+  Client --> LB[Load Balancer] --> API --> DB[(Postgres)]
+```
+<!-- blank: span hidden="Load Balancer" -->
+````
+
+The card shows the diagram with a mask over the Load Balancer node's
+label; the mask lifts when the answer shows. Sibling blanks and covers on
+the same fence stay masked, exactly like image occlusion, and a reader
+using assistive technology hears only the visible labels, never the
+hidden ones.
+
+A span must cover **one complete visible label**. Node and edge labels can
+be masked; node ids, arrows, and keywords never can, and a span whose
+hidden text lands on one is reported by `alix doctor` while the card falls
+back to masked source (reviewable, just not drawn). Where the same text
+appears more than once, `occurrence=` picks which one, counted over the
+block like any span. Two kinds of label cannot be masked for now, and
+doctor says so when a span targets them: a bare node like `A`, whose label
+is its id (write `A[A]` to give it a maskable label), and labels whose
+rendered text is not literally in the source (multi-line `<br/>` labels,
+HTML entities).
 
 ## Source citations
 

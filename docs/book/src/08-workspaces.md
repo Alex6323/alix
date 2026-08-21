@@ -23,7 +23,9 @@ Reach for a workspace when one of these becomes true:
   [dependency tree](09-dependencies.md) in the picker.
 - **The material has a source you want to keep.** Only a workspace member can
   **freeze** its evidence: initializing one copies each cited source excerpt
-  and each local image into `assets/deck-<token>/`, so the deck still shows
+  and each local image into `assets/deck-<token>/`, and renders each
+  [mermaid fence](06-cloze-direction-images.md) into a frozen diagram
+  there, so the deck still shows
   them when the original file has moved on, and still shows them on a machine
   that never had the source at all. A deck outside a workspace keeps its images
   beside it and its citations live, so if the cited file moves or changes, the

@@ -247,6 +247,11 @@ notes it.
   matching excerpts remain untouched and make the command fail, because whether
   such a card still teaches the truth is a reader's call. Deck and card IDs are
   preserved.
+- `alix doctor [dir-or-deck] --repair-diagrams`: after you review the
+  reported [diagram findings](06-cloze-direction-images.md), delete stamps
+  attached to no fence and re-freeze every stale or unfrozen fence
+  (workspace members only; needs the renderer on PATH). Orphan removal is
+  whole-line and atomic; a second run has nothing to do.
 - `alix doctor [dir-or-deck] --repair-positions`: after you review the
   reported [span anchor divergences](06-cloze-direction-images.md), rewrite
   each diverged `position:` anchor to where its span binds today (the
