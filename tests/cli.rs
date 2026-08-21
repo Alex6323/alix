@@ -43,6 +43,7 @@ fn alix_in(cwd: &Path, home: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home)
         .env("XDG_DATA_HOME", home)
+        .env("XDG_STATE_HOME", home)
         .output()
         .expect("failed to run the alix binary")
 }
@@ -961,6 +962,245 @@ fn a_corrupt_sibling_outside_the_target_is_never_parsed_or_touched() {
         "the sibling document is untouched"
     );
     assert_eq!(0, decks_store(&[&a], &ws).len(), "the target resets");
+}
+
+#[test]
+fn unrelated_damage_never_changes_a_targeted_commands_outcome() {
+    // The excess-footprint law (Alex, 2026-08-21): a command given an
+    // explicit target must not couple to the health of any store outside
+    // that target. Every row runs its command against self-contained
+    // workspaces while the CONFIGURED decks folder's store holds a garbage
+    // progress document; the row must succeed and print its marker. A new
+    // targeted command means a new row. Excluded, with the law's own
+    // reasons: `generate` and `deck augment` (the AI backend is the
+    // outcome), wormhole `share`/`receive` (the transport is the outcome;
+    // their local `--zip` forms ARE rows), `profile` (its target IS the
+    // global registry), the bare launcher (interactive server), and
+    // `workspace update` without `--discard` (staging is AI-backed).
+    type Setup = fn(&Path, &str, &str, &str) -> Vec<Vec<String>>;
+    type Args = fn(&str, &str, &str, &str) -> Vec<String>;
+    fn no_setup(_: &Path, _: &str, _: &str, _: &str) -> Vec<Vec<String>> {
+        Vec::new()
+    }
+    let rows: &[(&str, Setup, Args, &str)] = &[
+        (
+            "stats",
+            no_setup,
+            |_, member, _, _| vec!["stats".into(), member.into()],
+            "state:",
+        ),
+        (
+            "list",
+            no_setup,
+            |_, member, _, _| vec!["list".into(), member.into()],
+            "qa",
+        ),
+        (
+            "reset",
+            no_setup,
+            |ws, _, _, _| vec!["reset".into(), ws.into(), "--yes".into()],
+            "Reset",
+        ),
+        (
+            "doctor",
+            no_setup,
+            |ws, _, _, _| vec!["doctor".into(), ws.into()],
+            "decks",
+        ),
+        (
+            "deck-init",
+            no_setup,
+            |_, _, fresh, _| vec!["deck".into(), "init".into(), fresh.into()],
+            "Initialized",
+        ),
+        (
+            "deck-remove",
+            no_setup,
+            |_, member, _, _| {
+                vec![
+                    "deck".into(),
+                    "remove".into(),
+                    member.into(),
+                    "--yes".into(),
+                ]
+            },
+            "Removed",
+        ),
+        (
+            "deck-copy",
+            no_setup,
+            |_, member, _, ws2| vec!["deck".into(), "copy".into(), member.into(), ws2.into()],
+            "Copied",
+        ),
+        (
+            "deck-move",
+            no_setup,
+            |_, member, _, ws2| {
+                vec![
+                    "deck".into(),
+                    "move".into(),
+                    member.into(),
+                    ws2.into(),
+                    "-y".into(),
+                ]
+            },
+            "Moved",
+        ),
+        (
+            "deck-import",
+            |dir, _, _, _| {
+                std::fs::write(dir.join("cards.tsv"), "front-a\tback-a\n").unwrap();
+                Vec::new()
+            },
+            |_, _, _, ws2| {
+                vec![
+                    "deck".into(),
+                    "import".into(),
+                    "cards.tsv".into(),
+                    "--workspace".into(),
+                    ws2.into(),
+                ]
+            },
+            "Imported",
+        ),
+        (
+            "deck-restore",
+            |_, ws, _, _| {
+                let member = Path::new(ws).join("decks").join("a.md");
+                std::fs::copy(&member, member.with_extension("md.bak")).unwrap();
+                Vec::new()
+            },
+            |_, member, _, _| vec!["deck".into(), "restore".into(), member.into()],
+            "Restored",
+        ),
+        (
+            "workspace-update-discard",
+            no_setup,
+            |ws, _, _, _| {
+                vec![
+                    "workspace".into(),
+                    "update".into(),
+                    ws.into(),
+                    "--discard".into(),
+                ]
+            },
+            "No staged workspace update",
+        ),
+        (
+            "workspace-deadline",
+            no_setup,
+            |ws, _, _, _| vec!["workspace".into(), "deadline".into(), ws.into()],
+            "no deadline",
+        ),
+        (
+            "workspace-init",
+            no_setup,
+            |_, _, fresh, _| {
+                vec![
+                    "workspace".into(),
+                    "init".into(),
+                    format!("{fresh}-ws"),
+                    "--title".into(),
+                    "T".into(),
+                ]
+            },
+            "Initialized",
+        ),
+        (
+            "share-zip",
+            no_setup,
+            |ws, _, _, _| vec!["share".into(), ws.into(), "--zip".into()],
+            "Wrote ws.zip",
+        ),
+        (
+            "receive-zip",
+            |_, ws, _, _| {
+                let member = Path::new(ws).join("decks").join("a.md");
+                vec![vec![
+                    "share".into(),
+                    member.to_str().unwrap().into(),
+                    "--zip".into(),
+                ]]
+            },
+            |_, _, _, ws2| {
+                vec![
+                    "receive".into(),
+                    "a.zip".into(),
+                    "--workspace".into(),
+                    ws2.into(),
+                ]
+            },
+            "Received",
+        ),
+    ];
+    for (name, setup, build, marker) in rows {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(test_config_dir(&home)).unwrap();
+        let global = dir.path().join("global");
+        std::fs::create_dir_all(global.join("progress")).unwrap();
+        std::fs::write(global.join("progress").join("deck-junk.json"), "{ not json").unwrap();
+        std::fs::write(
+            test_config_dir(&home).join("config.toml"),
+            format!("decks_dir = {:?}\n", global),
+        )
+        .unwrap();
+        // BOTH canonical outside roots are poisoned: the configured decks
+        // root above, and the platform-default data store here, or an eager
+        // open against the unconfigured default (open_store(None) with no
+        // decks_dir) would survive the law.
+        let platform = test_state_dir(&home).join("progress");
+        std::fs::create_dir_all(&platform).unwrap();
+        std::fs::write(platform.join("deck-platform-junk.json"), "{ not json").unwrap();
+
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        let member = write(
+            &members,
+            "a.md",
+            "---\nformat-version: 1\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
+        );
+        let mut store = decks_store(&[&member], &ws);
+        let cards =
+            alix::parser::parse_str("a.md", &std::fs::read_to_string(&member).unwrap()).unwrap();
+        store.get_or_insert(&cards[0].id().unwrap());
+        store.save().unwrap();
+        let fresh = write(&members, "u.md", "## qu\nans-u\n");
+        let ws2 = dir.path().join("ws2");
+        std::fs::create_dir_all(ws2.join("decks")).unwrap();
+        std::fs::write(ws2.join("alix.toml"), "title = \"W2\"\n").unwrap();
+
+        for pre in setup(
+            dir.path(),
+            ws.to_str().unwrap(),
+            &fresh,
+            ws2.to_str().unwrap(),
+        ) {
+            let refs: Vec<&str> = pre.iter().map(String::as_str).collect();
+            let out = alix_in(dir.path(), &home, &refs);
+            assert!(
+                out.status.success(),
+                "row `{name}` setup {refs:?} failed; stderr: {}",
+                stderr(&out)
+            );
+        }
+
+        let args = build(ws.to_str().unwrap(), &member, &fresh, ws2.to_str().unwrap());
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = alix_in(dir.path(), &home, &arg_refs);
+        assert!(
+            out.status.success(),
+            "row `{name}`: unrelated damage changed the outcome; stderr: {}",
+            stderr(&out)
+        );
+        assert!(
+            stdout(&out).contains(marker),
+            "row `{name}`: expected marker {marker:?} in stdout: {}",
+            stdout(&out)
+        );
+    }
 }
 
 #[test]
