@@ -91,6 +91,14 @@ pub fn open_aggregate_store(user_root: &Path) -> Result<Store, StateError> {
     Ok(store)
 }
 
+/// The listing-side open: per-document read granularity, failed deck ids
+/// collected instead of failing the store (see Store::open_aggregate_tolerant).
+pub fn open_aggregate_store_tolerant(user_root: &Path) -> Result<(Store, Vec<String>), StateError> {
+    let (mut store, failed) = Store::open_aggregate_tolerant(UserFiles::new(user_root).progress())?;
+    store.device = store::device_label();
+    Ok((store, failed))
+}
+
 pub fn prepare(
     deck_path: &Path,
     user_root: &Path,

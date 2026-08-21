@@ -27,6 +27,10 @@ pub struct DeckSummary {
     pub exam_due: bool,
     pub has_exam: bool,
     pub locked: bool,
+    /// The deck's OWN progress document failed to load, so every
+    /// progress-derived claim here is suppressed and review is refused;
+    /// siblings are unaffected (per-document read granularity).
+    pub progress_error: bool,
     pub icon: Option<PathBuf>,
     pub indent: usize,
     pub tree: String,
@@ -44,7 +48,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
     if workspace::is_workspace(root) {
         return vec![folder_summary(root, root, review, now_ms)];
     }
-    let root_store = crate::state::open_aggregate_store(&workspace::root_store_path(root)).ok();
+    let (root_store, health) = open_listing_store(&workspace::root_store_path(root));
     let augment = AugmentCache::open_for_workspace(root).ok();
     let mut names: Vec<PathBuf> = std::fs::read_dir(root)
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
@@ -69,6 +73,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
                 deck_summary(
                     &path,
                     root_store.as_ref(),
+                    &health,
                     augment.as_ref(),
                     root,
                     review,
@@ -115,7 +120,7 @@ fn member_rows(
     review: &ReviewConfig,
     now_ms: u64,
 ) -> (Vec<PathBuf>, Vec<(DeckSummary, bool)>) {
-    let store = member_store(root, dir);
+    let (store, health) = member_store(root, dir);
     let augment = AugmentCache::open_for_workspace(dir).ok();
     let paths: Vec<PathBuf> = match workspace::Workspace::load(dir) {
         Ok(ws) => ws.members,
@@ -123,7 +128,17 @@ fn member_rows(
     };
     let rows: Vec<(DeckSummary, bool)> = paths
         .iter()
-        .map(|m| deck_summary(m, store.as_ref(), augment.as_ref(), root, review, now_ms))
+        .map(|m| {
+            deck_summary(
+                m,
+                store.as_ref(),
+                &health,
+                augment.as_ref(),
+                root,
+                review,
+                now_ms,
+            )
+        })
         .collect();
     (paths, rows)
 }
@@ -179,13 +194,43 @@ pub fn sync_conflicts_under(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn member_store(root: &Path, dir: &Path) -> Option<Store> {
+/// Which decks' progress documents failed to read: per-deck ids from the
+/// tolerant open, or everything when the store itself cannot be opened
+/// (directory damage, a cross-document ownership conflict). A missing
+/// progress directory is a FRESH store, never damage.
+enum ProgressHealth {
+    PerDeck(std::collections::HashSet<String>),
+    AllFailed,
+}
+
+impl ProgressHealth {
+    fn error_for(&self, deck: Option<&Deck>) -> bool {
+        match self {
+            ProgressHealth::AllFailed => true,
+            ProgressHealth::PerDeck(failed) => deck
+                .and_then(|d| d.deck_token.as_deref())
+                .is_some_and(|token| failed.contains(token)),
+        }
+    }
+}
+
+fn open_listing_store(path: &Path) -> (Option<Store>, ProgressHealth) {
+    match crate::state::open_aggregate_store_tolerant(path) {
+        Ok((store, failed)) => (
+            Some(store),
+            ProgressHealth::PerDeck(failed.into_iter().collect()),
+        ),
+        Err(_) => (None, ProgressHealth::AllFailed),
+    }
+}
+
+fn member_store(root: &Path, dir: &Path) -> (Option<Store>, ProgressHealth) {
     let path = if workspace::is_workspace(dir) {
         workspace::store_path(dir)
     } else {
         workspace::root_store_path(root)
     };
-    crate::state::open_aggregate_store(&path).ok()
+    open_listing_store(&path)
 }
 
 fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -> DeckSummary {
@@ -214,6 +259,7 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
         exam_due: false,
         has_exam: false,
         locked: false,
+        progress_error: false,
         icon,
         indent: 0,
         tree: String::new(),
@@ -223,6 +269,7 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
 fn deck_summary(
     path: &Path,
     store: Option<&Store>,
+    health: &ProgressHealth,
     augment: Option<&AugmentCache>,
     decks_dir: &Path,
     review: &ReviewConfig,
@@ -266,20 +313,24 @@ fn deck_summary(
             .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
         _ => Depth::default(),
     };
+    let progress_error = health.error_for(deck.as_ref());
+    // An error row makes NO progress-derived claims: even "due" would be a
+    // fabrication (an empty view of an unreadable document reads as fresh).
     let row = DeckSummary {
         title: if title.is_empty() { stem } else { title },
         path: path.to_path_buf(),
         is_workspace: false,
-        due,
+        due: due && !progress_error,
         can_recognize,
-        ready,
+        ready: ready && !progress_error,
         deadline: None,
         is_trace,
         last_depth,
-        mastered,
-        exam_due,
+        mastered: mastered && !progress_error,
+        exam_due: exam_due && !progress_error,
         has_exam,
         locked,
+        progress_error,
         icon: None,
         indent: 0,
         tree: String::new(),
@@ -708,6 +759,86 @@ mod tests {
                 ("Loose Deck", false),
                 ("c-plain", true),
             ]
+        );
+    }
+
+    #[test]
+    fn a_members_own_unreadable_document_reds_only_that_member() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write(&ws.join("decks").join("a.md"), "## qa\nans-a\n");
+        write(&ws.join("decks").join("b.md"), "## qb\nans-b\n");
+        let progress = workspace::store_path(&ws).join("progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(progress.join("deck-b.json"), "{ not json").unwrap();
+
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let a = rows.iter().find(|r| r.title == "a").unwrap();
+        let b = rows.iter().find(|r| r.title == "b").unwrap();
+        assert!(
+            !a.progress_error,
+            "a sibling with a healthy document lists normally"
+        );
+        assert!(
+            b.progress_error,
+            "the member whose OWN document is unreadable reds out"
+        );
+        assert!(
+            !b.due && !b.mastered && !b.exam_due,
+            "an error row makes no progress claims"
+        );
+    }
+
+    #[test]
+    fn a_healthy_siblings_loaded_progress_survives_an_unreadable_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write(&ws.join("decks").join("a.md"), "## qa\nans-a\n");
+        write(&ws.join("decks").join("b.md"), "## qb\nans-b\n");
+        let progress = workspace::store_path(&ws).join("progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(
+            progress.join("deck-a.json"),
+            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{},"deck":{"mastered_at_ms":1}}"#,
+        )
+        .unwrap();
+        std::fs::write(progress.join("deck-b.json"), "{ not json").unwrap();
+
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let a = rows.iter().find(|r| r.title == "a").unwrap();
+        let b = rows.iter().find(|r| r.title == "b").unwrap();
+        assert!(!a.progress_error);
+        assert!(
+            a.mastered,
+            "the bad later document must not erase the healthy sibling's loaded progress"
+        );
+        assert!(b.progress_error);
+    }
+
+    #[test]
+    fn an_existing_non_directory_progress_root_reds_every_member() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write(&ws.join("decks").join("a.md"), "## qa\nans-a\n");
+        write(&ws.join("decks").join("b.md"), "## qb\nans-b\n");
+        let store_root = workspace::store_path(&ws);
+        std::fs::create_dir_all(&store_root).unwrap();
+        std::fs::write(store_root.join("progress"), "not a directory").unwrap();
+
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        assert_eq!(2, rows.len());
+        assert!(
+            rows.iter().all(|row| row.progress_error),
+            "an existing invalid store root is damage, not a fresh missing store: {rows:#?}"
         );
     }
 
@@ -1352,9 +1483,11 @@ mod tests {
         let review = ReviewConfig::default();
         let now = session::now_ms();
 
+        let healthy = ProgressHealth::PerDeck(std::collections::HashSet::new());
         let (bare, _) = deck_summary(
             &deck_path,
             Some(&store),
+            &healthy,
             Some(&no_augment()),
             dir.path(),
             &review,
@@ -1367,6 +1500,7 @@ mod tests {
         let (armed, _) = deck_summary(
             &deck_path,
             Some(&store),
+            &healthy,
             Some(&augment),
             dir.path(),
             &review,

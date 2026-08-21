@@ -653,10 +653,44 @@ impl Store {
     }
 
     pub fn open_for_decks(path: impl AsRef<Path>, decks: &[Deck]) -> Result<Self, StoreError> {
-        Self::open_aggregate_for(path.as_ref().to_path_buf(), decks)
+        Self::open_aggregate_impl(path.as_ref().to_path_buf(), decks, None)
+    }
+
+    /// The aggregate open with per-document read granularity: a document
+    /// that fails to read is SKIPPED and its deck id collected, instead of
+    /// failing the whole store, so one damaged member cannot silence its
+    /// siblings' progress. Directory-level failures and cross-document
+    /// ownership conflicts still fail the open: tolerance of a damaged
+    /// file is never tolerance of a duplicate-key conflict.
+    pub fn open_aggregate_tolerant(
+        path: impl AsRef<Path>,
+    ) -> Result<(Self, Vec<String>), StoreError> {
+        let mut failed = Vec::new();
+        let store = Self::open_aggregate_impl(path.as_ref().to_path_buf(), &[], Some(&mut failed))?;
+        Ok((store, failed))
     }
 
     fn open_aggregate_for(path: PathBuf, expected_decks: &[Deck]) -> Result<Self, StoreError> {
+        Self::open_aggregate_impl(path, expected_decks, None)
+    }
+
+    fn open_aggregate_impl(
+        path: PathBuf,
+        expected_decks: &[Deck],
+        mut tolerated: Option<&mut Vec<String>>,
+    ) -> Result<Self, StoreError> {
+        // The promised distinction: an ABSENT root is a fresh store; an
+        // existing non-directory root is damage and must fail loud, or the
+        // listing would fabricate fresh-and-due rows over it.
+        if path.exists() && !path.is_dir() {
+            return Err(StoreError::Io {
+                path: path.clone(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotADirectory,
+                    "the progress root is not a directory",
+                ),
+            });
+        }
         let mut document_paths: Vec<PathBuf> = if path.is_dir() {
             std::fs::read_dir(&path)
                 .map_err(|source| StoreError::Io {
@@ -723,7 +757,16 @@ impl Store {
             };
             let current_subject = expected.get(&deck_id).map(String::as_str);
             let (revision, subject, data) =
-                read_deck_data(&document_path, &deck_id, current_subject)?;
+                match read_deck_data(&document_path, &deck_id, current_subject) {
+                    Ok(read) => read,
+                    Err(error) => match tolerated.as_deref_mut() {
+                        Some(failed) => {
+                            failed.push(deck_id);
+                            continue;
+                        }
+                        None => return Err(error),
+                    },
+                };
             merge_owned(&mut cards, &mut owners.cards, &data.cards, &deck_id, "card")?;
             merge_owned(
                 &mut records,
@@ -2990,6 +3033,56 @@ mod tests {
 
         let store = Store::open(dir.path()).unwrap();
         assert_eq!(1, store.len());
+    }
+
+    #[test]
+    fn tolerant_aggregate_open_still_rejects_cross_document_card_ownership_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("deck-a.json"),
+            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{"card-shared":{}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("deck-b.json"),
+            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{"card-shared":{}}}"#,
+        )
+        .unwrap();
+
+        let error = match Store::open_aggregate_tolerant(dir.path()) {
+            Ok(_) => panic!("tolerance swallowed a cross-document ownership conflict"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            StoreError::DuplicateKey { kind: "card", .. }
+        ));
+    }
+
+    #[test]
+    fn tolerant_aggregate_open_still_rejects_cross_document_record_ownership_conflicts() {
+        // Records merge through a SEPARATE merge_owned call, so its
+        // fail-closed behavior can regress independently of cards'.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("deck-a.json"),
+            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{},"records":{"rec-shared":{"version":1,"holes":[]}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("deck-b.json"),
+            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{},"records":{"rec-shared":{"version":1,"holes":[]}}}"#,
+        )
+        .unwrap();
+
+        let error = match Store::open_aggregate_tolerant(dir.path()) {
+            Ok(_) => panic!("tolerance swallowed a cross-document record conflict"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            StoreError::DuplicateKey { kind: "record", .. }
+        ));
     }
 
     #[test]
