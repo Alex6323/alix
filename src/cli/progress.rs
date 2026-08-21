@@ -191,15 +191,21 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         return reset_orphans(&args, &config);
     }
 
-    let mut store = open_store(
-        args.store
-            .clone()
-            .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d))),
-    )?;
+    // Opened only by the branches that use it (`--all`, exact `--card`): a
+    // target reset resolves the TARGET's store below, and an unrelated
+    // store's health must not gate it.
+    let default_store = || {
+        open_store(
+            args.store
+                .clone()
+                .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d))),
+        )
+    };
 
     // `store.len()` counts personal-card schedules too, so a store holding
     // only personal cards still reports something to reset.
     if args.all {
+        let mut store = default_store()?;
         let n = store.len();
         if n == 0 {
             println!("No stored progress to reset.");
@@ -221,6 +227,7 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         .filter(|c| alix::token::parse_prefixed_card_id(c).is_some());
     if let Some(id) = exact_id.filter(|_| args.target.is_none()) {
         let id = id.to_string();
+        let mut store = default_store()?;
         return reset_ids(
             &mut store,
             vec![(id.clone(), String::new())],

@@ -843,6 +843,48 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
 }
 
 #[test]
+fn a_target_reset_ignores_an_unreadable_default_store() {
+    // The configured decks dir's store is NOT the target's store: a garbage
+    // progress document there must not gate resetting a workspace that
+    // carries its own store.
+    let dir = TempDir::new().unwrap();
+    let global = dir.path().join("global");
+    std::fs::create_dir_all(global.join("progress")).unwrap();
+    std::fs::write(global.join("progress").join("deck-junk.json"), "{ not json").unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("decks_dir = {:?}\n", global),
+    );
+
+    let ws = dir.path().join("ws");
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+    let a = write(
+        &members,
+        "a.md",
+        "---\nformat-version: 1\nid: deck-decka\n---\n## qa <!-- id: card-qa1 -->\nans-a\n",
+    );
+    let mut store = decks_store(&[&a], &ws);
+    let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
+    store.get_or_insert(&cards[0].id().unwrap());
+    store.save().unwrap();
+
+    let out = alix(&["reset", ws.to_str().unwrap(), "--yes", "--config", &config]);
+    assert!(
+        out.status.success(),
+        "an unrelated store's health must not gate a workspace reset; stderr: {}",
+        stderr(&out)
+    );
+    assert_eq!(
+        0,
+        decks_store(&[&a], &ws).len(),
+        "the workspace's own store resets"
+    );
+}
+
+#[test]
 fn stats_reports_a_fresh_deck_against_an_empty_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

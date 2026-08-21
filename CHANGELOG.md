@@ -327,6 +327,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix reset <target>` opened the configured decks folder's progress
+  store before looking at the target, so one unreadable file there
+  blocked resetting an unrelated deck or workspace. The store is now
+  opened only by the branches that use it (`--all` and exact `--card`);
+  a target reset touches only the target's own store.
+
 - The kids web app handed its error toast and its tutor unbound
   `setTimeout`/`setInterval` references, which browsers reject with
   `Illegal invocation` when called as plain object methods: the error
