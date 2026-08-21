@@ -86,6 +86,10 @@ pub struct Deck {
     pub title: Option<String>,
     pub preamble: Option<String>,
     pub trace: Option<String>,
+    /// Generic load diagnostics (a stamped diagram that did not resolve):
+    /// the session surfaces these so a silent fallback cannot be mistaken
+    /// for a successful freeze.
+    pub load_warnings: Vec<String>,
 }
 
 #[derive(Debug, Error)]
@@ -160,7 +164,16 @@ impl Deck {
                 image.src = resolve_image(&base_dir, std::mem::take(&mut image.src));
             }
         }
-        crate::assets::resolve_diagrams(&path, deck_token.as_deref(), &mut cards);
+        let stamp_freshness = crate::diagram::attached_stamp_freshness(
+            &crate::diagram::fences_in_document(&text, parsed.frontmatter_span),
+            &text,
+        );
+        let load_warnings = crate::assets::resolve_diagrams(
+            &path,
+            deck_token.as_deref(),
+            &mut cards,
+            &stamp_freshness,
+        );
         let mut expanded = Vec::with_capacity(cards.len());
         for card in cards {
             let mut card = card;
@@ -195,6 +208,7 @@ impl Deck {
             title,
             preamble,
             trace,
+            load_warnings,
         })
     }
 

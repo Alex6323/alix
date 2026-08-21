@@ -8,7 +8,7 @@ use crate::{
 
 // Struct variants (not newtype) because serde's internal tagging can't tag
 // newtype variants; wire shape is `{"kind": ..., "text": ...}` (docs/API.md).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum NoteUnit {
     Sentence {
@@ -28,6 +28,15 @@ pub enum NoteUnit {
         width: u32,
         height: u32,
         alt: String,
+        /// Overlay regions in RASTER pixel space (the PNG's own pixels, the
+        /// space `naturalWidth` placement uses); absent on an unmasked
+        /// diagram, so the committed 6a wire shape stands.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        regions: Vec<crate::review::RegionView>,
+        /// The post-answer accessible text: asked labels revealed, sibling
+        /// and cover labels still masked. Absent when nothing is masked.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revealed_alt: Option<String>,
     },
     Checklist {
         items: Vec<ChecklistItem>,
@@ -104,6 +113,8 @@ fn fence_unit(
                 width: resolved.manifest.logical_width,
                 height: resolved.manifest.logical_height,
                 alt: source,
+                regions: Vec::new(),
+                revealed_alt: None,
             };
         }
     }
@@ -126,16 +137,16 @@ fn text_units_with(
         if let Some(marker) = fence_marker(logical) {
             match &code_fence {
                 Some((open_marker, info)) if *open_marker == marker => {
+                    // An empty fence keeps its unit slot: clients consume one
+                    // fence-shaped unit per closed raw fence.
                     let block = std::mem::take(&mut code);
-                    if !block.is_empty() {
-                        units.push(fence_unit(info, block, diagrams));
-                    }
+                    units.push(fence_unit(info, block, diagrams));
                     code_fence = None;
                 }
                 None => {
                     flush_checklist(&mut checklist, &mut units);
                     flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
-                    let info = logical.trim_start().trim_start_matches(marker).trim();
+                    let info = fence_info(logical, marker);
                     code_fence = Some((marker, info.to_string()));
                     code.clear();
                 }
@@ -208,12 +219,179 @@ pub(crate) fn front_units_with(
         .then_some(units)
 }
 
-fn fence_marker(line: &str) -> Option<char> {
+/// The fence-shaped units of a card's context, in fence order. Context
+/// renders line-by-line on every client (contextLine semantics), so this
+/// stream carries only what the nth-fence alignment law consumes. The
+/// context text is MASKED, so a mermaid fence resolves through its parse
+/// record's unmasked fingerprint, never through the displayed text; a
+/// record carrying spans or holes stays code until span binding ships.
+pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
+    let context = &card.context;
+    let diagrams = &card.resolved_diagrams;
+    let fences = &card.answer_fences;
+    let mut units = Vec::new();
+    let mut records = fences.iter();
+    let mut open: Option<(char, bool)> = None;
+    let mut interior: Vec<String> = Vec::new();
+    for line in context {
+        match (open, fence_marker(line)) {
+            (Some((ch, mermaid)), Some(marker)) if ch == marker => {
+                open = None;
+                let lines = std::mem::take(&mut interior);
+                let record = if mermaid { records.next() } else { None };
+                units.push(context_fence_unit(card, mermaid, lines, record, diagrams));
+            }
+            (Some(_), _) => interior.push(line.clone()),
+            (None, Some(marker)) => {
+                let mermaid = fence_info(line, marker).eq_ignore_ascii_case("mermaid");
+                open = Some((marker, mermaid));
+            }
+            (None, None) => {}
+        }
+    }
+    // An unterminated fence still yields its gathered lines; it was never
+    // recorded, so it can only be code.
+    if !interior.is_empty() {
+        units.push(NoteUnit::Code { lines: interior });
+    }
+    units
+}
+
+fn context_fence_unit(
+    card: &Card,
+    mermaid: bool,
+    lines: Vec<String>,
+    record: Option<&crate::card::AnswerFence>,
+    diagrams: &[crate::card::ResolvedDiagram],
+) -> NoteUnit {
+    if mermaid
+        && let Some(record) = record
+        && !record.holes
+        && let Some(resolved) = diagrams
+            .iter()
+            .find(|d| d.fingerprint == record.fingerprint)
+    {
+        if record.spans.is_empty() {
+            return NoteUnit::Diagram {
+                src: resolved.png.display().to_string(),
+                width: resolved.manifest.logical_width,
+                height: resolved.manifest.logical_height,
+                // The record's interior, not the displayed lines: the
+                // authored source is what was frozen and rendered.
+                alt: record.interior.to_string(),
+                regions: Vec::new(),
+                revealed_alt: None,
+            };
+        }
+        if let Some(unit) = masked_diagram_unit(card, record, resolved) {
+            return unit;
+        }
+    }
+    NoteUnit::Code { lines }
+}
+
+/// The masked projection: every span in the fence must validate and bind
+/// (complete-label-only), or the whole fence stays the masked-source code
+/// unit for this card; a partial diagram would mask the wrong thing.
+fn masked_diagram_unit(
+    card: &Card,
+    record: &crate::card::AnswerFence,
+    resolved: &crate::card::ResolvedDiagram,
+) -> Option<NoteUnit> {
+    use crate::{
+        parser::region::RegionKind,
+        review::{RegionRole, RegionView},
+    };
+
+    let manifest = &resolved.manifest;
+    crate::diagram::validate_label_sources(manifest, &record.interior).ok()?;
+    let asked: Vec<usize> = match &card.region {
+        None => Vec::new(),
+        Some(crate::card::RegionSlot::Single { line, .. }) => vec![*line],
+        Some(crate::card::RegionSlot::Group { members, .. }) => {
+            members.iter().map(|member| member.line).collect()
+        }
+    };
+    let covers_reveal = crate::review::covers_reveal(card);
+    // label index -> (role, reveal) for every bound span; a label bound
+    // twice cannot happen (spans never overlap, ranges never overlap).
+    let mut bound: Vec<(usize, RegionRole, bool)> = Vec::new();
+    for span in &record.spans {
+        let index = crate::diagram::bind_span(manifest, span.line, span.start, span.end).ok()?;
+        let kind = card
+            .span_regions
+            .iter()
+            .find(|region| region.line == span.line)
+            .map(|region| region.kind)?;
+        let (role, reveal) = match kind {
+            RegionKind::Cover => (RegionRole::Cover, covers_reveal),
+            RegionKind::Blank if asked.contains(&span.line) => (RegionRole::Asked, true),
+            RegionKind::Blank => (RegionRole::Mask, false),
+        };
+        bound.push((index, role, reveal));
+    }
+    let masked = |index: usize| bound.iter().any(|(bound_index, ..)| *bound_index == index);
+    let revealed = |index: usize| {
+        bound
+            .iter()
+            .any(|(bound_index, role, _)| *bound_index == index && *role == RegionRole::Asked)
+    };
+    // The accessible text is the RENDERED label inventory in reading order
+    // (box y, then x), never the source: source ids can spell out a masked
+    // label's text.
+    let mut order: Vec<usize> = (0..manifest.labels.len()).collect();
+    order.sort_by_key(|&index| {
+        let bounds = &manifest.labels[index].bounds;
+        (bounds.y, bounds.x)
+    });
+    let inventory = |shows: &dyn Fn(usize) -> bool| {
+        let entries: Vec<&str> = order
+            .iter()
+            .map(|&index| {
+                if shows(index) {
+                    manifest.labels[index].text.as_str()
+                } else {
+                    "…"
+                }
+            })
+            .collect();
+        format!("diagram labels: {}", entries.join(", "))
+    };
+    let regions = bound
+        .iter()
+        .map(|&(index, role, reveal_on_answer)| {
+            let bounds = &manifest.labels[index].bounds;
+            RegionView {
+                role,
+                reveal_on_answer,
+                x: f64::from(bounds.x),
+                y: f64::from(bounds.y),
+                width: f64::from(bounds.width),
+                height: f64::from(bounds.height),
+                unit: "px".to_string(),
+            }
+        })
+        .collect();
+    Some(NoteUnit::Diagram {
+        src: resolved.png.display().to_string(),
+        width: manifest.logical_width,
+        height: manifest.logical_height,
+        alt: inventory(&|index| !masked(index)),
+        regions,
+        revealed_alt: Some(inventory(&|index| !masked(index) || revealed(index))),
+    })
+}
+
+pub(crate) fn fence_marker(line: &str) -> Option<char> {
     let trimmed = line.trim_start();
     trimmed
         .starts_with("```")
         .then_some('`')
         .or_else(|| trimmed.starts_with("~~~").then_some('~'))
+}
+
+pub(crate) fn fence_info(line: &str, marker: char) -> &str {
+    line.trim_start().trim_start_matches(marker).trim()
 }
 
 fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>) {
@@ -607,6 +785,7 @@ mod tests {
             width,
             height,
             alt,
+            ..
         } = &units[1]
         else {
             panic!("the fence slot holds the diagram: {units:?}");
@@ -619,6 +798,137 @@ mod tests {
         );
         assert_eq!(source, alt, "the fence source is the accessible text");
         assert!(matches!(&units[2], NoteUnit::Sentence { text, .. } if text == "after"));
+    }
+
+    fn context_card(
+        context: &[String],
+        diagrams: Vec<crate::card::ResolvedDiagram>,
+        fences: Vec<crate::card::AnswerFence>,
+    ) -> Card {
+        let mut card = Card::plain(
+            std::sync::Arc::from("deck.md"),
+            "q".to_string(),
+            vec!["answer".to_string()],
+            None,
+            1,
+        );
+        card.context = context.to_vec();
+        card.resolved_diagrams = diagrams;
+        card.answer_fences = fences;
+        card
+    }
+
+    fn record(source: &str) -> crate::card::AnswerFence {
+        crate::card::AnswerFence {
+            fingerprint: crate::diagram::fingerprint(source),
+            interior: std::sync::Arc::from(source),
+            spans: Vec::new(),
+            holes: false,
+        }
+    }
+
+    /// The context stream's law: fence-shaped units only, one per closed
+    /// fence in order; a clean record (no spans, no holes) whose unmasked
+    /// fingerprint resolves swaps to the diagram, everything else is code.
+    #[test]
+    fn a_clean_recorded_context_fence_resolves_through_its_record() {
+        let source = "flowchart LR\n A-->B";
+        let context: Vec<String> = [
+            "prose line",
+            "```rust",
+            "let x = 1;",
+            "```",
+            "```mermaid",
+            "flowchart LR",
+            " A-->B",
+            "```",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let fences = vec![record(source)];
+        let units = context_units_with(&context_card(&context, resolved(source), fences));
+        assert_eq!(2, units.len(), "{units:?}");
+        assert!(
+            matches!(&units[0], NoteUnit::Code { lines } if lines == &["let x = 1;"]),
+            "a non-mermaid fence is code and consumes no record: {units:?}"
+        );
+        let NoteUnit::Diagram { alt, .. } = &units[1] else {
+            panic!("the mermaid fence resolves through its record: {units:?}");
+        };
+        assert_eq!(source, alt, "the clean interior is the accessible text");
+    }
+
+    #[test]
+    fn a_record_with_spans_or_holes_or_no_resolution_stays_code_in_context() {
+        let source = "flowchart LR\n A-->B";
+        let context: Vec<String> = ["```mermaid", "flowchart LR", " A-->B", "```"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let with_spans = crate::card::AnswerFence {
+            spans: vec![crate::card::AnswerFenceSpan {
+                line: 6,
+                start: 0,
+                end: 4,
+            }],
+            ..record(source)
+        };
+        let with_holes = crate::card::AnswerFence {
+            holes: true,
+            ..record(source)
+        };
+        let cases: [(Vec<crate::card::AnswerFence>, &str); 4] = [
+            (vec![with_spans], "bound spans hold for span binding"),
+            (vec![with_holes], "a hole poisons the fence"),
+            (vec![record("flowchart LR\n X-->Y")], "no resolution"),
+            (Vec::new(), "no record at all"),
+        ];
+        for (fences, why) in cases {
+            let units = context_units_with(&context_card(&context, resolved(source), fences));
+            assert!(
+                matches!(&units[0], NoteUnit::Code { .. }),
+                "{why}: {units:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_masked_context_interior_resolves_by_record_never_by_its_own_text() {
+        let authored = "flowchart LR\n![](x.png)\n A-->B";
+        let context: Vec<String> = ["```mermaid", "flowchart LR", " A-->B", "```"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let fences = vec![record(authored)];
+        let units = context_units_with(&context_card(&context, resolved(authored), fences));
+        let NoteUnit::Diagram { alt, .. } = &units[0] else {
+            panic!(
+                "the record carries the unmasked fingerprint even where the \
+                 displayed interior diverges: {units:?}"
+            );
+        };
+        assert_eq!(
+            authored, alt,
+            "the accessible text is the authored interior, not the displayed one"
+        );
+    }
+
+    /// Clients consume one fence-shaped unit per closed raw fence, so an
+    /// empty fence must still emit its code unit: skipping it hands this
+    /// fence the NEXT fence's unit and a later diagram lands one slot early.
+    #[test]
+    fn an_empty_fence_keeps_its_unit_slot_so_a_later_diagram_stays_aligned() {
+        let source = "flowchart LR\n A-->B";
+        let text = "```\n```\n```mermaid\nflowchart LR\n A-->B\n```";
+        let mut projector = DisplayProjector::default();
+        let units = text_units_with(text, &mut projector, false, &resolved(source));
+        assert_eq!(2, units.len(), "{units:?}");
+        assert!(
+            matches!(&units[0], NoteUnit::Code { lines } if lines.is_empty()),
+            "the empty fence holds its slot: {units:?}"
+        );
+        assert!(matches!(&units[1], NoteUnit::Diagram { .. }), "{units:?}");
     }
 
     /// The server resolves availability: no resolved stamp, a stale

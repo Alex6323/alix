@@ -49,6 +49,7 @@
         }
       ]
     ],
+    "context_units": [],
     "crumb": {
       "cells": [
         [
@@ -215,6 +216,9 @@
   ],
   "kind": "review",
   "label": "rust.md",
+  "load_warnings": [
+    "2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details"
+  ],
   "met_total": 4,
   "mode": "flip",
   "new_left": 0,

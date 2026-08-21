@@ -107,6 +107,7 @@ class CardView {
   final List<String> context;
   final bool contextLeads;
   final List<List<InlineRun>> contextRuns;
+  final List<NoteUnit> contextUnits;
   final List<String> back;
   final List<List<InlineRun>> backRuns;
   final List<NoteUnit> backUnits;
@@ -123,6 +124,7 @@ class CardView {
     required this.context,
     required this.contextLeads,
     required this.contextRuns,
+    required this.contextUnits,
     required this.back,
     required this.backRuns,
     required this.backUnits,
@@ -141,6 +143,7 @@ class CardView {
       context.hashCode ^
       contextLeads.hashCode ^
       contextRuns.hashCode ^
+      contextUnits.hashCode ^
       back.hashCode ^
       backRuns.hashCode ^
       backUnits.hashCode ^
@@ -161,6 +164,7 @@ class CardView {
           context == other.context &&
           contextLeads == other.contextLeads &&
           contextRuns == other.contextRuns &&
+          contextUnits == other.contextUnits &&
           back == other.back &&
           backRuns == other.backRuns &&
           backUnits == other.backUnits &&
@@ -419,6 +423,8 @@ sealed class NoteUnit with _$NoteUnit {
     required int width,
     required int height,
     required String alt,
+    required List<RegionView> regions,
+    String? revealedAlt,
   }) = NoteUnit_Diagram;
   const factory NoteUnit.checklist({required List<ChecklistItem> items}) =
       NoteUnit_Checklist;
@@ -513,6 +519,7 @@ class ReviewState {
   final int deckTotal;
   final RecognizeGap? recognizeGap;
   final String? saveError;
+  final List<String> loadWarnings;
 
   const ReviewState({
     this.card,
@@ -540,6 +547,7 @@ class ReviewState {
     required this.deckTotal,
     this.recognizeGap,
     this.saveError,
+    required this.loadWarnings,
   });
 
   @override
@@ -568,7 +576,8 @@ class ReviewState {
       metTotal.hashCode ^
       deckTotal.hashCode ^
       recognizeGap.hashCode ^
-      saveError.hashCode;
+      saveError.hashCode ^
+      loadWarnings.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -599,7 +608,8 @@ class ReviewState {
           metTotal == other.metTotal &&
           deckTotal == other.deckTotal &&
           recognizeGap == other.recognizeGap &&
-          saveError == other.saveError;
+          saveError == other.saveError &&
+          loadWarnings == other.loadWarnings;
 }
 
 class TutorCard {

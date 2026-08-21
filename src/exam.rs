@@ -1079,6 +1079,7 @@ mod tests {
             title: None,
             preamble: None,
             trace: None,
+            load_warnings: Vec::new(),
         }
     }
 
@@ -1750,6 +1751,7 @@ mod tests {
             title: None,
             preamble: None,
             trace: None,
+            load_warnings: Vec::new(),
         };
         let section = source_section(&deck.source_layers(), deck.path.parent()).unwrap();
         assert!(section.contains("the ground truth text"));

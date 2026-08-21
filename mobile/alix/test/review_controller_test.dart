@@ -104,6 +104,7 @@ ReviewStateModel _state({int remaining = 2, bool finished = false}) {
       context: const [],
       contextLeads: false,
       contextRuns: const [],
+      contextUnits: const [],
       back: const ['answer'],
       backRuns: const [[]],
       backUnits: const [],

@@ -12,14 +12,27 @@ export function createTutor({
     appendRuns,
     appendRunsOrText,
     chip,
-    contextLine,
+    appendContext,
+    diagramImage,
     document: doc,
+    maskedImage,
     el,
     keys,
     label,
     legend,
     stage,
   } = ui;
+  // The tutor reference shows what the learner is being asked about with
+  // the asked label revealed; sibling and cover masks stay, because the
+  // tutor must not leak the block's other questions.
+  function referenceDiagram(unit) {
+    const img = diagramImage(unit);
+    if (img.dataset.revealedAlt) img.alt = img.dataset.revealedAlt;
+    const kept = (unit.regions || []).filter((r) => !r.reveal_on_answer);
+    if (!kept.length) return img;
+    return maskedImage(img, kept, "img");
+  }
+
   let open = false;
   let data = { transcript: [], thinking: false, status: null, error: null };
   let info = { backend: "claude", model: "default", effort: "default" };
@@ -293,13 +306,14 @@ export function createTutor({
         if (card.front_runs) appendRuns(front, card.front_runs);
         else front.textContent = card.front;
         reference.appendChild(front);
-        for (let index = 0; index < (card.context || []).length; index++) {
-          reference.appendChild(contextLine(
-            card.context[index],
-            card.context_runs && card.context_runs[index],
-            "ask-card-ctx",
-          ));
-        }
+        appendContext(
+          reference,
+          card.context,
+          card.context_runs,
+          card.context_units,
+          "ask-card-ctx",
+          referenceDiagram,
+        );
         for (let index = 0; index < card.back.length; index++) {
           const answer = el("div", "ask-card-a");
           if (card.back_runs && card.back_runs[index]) appendRuns(answer, card.back_runs[index]);

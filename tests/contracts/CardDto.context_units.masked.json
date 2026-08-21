@@ -1,0 +1,21 @@
+[
+  {
+    "alt": "diagram labels: store, …",
+    "height": 114,
+    "kind": "diagram",
+    "regions": [
+      {
+        "height": 40.0,
+        "reveal_on_answer": true,
+        "role": "asked",
+        "unit": "px",
+        "width": 100.0,
+        "x": 10.0,
+        "y": 50.0
+      }
+    ],
+    "revealed_alt": "diagram labels: store, Cache",
+    "src": "/img/0c6d4b01aba232a4",
+    "width": 188
+  }
+]

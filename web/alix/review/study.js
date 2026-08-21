@@ -39,9 +39,11 @@ export function createStudy({
     appendReveal,
     appendRuns,
     chip,
+    diagramImage,
+    maskedImage,
     clearLegendSides,
+    appendContext,
     computedStyle,
-    contextLine,
     crumbStrip,
     deckEl,
     document: doc,
@@ -377,15 +379,11 @@ export function createStudy({
     // front keeps the lead and the label sits above it.
     if (c.context.length && c.context_leads) frontNode.classList.add("topic");
     if (!c.context_leads) {
-      for (let i = 0; i < c.context.length; i++) {
-        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i], "context label"));
-      }
+      appendContext(q, c.context, c.context_runs, c.context_units, "context label", contextDiagram);
     }
     q.appendChild(frontNode);
     if (c.context_leads) {
-      for (let i = 0; i < c.context.length; i++) {
-        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
-      }
+      appendContext(q, c.context, c.context_runs, c.context_units, undefined, contextDiagram);
     }
     appendImages(q, c.images);
 
@@ -421,15 +419,11 @@ export function createStudy({
     // front keeps the lead and the label sits above it.
     if (c.context.length && c.context_leads) frontNode.classList.add("topic");
     if (!c.context_leads) {
-      for (let i = 0; i < c.context.length; i++) {
-        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i], "context label"));
-      }
+      appendContext(q, c.context, c.context_runs, c.context_units, "context label", browseDiagram);
     }
     q.appendChild(frontNode);
     if (c.context_leads) {
-      for (let i = 0; i < c.context.length; i++) {
-        q.appendChild(contextLine(c.context[i], c.context_runs && c.context_runs[i]));
-      }
+      appendContext(q, c.context, c.context_runs, c.context_units, undefined, browseDiagram);
     }
     appendImages(q, c.images);
 
@@ -500,7 +494,10 @@ export function createStudy({
     else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
     else { fillAnswer(a); setNote(fullyRevealed()); }
     const cardEl = doc.getElementById("card");
-    if (cardEl) cardEl.classList.toggle("answered", isAnswered());
+    if (cardEl) {
+      cardEl.classList.toggle("answered", isAnswered());
+      syncDiagramAnswerState(cardEl);
+    }
     // A cited card: the whole region toggles answer ⟷ source (click it, or `s`).
     // The pill both marks the card as having a source and labels where it is.
     a.classList.toggle("citable", citable);
@@ -1062,7 +1059,7 @@ export function createStudy({
     img.alt = im.alt || "";
     const regions = im.regions || [];
     if (!regions.length && !im.crop) return img;
-    if (!im.crop) return maskedImage(img, regions, "img");
+    if (!im.crop) return maskedCardImage(img, regions, "img");
     // Region and crop geometry live in the source image's own space (px of
     // the source, or % of it), never in crop space: the crop is a viewport,
     // so the full-image sheet shifts inside it and masks sit on the sheet.
@@ -1131,59 +1128,27 @@ export function createStudy({
     notice("a blank lies outside the image, so its question cannot be drawn");
   }
 
-  // The three-role vocabulary: an asked region shows the blank glyph, a
-  // sibling card's mask the hidden glyph, and a cover stays a plain fill:
-  // it hides answer-giving content and is never a question.
-  function maskGlyph(mask, r, prefix) {
-    if (r.role === "cover") return;
-    mask.appendChild(el("span", prefix + "-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+  // The dom-level masked image bound to this surface's loud channel.
+  function maskedCardImage(img, regions, prefix) {
+    return maskedImage(img, regions, prefix, askedGone);
   }
 
-  // Masks over an uncropped image ride the standard card image: the img
-  // keeps its shrink-to-fit layout and each mask is positioned in px over
-  // the PAINTED rect (object-fit contain letterboxes, so the element box
-  // and the picture disagree), re-synced whenever the img resizes.
-  function maskedImage(img, regions, prefix) {
-    const wrap = el("div", prefix + "-wrap");
-    wrap.appendChild(img);
-    for (const r of regions) {
-      const mask = el("div", prefix + "-mask" + (r.reveal_on_answer ? " reveals" : ""));
-      maskGlyph(mask, r, prefix);
-      mask.dataset.region = JSON.stringify(r);
-      wrap.appendChild(mask);
-    }
-    let warned = false; // sync re-runs on every resize; the notice fires once
-    const sync = () => {
-      const sw = img.naturalWidth, sh = img.naturalHeight;
-      const w = img.clientWidth, h = img.clientHeight;
-      if (!sw || !sh || !w || !h) return;
-      const scale = Math.min(w / sw, h / sh);
-      const ox = img.offsetLeft + (w - sw * scale) / 2;
-      const oy = img.offsetTop + (h - sh * scale) / 2;
-      for (const mask of wrap.querySelectorAll("[data-region]")) {
-        const r = JSON.parse(mask.dataset.region);
-        const g = r.unit === "%"
-          ? { x: (r.x / 100) * sw, y: (r.y / 100) * sh, w: (r.width / 100) * sw, h: (r.height / 100) * sh }
-          : { x: r.x, y: r.y, w: r.width, h: r.height };
-        // Partial overlap is valid geometry; the painted mask clips at the
-        // source edge instead of floating over neighboring content.
-        const x0 = Math.max(0, g.x), y0 = Math.max(0, g.y);
-        const x1 = Math.min(sw, g.x + g.w), y1 = Math.min(sh, g.y + g.h);
-        const visible = x1 > x0 && y1 > y0;
-        if (!visible && r.role === "asked" && !warned) {
-          warned = true;
-          askedGone();
-        }
-        mask.style.display = visible ? "" : "none";
-        mask.style.left = `${ox + x0 * scale}px`;
-        mask.style.top = `${oy + y0 * scale}px`;
-        mask.style.width = `${(x1 - x0) * scale}px`;
-        mask.style.height = `${(y1 - y0) * scale}px`;
-      }
-    };
-    new ResizeObserver(sync).observe(img);
-    if (img.complete) sync(); else img.addEventListener("load", sync);
-    return wrap;
+  // Review context: a masked diagram carries its overlay; the asked mask
+  // lifts with the card's answered class, siblings and covers stay.
+  function contextDiagram(unit) {
+    const img = diagramImage(unit);
+    if (!unit.regions || !unit.regions.length) return img;
+    return maskedCardImage(img, unit.regions, "img");
+  }
+
+  // Browse shows every card revealed: the accessible name starts at the
+  // revealed text and the browse card's standing answered class lifts the
+  // asked mask; siblings and covers keep protecting their own cards.
+  function browseDiagram(unit) {
+    const img = diagramImage(unit);
+    if (img.dataset.revealedAlt) img.alt = img.dataset.revealedAlt;
+    if (!unit.regions || !unit.regions.length) return img;
+    return maskedCardImage(img, unit.regions, "img");
   }
 
   function renderLegend() {
@@ -1426,7 +1391,19 @@ export function createStudy({
     const a = doc.getElementById("ansRegion");
     if (!a) return;
     a.classList.toggle("concealed", answerConcealed); // visibility only — no reflow, no movement
+    const cardEl = doc.getElementById("card");
+    if (cardEl) syncDiagramAnswerState(cardEl);
     paintIntroCue(a);
+  }
+
+  // The self-test conceal owns the diagram answer too: re-masking rides a
+  // class (visibility only, no reflow) and the accessible name follows.
+  function syncDiagramAnswerState(cardEl) {
+    const showAnswer = isAnswered() && !answerConcealed;
+    cardEl.classList.toggle("concealing", isAnswered() && answerConcealed);
+    for (const img of cardEl.querySelectorAll("img.diagram[data-revealed-alt]")) {
+      img.alt = showAnswer ? img.dataset.revealedAlt : img.dataset.maskedAlt;
+    }
   }
   // Point the corner cue's glyph/title at what the next press does. A textContent swap
   // only — no layout change.
@@ -1444,11 +1421,24 @@ export function createStudy({
   }
 
 
+  let noticedLoadWarnings = "";
+  function syncLoadNotice() {
+    const msg = (state && state.load_warnings || []).join(" ");
+    // A warning-free state (the picker, a healthy deck) clears the memo:
+    // the dedup is per session occurrence, never per identical sentence, or
+    // deck B's warning would vanish because deck A said the same words.
+    if (!msg) { noticedLoadWarnings = ""; return; }
+    if (msg === noticedLoadWarnings) return;
+    noticedLoadWarnings = msg;
+    notice(msg);
+  }
+
   function prepareRender() {
     stopDuePoll();
     summaryPaint = null;
     summaryReady = false;
     syncSaveAlert();
+    syncLoadNotice();
   }
 
   function prepareSurface() {

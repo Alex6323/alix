@@ -150,11 +150,13 @@ export function frontEl(text, runs, units) {
   return wrap;
 }
 
-export function appendReveal(parent, lines, runs, isList, units) {
-  // Fence-shaped units (code or a rendered diagram) arrive in the same
-  // document order as the raw fences: the nth fence consumes the nth unit,
-  // and a resolved diagram replaces its fence only once the closing marker
-  // is within the revealed lines; a partial fence stays code.
+// The ONE fence walk (docs/API.md alignment law): fence-shaped units arrive
+// in the same document order as the raw fences, the nth closed fence
+// consumes the nth unit, and a resolved diagram replaces its fence only
+// once the closing marker is within the walked lines; a partial fence
+// stays code. `onLine(index)` renders a non-fence line in the caller's
+// own style.
+function walkFences(parent, lines, units, onLine, makeDiagram) {
   const fenceUnits = (units || []).filter(
     (u) => u.kind === "code" || u.kind === "diagram"
   );
@@ -175,24 +177,104 @@ export function appendReveal(parent, lines, runs, isList, units) {
       const unit = fenceUnits[fenceIndex];
       fenceIndex++;
       if (closed && unit && unit.kind === "diagram") {
-        const img = el("img", "diagram");
-        img.src = unit.src; img.alt = unit.alt || "";
-        img.width = unit.width; img.height = unit.height;
-        parent.appendChild(img);
+        parent.appendChild(makeDiagram ? makeDiagram(unit) : diagramImage(unit));
         continue;
       }
       const pre = el("pre", "code-block");
       pre.textContent = code.join("\n");
       parent.appendChild(pre);
     } else {
-      const line = el("div", "answer");
-      if (isList) line.appendChild(document.createTextNode("• "));
-      if (runs && runs[index]) appendRuns(line, runs[index]);
-      else line.appendChild(document.createTextNode(lines[index]));
-      parent.appendChild(line);
+      onLine(index);
       index++;
     }
   }
+}
+
+// The bare diagram img; a caller with masking policy wraps it (the
+// makeDiagram hook). Both accessible texts ride as data so answer-state
+// toggles can swap `alt` without a rebuild.
+export function diagramImage(unit) {
+  const img = el("img", "diagram");
+  img.src = unit.src; img.alt = unit.alt || "";
+  img.width = unit.width; img.height = unit.height;
+  if (unit.revealed_alt) {
+    img.dataset.maskedAlt = unit.alt || "";
+    img.dataset.revealedAlt = unit.revealed_alt;
+  }
+  return img;
+}
+
+// The three-role vocabulary: an asked region shows the blank glyph, a
+// sibling card's mask the hidden glyph, and a cover stays a plain fill:
+// it hides answer-giving content and is never a question.
+export function maskGlyph(mask, r, prefix) {
+  if (r.role === "cover") return;
+  mask.appendChild(el("span", prefix + "-mask-glyph", r.role === "asked" ? "\u2370" : "\u2b1a"));
+}
+
+// Masks over an uncropped image ride the standard card image: the img
+// keeps its shrink-to-fit layout and each mask is positioned in px over
+// the PAINTED rect (object-fit contain letterboxes, so the element box
+// and the picture disagree), re-synced whenever the img resizes.
+export function maskedImage(img, regions, prefix, onAskedGone) {
+  const wrap = el("div", prefix + "-wrap");
+  wrap.appendChild(img);
+  for (const r of regions) {
+    const mask = el("div", prefix + "-mask" + (r.reveal_on_answer ? " reveals" : ""));
+    maskGlyph(mask, r, prefix);
+    mask.dataset.region = JSON.stringify(r);
+    wrap.appendChild(mask);
+  }
+  let warned = false; // sync re-runs on every resize; the notice fires once
+  const sync = () => {
+    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const w = img.clientWidth, h = img.clientHeight;
+    if (!sw || !sh || !w || !h) return;
+    const scale = Math.min(w / sw, h / sh);
+    const ox = img.offsetLeft + (w - sw * scale) / 2;
+    const oy = img.offsetTop + (h - sh * scale) / 2;
+    for (const mask of wrap.querySelectorAll("[data-region]")) {
+      const r = JSON.parse(mask.dataset.region);
+      const g = r.unit === "%"
+        ? { x: (r.x / 100) * sw, y: (r.y / 100) * sh, w: (r.width / 100) * sw, h: (r.height / 100) * sh }
+        : { x: r.x, y: r.y, w: r.width, h: r.height };
+      // Partial overlap is valid geometry; the painted mask clips at the
+      // source edge instead of floating over neighboring content.
+      const x0 = Math.max(0, g.x), y0 = Math.max(0, g.y);
+      const x1 = Math.min(sw, g.x + g.w), y1 = Math.min(sh, g.y + g.h);
+      const visible = x1 > x0 && y1 > y0;
+      if (!visible && r.role === "asked" && !warned) {
+        warned = true;
+        if (onAskedGone) onAskedGone();
+      }
+      mask.style.display = visible ? "" : "none";
+      mask.style.left = `${ox + x0 * scale}px`;
+      mask.style.top = `${oy + y0 * scale}px`;
+      mask.style.width = `${(x1 - x0) * scale}px`;
+      mask.style.height = `${(y1 - y0) * scale}px`;
+    }
+  };
+  new ResizeObserver(sync).observe(img);
+  if (img.complete) sync(); else img.addEventListener("load", sync);
+  return wrap;
+}
+
+export function appendReveal(parent, lines, runs, isList, units, makeDiagram) {
+  walkFences(parent, lines, units, (index) => {
+    const line = el("div", "answer");
+    if (isList) line.appendChild(document.createTextNode("• "));
+    if (runs && runs[index]) appendRuns(line, runs[index]);
+    else line.appendChild(document.createTextNode(lines[index]));
+    parent.appendChild(line);
+  }, makeDiagram);
+}
+
+// Context keeps its per-line rendering (blank/hidden glyphs, standalone
+// math, the labelling style); only fence slots consume context_units.
+export function appendContext(parent, lines, runs, units, cls, makeDiagram) {
+  walkFences(parent, lines || [], units, (index) => {
+    parent.appendChild(contextLine(lines[index], runs && runs[index], cls));
+  }, makeDiagram);
 }
 
 function appendContextText(parent, run) {

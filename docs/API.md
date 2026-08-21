@@ -609,6 +609,7 @@ The review-session payload; returned by every review action.
 | `recognize_gap` | object? | Present only on a `done` Recognize sitting that excluded cards (Recognize schedules pick-capable cards only, so `due_left`/`new_left` cannot see them): `{recall, unaugmented}` — how many of the deck's cards are workable at Recall right now, and how many can build no pick at all. The summary points at those two exits (continue at Recall / augment choices) instead of claiming nothing is due. Absent everywhere else. |
 | `label` | string | Session header label *(presentational)*. |
 | `save_error` | string? | Absent while saving works. Set (human-readable reason) once session progress can no longer be persisted, e.g. another writer replaced this deck's progress document; it stays set until a save succeeds, so clients should show it persistently and advise reopening the deck. |
+| `load_warnings` | [string] | Deck-load diagnostics for the open session (absent when none): a stamped diagram that did not resolve falls back to source at review, and this is the loud trace of it. Clients surface it once at session open. |
 
 Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 `depth:"recall"`, `input:"type"`, counters 0.
@@ -624,6 +625,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `context` | [string] | Context lines: a cloze card's sentence, or a card table's title. |
 | `context_leads` | bool | True when `context` is the question and the front is a topic above it (cloze); false when `context` only labels the front, which keeps the lead (table title). |
 | `context_runs` | [[InlineRun]] | Display projection per cloze context line. |
+| `context_units` | [NoteUnitDto] | The context's fence-shaped units only (`code` / `diagram`), in fence order. Context prose keeps its per-line rendering; clients consume one unit per closed raw fence in `context` (the same alignment law as `back_units`). Empty when the context has no fences. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, and checklists remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
@@ -698,7 +700,7 @@ LaTeX renderer.
 `{"kind":"sentence", "text": string, "runs": [InlineRun]}`,
 `{"kind":"code", "lines": [string]}`,
 `{"kind":"diagram", "src": string, "width": number, "height": number,
-"alt": string}`, or
+"alt": string, "regions"?: [RegionDto], "revealed_alt"?: string}`, or
 `{"kind":"checklist", "items": [ChecklistItemDto]}`. Sentence `text` remains
 the authored text; `runs` is its display projection. `ChecklistItemDto` is
 `{checked: bool, text: string, runs: [InlineRun]}`; `text` is the content
@@ -708,12 +710,24 @@ A `diagram` unit is a frozen mermaid fence, rendered: it occupies the
 fence's own position in the unit stream. `src` is a `/img/<key>` URL (see
 §5 Images); `width`/`height` are LOGICAL pixels — the raster behind the
 URL is larger (2x), so clients size the element from these fields, never
-from the image's natural size. `alt` carries the fence's mermaid source,
-the accessible representation of the diagram. The server resolves
-availability: a fence that is not frozen, whose stamp is stale, or whose
-frozen objects are missing arrives as a plain `code` unit in the same
-position instead — clients never decide fallback. Example payload:
+from the image's natural size. The server resolves availability: a fence
+that is not frozen, whose stamp is stale, whose frozen objects are
+missing, or whose spans do not bind arrives as a plain `code` unit in the
+same position instead — clients never decide fallback. Example payload:
 `tests/contracts/CardDto.diagram.json`.
+
+A diagram whose fence carries bound spans arrives MASKED: `regions`
+(absent when empty) are RegionDto overlays in the raster's own pixel
+space (the image's natural size), drawn by the same machinery as image
+regions — the asked mask lifts on answer, sibling masks and covers stay.
+`alt` is then the visible label inventory in reading order with masked
+labels elided (never the mermaid source: source node ids can spell out a
+masked label's text), and `revealed_alt` (absent when nothing is masked)
+is the post-answer accessible name — asked labels revealed, siblings and
+covers still elided. Clients swap the element's accessible name to
+`revealed_alt` when the answer state changes. An unmasked diagram keeps
+the fence's mermaid source as `alt`. Example payload:
+`tests/contracts/CardDto.context_units.masked.json`.
 
 ### ExcerptDto / LineDto
 

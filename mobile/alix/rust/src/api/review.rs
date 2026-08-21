@@ -65,7 +65,14 @@ pub struct _ChecklistItem {
 pub enum _NoteUnit {
     Sentence { text: String, runs: Vec<InlineRun> },
     Code { lines: Vec<String> },
-    Diagram { src: String, width: u32, height: u32, alt: String },
+    Diagram {
+        src: String,
+        width: u32,
+        height: u32,
+        alt: String,
+        regions: Vec<RegionView>,
+        revealed_alt: Option<String>,
+    },
     Checklist { items: Vec<ChecklistItem> },
 }
 
@@ -112,6 +119,7 @@ pub struct _CardView {
     pub context: Vec<String>,
     pub context_leads: bool,
     pub context_runs: Vec<Vec<InlineRun>>,
+    pub context_units: Vec<NoteUnit>,
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,
     pub back_units: Vec<NoteUnit>,
@@ -155,6 +163,7 @@ pub struct _ReviewState {
     // does not surface it yet either).
     pub recognize_gap: Option<RecognizeGap>,
     pub save_error: Option<String>,
+    pub load_warnings: Vec<String>,
 }
 
 #[flutter_rust_bridge::frb(mirror(RecognizeGap))]
@@ -305,6 +314,7 @@ pub struct ReviewSession {
     // loop's banner semantics): review continues in memory, never dies on a
     // full disk mid-sitting.
     save_error: Option<String>,
+    load_warnings: Vec<String>,
 }
 
 impl ReviewSession {
@@ -353,6 +363,7 @@ impl ReviewSession {
                 bail!("milestone 2 reviews a facts deck, not a trace")
             }
         };
+        let load_warnings = build.load_warnings.clone();
         Ok(ReviewSession {
             session: build.session,
             store,
@@ -363,6 +374,7 @@ impl ReviewSession {
             deck_fingerprints,
             has_exam,
             save_error: None,
+            load_warnings,
         })
     }
 
@@ -370,6 +382,7 @@ impl ReviewSession {
     pub fn state(&self, now_ms: Option<u64>) -> ReviewState {
         let mut state = alix::review::state(&self.session, &self.store, &self.augment, now_ms);
         state.save_error = self.save_error.clone();
+        state.load_warnings = self.load_warnings.clone();
         state
     }
 

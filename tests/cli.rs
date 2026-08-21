@@ -6133,7 +6133,45 @@ fn doctor_reports_every_diagram_inconsistency() {
     let current_stamp = stamp(&print, &good_manifest);
     let disagree_stamp = stamp(&print, &bad_manifest);
 
-    let rows: [(&str, String, &str); 6] = [
+    let labeled_interior = "flowchart LR\n  Cache[store] --> B[Cache]";
+    let labeled_fence = format!("```mermaid\n{labeled_interior}\n```");
+    let labeled_print = alix::diagram::fingerprint(labeled_interior);
+    let labeled_manifest_for = |ranges: [(u32, u32); 2]| {
+        let label = |id: &str, text: &str, (start, end): (u32, u32)| alix::diagram::ManifestLabel {
+            id: id.into(),
+            text: text.into(),
+            source: alix::diagram::LabelSource::Range { start, end },
+            bounds: alix::diagram::PixelBox {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+        };
+        serde_json::to_vec(&alix::diagram::DiagramManifest {
+            png: png.clone(),
+            raster_width: 2,
+            raster_height: 2,
+            logical_width: 1,
+            logical_height: 1,
+            labels: vec![
+                label("Cache", "store", ranges[0]),
+                label("B", "Cache", ranges[1]),
+            ],
+        })
+        .unwrap()
+    };
+    let store_at = labeled_interior.find("store").unwrap() as u32;
+    let cache_at = labeled_interior.rfind("Cache").unwrap() as u32;
+    let bind_manifest_bytes =
+        labeled_manifest_for([(store_at, store_at + 5), (cache_at, cache_at + 5)]);
+    let bind_manifest = alix::assets::object_name(&bind_manifest_bytes, "json");
+    let range_manifest_bytes = labeled_manifest_for([(store_at, store_at + 5), (0, 9999)]);
+    let range_manifest = alix::assets::object_name(&range_manifest_bytes, "json");
+    let bind_stamp = stamp(&labeled_print, &bind_manifest);
+    let range_stamp = stamp(&labeled_print, &range_manifest);
+
+    let rows: [(&str, String, &str); 8] = [
         (
             "orphan",
             format!("## q\nanswer\n{orphan_stamp}\n"),
@@ -6160,6 +6198,18 @@ fn doctor_reports_every_diagram_inconsistency() {
             format!("## q\n{fence}\n{current_stamp}\nanswer\n"),
             "raster `sha256-",
         ),
+        (
+            "spanbind",
+            format!("## q\n{labeled_fence}\n{bind_stamp}\n<!-- blank: span hidden=\"Cache\" -->\n"),
+            "does not cover a diagram label",
+        ),
+        (
+            "badrange",
+            format!(
+                "## q\n{labeled_fence}\n{range_stamp}\n<!-- blank: span hidden=\"Cache\" occurrence=2 -->\n"
+            ),
+            "invalid source range",
+        ),
     ];
     for (name, body, _) in &rows {
         write(
@@ -6174,6 +6224,8 @@ fn doctor_reports_every_diagram_inconsistency() {
         }
         std::fs::write(owned.join(&good_manifest), &good_manifest_bytes).unwrap();
         std::fs::write(owned.join(&bad_manifest), &bad_manifest_bytes).unwrap();
+        std::fs::write(owned.join(&bind_manifest), &bind_manifest_bytes).unwrap();
+        std::fs::write(owned.join(&range_manifest), &range_manifest_bytes).unwrap();
     }
 
     let out = alix(&["doctor", ws.to_str().unwrap()]);

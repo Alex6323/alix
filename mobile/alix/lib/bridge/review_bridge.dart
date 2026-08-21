@@ -190,6 +190,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
     dueLeft: state.dueLeft,
     newLeft: state.newLeft,
     saveError: state.saveError,
+    loadWarnings: state.loadWarnings,
   );
 }
 
@@ -205,6 +206,7 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
     contextRuns: [
       for (final runs in card.contextRuns) inlineRunsFromBridge(runs),
     ],
+    contextUnits: [for (final unit in card.contextUnits) _noteFromBridge(unit)],
     back: card.back,
     backRuns: [for (final runs in card.backRuns) inlineRunsFromBridge(runs)],
     backUnits: [for (final unit in card.backUnits) _noteFromBridge(unit)],
@@ -215,26 +217,27 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
   );
 }
 
+ReviewRegionModel _regionFromBridge(bridge.RegionView region) {
+  return ReviewRegionModel(
+    role: switch (region.role) {
+      bridge.RegionRole.asked => ReviewRegionRole.asked,
+      bridge.RegionRole.mask => ReviewRegionRole.mask,
+      bridge.RegionRole.cover => ReviewRegionRole.cover,
+    },
+    revealOnAnswer: region.revealOnAnswer,
+    x: region.x,
+    y: region.y,
+    width: region.width,
+    height: region.height,
+    unit: region.unit,
+  );
+}
+
 ReviewImageModel _imageFromBridge(bridge.ImageView image) {
   return ReviewImageModel(
     src: image.src,
     alt: image.alt,
-    regions: [
-      for (final region in image.regions)
-        ReviewRegionModel(
-          role: switch (region.role) {
-            bridge.RegionRole.asked => ReviewRegionRole.asked,
-            bridge.RegionRole.mask => ReviewRegionRole.mask,
-            bridge.RegionRole.cover => ReviewRegionRole.cover,
-          },
-          revealOnAnswer: region.revealOnAnswer,
-          x: region.x,
-          y: region.y,
-          width: region.width,
-          height: region.height,
-          unit: region.unit,
-        ),
-    ],
+    regions: [for (final region in image.regions) _regionFromBridge(region)],
     crop: image.crop == null
         ? null
         : ReviewCropModel(
@@ -254,8 +257,22 @@ ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
       runs: inlineRunsFromBridge(runs),
     ),
     bridge.NoteUnit_Code(:final lines) => ReviewCodeModel(lines),
-    bridge.NoteUnit_Diagram(:final src, :final width, :final height, :final alt) =>
-      ReviewDiagramModel(src: src, width: width, height: height, alt: alt),
+    bridge.NoteUnit_Diagram(
+      :final src,
+      :final width,
+      :final height,
+      :final alt,
+      :final regions,
+      :final revealedAlt,
+    ) =>
+      ReviewDiagramModel(
+        src: src,
+        width: width,
+        height: height,
+        alt: alt,
+        regions: [for (final region in regions) _regionFromBridge(region)],
+        revealedAlt: revealedAlt,
+      ),
     bridge.NoteUnit_Checklist(:final items) => ReviewChecklistModel([
       for (final item in items)
         ReviewChecklistItemModel(

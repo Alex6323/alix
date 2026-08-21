@@ -18,7 +18,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   including the dark themes) decides its baked colors and compositing
   ground. `alix doctor` diagnoses missing, stale, orphaned, or corrupt
   frozen diagrams, and `alix doctor --repair-diagrams` removes orphaned
-  stamps and re-freezes what needs it.
+  stamps and re-freezes what needs it. A frozen diagram also renders
+  inside a cloze card's context (the sentence above the hole), where the
+  fence previously showed as raw source lines; a context fence that
+  cannot render as a diagram now displays as a code block. A `blank:` or
+  `cover:` span over a diagram label becomes a region mask ON the
+  rendered diagram (the asked label's box lifts when the answer shows,
+  sibling and cover boxes stay), with accessible text that names only
+  the visible labels; a span must cover one complete label, and a span
+  that does not bind keeps the card on its masked-source fallback. A
+  deck whose stamped diagram cannot serve says so once when a session
+  opens (web and mobile) instead of silently showing source.
 
 - Image regions (ADR 0034): a deck can hide a region of a picture and ask
   what is under it. `blank:`, `cover:`, and `crop:` directive comments carry

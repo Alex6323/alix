@@ -306,6 +306,30 @@ pub struct DocumentFences {
     pub unclosed: bool,
 }
 
+/// Line -> freshness for every stamp ATTACHED to a fence: true iff the
+/// stamp's fingerprint still matches its own fence's source. Freshness is
+/// per attachment, never per document: an identical fingerprint on a
+/// DIFFERENT fence (a duplicated diagram whose sibling was edited) cannot
+/// validate this stamp.
+pub fn attached_stamp_freshness(
+    found: &DocumentFences,
+    text: &str,
+) -> std::collections::HashMap<usize, bool> {
+    found
+        .fences
+        .iter()
+        .filter_map(|fence| {
+            let (range, stamped) = fence.stamp.as_ref()?;
+            let line = text[..range.start]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1;
+            Some((line, *stamped == fingerprint(&fence.source)))
+        })
+        .collect()
+}
+
 /// Every closed mermaid fence in a deck document, in order, with any stamp
 /// already on the line after it. Frontmatter lines are skipped.
 pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> DocumentFences {
@@ -375,7 +399,13 @@ pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> Do
 /// The full freeze computation for one rendered fence: extract the label
 /// map, rasterize at ZOOM, and prove every label's ink lies inside its
 /// emitted box (a per-label render diff, failing closed on any miss).
-pub fn freeze_fence(svg: &str, family: &str) -> Result<FrozenDiagram> {
+/// `sources` is the marker-probe assignment map (label id -> interior
+/// byte range); a label it does not name is unbindable.
+pub fn freeze_fence(
+    svg: &str,
+    family: &str,
+    sources: &std::collections::HashMap<String, (u32, u32)>,
+) -> Result<FrozenDiagram> {
     let found = geometry(svg)?;
     let full = raster(svg, family, ZOOM)?;
     let raster_size = (full.width(), full.height());
@@ -388,6 +418,13 @@ pub fn freeze_fence(svg: &str, family: &str) -> Result<FrozenDiagram> {
         labels.push(ManifestLabel {
             id: label.id.clone(),
             text: label.text.clone(),
+            source: match sources.get(&label.id) {
+                Some((start, end)) => LabelSource::Range {
+                    start: *start,
+                    end: *end,
+                },
+                None => LabelSource::Unbindable,
+            },
             bounds,
         });
     }
@@ -407,6 +444,92 @@ pub fn freeze_fence(svg: &str, family: &str) -> Result<FrozenDiagram> {
 pub struct FrozenDiagram {
     pub png: Vec<u8>,
     pub manifest: DiagramManifest,
+}
+
+#[cfg(feature = "full")]
+/// The per-fence cap on marker probes. Deterministic: probes beyond it are
+/// dropped, the caller warns, and the unprobed occurrences stay unassigned
+/// (their labels come out unbindable) instead of stalling authoring.
+pub const PROBE_BUDGET: usize = 128;
+
+#[cfg(feature = "full")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceProbe {
+    pub start: usize,
+    pub end: usize,
+    /// The interior with this occurrence replaced by the marker.
+    pub source: String,
+}
+
+#[cfg(feature = "full")]
+/// Rule 8's linear probe plan: one probe per unique candidate occurrence per
+/// DISTINCT rendered label text, in source order, never one pass per label.
+/// Returns the marker, the probes, and whether the budget truncated them.
+pub fn probe_plan(interior: &str, labels: &[Label]) -> (String, Vec<SourceProbe>, bool) {
+    let mut texts: Vec<&str> = Vec::new();
+    for label in labels {
+        if !label.text.is_empty() && !texts.contains(&label.text.as_str()) {
+            texts.push(&label.text);
+        }
+    }
+    let marker = (1..)
+        .map(|n| format!("xq{n}"))
+        .find(|s| !interior.contains(s.as_str()) && !texts.contains(&s.as_str()))
+        .expect("an unbounded counter leaves some marker unused");
+    let mut probes = Vec::new();
+    for text in &texts {
+        for (start, _) in interior.match_indices(text) {
+            let end = start + text.len();
+            let mut source = String::with_capacity(interior.len());
+            source.push_str(&interior[..start]);
+            source.push_str(&marker);
+            source.push_str(&interior[end..]);
+            probes.push(SourceProbe { start, end, source });
+        }
+    }
+    probes.sort_by_key(|probe| (probe.start, probe.end));
+    let truncated = probes.len() > PROBE_BUDGET;
+    probes.truncate(PROBE_BUDGET);
+    (marker, probes, truncated)
+}
+
+#[cfg(feature = "full")]
+/// The assignment law: a probe assigns iff EXACTLY ONE label with an
+/// unchanged semantic id carries the marker as its rendered text. Zero
+/// leaves the occurrence unassigned; multiple is ambiguous and assigns
+/// nothing.
+pub fn probe_assignment(original: &[Label], marker: &str, variant: &[Label]) -> Option<String> {
+    let known = |id: &str| original.iter().any(|label| label.id == id);
+    let mut hits = variant
+        .iter()
+        .filter(|label| label.text == marker && known(&label.id));
+    match (hits.next(), hits.next()) {
+        (Some(hit), None) => Some(hit.id.clone()),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "full")]
+/// Collates probe assignments into the per-label source map: a label
+/// assigned by zero probes or by more than one stays absent (unbindable),
+/// and a range that cannot convert to u32 is dropped (checked, per the
+/// producer-side conversion law).
+pub fn collate_assignments(
+    assigned: &[(String, usize, usize)],
+) -> std::collections::HashMap<String, (u32, u32)> {
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for (id, ..) in assigned {
+        *counts.entry(id).or_default() += 1;
+    }
+    assigned
+        .iter()
+        .filter(|(id, ..)| counts.get(id.as_str()) == Some(&1))
+        .filter_map(|(id, start, end)| {
+            let start = u32::try_from(*start).ok()?;
+            let end = u32::try_from(*end).ok()?;
+            Some((id.clone(), (start, end)))
+        })
+        .collect()
 }
 
 #[cfg(feature = "full")]
@@ -900,8 +1023,144 @@ pub struct DiagramManifest {
 pub struct ManifestLabel {
     pub id: String,
     pub text: String,
+    pub source: LabelSource,
     #[serde(flatten)]
     pub bounds: PixelBox,
+}
+
+/// Where the label's text lives in the fence source: a byte range in the
+/// LF-normalized interior (end-exclusive), or nothing bindable (multiline,
+/// entity- or markdown-processed, bare-id labels, ambiguous probes).
+/// Required, so a manifest frozen before this field fails loud as ordinary
+/// invalid input. Consumers validate a range against the interior bytes
+/// (bounds, char boundaries, overlap) before any slice.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase", tag = "kind")]
+pub enum LabelSource {
+    Range { start: u32, end: u32 },
+    Unbindable,
+}
+
+/// Why a fence's spans cannot project onto its frozen raster. Review
+/// silently falls back to the masked source; doctor and the deck-load
+/// diagnostic are the loud channels that speak these.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindFailure {
+    /// A persisted range fails bounds, ordering, or a char boundary against
+    /// the interior; a corrupt or hostile manifest lands here instead of
+    /// panicking review.
+    InvalidLabelRange {
+        label: String,
+    },
+    OverlappingLabelRanges {
+        first: String,
+        second: String,
+    },
+    /// The span's range is a proper part of one label's range; a diagram
+    /// span must cover the complete label.
+    SpanIncompleteLabel {
+        line: usize,
+        label: String,
+    },
+    /// The span's range matches no label's source position (an id, a
+    /// comment, an unbindable label's text).
+    SpanOutsideLabels {
+        line: usize,
+    },
+}
+
+impl std::fmt::Display for BindFailure {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BindFailure::InvalidLabelRange { label } => {
+                write!(out, "label '{label}' carries an invalid source range")
+            }
+            BindFailure::OverlappingLabelRanges { first, second } => {
+                write!(
+                    out,
+                    "labels '{first}' and '{second}' claim overlapping source ranges"
+                )
+            }
+            BindFailure::SpanIncompleteLabel { line, label } => write!(
+                out,
+                "the span at line {line} covers part of label '{label}'; a diagram span must cover the complete label"
+            ),
+            BindFailure::SpanOutsideLabels { line } => write!(
+                out,
+                "the span at line {line} does not cover a diagram label (ids, arrows, and keywords are never maskable)"
+            ),
+        }
+    }
+}
+
+/// Validates EVERY persisted label range against the interior bytes before
+/// anything slices: checked bounds, start < end, char boundaries, and
+/// cross-label overlap, including labels no card span targets.
+pub fn validate_label_sources(
+    manifest: &DiagramManifest,
+    interior: &str,
+) -> Result<(), BindFailure> {
+    let mut ranges: Vec<(usize, usize, &str)> = Vec::new();
+    for label in &manifest.labels {
+        let LabelSource::Range { start, end } = label.source else {
+            continue;
+        };
+        let (start, end) = (start as usize, end as usize);
+        let valid = start < end
+            && end <= interior.len()
+            && interior.is_char_boundary(start)
+            && interior.is_char_boundary(end);
+        if !valid {
+            return Err(BindFailure::InvalidLabelRange {
+                label: label.id.clone(),
+            });
+        }
+        ranges.push((start, end, &label.id));
+    }
+    ranges.sort_unstable();
+    for pair in ranges.windows(2) {
+        let [(_, first_end, first), (second_start, _, second)] = pair else {
+            continue;
+        };
+        if second_start < first_end {
+            return Err(BindFailure::OverlappingLabelRanges {
+                first: (*first).to_string(),
+                second: (*second).to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// A span binds iff its interior byte range EQUALS one label's source
+/// range (complete-label-only). Run `validate_label_sources` first; this
+/// only compares.
+pub fn bind_span(
+    manifest: &DiagramManifest,
+    line: usize,
+    start: usize,
+    end: usize,
+) -> Result<usize, BindFailure> {
+    for (index, label) in manifest.labels.iter().enumerate() {
+        let LabelSource::Range {
+            start: label_start,
+            end: label_end,
+        } = label.source
+        else {
+            continue;
+        };
+        let (label_start, label_end) = (label_start as usize, label_end as usize);
+        if (start, end) == (label_start, label_end) {
+            return Ok(index);
+        }
+        if start >= label_start && end <= label_end {
+            return Err(BindFailure::SpanIncompleteLabel {
+                line,
+                label: label.id.clone(),
+            });
+        }
+    }
+    Err(BindFailure::SpanOutsideLabels { line })
 }
 
 #[cfg(feature = "full")]
@@ -1054,11 +1313,17 @@ pub fn render_batch(
         outcomes.push(match (svg, error) {
             (Some((_, svg)), _) if !svg.is_empty() => Ok(svg.clone()),
             (_, Some((_, message))) => Err(message.clone()),
-            _ => Err("the renderer returned nothing for this diagram".to_string()),
+            _ => Err(NO_RENDER_OUTPUT.to_string()),
         });
     }
     Ok(outcomes)
 }
+
+#[cfg(feature = "full")]
+/// The batch outcome for a diagram the renderer never answered: an
+/// OPERATIONAL failure (truncated stream, dead child), unlike a stderr
+/// message, which is the renderer processing and rejecting the input.
+pub const NO_RENDER_OUTPUT: &str = "the renderer returned nothing for this diagram";
 
 #[cfg(feature = "full")]
 fn drain<R: Read>(mut pipe: R) -> String {
@@ -1945,6 +2210,7 @@ mod tests {
             labels: vec![ManifestLabel {
                 id: "A".into(),
                 text: "Cache".into(),
+                source: LabelSource::Range { start: 20, end: 25 },
                 bounds: PixelBox {
                     x: 1,
                     y: 2,
@@ -1964,6 +2230,234 @@ mod tests {
         assert!(
             serde_json::from_str::<DiagramManifest>(&unknown).is_err(),
             "an unknown field must fail loud, never be silently dropped"
+        );
+    }
+
+    #[test]
+    fn the_label_source_wire_shape_is_the_ruled_tagged_object() {
+        let range = serde_json::to_value(LabelSource::Range { start: 20, end: 25 }).unwrap();
+        assert_eq!(
+            serde_json::json!({"kind": "range", "start": 20, "end": 25}),
+            range
+        );
+        let unbindable = serde_json::to_value(LabelSource::Unbindable).unwrap();
+        assert_eq!(serde_json::json!({"kind": "unbindable"}), unbindable);
+        let manifest = serde_json::json!({
+            "png": "sha256-ab.png",
+            "raster_width": 200,
+            "raster_height": 100,
+            "logical_width": 100,
+            "logical_height": 50,
+            "labels": [{"id": "A", "text": "Cache", "x": 1, "y": 2, "width": 3, "height": 4}],
+        });
+        assert!(
+            serde_json::from_value::<DiagramManifest>(manifest).is_err(),
+            "a label without `source` (a manifest frozen before the field) \
+             must fail loud as ordinary invalid input"
+        );
+    }
+
+    fn manifest_with(labels: Vec<ManifestLabel>) -> DiagramManifest {
+        DiagramManifest {
+            png: "sha256-ab.png".into(),
+            raster_width: 200,
+            raster_height: 100,
+            logical_width: 100,
+            logical_height: 50,
+            labels,
+        }
+    }
+
+    fn ranged(id: &str, text: &str, start: u32, end: u32) -> ManifestLabel {
+        ManifestLabel {
+            id: id.into(),
+            text: text.into(),
+            source: LabelSource::Range { start, end },
+            bounds: PixelBox {
+                x: 1,
+                y: 2,
+                width: 3,
+                height: 4,
+            },
+        }
+    }
+
+    #[test]
+    fn every_label_range_is_validated_not_only_span_equal_ones() {
+        let interior = "flowchart LR\n  A[Löwe] --> B[ok]";
+        let a = interior.find("Löwe").unwrap() as u32;
+        let cases: [(ManifestLabel, &str); 4] = [
+            (
+                ranged("B", "ok", 0, interior.len() as u32 + 4),
+                "out of bounds",
+            ),
+            (ranged("B", "ok", 9, 9), "empty range"),
+            (ranged("B", "ok", 12, 9), "reversed range"),
+            (
+                // one byte into the two-byte ö
+                ranged("B", "ok", a + 2, a + 4),
+                "splits a UTF-8 scalar",
+            ),
+        ];
+        for (bad, why) in cases {
+            let manifest = manifest_with(vec![ranged("A", "Löwe", a, a + 5), bad]);
+            assert_eq!(
+                Err(BindFailure::InvalidLabelRange { label: "B".into() }),
+                validate_label_sources(&manifest, interior),
+                "an UNRELATED label's bad range must fail the whole manifest ({why})"
+            );
+        }
+        let manifest = manifest_with(vec![
+            ranged("A", "Löwe", a, a + 5),
+            ranged("B", "we]", a + 3, a + 8),
+        ]);
+        assert!(
+            matches!(
+                validate_label_sources(&manifest, interior),
+                Err(BindFailure::OverlappingLabelRanges { .. })
+            ),
+            "overlapping label ranges fail the whole manifest"
+        );
+        let manifest = manifest_with(vec![ranged("A", "Löwe", a, a + 5)]);
+        assert_eq!(Ok(()), validate_label_sources(&manifest, interior));
+    }
+
+    #[test]
+    fn a_span_binds_only_the_exact_complete_label_range() {
+        let interior = "flowchart LR\n  Cache[store] --> B[Cache]";
+        let store = interior.find("store").unwrap();
+        let second_cache = interior.rfind("Cache").unwrap();
+        let manifest = manifest_with(vec![
+            ranged("Cache", "store", store as u32, store as u32 + 5),
+            ranged("B", "Cache", second_cache as u32, second_cache as u32 + 5),
+        ]);
+        assert_eq!(
+            Ok(1),
+            bind_span(&manifest, 6, second_cache, second_cache + 5),
+            "the exact range binds its label"
+        );
+        assert_eq!(
+            Err(BindFailure::SpanIncompleteLabel {
+                line: 6,
+                label: "Cache".into()
+            }),
+            bind_span(&manifest, 6, store + 1, store + 4),
+            "a proper part of a label is incomplete"
+        );
+        assert_eq!(
+            Err(BindFailure::SpanOutsideLabels { line: 6 }),
+            bind_span(&manifest, 6, 15, 20),
+            "the id occurrence of a label's text is not the label"
+        );
+    }
+
+    #[test]
+    fn probe_plan_is_linear_over_repeated_label_texts() {
+        let label = |id: &str, text: &str| Label {
+            id: id.into(),
+            text: text.into(),
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        };
+        let interior = "flowchart LR\n  A[yes] --> B[yes]\n  C[yes] --> D[store]";
+        let labels = [
+            label("A", "yes"),
+            label("B", "yes"),
+            label("C", "yes"),
+            label("D", "store"),
+        ];
+        let (marker, probes, truncated) = probe_plan(interior, &labels);
+        assert!(!truncated);
+        assert!(!interior.contains(&marker), "the marker is absent");
+        assert_eq!(
+            4,
+            probes.len(),
+            "one probe per unique occurrence per DISTINCT text (3 for the \
+             shared `yes`, 1 for `store`), never one pass per label: {probes:?}"
+        );
+        for probe in &probes {
+            assert_eq!(
+                format!(
+                    "{}{}{}",
+                    &interior[..probe.start],
+                    marker,
+                    &interior[probe.end..]
+                ),
+                probe.source,
+                "a probe substitutes exactly its own occurrence"
+            );
+        }
+        let starts: Vec<usize> = probes.iter().map(|p| p.start).collect();
+        let mut sorted = starts.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, starts, "probes ride in source order");
+    }
+
+    #[test]
+    fn probe_plan_truncates_at_the_budget_and_flags_it() {
+        let label = |id: &str, text: &str| Label {
+            id: id.into(),
+            text: text.into(),
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        };
+        let interior = "y ".repeat(PROBE_BUDGET + 10);
+        let labels = [label("A", "y")];
+        let (_, probes, truncated) = probe_plan(&interior, &labels);
+        assert!(truncated, "over-budget planning must say so");
+        assert_eq!(PROBE_BUDGET, probes.len());
+    }
+
+    #[test]
+    fn a_probe_assigns_only_an_exactly_one_unchanged_id_marker_hit() {
+        let label = |id: &str, text: &str| Label {
+            id: id.into(),
+            text: text.into(),
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        };
+        let original = [label("A", "yes"), label("B", "yes")];
+        assert_eq!(
+            Some("B".to_string()),
+            probe_assignment(&original, "xq1", &[label("A", "yes"), label("B", "xq1")]),
+            "exactly one unchanged id carries the marker"
+        );
+        assert_eq!(
+            None,
+            probe_assignment(&original, "xq1", &[label("A", "yes"), label("B", "yes")]),
+            "zero hits assigns nothing (an id position, a comment)"
+        );
+        assert_eq!(
+            None,
+            probe_assignment(&original, "xq1", &[label("A", "xq1"), label("B", "xq1")]),
+            "multiple hits are ambiguous and assign nothing"
+        );
+        assert_eq!(
+            None,
+            probe_assignment(&original, "xq1", &[label("XSENTX", "xq1")]),
+            "a renamed node is not an unchanged id"
+        );
+    }
+
+    #[test]
+    fn collate_drops_multiply_assigned_labels() {
+        let assigned = [
+            ("A".to_string(), 5, 8),
+            ("B".to_string(), 12, 15),
+            ("B".to_string(), 20, 23),
+        ];
+        let sources = collate_assignments(&assigned);
+        assert_eq!(Some(&(5, 8)), sources.get("A"));
+        assert_eq!(
+            None,
+            sources.get("B"),
+            "a label confirmed twice is ambiguous, never two ranges to one box"
         );
     }
 

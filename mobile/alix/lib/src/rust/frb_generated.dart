@@ -1491,8 +1491,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CardView dco_decode_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
     return CardView(
       front: dco_decode_String(arr[0]),
       frontRuns: dco_decode_list_inline_run(arr[1]),
@@ -1500,14 +1500,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       context: dco_decode_list_String(arr[3]),
       contextLeads: dco_decode_bool(arr[4]),
       contextRuns: dco_decode_list_list_inline_run(arr[5]),
-      back: dco_decode_list_String(arr[6]),
-      backRuns: dco_decode_list_list_inline_run(arr[7]),
-      backUnits: dco_decode_list_note_unit(arr[8]),
-      reshaped: dco_decode_bool(arr[9]),
-      note: dco_decode_list_note_unit(arr[10]),
-      images: dco_decode_list_image_view(arr[11]),
-      imagesBack: dco_decode_list_image_view(arr[12]),
-      citations: dco_decode_list_String(arr[13]),
+      contextUnits: dco_decode_list_note_unit(arr[6]),
+      back: dco_decode_list_String(arr[7]),
+      backRuns: dco_decode_list_list_inline_run(arr[8]),
+      backUnits: dco_decode_list_note_unit(arr[9]),
+      reshaped: dco_decode_bool(arr[10]),
+      note: dco_decode_list_note_unit(arr[11]),
+      images: dco_decode_list_image_view(arr[12]),
+      imagesBack: dco_decode_list_image_view(arr[13]),
+      citations: dco_decode_list_String(arr[14]),
     );
   }
 
@@ -1807,6 +1808,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           width: dco_decode_u_32(raw[2]),
           height: dco_decode_u_32(raw[3]),
           alt: dco_decode_String(raw[4]),
+          regions: dco_decode_list_region_view(raw[5]),
+          revealedAlt: dco_decode_opt_String(raw[6]),
         );
       case 3:
         return NoteUnit_Checklist(
@@ -1970,8 +1973,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 25)
-      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
+    if (arr.length != 26)
+      throw Exception('unexpected arr length: expect 26 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
@@ -1998,6 +2001,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deckTotal: dco_decode_u_32(arr[22]),
       recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[23]),
       saveError: dco_decode_opt_String(arr[24]),
+      loadWarnings: dco_decode_list_String(arr[25]),
     );
   }
 
@@ -2362,6 +2366,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_context = sse_decode_list_String(deserializer);
     var var_contextLeads = sse_decode_bool(deserializer);
     var var_contextRuns = sse_decode_list_list_inline_run(deserializer);
+    var var_contextUnits = sse_decode_list_note_unit(deserializer);
     var var_back = sse_decode_list_String(deserializer);
     var var_backRuns = sse_decode_list_list_inline_run(deserializer);
     var var_backUnits = sse_decode_list_note_unit(deserializer);
@@ -2377,6 +2382,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       context: var_context,
       contextLeads: var_contextLeads,
       contextRuns: var_contextRuns,
+      contextUnits: var_contextUnits,
       back: var_back,
       backRuns: var_backRuns,
       backUnits: var_backUnits,
@@ -2763,11 +2769,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_width = sse_decode_u_32(deserializer);
         var var_height = sse_decode_u_32(deserializer);
         var var_alt = sse_decode_String(deserializer);
+        var var_regions = sse_decode_list_region_view(deserializer);
+        var var_revealedAlt = sse_decode_opt_String(deserializer);
         return NoteUnit_Diagram(
           src: var_src,
           width: var_width,
           height: var_height,
           alt: var_alt,
+          regions: var_regions,
+          revealedAlt: var_revealedAlt,
         );
       case 3:
         var var_items = sse_decode_list_checklist_item(deserializer);
@@ -3072,6 +3082,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deserializer,
     );
     var var_saveError = sse_decode_opt_String(deserializer);
+    var var_loadWarnings = sse_decode_list_String(deserializer);
     return ReviewState(
       card: var_card,
       mode: var_mode,
@@ -3098,6 +3109,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deckTotal: var_deckTotal,
       recognizeGap: var_recognizeGap,
       saveError: var_saveError,
+      loadWarnings: var_loadWarnings,
     );
   }
 
@@ -3513,6 +3525,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.context, serializer);
     sse_encode_bool(self.contextLeads, serializer);
     sse_encode_list_list_inline_run(self.contextRuns, serializer);
+    sse_encode_list_note_unit(self.contextUnits, serializer);
     sse_encode_list_String(self.back, serializer);
     sse_encode_list_list_inline_run(self.backRuns, serializer);
     sse_encode_list_note_unit(self.backUnits, serializer);
@@ -3837,12 +3850,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         width: final width,
         height: final height,
         alt: final alt,
+        regions: final regions,
+        revealedAlt: final revealedAlt,
       ):
         sse_encode_i_32(2, serializer);
         sse_encode_String(src, serializer);
         sse_encode_u_32(width, serializer);
         sse_encode_u_32(height, serializer);
         sse_encode_String(alt, serializer);
+        sse_encode_list_region_view(regions, serializer);
+        sse_encode_opt_String(revealedAlt, serializer);
       case NoteUnit_Checklist(items: final items):
         sse_encode_i_32(3, serializer);
         sse_encode_list_checklist_item(items, serializer);
@@ -4140,6 +4157,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.deckTotal, serializer);
     sse_encode_opt_box_autoadd_recognize_gap(self.recognizeGap, serializer);
     sse_encode_opt_String(self.saveError, serializer);
+    sse_encode_list_String(self.loadWarnings, serializer);
   }
 
   @protected

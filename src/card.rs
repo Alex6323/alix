@@ -86,6 +86,36 @@ pub struct DiagramStamp {
     pub line: usize,
 }
 
+/// One closed mermaid fence in the block's answer, in block order, captured
+/// at parse time because a region card's context holds the fence MASKED:
+/// neither the unmasked fingerprint nor a span's authored offsets can be
+/// recovered from the displayed text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnswerFence {
+    /// Fingerprint of the unmasked LF-normalized interior.
+    pub fingerprint: String,
+    /// The unmasked LF-normalized interior itself, shared across the
+    /// block's synthesized cards: consumers validate every persisted label
+    /// range (bounds, UTF-8 boundaries, overlap) against these bytes
+    /// before any slice, which the masked context can never supply.
+    pub interior: std::sync::Arc<str>,
+    /// Every bound span splicing into this fence's interior.
+    pub spans: Vec<AnswerFenceSpan>,
+    /// A cloze hole sits inside the interior: the fence never projects as a
+    /// diagram, because the raster would show the hole's answer.
+    pub holes: bool,
+}
+
+/// One span's bound range inside its fence, in bytes of the LF-normalized
+/// interior; `line` is the directive line, the same identity `RegionSlot`
+/// and `masked_context` match spans by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnswerFenceSpan {
+    pub line: usize,
+    pub start: usize,
+    pub end: usize,
+}
+
 /// A stamp whose frozen pair checked out at deck load: both objects
 /// present, the manifest parses, and it names the stamp's raster. Only
 /// resolution this shallow runs on the load path; doctor re-hashes bytes.
@@ -157,6 +187,7 @@ pub struct Card {
     pub span_regions: Vec<crate::parser::region::RawRegion>,
     /// Set on a synthesized region card: which region(s) this card asks.
     pub region: Option<RegionSlot>,
+    pub answer_fences: Vec<AnswerFence>,
 }
 
 impl Card {
@@ -204,6 +235,7 @@ impl Card {
             authored_distractors: Vec::new(),
             span_regions: Vec::new(),
             region: None,
+            answer_fences: Vec::new(),
         }
     }
 

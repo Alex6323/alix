@@ -73,6 +73,10 @@ pub struct CardView {
     pub context_leads: bool,
     #[serde(default)]
     pub context_runs: Vec<Vec<InlineRun>>,
+    /// The context's fence-shaped units only, in fence order (the nth raw
+    /// fence consumes the nth unit); context prose keeps its line rendering.
+    #[serde(default)]
+    pub context_units: Vec<NoteUnit>,
     pub back: Vec<String>,
     #[serde(default)]
     pub back_runs: Vec<Vec<InlineRun>>,
@@ -145,7 +149,7 @@ fn image_views(
 /// A cover reveals with the answer only on a card whose block poses no
 /// sibling questions the cover could give away: neither a region card nor a
 /// cloze sub-card (Alex, 2026-08-19; the cloze ruling closes the step-B gap).
-fn covers_reveal(card: &Card) -> bool {
+pub(crate) fn covers_reveal(card: &Card) -> bool {
     card.region.is_none() && card.hole.is_none()
 }
 
@@ -187,6 +191,7 @@ impl CardView {
             context: card.context.clone(),
             context_leads: card.context_leads,
             context_runs,
+            context_units: render::context_units_with(card),
             back,
             back_runs,
             back_units,
@@ -320,6 +325,10 @@ pub struct ReviewState {
     /// builder leaves it `None`; a stateful caller stamps it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub save_error: Option<String>,
+    /// Deck-load diagnostics (a stamped diagram that did not resolve). The
+    /// builder leaves it empty; a stateful caller stamps it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub load_warnings: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -443,6 +452,7 @@ pub fn state(
             .then(|| session.recognize_gap(store, now))
             .flatten(),
         save_error: None,
+        load_warnings: Vec::new(),
     }
 }
 
@@ -1631,6 +1641,157 @@ mod tests {
             vec![RegionRole::Mask, RegionRole::Asked, RegionRole::Cover],
             sibling_roles,
             "each region card asks its own blank and masks the sibling's"
+        );
+    }
+
+    fn masked_fence_deck() -> Vec<crate::card::Card> {
+        let text = concat!(
+            "## the request path\n",
+            "```mermaid\n",
+            "flowchart LR\n",
+            "  Cache[store] --> B[Cache]\n",
+            "```\n",
+            "<!-- blank: span hidden=\"store\" -->\n",
+            "<!-- blank: span hidden=\"Cache\" occurrence=2 -->\n",
+        );
+        crate::parser::parse_str("t.md", text).unwrap()
+    }
+
+    fn masked_fence_manifest(
+        extra: Vec<crate::diagram::ManifestLabel>,
+    ) -> crate::card::ResolvedDiagram {
+        let interior = "flowchart LR\n  Cache[store] --> B[Cache]";
+        let store = interior.find("store").unwrap() as u32;
+        let cache = interior.rfind("Cache").unwrap() as u32;
+        let label =
+            |id: &str, text: &str, start: u32, end: u32, y: u32| crate::diagram::ManifestLabel {
+                id: id.into(),
+                text: text.into(),
+                source: crate::diagram::LabelSource::Range { start, end },
+                bounds: crate::diagram::PixelBox {
+                    x: 10,
+                    y,
+                    width: 100,
+                    height: 40,
+                },
+            };
+        let mut labels = vec![
+            label("Cache", "store", store, store + 5, 10),
+            label("B", "Cache", cache, cache + 5, 50),
+        ];
+        labels.extend(extra);
+        crate::card::ResolvedDiagram {
+            fingerprint: crate::diagram::fingerprint(interior),
+            png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+            manifest: crate::diagram::DiagramManifest {
+                png: "sha256-aa.png".to_string(),
+                raster_width: 376,
+                raster_height: 228,
+                logical_width: 188,
+                logical_height: 114,
+                labels,
+            },
+        }
+    }
+
+    #[test]
+    fn a_bound_span_projects_regions_and_a_leak_free_label_inventory() {
+        let mut cards = masked_fence_deck();
+        assert_eq!(2, cards.len(), "two blanks make two region cards");
+        let card = cards
+            .iter_mut()
+            .find(|card| card.back == ["Cache"])
+            .expect("the card asking the Cache label");
+        card.resolved_diagrams = vec![masked_fence_manifest(Vec::new())];
+        let view = CardView::from(&*card);
+        let NoteUnit::Diagram {
+            regions,
+            alt,
+            revealed_alt,
+            ..
+        } = &view.context_units[0]
+        else {
+            panic!("the fence projects as a diagram: {:?}", view.context_units);
+        };
+        assert_eq!(2, regions.len(), "asked plus sibling: {regions:?}");
+        let asked = regions
+            .iter()
+            .find(|region| region.role == RegionRole::Asked)
+            .expect("the asked region");
+        assert!(asked.reveal_on_answer, "the asked mask lifts on answer");
+        assert_eq!(
+            (50.0, 100.0),
+            (asked.y, asked.width),
+            "the asked box is the Cache label's raster box"
+        );
+        let sibling = regions
+            .iter()
+            .find(|region| region.role == RegionRole::Mask)
+            .expect("the sibling region");
+        assert!(!sibling.reveal_on_answer, "the sibling stays masked");
+        assert_eq!(
+            "diagram labels: …, …", alt,
+            "pre-reveal accessible text names NO label"
+        );
+        assert!(
+            !alt.contains("Cache"),
+            "the id channel must not speak the answer"
+        );
+        assert_eq!(
+            &Some("diagram labels: …, Cache".to_string()),
+            revealed_alt,
+            "post-reveal exposes only the asked label; the sibling stays masked"
+        );
+    }
+
+    #[test]
+    fn an_unbound_span_or_invalid_manifest_falls_back_to_masked_source() {
+        // The span binds the stream's FIRST occurrence of `Cache`: the node
+        // id, which is no label's source range.
+        let text = concat!(
+            "## q\n",
+            "```mermaid\n",
+            "flowchart LR\n",
+            "  Cache[store] --> B[Cache]\n",
+            "```\n",
+            "<!-- blank: span hidden=\"Cache\" -->\n",
+        );
+        let mut cards = crate::parser::parse_str("t.md", text).unwrap();
+        let card = &mut cards[0];
+        card.resolved_diagrams = vec![masked_fence_manifest(Vec::new())];
+        let view = CardView::from(&*card);
+        assert!(
+            matches!(&view.context_units[0], NoteUnit::Code { .. }),
+            "an id-position span never masks a box: {:?}",
+            view.context_units
+        );
+
+        // An UNRELATED label's hostile range fails the whole manifest before
+        // anything slices, even though the asked span's own label is fine.
+        let mut cards = masked_fence_deck();
+        let card = cards
+            .iter_mut()
+            .find(|card| card.back == ["Cache"])
+            .expect("the card asking the Cache label");
+        card.resolved_diagrams = vec![masked_fence_manifest(vec![crate::diagram::ManifestLabel {
+            id: "X".into(),
+            text: "ghost".into(),
+            source: crate::diagram::LabelSource::Range {
+                start: 0,
+                end: 9999,
+            },
+            bounds: crate::diagram::PixelBox {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        }])];
+        let view = CardView::from(&*card);
+        assert!(
+            matches!(&view.context_units[0], NoteUnit::Code { .. }),
+            "an out-of-bounds unrelated range falls back: {:?}",
+            view.context_units
         );
     }
 

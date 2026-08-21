@@ -1527,6 +1527,7 @@ const _: fn() = || {
         let _: Vec<String> = CardView.context;
         let _: bool = CardView.context_leads;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.context_runs;
+        let _: Vec<crate::api::review::NoteUnit> = CardView.context_units;
         let _: Vec<String> = CardView.back;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.back_runs;
         let _: Vec<crate::api::review::NoteUnit> = CardView.back_units;
@@ -1595,11 +1596,15 @@ const _: fn() = || {
             width,
             height,
             alt,
+            regions,
+            revealed_alt,
         } => {
             let _: String = src;
             let _: u32 = width;
             let _: u32 = height;
             let _: String = alt;
+            let _: Vec<crate::api::review::RegionView> = regions;
+            let _: Option<String> = revealed_alt;
         }
         crate::api::review::NoteUnit::Checklist { items } => {
             let _: Vec<crate::api::review::ChecklistItem> = items;
@@ -1647,6 +1652,7 @@ const _: fn() = || {
         let _: u32 = ReviewState.deck_total;
         let _: Option<crate::api::review::RecognizeGap> = ReviewState.recognize_gap;
         let _: Option<String> = ReviewState.save_error;
+        let _: Vec<String> = ReviewState.load_warnings;
     }
     {
         let TypedResult = None::<crate::api::review::TypedResult>.unwrap();
@@ -1741,6 +1747,7 @@ impl SseDecode for crate::api::review::CardView {
         let mut var_contextLeads = <bool>::sse_decode(deserializer);
         let mut var_contextRuns =
             <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
+        let mut var_contextUnits = <Vec<crate::api::review::NoteUnit>>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
         let mut var_backRuns = <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_backUnits = <Vec<crate::api::review::NoteUnit>>::sse_decode(deserializer);
@@ -1756,6 +1763,7 @@ impl SseDecode for crate::api::review::CardView {
             context: var_context,
             context_leads: var_contextLeads,
             context_runs: var_contextRuns,
+            context_units: var_contextUnits,
             back: var_back,
             back_runs: var_backRuns,
             back_units: var_backUnits,
@@ -2211,11 +2219,16 @@ impl SseDecode for crate::api::review::NoteUnit {
                 let mut var_width = <u32>::sse_decode(deserializer);
                 let mut var_height = <u32>::sse_decode(deserializer);
                 let mut var_alt = <String>::sse_decode(deserializer);
+                let mut var_regions =
+                    <Vec<crate::api::review::RegionView>>::sse_decode(deserializer);
+                let mut var_revealedAlt = <Option<String>>::sse_decode(deserializer);
                 return crate::api::review::NoteUnit::Diagram {
                     src: var_src,
                     width: var_width,
                     height: var_height,
                     alt: var_alt,
+                    regions: var_regions,
+                    revealed_alt: var_revealedAlt,
                 };
             }
             3 => {
@@ -2529,6 +2542,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_recognizeGap =
             <Option<crate::api::review::RecognizeGap>>::sse_decode(deserializer);
         let mut var_saveError = <Option<String>>::sse_decode(deserializer);
+        let mut var_loadWarnings = <Vec<String>>::sse_decode(deserializer);
         return crate::api::review::ReviewState {
             card: var_card,
             mode: var_mode,
@@ -2555,6 +2569,7 @@ impl SseDecode for crate::api::review::ReviewState {
             deck_total: var_deckTotal,
             recognize_gap: var_recognizeGap,
             save_error: var_saveError,
+            load_warnings: var_loadWarnings,
         };
     }
 }
@@ -2875,6 +2890,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
             self.0.context.into_into_dart().into_dart(),
             self.0.context_leads.into_into_dart().into_dart(),
             self.0.context_runs.into_into_dart().into_dart(),
+            self.0.context_units.into_into_dart().into_dart(),
             self.0.back.into_into_dart().into_dart(),
             self.0.back_runs.into_into_dart().into_dart(),
             self.0.back_units.into_into_dart().into_dart(),
@@ -3256,12 +3272,16 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::NoteUnit> 
                 width,
                 height,
                 alt,
+                regions,
+                revealed_alt,
             } => [
                 2.into_dart(),
                 src.into_into_dart().into_dart(),
                 width.into_into_dart().into_dart(),
                 height.into_into_dart().into_dart(),
                 alt.into_into_dart().into_dart(),
+                regions.into_into_dart().into_dart(),
+                revealed_alt.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::review::NoteUnit::Checklist { items } => {
@@ -3382,6 +3402,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.deck_total.into_into_dart().into_dart(),
             self.0.recognize_gap.into_into_dart().into_dart(),
             self.0.save_error.into_into_dart().into_dart(),
+            self.0.load_warnings.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3648,6 +3669,7 @@ impl SseEncode for crate::api::review::CardView {
         <Vec<String>>::sse_encode(self.context, serializer);
         <bool>::sse_encode(self.context_leads, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.context_runs, serializer);
+        <Vec<crate::api::review::NoteUnit>>::sse_encode(self.context_units, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.back_runs, serializer);
         <Vec<crate::api::review::NoteUnit>>::sse_encode(self.back_units, serializer);
@@ -4013,12 +4035,16 @@ impl SseEncode for crate::api::review::NoteUnit {
                 width,
                 height,
                 alt,
+                regions,
+                revealed_alt,
             } => {
                 <i32>::sse_encode(2, serializer);
                 <String>::sse_encode(src, serializer);
                 <u32>::sse_encode(width, serializer);
                 <u32>::sse_encode(height, serializer);
                 <String>::sse_encode(alt, serializer);
+                <Vec<crate::api::review::RegionView>>::sse_encode(regions, serializer);
+                <Option<String>>::sse_encode(revealed_alt, serializer);
             }
             crate::api::review::NoteUnit::Checklist { items } => {
                 <i32>::sse_encode(3, serializer);
@@ -4290,6 +4316,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <u32>::sse_encode(self.deck_total, serializer);
         <Option<crate::api::review::RecognizeGap>>::sse_encode(self.recognize_gap, serializer);
         <Option<String>>::sse_encode(self.save_error, serializer);
+        <Vec<String>>::sse_encode(self.load_warnings, serializer);
     }
 }
 

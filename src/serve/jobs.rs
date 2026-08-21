@@ -37,6 +37,7 @@ pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
 pub(super) struct Reviewing {
     pub(super) session: Session,
     pub(super) label: String,
+    pub(super) load_warnings: Vec<String>,
     pub(super) files: DeckFiles,
     pub(super) images: HashMap<String, PathBuf>,
     pub(super) ask: Ask,
@@ -508,6 +509,7 @@ impl Reviewing {
         Self {
             session: build.session,
             label: build.label,
+            load_warnings: build.load_warnings,
             files: DeckFiles::new(build.decks),
             images,
             ask: Ask::new(),

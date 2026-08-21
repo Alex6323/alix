@@ -42,6 +42,8 @@
   .img-mask { position: absolute; background: #64748b; border: 1px solid rgba(0,0,0,.25); border-radius: 4px; container-type: size; display: flex; align-items: center; justify-content: center; }
   .img-mask-glyph { font-size: clamp(10px, 55cqmin, 40px); line-height: 1; opacity: .75; user-select: none; }
   .card.answered .img-mask.reveals { display: none; }
+  /* Introduction self-test: concealing re-masks the diagram answer too. */
+  .card.answered.concealing .img-mask.reveals { display: flex; }
 
   .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
   /* A reshaped list reveals as a left-aligned block, centered as a whole; its lines

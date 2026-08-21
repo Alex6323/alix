@@ -83,9 +83,7 @@ function renderReview() {
 
   cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, introducing)));
   cardEl.appendChild(frontPrompt(card));
-  for (let i = 0; i < (card.context || []).length; i++) {
-    cardEl.appendChild(contextLine(card.context[i], card.context_runs && card.context_runs[i]));
-  }
+  appendContextLines(cardEl, card, done);
   appendImages(cardEl, card.images, done);
 
   if (choiceMode) {
@@ -279,15 +277,14 @@ function renderLines(card) {
   return wrap;
 }
 
-function appendBackLines(parent, card, shown, tag, cls) {
-  const lines = card.back || [];
-  const runs = card.back_runs || [];
-  // Fence-shaped units (code or a rendered diagram) arrive in the same
-  // document order as the raw fences, so the nth fence consumes the nth
-  // such unit: a resolved diagram replaces its fence in place, and only
-  // once the fence is fully revealed (line mode shows partial fences as
-  // code until their closing marker is shown).
-  const fenceUnits = (card.back_units || []).filter(
+// The ONE fence walk (the same alignment law as the adult client):
+// fence-shaped units arrive in document order, the nth closed fence
+// consumes the nth such unit, a resolved diagram replaces its fence in
+// place once its closing marker is within the walked lines, and
+// everything else renders its own interior as code. `onLine(i)` draws a
+// non-fence line in the caller's own style.
+function walkFences(parent, lines, shown, units, onLine, makeDiagram) {
+  const fenceUnits = (units || []).filter(
     (u) => u.kind === "code" || u.kind === "diagram"
   );
   let fenceIndex = 0;
@@ -307,10 +304,7 @@ function appendBackLines(parent, card, shown, tag, cls) {
       const unit = fenceUnits[fenceIndex];
       fenceIndex++;
       if (closed && unit && unit.kind === "diagram") {
-        const img = el("img", "diagram");
-        img.src = unit.src; img.alt = unit.alt || "";
-        img.width = unit.width; img.height = unit.height;
-        parent.appendChild(img);
+        parent.appendChild(makeDiagram ? makeDiagram(unit) : plainDiagram(unit));
         continue;
       }
       const pre = el("pre", "why-code");
@@ -318,11 +312,41 @@ function appendBackLines(parent, card, shown, tag, cls) {
       parent.appendChild(pre);
       continue;
     }
+    onLine(i);
+    i++;
+  }
+}
+
+function appendBackLines(parent, card, shown, tag, cls) {
+  const lines = card.back || [];
+  const runs = card.back_runs || [];
+  walkFences(parent, lines, shown, card.back_units, (i) => {
     const line = el(tag, cls);
     if (runs[i]) appendRuns(line, runs[i]); else line.textContent = lines[i];
     parent.appendChild(line);
-    i++;
-  }
+  });
+}
+
+function plainDiagram(unit) {
+  const img = el("img", "diagram");
+  img.src = unit.src; img.alt = unit.alt || "";
+  img.width = unit.width; img.height = unit.height;
+  return img;
+}
+
+function appendContextLines(parent, card, done) {
+  const lines = card.context || [];
+  walkFences(parent, lines, lines.length, card.context_units, (i) => {
+    parent.appendChild(contextLine(lines[i], card.context_runs && card.context_runs[i]));
+  }, (unit) => {
+    // The kids surface re-renders per state: the accessible name and the
+    // kept masks are recomputed here, the asked mask dropping once done.
+    const img = plainDiagram(unit);
+    if (done && unit.revealed_alt) img.alt = unit.revealed_alt;
+    const kept = keptRegions(unit.regions || [], done);
+    if (!kept.length) return img;
+    return maskedImage(img, kept, "rev-img");
+  });
 }
 
 // Tap-the-answer options. Before a pick each is tappable; after a pick (chosen

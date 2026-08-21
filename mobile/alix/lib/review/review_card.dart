@@ -139,34 +139,26 @@ class ReviewCardView extends StatelessWidget {
         // a quieter style; a leading one (a cloze sentence) is the question
         // itself and follows the front.
         if (!card.contextLeads)
-          for (final (index, line) in card.context.indexed) ...[
-            _runsOrText(
-              index < card.contextRuns.length ? card.contextRuns[index] : null,
-              line,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
-              contextHoles: false,
-              tokens: tokens,
-            ),
-            const SizedBox(height: 8),
-          ],
+          ..._contextLines(
+            card,
+            tokens,
+            leading: false,
+            answered: answered,
+            style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
+          ),
         _front(context, card, tokens),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
           _cardImage(context, image, answered),
         ],
         if (card.contextLeads)
-          for (final (index, line) in card.context.indexed) ...[
-            const SizedBox(height: 8),
-            _runsOrText(
-              index < card.contextRuns.length ? card.contextRuns[index] : null,
-              line,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
-              contextHoles: true,
-              tokens: tokens,
-            ),
-          ],
+          ..._contextLines(
+            card,
+            tokens,
+            leading: true,
+            answered: answered,
+            style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
+          ),
         const SizedBox(height: 14),
         _divider(tokens),
         const SizedBox(height: 22),
@@ -283,21 +275,50 @@ class ReviewCardView extends StatelessWidget {
         lines,
         style.color ?? tokens.text,
       ),
-      ReviewDiagramModel(:final src, :final width, :final height, :final alt) =>
-        _diagram(src, width, height, alt),
+      ReviewDiagramModel() => _diagram(unit, answered: true),
       ReviewChecklistModel(:final items) => _checklist(items, tokens, style),
     };
   }
 
-  Widget _diagram(String src, int width, int height, String alt) {
+  Widget _diagram(ReviewDiagramModel unit, {required bool answered}) {
+    final alt = answered && unit.revealedAlt != null ? unit.revealedAlt! : unit.alt;
+    if (unit.regions.isEmpty) {
+      return Semantics(
+        label: alt,
+        image: true,
+        child: Image.file(
+          File(unit.src),
+          width: unit.width.toDouble(),
+          fit: BoxFit.scaleDown,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+      );
+    }
+    // A masked diagram is the shipped occlusion surface over the frozen
+    // raster: regions are raster-pixel boxes, exactly what MaskedCardImage
+    // places against the decoded source size.
     return Semantics(
       label: alt,
       image: true,
-      child: Image.file(
-        File(src),
-        width: width.toDouble(),
-        fit: BoxFit.scaleDown,
-        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      child: Builder(
+        builder: (context) => MaskedCardImage(
+          provider: FileImage(File(unit.src)),
+          image: ReviewImageModel(
+            src: unit.src,
+            alt: alt,
+            regions: unit.regions,
+            crop: null,
+          ),
+          answered: answered,
+          height: unit.height.toDouble(),
+          onAskedGone: () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'this card asks about a region outside its diagram',
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -552,16 +573,97 @@ class ReviewCardView extends StatelessWidget {
       color: Theme.of(context).colorScheme.onSurface,
     );
     final gap = stanza && lines.length > 1 ? 22.0 : 6.0;
-    // Fence-shaped units arrive in the same document order as the raw
-    // fences: the nth fence consumes the nth unit, and a resolved diagram
-    // replaces its fence only once the closing marker is revealed; a
-    // partial fence stays a code block.
+    final children = <Widget>[];
+    _walkFences(
+      lines,
+      units,
+      onFence: (code, unit, closed) {
+        if (children.isNotEmpty) children.add(SizedBox(height: gap));
+        if (closed && unit is ReviewDiagramModel) {
+          children.add(_diagram(unit, answered: true));
+        } else {
+          children.add(_codeBlock(code, style.color ?? tokens.text));
+        }
+      },
+      onLine: (index) {
+        if (children.isNotEmpty) children.add(SizedBox(height: gap));
+        children.add(
+          _runsOrText(
+            index < runLines.length ? runLines[index] : null,
+            lines[index],
+            textAlign: TextAlign.center,
+            style: style,
+          ),
+        );
+      },
+    );
+    return Column(children: children);
+  }
+
+  // Context keeps its per-line rendering (blank/hidden glyphs, the
+  // labelling style); only fence slots consume contextUnits. A labelling
+  // context puts its 8px gap after each block, a leading one before it.
+  List<Widget> _contextLines(
+    ReviewCardModel card,
+    AlixTokens tokens, {
+    required bool leading,
+    required bool answered,
+    TextStyle? style,
+  }) {
+    final children = <Widget>[];
+    void add(Widget widget) {
+      if (leading) children.add(const SizedBox(height: 8));
+      children.add(widget);
+      if (!leading) children.add(const SizedBox(height: 8));
+    }
+
+    _walkFences(
+      card.context,
+      card.contextUnits,
+      onFence: (code, unit, closed) {
+        if (closed && unit is ReviewDiagramModel) {
+          add(_diagram(unit, answered: answered));
+        } else {
+          add(_codeBlock(code, style?.color ?? tokens.text));
+        }
+      },
+      onLine: (index) {
+        add(
+          _runsOrText(
+            index < card.contextRuns.length ? card.contextRuns[index] : null,
+            card.context[index],
+            textAlign: TextAlign.center,
+            style: style,
+            contextHoles: leading,
+            tokens: tokens,
+          ),
+        );
+      },
+    );
+    return children;
+  }
+
+  // The ONE fence walk (the same alignment law as the web clients):
+  // fence-shaped units arrive in the same document order as the raw fences,
+  // the nth fence consumes the nth unit, and a resolved diagram replaces
+  // its fence only once the closing marker is within the walked lines; a
+  // partial fence stays a code block.
+  void _walkFences(
+    List<String> lines,
+    List<ReviewNoteUnitModel> units, {
+    required void Function(
+      List<String> code,
+      ReviewNoteUnitModel? unit,
+      bool closed,
+    )
+    onFence,
+    required void Function(int index) onLine,
+  }) {
     final fenceUnits = [
       for (final unit in units)
         if (unit is ReviewCodeModel || unit is ReviewDiagramModel) unit,
     ];
     var fenceIndex = 0;
-    final children = <Widget>[];
     var index = 0;
     while (index < lines.length) {
       final trimmed = lines[index].trim();
@@ -583,26 +685,12 @@ class ReviewCardView extends StatelessWidget {
             ? fenceUnits[fenceIndex]
             : null;
         fenceIndex++;
-        if (children.isNotEmpty) children.add(SizedBox(height: gap));
-        if (closed && unit is ReviewDiagramModel) {
-          children.add(_diagram(unit.src, unit.width, unit.height, unit.alt));
-        } else {
-          children.add(_codeBlock(code, style.color ?? tokens.text));
-        }
+        onFence(code, unit, closed);
         continue;
       }
-      if (children.isNotEmpty) children.add(SizedBox(height: gap));
-      children.add(
-        _runsOrText(
-          index < runLines.length ? runLines[index] : null,
-          lines[index],
-          textAlign: TextAlign.center,
-          style: style,
-        ),
-      );
+      onLine(index);
       index++;
     }
-    return Column(children: children);
   }
 
   Widget _options(AlixTokens tokens) {
@@ -992,13 +1080,7 @@ class ReviewCardView extends StatelessWidget {
                     lines,
                     tokens.text,
                   ),
-                  ReviewDiagramModel(
-                    :final src,
-                    :final width,
-                    :final height,
-                    :final alt,
-                  ) =>
-                    _diagram(src, width, height, alt),
+                  ReviewDiagramModel() => _diagram(note, answered: true),
                   ReviewChecklistModel(:final items) => _checklist(
                     items,
                     tokens,

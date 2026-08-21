@@ -281,23 +281,9 @@ fn deck_diagram_findings(
     }
     // A stamp ATTACHED to a fence belongs to it (freeze replaces it in
     // place when stale); a stamp attached to nothing is an orphan only
-    // `--repair-diagrams` can remove.
-    let attached: std::collections::HashMap<usize, bool> = found
-        .fences
-        .iter()
-        .filter_map(|fence| {
-            let (range, fingerprint) = fence.stamp.as_ref()?;
-            let line = text[..range.start]
-                .bytes()
-                .filter(|byte| *byte == b'\n')
-                .count()
-                + 1;
-            Some((
-                line,
-                *fingerprint == alix::diagram::fingerprint(&fence.source),
-            ))
-        })
-        .collect();
+    // `--repair-diagrams` can remove. The same per-attachment freshness
+    // accounting decides the deck-load warning.
+    let attached = alix::diagram::attached_stamp_freshness(&found, text);
     for stamp in cards.iter().flat_map(|card| &card.diagrams) {
         match attached.get(&stamp.line) {
             None => report.warn(format!(
@@ -337,6 +323,58 @@ fn deck_diagram_findings(
             alix::diagram::COMMAND
         ));
     }
+    // Review silently falls back on a span that cannot project; doctor is
+    // the loud channel and judges from the STAMPED manifest itself, so a
+    // manifest the load path already refused still gets its precise
+    // finding. Records ride every card of a block, so findings dedupe.
+    let mut bind_findings: std::collections::BTreeSet<String> = Default::default();
+    for card in cards {
+        for fence in &card.answer_fences {
+            let Some(stamp) = card
+                .diagrams
+                .iter()
+                .find(|stamp| stamp.fingerprint == fence.fingerprint)
+            else {
+                continue;
+            };
+            let Ok(manifest) = stamped_manifest(path, deck_token, stamp) else {
+                // manifest_agreement above already speaks for unreadable or
+                // disagreeing objects.
+                continue;
+            };
+            if let Err(failure) = alix::diagram::validate_label_sources(&manifest, &fence.interior)
+            {
+                bind_findings.insert(format!(
+                    "{}: frozen diagram {}: {failure}; re-run `alix deck init {}` to re-freeze",
+                    path.display(),
+                    fence.fingerprint,
+                    path.display()
+                ));
+                continue;
+            }
+            for span in &fence.spans {
+                if let Err(failure) =
+                    alix::diagram::bind_span(&manifest, span.line, span.start, span.end)
+                {
+                    bind_findings.insert(format!("{}: {failure}", path.display()));
+                }
+            }
+        }
+    }
+    for finding in bind_findings {
+        report.warn(finding);
+    }
+}
+
+fn stamped_manifest(
+    path: &Path,
+    deck_id: &str,
+    stamp: &alix::card::DiagramStamp,
+) -> anyhow::Result<alix::diagram::DiagramManifest> {
+    let root = workspace::root_for_deck(path).context("not a workspace member")?;
+    let owned = alix::assets::deck_dir(&root, deck_id)?;
+    let bytes = std::fs::read(owned.join(&stamp.manifest))?;
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 /// The stamp names the raster twice: directly (`asset:`) and through the

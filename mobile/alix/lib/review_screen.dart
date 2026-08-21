@@ -65,7 +65,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_controller.openError == null) {
       _resetInputs();
       _probeServer();
+      _surfaceLoadWarnings();
     }
+  }
+
+  // One transient line at open (the web client's notice semantics): the
+  // deck still reviews, but a fallback must not pass for a frozen diagram.
+  void _surfaceLoadWarnings() {
+    final warnings = _controller.state.loadWarnings;
+    if (warnings.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(warnings.join(' '))));
+    });
   }
 
   @override

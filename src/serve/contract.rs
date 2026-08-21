@@ -57,6 +57,7 @@ fn statedto_select_phase_wire_shape() {
         recognize_gap: None,
         label: "select decks".to_string(),
         save_error: None,
+        load_warnings: Vec::new(),
     };
     pin(
         "StateDto.select",
@@ -106,6 +107,7 @@ fn statedto_review_phase_wire_shape() {
             context: vec!["Chapter 4".to_string()],
             context_leads: true,
             context_runs: vec![crate::inline::parse_inline("Chapter 4")],
+            context_units: Vec::new(),
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
             back_units: vec![NoteUnit::Sentence {
@@ -238,6 +240,7 @@ fn statedto_review_phase_wire_shape() {
         save_error: Some(
             "progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
         ),
+        load_warnings: vec!["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details".to_string()],
     };
     pin(
         "StateDto.review",
@@ -256,6 +259,7 @@ fn statedto_review_phase_wire_shape() {
                 "context": ["Chapter 4"],
                 "context_leads": true,
                 "context_runs": [[{"text": "Chapter 4"}]],
+                "context_units": [],
                 "back": ["every value has one owner"],
                 "back_runs": [[{"text": "every value has one owner"}]],
                 "back_units": [{
@@ -338,7 +342,8 @@ fn statedto_review_phase_wire_shape() {
             "met_total": 4,
             "deck_total": 9,
             "label": "rust.md",
-            "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4"
+            "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4",
+            "load_warnings": ["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details"]
         }),
     );
 }
@@ -375,6 +380,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
         recognize_gap: None,
         label: "rust.md".to_string(),
         save_error: None,
+        load_warnings: Vec::new(),
     };
     pin(
         "StateDto.done",
@@ -448,6 +454,7 @@ fn statedto_done_phase_carries_the_recognize_gap() {
         }),
         label: "status-codes.md".to_string(),
         save_error: None,
+        load_warnings: Vec::new(),
     };
     pin(
         "StateDto.recognize-gap",
@@ -753,6 +760,7 @@ fn carddto_wire_shape() {
             context: Vec::new(),
             context_leads: false,
             context_runs: Vec::new(),
+            context_units: Vec::new(),
             back: vec!["Use **x**".to_string(), "France".to_string()],
             back_runs: vec![
                 crate::inline::parse_inline("Use `**x**`"),
@@ -809,6 +817,7 @@ fn carddto_wire_shape() {
             "context": [],
             "context_leads": false,
             "context_runs": [],
+            "context_units": [],
             "back": ["Use **x**", "France"],
             "back_runs": [
                 [{"text": "Use "}, {"text": "**x**", "code": true}],
@@ -875,6 +884,7 @@ fn carddto_math_wire_shape() {
         context: vec!["$$y^2$$".to_string()],
         context_leads: true,
         context_runs: vec![vec![display]],
+        context_units: Vec::new(),
         back: vec![r"\frac{1".to_string()],
         back_runs: vec![vec![error]],
         back_units: vec![NoteUnit::Sentence {
@@ -918,6 +928,7 @@ fn carddto_math_wire_shape() {
                     "svg": "<svg><path d=\"M1 1\"/></svg>"
                 }
             }]],
+            "context_units": [],
             "back": ["\\frac{1"],
             "back_runs": [[{
                 "text": "\\frac{1",
@@ -1205,6 +1216,7 @@ fn browsedto_wire_shape() {
             context: Vec::new(),
             context_leads: false,
             context_runs: Vec::new(),
+            context_units: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
             back_units: vec![NoteUnit::Sentence {
@@ -1232,6 +1244,7 @@ fn browsedto_wire_shape() {
                 "context": [],
                 "context_leads": false,
                 "context_runs": [],
+                "context_units": [],
                 "back": ["a"],
                 "back_runs": [[{"text": "a"}]],
                 "back_units": [{
@@ -2068,6 +2081,125 @@ fn carddto_diagram_wire_shape() {
                 "width": 188,
                 "height": 114,
                 "alt": "flowchart LR\n A-->B"
+            }
+        ]),
+    );
+}
+
+#[test]
+fn carddto_context_diagram_wire_shape() {
+    let source = "flowchart LR\n A-->B";
+    let mut card = diagram_card();
+    card.context = vec![
+        "```mermaid".to_string(),
+        "flowchart LR".to_string(),
+        " A-->B".to_string(),
+        "```".to_string(),
+    ];
+    card.answer_fences.push(crate::card::AnswerFence {
+        fingerprint: crate::diagram::fingerprint(source),
+        interior: std::sync::Arc::from(source),
+        spans: Vec::new(),
+        holes: false,
+    });
+    let view =
+        crate::review::CardView::project(&card, &mut crate::inline::DisplayProjector::default());
+    let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
+    let NoteUnit::Diagram { src, .. } = &dto.context_units[0] else {
+        panic!(
+            "the context fence slot holds the diagram unit: {:?}",
+            dto.context_units
+        );
+    };
+    let src = src.clone();
+    assert!(src.starts_with("/img/"), "{src}");
+    pin(
+        "CardDto.context_units",
+        &dto.context_units,
+        serde_json::json!([
+            {
+                "kind": "diagram",
+                "src": src,
+                "width": 188,
+                "height": 114,
+                "alt": "flowchart LR\n A-->B"
+            }
+        ]),
+    );
+}
+
+#[test]
+fn carddto_masked_context_diagram_wire_shape() {
+    let text = concat!(
+        "## the request path\n",
+        "```mermaid\n",
+        "flowchart LR\n",
+        "  Cache[store] --> B[Cache]\n",
+        "```\n",
+        "<!-- blank: span hidden=\"Cache\" occurrence=2 -->\n",
+    );
+    let mut cards = crate::parser::parse_str("deck.md", text).unwrap();
+    let card = &mut cards[0];
+    let interior = "flowchart LR\n  Cache[store] --> B[Cache]";
+    let store = interior.find("store").unwrap() as u32;
+    let cache = interior.rfind("Cache").unwrap() as u32;
+    let label =
+        |id: &str, text: &str, start: u32, end: u32, y: u32| crate::diagram::ManifestLabel {
+            id: id.into(),
+            text: text.into(),
+            source: crate::diagram::LabelSource::Range { start, end },
+            bounds: crate::diagram::PixelBox {
+                x: 10,
+                y,
+                width: 100,
+                height: 40,
+            },
+        };
+    card.resolved_diagrams.push(crate::card::ResolvedDiagram {
+        fingerprint: crate::diagram::fingerprint(interior),
+        png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+        manifest: crate::diagram::DiagramManifest {
+            png: "sha256-aa.png".to_string(),
+            raster_width: 376,
+            raster_height: 228,
+            logical_width: 188,
+            logical_height: 114,
+            labels: vec![
+                label("Cache", "store", store, store + 5, 10),
+                label("B", "Cache", cache, cache + 5, 50),
+            ],
+        },
+    });
+    let view =
+        crate::review::CardView::project(card, &mut crate::inline::DisplayProjector::default());
+    let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
+    let NoteUnit::Diagram { src, .. } = &dto.context_units[0] else {
+        panic!("the masked fence projects: {:?}", dto.context_units);
+    };
+    let src = src.clone();
+    assert!(src.starts_with("/img/"), "{src}");
+    pin(
+        "CardDto.context_units.masked",
+        &dto.context_units,
+        serde_json::json!([
+            {
+                "kind": "diagram",
+                "src": src,
+                "width": 188,
+                "height": 114,
+                "alt": "diagram labels: store, …",
+                "regions": [
+                    {
+                        "role": "asked",
+                        "reveal_on_answer": true,
+                        "x": 10.0,
+                        "y": 50.0,
+                        "width": 100.0,
+                        "height": 40.0,
+                        "unit": "px"
+                    }
+                ],
+                "revealed_alt": "diagram labels: store, Cache"
             }
         ]),
     );

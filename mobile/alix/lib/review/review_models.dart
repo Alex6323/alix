@@ -103,7 +103,9 @@ class ReviewDiagramModel extends ReviewNoteUnitModel {
     required this.width,
     required this.height,
     required this.alt,
-  });
+    Iterable<ReviewRegionModel> regions = const [],
+    this.revealedAlt,
+  }) : regions = List.unmodifiable(regions);
 
   /// An absolute file path: the lean core serves diagrams from disk.
   final String src;
@@ -112,6 +114,14 @@ class ReviewDiagramModel extends ReviewNoteUnitModel {
   final int width;
   final int height;
   final String alt;
+
+  /// Overlay regions in RASTER pixel space (the PNG's own pixels); empty on
+  /// an unmasked diagram.
+  final List<ReviewRegionModel> regions;
+
+  /// Post-answer accessible text: asked labels revealed, siblings and
+  /// covers still masked. Null when nothing is masked.
+  final String? revealedAlt;
 }
 
 class ReviewChecklistModel extends ReviewNoteUnitModel {
@@ -129,6 +139,7 @@ class ReviewCardModel {
     required Iterable<String> context,
     required this.contextLeads,
     required Iterable<Iterable<InlineRunModel>> contextRuns,
+    required Iterable<ReviewNoteUnitModel> contextUnits,
     required Iterable<String> back,
     required Iterable<Iterable<InlineRunModel>> backRuns,
     required Iterable<ReviewNoteUnitModel> backUnits,
@@ -140,6 +151,7 @@ class ReviewCardModel {
        frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits),
        context = List.unmodifiable(context),
        contextRuns = _freezeRunLines(contextRuns),
+       contextUnits = List.unmodifiable(contextUnits),
        back = List.unmodifiable(back),
        backRuns = _freezeRunLines(backRuns),
        backUnits = List.unmodifiable(backUnits),
@@ -155,6 +167,9 @@ class ReviewCardModel {
   /// front (a card table's title).
   final bool contextLeads;
   final List<List<InlineRunModel>> contextRuns;
+  /// The context's fence-shaped units only, in fence order (the nth raw
+  /// fence consumes the nth unit); context prose keeps its line rendering.
+  final List<ReviewNoteUnitModel> contextUnits;
   final List<String> back;
   final List<List<InlineRunModel>> backRuns;
   final List<ReviewNoteUnitModel> backUnits;
@@ -263,12 +278,14 @@ class ReviewStateModel {
     required this.dueLeft,
     required this.newLeft,
     this.saveError,
+    Iterable<String> loadWarnings = const [],
   }) : choices = choices == null ? null : List.unmodifiable(choices),
        choiceRuns = choiceRuns == null ? null : _freezeRunLines(choiceRuns),
        keypoints = keypoints == null ? null : List.unmodifiable(keypoints),
        keypointRuns = keypointRuns == null
            ? null
-           : _freezeRunLines(keypointRuns);
+           : _freezeRunLines(keypointRuns),
+       loadWarnings = List.unmodifiable(loadWarnings);
 
   final ReviewCardModel? card;
   final ReviewMode mode;
@@ -291,6 +308,7 @@ class ReviewStateModel {
   final int dueLeft;
   final int newLeft;
   final String? saveError;
+  final List<String> loadWarnings;
 }
 
 List<List<InlineRunModel>> _freezeRunLines(

@@ -1001,6 +1001,68 @@ struct BlockProse {
     splices: Vec<SpanSplice>,
 }
 
+/// Captures the block's closed mermaid fences in order (empty included:
+/// one record per closed mermaid fence is what keeps records aligned with
+/// units), each with every bound span's byte range in the LF-normalized
+/// interior. Walks with
+/// the render tokenizer's fence grammar so records align one-to-one with
+/// the fence-shaped units clients consume; captured at parse because a
+/// region card's context carries the fence MASKED, so display text can
+/// recover neither the unmasked fingerprint nor authored offsets.
+fn capture_answer_fences(
+    answer: &[(usize, String)],
+    splices: &[SpanSplice],
+    hole_lines: &[usize],
+) -> Vec<crate::card::AnswerFence> {
+    use crate::render::{fence_info, fence_marker};
+    let mut fences = Vec::new();
+    let mut open: Option<(char, bool, usize)> = None;
+    for (index, (_, text)) in answer.iter().enumerate() {
+        match (open, fence_marker(text)) {
+            (Some((ch, mermaid, from)), Some(marker)) if ch == marker => {
+                open = None;
+                if !mermaid {
+                    continue;
+                }
+                let offset_in = |line: usize, at: usize| -> usize {
+                    let prefix: usize = answer[from..line]
+                        .iter()
+                        .map(|(_, text)| text.len() + 1)
+                        .sum();
+                    prefix + at
+                };
+                let spans = splices
+                    .iter()
+                    .filter(|splice| (from..index).contains(&splice.answer_index))
+                    .map(|splice| crate::card::AnswerFenceSpan {
+                        line: splice.directive_line,
+                        start: offset_in(splice.answer_index, splice.range.0),
+                        end: offset_in(splice.answer_index, splice.range.1),
+                    })
+                    .collect();
+                let interior = answer[from..index]
+                    .iter()
+                    .map(|(_, text)| text.as_str())
+                    .collect::<Vec<&str>>()
+                    .join("\n");
+                fences.push(crate::card::AnswerFence {
+                    fingerprint: crate::diagram::fingerprint(&interior),
+                    interior: std::sync::Arc::from(interior),
+                    spans,
+                    holes: hole_lines.iter().any(|line| (from..index).contains(line)),
+                });
+            }
+            (Some(_), _) => {}
+            (None, Some(marker)) => {
+                let mermaid = fence_info(text, marker).eq_ignore_ascii_case("mermaid");
+                open = Some((marker, mermaid, index + 1));
+            }
+            (None, None) => {}
+        }
+    }
+    fences
+}
+
 /// Synthesizes the region cards a block's blanks ask (ADR 0034): a named
 /// group is one card asking every member, an ungrouped blank one card each,
 /// a cover no card. A blank-bearing block is a template: its region cards
@@ -1949,6 +2011,9 @@ fn build_card(
         })
         .collect();
 
+    let hole_answer_lines: Vec<usize> = holes.iter().map(|hole| hole.line).collect();
+    let answer_fences = capture_answer_fences(&answer, &splices, &hole_answer_lines);
+
     let mut named = HashSet::new();
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for (h, hole) in holes.iter().enumerate() {
@@ -1980,6 +2045,7 @@ fn build_card(
         card.images = images;
         card.images_back = images_back;
         card.span_regions = span_regions;
+        card.answer_fences = answer_fences;
         card.citations = directives.citations;
         card.diagrams = directives.diagrams;
         card.givens = directives.givens;
@@ -2148,6 +2214,7 @@ fn build_card(
         card.images = images.clone();
         card.images_back = images_back.clone();
         card.span_regions = span_regions.clone();
+        card.answer_fences = answer_fences.clone();
         // The effective question (ADR 0034): this card's own masked context
         // and back, so editing a hidden sibling never stales this card's
         // cached AI artifacts; the block key above addresses the block.
@@ -4408,6 +4475,156 @@ the answer
         let card = &deck.cards[0];
         assert_eq!(1, card.span_regions.len());
         assert!(card.images.is_empty() && card.images_back.is_empty());
+    }
+
+    #[test]
+    fn a_span_inside_a_mermaid_fence_records_its_interior_range_and_fingerprint() {
+        let deck = parse(
+            "## q\n```mermaid\nflowchart LR\n  A[Load] --> B\n```\n<!-- blank: span hidden=\"Load\" -->\n",
+        );
+        let card = &deck.cards[0];
+        assert!(card.region.is_some(), "the blank makes a region card");
+        assert_eq!(1, card.answer_fences.len());
+        let fence = &card.answer_fences[0];
+        let interior = "flowchart LR\n  A[Load] --> B";
+        assert_eq!(
+            interior,
+            fence.interior.as_ref(),
+            "the unmasked bytes ride the record"
+        );
+        assert_eq!(crate::diagram::fingerprint(interior), fence.fingerprint);
+        assert!(!fence.holes);
+        assert_eq!(1, fence.spans.len());
+        let span = &fence.spans[0];
+        assert_eq!(6, span.line, "the span's identity is its directive line");
+        assert_eq!(
+            "Load",
+            &interior[span.start..span.end],
+            "the range addresses the hidden text in the unmasked interior"
+        );
+    }
+
+    #[test]
+    fn fence_records_keep_block_order_and_skip_non_mermaid_and_prose_spans() {
+        let deck = parse(concat!(
+            "## q\n",
+            "```mermaid\nflowchart LR\n  A[First] --> B\n```\n",
+            "```rust\nlet code = 1;\n```\n",
+            "```MERMAID\nflowchart TD\n  C[Second] --> D\n```\n",
+            "prose with der Artikel\n",
+            "<!-- blank: span hidden=\"First\" -->\n",
+            "<!-- blank: span hidden=\"Second\" -->\n",
+            "<!-- cover: span hidden=\"der\" -->\n",
+        ));
+        let card = &deck.cards[0];
+        assert_eq!(
+            2,
+            card.answer_fences.len(),
+            "mermaid fences only (case-insensitive), in order"
+        );
+        let first = &card.answer_fences[0];
+        let second = &card.answer_fences[1];
+        assert_eq!(
+            crate::diagram::fingerprint("flowchart LR\n  A[First] --> B"),
+            first.fingerprint
+        );
+        assert_eq!(
+            crate::diagram::fingerprint("flowchart TD\n  C[Second] --> D"),
+            second.fingerprint
+        );
+        assert_eq!(1, first.spans.len(), "each fence sees only its own spans");
+        assert_eq!(1, second.spans.len());
+        assert_eq!(
+            "Second",
+            &"flowchart TD\n  C[Second] --> D"[second.spans[0].start..second.spans[0].end]
+        );
+        let recorded: usize = card.answer_fences.iter().map(|f| f.spans.len()).sum();
+        assert_eq!(2, recorded, "the prose cover appears in no fence record");
+    }
+
+    #[test]
+    fn a_hole_inside_a_fence_marks_the_record_and_rides_every_cloze_card() {
+        let deck = parse(concat!(
+            "## q\n",
+            "```mermaid\nflowchart LR\n  A[\\blank{Load}] --> B\n```\n",
+            "a prose \\blank{hole} outside\n",
+        ));
+        for card in &deck.cards {
+            assert_eq!(1, card.answer_fences.len(), "cloze cards carry the records");
+            assert!(
+                card.answer_fences[0].holes,
+                "a hole in the interior poisons the fence for projection"
+            );
+        }
+        let deck = parse(concat!(
+            "## q\n",
+            "```mermaid\nflowchart LR\n  A[Load] --> B\n```\n",
+            "a prose \\blank{hole} outside\n",
+        ));
+        assert!(
+            !deck.cards[0].answer_fences[0].holes,
+            "a hole outside the interior leaves the fence projectable"
+        );
+    }
+
+    #[test]
+    fn empty_unclosed_and_indented_fences_follow_the_unit_grammar() {
+        let deck = parse("## q\n```mermaid\n```\nanswer\n");
+        assert_eq!(
+            1,
+            deck.cards[0].answer_fences.len(),
+            "one record per closed mermaid fence, empty included: a context \
+             interior emptied by image-line dropping is indistinguishable \
+             from an authored-empty one, so only the uniform rule aligns"
+        );
+        assert_eq!(
+            crate::diagram::fingerprint(""),
+            deck.cards[0].answer_fences[0].fingerprint
+        );
+        let deck = parse("## q\n```mermaid\nflowchart LR\nanswer without a closer\n");
+        assert!(
+            deck.cards[0].answer_fences.is_empty(),
+            "an unclosed fence produces no unit, so it produces no record"
+        );
+        let deck = parse("## q\n```mermaid\nflowchart LR\n  ```\nanswer\n");
+        assert_eq!(
+            crate::diagram::fingerprint("flowchart LR"),
+            deck.cards[0].answer_fences[0].fingerprint,
+            "an indented close line closes the fence in the unit grammar, so \
+             the record ends where the unit ends"
+        );
+        let deck = parse("## q\n  ```mermaid\n  flowchart LR\n  ```\nanswer\n");
+        assert_eq!(
+            1,
+            deck.cards[0].answer_fences.len(),
+            "an indented fence is a fence to the unit grammar, so it is recorded"
+        );
+        assert_eq!(
+            crate::diagram::fingerprint("flowchart LR"),
+            deck.cards[0].answer_fences[0].fingerprint,
+            "the scanner dedents non-fence lines, so in card space the fence \
+             is column-0 and its interior is dedented; it can never resolve \
+             (freeze only stamps document column-0 fences verbatim)"
+        );
+    }
+
+    #[test]
+    fn a_second_occurrence_span_records_the_second_range_in_the_fence() {
+        let deck = parse(concat!(
+            "## q\n",
+            "```mermaid\nflowchart LR\n  Cache[store] --> B[Cache]\n```\n",
+            "<!-- blank: span hidden=\"Cache\" occurrence=2 -->\n",
+        ));
+        let interior = "flowchart LR\n  Cache[store] --> B[Cache]";
+        let fence = &deck.cards[0].answer_fences[0];
+        assert_eq!(1, fence.spans.len());
+        let span = &fence.spans[0];
+        assert_eq!("Cache", &interior[span.start..span.end]);
+        assert_eq!(
+            interior.rfind("Cache").unwrap(),
+            span.start,
+            "n=2 addresses the second occurrence, not the first"
+        );
     }
 
     #[test]

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+// The overlay observes element resizes; node has no layout, so a no-op
+// observer stands in and mask geometry is simply never synced here.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 import {
   applyKidsStudyState,
   clearKidsStudyState,
@@ -22,6 +30,8 @@ function element(tag, className, text) {
     className: className || "",
     textContent: text ?? "",
     children: [],
+    dataset: {},
+    style: {},
     classList: { add: (...names) => names.forEach((name) => classes.add(name)) },
     appendChild(child) { this.children.push(child); return child; },
     addEventListener(type, listener) { listeners.set(type, listener); },
@@ -178,6 +188,91 @@ test("kids done summary does not call a partial answer right", () => {
   const close = find(run.stage, (node) =>
     (node.textContent || "").includes("So close on 1 card."));
   assert.ok(close, "the almost line still reports the work");
+});
+
+test("kids masks a context diagram until reveal, then swaps its alt", () => {
+  const original = review({
+    card: {
+      id: "card-1",
+      front: "Question",
+      back: ["Cache"],
+      context: ["```mermaid", "flowchart LR", "  Cache[store] --> B[Cache]", "```"],
+      context_runs: [],
+      context_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "diagram labels: …, …",
+        regions: [
+          { role: "asked", reveal_on_answer: true, x: 10, y: 50, width: 100, height: 40, unit: "px" },
+          { role: "mask", reveal_on_answer: false, x: 10, y: 10, width: 100, height: 40, unit: "px" },
+        ],
+        revealed_alt: "diagram labels: …, Cache",
+      }],
+      images: [],
+      images_back: [],
+      note: [],
+    },
+  });
+  const run = harness(original);
+  run.study.render();
+
+  let image = find(run.stage, (node) => node.tag === "img" && node.className === "diagram");
+  assert.equal(image?.alt, "diagram labels: …, …", "pre-reveal alt is masked");
+  let masks = [];
+  const collect = (node) => {
+    const cls = (node.className || "").split(" ")[0];
+    if (cls === "rev-img-mask") masks.push(node);
+    for (const child of node.children || []) collect(child);
+  };
+  collect(run.stage);
+  assert.equal(masks.length, 2, "asked and sibling masks are drawn pre-reveal");
+
+  const reveal = find(run.actionbar, (node) => node.textContent === "Show me 👀");
+  reveal.click();
+  // The fake stage accumulates children across renders (innerHTML is inert
+  // on it), so drop the first render before reading the second.
+  run.stage.children.length = 0;
+  run.study.render();
+
+  image = find(run.stage, (node) => node.tag === "img" && node.className === "diagram");
+  assert.equal(image?.alt, "diagram labels: …, Cache", "post-reveal alt exposes the asked label");
+  masks = [];
+  collect(run.stage);
+  assert.equal(masks.length, 1, "the asked mask drops, the sibling stays");
+});
+
+test("kids renders a context diagram unit through the fence walk", () => {
+  const original = review({
+    card: {
+      id: "card-1",
+      front: "Question",
+      back: ["Answer"],
+      context: ["```mermaid", "flowchart LR", " A-->B", "```", "a sentence"],
+      context_runs: [],
+      context_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "flowchart LR\n A-->B",
+      }],
+      images: [],
+      images_back: [],
+      note: [],
+    },
+  });
+  const run = harness(original);
+  run.study.render();
+
+  const image = find(run.stage, (node) =>
+    node.tag === "img" && node.className === "diagram");
+  assert.equal(image?.src, "/img/0123456789abcdef", "the context fence renders the diagram");
+  assert.equal(image?.alt, "flowchart LR\n A-->B");
+  const raw = find(run.stage, (node) =>
+    typeof node.textContent === "string" && node.textContent.includes("```"));
+  assert.equal(raw, null, "no raw fence marker line survives in context");
 });
 
 test("kids renders a diagram unit on answer reveal", () => {

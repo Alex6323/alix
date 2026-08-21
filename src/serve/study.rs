@@ -1663,6 +1663,7 @@ mod tests {
             session,
             label: "study.md".to_string(),
             decks,
+            load_warnings: Vec::new(),
             links: HashMap::new(),
             source_layers: HashMap::new(),
             base_roots: HashMap::new(),

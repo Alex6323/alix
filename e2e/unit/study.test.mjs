@@ -174,6 +174,48 @@ test("study owns accepted state publication and screen selection", () => {
   assert.equal(run.renders(), 2);
 });
 
+test("the same load warning surfaces again for a later deck", () => {
+  const notices = [];
+  const document = { getElementById: () => null };
+  const study = createStudy({
+    api: async () => ({}),
+    post: (body) => ({ method: "POST", body }),
+    storage: { getItem: () => null, setItem: () => {} },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker },
+    rerender: () => {},
+    walkData: () => null,
+    replaceWalk: () => {},
+    openTutor: () => {},
+    startExam: () => {},
+    closeMenu: () => {},
+    notice: (message) => notices.push(message),
+    timers: {},
+    ui: { document },
+  });
+  const warning =
+    "1 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details";
+  const state = (label, loadWarnings) => ({
+    kind: "review",
+    phase: "done",
+    label,
+    load_warnings: loadWarnings,
+    save_error: null,
+  });
+
+  study.apply(state("first.md", [warning]));
+  study.prepareRender();
+  study.apply(state("picker", []));
+  study.prepareRender();
+  study.apply(state("second.md", [warning]));
+  study.prepareRender();
+
+  assert.deepEqual(
+    notices,
+    [warning, warning],
+    "each newly opened deck gets its own one-shot warning even when the text matches",
+  );
+});
+
 test("the badge names provenance and the interaction actually on screen", () => {
   const cases = [
     [{ mode: "flip" }, "flip"],

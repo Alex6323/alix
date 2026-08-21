@@ -23,6 +23,7 @@ pub struct DeckInfo {
     pub base_root: Option<PathBuf>,
     pub source_access: bool,
     pub source_base: SourceBase,
+    pub load_warnings: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -29,6 +29,7 @@ pub(super) struct CardDto {
     pub(super) context: Vec<String>,
     pub(super) context_leads: bool,
     pub(super) context_runs: Vec<Vec<InlineRun>>,
+    pub(super) context_units: Vec<NoteUnit>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) back_units: Vec<NoteUnit>,
@@ -130,6 +131,10 @@ pub(super) struct StateDto {
     pub(super) label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) save_error: Option<String>,
+    /// Deck-load diagnostics for the open session (a stamped diagram that
+    /// did not resolve); absent when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) load_warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -994,6 +999,7 @@ pub(super) fn review_state(
             recognize_gap: None,
             label: "select decks".to_string(),
             save_error: save_error.map(str::to_string),
+            load_warnings: Vec::new(),
         };
     };
     let session = &r.session;
@@ -1120,6 +1126,7 @@ pub(super) fn review_state(
         recognize_gap: s.recognize_gap,
         label: r.label.clone(),
         save_error: save_error.map(str::to_string),
+        load_warnings: r.load_warnings.clone(),
     }
 }
 
@@ -1200,11 +1207,15 @@ fn web_units(units: Vec<crate::render::NoteUnit>) -> Vec<crate::render::NoteUnit
                 width,
                 height,
                 alt,
+                regions,
+                revealed_alt,
             } => crate::render::NoteUnit::Diagram {
                 src: format!("/img/{}", img_key(Path::new(&src))),
                 width,
                 height,
                 alt,
+                regions,
+                revealed_alt,
             },
             other => other,
         })
@@ -1228,6 +1239,7 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
         context: view.context,
         context_leads: view.context_leads,
         context_runs: view.context_runs,
+        context_units: web_units(view.context_units),
         back: view.back,
         back_runs: view.back_runs,
         back_units: web_units(view.back_units),

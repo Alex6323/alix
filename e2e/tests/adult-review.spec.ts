@@ -409,6 +409,156 @@ test("line reveal replaces a complete Mermaid fence with its rendered diagram", 
   await expect(diagram).toHaveAttribute("alt", "flowchart LR\n A-->B");
 });
 
+test("a load warning surfaces once as a notice at session open", async ({ page }) => {
+  const original = longContentState({ answerLines: ["Answer"] });
+  const state = {
+    ...original,
+    load_warnings: [
+      "1 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details",
+    ],
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+
+  const notice = page.locator("#notice");
+  await expect(notice).toHaveClass(/show/);
+  await expect(notice).toContainText("did not resolve");
+});
+
+test("a masked context diagram lifts its asked mask and swaps alt on reveal", async ({ page }) => {
+  // A raster-sized fixture: mask geometry clips against naturalWidth, so a
+  // 1x1 stand-in would hide every region as out-of-source.
+  const rasterPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAXgAAADkCAIAAAAdLKh9AAACMUlEQVR42u3UIQEAAADCMPonJQYpcFuEi6cAZ5EAMBrAaACMBjAawGgAjAYwGgCjAYwGMBoAowGMBjAaAKMBjAbAaACjAYwGwGgAowGMBsBoAKMBMBrAaACjATAawGgAowEwGsBoAIwGMBrAaACMBjAawGgAjAYwGgCjAYwGMBoAowGMBjAaAKMBjAbAaACjAYwGwGgAowGMBsBoAKMBMBrAaACjATAawGgAowEwGsBoAIwGMBrAaACMBjAawGgAjAYwGgCjAYwGMBoAowGMBjAaAKMBjAbAaACjAYwGwGgAowGMBsBoAKMBMBrAaACjATAawGgAowEwGsBoAIwGMBrAaACMBjAawGgAjAYwGgCjAYwGMBoAowGMBjAaAKMBjAbAaACjAYwGwGgAowGMBsBoAKMBMBrAaACjATAawGgAowEwGsBoAIwGMBrAaACMBjAaAKMBjAYwGgCjAYwGMBoAowGMBsBoAKMBjAbAaACjAYwGwGgAowEwGsBoAKMBMBrAaACjATAawGgAjAYwGsBoAIwGMBrAaACMBjAaAKMBjAYwGgCjAYwGMBoAowGMBsBoAKMBjAbAaACjAYwGwGgAowEwGsBoAKMBMBrAaACjATAawGgAjAYwGsBoAIwGMBrAaACMBjAaAKMBjAYwGgCjAYwGMBoAowGMBsBoAKMBjAbAaACjAYwGwGgAowEwGsBoAKMBMBrAaACjATAawGgAjAYwGsBoAIwGMBrAaABeBuh/plOqpXZgAAAAAElFTkSuQmCC",
+    "base64",
+  );
+  const original = longContentState({ answerLines: ["Cache"] });
+  const state = {
+    ...original,
+    card: {
+      ...original.card,
+      context: ["```mermaid", "flowchart LR", "  Cache[store] --> B[Cache]", "```"],
+      context_leads: true,
+      context_runs: [[], [], [], []],
+      context_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "diagram labels: …, …",
+        regions: [
+          { role: "asked", reveal_on_answer: true, x: 10, y: 50, width: 100, height: 40, unit: "px" },
+          { role: "mask", reveal_on_answer: false, x: 10, y: 10, width: 100, height: 40, unit: "px" },
+        ],
+        revealed_alt: "diagram labels: …, Cache",
+      }],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await page.route("**/img/0123456789abcdef", (route) =>
+    route.fulfill({ body: rasterPng, contentType: "image/png" }),
+  );
+  await openApp(page);
+
+  const question = page.locator(".region.q");
+  const diagram = question.locator("img.diagram");
+  await expect(diagram).toHaveAttribute("alt", "diagram labels: …, …");
+  const masks = question.locator(".img-mask");
+  await expect(masks).toHaveCount(2);
+  await expect(masks.first()).toBeVisible();
+
+  await page.getByRole("button", { name: /^Reveal/ }).click();
+  await expect(diagram).toHaveAttribute(
+    "alt",
+    "diagram labels: …, Cache",
+    { timeout: 5000 },
+  );
+  await expect(question.locator(".img-mask.reveals")).toBeHidden();
+  await expect(question.locator(".img-mask:not(.reveals)")).toBeVisible();
+});
+
+test("concealing a new card restores its diagram mask and masked alt", async ({ page }) => {
+  const original = longContentState({ answerLines: ["Cache"] });
+  const state = {
+    ...original,
+    introducing: true,
+    card: {
+      ...original.card,
+      context: ["```mermaid", "flowchart LR", "  Cache[store] --> B[Cache]", "```"],
+      context_leads: true,
+      context_runs: [[], [], [], []],
+      context_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "diagram labels: …, …",
+        regions: [
+          { role: "asked", reveal_on_answer: true, x: 10, y: 50, width: 100, height: 40, unit: "px" },
+          { role: "mask", reveal_on_answer: false, x: 10, y: 10, width: 100, height: 40, unit: "px" },
+        ],
+        revealed_alt: "diagram labels: …, Cache",
+      }],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await page.route("**/img/0123456789abcdef", (route) =>
+    route.fulfill({
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="376" height="228"></svg>',
+      contentType: "image/svg+xml",
+    }),
+  );
+  await openApp(page);
+
+  const question = page.locator(".region.q");
+  const diagram = question.locator("img.diagram");
+  const askedMask = question.locator(".img-mask.reveals");
+  await page.getByRole("button", { name: /^Reveal/ }).click();
+  await expect(askedMask).toBeHidden();
+  await expect(diagram).toHaveAttribute("alt", "diagram labels: …, Cache");
+
+  await page.locator("#ansRegion .cite-toggle").click();
+  await expect(page.locator("#ansRegion")).toHaveClass(/concealed/);
+  await expect(askedMask).toBeVisible();
+  await expect(diagram).toHaveAttribute("alt", "diagram labels: …, …");
+});
+
+test("a cloze context fence renders its diagram in the question region", async ({ page }) => {
+  const original = longContentState({ answerLines: ["Answer"] });
+  const state = {
+    ...original,
+    card: {
+      ...original.card,
+      context: ["```mermaid", "flowchart LR", " A-->B", "```", "a sentence with a gap"],
+      context_leads: true,
+      context_runs: [[], [], [], [], [{ text: "a sentence with a gap" }]],
+      context_units: [{
+        kind: "diagram",
+        src: "/img/0123456789abcdef",
+        width: 188,
+        height: 114,
+        alt: "flowchart LR\n A-->B",
+      }],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABXvMqOgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await page.route("**/img/0123456789abcdef", (route) =>
+    route.fulfill({ body: png, contentType: "image/png" }),
+  );
+  await openApp(page);
+
+  const question = page.locator(".region.q");
+  const diagram = question.locator("img.diagram");
+  await expect(diagram).toHaveAttribute("src", "/img/0123456789abcdef");
+  await expect(diagram).toHaveAttribute("alt", "flowchart LR\n A-->B");
+  await expect(question.getByText("a sentence with a gap")).toBeVisible();
+  await expect(question.getByText("```")).toHaveCount(0);
+});
+
 test("explain reveal renders the resolved diagram in the authored answer", async ({ page }) => {
   const back = ["```mermaid", "flowchart LR", " A-->B", "```"];
   const original = longContentState({ answerLines: back });
@@ -643,7 +793,11 @@ test("a card merely shown in an earlier session stays an untouched empty cell", 
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "fronts").click();
 
-  // Scoped to fronts' own drawer: a sibling drawer may linger mid-close.
+  // A sibling drawer can linger mid-close and re-render between
+  // assertions; waiting for the TOTAL drawer count to settle at one turns
+  // that race into a wait (the count assertion retries), and only then are
+  // the content assertions unambiguous.
+  await expect(page.locator(".drawer")).toHaveCount(1);
   const drawer = page.locator(".drawer").filter({ hasText: "1 card" });
   await expect(drawer).toHaveCount(1);
   await expect(drawer.locator(".drawer-size")).toHaveText("1 card");

@@ -125,12 +125,12 @@ return checklist(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text,  List<InlineRun> runs)?  sentence,TResult Function( List<String> lines)?  code,TResult Function( String src,  int width,  int height,  String alt)?  diagram,TResult Function( List<ChecklistItem> items)?  checklist,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text,  List<InlineRun> runs)?  sentence,TResult Function( List<String> lines)?  code,TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult Function( List<ChecklistItem> items)?  checklist,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
 return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
 return code(_that.lines);case NoteUnit_Diagram() when diagram != null:
-return diagram(_that.src,_that.width,_that.height,_that.alt);case NoteUnit_Checklist() when checklist != null:
+return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist() when checklist != null:
 return checklist(_that.items);case _:
   return orElse();
 
@@ -149,12 +149,12 @@ return checklist(_that.items);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text,  List<InlineRun> runs)  sentence,required TResult Function( List<String> lines)  code,required TResult Function( String src,  int width,  int height,  String alt)  diagram,required TResult Function( List<ChecklistItem> items)  checklist,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text,  List<InlineRun> runs)  sentence,required TResult Function( List<String> lines)  code,required TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)  diagram,required TResult Function( List<ChecklistItem> items)  checklist,}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence():
 return sentence(_that.text,_that.runs);case NoteUnit_Code():
 return code(_that.lines);case NoteUnit_Diagram():
-return diagram(_that.src,_that.width,_that.height,_that.alt);case NoteUnit_Checklist():
+return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist():
 return checklist(_that.items);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -169,12 +169,12 @@ return checklist(_that.items);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text,  List<InlineRun> runs)?  sentence,TResult? Function( List<String> lines)?  code,TResult? Function( String src,  int width,  int height,  String alt)?  diagram,TResult? Function( List<ChecklistItem> items)?  checklist,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text,  List<InlineRun> runs)?  sentence,TResult? Function( List<String> lines)?  code,TResult? Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult? Function( List<ChecklistItem> items)?  checklist,}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
 return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
 return code(_that.lines);case NoteUnit_Diagram() when diagram != null:
-return diagram(_that.src,_that.width,_that.height,_that.alt);case NoteUnit_Checklist() when checklist != null:
+return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist() when checklist != null:
 return checklist(_that.items);case _:
   return null;
 
@@ -333,13 +333,21 @@ as List<String>,
 
 
 class NoteUnit_Diagram extends NoteUnit {
-  const NoteUnit_Diagram({required this.src, required this.width, required this.height, required this.alt}): super._();
+  const NoteUnit_Diagram({required this.src, required this.width, required this.height, required this.alt, required final  List<RegionView> regions, this.revealedAlt}): _regions = regions,super._();
 
 
  final  String src;
  final  int width;
  final  int height;
  final  String alt;
+ final  List<RegionView> _regions;
+ List<RegionView> get regions {
+  if (_regions is EqualUnmodifiableListView) return _regions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_regions);
+}
+
+ final  String? revealedAlt;
 
 /// Create a copy of NoteUnit
 /// with the given fields replaced by the non-null parameter values.
@@ -351,16 +359,16 @@ $NoteUnit_DiagramCopyWith<NoteUnit_Diagram> get copyWith => _$NoteUnit_DiagramCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Diagram&&(identical(other.src, src) || other.src == src)&&(identical(other.width, width) || other.width == width)&&(identical(other.height, height) || other.height == height)&&(identical(other.alt, alt) || other.alt == alt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Diagram&&(identical(other.src, src) || other.src == src)&&(identical(other.width, width) || other.width == width)&&(identical(other.height, height) || other.height == height)&&(identical(other.alt, alt) || other.alt == alt)&&const DeepCollectionEquality().equals(other._regions, _regions)&&(identical(other.revealedAlt, revealedAlt) || other.revealedAlt == revealedAlt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,src,width,height,alt);
+int get hashCode => Object.hash(runtimeType,src,width,height,alt,const DeepCollectionEquality().hash(_regions),revealedAlt);
 
 @override
 String toString() {
-  return 'NoteUnit.diagram(src: $src, width: $width, height: $height, alt: $alt)';
+  return 'NoteUnit.diagram(src: $src, width: $width, height: $height, alt: $alt, regions: $regions, revealedAlt: $revealedAlt)';
 }
 
 
@@ -371,7 +379,7 @@ abstract mixin class $NoteUnit_DiagramCopyWith<$Res> implements $NoteUnitCopyWit
   factory $NoteUnit_DiagramCopyWith(NoteUnit_Diagram value, $Res Function(NoteUnit_Diagram) _then) = _$NoteUnit_DiagramCopyWithImpl;
 @useResult
 $Res call({
- String src, int width, int height, String alt
+ String src, int width, int height, String alt, List<RegionView> regions, String? revealedAlt
 });
 
 
@@ -388,13 +396,15 @@ class _$NoteUnit_DiagramCopyWithImpl<$Res>
 
 /// Create a copy of NoteUnit
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? src = null,Object? width = null,Object? height = null,Object? alt = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? src = null,Object? width = null,Object? height = null,Object? alt = null,Object? regions = null,Object? revealedAlt = freezed,}) {
   return _then(NoteUnit_Diagram(
 src: null == src ? _self.src : src // ignore: cast_nullable_to_non_nullable
 as String,width: null == width ? _self.width : width // ignore: cast_nullable_to_non_nullable
 as int,height: null == height ? _self.height : height // ignore: cast_nullable_to_non_nullable
 as int,alt: null == alt ? _self.alt : alt // ignore: cast_nullable_to_non_nullable
-as String,
+as String,regions: null == regions ? _self._regions : regions // ignore: cast_nullable_to_non_nullable
+as List<RegionView>,revealedAlt: freezed == revealedAlt ? _self.revealedAlt : revealedAlt // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

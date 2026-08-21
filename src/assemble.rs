@@ -91,6 +91,9 @@ pub struct SessionBuild {
     pub session: Session,
     pub label: String,
     pub decks: HashMap<String, PathBuf>,
+    /// Deck-load diagnostics for the whole selection, surfaced by the
+    /// session so a silent fallback cannot pass for a successful freeze.
+    pub load_warnings: Vec<String>,
     pub links: HashMap<String, Vec<String>>,
     pub source_layers: HashMap<String, SourceLayers>,
     pub base_roots: HashMap<String, PathBuf>,
@@ -214,6 +217,7 @@ pub fn load_decks(
                 base_root: deck.base_root(),
                 source_access: false,
                 source_base: SourceBase::for_deck(&deck),
+                load_warnings: deck.load_warnings.clone(),
             },
         );
         settings.push(deck.settings);
@@ -592,10 +596,16 @@ pub fn select(
         })
         .collect();
 
+    let mut load_warnings: Vec<String> = decks
+        .values()
+        .flat_map(|info| info.load_warnings.iter().cloned())
+        .collect();
+    load_warnings.sort();
     Ok(Selected::Review(SessionBuild {
         session,
         label,
         decks: deck_id_paths(decks),
+        load_warnings,
         links,
         source_layers,
         base_roots,
