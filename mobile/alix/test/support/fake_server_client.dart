@@ -16,6 +16,7 @@ class FakeServerClient implements ServerClient {
   FakeServerClient({
     this.versionReply,
     this.expireOnVersion = false,
+    this.versionGate,
     this.backendReply = 'Claude',
     List<bool>? postAskReplies,
     this.expireOnPostAsk = false,
@@ -50,6 +51,7 @@ class FakeServerClient implements ServerClient {
   // ── probe (version / backendName) ────────────────────────────────────
   final String? versionReply;
   final bool expireOnVersion;
+  final Completer<void>? versionGate;
   final String? backendReply;
 
   // ── tutor (postAsk / getAsk / postDraft / postNote) ────────────────────
@@ -117,6 +119,7 @@ class FakeServerClient implements ServerClient {
 
   @override
   Future<String?> version() async {
+    if (versionGate != null) await versionGate!.future;
     if (expireOnVersion) throw const PairingExpired();
     return versionReply;
   }

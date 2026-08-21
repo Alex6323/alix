@@ -4,6 +4,7 @@
 // web client's tutor chip). ReviewScreen's own listing/session calls the
 // real bridge in initState, so RustLib.init() is required to mount it,
 // same as trace_review_routing_test.dart's own screens.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -60,7 +61,10 @@ void main() {
   // the Reveal tap. The negative cases reveal too: without it, they would
   // pass trivially off the attempt gate rather than the server gate.
   Future<void> reveal(WidgetTester tester) async {
-    await tester.tap(find.text('Reveal'));
+    final revealChip = find.widgetWithText(InkWell, 'Reveal');
+    expect(revealChip, findsOneWidget);
+    await tester.ensureVisible(revealChip);
+    await tester.tap(revealChip);
     await tester.pumpAndSettle();
   }
 
@@ -119,14 +123,20 @@ void main() {
       'a refused token (401 on the probe): no chip, the exact re-pair SnackBar, '
       'and Re-pair opens the pairing sheet', (tester) async {
     final support = tempSupport();
+    final versionGate = Completer<void>();
     await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale'), support: support);
 
     await pumpReview(
       tester,
       support: support,
-      buildClient: (_) => FakeServerClient(expireOnVersion: true),
+      buildClient: (_) => FakeServerClient(
+        expireOnVersion: true,
+        versionGate: versionGate,
+      ),
     );
     await reveal(tester);
+    versionGate.complete();
+    await tester.pumpAndSettle();
 
     expect(find.text('Ask'), findsNothing);
     expect(
