@@ -213,6 +213,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   usually still `unseen`. A card served in a session also carries its
   `section_context` with per-line runs and fence units, so a client can show
   the section a card sits under. Both are documented in `docs/API.md`.
+- The prebuilt installer now resolves one immutable release tag and verifies
+  the downloaded archive against that release's SHA-256 record before
+  extracting or installing it. Missing, malformed, mismatched, and corrupt
+  checksum paths fail closed on both Linux and macOS.
 
 - **Headings are study structure, not deck metadata (breaking).** A `# `
   heading is now the SECTION CONTEXT for the cards beneath it, `###` and
@@ -228,7 +232,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts and the done summary agree. The gate is read when a sitting is
   assembled: a parent graduating mid-sitting frees its children for the
   next one, never under the card in front of you.
-
 - The mask markers are now reserved codepoints: an asked blank shows as `⍰`
   and a hidden one as `⬚` (matching the boxed-`?` a masked formula renders),
   and authored deck text may not contain either character, the same way

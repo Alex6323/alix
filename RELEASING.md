@@ -25,11 +25,14 @@ original in its own message, so the released history carries the
 provenance after the branch is deleted, instead of leaving it to
 patch-equivalence archaeology.
 
-Every desktop release asset uploads with a `.sha256` beside it; verify a
-download with `sha256sum -c alix-<target>.tar.gz.sha256`. Before tagging,
-`make audit` must pass clean: it scans both lockfiles against the RustSec
-advisory database (the nightly advisory-drift workflow backstops this
-between releases, but the tag-time run is the blocking one).
+Every desktop release archive uploads with an `alix-<target>.sha256` record
+beside it. Download both files into one directory, then verify manually with
+`sha256sum -c alix-<target>.sha256` on Linux or
+`shasum -a 256 -c alix-<target>.sha256` on macOS. The normal installer
+performs the same check before extraction. Before tagging, `make audit` must
+pass clean: it scans both lockfiles against the RustSec advisory database (the
+nightly advisory-drift workflow backstops this between releases, but the
+tag-time run is the blocking one).
 
 ## Pinned build environment
 

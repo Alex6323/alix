@@ -33,6 +33,11 @@ cargo install alix
 curl -sSf https://alix.study/install.sh | sh
 ```
 
+The prebuilt installer resolves one release tag, downloads that release's
+archive and SHA-256 record, and verifies the archive before extracting it.
+Pin a particular release with
+`curl -sSf https://alix.study/install.sh | ALIX_VERSION=v0.7.0 sh`.
+
 The core needs nothing else. The AI features (`generate`, `deck augment`, the
 exam, and the tutor) shell out to a model CLI you
 install and log in to yourself: [Claude Code](https://www.anthropic.com/claude-code)

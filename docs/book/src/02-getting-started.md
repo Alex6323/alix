@@ -10,10 +10,19 @@ curl -sSf https://alix.study/install.sh | sh   # prebuilt release binary
 cargo install alix                             # from crates.io (needs rustup.rs)
 ```
 
-The installer fetches the release asset for your platform; every asset also
-has a `.sha256` beside it on the GitHub releases page to verify a manual
-download. Building from a checkout works too (`git clone`, then
-`make install`).
+The installer first resolves one release tag, then fetches that release's
+archive and SHA-256 record and verifies the archive before extracting it. To
+pin the install to a particular release, use:
+
+```sh
+curl -sSf https://alix.study/install.sh | ALIX_VERSION=v0.7.0 sh
+```
+
+Verification uses `sha256sum` on Linux or `shasum -a 256` on macOS. The
+installer stops if neither exists. `ALIX_INSTALL_UNVERIFIED=1` is an explicit
+emergency override, but it disables the corruption and asset-mix-up check and
+is not the recommended install path. Building from a checkout works too (`git
+clone`, then `make install`).
 
 Any of those puts `alix` on your `PATH`. Check it:
 
