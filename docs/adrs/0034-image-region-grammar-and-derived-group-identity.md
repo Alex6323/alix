@@ -4,6 +4,9 @@
   ruled frozen 2026-08-18, the base build's first four slices are committed,
   and the span semantics and template correction build from the span-masking
   spec signed off 2026-08-19)
+- Evidence: a_full_rect_blank_parses_with_group_hidden_and_stamp in src/parser/region.rs
+- Evidence: the_adr_0034_group_derivation_reproduces_the_frozen_vector in src/token.rs
+- Evidence: an_unstamped_region_is_minted_into_on_the_first_pass_and_then_stable in src/stamp.rs
 - Recorded: 2026-08-18
 - Retrospective: No
 

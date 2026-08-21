@@ -31,8 +31,8 @@ Every Accepted record names what proves it is in force:
 `make adr-check` fails when a named string is absent from that path, so a status
 cannot drift ahead of the code. Repeat the line for several markers. Use
 `- Evidence: none, <why>` for a record that constrains no identifier, such as a
-scope boundary or a policy. Records predating this rule are listed by the check
-rather than failing it, since a marker invented in a hurry gives false assurance.
+scope boundary or a policy. An Accepted record without either form fails the
+check.
 
 An ADR has one of these statuses:
 

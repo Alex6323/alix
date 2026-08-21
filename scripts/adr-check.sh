@@ -9,8 +9,9 @@
 # The string must occur under that path. Use `- Evidence: none, <why>` for a
 # record that constrains no identifier, such as a scope boundary or a policy.
 #
-# Records carrying no Evidence line are counted and listed, not failed: a marker
-# invented in a hurry gives false assurance, which is worse than none.
+# Records carrying no Evidence line fail closed. An Accepted record is a claim
+# about the current tree, so it must name either a real marker or an explicit
+# `none, <why>` policy boundary.
 set -eu
 
 dir="docs/adrs"
@@ -35,6 +36,7 @@ for adr in "$dir"/0*.md; do
     sed -n 's/^- Evidence: *//p' "$adr" > "$status_file"
     if [ ! -s "$status_file" ]; then
         missing="$missing $(basename "$adr")"
+        failed=1
         continue
     fi
 
@@ -62,11 +64,11 @@ for adr in "$dir"/0*.md; do
     done < "$status_file"
 done
 
-[ "$failed" -eq 0 ] || exit 1
-
 if [ -n "$missing" ]; then
     count=$(echo "$missing" | wc -w | tr -d ' ')
     note "$count Accepted record(s) name no evidence yet:$missing"
 fi
+
+[ "$failed" -eq 0 ] || exit 1
 
 echo "adr-check: every named marker is present"
