@@ -10,13 +10,27 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write # create the Release and upload its assets
+  contents: read
 
 jobs:
+  # Re-run every blocking CI job on the tag's exact source SHA. This is a
+  # dependency of the first publishing job, so green checks on other bytes
+  # cannot authorize a release.
+  exact-tag-ci:
+    name: exact tag CI
+    uses: ./.github/workflows/ci.yml
+    with:
+      release_gate: true
+    permissions:
+      contents: read
+
   # upload-rust-binary-action only uploads to an EXISTING release, so create the
   # release first (one job), then fan out the per-target builds + uploads to it.
   create-release:
+    needs: exact-tag-ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: taiki-e/create-gh-release-action@eba8ea96c86cca8a37f1b56e94b4d13301fba651 # v1
@@ -27,6 +41,8 @@ jobs:
     needs: create-release
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
