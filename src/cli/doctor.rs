@@ -1404,6 +1404,32 @@ mod tests {
         path
     }
 
+    /// Ruled D13(ii): a filename-named deck is sanctioned, so doctor must
+    /// stay silent about a missing `title:`. A finding here would nag on
+    /// 444 of the 621 initialized decks in the maintainer's own library.
+    #[test]
+    fn an_untitled_deck_draws_no_missing_title_finding() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Eng-Sayings.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-3nmmy2qkrw2trvvrmbm7ajry9t\"\n---\n## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\na\n",
+        )
+        .unwrap();
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        let mentions_title = report
+            .warnings
+            .iter()
+            .chain(report.errors.iter())
+            .any(|line| line.to_lowercase().contains("title"));
+        assert!(
+            !mentions_title,
+            "no title finding may exist: {:?} {:?}",
+            report.warnings, report.errors
+        );
+    }
+
     #[test]
     fn a_diverged_anchor_is_reported_with_both_edits() {
         let dir = tempfile::tempdir().unwrap();

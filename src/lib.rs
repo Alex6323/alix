@@ -77,7 +77,6 @@ pub mod stamp;
 pub mod state;
 pub mod store;
 pub mod time;
-#[cfg(feature = "full")]
 pub mod title;
 pub mod token;
 pub mod trace;

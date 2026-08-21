@@ -712,7 +712,7 @@ test("a revealed note matches its choice column width and text size", async ({ p
   expect(noteFontSize).toBe(choicesFontSize);
 });
 
-test("focusing a deck opens the drawer with its preamble, size and heatmap, no due count", async ({ page }, testInfo) => {
+test("focusing a deck opens the drawer with its description, size and heatmap, no due count", async ({ page }, testInfo) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click(); // focuses the row → opens the drawer
 
@@ -721,7 +721,7 @@ test("focusing a deck opens the drawer with its preamble, size and heatmap, no d
   // wild's own drawer instead of counting drawers globally.
   const drawer = page.locator(".drawer").filter({ hasText: "2 cards" });
   await expect(drawer).toHaveCount(1);
-  await expect(drawer.locator(".drawer-preamble")).toHaveText(/wild animals/i);
+  await expect(drawer.locator(".drawer-description")).toHaveText(/wild animals/i);
   // The progress funnel, top-right: both wild cards counted lib-side. The
   // note-layout test above reset wild and answered one card without ever
   // leaving it, and an abandoned sitting persists nothing (ADR 0035), so

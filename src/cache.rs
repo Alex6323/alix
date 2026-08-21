@@ -175,7 +175,7 @@ mod tests {
         let path = dir.path().join("d.md");
         write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n# Old Title\n\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-d\"\ntitle: Old Title\n---\n## q\na\n",
         );
         let mut cache = DeckCache::default();
         assert!(cache.is_deck(&path));
@@ -198,14 +198,14 @@ mod tests {
         let path = dir.path().join("d.md");
         write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n# Old Title\n\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-d\"\ntitle: Old Title\n---\n## q\na\n",
         );
         let mut cache = DeckCache::default();
         assert_eq!(Some("Old Title".to_string()), cache.label(&path));
 
         write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n# A New Title Grown Longer\n\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-d\"\ntitle: A New Title Grown Longer\n---\n## q\na\n",
         );
 
         assert_eq!(
@@ -220,7 +220,7 @@ mod tests {
         let path = dir.path().join("d.md");
         write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n# Title A\n\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-d\"\ntitle: Title A\n---\n## q\na\n",
         );
         let mut cache = DeckCache::default();
         assert_eq!(Some("Title A".to_string()), cache.label(&path));
@@ -228,7 +228,7 @@ mod tests {
 
         write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n# Title B\n\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-d\"\ntitle: Title B\n---\n## q\na\n",
         );
         set_mtime(&path, mtime + Duration::from_secs(1));
 

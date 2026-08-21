@@ -18,7 +18,8 @@ pub struct Frontmatter {
     pub authors: Vec<String>,
     pub license: Option<String>,
     pub created_at: Option<String>,
-    pub tags: Vec<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
     pub source: Vec<String>,
     pub requires: Vec<String>,
     pub link: Vec<String>,
@@ -165,7 +166,25 @@ fn load_frontmatter(
                 None => lints.push(bad_value(line, key, describe(value))),
             },
             "authors" => frontmatter.authors = string_list(key, value, line, lints),
-            "tags" => frontmatter.tags = string_list(key, value, line, lints),
+            // The deck's display name: trimmed, non-empty, single line. An
+            // empty or multi-line value would become a blank or a reflowing
+            // picker row, so it is refused rather than shown.
+            "title" => match value {
+                Yaml::String(s) if !trim_ws(s).is_empty() && !s.contains('\n') => {
+                    frontmatter.title = Some(trim_ws(s).to_string());
+                }
+                Yaml::String(s) => {
+                    return Err(ParseError::InvalidTitle {
+                        line,
+                        value: s.clone(),
+                    });
+                }
+                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
+            },
+            "description" => match value {
+                Yaml::String(s) => frontmatter.description = Some(s.clone()),
+                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
+            },
             "license" => match value {
                 Yaml::String(s) => frontmatter.license = Some(s.clone()),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),

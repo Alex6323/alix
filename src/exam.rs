@@ -191,7 +191,7 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
     cfg_run.allowed_tools.clear(); // no web access needed, so it can't wander off
     let raw = ask::run(&cfg_run, &prompt, &[])?;
     let cards = clean_deck_output(&raw);
-    if !cards.lines().any(|l| l.starts_with("## ")) {
+    if !has_card_fronts(&cards) {
         bail!("the model replied without any cards — try remediating again");
     }
     Ok(cards)
@@ -1034,9 +1034,19 @@ fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
         .with_context(|| format!("the model did not return valid JSON:\n{json}"))
 }
 
+/// A generated block counts as cards when it carries a front at any card
+/// depth; a section heading alone is prose.
+fn has_card_fronts(text: &str) -> bool {
+    text.lines()
+        .any(|l| crate::parser::heading_depth(l).is_some_and(|(d, _)| (2..=4).contains(&d)))
+}
+
 fn clean_deck_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    let Some(start) = lines.iter().position(|l| l.starts_with("## ")) else {
+    let Some(start) = lines
+        .iter()
+        .position(|l| crate::parser::heading_depth(l).is_some_and(|(d, _)| (2..=4).contains(&d)))
+    else {
         return raw.trim().to_string();
     };
     let end = lines[start + 1..]
@@ -1077,7 +1087,7 @@ mod tests {
             sources: srcs.iter().map(|s| s.to_string()).collect(),
             settings: Default::default(),
             title: None,
-            preamble: None,
+            description: None,
             trace: None,
             load_warnings: Vec::new(),
         }
@@ -1088,6 +1098,16 @@ mod tests {
             own: own.iter().map(|s| s.to_string()).collect(),
             workspace: Vec::new(),
         }
+    }
+
+    /// Generated cards are recognized at every card depth: a check that
+    /// only knows `## ` would reject a valid generated sub-card set as
+    /// empty, or keep prose above the first front.
+    #[test]
+    fn generated_card_text_is_recognized_at_every_depth() {
+        assert!(has_card_fronts("### only a sub-card\nanswer\n"));
+        assert!(has_card_fronts("#### deep\nanswer\n"));
+        assert!(!has_card_fronts("# just a section\nprose\n"));
     }
 
     #[test]
@@ -1749,7 +1769,7 @@ mod tests {
             sources: vec!["notes.md".to_string()],
             settings: Default::default(),
             title: None,
-            preamble: None,
+            description: None,
             trace: None,
             load_warnings: Vec::new(),
         };

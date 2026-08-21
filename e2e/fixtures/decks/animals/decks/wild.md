@@ -1,11 +1,9 @@
 ---
 format-version: 1
 id: "deck-00000000000000000000000008"
+title: Wild
+description: A few facts about wild animals.
 ---
-
-# Wild
-
-A few facts about wild animals.
 
 ## Which animal is the tallest in the world?
 Giraffe

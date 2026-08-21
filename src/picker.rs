@@ -355,7 +355,7 @@ mod tests {
         );
 
         let titled = dir.path().join("01-the-domain-model.md");
-        std::fs::write(&titled, "# The Domain Model\n## f\nb\n").unwrap();
+        std::fs::write(&titled, "---\ntitle: The Domain Model\n---\n## f\nb\n").unwrap();
         assert_eq!(Some("The Domain Model".to_string()), deck_label(&titled));
 
         let plain = dir.path().join("plain.md");

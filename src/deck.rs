@@ -84,7 +84,7 @@ pub struct Deck {
     pub sources: Vec<String>,
     pub settings: DeckSettings,
     pub title: Option<String>,
-    pub preamble: Option<String>,
+    pub description: Option<String>,
     pub trace: Option<String>,
     /// Generic load diagnostics (a stamped diagram that did not resolve):
     /// the session surfaces these so a silent fallback cannot be mistaken
@@ -143,7 +143,7 @@ impl Deck {
         let requires = parsed.frontmatter.requires.clone();
         let sources = parsed.frontmatter.source.clone();
         let title = parsed.title.clone();
-        let preamble = parsed.preamble.clone();
+        let description = parsed.frontmatter.description.clone();
         let trace = parsed.frontmatter.trace.clone();
         let deck_token = parsed.deck_token.clone();
         let mut settings = DeckSettings::from_frontmatter(&parsed.frontmatter);
@@ -206,7 +206,7 @@ impl Deck {
             sources,
             settings,
             title,
-            preamble,
+            description,
             trace,
             load_warnings,
         })
@@ -220,10 +220,13 @@ impl Deck {
         self.is_trace() || !self.sources.is_empty() || !self.workspace_sources().is_empty()
     }
 
+    /// `title:` else the condensed `trace:` else the filename stem (D10).
+    /// The condensing lives here, not in one caller, so every surface shows
+    /// a trace deck the same name.
     pub fn display_name(&self) -> String {
         self.title
             .clone()
-            .or_else(|| self.trace.clone())
+            .or_else(|| self.trace.as_deref().map(crate::title::condense))
             .unwrap_or_else(|| {
                 self.subject
                     .strip_suffix(".md")
@@ -969,6 +972,29 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+
+    /// Codex's finding: the reverse half is created after the parser has
+    /// finished, so the builder's section stamp cannot reach it. A reversed
+    /// prompt needs the same framing as the forward one.
+    #[test]
+    fn a_both_direction_cards_reverse_half_keeps_its_section_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("both.md");
+        std::fs::write(
+            &path,
+            "---\ndirection: both\n---\n# Road safety\nApplies in rain.\n## stopping distance\nlonger\n",
+        )
+        .unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(2, deck.cards.len());
+        for card in &deck.cards {
+            assert_eq!(
+                vec!["Road safety", "Applies in rain."],
+                card.section_context
+            );
+        }
+    }
 
     #[test]
     fn workspace_defaults_carry_the_sampling_switch_and_reject_junk() {
@@ -2122,23 +2148,29 @@ mod tests {
     }
 
     #[test]
-    fn display_name_uses_title_else_stripped_filename() {
+    fn display_name_is_title_then_condensed_trace_then_filename() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("Eng-Sayings.md");
         std::fs::write(&path, "## a\nb\n").unwrap();
         assert_eq!("Eng-Sayings", Deck::load(&path).unwrap().display_name());
 
+        // An H1 is section context now, never a name.
         std::fs::write(&path, "# English Sayings\n\n## a\nb\n").unwrap();
+        assert_eq!("Eng-Sayings", Deck::load(&path).unwrap().display_name());
+
+        std::fs::write(&path, "---\ntitle: English Sayings\n---\n## a\nb\n").unwrap();
         assert_eq!("English Sayings", Deck::load(&path).unwrap().display_name());
 
         std::fs::write(
             &path,
-            "---\ntrace: how a keypress becomes a grade\n---\n## a\nb\n",
+            "---\ntrace: \"how a keypress becomes a grade: the long way\"\n---\n## a\nb\n",
         )
         .unwrap();
         assert_eq!(
-            "how a keypress becomes a grade",
-            Deck::load(&path).unwrap().display_name()
+            "How a Keypress Becomes a Grade",
+            Deck::load(&path).unwrap().display_name(),
+            "condensing (truncate at the colon, then title-case) happens here \
+             now, so every surface names a trace deck identically"
         );
     }
 

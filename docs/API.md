@@ -798,7 +798,7 @@ never a group.
 
 ### DeckDrawerDto
 
-`preamble: string | null` (the prose under the deck's `#` H1, if any),
+`description: string | null` (the deck's frontmatter `description:`, if any),
 `heatmap: [string]` (one tier per card in file order, from the seven-value
 vocabulary `"unseen"` | `"seen"` | `"learning"` | `"learned-strong"` |
 `"learned-fading"` | `"learned-weak"` | `"retired"`). The tiers are a ladder

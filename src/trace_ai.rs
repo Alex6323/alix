@@ -555,6 +555,17 @@ mod tests {
         assert_eq!(Some("haiku".to_string()), cfg.model);
     }
 
+    /// The cleaner trims to the first card front, and a `### ` front is
+    /// one: amputating sub-cards would silently drop generated material.
+    #[test]
+    fn clean_to_cards_keeps_sub_cards() {
+        let raw = "chatter\n## a\n1\n### b\n2\n#### c\n3\n";
+        let cleaned = clean_to_cards(raw);
+        assert!(cleaned.starts_with("## a"), "{cleaned:?}");
+        assert!(cleaned.contains("### b"), "{cleaned:?}");
+        assert!(cleaned.contains("#### c"), "{cleaned:?}");
+    }
+
     #[test]
     fn clean_to_cards_strips_fence_and_preamble() {
         let raw = "Here is the trace:\n```text\n## Q1\np\n<!-- at: 1 -->\n```";

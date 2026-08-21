@@ -2537,12 +2537,12 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
 }
 
 #[test]
-fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
+fn deck_drawer_dto_exposes_the_description_and_a_flat_heatmap() {
     let dir = tempfile::tempdir().unwrap();
     let deck_path = dir.path().join("rust.md");
     std::fs::write(
         &deck_path,
-        "# Rust\nA short intro.\n\n## q1 <!-- id: card-qa -->\na1\n## q2 <!-- id: card-qb -->\na2\n",
+        "---\ntitle: Rust\ndescription: A short intro.\n---\n## q1 <!-- id: card-qa -->\na1\n## q2 <!-- id: card-qb -->\na2\n",
     )
     .unwrap();
     let deck = Deck::load(&deck_path).unwrap();
@@ -2551,7 +2551,7 @@ fn deck_drawer_dto_exposes_preamble_and_a_flat_heatmap() {
     let augment = AugmentCache::open_for_workspace(dir.path()).unwrap();
 
     let dto = deck_drawer_dto(&augment, &store, &deck, None);
-    assert_eq!(Some("A short intro."), dto.preamble.as_deref());
+    assert_eq!(Some("A short intro."), dto.description.as_deref());
     // One cell per stamped card; a never-presented card is the untouched tier.
     assert_eq!(vec![CardTier::Unseen, CardTier::Unseen], dto.heatmap);
     assert!(dto.topologies.is_empty());

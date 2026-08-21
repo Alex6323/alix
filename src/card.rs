@@ -144,6 +144,10 @@ pub struct Card {
     /// (uninitialized deck, or a card built outside deck context).
     pub deck_id: Arc<str>,
     pub front: String,
+    /// The card's section: its `# ` heading and that section's prose. Shown
+    /// only on demand and never part of identity, so re-filing a card
+    /// changes what it explains, never what it is.
+    pub section_context: Vec<String>,
     pub context: Vec<String>,
     /// Whether `context` is the question (a cloze sentence, which leads) or a
     /// label for the front (a table title, which steps back).
@@ -206,6 +210,7 @@ impl Card {
             subject,
             deck_id: Arc::from(""),
             front,
+            section_context: Vec::new(),
             context: Vec::new(),
             context_leads: false,
             back,
@@ -252,6 +257,9 @@ impl Card {
             self.line,
         );
         card.deck_id = Arc::clone(&self.deck_id);
+        // Built after the parser has finished, so the builder's stamp never
+        // reaches it: the reverse half must carry the section itself.
+        card.section_context = self.section_context.clone();
         card.reveal = self.reveal;
         card.input = self.input;
         card.images = self.images_back.clone();

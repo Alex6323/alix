@@ -30,7 +30,7 @@ pub use sidecar::{SidecarNote, notes, without_notes};
 // Deliberately not Unicode whitespace; anything outside this set is content.
 const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
 
-const ESCAPABLE: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
+const ESCAPABLE: [&str; 6] = ["#", ">", "---", "<!--", "```", "~~~"];
 
 pub type LineSpan = (usize, usize);
 
@@ -38,7 +38,6 @@ pub type LineSpan = (usize, usize);
 pub struct ParsedDeck {
     pub deck_token: Option<String>,
     pub title: Option<String>,
-    pub preamble: Option<String>,
     pub frontmatter: Frontmatter,
     pub cards: Vec<Card>,
     pub lints: Vec<Lint>,
@@ -137,10 +136,24 @@ pub enum ParseError {
     ControlChar { line: usize, found: String },
     #[error("line {0}: `⍰` and `⬚` are the mask markers and cannot appear in authored text")]
     ReservedMarker(usize),
+    #[error("line {line}: `title:` must be a non-empty single line, found {value:?}")]
+    InvalidTitle { line: usize, value: String },
     #[error("line {0}: card front is empty")]
     EmptyFront(usize),
     #[error("line {0}: card front without an answer")]
     FrontWithoutAnswer(usize),
+    #[error("line {0}: a heading deeper than `#### ` has no meaning")]
+    HeadingTooDeep(usize),
+    #[error("line {0}: this sub-card has no open parent one level above it")]
+    OrphanSubCard(usize),
+    #[error("line {0}: section heading is empty")]
+    EmptySection(usize),
+    #[error("line {0}: a section heading takes no directives and no card id")]
+    SectionDirective(usize),
+    #[error("line {0}: this card id belongs to no card")]
+    OrphanCardId(usize),
+    #[error("line {0}: only a `## ` heading can title a card table")]
+    SubCardTableTitle(usize),
     #[error(
         "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order"
     )]
@@ -198,8 +211,15 @@ impl ParseError {
             Self::NonIntegerVersion { .. } => "non_integer_version",
             Self::ControlChar { .. } => "control_character",
             Self::ReservedMarker(_) => "reserved_marker",
+            Self::InvalidTitle { .. } => "invalid_title",
             Self::EmptyFront(_) => "empty_front",
             Self::FrontWithoutAnswer(_) => "front_without_answer",
+            Self::HeadingTooDeep(_) => "heading_too_deep",
+            Self::OrphanSubCard(_) => "orphan_sub_card",
+            Self::EmptySection(_) => "empty_section",
+            Self::SectionDirective(_) => "section_directive",
+            Self::OrphanCardId(_) => "orphan_card_id",
+            Self::SubCardTableTitle(_) => "sub_card_table_title",
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
             Self::InvalidHoleName(_) => "invalid_hole_name",
@@ -223,6 +243,12 @@ impl ParseError {
             | Self::MissingDeckVersion(line)
             | Self::EmptyFront(line)
             | Self::FrontWithoutAnswer(line)
+            | Self::HeadingTooDeep(line)
+            | Self::OrphanSubCard(line)
+            | Self::EmptySection(line)
+            | Self::SectionDirective(line)
+            | Self::OrphanCardId(line)
+            | Self::SubCardTableTitle(line)
             | Self::InvalidHoleName(line)
             | Self::UnclosedHole(line)
             | Self::EmptyHole(line)
@@ -232,7 +258,8 @@ impl ParseError {
             | Self::TableCellHole(line)
             | Self::TableCellImage(line)
             | Self::TableTrailing(line) => *line,
-            Self::FrontmatterSyntax { line, .. }
+            Self::InvalidTitle { line, .. }
+            | Self::FrontmatterSyntax { line, .. }
             | Self::NonStringId { line, .. }
             | Self::InvalidDeckId { line, .. }
             | Self::InvalidCardId { line, .. }
@@ -284,8 +311,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     }
     Ok(ParsedDeck {
         deck_token: document.frontmatter.id.clone(),
-        title: document.title,
-        preamble: document.preamble,
+        title: document.frontmatter.title.clone(),
         frontmatter: document.frontmatter,
         cards,
         lints,
@@ -296,6 +322,25 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
 
 pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
     Ok(parse(subject, text)?.cards)
+}
+
+/// A personal sidecar, whose hierarchy is deliberately flat (D16): a
+/// reader labels notes with whatever depth the source card used, and that
+/// label must stay content rather than opening a sub-card that steals the
+/// stamped card's answer or orphans the whole file.
+pub fn parse_sidecar(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
+    SIDECAR_MODE.with(|flat| flat.set(true));
+    let out = parse(subject, text).map(|deck| deck.cards);
+    SIDECAR_MODE.with(|flat| flat.set(false));
+    out
+}
+
+thread_local! {
+    static SIDECAR_MODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn sidecar_mode() -> bool {
+    SIDECAR_MODE.with(std::cell::Cell::get)
 }
 
 pub fn card_front_lines(text: &str) -> Result<Vec<usize>, ParseError> {
@@ -407,6 +452,50 @@ fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageRefere
     }
 }
 
+/// A structural heading at column 0: `(depth, text)` for one to six `#`
+/// followed by a space. Depth decides the role (1 section, 2 card, 3 and 4
+/// sub-cards, 5 and 6 reserved); the space is required, so `##tight` stays
+/// content.
+/// Does a section heading's tail carry a RECOGNIZED card directive? Asks
+/// `apply_directive` itself rather than keeping a second list that can drift
+/// (that list already omitted `diagram` once): a key is recognized when
+/// applying it raises no unknown-key lint. It applies a throwaway probe
+/// value so the answer is about the KEY: an invalid value only lints, and a
+/// lint would let the comment be stripped and the setting silently lost.
+fn section_carries_directive(rest: &str, line: usize) -> bool {
+    let mut tail = rest;
+    while let Some(open) = tail.find("<!--") {
+        let after = &tail[open + 4..];
+        let Some(close) = after.find("-->") else {
+            return false;
+        };
+        if let Some((key, _)) = directive(&after[..close]) {
+            let mut probe = CardDirectives::default();
+            let mut probe_lints = Vec::new();
+            let recognized =
+                match apply_directive(&mut probe, &key, "x".to_string(), line, &mut probe_lints) {
+                    Err(_) => true,
+                    Ok(()) => !probe_lints.iter().any(
+                        |lint| matches!(&lint.kind, LintKind::UnknownKey { key: k } if *k == key),
+                    ),
+                };
+            if recognized {
+                return true;
+            }
+        }
+        tail = &after[close + 3..];
+    }
+    false
+}
+
+pub(crate) fn heading_depth(raw: &str) -> Option<(usize, &str)> {
+    let hashes = raw.len() - raw.trim_start_matches('#').len();
+    if hashes == 0 {
+        return None;
+    }
+    raw[hashes..].strip_prefix(' ').map(|rest| (hashes, rest))
+}
+
 fn escaped_marker(line: &str, marker: usize) -> bool {
     let slashes = line[..marker]
         .chars()
@@ -420,8 +509,6 @@ fn escaped_marker(line: &str, marker: usize) -> bool {
 
 struct Document {
     frontmatter: Frontmatter,
-    title: Option<String>,
-    preamble: Option<String>,
     blocks: Vec<RawBlock>,
     lints: Vec<Lint>,
     frontmatter_span: Option<LineSpan>,
@@ -434,6 +521,10 @@ enum RawBlock {
 
 struct RawCard {
     line: usize,
+    section: Vec<String>,
+    /// 2 for a `## ` card, 3 or 4 for a sub-card. Gating reads it; identity
+    /// never does, so re-heading a card keeps its token.
+    depth: usize,
     front: String,
     front_extra: Vec<(usize, String)>,
     back: Vec<(usize, String)>,
@@ -448,6 +539,7 @@ struct RawCard {
 
 struct RawTable {
     line: usize,
+    section: Vec<String>,
     title: Option<String>,
     columns: usize,
     rows: Vec<RawRow>,
@@ -540,11 +632,9 @@ fn parse_document(text: &str) -> Result<Document, ParseError> {
     let lines = prepare(text)?;
     let mut lints = Vec::new();
     let (frontmatter, body_start, frontmatter_span) = parse_frontmatter(&lines, &mut lints)?;
-    let (title, preamble, blocks) = scan(&lines, body_start, &mut lints)?;
+    let blocks = scan(&lines, body_start, &mut lints)?;
     Ok(Document {
         frontmatter,
-        title,
-        preamble,
         blocks,
         lints,
         frontmatter_span,
@@ -601,15 +691,14 @@ pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
 
 // ── The line scanner ──
 
-// `(title, preamble, blocks)` from the body above the first card.
-type ScannedBody = (Option<String>, Option<String>, Vec<RawBlock>);
+type ScannedBody = Vec<RawBlock>;
 
 fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
-    let mut title: Option<String> = None;
-    let mut preamble_lines: Vec<String> = Vec::new();
     let mut blocks: Vec<RawBlock> = Vec::new();
     let mut current: Option<RawCard> = None;
     let mut table: Option<RawTable> = None;
+    let mut open_depths: Vec<usize> = Vec::new();
+    let mut section: Vec<String> = Vec::new();
     let mut skip_delimiter = false;
     let mut fence: Option<(char, usize)> = None;
     let mut prev_blank = false;
@@ -634,6 +723,15 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 continue;
             }
             if let Some(tbl) = table.take() {
+                // A titled table with rows stands in for its `## ` heading
+                // as the depth-2 parent. Anything else leaves no parent: a
+                // zero-row table expands to no card, and an UNTITLED table
+                // is its own block, so a sub-card after it must not attach
+                // to whatever card happened to precede it.
+                let parents = tbl.title.is_some() && !tbl.rows.is_empty();
+                if !parents {
+                    open_depths.clear();
+                }
                 blocks.push(RawBlock::Table(tbl));
             }
         }
@@ -641,6 +739,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some((ch, _)) = fence {
             if closes_fence(raw, ch) {
                 fence = None;
+            }
+            if current.is_none() {
+                section.push(raw.to_string());
+                prev_blank = false;
+                prev_heading = false;
+                continue;
             }
             push_content(&mut current, lineno, raw.to_string());
             prev_blank = false;
@@ -650,6 +754,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
 
         if let Some(ch) = fence_opener(raw) {
             fence = Some((ch, lineno));
+            if current.is_none() {
+                section.push(raw.to_string());
+                prev_blank = false;
+                prev_heading = false;
+                continue;
+            }
             push_content(&mut current, lineno, raw.to_string());
             prev_blank = false;
             prev_heading = false;
@@ -666,6 +776,15 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             let mut title = None;
             let mut block_line = lineno;
             let mut directives = CardDirectives::default();
+            if let Some(card) = current.as_ref()
+                && card.depth > 2
+                && card.front_extra.is_empty()
+                && card.back.is_empty()
+                && card.note.is_none()
+                && !card.divided
+            {
+                return Err(ParseError::SubCardTableTitle(card.line));
+            }
             if let Some(card) = current.take() {
                 if card.front_extra.is_empty()
                     && card.back.is_empty()
@@ -698,6 +817,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             }
             table = Some(RawTable {
                 line: block_line,
+                section: section.clone(),
                 title,
                 columns: header.len(),
                 rows: Vec::new(),
@@ -711,7 +831,43 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             continue;
         }
 
-        if let Some(rest) = raw.strip_prefix("## ") {
+        if let Some((depth, rest)) = heading_depth(raw)
+            && !(sidecar_mode() && depth != 2)
+        {
+            if depth > 4 {
+                return Err(ParseError::HeadingTooDeep(lineno));
+            }
+            if depth == 1 {
+                if let Some(card) = current.take() {
+                    blocks.push(RawBlock::Card(card));
+                }
+                // Scanned like any other heading, so an editorial comment
+                // is stripped exactly as it is on a card front; only a
+                // RECOGNIZED directive or an id is an error, because a
+                // section owns no card to bind one to and a swallowed id
+                // would sever its card's history.
+                if section_carries_directive(rest, lineno) {
+                    return Err(ParseError::SectionDirective(lineno));
+                }
+                let (text, _) = heading(rest, lineno, lints)?;
+                if trim_ws(&text).is_empty() {
+                    return Err(ParseError::EmptySection(lineno));
+                }
+                open_depths.clear();
+                section = vec![text];
+                prev_blank = false;
+                prev_heading = true;
+                continue;
+            }
+            // The stack rule: a front at depth N closes every open chain at
+            // depth >= N, then requires the next-shallower one to still be
+            // open. Depth 2 always opens.
+            while open_depths.last().is_some_and(|open| *open >= depth) {
+                open_depths.pop();
+            }
+            if depth > 2 && open_depths.last() != Some(&(depth - 1)) {
+                return Err(ParseError::OrphanSubCard(lineno));
+            }
             if let Some(card) = current.take() {
                 blocks.push(RawBlock::Card(card));
             }
@@ -719,8 +875,11 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if front.is_empty() {
                 return Err(ParseError::EmptyFront(lineno));
             }
+            open_depths.push(depth);
             current = Some(RawCard {
                 line: lineno,
+                section: section.clone(),
+                depth,
                 front,
                 front_extra: Vec::new(),
                 back: Vec::new(),
@@ -745,6 +904,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some(rest) = t.strip_prefix('\\')
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
+            if current.is_none() {
+                section.push(rest.to_string());
+                prev_blank = false;
+                prev_heading = false;
+                continue;
+            }
             push_content(&mut current, lineno, rest.to_string());
             prev_blank = false;
             prev_heading = false;
@@ -757,6 +922,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if divides && let Some(card) = current.as_mut() {
                 card.divided = true;
                 card.divider_line = Some(lineno);
+            } else if current.is_none() {
+                section.push("---".to_string());
             } else {
                 push_content(&mut current, lineno, "---".to_string());
             }
@@ -766,9 +933,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if let Some(rest) = t.strip_prefix('>') {
-            if let Some(card) = current.as_mut() {
-                let text = rest.strip_prefix(' ').unwrap_or(rest);
-                append_note(card, text);
+            let text = rest.strip_prefix(' ').unwrap_or(rest);
+            match current.as_mut() {
+                Some(card) => append_note(card, text),
+                // A section has no note to append to, so the line is
+                // ordinary section prose rather than a dropped quote.
+                None => section.push(t.to_string()),
             }
             prev_blank = false;
             prev_heading = false;
@@ -785,6 +955,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                         // A region outside any card has nothing to bind to and
                         // would otherwise vanish silently; other directives
                         // keep their historical tolerance here.
+                        // An id names a card; with none open it would be
+                        // swallowed, and the card it names would silently
+                        // lose its history on the next stamping pass.
+                        None if key == "id" => {
+                            return Err(ParseError::OrphanCardId(lineno));
+                        }
                         None if matches!(key.as_str(), "blank" | "cover" | "crop") => {
                             return Err(ParseError::InvalidRegion {
                                 line: lineno,
@@ -814,13 +990,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             });
         }
 
+        // Prose outside any card belongs to the section it sits in, which
+        // before the first heading is the unnamed one (ruled D3). A sidecar
+        // has no sections at all (D16), so nothing accumulates there and a
+        // personal card stays context-free.
         if current.is_none() {
-            if title.is_none()
-                && let Some(rest) = raw.strip_prefix("# ")
-            {
-                title = Some(strip_trailing_hashes(trim_ws(rest)).to_string());
-            } else {
-                preamble_lines.push(t.to_string());
+            if !sidecar_mode() {
+                section.push(t.to_string());
             }
             prev_blank = false;
             prev_heading = false;
@@ -844,8 +1020,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     if let Some(card) = current.take() {
         blocks.push(RawBlock::Card(card));
     }
-    let preamble = (!preamble_lines.is_empty()).then(|| preamble_lines.join(" "));
-    Ok((title, preamble, blocks))
+    Ok(blocks)
 }
 
 // ── Table blocks ──
@@ -912,7 +1087,7 @@ fn table_line(
         tbl.rows_done = true;
         return Ok(true);
     }
-    if raw.strip_prefix("## ").is_some() {
+    if heading_depth(raw).is_some() {
         return Ok(false);
     }
     if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
@@ -1226,6 +1401,21 @@ fn build_table_cards(
     raw: RawTable,
     cards: &mut Vec<Card>,
 ) -> Result<(), ParseError> {
+    let start = cards.len();
+    let section = raw.section.clone();
+    let out = build_table_cards_inner(subject, deck_id, raw, cards);
+    for card in &mut cards[start..] {
+        card.section_context = section.clone();
+    }
+    out
+}
+
+fn build_table_cards_inner(
+    subject: &Arc<str>,
+    deck_id: &Arc<str>,
+    raw: RawTable,
+    cards: &mut Vec<Card>,
+) -> Result<(), ParseError> {
     if let Some(line) = raw
         .directives
         .regions
@@ -1532,8 +1722,27 @@ fn build_card(
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
 ) -> Result<Option<BlockProse>, ParseError> {
+    let start = cards.len();
+    let section = raw.section.clone();
+    let out = build_card_inner(subject, deck_id, raw, cards, lints);
+    for card in &mut cards[start..] {
+        card.section_context = section.clone();
+    }
+    out
+}
+
+fn build_card_inner(
+    subject: &Arc<str>,
+    deck_id: &Arc<str>,
+    raw: RawCard,
+    cards: &mut Vec<Card>,
+    lints: &mut Vec<Lint>,
+) -> Result<Option<BlockProse>, ParseError> {
     let RawCard {
         line,
+        // The wrapper stamps it onto every card this block emits.
+        section: _,
+        depth: _,
         front: heading,
         front_extra,
         back,
@@ -2243,6 +2452,469 @@ mod tests {
         super::parse("deck.md", text).unwrap_err()
     }
 
+    /// Spec law 1 (section-context arc): the heading grammar over depth
+    /// times spacing times position. Each row states the OUTCOME, so it
+    /// survives whatever the error variants end up being named; the
+    /// per-variant assertions live with the code that raises them.
+    ///
+    /// Read `Cards(n)` as "parses, yielding n cards", `Err(line)` as "a
+    /// parse error reported at that line".
+    #[derive(Debug, PartialEq)]
+    enum Outcome {
+        Cards(usize),
+        Err(usize),
+    }
+
+    fn outcome(text: &str) -> Outcome {
+        match super::parse("deck.md", text) {
+            Ok(deck) => Outcome::Cards(deck.cards.len()),
+            Err(e) => Outcome::Err(e.line()),
+        }
+    }
+
+    /// Spec law 10: the section a card was authored under reaches the
+    /// card, heading first, then its prose, including the line classes
+    /// that take card-only branches elsewhere in the scanner.
+    #[test]
+    fn section_context_reaches_every_card_in_its_section() {
+        let deck = parse(
+            "# Vehicle safety\nApplies on public roads.\n## stopping distance\nanswer\n### wet roads\nlonger\n# Other\n## unrelated\nx\n",
+        );
+        assert_eq!(
+            vec!["Vehicle safety", "Applies on public roads."],
+            deck.cards[0].section_context
+        );
+        let fronts: Vec<&str> = deck.cards.iter().map(|c| c.front.as_str()).collect();
+        assert_eq!(
+            vec!["stopping distance", "wet roads", "unrelated"],
+            fronts,
+            "precondition: three cards in document order"
+        );
+        assert_eq!(
+            vec!["Vehicle safety", "Applies on public roads."],
+            deck.cards[1].section_context,
+            "a sub-card sits in its section too"
+        );
+        assert_eq!(vec!["Other"], deck.cards[2].section_context);
+    }
+
+    /// Ruled D3: before any heading the section is simply the prose, so no
+    /// line in a deck file is parsed and then shown nowhere.
+    #[test]
+    fn leading_prose_is_the_context_of_the_cards_above_the_first_heading() {
+        let deck = parse("Applies throughout.\n## q\na\n# Later\n## r\nb\n");
+        assert_eq!(vec!["Applies throughout."], deck.cards[0].section_context);
+        assert_eq!(vec!["Later"], deck.cards[1].section_context);
+    }
+
+    /// Every line class that has a card-only branch must still land in the
+    /// section when no card is open, or it is silently dropped.
+    #[test]
+    fn section_prose_keeps_fences_quotes_dividers_and_escapes() {
+        let deck = parse("# S\nplain\n> quoted\n---\n\\## escaped\n```\ncode\n```\n## q\na\n");
+        assert_eq!(
+            vec![
+                "S",
+                "plain",
+                "> quoted",
+                "---",
+                "## escaped",
+                "```",
+                "code",
+                "```"
+            ],
+            deck.cards[0].section_context
+        );
+    }
+
+    /// A table's rows are cards, and they sit in the section too.
+    #[test]
+    fn table_row_cards_carry_their_section() {
+        let deck = parse("# Capitals\n## Pairs\n| c | a |\n| --- | --- |\n| DE | Berlin |\n");
+        assert_eq!(vec!["Capitals"], deck.cards[0].section_context);
+    }
+
+    /// D16: a sidecar has no sections, so a reader's hand-written label
+    /// must not become context a personal card then carries and exposes.
+    #[test]
+    fn a_sidecar_never_turns_leading_headings_into_section_context() {
+        let cards = parse_sidecar(
+            "deck.personal.md",
+            "#### reader label\n## personal <!-- id: card-personal -->\nanswer\n",
+        )
+        .unwrap();
+        assert_eq!(1, cards.len());
+        assert!(
+            cards[0].section_context.is_empty(),
+            "got {:?}",
+            cards[0].section_context
+        );
+    }
+
+    /// D19 judges a section directive by its KEY: an invalid value only
+    /// lints, and a lint would let the comment be stripped and the author's
+    /// intended setting vanish.
+    #[test]
+    fn a_recognized_directive_on_a_section_errors_whatever_its_value() {
+        // Codex's finding: a hand-maintained key list had already drifted
+        // past `diagram`, so this sweeps every recognized key and the
+        // predicate asks apply_directive rather than keeping a copy.
+        for tail in [
+            "direction: both",
+            "direction: sideways",
+            "reveal: line",
+            "id: card-x",
+            "diagram: xxh64-0123456789abcdef",
+            "input: draw",
+            "sampling: on",
+            "given: partial",
+            "at: notes.md:1-2",
+            "blank: span hidden=\"x\" b:a1b2c3",
+            "cover: 1,2,3,4",
+            "crop: 1,2,3,4",
+        ] {
+            let text = format!("# Topic <!-- {tail} -->\n## question\nanswer\n");
+            let e = err(&text);
+            assert!(
+                matches!(e, ParseError::SectionDirective(1)),
+                "tail {tail:?} gave {e:?}"
+            );
+        }
+        // An editorial comment is not a directive and stays allowed.
+        let deck = parse("# Topic <!-- editorial note -->\n## q\na\n");
+        assert_eq!(1, deck.cards.len());
+    }
+
+    /// Done-list law: identity is independent of depth, so re-filing a card
+    /// under a different heading keeps its token and its fingerprints.
+    #[test]
+    fn re_heading_a_card_changes_neither_its_id_nor_its_fingerprints() {
+        let stamped = "<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->";
+        let shallow = parse(&format!("## q {stamped}\na\n"));
+        let deep = parse(&format!("## parent\np\n### q {stamped}\na\n"));
+        let a = &shallow.cards[0];
+        let b = &deep.cards[1];
+        assert_eq!(a.id(), b.id(), "the minted token is the identity");
+        assert_eq!(a.content_fingerprint, b.content_fingerprint);
+        assert_eq!(a.block_fingerprint, b.block_fingerprint);
+    }
+
+    /// Done-list law: moving a card between sections leaves every stamp
+    /// untouched, which is what keeps cached AI artifacts valid (D18).
+    #[test]
+    fn moving_a_card_between_sections_changes_no_fingerprint() {
+        let one = parse("# One\nprose one\n## q\na\n");
+        let two = parse("# Two\nprose two\n## q\na\n");
+        assert_ne!(one.cards[0].section_context, two.cards[0].section_context);
+        assert_eq!(
+            one.cards[0].content_fingerprint,
+            two.cards[0].content_fingerprint
+        );
+        assert_eq!(
+            one.cards[0].block_fingerprint,
+            two.cards[0].block_fingerprint
+        );
+    }
+
+    #[test]
+    fn the_heading_grammar_matrix() {
+        use Outcome::{Cards, Err};
+        // (label, deck text, expected outcome)
+        let rows: Vec<(&str, String, Outcome)> = vec![
+            // ── depth, in the ordinary position ──
+            (
+                "h1 opens a section",
+                "# S
+## q
+a
+"
+                .into(),
+                Cards(1),
+            ),
+            (
+                "h2 is a card",
+                "## q
+a
+"
+                .into(),
+                Cards(1),
+            ),
+            (
+                "h3 is a sub-card of the h2",
+                "## q
+a
+### s
+b
+"
+                .into(),
+                Cards(2),
+            ),
+            (
+                "h4 under h3",
+                "## q
+a
+### s
+b
+#### t
+c
+"
+                .into(),
+                Cards(3),
+            ),
+            (
+                "h5 is reserved",
+                "## q
+a
+### s
+b
+#### t
+c
+##### u
+d
+"
+                .into(),
+                Err(7),
+            ),
+            (
+                "h6 is reserved",
+                "## q
+a
+###### u
+d
+"
+                .into(),
+                Err(3),
+            ),
+            // ── the stack rule ──
+            (
+                "h4 skipping h3 errors",
+                "## q
+a
+#### t
+c
+"
+                .into(),
+                Err(3),
+            ),
+            (
+                "h3 before any h2 is an orphan",
+                "### s
+b
+"
+                .into(),
+                Err(1),
+            ),
+            (
+                "a closed chain cannot be re-entered",
+                "## a
+1
+### b
+2
+## c
+3
+#### d
+4
+"
+                .into(),
+                Err(7),
+            ),
+            (
+                "a section closes the chain",
+                "## a
+1
+### b
+2
+# S
+### c
+3
+"
+                .into(),
+                Err(6),
+            ),
+            // ── spacing: the marker needs its space ──
+            (
+                "h1 without a space is content",
+                "## q
+a
+#tight
+"
+                .into(),
+                Cards(1),
+            ),
+            (
+                "h2 without a space is content",
+                "## q
+a
+##tight
+"
+                .into(),
+                Cards(1),
+            ),
+            (
+                "h3 without a space is content",
+                "## q
+a
+###tight
+"
+                .into(),
+                Cards(1),
+            ),
+            // ── empty heading text ──
+            (
+                "an empty section heading errors",
+                "#\u{20}\n## q\na\n".into(),
+                Err(1),
+            ),
+            (
+                "an empty sub-card front errors",
+                "## q\na\n###\u{20}\nb\n".into(),
+                Err(3),
+            ),
+            // ── escapes ──
+            (
+                "an escaped h1 is content",
+                "## q
+a
+\\# not a section
+"
+                .into(),
+                Cards(1),
+            ),
+            (
+                "an escaped h3 is content",
+                "## q
+a
+\\### not a sub-card
+"
+                .into(),
+                Cards(1),
+            ),
+            // ── fences keep their contents ──
+            (
+                "a fenced h1 is content",
+                "## q
+a
+```
+# fenced
+```
+"
+                .into(),
+                Cards(1),
+            ),
+            (
+                "a fenced h3 is content",
+                "## q
+a
+```
+### fenced
+```
+"
+                .into(),
+                Cards(1),
+            ),
+            // ── inside a divided front ──
+            (
+                "a section closes a front, so its answerless card errors at ITS line",
+                "## line one
+# S
+---
+a
+"
+                .into(),
+                Err(1),
+            ),
+            // ── tables ──
+            (
+                "a section closes an open table",
+                "## Capitals
+| c | a |
+| --- | --- |
+| DE | Berlin |
+# Two
+## Next
+answer
+"
+                .into(),
+                Cards(2),
+            ),
+            (
+                "a sub-card above a table header is reserved",
+                "## q
+a
+### t
+| c | a |
+| --- | --- |
+| DE | Berlin |
+"
+                .into(),
+                Err(3),
+            ),
+            (
+                "a sub-card under a zero-row titled table has no parent",
+                "## Empty
+| c | a |
+| --- | --- |
+### Dependent
+answer
+"
+                .into(),
+                Err(4),
+            ),
+            // ── directives and ids on a section line ──
+            (
+                "a card directive on a section errors",
+                "# S <!-- reveal: line -->
+## q
+a
+"
+                .into(),
+                Err(1),
+            ),
+            (
+                "an id comment on a section errors",
+                "# S <!-- id: card-abc -->
+## q
+a
+"
+                .into(),
+                Err(1),
+            ),
+            (
+                "a stray id in section prose errors",
+                "# S
+<!-- id: card-abc -->
+## q
+a
+"
+                .into(),
+                Err(2),
+            ),
+            // ── normalization ──
+            (
+                "a section strips its trailing hashes",
+                "# S ###
+## q
+a
+"
+                .into(),
+                Cards(1),
+            ),
+        ];
+
+        let mut failures = Vec::new();
+        for (label, text, expected) in rows {
+            let got = outcome(&text);
+            if got != expected {
+                failures.push(format!("{label}: expected {expected:?}, got {got:?}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "grammar matrix:\n  {}",
+            failures.join("\n  ")
+        );
+    }
+
     fn unknown(line: usize, key: &str) -> Lint {
         Lint {
             line,
@@ -2387,13 +3059,31 @@ mod tests {
     #[test]
     fn deck_metadata_keys_parse_as_single_values_or_lists() {
         let deck = parse(
-            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\nauthors: Alex\nlicense: CC-BY-4.0\ntags: [rust, memory]\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\nauthors: Alex\nlicense: CC-BY-4.0\ntitle: Memory\ndescription: |\n  Two lines\n  of description.\n---\n## q\na\n",
         );
         assert_eq!(vec!["Alex".to_string()], deck.frontmatter.authors);
         assert_eq!(Some("CC-BY-4.0"), deck.frontmatter.license.as_deref());
+        assert_eq!(Some("Memory"), deck.frontmatter.title.as_deref());
         assert_eq!(
-            vec!["rust".to_string(), "memory".to_string()],
-            deck.frontmatter.tags
+            Some("Two lines\nof description.\n"),
+            deck.frontmatter.description.as_deref()
+        );
+    }
+
+    /// The classification key was deferred, so the word that used to be
+    /// parsed now takes the ordinary unknown-key lint.
+    #[test]
+    fn a_tags_key_is_no_longer_recognized() {
+        let deck = parse(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntags: [rust]\n---\n## q\na\n",
+        );
+        assert!(
+            deck.lints.iter().any(|l| matches!(
+                &l.kind,
+                LintKind::UnknownKey { key } if key == "tags"
+            )),
+            "lints: {:?}",
+            deck.lints
         );
     }
 
@@ -2500,10 +3190,10 @@ mod tests {
     #[test]
     fn unknown_frontmatter_keys_are_linted_reserved_keys_are_not() {
         let deck = parse(
-            "---\ntags: [x, y]\nlicense: MIT\nauthors: me\nlanguage: de\nrevision: 3\n\
+            "---\nlicense: MIT\nauthors: me\nlanguage: de\nrevision: 3\n\
              created-at: 2026-07-19\nfnord: 7\n---\n## q\na\n",
         );
-        assert_eq!(vec![unknown(8, "fnord")], deck.lints);
+        assert_eq!(vec![unknown(7, "fnord")], deck.lints);
     }
 
     #[test]
@@ -2557,7 +3247,7 @@ mod tests {
 
     #[test]
     fn a_file_with_no_h2_fronts_is_a_zero_card_deck() {
-        let deck = parse("# Title\njust prose\n");
+        let deck = parse("---\ntitle: Title\n---\n# A section\njust prose\n");
         assert!(deck.cards.is_empty());
         assert_eq!(Some("Title"), deck.title.as_deref());
     }
@@ -2612,32 +3302,29 @@ mod tests {
     }
 
     #[test]
-    fn preamble_prose_and_h1_title_precede_the_first_card() {
-        let deck = parse("# My Deck\nsome intro prose\n\n## q\n---\na\n");
+    fn the_title_comes_from_frontmatter_and_an_h1_is_ordinary_section_context() {
+        let deck =
+            parse("---\ntitle: My Deck\n---\n# A section\nsome intro prose\n\n## q\n---\na\n");
         assert_eq!(Some("My Deck"), deck.title.as_deref());
-        assert_eq!(Some("some intro prose"), deck.preamble.as_deref());
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(vec!["a"], deck.cards[0].back);
     }
 
+    /// Prose outside a card no longer becomes a deck description: the
+    /// description is a frontmatter key, and body prose is section context.
+    /// These three shapes must all still parse to their cards.
     #[test]
-    fn preamble_joins_multiple_lines_and_stops_at_the_first_card() {
-        let deck = parse("# T\nline one\nline two\n\n## q\na\n");
-        assert_eq!(Some("line one line two"), deck.preamble.as_deref());
-    }
-
-    #[test]
-    fn a_deck_without_preamble_prose_has_none() {
-        let deck = parse("# T\n\n## q\na\n");
-        assert_eq!(None, deck.preamble);
-    }
-
-    #[test]
-    fn preamble_is_captured_even_without_a_title() {
-        let deck = parse("just an intro\n\n## q\na\n");
-        assert_eq!(None, deck.title);
-        assert_eq!(Some("just an intro"), deck.preamble.as_deref());
+    fn body_prose_never_becomes_deck_metadata() {
+        for text in [
+            "# T\nline one\nline two\n\n## q\na\n",
+            "# T\n\n## q\na\n",
+            "just an intro\n\n## q\na\n",
+        ] {
+            let deck = parse(text);
+            assert_eq!(None, deck.title, "no title without frontmatter: {text:?}");
+            assert_eq!(1, deck.cards.len(), "{text:?}");
+        }
     }
 
     #[test]
@@ -3250,7 +3937,12 @@ mod tests {
     #[test]
     fn a_backslash_before_anything_else_is_literal() {
         let deck = parse("## q\n---\n\\d is a digit class\n\\# x\n");
-        assert_eq!(vec!["\\d is a digit class", "\\# x"], deck.cards[0].back);
+        assert_eq!(
+            vec!["\\d is a digit class", "# x"],
+            deck.cards[0].back,
+            "`\\d` is not a marker so it stays literal, while `\\#` now escapes \
+             the section marker and gives up its backslash (ruled D5)"
+        );
     }
 
     #[test]
@@ -3857,7 +4549,7 @@ reveal: line
 order: sequential
 input: draw
 direction: both
-tags: [a, b]
+title: The Title
 license: MIT
 authors: someone
 language: de
@@ -3885,7 +4577,8 @@ the answer
                 authors: vec!["someone".into()],
                 created_at: Some("2026-07-19".into()),
                 license: Some("MIT".into()),
-                tags: vec!["a".into(), "b".into()],
+                title: Some("The Title".into()),
+                description: None,
                 source: vec!["https://example.org/book".into(), "notes.md".into()],
                 requires: vec!["basics".into()],
                 link: vec!["https://docs.rs/tokio".into()],
@@ -3900,7 +4593,6 @@ the answer
             },
             document.frontmatter
         );
-        assert_eq!(Some("The Title"), document.title.as_deref());
         assert_eq!(1, document.blocks.len());
         let RawBlock::Card(raw_card) = &document.blocks[0] else {
             panic!("expected a card block");

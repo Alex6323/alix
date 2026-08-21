@@ -1515,6 +1515,7 @@ pub fn record_badges(store: &mut Store, deck_id: &str, cards: &[Card], now_ms: u
 
 // Preamble before the first `## ` front (frontmatter, prose) is dropped: it belongs to no card.
 pub fn split_card_blocks(text: &str) -> Vec<String> {
+    let mut open = false;
     let mut blocks: Vec<Vec<&str>> = Vec::new();
     // Tracks fences so a `## ` line inside a code fence doesn't start a bogus block.
     let mut fence: Option<char> = None;
@@ -1528,13 +1529,21 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
             None => {
                 if let Some(ch) = crate::parser::fence_opener(raw) {
                     fence = Some(ch);
-                } else if raw.starts_with("## ") {
-                    blocks.push(vec![raw]);
+                } else if let Some((depth, _)) = crate::parser::heading_depth(raw) {
+                    if (2..=4).contains(&depth) {
+                        blocks.push(vec![raw]);
+                        open = true;
+                    } else {
+                        // A section owns no card: its heading and prose
+                        // belong to no block, so nothing may append to the
+                        // card above it.
+                        open = false;
+                    }
                     continue;
                 }
             }
         }
-        if let Some(current) = blocks.last_mut() {
+        if open && let Some(current) = blocks.last_mut() {
             current.push(raw);
         }
         // else: preamble before the first front, dropped.
@@ -2809,6 +2818,25 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, MintError::Malformed(_)));
+    }
+
+    /// Spec law 2, the block-splitter's row: a deck holding every
+    /// structural heading splits into one block per CARD, with sections and
+    /// their prose owned by no card. A splitter that only knows `## ` would
+    /// swallow a sub-card into its parent and reset the wrong progress.
+    #[test]
+    fn split_card_blocks_cuts_at_every_card_depth() {
+        let text = "# One\nprose\n## a\n1\n### b\n2\n#### c\n3\n# Two\n## d\n4\n";
+        let blocks = split_card_blocks(text);
+        let fronts: Vec<&str> = blocks
+            .iter()
+            .map(|b| b.lines().next().unwrap_or_default())
+            .collect();
+        assert_eq!(vec!["## a", "### b", "#### c", "## d"], fronts);
+        assert!(
+            !blocks.iter().any(|b| b.contains("prose")),
+            "a section's prose belongs to no card: {blocks:?}"
+        );
     }
 
     #[test]

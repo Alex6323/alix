@@ -522,7 +522,10 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
             last = line;
             continue;
         }
-        if raw.starts_with("## ") {
+        // ANY structural heading ends the block: a section or a sub-card
+        // front starts new territory, and an id placed past it binds to
+        // nothing the parser will accept.
+        if parser::heading_depth(raw).is_some() {
             return last;
         }
         // A table opens its own block: the card's id line must not land
@@ -572,10 +575,16 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
             block_end = Some(table_block_end(&lines, index));
             continue;
         }
-        if let Some(rest) = raw.strip_prefix("## ") {
-            block_end = Some(block_end_line(text, line));
-            if heading_id_marker(rest) {
-                found.push(line);
+        if let Some((depth, rest)) = parser::heading_depth(raw) {
+            if (2..=4).contains(&depth) {
+                block_end = Some(block_end_line(text, line));
+                if heading_id_marker(rest) {
+                    found.push(line);
+                }
+            } else {
+                // A section owns no card, so any marker after it is stranded
+                // until the next front opens a block.
+                block_end = None;
             }
             continue;
         }
@@ -584,8 +593,7 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
             && matches!(parser::directive(body), Some((key, _)) if key == "id")
-            && let Some(end) = block_end
-            && line != end
+            && block_end != Some(line)
         {
             found.push(line);
         }
@@ -719,6 +727,62 @@ mod tests {
         path
     }
 
+    /// Spec law 2, the stamper's half: a deck holding every structural
+    /// heading gets exactly one id INSIDE each card block, and never one
+    /// stranded after a heading, where the parser would refuse it as an
+    /// orphan and the card would silently lose its history.
+    #[test]
+    fn stamping_places_one_id_inside_every_card_block_across_depths() {
+        let text = "# One\nprose\n## a\n1\n### b\n2\n#### c\n3\n# Two\n## d\n4\n";
+        let fronts: Vec<usize> = text
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                crate::parser::heading_depth(l).is_some_and(|(depth, _)| (2..=4).contains(&depth))
+            })
+            .map(|(i, _)| i + 1)
+            .collect();
+        assert_eq!(vec![3, 5, 7, 10], fronts, "precondition: four card fronts");
+
+        for front in fronts {
+            let end = block_end_line(text, front);
+            let next_heading = text
+                .lines()
+                .enumerate()
+                .map(|(i, l)| (i + 1, l))
+                .find(|(line, l)| *line > front && crate::parser::heading_depth(l).is_some())
+                .map(|(line, _)| line)
+                .unwrap_or(usize::MAX);
+            assert!(
+                end < next_heading,
+                "the id for the front at {front} would land at {end}, past the heading at \
+                 {next_heading}"
+            );
+            assert!(end >= front, "block ends before its own front: {front}");
+        }
+    }
+
+    /// The same grammar on the other side: an id marker sitting on or after
+    /// a sub-card front is judged by that card's block, not ignored because
+    /// the line is not a `## `.
+    #[test]
+    fn a_marker_trailing_a_sub_card_front_is_misplaced() {
+        let text = "## a\n1\n### b <!-- id: card-b1 -->\n2\n";
+        assert_eq!(vec![3], misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_marker_closing_a_sub_card_is_canonical() {
+        let text = "## a\n1\n### b\n2\n<!-- id: card-b1 -->\n";
+        assert!(misplaced_id_markers(text).is_empty());
+    }
+
+    #[test]
+    fn a_marker_stranded_after_a_section_heading_is_misplaced() {
+        let text = "## a\n1\n# Two\n<!-- id: card-a1 -->\n";
+        assert_eq!(vec![4], misplaced_id_markers(text));
+    }
+
     #[test]
     fn a_marker_trailing_the_front_line_is_misplaced() {
         let text = "## q <!-- id: card-q1 -->\na\n";
@@ -837,6 +901,30 @@ mod tests {
             "a second version key is a duplicate mapping key, so the deck stops parsing: {stamped}"
         );
         parser::parse("d.md", &stamped).expect("the stamped deck must still load");
+    }
+
+    /// Done-list law: the frozen metadata keys survive an id splice
+    /// byte-for-byte, including a multi-line description, so stamping a
+    /// deck never rewrites what the drawer shows.
+    #[test]
+    fn the_frontmatter_metadata_keys_survive_an_id_splice() {
+        let dir = tempfile::tempdir().unwrap();
+        let original =
+            "---\ntitle: Rust\ndescription: |\n  Two lines\n  of description.\n---\n## q\na\n";
+        let path = write(&dir, "deck.md", original);
+
+        stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        assert!(
+            stamped.contains("description: |\n  Two lines\n  of description.\n"),
+            "the block scalar must survive verbatim:\n{stamped}"
+        );
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
+        assert_eq!(Some("Rust"), parsed.frontmatter.title.as_deref());
+        assert_eq!(
+            Some("Two lines\nof description.\n"),
+            parsed.frontmatter.description.as_deref()
+        );
     }
 
     #[test]

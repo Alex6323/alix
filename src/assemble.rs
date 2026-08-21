@@ -682,6 +682,42 @@ mod tests {
         .unwrap();
     }
 
+    /// Codex's finding, at the public boundary: a deck reorganized so that
+    /// a former card front became a `# ` section leaves its old id below
+    /// that section, belonging to no card. That malformed file must not
+    /// drag a HEALTHY copy elsewhere into a remint: the healthy card would
+    /// get a fresh token and lose its progress row.
+    #[test]
+    fn a_section_orphan_id_never_remints_a_valid_card_in_another_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let broken = dir.path().join("a-broken.md");
+        // The reorganization shape: a real card, then a former front turned
+        // into a section, with that card's old id stranded below it.
+        std::fs::write(
+            &broken,
+            "## still a card <!-- id: card-7ty2cy2c42qp8vqq5xrfwcqega -->\nanswer\n# was a card\nprose\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+        )
+        .unwrap();
+        let valid = dir.path().join("z-valid.md");
+        let valid_text = "## a real card <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\nanswer\n";
+        std::fs::write(&valid, valid_text).unwrap();
+
+        let dupes = crate::dedup::scan_dir_fast(dir.path()).card_dupes;
+        assert!(
+            dupes.is_empty(),
+            "precondition: the orphan id below a section claims no card, so \
+             there is no duplicate at all: {dupes:?}"
+        );
+
+        resolve_duplicates_at_open(&valid);
+
+        assert_eq!(
+            valid_text,
+            std::fs::read_to_string(&valid).unwrap(),
+            "the healthy deck must be byte-identical after opening"
+        );
+    }
+
     #[test]
     fn resolve_uses_cli_then_consensus_then_default() {
         assert_eq!(

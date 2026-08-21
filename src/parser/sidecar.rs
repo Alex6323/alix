@@ -38,7 +38,10 @@ pub fn without_notes(text: &str) -> String {
         dropped[index] = true;
         dropped[index + 1..quoted_run_end(&lines, index)].fill(true);
         // A label the reader wrote above their own note; alix never writes one.
-        if index > 0 && trim_ws(lines[index - 1]).starts_with("## ") {
+        if index > 0
+            && super::heading_depth(trim_ws(lines[index - 1]))
+                .is_some_and(|(depth, _)| (2..=4).contains(&depth))
+        {
             dropped[index - 1] = true;
         }
     }
@@ -76,6 +79,32 @@ fn marker_target(line: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A reader labels a note with whatever heading depth the source card
+    /// used. Every depth is absorbed, so the label never reaches the deck
+    /// parser, where it would orphan and silently empty the personal file.
+    /// Done-list law, exact ownership: a stray deeper heading inside a
+    /// personal card stays THAT card's content, rather than being dropped
+    /// or opening a card of its own.
+    #[test]
+    fn a_stray_deep_heading_stays_the_personal_cards_own_content() {
+        let text = "## personal <!-- id: card-p1 -->\nanswer\n### stray label\ntail\n";
+        let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!(vec!["answer", "### stray label", "tail"], cards[0].back);
+    }
+
+    #[test]
+    fn a_note_label_is_absorbed_at_every_card_depth() {
+        for label in ["## why", "### why", "#### why"] {
+            let text = format!("{label}\n<!-- note: card-q1 -->\n> because\n");
+            let stripped = without_notes(&text);
+            assert!(
+                !stripped.contains("why"),
+                "label {label:?} survived into the deck text: {stripped:?}"
+            );
+        }
+    }
 
     #[test]
     fn a_marker_carries_the_quoted_lines_below_it() {

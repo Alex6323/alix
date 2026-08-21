@@ -63,39 +63,48 @@ belongs to the frontmatter.** Concretely:
    client-local, so ADR 0035's departure law gains no row). A future
    show-hint action caps that review's grade at `Partial` (FSRS
    `Hard`): a hinted pass still passes and still graduates, but pays
-   in interval growth. The AI split is deterministic: the tutor and
-   the augmenter always see a card's section context, the exam and
-   its remediation never do (exam prompts are built from `source:`
-   layers only); and a tutor-drafted personal card is a context-free
-   OUTPUT of that context-aware prompt, so the draft prompt demands
-   a self-contained question and answer, because the saved card is
-   top-level in the sidecar and carries no section context. Section context joins the content fingerprint,
-   the AI-cache key, so editing a heading invalidates cached AI
-   artifacts for its section; the block fingerprint stays
-   context-free, because it is the dedup key that matches
-   context-free generated candidates (remediation, tutor mints)
-   against authored cards; and neither minted identity nor schedule
-   keys ever include it.
+   in interval growth. The AI split is deterministic: the TUTOR always
+   sees a card's section context; augmentation, the exam and its
+   remediation never do. A tutor-drafted personal card is a
+   context-free OUTPUT of that context-aware prompt, so the draft
+   prompt demands a self-contained question and answer, because the
+   saved card is top-level in the sidecar and carries no section
+   context. **No fingerprint changes**: content and block
+   fingerprints keep their existing inputs, so a heading edit
+   invalidates nothing and moving a card between sections keeps
+   every cached artifact. Augmentation is excluded because a
+   distractor is a near-miss of the answer and the prompt already
+   carries the answer, while section context is by construction the
+   part that is not the answer; and because these stamps are
+   per-card while one section spans a whole deck, so a reworded
+   heading would have regenerated an entire deck's distractors.
 4. **`title:` and `description:` are frontmatter keys**, frozen
-   jointly with the planned frontmatter-only deck listing (one key
-   set: `title:`, `description:`, `tags:`). The display chain is
+   jointly with the planned frontmatter-only deck listing, which
+   inherits them. `name:` was rejected because the published API
+   already uses `name` for a deck's selector while display text
+   travels as `label`, and because workspace manifests already say
+   `title`/`description`. A third, classification key is deliberately
+   not frozen: adding a key later is additive, and its name follows
+   from a decision not yet made, whether classification is a picker
+   filter or a cross-deck study scope. The previously parsed and
+   unconsumed `tags:` key is removed. The display chain is
    `title:`, else the condensed `trace:`, else the filename stem;
    there is no heading fallback. The preamble concept is deleted.
 
 ## Consequences
 
-Every existing deck is affected by the metadata move, and the
-maintainer chooses between two dispositions at go/no-go: requiring
-`title:` whenever `id:` is present (the same required-key shape as
-the existing `format-version` rule, `src/parser/frontmatter.rs:189`),
-which makes every old initialized deck fail loud as ordinary invalid
-input at the cost of refusing untitled decks at init and, measured
-against the real corpus on 2026-08-21, synthesizing titles for 444
-of 621 initialized decks that are filename-named by choice; or
-accepting silent re-meaning (the old `# Title` becomes a section
-heading, the drawer empties, the list shows the filename) with no
-doctor finding, because a missing-title finding would warn forever
-on those same sanctioned filename-named decks. Neither
+Every existing deck is affected by the metadata move. The
+maintainer ruled the disposition: old decks RE-MEAN SILENTLY (the old
+`# Title` becomes a section heading, the drawer empties, the list
+falls back to the filename) and no doctor finding is added, because
+444 of the 621 initialized decks measured on 2026-08-21 are
+filename-named by choice, so such a finding would warn forever on
+sanctioned state. The alternative, requiring `title:` whenever `id:`
+is present (the shape of the existing `format-version` rule,
+`src/parser/frontmatter.rs:189`), would have failed every old
+initialized deck loudly as ordinary invalid input; it was rejected
+for making the key mandatory forever and forcing synthesized titles
+onto those 444 decks. Neither option recognizes the old format. Neither
 recognizes the old format; conversion is disposable tooling outside
 the repository, and it must never rewrite `assets/` source
 snapshots, whose sha256 filenames address their content. No deck
@@ -156,15 +165,21 @@ question of cloze/region/table cards, rendered unconditionally by
 both clients, and overloading it would hide real questions and
 misroute the drawing surface.
 
-**Excluding section context from content fingerprints** (cache
-stability over correctness): rejected; a cached explanation or
-distractor generated under the wrong section is confidently wrong,
-which is worse than regenerating a disposable artifact.
+**Feeding section context to the augmenter, and stamping it into
+the content fingerprint**: proposed in review and rejected by the
+maintainer. The distractor prompt already carries the answer, and a
+distractor is a near-miss of the answer, so context adds little the
+answer does not already fix; and the stamps are per-card while a
+section spans a whole deck, so a reworded heading would regenerate
+every distractor in it. The distractor-quality problem this was
+reaching for has a different cause: augmentation is never given the
+deck's own source material, which the exam does receive. Tracked
+separately.
 
-**Including section context in the block fingerprint as well**: the
-first review recommended it and the second retracted it against the
-live consumers; a context-bearing authored key could never match
-the context-free candidates the dedup exists to catch, so every
+**Including section context in the block fingerprint**: the first
+review recommended it and the second retracted it against the live
+consumers; a context-bearing authored key could never match the
+context-free candidates the dedup exists to catch, so every
 sectioned deck would duplicate instead of deduplicate.
 
 ## Compatibility
@@ -193,14 +208,14 @@ reset; agreement of every count/status/queue surface on one locked
 fixture in every order mode; separation of section context from the
 effective-question field with the kids client rendering no new aid;
 no context route in the route table; no exam prompt builder
-accepting deck-body input; tutor/augment prompts carrying the
-labeled block and the sectioned draft prompt carrying the
-self-containment instruction, with a round-trip minting a
-top-level context-free personal card; content-fingerprint divergence for identical cards under
-different headings with block fingerprints, ids and dedup behavior
-unchanged (a sectioned authored card still deduplicates its
-remediation candidate); the zero-row titled-table error; atomic
-init refusal on the required-title option; frontmatter validation,
+accepting deck-body input, and no augment prompt builder accepting
+one either; the tutor prompt carrying the labeled block and the
+sectioned draft prompt carrying the self-containment instruction,
+with a round-trip minting a top-level context-free personal card;
+fingerprints, ids and dedup behavior unchanged for identical cards
+under different headings and for a card moved between sections (a
+sectioned authored card still deduplicates its remediation
+candidate); the zero-row titled-table error; frontmatter validation,
 id-splice survival, doctor findings with line numbers; contract
 snapshot regeneration with a formatted-section projection row.
 

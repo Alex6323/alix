@@ -2,9 +2,8 @@
 format-version: 1
 id: "deck-00000000000000000000000003"
 source: source-fact.rs
+title: Source Fact
 ---
-
-# Source Fact
 
 ## Which operation ensures capacity before inserting?
 `reserve` ensures the vector has capacity

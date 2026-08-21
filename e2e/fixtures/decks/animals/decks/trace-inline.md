@@ -3,9 +3,8 @@ format-version: 1
 id: "deck-00000000000000000000000001"
 trace: How `push` grows a `Vec`
 source: trace-source.txt
+title: Inline Trace
 ---
-
-# Inline Trace
 
 ## When `push` finds no spare capacity, what happens next?
 <!-- given: `Vec` — the collection being grown -->

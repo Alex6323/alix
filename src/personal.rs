@@ -41,7 +41,7 @@ pub fn read(deck_path: &Path, subject: &str) -> Personal {
         return Personal::default();
     };
     Personal {
-        cards: crate::parser::parse_str(subject, &crate::parser::without_notes(&text))
+        cards: crate::parser::parse_sidecar(subject, &crate::parser::without_notes(&text))
             .unwrap_or_default()
             .into_iter()
             .filter(|card| card.id().is_some())
@@ -169,6 +169,34 @@ mod tests {
 
     fn note(text: &str) -> Vec<String> {
         vec![text.to_string()]
+    }
+
+    /// Codex's finding: a sidecar is reader-owned Markdown, so a
+    /// hand-written deeper heading must stay content. Opening a sub-card
+    /// there steals the stamped card's answer, and an orphan makes
+    /// `read` swallow the parse error and return NO personal cards at all.
+    #[test]
+    fn a_sidecar_keeps_deeper_headings_as_card_content() {
+        let text = "---\nformat-version: 1\nfor: deck-abc\n---\n\
+                    ## personal <!-- id: card-personal -->\n\
+                    answer\n\
+                    ### hand-written detail\n\
+                    more detail\n";
+        let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
+        assert_eq!(1, cards.len(), "sub-card syntax is disabled in a sidecar");
+        assert_eq!(
+            vec!["answer", "### hand-written detail", "more detail"],
+            cards[0].back
+        );
+    }
+
+    /// A deeper heading with no `## ` above it would orphan in a deck and
+    /// empty the whole file; in a sidecar it is simply content.
+    #[test]
+    fn a_leading_deep_heading_never_empties_a_sidecar() {
+        let text = "## personal <!-- id: card-p2 -->\nanswer\n#### deep\ntail\n";
+        let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
+        assert_eq!(1, cards.len());
     }
 
     #[test]

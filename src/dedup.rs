@@ -113,8 +113,16 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
             }
             continue;
         }
-        if line.starts_with("## ") {
-            heading_line = n;
+        if let Some((depth, _)) = crate::parser::heading_depth(line) {
+            if (2..=4).contains(&depth) {
+                heading_line = n;
+            } else {
+                // A section closes the card chain, so an id below it belongs
+                // to no card. Leaving the previous heading open would credit
+                // that orphan to it, report a false duplicate against a
+                // healthy deck elsewhere, and remint the healthy card.
+                heading_line = 0;
+            }
         }
         // A table opens a block too: its first pipe line anchors the
         // container id comment that follows the table.
@@ -124,7 +132,7 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
         prev_pipe = line.starts_with('|');
         let candidate = if line.trim().starts_with("<!--") {
             line.trim()
-        } else if line.starts_with("## ")
+        } else if crate::parser::heading_depth(line).is_some_and(|(d, _)| (2..=4).contains(&d))
             && let Some(pos) = line.find("<!--")
         {
             line[pos..].trim()
@@ -329,6 +337,19 @@ mod tests {
         )
         .unwrap();
         path
+    }
+
+    /// Existing ids must be found at every card depth: a scan that only
+    /// knows `## ` would miss a sub-card's id and mint a second one for the
+    /// same proposition.
+    #[test]
+    fn existing_ids_are_found_at_every_card_depth() {
+        let text = "## a <!-- id: card-a1 -->\n1\n### b <!-- id: card-b1 -->\n2\n#### c <!-- id: card-c1 -->\n3\n";
+        let (_, ids) = extract_ids(text);
+        let found: Vec<&str> = ids.iter().map(|(id, _)| id.as_str()).collect();
+        for want in ["card-a1", "card-b1", "card-c1"] {
+            assert!(found.contains(&want), "{want} missing from {found:?}");
+        }
     }
 
     #[test]

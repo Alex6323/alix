@@ -43,8 +43,8 @@ not write a replacement unless the current source supports a useful new card.
 - Never move, copy, invent, or reuse an existing ID.
 
 UPDATE RULES:
-- Preserve the frontmatter `id`, title, trace, requires, links, and unrelated \
-frontmatter.
+- Preserve the frontmatter `id`, `title`, `description`, trace, requires, \
+links, and unrelated frontmatter.
 - Preserve good supported cards rather than rewriting for style.
 - Remove cards the current source no longer supports.
 - Add only important new propositions that deepen understanding.
@@ -454,7 +454,7 @@ fn validate_proposal_metadata(current: &Deck, candidate: &Deck, source: &str) ->
         || candidate.links != current.links
         || candidate.title != current.title
         || candidate.trace != current.trace
-        || candidate.preamble != current.preamble
+        || candidate.description != current.description
     {
         bail!(
             "{} changed deck metadata outside the source update boundary",
@@ -960,6 +960,50 @@ mod tests {
     }
 
     #[cfg(unix)]
+    /// Done-list law: the metadata guard covers BOTH frozen keys. An AI
+    /// source refresh may rewrite cards; it may never rename the deck or
+    /// rewrite the drawer description while reporting success.
+    #[test]
+    fn a_proposal_may_not_change_the_title_or_the_description() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: src\ntitle: Facts\ndescription: |\n  Two lines\n  of description.\n---\n## q <!-- id: card-q1 -->\na\n";
+        let write_deck = |name: &str, text: &str| {
+            let path = dir.path().join(name);
+            fs::write(&path, text).unwrap();
+            Deck::load(&path).unwrap()
+        };
+        let current = write_deck("current.md", base);
+
+        let renamed = write_deck("renamed.md", &base.replace("title: Facts", "title: Other"));
+        assert!(
+            validate_proposal_metadata(&current, &renamed, "src").is_err(),
+            "a renamed deck must be refused"
+        );
+
+        let redescribed = write_deck(
+            "redescribed.md",
+            &base.replace("  of description.", "  of something else."),
+        );
+        assert!(
+            validate_proposal_metadata(&current, &redescribed, "src").is_err(),
+            "a rewritten description must be refused"
+        );
+
+        let same = write_deck("same.md", base);
+        assert!(
+            validate_proposal_metadata(&current, &same, "src").is_ok(),
+            "an unchanged pair must pass"
+        );
+    }
+
+    /// The prompt names both frozen keys, or the model is free to drop one
+    /// and the guard turns an ordinary refresh into a hard failure.
+    #[test]
+    fn the_update_prompt_names_both_frozen_metadata_keys() {
+        assert!(UPDATE_PROMPT.contains("`title`"), "{UPDATE_PROMPT}");
+        assert!(UPDATE_PROMPT.contains("`description`"), "{UPDATE_PROMPT}");
+    }
+
     #[test]
     fn changed_learning_content_cannot_keep_the_old_card_id() {
         let _lock = exec_lock();

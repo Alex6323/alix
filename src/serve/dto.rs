@@ -67,7 +67,7 @@ pub(super) struct CrumbDto {
 
 #[derive(Debug, Serialize, Default)]
 pub(super) struct DeckDrawerDto {
-    pub(super) preamble: Option<String>,
+    pub(super) description: Option<String>,
     pub(super) heatmap: Vec<CardTier>,
     pub(super) topologies: Vec<TopologyInfoDto>,
     /// Total cards in the deck. Not derivable from `heatmap.len()`, which counts
@@ -1187,7 +1187,7 @@ pub(super) fn deck_drawer_dto(
         .filter(|c| crate::session::is_retired(c, store, retire_after_days))
         .count();
     DeckDrawerDto {
-        preamble: deck.preamble.clone(),
+        description: deck.description.clone(),
         heatmap,
         topologies,
         total: deck.cards.len(),

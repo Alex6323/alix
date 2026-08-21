@@ -1,4 +1,5 @@
 {
+  "description": "A short intro from the frontmatter.",
   "graduated": 4,
   "heatmap": [
     "unseen",
@@ -9,7 +10,6 @@
     "learned-weak",
     "retired"
   ],
-  "preamble": "A short intro under the H1.",
   "retired": 1,
   "seen": 6,
   "topologies": [

@@ -1,11 +1,9 @@
 ---
 format-version: 1
 id: "deck-00000000000000000000000007"
+title: Math
+description: Math rendering fixtures for every card surface.
 ---
-
-# Math
-
-Math rendering fixtures for every card surface.
 
 ## What does $E = mc^2$ describe?
 - [x] **$E = mc^2$**

@@ -727,7 +727,9 @@ mod tests {
             .iter()
             .map(|r| (r.title.as_str(), r.is_trace))
             .collect();
-        assert_eq!(vec![("facts", false), ("How it flows", true)], flags);
+        // The trace name is condensed here too now (D10): one name per deck
+        // across every surface.
+        assert_eq!(vec![("facts", false), ("How It Flows", true)], flags);
     }
 
     fn settle(user_root: &Path, deck_path: &Path) {
@@ -749,7 +751,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("b-loose.md"),
-            "# Loose Deck\n## q <!-- id: card-qloose -->\na\n",
+            "---\ntitle: Loose Deck\n---\n## q <!-- id: card-qloose -->\na\n",
         );
         std::fs::create_dir_all(root.join("a-ws/decks")).unwrap();
         write(&root.join("a-ws/alix.toml"), "title = \"My Workspace\"\n");
@@ -1215,7 +1217,7 @@ mod tests {
         assert!(!base.mastered);
         let advanced = rows.iter().find(|r| r.title == "advanced").unwrap();
         assert!(advanced.locked);
-        let walk = rows.iter().find(|r| r.title == "How it flows").unwrap();
+        let walk = rows.iter().find(|r| r.title == "How It Flows").unwrap();
         assert!(walk.is_trace);
         assert!(walk.has_exam);
 

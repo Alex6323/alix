@@ -676,9 +676,9 @@ export function createPicker({
       function renderDrawer(row, data) {
         const topologies = data.topologies || [];
         const heatmap = data.heatmap || [];
-        const preamble = data.preamble || "";
+        const description = data.description || "";
         // Nothing worth showing → no drawer.
-        if (!preamble && !heatmap.length && !topologies.length) return;
+        if (!description && !heatmap.length && !topologies.length) return;
         drawerSel = { deck: row._item.name, topology: topologies[0] ? topologies[0].name : null, region: null };
         drawerCycle = null;
         const wrap = el("div", "drawer-wrap");
@@ -699,7 +699,7 @@ export function createPicker({
           box.appendChild(top);
         }
 
-        if (preamble) box.appendChild(el("div", "drawer-preamble", preamble));
+        if (description) box.appendChild(el("div", "drawer-description", description));
 
         const regions = el("div", "drawer-regions");
 
@@ -814,7 +814,7 @@ export function createPicker({
         const cached = topoCache[name];
         if (cached) { renderDrawer(row, cached); return; }
         api("/api/deck-drawer", post({ deck: name })).then(d => {
-          const data = d || { preamble: null, heatmap: [], topologies: [], total: 0, seen: 0, graduated: 0, retired: 0 };
+          const data = d || { description: null, heatmap: [], topologies: [], total: 0, seen: 0, graduated: 0, retired: 0 };
           topoCache[name] = data;
           if (focusedEl === row) renderDrawer(row, data);
         });

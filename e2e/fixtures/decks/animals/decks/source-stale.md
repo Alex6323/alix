@@ -2,9 +2,8 @@
 format-version: 1
 id: "deck-00000000000000000000000009"
 source: source-stale.rs
+title: Source Stale
 ---
-
-# Source Stale
 
 ## Which call belongs to the cited implementation?
 The cited implementation calls `stable`.

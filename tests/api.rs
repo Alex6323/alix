@@ -1494,7 +1494,7 @@ fn get_api_decks_lists_a_workspace_with_its_member_decks() {
 
 /// A one-card deck whose H1 title is what `/api/decks` serves as the row's
 /// `label`, the field that proves whether the file was (re-)parsed.
-const TITLED_DECK: &str = "---\nformat-version: 1\nid: \"deck-titled\"\n---\n# Original Title\n\n## q <!-- id: card-ti1 -->\na\n";
+const TITLED_DECK: &str = "---\nformat-version: 1\nid: \"deck-titled\"\ntitle: Original Title\n---\n## q <!-- id: card-ti1 -->\na\n";
 
 fn write_titled_deck(dir: &Path) {
     std::fs::write(dir.join("titled.md"), TITLED_DECK).unwrap();
@@ -1551,7 +1551,7 @@ fn a_changed_deck_is_reparsed_on_the_next_listing() {
     // A longer rewrite changes the size, which dodges mtime granularity.
     std::fs::write(
         guard.dir().join("titled.md"),
-        "---\nformat-version: 1\nid: \"deck-titled\"\n---\n# A Renamed Title Longer Than Before\n\n## q <!-- id: card-ti1 -->\na\n",
+        "---\nformat-version: 1\nid: \"deck-titled\"\ntitle: A Renamed Title Longer Than Before\n---\n## q <!-- id: card-ti1 -->\na\n",
     )
     .unwrap();
     std::fs::write(
@@ -2338,8 +2338,8 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
     );
     assert!(body.get("deck_due").is_none(), "deck_due removed: {body}");
     assert!(
-        body["preamble"].is_null(),
-        "no preamble in the fixture: {body}"
+        body["description"].is_null(),
+        "no description in the fixture: {body}"
     );
 }
 
@@ -2414,7 +2414,7 @@ fn post_api_deck_drawer_with_an_unknown_deck_still_returns_the_empty_default_dto
         body["heatmap"].as_array().unwrap().is_empty(),
         "body: {body}"
     );
-    assert!(body["preamble"].is_null(), "body: {body}");
+    assert!(body["description"].is_null(), "body: {body}");
 }
 
 // ── Reset ───────────────────────────────────────────────────────────────

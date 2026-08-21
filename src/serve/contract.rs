@@ -1159,7 +1159,7 @@ fn decklistdto_wire_shape() {
 #[test]
 fn deckdrawerdto_wire_shape() {
     let dto = DeckDrawerDto {
-        preamble: Some("A short intro under the H1.".to_string()),
+        description: Some("A short intro from the frontmatter.".to_string()),
         heatmap: vec![
             CardTier::Unseen,
             CardTier::Seen,
@@ -1186,7 +1186,7 @@ fn deckdrawerdto_wire_shape() {
         "DeckDrawerDto",
         &dto,
         json!({
-            "preamble": "A short intro under the H1.",
+            "description": "A short intro from the frontmatter.",
             "heatmap": [
                 "unseen",
                 "seen",
