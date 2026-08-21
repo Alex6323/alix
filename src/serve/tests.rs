@@ -2620,6 +2620,7 @@ fn an_unparseable_config_keeps_the_current_dir() {
 /// The reachability law (ruling 3's serving half): the diagram unit's
 /// /img/<key> URL and the session image allowlist must agree on the key,
 /// or the PNG 404s: nothing else registers frozen rasters.
+#[cfg(unix)]
 #[test]
 fn a_frozen_diagram_is_reachable_through_the_image_allowlist() {
     let _lock = crate::testutil::exec_lock();

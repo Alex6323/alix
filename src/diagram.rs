@@ -1406,7 +1406,7 @@ fn by_meta_id(stream: &str) -> Vec<(usize, String)> {
     found
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::path::{Path, PathBuf};
 

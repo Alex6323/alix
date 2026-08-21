@@ -1198,7 +1198,7 @@ pub fn is_object_name(name: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() && !character.is_ascii_uppercase())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -1938,10 +1938,11 @@ mod tests {
         std::fs::write(&out1, first).unwrap();
         std::fs::write(&out2, second).unwrap();
         let counts = directory.path().join("render-counts");
+        // BSD wc left-pads its counts; tr strips so the branch compares clean.
         let cli = crate::testutil::fake_cli(
             directory.path(),
             &format!(
-                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts}); if [ \"$n\" = \"1\" ]; then cat {out1}; else cat {out2}; fi",
+                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts} | tr -d ' '); if [ \"$n\" = \"1\" ]; then cat {out1}; else cat {out2}; fi",
                 counts = counts.display(),
                 out1 = out1.display(),
                 out2 = out2.display(),
@@ -2046,7 +2047,7 @@ mod tests {
         let cli = crate::testutil::fake_cli(
             directory.path(),
             &format!(
-                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts}); if [ \"$n\" = \"1\" ]; then cat {out1}; elif [ \"$n\" = \"2\" ]; then cat {out2}; else cat {out3}; fi",
+                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts} | tr -d ' '); if [ \"$n\" = \"1\" ]; then cat {out1}; elif [ \"$n\" = \"2\" ]; then cat {out2}; else cat {out3}; fi",
                 counts = counts.display(),
                 out1 = out1.display(),
                 out2 = out2.display(),
@@ -2140,7 +2141,7 @@ mod tests {
         let cli = crate::testutil::fake_cli(
             directory.path(),
             &format!(
-                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts}); if [ \"$n\" = \"1\" ]; then cat {out1}; elif [ \"$n\" = \"2\" ]; then cat {out2}; else cat {out3}; fi",
+                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts} | tr -d ' '); if [ \"$n\" = \"1\" ]; then cat {out1}; elif [ \"$n\" = \"2\" ]; then cat {out2}; else cat {out3}; fi",
                 counts = counts.display(),
                 out1 = out1.display(),
                 out2 = out2.display(),
@@ -2343,7 +2344,7 @@ mod tests {
         let failing = crate::testutil::fake_cli(
             directory.path(),
             &format!(
-                "cat >/dev/null; echo x >> {counts}; n=$(wc -l < {counts}); if [ \"$n\" = \"1\" ]; then cat {out}; fi",
+                "cat >/dev/null; echo x >> {counts}; n=$(wc -l < {counts} | tr -d ' '); if [ \"$n\" = \"1\" ]; then cat {out}; fi",
                 counts = first_counts.display(),
                 out = first_out.display(),
             ),
@@ -2370,7 +2371,7 @@ mod tests {
         let healthy = crate::testutil::fake_cli(
             directory.path(),
             &format!(
-                "cat >/dev/null; echo x >> {counts}; n=$(wc -l < {counts}); if [ \"$n\" = \"1\" ]; then cat {out1}; else cat {out2}; fi",
+                "cat >/dev/null; echo x >> {counts}; n=$(wc -l < {counts} | tr -d ' '); if [ \"$n\" = \"1\" ]; then cat {out1}; else cat {out2}; fi",
                 counts = retry_counts.display(),
                 out1 = retry_out1.display(),
                 out2 = retry_out2.display(),
