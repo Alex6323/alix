@@ -110,8 +110,8 @@ fn fence_unit(
         if let Some(resolved) = diagrams.iter().find(|d| d.fingerprint == print) {
             return NoteUnit::Diagram {
                 src: resolved.png.display().to_string(),
-                width: resolved.manifest.logical_width,
-                height: resolved.manifest.logical_height,
+                width: resolved.geometry.logical_width,
+                height: resolved.geometry.logical_height,
                 alt: source,
                 regions: Vec::new(),
                 revealed_alt: None,
@@ -274,8 +274,8 @@ fn context_fence_unit(
         if record.spans.is_empty() {
             return NoteUnit::Diagram {
                 src: resolved.png.display().to_string(),
-                width: resolved.manifest.logical_width,
-                height: resolved.manifest.logical_height,
+                width: resolved.geometry.logical_width,
+                height: resolved.geometry.logical_height,
                 // The record's interior, not the displayed lines: the
                 // authored source is what was frozen and rendered.
                 alt: record.interior.to_string(),
@@ -303,8 +303,8 @@ fn masked_diagram_unit(
         review::{RegionRole, RegionView},
     };
 
-    let manifest = &resolved.manifest;
-    crate::diagram::validate_label_sources(manifest, &record.interior).ok()?;
+    let geometry = &resolved.geometry;
+    crate::diagram::validate_label_sources(geometry, &record.interior).ok()?;
     let asked: Vec<usize> = match &card.region {
         None => Vec::new(),
         Some(crate::card::RegionSlot::Single { line, .. }) => vec![*line],
@@ -317,7 +317,7 @@ fn masked_diagram_unit(
     // twice cannot happen (spans never overlap, ranges never overlap).
     let mut bound: Vec<(usize, RegionRole, bool)> = Vec::new();
     for span in &record.spans {
-        let index = crate::diagram::bind_span(manifest, span.line, span.start, span.end).ok()?;
+        let index = crate::diagram::bind_span(geometry, span.line, span.start, span.end).ok()?;
         let kind = card
             .span_regions
             .iter()
@@ -339,9 +339,9 @@ fn masked_diagram_unit(
     // The accessible text is the RENDERED label inventory in reading order
     // (box y, then x), never the source: source ids can spell out a masked
     // label's text.
-    let mut order: Vec<usize> = (0..manifest.labels.len()).collect();
+    let mut order: Vec<usize> = (0..geometry.labels.len()).collect();
     order.sort_by_key(|&index| {
-        let bounds = &manifest.labels[index].bounds;
+        let bounds = &geometry.labels[index].bounds;
         (bounds.y, bounds.x)
     });
     let inventory = |shows: &dyn Fn(usize) -> bool| {
@@ -349,7 +349,7 @@ fn masked_diagram_unit(
             .iter()
             .map(|&index| {
                 if shows(index) {
-                    manifest.labels[index].text.as_str()
+                    geometry.labels[index].text.as_str()
                 } else {
                     "…"
                 }
@@ -360,7 +360,7 @@ fn masked_diagram_unit(
     let regions = bound
         .iter()
         .map(|&(index, role, reveal_on_answer)| {
-            let bounds = &manifest.labels[index].bounds;
+            let bounds = &geometry.labels[index].bounds;
             RegionView {
                 role,
                 reveal_on_answer,
@@ -374,8 +374,8 @@ fn masked_diagram_unit(
         .collect();
     Some(NoteUnit::Diagram {
         src: resolved.png.display().to_string(),
-        width: manifest.logical_width,
-        height: manifest.logical_height,
+        width: geometry.logical_width,
+        height: geometry.logical_height,
         alt: inventory(&|index| !masked(index)),
         regions,
         revealed_alt: Some(inventory(&|index| !masked(index) || revealed(index))),
@@ -758,10 +758,10 @@ mod tests {
         vec![crate::card::ResolvedDiagram {
             fingerprint: crate::diagram::fingerprint(source),
             png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
-            manifest: crate::diagram::DiagramManifest {
-                png: "sha256-aa.png".to_string(),
-                raster_width: 376,
-                raster_height: 228,
+            geometry: crate::diagram::DiagramGeometry {
+                image: "sha256-aa.png".to_string(),
+                image_width: 376,
+                image_height: 228,
                 logical_width: 188,
                 logical_height: 114,
                 labels: Vec::new(),

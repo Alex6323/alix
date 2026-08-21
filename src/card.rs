@@ -77,12 +77,12 @@ pub struct CardImage {
 }
 
 /// A frozen diagram's stamp: the fence's fingerprint plus the two
-/// content-addressed artifacts (raster and manifest) minted at freeze time.
+/// content-addressed artifacts (raster and geometry) minted at freeze time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagramStamp {
     pub fingerprint: String,
     pub asset: String,
-    pub manifest: String,
+    pub geometry: String,
     pub line: usize,
 }
 
@@ -117,13 +117,13 @@ pub struct AnswerFenceSpan {
 }
 
 /// A stamp whose frozen pair checked out at deck load: both objects
-/// present, the manifest parses, and it names the stamp's raster. Only
+/// present, the geometry parses, and it names the stamp's raster. Only
 /// resolution this shallow runs on the load path; doctor re-hashes bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedDiagram {
     pub fingerprint: String,
     pub png: std::path::PathBuf,
-    pub manifest: crate::diagram::DiagramManifest,
+    pub geometry: crate::diagram::DiagramGeometry,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

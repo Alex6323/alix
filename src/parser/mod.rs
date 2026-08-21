@@ -477,7 +477,7 @@ struct CardDirectives {
     givens: Vec<String>,
 }
 
-/// `fingerprint: xxh64-<16 hex> asset: <object>.png manifest: <object>.json`,
+/// `fingerprint: xxh64-<16 hex> asset: <object>.png geometry: <object>.json`,
 /// exactly these three fields in order; anything else is invalid input.
 fn parse_diagram_stamp(value: &str, line: usize) -> Result<crate::card::DiagramStamp, String> {
     let mut rest = value.trim();
@@ -499,8 +499,8 @@ fn parse_diagram_stamp(value: &str, line: usize) -> Result<crate::card::DiagramS
         ));
     }
     let asset = field("asset:")?;
-    let manifest = field("manifest:")?;
-    for (name, extension) in [(&asset, ".png"), (&manifest, ".json")] {
+    let geometry = field("geometry:")?;
+    for (name, extension) in [(&asset, ".png"), (&geometry, ".json")] {
         if !crate::assets::is_object_name(name) {
             return Err(format!("`{name}` is not a content-addressed object name"));
         }
@@ -516,7 +516,7 @@ fn parse_diagram_stamp(value: &str, line: usize) -> Result<crate::card::DiagramS
     Ok(crate::card::DiagramStamp {
         fingerprint,
         asset,
-        manifest,
+        geometry,
         line,
     })
 }
@@ -5678,7 +5678,7 @@ the answer
     fn a_diagram_stamp_parses_onto_the_card() {
         let object = |ext: &str| format!("sha256-{}.{ext}", "a".repeat(64));
         let text = format!(
-            "## q\n```mermaid\nflowchart LR\n A-->B\n```\n<!-- diagram: fingerprint: xxh64-0011223344556677 asset: {} manifest: {} -->\nanswer\n",
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\n<!-- diagram: fingerprint: xxh64-0011223344556677 asset: {} geometry: {} -->\nanswer\n",
             object("png"),
             object("json"),
         );
@@ -5687,7 +5687,7 @@ the answer
         let stamp = &deck.cards[0].diagrams[0];
         assert_eq!("xxh64-0011223344556677", stamp.fingerprint);
         assert_eq!(object("png"), stamp.asset);
-        assert_eq!(object("json"), stamp.manifest);
+        assert_eq!(object("json"), stamp.geometry);
         assert!(
             !deck.cards[0]
                 .back
@@ -5703,32 +5703,32 @@ the answer
         let json = format!("sha256-{}.json", "a".repeat(64));
         let cases = [
             (
-                "fingerprint: xxh64-00112233 asset: a manifest: b".to_string(),
+                "fingerprint: xxh64-00112233 asset: a geometry: b".to_string(),
                 "short fingerprint hex",
             ),
             (
-                format!("fingerprint: 0011223344556677 asset: {png} manifest: {json}"),
+                format!("fingerprint: 0011223344556677 asset: {png} geometry: {json}"),
                 "missing xxh64 prefix",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 asset: nope.png manifest: {json}"),
+                format!("fingerprint: xxh64-0011223344556677 asset: nope.png geometry: {json}"),
                 "asset is not an object name",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 asset: {json} manifest: {png}"),
-                "swapped artifact roles: a json asset or png manifest is a later decode failure",
+                format!("fingerprint: xxh64-0011223344556677 asset: {json} geometry: {png}"),
+                "swapped artifact roles: a json asset or png geometry is a later decode failure",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 asset: {png} manifest: {png}"),
-                "the manifest role requires a json object",
+                format!("fingerprint: xxh64-0011223344556677 asset: {png} geometry: {png}"),
+                "the geometry role requires a json object",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 manifest: {json} asset: {png}"),
+                format!("fingerprint: xxh64-0011223344556677 geometry: {json} asset: {png}"),
                 "fields out of order",
             ),
             (
                 format!(
-                    "fingerprint: xxh64-0011223344556677 asset: {png} manifest: {json} extra: 1"
+                    "fingerprint: xxh64-0011223344556677 asset: {png} geometry: {json} extra: 1"
                 ),
                 "trailing junk",
             ),

@@ -134,7 +134,7 @@ pub fn fingerprint(source: &str) -> String {
 /// silently textless diagram.
 #[derive(Debug)]
 pub struct Raster {
-    pub png: Vec<u8>,
+    pub image: Vec<u8>,
     pub width: u32,
     pub height: u32,
 }
@@ -145,7 +145,7 @@ pub fn rasterize(svg: &str, family: &str, zoom: f32) -> Result<Raster> {
     Ok(Raster {
         width: pixmap.width(),
         height: pixmap.height(),
-        png: pixmap.encode_png().context("the PNG cannot be encoded")?,
+        image: pixmap.encode_png().context("the PNG cannot be encoded")?,
     })
 }
 
@@ -415,7 +415,7 @@ pub fn freeze_fence(
         let stripped = raster(&strip_label_texts(svg, &label.id)?, family, ZOOM)?;
         ink_within(&full, &stripped, bounds)
             .with_context(|| format!("label '{}' failed the ink-containment check", label.id))?;
-        labels.push(ManifestLabel {
+        labels.push(GeometryLabel {
             id: label.id.clone(),
             text: label.text.clone(),
             source: match sources.get(&label.id) {
@@ -429,21 +429,24 @@ pub fn freeze_fence(
         });
     }
     let png = full.encode_png().context("the PNG cannot be encoded")?;
-    let manifest = DiagramManifest {
-        png: crate::assets::object_name(&png, "png"),
-        raster_width: full.width(),
-        raster_height: full.height(),
+    let geometry = DiagramGeometry {
+        image: crate::assets::object_name(&png, "png"),
+        image_width: full.width(),
+        image_height: full.height(),
         logical_width: found.view_box.width.ceil() as u32,
         logical_height: found.view_box.height.ceil() as u32,
         labels,
     };
-    Ok(FrozenDiagram { png, manifest })
+    Ok(FrozenDiagram {
+        image: png,
+        geometry,
+    })
 }
 
 #[cfg(feature = "full")]
 pub struct FrozenDiagram {
-    pub png: Vec<u8>,
-    pub manifest: DiagramManifest,
+    pub image: Vec<u8>,
+    pub geometry: DiagramGeometry,
 }
 
 #[cfg(feature = "full")]
@@ -533,7 +536,43 @@ pub fn collate_assignments(
 }
 
 #[cfg(feature = "full")]
-/// The scale frozen rasters render at; the manifest records both raster and
+/// The bare-node signature, two-sided. Variant side: a plain probe of a
+/// bare occurrence RENAMES the node, so a label's id and text are both the
+/// marker. Original side: the occurrence text must itself name a bare
+/// label (id == text == occurrence), or the marker node was fabricated by
+/// replacing a bare ID REFERENCE to some labeled node, and a retry would
+/// bind that node's visible label to id bytes.
+pub fn bare_rename(occurrence: &str, original: &[Label], marker: &str, variant: &[Label]) -> bool {
+    original
+        .iter()
+        .any(|label| label.id == occurrence && label.text == occurrence)
+        && variant
+            .iter()
+            .any(|label| label.id == marker && label.text == marker)
+}
+
+#[cfg(feature = "full")]
+/// The pass-2 probe for a bare occurrence: `text[marker]` relabels the
+/// node in place instead of renaming it, so the unchanged-id law can
+/// accept the same occurrence the plain probe had to reject.
+pub fn bracket_probe(interior: &str, probe: &SourceProbe, marker: &str) -> SourceProbe {
+    let text = &interior[probe.start..probe.end];
+    let mut source = String::with_capacity(interior.len() + marker.len() + 2);
+    source.push_str(&interior[..probe.start]);
+    source.push_str(text);
+    source.push('[');
+    source.push_str(marker);
+    source.push(']');
+    source.push_str(&interior[probe.end..]);
+    SourceProbe {
+        start: probe.start,
+        end: probe.end,
+        source,
+    }
+}
+
+#[cfg(feature = "full")]
+/// The scale frozen rasters render at; the geometry records both raster and
 /// logical dimensions so clients display at logical size.
 pub const ZOOM: f32 = 2.0;
 
@@ -989,9 +1028,9 @@ pub fn pixel_box(label: &Label, view_box: ViewBox, zoom: f32, raster: (u32, u32)
     let top = scale(label.y - view_box.y - BOX_PAD).floor().max(0.0) as u32;
     let right = scale(label.x - view_box.x + label.width + BOX_PAD).ceil() as u32;
     let bottom = scale(label.y - view_box.y + label.height + BOX_PAD).ceil() as u32;
-    let (raster_width, raster_height) = raster;
-    let right = right.min(raster_width);
-    let bottom = bottom.min(raster_height);
+    let (image_width, image_height) = raster;
+    let right = right.min(image_width);
+    let bottom = bottom.min(image_height);
     PixelBox {
         x: left,
         y: top,
@@ -1015,18 +1054,18 @@ pub struct PixelBox {
 /// invalidate the frozen pair.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DiagramManifest {
-    pub png: String,
-    pub raster_width: u32,
-    pub raster_height: u32,
+pub struct DiagramGeometry {
+    pub image: String,
+    pub image_width: u32,
+    pub image_height: u32,
     pub logical_width: u32,
     pub logical_height: u32,
-    pub labels: Vec<ManifestLabel>,
+    pub labels: Vec<GeometryLabel>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ManifestLabel {
+pub struct GeometryLabel {
     pub id: String,
     pub text: String,
     pub source: LabelSource,
@@ -1037,7 +1076,7 @@ pub struct ManifestLabel {
 /// Where the label's text lives in the fence source: a byte range in the
 /// LF-normalized interior (end-exclusive), or nothing bindable (multiline,
 /// entity- or markdown-processed, bare-id labels, ambiguous probes).
-/// Required, so a manifest frozen before this field fails loud as ordinary
+/// Required, so a geometry frozen before this field fails loud as ordinary
 /// invalid input. Consumers validate a range against the interior bytes
 /// (bounds, char boundaries, overlap) before any slice.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1053,7 +1092,7 @@ pub enum LabelSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindFailure {
     /// A persisted range fails bounds, ordering, or a char boundary against
-    /// the interior; a corrupt or hostile manifest lands here instead of
+    /// the interior; a corrupt or hostile geometry lands here instead of
     /// panicking review.
     InvalidLabelRange {
         label: String,
@@ -1103,11 +1142,11 @@ impl std::fmt::Display for BindFailure {
 /// anything slices: checked bounds, start < end, char boundaries, and
 /// cross-label overlap, including labels no card span targets.
 pub fn validate_label_sources(
-    manifest: &DiagramManifest,
+    geometry: &DiagramGeometry,
     interior: &str,
 ) -> Result<(), BindFailure> {
     let mut ranges: Vec<(usize, usize, &str)> = Vec::new();
-    for label in &manifest.labels {
+    for label in &geometry.labels {
         let LabelSource::Range { start, end } = label.source else {
             continue;
         };
@@ -1142,12 +1181,12 @@ pub fn validate_label_sources(
 /// range (complete-label-only). Run `validate_label_sources` first; this
 /// only compares.
 pub fn bind_span(
-    manifest: &DiagramManifest,
+    geometry: &DiagramGeometry,
     line: usize,
     start: usize,
     end: usize,
 ) -> Result<usize, BindFailure> {
-    for (index, label) in manifest.labels.iter().enumerate() {
+    for (index, label) in geometry.labels.iter().enumerate() {
         let LabelSource::Range {
             start: label_start,
             end: label_end,
@@ -1628,18 +1667,18 @@ mod tests {
         let raster = rasterize(RECT_SVG, "no-such-family-xyz", 1.0).unwrap();
         assert_eq!(
             (10, 8),
-            png_size(&raster.png),
+            png_size(&raster.image),
             "zoom 1 keeps intrinsic size"
         );
         assert_eq!(
             (raster.width, raster.height),
-            png_size(&raster.png),
+            png_size(&raster.image),
             "reported size is the IHDR size"
         );
         let raster = rasterize(RECT_SVG, "no-such-family-xyz", 2.5).unwrap();
         assert_eq!(
             (25, 20),
-            png_size(&raster.png),
+            png_size(&raster.image),
             "zoom scales both dimensions"
         );
     }
@@ -1870,8 +1909,8 @@ mod tests {
             &std::collections::HashMap::new(),
         )
         .expect("the full freeze succeeds with an empty label map");
-        assert!(frozen.manifest.labels.is_empty());
-        assert!(frozen.manifest.raster_width > 0);
+        assert!(frozen.geometry.labels.is_empty());
+        assert!(frozen.geometry.image_width > 0);
     }
 
     /// Codex's P1: shaped nodes are ordinary flowchart syntax, and a map
@@ -1958,7 +1997,7 @@ mod tests {
         let cases = [
             (
                 format!(
-                    "## q\n```mermaid\n{source}\n```\n{nbsp}<!-- diagram: fingerprint: {print} asset: {} manifest: {} -->\nanswer\n",
+                    "## q\n```mermaid\n{source}\n```\n{nbsp}<!-- diagram: fingerprint: {print} asset: {} geometry: {} -->\nanswer\n",
                     object("png"),
                     object("json"),
                     nbsp = '\u{00a0}',
@@ -1993,7 +2032,7 @@ mod tests {
         let source = "flowchart LR\n A-->B";
         let print = fingerprint(source);
         let text = format!(
-            "## q\n```mermaid\n{source}\n```\n  <!-- diagram: fingerprint: {print} asset: sha256-{0}.png manifest: sha256-{0}.json -->\nanswer\n",
+            "## q\n```mermaid\n{source}\n```\n  <!-- diagram: fingerprint: {print} asset: sha256-{0}.png geometry: sha256-{0}.json -->\nanswer\n",
             "a".repeat(64)
         );
         let found = fences_in_document(&text, None);
@@ -2009,7 +2048,7 @@ mod tests {
     #[test]
     fn document_fences_carry_insert_offsets_and_existing_stamps() {
         let text = format!(
-            "---\nid: x\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n```mermaid\nsecond\n```\n<!-- diagram: fingerprint: xxh64-00000000000000ff asset: sha256-{0}.png manifest: sha256-{0}.json -->\nmore\n",
+            "---\nid: x\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n```mermaid\nsecond\n```\n<!-- diagram: fingerprint: xxh64-00000000000000ff asset: sha256-{0}.png geometry: sha256-{0}.json -->\nmore\n",
             "a".repeat(64)
         );
         let text = text.as_str();
@@ -2239,14 +2278,14 @@ mod tests {
     }
 
     #[test]
-    fn the_manifest_round_trips_and_rejects_unknown_fields() {
-        let manifest = DiagramManifest {
-            png: "sha256-ab.png".into(),
-            raster_width: 200,
-            raster_height: 100,
+    fn the_geometry_round_trips_and_rejects_unknown_fields() {
+        let geometry = DiagramGeometry {
+            image: "sha256-ab.png".into(),
+            image_width: 200,
+            image_height: 100,
             logical_width: 100,
             logical_height: 50,
-            labels: vec![ManifestLabel {
+            labels: vec![GeometryLabel {
                 id: "A".into(),
                 text: "Cache".into(),
                 source: LabelSource::Range { start: 20, end: 25 },
@@ -2258,16 +2297,16 @@ mod tests {
                 },
             }],
         };
-        let json = serde_json::to_string(&manifest).unwrap();
+        let json = serde_json::to_string(&geometry).unwrap();
         assert!(
             json.contains(r#""x":1"#),
             "bounds must flatten into the label entry: {json}"
         );
-        let back: DiagramManifest = serde_json::from_str(&json).unwrap();
-        assert_eq!(manifest.labels[0].bounds, back.labels[0].bounds);
-        let unknown = json.replace(r#""png""#, r#""theme":"dark","png""#);
+        let back: DiagramGeometry = serde_json::from_str(&json).unwrap();
+        assert_eq!(geometry.labels[0].bounds, back.labels[0].bounds);
+        let unknown = json.replace(r#""image""#, r#""theme":"dark","image""#);
         assert!(
-            serde_json::from_str::<DiagramManifest>(&unknown).is_err(),
+            serde_json::from_str::<DiagramGeometry>(&unknown).is_err(),
             "an unknown field must fail loud, never be silently dropped"
         );
     }
@@ -2281,34 +2320,34 @@ mod tests {
         );
         let unbindable = serde_json::to_value(LabelSource::Unbindable).unwrap();
         assert_eq!(serde_json::json!({"kind": "unbindable"}), unbindable);
-        let manifest = serde_json::json!({
+        let geometry = serde_json::json!({
             "png": "sha256-ab.png",
-            "raster_width": 200,
-            "raster_height": 100,
+            "image_width": 200,
+            "image_height": 100,
             "logical_width": 100,
             "logical_height": 50,
             "labels": [{"id": "A", "text": "Cache", "x": 1, "y": 2, "width": 3, "height": 4}],
         });
         assert!(
-            serde_json::from_value::<DiagramManifest>(manifest).is_err(),
-            "a label without `source` (a manifest frozen before the field) \
+            serde_json::from_value::<DiagramGeometry>(geometry).is_err(),
+            "a label without `source` (a geometry frozen before the field) \
              must fail loud as ordinary invalid input"
         );
     }
 
-    fn manifest_with(labels: Vec<ManifestLabel>) -> DiagramManifest {
-        DiagramManifest {
-            png: "sha256-ab.png".into(),
-            raster_width: 200,
-            raster_height: 100,
+    fn geometry_with(labels: Vec<GeometryLabel>) -> DiagramGeometry {
+        DiagramGeometry {
+            image: "sha256-ab.png".into(),
+            image_width: 200,
+            image_height: 100,
             logical_width: 100,
             logical_height: 50,
             labels,
         }
     }
 
-    fn ranged(id: &str, text: &str, start: u32, end: u32) -> ManifestLabel {
-        ManifestLabel {
+    fn ranged(id: &str, text: &str, start: u32, end: u32) -> GeometryLabel {
+        GeometryLabel {
             id: id.into(),
             text: text.into(),
             source: LabelSource::Range { start, end },
@@ -2325,7 +2364,7 @@ mod tests {
     fn every_label_range_is_validated_not_only_span_equal_ones() {
         let interior = "flowchart LR\n  A[Löwe] --> B[ok]";
         let a = interior.find("Löwe").unwrap() as u32;
-        let cases: [(ManifestLabel, &str); 4] = [
+        let cases: [(GeometryLabel, &str); 4] = [
             (
                 ranged("B", "ok", 0, interior.len() as u32 + 4),
                 "out of bounds",
@@ -2339,26 +2378,26 @@ mod tests {
             ),
         ];
         for (bad, why) in cases {
-            let manifest = manifest_with(vec![ranged("A", "Löwe", a, a + 5), bad]);
+            let geometry = geometry_with(vec![ranged("A", "Löwe", a, a + 5), bad]);
             assert_eq!(
                 Err(BindFailure::InvalidLabelRange { label: "B".into() }),
-                validate_label_sources(&manifest, interior),
-                "an UNRELATED label's bad range must fail the whole manifest ({why})"
+                validate_label_sources(&geometry, interior),
+                "an UNRELATED label's bad range must fail the whole geometry ({why})"
             );
         }
-        let manifest = manifest_with(vec![
+        let geometry = geometry_with(vec![
             ranged("A", "Löwe", a, a + 5),
             ranged("B", "we]", a + 3, a + 8),
         ]);
         assert!(
             matches!(
-                validate_label_sources(&manifest, interior),
+                validate_label_sources(&geometry, interior),
                 Err(BindFailure::OverlappingLabelRanges { .. })
             ),
-            "overlapping label ranges fail the whole manifest"
+            "overlapping label ranges fail the whole geometry"
         );
-        let manifest = manifest_with(vec![ranged("A", "Löwe", a, a + 5)]);
-        assert_eq!(Ok(()), validate_label_sources(&manifest, interior));
+        let geometry = geometry_with(vec![ranged("A", "Löwe", a, a + 5)]);
+        assert_eq!(Ok(()), validate_label_sources(&geometry, interior));
     }
 
     #[test]
@@ -2366,13 +2405,13 @@ mod tests {
         let interior = "flowchart LR\n  Cache[store] --> B[Cache]";
         let store = interior.find("store").unwrap();
         let second_cache = interior.rfind("Cache").unwrap();
-        let manifest = manifest_with(vec![
+        let geometry = geometry_with(vec![
             ranged("Cache", "store", store as u32, store as u32 + 5),
             ranged("B", "Cache", second_cache as u32, second_cache as u32 + 5),
         ]);
         assert_eq!(
             Ok(1),
-            bind_span(&manifest, 6, second_cache, second_cache + 5),
+            bind_span(&geometry, 6, second_cache, second_cache + 5),
             "the exact range binds its label"
         );
         assert_eq!(
@@ -2380,13 +2419,84 @@ mod tests {
                 line: 6,
                 label: "Cache".into()
             }),
-            bind_span(&manifest, 6, store + 1, store + 4),
+            bind_span(&geometry, 6, store + 1, store + 4),
             "a proper part of a label is incomplete"
         );
         assert_eq!(
             Err(BindFailure::SpanOutsideLabels { line: 6 }),
-            bind_span(&manifest, 6, 15, 20),
+            bind_span(&geometry, 6, 15, 20),
             "the id occurrence of a label's text is not the label"
+        );
+    }
+
+    #[test]
+    fn only_the_bare_rename_signature_licenses_a_bracket_retry() {
+        let label = |id: &str, text: &str| Label {
+            id: id.into(),
+            text: text.into(),
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        };
+        let original = [label("Idle", "Idle"), label("Done", "Finished")];
+        assert!(
+            bare_rename(
+                "Idle",
+                &original,
+                "xq1",
+                &[label("xq1", "xq1"), label("Done", "Finished")]
+            ),
+            "a renamed bare node carries the marker as id AND text, and the \
+             occurrence names a bare label in the original"
+        );
+        assert!(
+            !bare_rename(
+                "Cache",
+                &[label("Cache", "store"), label("B", "Cache")],
+                "xq1",
+                &[label("xq1", "store"), label("B", "Cache")]
+            ),
+            "a labeled node's id occurrence keeps its own text: no retry, or \
+             the retry would bind id bytes the picture never shows"
+        );
+        assert!(
+            !bare_rename("Idle", &original, "xq1", &[label("Idle", "xq1")]),
+            "a relabeled node with an unchanged id is the plain probe's own \
+             assignment, never a retry"
+        );
+        assert!(
+            !bare_rename(
+                "A",
+                &[label("A", "\u{3b2}"), label("X", "A")],
+                "xq1",
+                &[label("A", "\u{3b2}"), label("X", "A"), label("xq1", "xq1")]
+            ),
+            "Codex's P1: a bare ID REFERENCE to a labeled node fabricates the \
+             variant signature, but the occurrence names no bare label in the \
+             ORIGINAL, so no retry; a retry would bind the nonliteral \u{3b2} \
+             label to id bytes"
+        );
+    }
+
+    #[test]
+    fn the_bracket_probe_relabels_the_occurrence_in_place() {
+        let interior = "flowchart LR\n  Idle --> Done[Finished]";
+        let start = interior.find("Idle").unwrap();
+        let probe = SourceProbe {
+            start,
+            end: start + "Idle".len(),
+            source: String::new(),
+        };
+        let bracketed = bracket_probe(interior, &probe, "xq1");
+        assert_eq!(
+            "flowchart LR\n  Idle[xq1] --> Done[Finished]",
+            bracketed.source
+        );
+        assert_eq!(
+            (probe.start, probe.end),
+            (bracketed.start, bracketed.end),
+            "the retry binds the ORIGINAL occurrence bytes, not the variant's"
         );
     }
 

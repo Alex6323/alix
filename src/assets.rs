@@ -639,49 +639,95 @@ fn freeze_diagrams(
             }
         }
     };
+    // Pass B: consume each fence's plain share and plan ONE bracket retry
+    // per occurrence whose plain probe came back with the bare-node rename
+    // signature, so all retries ride one further renderer batch.
+    struct ProbedFreeze<'a> {
+        p: PendingFreeze<'a>,
+        assigned: Vec<(String, usize, usize)>,
+        retries: Vec<diagram::SourceProbe>,
+        failure: Option<String>,
+    }
     let mut probe_results = probe_results.into_iter();
+    let mut probed: Vec<ProbedFreeze> = Vec::new();
     for p in pending {
-        let fence = p.fence;
-        let fingerprint = p.fingerprint;
         let mut assigned: Vec<(String, usize, usize)> = Vec::new();
+        let mut retries: Vec<diagram::SourceProbe> = Vec::new();
         // Exactly this fence's share of the batch, so a failure here can
         // never misalign a later fence's results.
         let results: Vec<Result<String, String>> =
             probe_results.by_ref().take(p.probes.len()).collect();
-        // An OPERATIONAL probe failure (missing output, unreadable render)
-        // must not mint a current stamp: the author's natural retry, re-run
-        // deck init unchanged, would see it and skip the fence forever. A
-        // probe the renderer processed and rejected (a keyword-position
-        // candidate) is an ordinary unassigned occurrence instead.
-        let mut probe_failure = (results.len() < p.probes.len())
-            .then(|| "the probe batch returned too few renders".to_string());
-        if probe_failure.is_none() {
-            for (probe, result) in p.probes.iter().zip(&results) {
-                match (result, p.original.as_ref()) {
-                    (Ok(variant_svg), Some(original)) => match diagram::geometry(variant_svg) {
-                        Ok(variant) => {
-                            if let Some(id) = diagram::probe_assignment(
-                                &original.labels,
-                                &p.marker,
-                                &variant.labels,
-                            ) {
-                                assigned.push((id, probe.start, probe.end));
-                            }
-                        }
-                        Err(error) => {
-                            probe_failure =
-                                Some(format!("a probe render was unreadable: {error:#}"));
-                            break;
-                        }
-                    },
-                    (Err(message), _) if message == diagram::NO_RENDER_OUTPUT => {
-                        probe_failure = Some("a probe render produced no output".to_string());
-                        break;
-                    }
-                    (Err(_), _) | (Ok(_), None) => {}
+        let failure = assign_share(
+            &p.probes,
+            &results,
+            p.original.as_ref(),
+            &p.marker,
+            &mut assigned,
+            |probe, variant| {
+                let occurrence = &p.fence.source[probe.start..probe.end];
+                let original = p.original.as_ref().map(|found| found.labels.as_slice());
+                if diagram::bare_rename(occurrence, original.unwrap_or(&[]), &p.marker, variant) {
+                    retries.push(diagram::bracket_probe(&p.fence.source, probe, &p.marker));
                 }
+            },
+        );
+        if failure.is_some() {
+            retries.clear();
+        }
+        let budget = diagram::PROBE_BUDGET.saturating_sub(p.probes.len());
+        if retries.len() > budget {
+            outcome.warnings.push(format!(
+                "diagram {}: bare-node retries over the probe budget; unretried labels stay unbindable",
+                p.fingerprint
+            ));
+            retries.truncate(budget);
+        }
+        probed.push(ProbedFreeze {
+            p,
+            assigned,
+            retries,
+            failure,
+        });
+    }
+    let retry_sources: Vec<String> = probed
+        .iter()
+        .flat_map(|f| f.retries.iter().map(|probe| probe.source.clone()))
+        .collect();
+    let retry_results = if retry_sources.is_empty() {
+        Vec::new()
+    } else {
+        match diagram::render_batch(
+            command,
+            Some(family),
+            &retry_sources,
+            diagram::RENDER_TIMEOUT,
+        ) {
+            Ok(results) => results,
+            Err(error) => {
+                outcome.warnings.push(format!(
+                    "diagram bare-node retries not probed (their labels stay unbindable): {error:#}"
+                ));
+                Vec::new()
             }
         }
+    };
+    let mut retry_results = retry_results.into_iter();
+    for f in probed {
+        let fence = f.p.fence;
+        let fingerprint = f.p.fingerprint;
+        let mut assigned = f.assigned;
+        let results: Vec<Result<String, String>> =
+            retry_results.by_ref().take(f.retries.len()).collect();
+        let probe_failure = f.failure.or_else(|| {
+            assign_share(
+                &f.retries,
+                &results,
+                f.p.original.as_ref(),
+                &f.p.marker,
+                &mut assigned,
+                |_, _| {},
+            )
+        });
         if let Some(reason) = probe_failure {
             outcome.warnings.push(format!(
                 "diagram {fingerprint} not frozen: {reason}; re-run `alix deck init` when the renderer is healthy"
@@ -689,7 +735,7 @@ fn freeze_diagrams(
             continue;
         }
         let sources = diagram::collate_assignments(&assigned);
-        let frozen = match diagram::freeze_fence(&p.svg, family, &sources) {
+        let frozen = match diagram::freeze_fence(&f.p.svg, family, &sources) {
             Ok(frozen) => frozen,
             Err(error) => {
                 outcome
@@ -698,17 +744,17 @@ fn freeze_diagrams(
                 continue;
             }
         };
-        let manifest_bytes =
-            serde_json::to_vec(&frozen.manifest).map_err(|source| AssetError::Io {
+        let geometry_bytes =
+            serde_json::to_vec(&frozen.geometry).map_err(|source| AssetError::Io {
                 path: workspace_root.to_path_buf(),
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
             })?;
-        write_object(workspace_root, deck_id, &frozen.png, "png")?;
-        let manifest_object = write_object(workspace_root, deck_id, &manifest_bytes, "json")?;
+        write_object(workspace_root, deck_id, &frozen.image, "png")?;
+        let geometry_object = write_object(workspace_root, deck_id, &geometry_bytes, "json")?;
         let stamp = format!(
-            "<!-- diagram: fingerprint: {fingerprint} asset: {} manifest: {} -->",
-            frozen.manifest.png,
-            file_name(&manifest_object)?,
+            "<!-- diagram: fingerprint: {fingerprint} asset: {} geometry: {} -->",
+            frozen.geometry.image,
+            file_name(&geometry_object)?,
         );
         match &fence.stamp {
             Some((range, _)) => outcome.replacements.push((range.clone(), stamp)),
@@ -740,6 +786,47 @@ fn freeze_diagrams(
         outcome.frozen += 1;
     }
     Ok(outcome)
+}
+
+#[cfg(feature = "full")]
+/// One fence's share of a probe batch. An OPERATIONAL failure (missing
+/// output, unreadable render, short batch) returns Some and must skip the
+/// stamp: the author's natural retry, re-running deck init unchanged, would
+/// see a current stamp and skip the fence forever. A probe the renderer
+/// processed and REJECTED is an ordinary unassigned occurrence handed to
+/// `on_rejected` (pass 1 plans bracket retries there; pass 2 drops it).
+fn assign_share(
+    probes: &[crate::diagram::SourceProbe],
+    results: &[Result<String, String>],
+    original: Option<&crate::diagram::Geometry>,
+    marker: &str,
+    assigned: &mut Vec<(String, usize, usize)>,
+    mut on_rejected: impl FnMut(&crate::diagram::SourceProbe, &[crate::diagram::Label]),
+) -> Option<String> {
+    if results.len() < probes.len() {
+        return Some("the probe batch returned too few renders".to_string());
+    }
+    for (probe, result) in probes.iter().zip(results) {
+        match (result, original) {
+            (Ok(variant_svg), Some(original)) => match crate::diagram::geometry(variant_svg) {
+                Ok(variant) => {
+                    if let Some(id) =
+                        crate::diagram::probe_assignment(&original.labels, marker, &variant.labels)
+                    {
+                        assigned.push((id, probe.start, probe.end));
+                    } else {
+                        on_rejected(probe, &variant.labels);
+                    }
+                }
+                Err(error) => return Some(format!("a probe render was unreadable: {error:#}")),
+            },
+            (Err(message), _) if message == crate::diagram::NO_RENDER_OUTPUT => {
+                return Some("a probe render produced no output".to_string());
+            }
+            (Err(_), _) | (Ok(_), None) => {}
+        }
+    }
+    None
 }
 
 // A URL source grounds the exam and tutor but holds no freezable bytes;
@@ -873,11 +960,11 @@ fn resolve_image_source(workspace_root: &Path, source: &str) -> Result<PathBuf, 
 }
 
 /// Load-time resolution of diagram stamps: shape checks only (both objects
-/// present, manifest parses, names agree); byte verification is doctor's.
+/// present, geometry parses, names agree); byte verification is doctor's.
 /// Anything unresolved simply stays a code fence at review, by design.
 /// Resolves each card's diagram stamps against the deck's owned objects and
 /// returns the deck's load diagnostics: a stamped diagram that cannot
-/// resolve (or whose manifest fails range validation against the fence
+/// resolve (or whose geometry fails range validation against the fence
 /// interior) falls back to source at review, and the ONE generic warning
 /// line here is what makes that fallback visible in the ordinary session
 /// journey instead of silent. Standalone decks resolve nothing and warn
@@ -914,27 +1001,27 @@ pub fn resolve_diagrams(
                 unresolved.insert(stamp.fingerprint.clone());
                 continue;
             }
-            let Ok(bytes) = std::fs::read(owned.join(&stamp.manifest)) else {
+            let Ok(bytes) = std::fs::read(owned.join(&stamp.geometry)) else {
                 unresolved.insert(stamp.fingerprint.clone());
                 continue;
             };
-            let Ok(manifest) = serde_json::from_slice::<crate::diagram::DiagramManifest>(&bytes)
+            let Ok(geometry) = serde_json::from_slice::<crate::diagram::DiagramGeometry>(&bytes)
             else {
                 unresolved.insert(stamp.fingerprint.clone());
                 continue;
             };
-            if manifest.png != stamp.asset {
+            if geometry.image != stamp.asset {
                 unresolved.insert(stamp.fingerprint.clone());
                 continue;
             }
             card.resolved_diagrams.push(crate::card::ResolvedDiagram {
                 fingerprint: stamp.fingerprint.clone(),
                 png,
-                manifest,
+                geometry,
             });
         }
     }
-    // A manifest whose ranges fail validation against the authored interior
+    // A geometry whose ranges fail validation against the authored interior
     // is a corrupt artifact: unresolve it everywhere so nothing downstream
     // can slice with it, and say so once.
     let mut invalid: std::collections::BTreeSet<String> = Default::default();
@@ -942,7 +1029,7 @@ pub fn resolve_diagrams(
         for fence in &card.answer_fences {
             for resolved in &card.resolved_diagrams {
                 if resolved.fingerprint == fence.fingerprint
-                    && crate::diagram::validate_label_sources(&resolved.manifest, &fence.interior)
+                    && crate::diagram::validate_label_sources(&resolved.geometry, &fence.interior)
                         .is_err()
                 {
                     invalid.insert(fence.fingerprint.clone());
@@ -989,7 +1076,7 @@ pub fn validate_at_root(deck: &Deck, root: &Path) -> Result<(), AssetError> {
             }
         }
         for stamp in &card.diagrams {
-            for name in [&stamp.asset, &stamp.manifest] {
+            for name in [&stamp.asset, &stamp.geometry] {
                 let path = owned.join(name);
                 if !path.is_file() {
                     return Err(AssetError::MissingAsset(path));
@@ -1880,10 +1967,10 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         let stamp = &deck.cards[0].diagrams[0];
         let owned = directory.path().join("assets/deck-deck1");
-        let manifest: crate::diagram::DiagramManifest =
-            serde_json::from_slice(&std::fs::read(owned.join(&stamp.manifest)).unwrap()).unwrap();
+        let geometry: crate::diagram::DiagramGeometry =
+            serde_json::from_slice(&std::fs::read(owned.join(&stamp.geometry)).unwrap()).unwrap();
         let range_of = |id: &str| {
-            let label = manifest.labels.iter().find(|label| label.id == id).unwrap();
+            let label = geometry.labels.iter().find(|label| label.id == id).unwrap();
             match label.source {
                 crate::diagram::LabelSource::Range { start, end } => (start as usize, end as usize),
                 crate::diagram::LabelSource::Unbindable => panic!("{id} unbindable"),
@@ -1903,9 +1990,209 @@ mod tests {
         assert_eq!(occurrence("reads", 1), range_of("L_C_B_0"));
     }
 
+    /// The bracket-retry law, instrumented: a bare node's plain probe
+    /// renames it (rejected by the unchanged-id law), so pass 2 re-probes
+    /// the same occurrence as `Idle[marker]`, relabeling in place; the
+    /// persisted geometry then binds the bare occurrence without the
+    /// author rewriting the fence, on one extra render for the one bare
+    /// occurrence.
+    #[test]
+    fn a_bare_node_binds_through_the_bracket_retry() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let interior = "flowchart LR\n  Idle --> Done[Finished]";
+        let path = diagram_deck(
+            directory.path(),
+            &format!("## q\n```mermaid\n{interior}\n```\nanswer\n"),
+        );
+        let node = |id: &str, text: &str, ty: u32| {
+            format!(
+                r##"<g class="node" id="d1-flowchart-{id}-0" transform="translate(10,{ty})"><rect class="label-container" x="0" y="0" width="200" height="40" fill="none"/><g class="label"><text x="10" y="28">{text}</text></g></g>"##
+            )
+        };
+        let svg_of = |idle_id: &str, idle_text: &str, done_text: &str| {
+            format!(
+                r##"<svg id="d1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120"><style>#d1{{font-family:DejaVu Sans;font-size:16px;fill:#333;}}</style>{}{}</svg>"##,
+                node(idle_id, idle_text, 10),
+                node("Done", done_text, 60),
+            )
+        };
+        let main = format!(
+            "<!-- {{\"id\": 1}} -->\n{}",
+            svg_of("Idle", "Idle", "Finished")
+        );
+        // Plain probes in source order: Idle (renames the bare node), then
+        // Finished (relabels Done in place, so it assigns directly).
+        let plain = [
+            svg_of("xq1", "xq1", "Finished"),
+            svg_of("Idle", "Idle", "xq1"),
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, svg)| format!("<!-- {{\"id\": {}}} -->\n{svg}", index + 1))
+        .collect::<Vec<_>>()
+        .join("\n");
+        let retry = format!(
+            "<!-- {{\"id\": 1}} -->\n{}",
+            svg_of("Idle", "xq1", "Finished")
+        );
+        let out1 = directory.path().join("sekien-out1");
+        let out2 = directory.path().join("sekien-out2");
+        let out3 = directory.path().join("sekien-out3");
+        std::fs::write(&out1, main).unwrap();
+        std::fs::write(&out2, plain).unwrap();
+        std::fs::write(&out3, retry).unwrap();
+        let counts = directory.path().join("render-counts");
+        let cli = crate::testutil::fake_cli(
+            directory.path(),
+            &format!(
+                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts}); if [ \"$n\" = \"1\" ]; then cat {out1}; elif [ \"$n\" = \"2\" ]; then cat {out2}; else cat {out3}; fi",
+                counts = counts.display(),
+                out1 = out1.display(),
+                out2 = out2.display(),
+                out3 = out3.display(),
+            ),
+        );
+
+        let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        assert_eq!(1, report.diagrams, "{:?}", report.diagram_warnings);
+
+        let recorded: Vec<usize> = std::fs::read_to_string(&counts)
+            .unwrap()
+            .lines()
+            .map(|line| line.trim().parse().unwrap())
+            .collect();
+        assert_eq!(
+            vec![0, 1, 0],
+            recorded,
+            "NUL separators per batch: the fence render, 2 plain probes (1 \
+             separator), then exactly ONE bracket retry for the one bare \
+             occurrence"
+        );
+
+        let deck = Deck::load(&path).unwrap();
+        let stamp = &deck.cards[0].diagrams[0];
+        let owned = directory.path().join("assets/deck-deck1");
+        let geometry: crate::diagram::DiagramGeometry =
+            serde_json::from_slice(&std::fs::read(owned.join(&stamp.geometry)).unwrap()).unwrap();
+        let range_of = |id: &str| {
+            let label = geometry.labels.iter().find(|label| label.id == id).unwrap();
+            match label.source {
+                crate::diagram::LabelSource::Range { start, end } => (start as usize, end as usize),
+                crate::diagram::LabelSource::Unbindable => panic!("{id} unbindable"),
+            }
+        };
+        let start = interior.find("Idle").unwrap();
+        assert_eq!((start, start + "Idle".len()), range_of("Idle"));
+        let start = interior.find("Finished").unwrap();
+        assert_eq!((start, start + "Finished".len()), range_of("Done"));
+    }
+
+    #[test]
+    fn a_labeled_node_reference_cannot_license_a_bare_retry() {
+        let _guard = crate::testutil::exec_lock();
+        let directory = workspace();
+        let interior = "flowchart LR\n  A[&beta;] --> X[A]\n  A --> X";
+        let path = diagram_deck(
+            directory.path(),
+            &format!("## q\n```mermaid\n{interior}\n```\nanswer\n"),
+        );
+        let node = |id: &str, text: &str, y: u32| {
+            format!(
+                r##"<g class="node" id="d1-flowchart-{id}-0" transform="translate(10,{y})"><rect class="label-container" x="0" y="0" width="200" height="40" fill="none"/><g class="label"><text x="10" y="28">{text}</text></g></g>"##
+            )
+        };
+        let svg_of = |labels: &[(&str, &str)]| {
+            let nodes = labels
+                .iter()
+                .enumerate()
+                .map(|(index, (id, text))| node(id, text, 10 + index as u32 * 50))
+                .collect::<String>();
+            format!(
+                r##"<svg id="d1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 180"><style>#d1{{font-family:DejaVu Sans;font-size:16px;fill:#333;}}</style>{nodes}</svg>"##
+            )
+        };
+        let main = format!(
+            "<!-- {{\"id\": 1}} -->\n{}",
+            svg_of(&[("A", "β"), ("X", "A")])
+        );
+        let plain = [
+            svg_of(&[("xq1", "β"), ("X", "A"), ("A", "A")]),
+            svg_of(&[("A", "β"), ("X", "xq1")]),
+            svg_of(&[("A", "β"), ("X", "A"), ("xq1", "xq1")]),
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, svg)| format!("<!-- {{\"id\": {}}} -->\n{svg}", index + 1))
+        .collect::<Vec<_>>()
+        .join("\n");
+        let retry = format!(
+            "<!-- {{\"id\": 1}} -->\n{}",
+            svg_of(&[("A", "xq1"), ("X", "A")])
+        );
+        let out1 = directory.path().join("sekien-out1");
+        let out2 = directory.path().join("sekien-out2");
+        let out3 = directory.path().join("sekien-out3");
+        std::fs::write(&out1, main).unwrap();
+        std::fs::write(&out2, plain).unwrap();
+        std::fs::write(&out3, retry).unwrap();
+        let counts = directory.path().join("render-counts");
+        let cli = crate::testutil::fake_cli(
+            directory.path(),
+            &format!(
+                "c=$(cat | tr -cd '\\000' | wc -c); echo $c >> {counts}; n=$(wc -l < {counts}); if [ \"$n\" = \"1\" ]; then cat {out1}; elif [ \"$n\" = \"2\" ]; then cat {out2}; else cat {out3}; fi",
+                counts = counts.display(),
+                out1 = out1.display(),
+                out2 = out2.display(),
+                out3 = out3.display(),
+            ),
+        );
+
+        let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+        assert_eq!(1, report.diagrams, "{:?}", report.diagram_warnings);
+
+        let deck = Deck::load(&path).unwrap();
+        let stamp = &deck.cards[0].diagrams[0];
+        let owned = directory.path().join("assets/deck-deck1");
+        let geometry: crate::diagram::DiagramGeometry =
+            serde_json::from_slice(&std::fs::read(owned.join(&stamp.geometry)).unwrap()).unwrap();
+        let a = geometry
+            .labels
+            .iter()
+            .find(|label| label.id == "A")
+            .unwrap();
+        assert_eq!(
+            crate::diagram::LabelSource::Unbindable,
+            a.source,
+            "A's visible β is not literal source text, so a later A reference must not bind it"
+        );
+        let x = geometry
+            .labels
+            .iter()
+            .find(|label| label.id == "X")
+            .unwrap();
+        let start = interior.find("X[A]").unwrap() + 2;
+        assert_eq!(
+            crate::diagram::LabelSource::Range {
+                start: start as u32,
+                end: start as u32 + 1,
+            },
+            x.source
+        );
+        assert_eq!(
+            vec![0, 2],
+            std::fs::read_to_string(&counts)
+                .unwrap()
+                .lines()
+                .map(|line| line.trim().parse::<usize>().unwrap())
+                .collect::<Vec<_>>(),
+            "a labeled node reference does not schedule a bare-node retry"
+        );
+    }
+
     /// The load channel for a stamped diagram that cannot serve: an
     /// artifact missing the per-label `source` key fails to parse as
-    /// ordinary invalid input, a parseable manifest with a hostile range
+    /// ordinary invalid input, a parseable geometry with a hostile range
     /// unresolves the same way, and either surfaces ONE generic warning at
     /// ordinary deck load while a healthy freeze loads quietly.
     #[test]
@@ -1931,8 +2218,8 @@ mod tests {
         );
         let stamp = healthy.cards[0].diagrams[0].clone();
         let owned = directory.path().join("assets/deck-deck1");
-        let manifest_path = owned.join(&stamp.manifest);
-        let original = std::fs::read_to_string(&manifest_path).unwrap();
+        let geometry_path = owned.join(&stamp.geometry);
+        let original = std::fs::read_to_string(&geometry_path).unwrap();
 
         let old_shape = {
             let mut value: serde_json::Value = serde_json::from_str(&original).unwrap();
@@ -1941,11 +2228,11 @@ mod tests {
             }
             serde_json::to_string(&value).unwrap()
         };
-        std::fs::write(&manifest_path, old_shape).unwrap();
+        std::fs::write(&geometry_path, old_shape).unwrap();
         let deck = Deck::load(&path).unwrap();
         assert!(
             deck.cards[0].resolved_diagrams.is_empty(),
-            "a manifest without label sources is ordinary invalid input"
+            "a geometry without label sources is ordinary invalid input"
         );
         assert_eq!(
             vec![
@@ -1961,7 +2248,7 @@ mod tests {
                 serde_json::json!({"kind": "range", "start": 0, "end": 999999});
             serde_json::to_string(&value).unwrap()
         };
-        std::fs::write(&manifest_path, hostile).unwrap();
+        std::fs::write(&geometry_path, hostile).unwrap();
         let deck = Deck::load(&path).unwrap();
         assert!(
             deck.cards[0].resolved_diagrams.is_empty(),
@@ -2167,18 +2454,18 @@ mod tests {
         let stamp = &deck.cards[0].diagrams[0];
         assert_eq!(fingerprint, stamp.fingerprint);
         let owned = directory.path().join("assets/deck-deck1");
-        let manifest_bytes = std::fs::read(owned.join(&stamp.manifest)).unwrap();
-        let manifest: crate::diagram::DiagramManifest =
-            serde_json::from_slice(&manifest_bytes).unwrap();
+        let geometry_bytes = std::fs::read(owned.join(&stamp.geometry)).unwrap();
+        let geometry: crate::diagram::DiagramGeometry =
+            serde_json::from_slice(&geometry_bytes).unwrap();
         assert_eq!(
-            stamp.asset, manifest.png,
-            "the stamp and manifest agree on the raster"
+            stamp.asset, geometry.image,
+            "the stamp and geometry agree on the raster"
         );
         assert!(owned.join(&stamp.asset).is_file(), "the PNG object exists");
-        assert_eq!(5, manifest.labels.len(), "three nodes and two edge labels");
+        assert_eq!(5, geometry.labels.len(), "three nodes and two edge labels");
         assert_eq!(
-            (manifest.logical_width * 2, manifest.logical_height * 2),
-            (manifest.raster_width, manifest.raster_height),
+            (geometry.logical_width * 2, geometry.logical_height * 2),
+            (geometry.image_width, geometry.image_height),
             "raster is the logical size at ZOOM"
         );
         validate_member(&deck).expect("both objects verify");
@@ -2417,7 +2704,7 @@ mod tests {
     }
 
     /// Both halves of the stamped pair ride the existence sweep: losing
-    /// either the raster or the manifest is a validation error, not a
+    /// either the raster or the geometry is a validation error, not a
     /// surprise at review time.
     /// Direct freeze_diagrams-level law (the citation rewrite above it
     /// still normalizes whole decks, the named follow-up): a CRLF text's
@@ -2482,8 +2769,8 @@ mod tests {
     }
 
     /// The load-time resolution law: a freshly frozen deck loads with its
-    /// stamp RESOLVED (both objects present, manifest naming the raster),
-    /// and a manifest that stops naming the raster unresolves the stamp so
+    /// stamp RESOLVED (both objects present, geometry naming the raster),
+    /// and a geometry that stops naming the raster unresolves the stamp so
     /// review falls back to the fence, never serves a mismatched pair.
     #[test]
     fn a_frozen_deck_loads_with_resolved_diagrams_and_a_mismatch_unresolves() {
@@ -2508,28 +2795,28 @@ mod tests {
             resolved.png.is_file(),
             "the resolved path points at the raster"
         );
-        assert_eq!(resolved.manifest.png, deck.cards[0].diagrams[0].asset);
+        assert_eq!(resolved.geometry.image, deck.cards[0].diagrams[0].asset);
         assert_eq!(
             (
-                resolved.manifest.logical_width * 2,
-                resolved.manifest.logical_height * 2
+                resolved.geometry.logical_width * 2,
+                resolved.geometry.logical_height * 2
             ),
             (
-                resolved.manifest.raster_width,
-                resolved.manifest.raster_height
+                resolved.geometry.image_width,
+                resolved.geometry.image_height
             ),
         );
 
         let owned = directory.path().join("assets/deck-deck1");
-        let manifest_path = owned.join(&deck.cards[0].diagrams[0].manifest);
-        let mut manifest: crate::diagram::DiagramManifest =
-            serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
-        manifest.png = format!("sha256-{}.png", "b".repeat(64));
-        std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let geometry_path = owned.join(&deck.cards[0].diagrams[0].geometry);
+        let mut geometry: crate::diagram::DiagramGeometry =
+            serde_json::from_slice(&std::fs::read(&geometry_path).unwrap()).unwrap();
+        geometry.image = format!("sha256-{}.png", "b".repeat(64));
+        std::fs::write(&geometry_path, serde_json::to_vec(&geometry).unwrap()).unwrap();
         let deck = Deck::load(&path).unwrap();
         assert!(
             deck.cards[0].resolved_diagrams.is_empty(),
-            "a manifest naming a different raster must not resolve"
+            "a geometry naming a different raster must not resolve"
         );
     }
 
@@ -2551,7 +2838,7 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         let stamp = deck.cards[0].diagrams[0].clone();
         let owned = directory.path().join("assets/deck-deck1");
-        for name in [&stamp.asset, &stamp.manifest] {
+        for name in [&stamp.asset, &stamp.geometry] {
             let object = owned.join(name);
             let bytes = std::fs::read(&object).unwrap();
             std::fs::remove_file(&object).unwrap();

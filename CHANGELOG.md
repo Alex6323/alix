@@ -10,7 +10,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Mermaid diagrams render into decks: a ```` ```mermaid ```` fence in a
   workspace member freezes at `alix deck init` time into a deck-owned PNG
-  plus a label manifest (rendering shells out to the optional `sekien`
+  plus a label-geometry file (rendering shells out to the optional `sekien`
   CLI; without it the deck still initializes and warns). At review the
   rendered diagram appears in the fence's own position on every client,
   and an unfrozen or stale fence falls back to its source in place. The
@@ -25,7 +25,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `cover:` span over a diagram label becomes a region mask ON the
   rendered diagram (the asked label's box lifts when the answer shows,
   sibling and cover boxes stay), with accessible text that names only
-  the visible labels; a span must cover one complete label, and a span
+  the visible labels; a span must cover one complete label (a bare node,
+  whose label is its id, masks like any other), and a span
   that does not bind keeps the card on its masked-source fallback. A
   deck whose stamped diagram cannot serve says so once when a session
   opens (web and mobile) instead of silently showing source.

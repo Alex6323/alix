@@ -1657,14 +1657,14 @@ mod tests {
         crate::parser::parse_str("t.md", text).unwrap()
     }
 
-    fn masked_fence_manifest(
-        extra: Vec<crate::diagram::ManifestLabel>,
+    fn masked_fence_geometry(
+        extra: Vec<crate::diagram::GeometryLabel>,
     ) -> crate::card::ResolvedDiagram {
         let interior = "flowchart LR\n  Cache[store] --> B[Cache]";
         let store = interior.find("store").unwrap() as u32;
         let cache = interior.rfind("Cache").unwrap() as u32;
         let label =
-            |id: &str, text: &str, start: u32, end: u32, y: u32| crate::diagram::ManifestLabel {
+            |id: &str, text: &str, start: u32, end: u32, y: u32| crate::diagram::GeometryLabel {
                 id: id.into(),
                 text: text.into(),
                 source: crate::diagram::LabelSource::Range { start, end },
@@ -1683,10 +1683,10 @@ mod tests {
         crate::card::ResolvedDiagram {
             fingerprint: crate::diagram::fingerprint(interior),
             png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
-            manifest: crate::diagram::DiagramManifest {
-                png: "sha256-aa.png".to_string(),
-                raster_width: 376,
-                raster_height: 228,
+            geometry: crate::diagram::DiagramGeometry {
+                image: "sha256-aa.png".to_string(),
+                image_width: 376,
+                image_height: 228,
                 logical_width: 188,
                 logical_height: 114,
                 labels,
@@ -1702,7 +1702,7 @@ mod tests {
             .iter_mut()
             .find(|card| card.back == ["Cache"])
             .expect("the card asking the Cache label");
-        card.resolved_diagrams = vec![masked_fence_manifest(Vec::new())];
+        card.resolved_diagrams = vec![masked_fence_geometry(Vec::new())];
         let view = CardView::from(&*card);
         let NoteUnit::Diagram {
             regions,
@@ -1745,7 +1745,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unbound_span_or_invalid_manifest_falls_back_to_masked_source() {
+    fn an_unbound_span_or_invalid_geometry_falls_back_to_masked_source() {
         // The span binds the stream's FIRST occurrence of `Cache`: the node
         // id, which is no label's source range.
         let text = concat!(
@@ -1758,7 +1758,7 @@ mod tests {
         );
         let mut cards = crate::parser::parse_str("t.md", text).unwrap();
         let card = &mut cards[0];
-        card.resolved_diagrams = vec![masked_fence_manifest(Vec::new())];
+        card.resolved_diagrams = vec![masked_fence_geometry(Vec::new())];
         let view = CardView::from(&*card);
         assert!(
             matches!(&view.context_units[0], NoteUnit::Code { .. }),
@@ -1766,14 +1766,14 @@ mod tests {
             view.context_units
         );
 
-        // An UNRELATED label's hostile range fails the whole manifest before
+        // An UNRELATED label's hostile range fails the whole geometry before
         // anything slices, even though the asked span's own label is fine.
         let mut cards = masked_fence_deck();
         let card = cards
             .iter_mut()
             .find(|card| card.back == ["Cache"])
             .expect("the card asking the Cache label");
-        card.resolved_diagrams = vec![masked_fence_manifest(vec![crate::diagram::ManifestLabel {
+        card.resolved_diagrams = vec![masked_fence_geometry(vec![crate::diagram::GeometryLabel {
             id: "X".into(),
             text: "ghost".into(),
             source: crate::diagram::LabelSource::Range {

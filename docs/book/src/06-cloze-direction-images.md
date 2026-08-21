@@ -275,7 +275,7 @@ stamp comment lands on the line after the fence, tying the fence text to
 those two frozen files:
 
 ```
-<!-- diagram: fingerprint: xxh64-… asset: sha256-….png manifest: sha256-….json -->
+<!-- diagram: fingerprint: xxh64-… asset: sha256-….png geometry: sha256-….json -->
 ```
 
 From then on every client shows the image, including the mobile app
@@ -303,7 +303,7 @@ the same thing: the fence displays as a code block instead of a picture;
 on a masking card (below) the hidden text inside it is blanked, so the
 card stays reviewable either way. When a session opens on a deck with a
 stamped diagram that cannot be loaded (a stale stamp, a missing frozen
-file, or a manifest that does not read back), the app shows a one-line
+file, or a geometry file that does not read back), the app shows a one-line
 warning so the fallback is never mistaken for a successful freeze. One
 kind of damage is deliberately outside that check: loading verifies
 shapes, not bytes, so a frozen file whose content was corrupted in place
@@ -362,11 +362,12 @@ be masked; node ids, arrows, and keywords never can, and a span whose
 hidden text lands on one is reported by `alix doctor` while the card falls
 back to masked source (reviewable, just not drawn). Where the same text
 appears more than once, `occurrence=` picks which one, counted over the
-block like any span. Two kinds of label cannot be masked for now, and
-doctor says so when a span targets them: a bare node like `A`, whose label
-is its id (write `A[A]` to give it a maskable label), and labels whose
-rendered text is not literally in the source (multi-line `<br/>` labels,
-HTML entities).
+block like any span. A bare node like `A`, whose label is its id, masks
+like any other label. Some labels still cannot be masked, and doctor says
+so when a span targets them: labels whose rendered text is not literally
+in the source (multi-line `<br/>` labels, HTML entities), and a bare node
+the fence references on more than one line, where which occurrence is
+"the" label is ambiguous (write `A[A]` once to settle it).
 
 ## Source citations
 

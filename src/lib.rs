@@ -31,7 +31,7 @@ pub mod deck;
 pub mod deck_transfer;
 pub mod dedup;
 pub mod depth;
-// The fence grammar, fingerprint, and manifest types are lean (the mobile
+// The fence grammar, fingerprint, and geometry types are lean (the mobile
 // core reads frozen diagrams); only the renderer half is full-gated inside.
 pub mod diagram;
 #[cfg(feature = "full")]

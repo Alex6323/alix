@@ -2144,7 +2144,7 @@ fn carddto_masked_context_diagram_wire_shape() {
     let store = interior.find("store").unwrap() as u32;
     let cache = interior.rfind("Cache").unwrap() as u32;
     let label =
-        |id: &str, text: &str, start: u32, end: u32, y: u32| crate::diagram::ManifestLabel {
+        |id: &str, text: &str, start: u32, end: u32, y: u32| crate::diagram::GeometryLabel {
             id: id.into(),
             text: text.into(),
             source: crate::diagram::LabelSource::Range { start, end },
@@ -2158,10 +2158,10 @@ fn carddto_masked_context_diagram_wire_shape() {
     card.resolved_diagrams.push(crate::card::ResolvedDiagram {
         fingerprint: crate::diagram::fingerprint(interior),
         png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
-        manifest: crate::diagram::DiagramManifest {
-            png: "sha256-aa.png".to_string(),
-            raster_width: 376,
-            raster_height: 228,
+        geometry: crate::diagram::DiagramGeometry {
+            image: "sha256-aa.png".to_string(),
+            image_width: 376,
+            image_height: 228,
             logical_width: 188,
             logical_height: 114,
             labels: vec![
@@ -2222,10 +2222,10 @@ fn diagram_card() -> crate::card::Card {
     card.resolved_diagrams.push(crate::card::ResolvedDiagram {
         fingerprint: crate::diagram::fingerprint(source),
         png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
-        manifest: crate::diagram::DiagramManifest {
-            png: "sha256-aa.png".to_string(),
-            raster_width: 376,
-            raster_height: 228,
+        geometry: crate::diagram::DiagramGeometry {
+            image: "sha256-aa.png".to_string(),
+            image_width: 376,
+            image_height: 228,
             logical_width: 188,
             logical_height: 114,
             labels: Vec::new(),

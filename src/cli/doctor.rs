@@ -300,7 +300,7 @@ fn deck_diagram_findings(
                 path.display()
             )),
             Some(true) => {
-                if let Err(error) = manifest_agreement(path, deck_token, stamp) {
+                if let Err(error) = geometry_agreement(path, deck_token, stamp) {
                     report.error(format!(
                         "{}:{}: frozen diagram is inconsistent: {error:#}",
                         path.display(),
@@ -324,8 +324,8 @@ fn deck_diagram_findings(
         ));
     }
     // Review silently falls back on a span that cannot project; doctor is
-    // the loud channel and judges from the STAMPED manifest itself, so a
-    // manifest the load path already refused still gets its precise
+    // the loud channel and judges from the STAMPED geometry itself, so a
+    // geometry the load path already refused still gets its precise
     // finding. Records ride every card of a block, so findings dedupe.
     let mut bind_findings: std::collections::BTreeSet<String> = Default::default();
     for card in cards {
@@ -337,12 +337,12 @@ fn deck_diagram_findings(
             else {
                 continue;
             };
-            let Ok(manifest) = stamped_manifest(path, deck_token, stamp) else {
-                // manifest_agreement above already speaks for unreadable or
+            let Ok(geometry) = stamped_geometry(path, deck_token, stamp) else {
+                // geometry_agreement above already speaks for unreadable or
                 // disagreeing objects.
                 continue;
             };
-            if let Err(failure) = alix::diagram::validate_label_sources(&manifest, &fence.interior)
+            if let Err(failure) = alix::diagram::validate_label_sources(&geometry, &fence.interior)
             {
                 bind_findings.insert(format!(
                     "{}: frozen diagram {}: {failure}; re-run `alix deck init {}` to re-freeze",
@@ -354,7 +354,7 @@ fn deck_diagram_findings(
             }
             for span in &fence.spans {
                 if let Err(failure) =
-                    alix::diagram::bind_span(&manifest, span.line, span.start, span.end)
+                    alix::diagram::bind_span(&geometry, span.line, span.start, span.end)
                 {
                     bind_findings.insert(format!("{}: {failure}", path.display()));
                 }
@@ -366,21 +366,21 @@ fn deck_diagram_findings(
     }
 }
 
-fn stamped_manifest(
+fn stamped_geometry(
     path: &Path,
     deck_id: &str,
     stamp: &alix::card::DiagramStamp,
-) -> anyhow::Result<alix::diagram::DiagramManifest> {
+) -> anyhow::Result<alix::diagram::DiagramGeometry> {
     let root = workspace::root_for_deck(path).context("not a workspace member")?;
     let owned = alix::assets::deck_dir(&root, deck_id)?;
-    let bytes = std::fs::read(owned.join(&stamp.manifest))?;
+    let bytes = std::fs::read(owned.join(&stamp.geometry))?;
     Ok(serde_json::from_slice(&bytes)?)
 }
 
 /// The stamp names the raster twice: directly (`asset:`) and through the
-/// manifest's `png` field. Both routes must name the same object, and the
-/// manifest must parse, or serving would pair a raster with the wrong map.
-fn manifest_agreement(
+/// geometry's `image` field. Both routes must name the same object, and the
+/// geometry must parse, or serving would pair a raster with the wrong map.
+fn geometry_agreement(
     path: &Path,
     deck_id: &str,
     stamp: &alix::card::DiagramStamp,
@@ -388,22 +388,22 @@ fn manifest_agreement(
     let root = workspace::root_for_deck(path).context("not a workspace member")?;
     let owned = alix::assets::deck_dir(&root, deck_id)?;
     if !owned.join(&stamp.asset).is_file() {
-        anyhow::bail!("raster `{}` is missing from the deck's assets", stamp.asset);
+        anyhow::bail!("image `{}` is missing from the deck's assets", stamp.asset);
     }
     // Content addressing is only a guarantee if someone re-hashes: existence
     // and name agreement pass for an object whose bytes were replaced.
-    for name in [&stamp.asset, &stamp.manifest] {
+    for name in [&stamp.asset, &stamp.geometry] {
         alix::assets::verify_object(&owned.join(name))
             .with_context(|| format!("object `{name}`"))?;
     }
-    let bytes = std::fs::read(owned.join(&stamp.manifest))
-        .with_context(|| format!("manifest `{}` cannot be read", stamp.manifest))?;
-    let manifest: alix::diagram::DiagramManifest = serde_json::from_slice(&bytes)
-        .with_context(|| format!("manifest `{}` does not parse", stamp.manifest))?;
-    if manifest.png != stamp.asset {
+    let bytes = std::fs::read(owned.join(&stamp.geometry))
+        .with_context(|| format!("geometry `{}` cannot be read", stamp.geometry))?;
+    let geometry: alix::diagram::DiagramGeometry = serde_json::from_slice(&bytes)
+        .with_context(|| format!("geometry `{}` does not parse", stamp.geometry))?;
+    if geometry.image != stamp.asset {
         anyhow::bail!(
-            "the manifest names raster `{}` but the stamp says `{}`",
-            manifest.png,
+            "the geometry names image `{}` but the stamp says `{}`",
+            geometry.image,
             stamp.asset
         );
     }
