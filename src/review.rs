@@ -68,6 +68,15 @@ pub struct CardView {
     pub front_runs: Vec<InlineRun>,
     #[serde(default)]
     pub front_units: Option<Vec<NoteUnit>>,
+    /// The card's section: its `# ` heading and that section's prose, shown
+    /// only on demand. Image syntax inside it stays prose.
+    #[serde(default)]
+    pub section_context: Vec<String>,
+    #[serde(default)]
+    pub section_context_runs: Vec<Vec<InlineRun>>,
+    /// Fence-shaped units only, in fence order, exactly as `context_units`.
+    #[serde(default)]
+    pub section_context_units: Vec<NoteUnit>,
     pub context: Vec<String>,
     #[serde(default)]
     pub context_leads: bool,
@@ -184,10 +193,18 @@ impl CardView {
         let (back, back_runs) = project_lines(card.back_for_display(), projector);
         let back_units =
             render::answer_units_with(card.back_for_display(), projector, &card.resolved_diagrams);
+        let section_context_runs = card
+            .section_context
+            .iter()
+            .map(|line| projector.project_context(line))
+            .collect();
         CardView {
             front,
             front_runs,
             front_units,
+            section_context: card.section_context.clone(),
+            section_context_runs,
+            section_context_units: render::section_units(&card.section_context),
             context: card.context.clone(),
             context_leads: card.context_leads,
             context_runs,
@@ -584,6 +601,65 @@ mod tests {
         let (_, runs) = project_lines(&lines, &mut projector);
         assert!(runs[..5].iter().flatten().all(|run| run.math.is_none()));
         assert!(runs[5].iter().any(|run| run.math.is_some()));
+    }
+
+    /// Spec law 14, the projection half: a section arrives as raw lines plus
+    /// inline runs, its fences collapse into one code unit each, and image
+    /// syntax inside it stays prose rather than becoming a media element.
+    #[test]
+    fn a_section_projects_as_prose_runs_and_code_fences_never_as_media() {
+        let text = "# *Ownership* and $x$\n\nProse before the card.\n\n```rust\nlet x = 1;\n```\n\n![](assets/diagram.png)\n\n## q\na\n";
+        let cards = crate::parser::parse_str("t", text).expect("the fixture parses");
+        let card = &cards[0];
+        let view = CardView::from(card);
+
+        assert_eq!(
+            card.section_context, view.section_context,
+            "the raw section lines ride the view untouched"
+        );
+        assert!(
+            view.section_context
+                .iter()
+                .any(|line| line.contains("assets/diagram.png")),
+            "the image line is carried as text: {:?}",
+            view.section_context
+        );
+        assert_eq!(
+            view.section_context.len(),
+            view.section_context_runs.len(),
+            "every section line gets its inline runs"
+        );
+        assert!(
+            view.section_context_runs
+                .iter()
+                .flatten()
+                .any(|run| run.math.is_some()),
+            "math in a section heading projects like any other context line"
+        );
+        assert_eq!(
+            1,
+            view.section_context_units.len(),
+            "the rust fence is one unit: {:?}",
+            view.section_context_units
+        );
+        let NoteUnit::Code { lines } = &view.section_context_units[0] else {
+            panic!(
+                "a section fence is code, never a diagram: {:?}",
+                view.section_context_units
+            );
+        };
+        assert_eq!(vec!["let x = 1;".to_string()], *lines);
+        assert!(
+            !view
+                .section_context_units
+                .iter()
+                .any(|unit| matches!(unit, NoteUnit::Diagram { .. })),
+            "nothing freezes a section fence, so it can never resolve to media"
+        );
+        assert!(
+            view.images.is_empty() && view.images_back.is_empty(),
+            "a section image line adds no media element"
+        );
     }
 
     fn session_at(cards: Vec<Card>, store: &mut Store, depth: Depth, now: u64) -> Session {

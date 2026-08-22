@@ -1,0 +1,86 @@
+{
+  "back": [
+    "a"
+  ],
+  "back_runs": [
+    [
+      {
+        "text": "a"
+      }
+    ]
+  ],
+  "back_units": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "text": "a"
+        }
+      ],
+      "text": "a"
+    }
+  ],
+  "citations": [],
+  "context": [],
+  "context_leads": false,
+  "context_runs": [],
+  "context_units": [],
+  "crumb": null,
+  "front": "q",
+  "front_runs": [
+    {
+      "text": "q"
+    }
+  ],
+  "id": "card-9w2c7xkq4m",
+  "images": [],
+  "images_back": [],
+  "note": [],
+  "reshaped": false,
+  "section_context": [
+    "*Ownership* rules",
+    "Borrowing has rules.",
+    "```rust",
+    "let x = 1;",
+    "```"
+  ],
+  "section_context_runs": [
+    [
+      {
+        "italic": true,
+        "text": "Ownership"
+      },
+      {
+        "text": " rules"
+      }
+    ],
+    [
+      {
+        "text": "Borrowing has rules."
+      }
+    ],
+    [
+      {
+        "text": "`rust"
+      }
+    ],
+    [
+      {
+        "text": "let x = 1;"
+      }
+    ],
+    [
+      {
+        "text": "`"
+      }
+    ]
+  ],
+  "section_context_units": [
+    {
+      "kind": "code",
+      "lines": [
+        "let x = 1;"
+      ]
+    }
+  ]
+}

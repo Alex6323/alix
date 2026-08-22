@@ -188,7 +188,7 @@ return checklist(_that.items);case _:
 
 class NoteUnit_Sentence extends NoteUnit {
   const NoteUnit_Sentence({required this.text, required final  List<InlineRun> runs}): _runs = runs,super._();
-
+  
 
  final  String text;
  final  List<InlineRun> _runs;
@@ -262,7 +262,7 @@ as List<InlineRun>,
 
 class NoteUnit_Code extends NoteUnit {
   const NoteUnit_Code({required final  List<String> lines}): _lines = lines,super._();
-
+  
 
  final  List<String> _lines;
  List<String> get lines {
@@ -334,7 +334,7 @@ as List<String>,
 
 class NoteUnit_Diagram extends NoteUnit {
   const NoteUnit_Diagram({required this.src, required this.width, required this.height, required this.alt, required final  List<RegionView> regions, this.revealedAlt}): _regions = regions,super._();
-
+  
 
  final  String src;
  final  int width;
@@ -416,7 +416,7 @@ as String?,
 
 class NoteUnit_Checklist extends NoteUnit {
   const NoteUnit_Checklist({required final  List<ChecklistItem> items}): _items = items,super._();
-
+  
 
  final  List<ChecklistItem> _items;
  List<ChecklistItem> get items {

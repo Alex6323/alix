@@ -257,6 +257,31 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
     units
 }
 
+/// Section prose is never a diagram: a fence there is code, always. Nothing
+/// freezes a section's fence, so there is no record to resolve it against.
+pub(crate) fn section_units(lines: &[String]) -> Vec<NoteUnit> {
+    let mut units = Vec::new();
+    let mut open: Option<char> = None;
+    let mut interior: Vec<String> = Vec::new();
+    for line in lines {
+        match (open, fence_marker(line)) {
+            (Some(ch), Some(marker)) if ch == marker => {
+                open = None;
+                units.push(NoteUnit::Code {
+                    lines: std::mem::take(&mut interior),
+                });
+            }
+            (Some(_), _) => interior.push(line.clone()),
+            (None, Some(marker)) => open = Some(marker),
+            (None, None) => {}
+        }
+    }
+    if !interior.is_empty() {
+        units.push(NoteUnit::Code { lines: interior });
+    }
+    units
+}
+
 fn context_fence_unit(
     card: &Card,
     mermaid: bool,

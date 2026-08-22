@@ -76,8 +76,8 @@ pub(super) enum SessionSnapshot {
 }
 
 pub(super) enum SelectedDto {
-    Walk(WalkDto),
-    Review(StateDto),
+    Walk(Box<WalkDto>),
+    Review(Box<StateDto>),
 }
 
 pub(super) enum Feedback<T> {
@@ -1231,7 +1231,7 @@ impl StudyState {
                 self.reviewing = None;
                 self.examining = None;
                 self.revision += 1;
-                Transition::Done((SelectedDto::Walk(dto), None))
+                Transition::Done((SelectedDto::Walk(Box::new(dto)), None))
             }
             Ok(assemble::Selected::Review(b)) => {
                 self.install_store(candidate);
@@ -1243,7 +1243,7 @@ impl StudyState {
                 self.reviewing = Some(r);
                 self.walking = None;
                 self.revision += 1;
-                Transition::Done((SelectedDto::Review(self.review_dto()), record))
+                Transition::Done((SelectedDto::Review(Box::new(self.review_dto())), record))
             }
             Err(e) => {
                 eprintln!("warning: could not load the selected decks: {e}");

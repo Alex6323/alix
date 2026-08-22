@@ -104,6 +104,9 @@ fn statedto_review_phase_wire_shape() {
             front: "What is ownership?".to_string(),
             front_runs: crate::inline::parse_inline("What is **ownership**?"),
             front_units: None,
+            section_context: Vec::new(),
+            section_context_runs: Vec::new(),
+            section_context_units: Vec::new(),
             context: vec!["Chapter 4".to_string()],
             context_leads: true,
             context_runs: vec![crate::inline::parse_inline("Chapter 4")],
@@ -750,6 +753,113 @@ fn examdto_cooldown_phase_wire_shape() {
     );
 }
 
+/// Spec law 14, the wire half: a card under a section carries the
+/// `section_context` triple. The fence collapses into ONE code unit, and the
+/// fence's own lines keep the per-line run projection `context_runs` already
+/// uses, so a client skips them in prose and renders the unit instead. Math
+/// is asserted in the lib's projection law, never pinned here: a rendered SVG
+/// is the renderer's business, not the wire's.
+#[test]
+fn carddto_sectioned_wire_shape() {
+    let text =
+        "# *Ownership* rules\n\nBorrowing has rules.\n\n```rust\nlet x = 1;\n```\n\n## q\na\n";
+    let cards = crate::parser::parse_str("t", text).expect("the fixture parses");
+    let dto = card_dto(
+        crate::review::CardView::from(&cards[0]),
+        Some("card-9w2c7xkq4m".to_string()),
+    );
+    pin(
+        "CardDto.sectioned",
+        &dto,
+        json!({
+            "back": [
+                "a"
+            ],
+            "back_runs": [
+                [
+                    {
+                        "text": "a"
+                    }
+                ]
+            ],
+            "back_units": [
+                {
+                    "kind": "sentence",
+                    "runs": [
+                        {
+                            "text": "a"
+                        }
+                    ],
+                    "text": "a"
+                }
+            ],
+            "citations": [],
+            "context": [],
+            "context_leads": false,
+            "context_runs": [],
+            "context_units": [],
+            "crumb": null,
+            "front": "q",
+            "front_runs": [
+                {
+                    "text": "q"
+                }
+            ],
+            "id": "card-9w2c7xkq4m",
+            "images": [],
+            "images_back": [],
+            "note": [],
+            "reshaped": false,
+            "section_context": [
+                "*Ownership* rules",
+                "Borrowing has rules.",
+                "```rust",
+                "let x = 1;",
+                "```"
+            ],
+            "section_context_runs": [
+                [
+                    {
+                        "italic": true,
+                        "text": "Ownership"
+                    },
+                    {
+                        "text": " rules"
+                    }
+                ],
+                [
+                    {
+                        "text": "Borrowing has rules."
+                    }
+                ],
+                [
+                    {
+                        "text": "`rust"
+                    }
+                ],
+                [
+                    {
+                        "text": "let x = 1;"
+                    }
+                ],
+                [
+                    {
+                        "text": "`"
+                    }
+                ]
+            ],
+            "section_context_units": [
+                {
+                    "kind": "code",
+                    "lines": [
+                        "let x = 1;"
+                    ]
+                }
+            ]
+        }),
+    );
+}
+
 #[test]
 fn carddto_wire_shape() {
     let dto = card_dto(
@@ -757,6 +867,9 @@ fn carddto_wire_shape() {
             front: "Pick a city:\n- [x] Paris\n- [ ] Rome".to_string(),
             front_runs: crate::inline::parse_inline("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
             front_units: crate::render::front_units("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
+            section_context: Vec::new(),
+            section_context_runs: Vec::new(),
+            section_context_units: Vec::new(),
             context: Vec::new(),
             context_leads: false,
             context_runs: Vec::new(),
@@ -881,6 +994,9 @@ fn carddto_math_wire_shape() {
         front: "x^2".to_string(),
         front_runs: vec![inline],
         front_units: None,
+        section_context: Vec::new(),
+        section_context_runs: Vec::new(),
+        section_context_units: Vec::new(),
         context: vec!["$$y^2$$".to_string()],
         context_leads: true,
         context_runs: vec![vec![display]],
@@ -1219,6 +1335,9 @@ fn browsedto_wire_shape() {
             front: "q".to_string(),
             front_runs: crate::inline::parse_inline("q"),
             front_units: None,
+            section_context: Vec::new(),
+            section_context_runs: Vec::new(),
+            section_context_units: Vec::new(),
             context: Vec::new(),
             context_leads: false,
             context_runs: Vec::new(),
