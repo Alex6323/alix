@@ -635,7 +635,7 @@ export function createPicker({
         if (f && f._item && f._item.has_exam && (f._item.is_trace || f._item.state !== "examdue")) {
           const it = f._item;
           const ex = el("button", "chip", "Take exam");
-          ex.appendChild(el("span", "k", it.examable ? "x" : "\u{1F512}"));
+          ex.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
           ex.disabled = !it.examable;
           if (it.examable) ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; startExam(it.name); });
           legend.appendChild(ex);

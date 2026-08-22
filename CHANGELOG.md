@@ -372,6 +372,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The adult picker's action footer no longer shifts when focus moves between
+  decks whose early exam is available and decks whose exam is still locked.
+
 - Adult review cards now use the height available between the header and
   footer on tall windows, keeping the mode and question near the deck title
   and the authored note near the review controls.

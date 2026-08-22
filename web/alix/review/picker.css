@@ -108,6 +108,7 @@
     transition: border-color 0.12s, color 0.12s, background 0.12s, filter 0.12s;
   }
   .chip .k { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+  .chip .exam-key { display: inline-flex; justify-content: center; flex: none; width: 1.5em; }
   /* the inline "Ready by…" date prompt, sized to sit level with the footer's
      chips rather than a full sheet — a minimal in-place form, not a modal. */
   .deadline-input { background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.85rem; padding: 9px 12px; min-height: 42px; box-sizing: border-box; }

@@ -142,6 +142,60 @@ test("the picker lists the fixture workspace and its decks", async ({ page }) =>
   await expect(adultDeckRow(page, "cats")).toBeVisible();
 });
 
+test("the exam chip stays put when focus moves between ready and locked exams", async ({ page }) => {
+  // A normal workspace can contain both an exam a learner may take early and
+  // one that is still locked. Pin every footer-relevant field to the same
+  // value except `examable`, so moving between the rows isolates the x/lock
+  // hint swap that used to resize the centered action group.
+  await page.route("**/api/decks", async (route) => {
+    const response = await route.fetch();
+    const catalog = await response.json();
+    const rows = [
+      ...catalog.recent,
+      ...catalog.workspaces.flatMap((row) => row.members),
+      ...catalog.folders.flatMap((row) => row.members),
+    ];
+    const wild = rows.find((row) => row.name.endsWith("wild.md"));
+    const cats = rows.find((row) => row.name.endsWith("cats.md"));
+    const shared = {
+      state: "learning",
+      has_exam: true,
+      is_trace: false,
+      reviewable: true,
+      reviewable_recognize: true,
+      reviewable_recall: true,
+      reviewable_reconstruct: false,
+      last_depth: null,
+    };
+    Object.assign(wild, shared, { examable: true });
+    Object.assign(cats, shared, { examable: false });
+    await route.fulfill({ response, json: catalog });
+  });
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+
+  const exam = page.locator("#legend .chip").filter({ hasText: "Take exam" });
+  const browse = page.getByRole("button", { name: "Browse" });
+
+  await adultDeckRow(page, "wild").click();
+  await expect(exam.locator(".k")).toHaveText("x");
+  const readyExam = await exam.boundingBox();
+  const readyBrowse = await browse.boundingBox();
+
+  await adultDeckRow(page, "cats").click();
+  await expect(exam.locator(".k")).toHaveText("🔒");
+  const lockedExam = await exam.boundingBox();
+  const lockedBrowse = await browse.boundingBox();
+
+  expect(readyExam).not.toBeNull();
+  expect(readyBrowse).not.toBeNull();
+  expect(lockedExam).not.toBeNull();
+  expect(lockedBrowse).not.toBeNull();
+  expect(lockedExam!.width).toBeCloseTo(readyExam!.width, 1);
+  expect(lockedBrowse!.x).toBeCloseTo(readyBrowse!.x, 1);
+});
+
 test("clicking a deck row fires POST /api/select, and a card front renders", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click(); // focuses the row; doesn't launch it yet
