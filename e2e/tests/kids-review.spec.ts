@@ -266,3 +266,25 @@ test("a wrong Recognize pick can only record failed, never passed", async ({ pag
   await expect(page.locator(".rate-got")).toHaveCount(0);
   await expect(page.locator(".rate-again")).toBeVisible();
 });
+
+test("the kids client never shows a card's section, and offers no way to ask for it", async ({ page }) => {
+  await openApp(page);
+  await page.locator(".box", { hasText: "Animals" }).click();
+  await kidsDeckRow(page, "sectioned").click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: "Say it yourself" }).click(),
+  ]);
+
+  // The section rides every card on the wire (CardDto.section_context), so
+  // "the kids client does not show it" is a claim about this client's DOM,
+  // not about what the server sent.
+  await expect(page.locator("body")).toContainText("sunlight zone");
+  await expect(page.locator("body")).not.toContainText("Ocean depths");
+  await expect(page.locator("body")).not.toContainText("Sunlight reaches only the top layer.");
+  await expect(page.locator(".context.section")).toHaveCount(0);
+
+  // And the adult toggle's key does nothing here: no aid to reveal.
+  await page.keyboard.press("c");
+  await expect(page.locator("body")).not.toContainText("Ocean depths");
+});
