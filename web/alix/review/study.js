@@ -562,7 +562,6 @@ export function createStudy({
     updateFade(a);
   }
 
-  // Swap the answer region between the worded answer and the cited source excerpt.
   function hasSection() {
     return !!(state && state.card && (state.card.section_context || []).length);
   }
@@ -576,6 +575,7 @@ export function createStudy({
     rerender();
   }
 
+  // Swap the answer region between the worded answer and the cited source excerpt.
   function toggleCitation() {
     if (!state || !state.card || !(state.card.citations || []).length || !isAnswered()) return;
     citationView = !citationView;

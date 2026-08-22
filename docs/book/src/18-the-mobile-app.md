@@ -81,6 +81,8 @@ writes through a temp file; there is no point syncing it), and prefer
 "send & receive" on both sides so the phone's grades actually travel back.
 
 Install the same Alix version on every device that writes a synchronized
-folder. For a pre-1.0 persisted-state format break, stop every writer, back up
-the folder, complete the release's external conversion procedure, synchronize
-the resulting per-deck documents, and only then resume review.
+folder. Before 1.0 there is no migration and no conversion tool: a
+persisted-state format break makes documents written by an earlier version fail
+to open. Stop every writer, back up the folder, then `alix reset` the affected
+decks (that clears the documents that no longer parse) and start their history
+again. Synchronize once before resuming review on a second device.

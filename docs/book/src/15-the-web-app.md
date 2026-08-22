@@ -22,7 +22,7 @@ Focus a deck and **Learn** it with **Enter** (a facts deck opens a
 review, a [trace](13-trace-decks.md) opens a walk) one deck per session. **Browse**
 on **`b`** opens a read-only, in-page read-through instead: step the cards with
 Prev/Next, Esc to leave. Focusing any deck opens an inline **focus drawer**
-beneath it: it shows the deck's preamble (the prose under its title, if any) and
+beneath it: it shows the deck's frontmatter `description:`, if any, and
 a per-card **tier heatmap**: neutral for an untouched card, grey for one merely
 **seen** (shown to you at least once), white once **introduced** (correct at least
 once), green/yellow/red for a **learned** card by how well you'd recall it right

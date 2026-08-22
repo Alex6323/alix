@@ -241,27 +241,86 @@ A cloze card can give one blank a note of its own, so a note that names an
 answer doesn't give it away on the sibling cards. See
 [a note for one blank](06-cloze-direction-images.md#a-note-for-one-blank).
 
+## Sections and sub-cards
+
+Heading depth decides a line's role. `##` is a card front, `#` opens a section,
+and `###`/`####` are sub-cards.
+
+### `#` — section context
+
+A single-`#` heading opens a **section**. Its text, plus any prose that follows
+it outside a card, is the shared context for every card below it until the next
+`#`. Prose written before the first heading is section context too.
+
+```
+# Ocean depths
+
+Pressure rises by about one atmosphere per ten metres.
+
+## What is the pressure at 30 m?
+About 4 atmospheres.
+```
+
+Context is not shown while you answer; that would give the card away. Ask for
+it: in the web app press `c` and the section replaces the question until you
+press `c` again.
+
+A section heading is a heading, nothing more. It takes no directives and no card
+ID, and an empty one is an error, because a section owns no card to bind either
+to.
+
+### `###` and `####` — sub-cards
+
+A card written one level deeper than the card above it is a **sub-card** of it:
+the same card syntax, gated on the parent. A sub-card stays out of review until
+its parent has graduated (reached FSRS's review phase, see
+[Scheduling](05-scheduling.md)), so a deck can teach the general case first and
+release the specialisations once it has stuck.
+
+```
+## What does a TCP handshake establish?
+An agreed starting sequence number in each direction.
+
+### Why does the client resend SYN if no SYN-ACK arrives?
+The SYN may have been lost; nothing else can distinguish that from a slow peer.
+```
+
+Depth stacks: `####` hangs off the `###` above it. Two rules are enforced when
+the deck is read, so a mis-indented heading fails loudly instead of silently
+becoming a top-level card:
+
+- a sub-card needs its parent one level shallower actually open, so a `###`
+  with no `##` above it, or a `####` directly under a `##`, is an error;
+- nothing goes deeper than `####`.
+
+A `##` closes every open sub-card chain, and a `#` clears the chain entirely.
+
 ## Title, and deck-wide settings
 
-A deck's title is a single-`#` heading. Deck-wide settings and its
-machine-maintained deck ID live in
-**frontmatter**: a `---`-fenced YAML block at the very top of the file, above the
-title.
+A deck's name, its deck-wide settings, and its machine-maintained deck ID all
+live in **frontmatter**: a `---`-fenced YAML block at the very top of the file.
+
+The name comes from `title:`. A deck without one falls back to a condensed form
+of its `trace:` sentence, and a deck with neither is named by its filename stem.
+A `#` heading is never the name: it is [section context](#sections-and-sub-cards)
+for the cards below it.
 
 ```
 ---
 format-version: 1
 id: "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"
+title: French vocabulary, chapter 4
+description: The verbs from the chapter's dialogue, plus their prepositions.
 authors: [Alex, "Claude (Opus 5)"]
 license: CC-BY-4.0
-tags: [french, vocabulary]
 created-at: 2026-07-31
 reveal: line
 order: sequential
 ---
-
-# French vocabulary, chapter 4
 ```
+
+`description` is a one-line summary. The web picker shows it when you open a
+deck's drawer; nothing else reads it.
 
 `format-version` is the version of the deck *format*, not of the deck itself.
 `alix deck init` writes it above `id`, it stays `1`, and alix refuses a deck
@@ -269,16 +328,14 @@ declaring any other number rather than guessing at a format it does not know.
 It is written first because it says how to read everything below it, but alix
 accepts it anywhere in the block.
 
-`authors` and `tags` take one value or a list; `license` and `created-at` are
-single strings, by convention an SPDX identifier and an ISO 8601 date. Put both
-people and any AI that helped in `authors`. These four are yours to fill in and
-alix never changes them.
+`authors` takes one value or a list; `title`, `description`, `license`, and
+`created-at` are single strings, by convention an SPDX identifier and an ISO
+8601 date for the last two. Put both people and any AI that helped in `authors`.
+These five are yours to fill in and alix never changes them.
 
-Apart from `id` and `format-version`, frontmatter carries only what differs from the defaults,
-and a command-line flag always overrides it. Anything else you write before the
-first card is just prose (context, a reading order, whatever you like), so a
-deck can also read as a normal document. The full set of frontmatter and
-per-card keys gets its own *Directives reference* chapter.
+Apart from `id` and `format-version`, frontmatter carries only what differs from
+the defaults, and a command-line flag always overrides it. The full set of
+frontmatter and per-card keys gets its own *Directives reference* chapter.
 
 ## Escaping
 

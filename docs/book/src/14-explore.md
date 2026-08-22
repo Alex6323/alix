@@ -36,7 +36,7 @@ explores the source **once** and reuses that single session to fill every item â
 predict-verify checkpoints for the traces, fact cards for the decks â€” so the
 [workspace](08-workspaces.md) comes out review-ready in one command: an
 `alix.toml` (carrying the goal; `--title` names it) and one file per item under
-`decks/`: a `trace:` deck per trace and a `# ` facts deck per deck, wired together
+`decks/`: a `trace:` deck per trace and a `source:` facts deck per deck, wired together
 with `requires:` so they unlock in dependency order, each `source:` pointing
 back at the real source. Writing the whole set from one understanding keeps the
 items **coherent** (each builds on its prerequisites instead of repeating them).

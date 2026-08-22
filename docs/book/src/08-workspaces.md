@@ -299,8 +299,9 @@ when neither side has `wormhole` installed.
 
 ## Titles
 
-A single deck's display name is its `#` heading (the top-level Markdown title); a
-workspace's name comes from a `title` in its `alix.toml`. Either replaces the file
+A single deck's display name comes from its frontmatter `title:` (failing that,
+its condensed `trace:`, then its filename stem); a workspace's name comes from a
+`title` in its `alix.toml`. Either replaces the file
 name in the picker, the session header, `alix list`, and `alix stats`. It's
 display-only: you still refer to decks by file path on the command line, and a
 title never affects a card's identity.

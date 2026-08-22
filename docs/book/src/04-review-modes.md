@@ -16,7 +16,7 @@ author's job) apart from *how deep you're drilling* (your call, per session).
 
 ## The reveal-method axis: `reveal:`
 
-Three ways to uncover an answer. Set it deck-wide with a `reveal:` line in the
+Two ways to uncover an answer. Set it deck-wide with a `reveal:` line in the
 frontmatter, or per card with a `<!-- reveal: ... -->` directive (default `flip`):
 
 - **flip** *(default)*: the whole answer is revealed at once.

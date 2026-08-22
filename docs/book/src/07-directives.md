@@ -4,11 +4,15 @@ Every card marker and deck/card key in one place. **Scope** is where each may
 appear: a *deck* key is a line in the frontmatter (the `---`-fenced YAML block
 at the top of the file), a *card* key is a `<!-- key: value -->` comment after
 a card's front, and *deck · card* keys work either way, with the card one
-taking precedence. Each links to the chapter that explains it in full.
+taking precedence. The heading rows are structure rather than keys: `#` scopes a
+section, the rest scope a card. Each links to the chapter that explains it in
+full.
 
 | Token | Scope | What it does |
 | --- | --- | --- |
 | `##` front | card | Starts a card at column 0; the lines below are the answer. [→ ch 3](03-the-deck-format.md) |
+| `#` heading | section | Opens a section: its text and the prose under it are the shared context of every card below, shown on demand (`c` in the web app), never while you answer. Takes no directives and no card ID. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
+| `###`/`####` front | card | A sub-card of the card one level shallower, withheld from review until that parent graduates. Nothing goes deeper than `####`. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
 | `>` line | card | A note, shown after you answer. [→ ch 3](03-the-deck-format.md) |
 | `<!-- -->` | anywhere | A comment with no recognized key: ignored. |
 | `format-version` | deck | The deck **format's** version, not the deck's own. Written by `alix deck init` above `id`, stays `1`, and any other number is refused rather than guessed at. Mandatory once a deck has an `id`. [→ ch 3](03-the-deck-format.md) |
@@ -21,9 +25,10 @@ taking precedence. Each links to the chapter that explains it in full.
 | `sampling` | deck · card | `on` (default) or `off`: whether a [card table](03-the-deck-format.md)'s rows may draw Recognize options from their own column. A table's value overrides the deck's in either direction. |
 | `strictness` | workspace | [Exam](12-the-ai-exam.md) grading rigor for the members, in `alix.toml`'s `[defaults]` only: a learner setting, so a deck declaring it gets an unknown-key lint. |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
+| `title` | deck | The deck's display name, a single non-empty line. Without it a deck is named by its condensed `trace:`, else by its filename stem; a `#` heading is never the name. [→ ch 3](03-the-deck-format.md) |
+| `description` | deck | A one-line summary, shown in the web picker's deck drawer. [→ ch 3](03-the-deck-format.md) |
 | `authors` | deck | Who made the deck: one value or a list. Holds people and any AI that helped, so there is no separate generated-by key. Yours to fill in; alix never rewrites it. |
 | `license` | deck | The deck's licence, a single string, by convention an SPDX identifier. |
-| `tags` | deck | Free-form labels: one value or a list. |
 | `created-at` | deck | When the deck was made, a single string, by convention an ISO 8601 date. Stored verbatim and not validated. |
 | `link` | deck | [tutor reference](10-tutor.md) URL, tutor-only (repeatable). |
 | `source` | deck | [Exam ground truth](12-the-ai-exam.md): a YAML list of URLs, files, or directories (one entry is the norm), also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. A workspace `alix.toml` may declare a `source` too, as supporting context for its members. |
