@@ -66,7 +66,10 @@
   .region.a.filled { justify-content: flex-start; }
   .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
   /* keep the note (and its divider) pinned to the bottom of the card */
-  #noteDivider { margin-top: auto; }
+  #noteDivider {
+    margin-top: auto;
+    background: linear-gradient(90deg, transparent, var(--note-line) 18%, var(--note-line) 82%, transparent);
+  }
   /* a cited card's answer region is tappable to swap answer <-> source; a corner
      icon marks it ( </> = view the source, ¶ = back to the answer ) */
   .region.a.citable, .region.a.hidable { position: relative; cursor: pointer; }

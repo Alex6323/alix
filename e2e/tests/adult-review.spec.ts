@@ -368,6 +368,76 @@ test("long answer variants start at the first line and show scroll hints", async
   }
 });
 
+test("a source answer and its note have a visible separator", async ({ page }, testInfo) => {
+  const sourceLines = Array.from(
+    { length: 24 },
+    (_, index) => ({ n: index + 1, text: `source line ${index + 1}: evidence for the answer` }),
+  );
+  const state = longContentState({
+    answerLines: ["The source establishes the expected answer."],
+    citations: [{
+      locator: "source.rs:1-24",
+      excerpt: { path: "source.rs", lines: sourceLines, truncated: false },
+      error: null,
+    }],
+    note: [
+      { kind: "sentence", text: "This note explains why the evidence matters." },
+      { kind: "sentence", text: "It must read as a separate section from the source answer." },
+    ],
+  });
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await page.keyboard.press("s");
+
+  const card = page.locator("#card");
+  await expect(card.locator(".source-excerpt")).toBeVisible();
+  await expect(card.locator(".note")).toBeVisible();
+  const divider = card.locator("#noteDivider");
+  const cardBox = await card.boundingBox();
+  const dividerBox = await divider.boundingBox();
+  expect(cardBox).not.toBeNull();
+  expect(dividerBox).not.toBeNull();
+  const screenshot = await card.screenshot({ path: testInfo.outputPath("source-note-separator.png") });
+  const contrast = await page.evaluate(async ({ png, x0, x1, y }) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${png}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return 0;
+    context.drawImage(image, 0, 0);
+    const start = Math.round(x0 * canvas.width);
+    const end = Math.round(x1 * canvas.width);
+    const center = Math.round(y * canvas.height);
+    const average = (row: number) => {
+      const pixels = context.getImageData(start, row, end - start, 1).data;
+      const color = [0, 0, 0];
+      for (let index = 0; index < pixels.length; index += 4) {
+        color[0] += pixels[index];
+        color[1] += pixels[index + 1];
+        color[2] += pixels[index + 2];
+      }
+      return color.map((value) => value / (pixels.length / 4));
+    };
+    const above = average(center - 4);
+    const below = average(center + 4);
+    const background = above.map((value, index) => (value + below[index]) / 2);
+    return Math.max(...[-1, 0, 1].map((offset) => {
+      const band = average(center + offset);
+      return Math.hypot(...band.map((value, index) => value - background[index]));
+    }));
+  }, {
+    png: screenshot.toString("base64"),
+    x0: ((dividerBox?.x ?? 0) - (cardBox?.x ?? 0) + (dividerBox?.width ?? 0) * 0.25) / (cardBox?.width ?? 1),
+    x1: ((dividerBox?.x ?? 0) - (cardBox?.x ?? 0) + (dividerBox?.width ?? 0) * 0.75) / (cardBox?.width ?? 1),
+    y: ((dividerBox?.y ?? 0) - (cardBox?.y ?? 0) + (dividerBox?.height ?? 0) / 2) / (cardBox?.height ?? 1),
+  });
+  expect(contrast, "the rendered separator must visibly contrast with the card background").toBeGreaterThan(50);
+});
+
 test("line reveal replaces a complete Mermaid fence with its rendered diagram", async ({ page }) => {
   const back = ["```mermaid", "flowchart LR", " A-->B", "```"];
   const original = longContentState({ answerLines: back });

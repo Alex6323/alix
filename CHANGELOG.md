@@ -366,6 +366,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Adult review now draws a visible note-coloured divider between a revealed
+  answer or source excerpt and its authored note. The generic hairline blended
+  into the card background, making the two sections appear joined.
+
 - The advertised `curl -sSf https://alix.study/install.sh | sh` install has
   been failing since 2026-08-03. GitHub's `/releases/latest` is repo-wide, and
   the `mobile-v0.3.0` APK release took that slot, so the installer resolved to
