@@ -29,6 +29,35 @@ void main() {
     );
   });
 
+  test('no mobile surface renders a card section', () {
+    // The section rides every card on the wire (CardView.sectionContext), and
+    // the ruling is that it is shown ON DEMAND, never by default. Mobile has
+    // no keyboard, so the adult client's `c` press does not transfer and no
+    // affordance has been ruled for it yet. Until one is, a mobile surface
+    // reading the field could only be showing it unasked.
+    //
+    // Delete this test in the same change that adds the ruled affordance;
+    // do not weaken it to let one reader through.
+    final readers = <String>[];
+    for (final source in _dartSources()) {
+      final path = _normalizedPath(source);
+      if (_isGenerated(path)) continue;
+      for (final (index, line) in source.readAsLinesSync().indexed) {
+        if (line.contains('sectionContext')) {
+          readers.add('$path:${index + 1} ${line.trim()}');
+        }
+      }
+    }
+
+    expect(
+      readers,
+      isEmpty,
+      reason:
+          'a mobile surface reads sectionContext, but no on-demand affordance '
+          'has been ruled for mobile yet',
+    );
+  });
+
   test('source metrics exclude generated Rust sources', () {
     final allSources = _dartSources();
     final generated = allSources.where(
