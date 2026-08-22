@@ -947,3 +947,19 @@ test("`c` swaps the section into the question's place, costs no request, and res
   await expect(card).toContainText("What lies below it?");
   await expect(page.locator(".context.section")).toHaveCount(0);
 });
+
+test("a gated sub-card's cell is outlined, not filled, and its parent's is not", async ({ page }) => {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "gated").click(); // focuses the row -> opens the drawer
+
+  const drawer = page.locator(".drawer").filter({ hasText: "2 cards" }).last();
+  await expect(drawer.locator(".crumb-cell")).toHaveCount(2);
+  // Neither card has been reviewed, so both are `unseen`. Locked is a
+  // SEPARATE axis: the sub-card waits on its parent graduating, and folding
+  // that into the tier would make "never shown to you" and "withheld from
+  // you" the same colour.
+  await expect(drawer.locator(".crumb-cell.empty")).toHaveCount(2);
+  await expect(drawer.locator(".crumb-cell.locked")).toHaveCount(1);
+  await expect(drawer.locator(".crumb-cell").first()).not.toHaveClass(/locked/);
+  await expect(drawer.locator(".crumb-cell").last()).toHaveClass(/locked/);
+});

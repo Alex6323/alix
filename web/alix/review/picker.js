@@ -121,8 +121,9 @@ export function createPicker({
     return box;
   }
 
-  function paintHeatCell(cell, { tier }) {
+  function paintHeatCell(cell, { tier, locked }) {
     cell.classList.add(tier === "unseen" ? "empty" : tier);
+    if (locked) cell.classList.add("locked");
   }
 
   let lastDecksSignature = "";

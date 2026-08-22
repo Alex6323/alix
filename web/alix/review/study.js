@@ -130,8 +130,9 @@ export function createStudy({
 
   // One heatmap cell's fill: the lib's per-card tier, colored by the CSS
   // class of the same name.
-  function paintHeatCell(cellEl, { tier }) {
+  function paintHeatCell(cellEl, { tier, locked }) {
     cellEl.classList.add(tier === "unseen" ? "empty" : tier);
+    if (locked) cellEl.classList.add("locked");
   }
   function syncSaveAlert() {
     let a = doc.getElementById("save-alert");
