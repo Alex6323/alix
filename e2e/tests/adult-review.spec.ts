@@ -368,6 +368,65 @@ test("long answer variants start at the first line and show scroll hints", async
   }
 });
 
+test("keyboard-focused choices stay clear of both overflow hints", async ({ page }) => {
+  const choices = Array.from(
+    { length: 18 },
+    (_, index) => `Choice ${index + 1} is a deliberately substantial authored option.`,
+  );
+  await page.unroute("**/api/state");
+  await page.route("**/api/state", (route) => route.fulfill({
+    json: longContentState({
+      answerLines: ["The first choice is correct."],
+      choices,
+    }),
+  }));
+  await openApp(page);
+
+  await expect(page.locator(".option")).toHaveCount(18);
+  await expect(page.locator(".option.focused .num")).toHaveText("1");
+  for (let step = 0; step < 10; step += 1) await page.keyboard.press("ArrowDown");
+  for (let step = 0; step < 6; step += 1) await page.keyboard.press("ArrowUp");
+
+  const answer = page.locator(".region.a");
+  const focused = page.locator(".option.focused");
+  const above = page.locator(".more-hint.top");
+  await expect(focused.locator(".num")).toHaveText("5");
+  await expect(answer).toHaveClass(/fade-top/);
+  await expect(above).toHaveClass(/show/);
+  const upperEdge = await focused.evaluate((element) => {
+    const focusedBox = element.getBoundingClientRect();
+    const hint = document.querySelector(".more-hint.top");
+    if (!(hint instanceof HTMLElement)) throw new Error("missing upper overflow hint");
+    return {
+      focusedTop: focusedBox.top,
+      safeTop: hint.getBoundingClientRect().bottom,
+    };
+  });
+  expect(
+    upperEdge.focusedTop,
+    `focused row top ${upperEdge.focusedTop} must clear hint bottom ${upperEdge.safeTop}`,
+  ).toBeGreaterThanOrEqual(upperEdge.safeTop);
+
+  for (let step = 0; step < 6; step += 1) await page.keyboard.press("ArrowDown");
+  const below = page.locator(".more-hint:not(.top)");
+  await expect(focused.locator(".num")).toHaveText("11");
+  await expect(answer).toHaveClass(/fade-bottom/);
+  await expect(below).toHaveClass(/show/);
+  const lowerEdge = await focused.evaluate((element) => {
+    const focusedBox = element.getBoundingClientRect();
+    const hint = document.querySelector(".more-hint:not(.top)");
+    if (!(hint instanceof HTMLElement)) throw new Error("missing lower overflow hint");
+    return {
+      focusedBottom: focusedBox.bottom,
+      safeBottom: hint.getBoundingClientRect().top,
+    };
+  });
+  expect(
+    lowerEdge.focusedBottom,
+    `focused row bottom ${lowerEdge.focusedBottom} must clear hint top ${lowerEdge.safeBottom}`,
+  ).toBeLessThanOrEqual(lowerEdge.safeBottom);
+});
+
 test("a source answer and its note have a visible separator", async ({ page }, testInfo) => {
   const sourceLines = Array.from(
     { length: 24 },

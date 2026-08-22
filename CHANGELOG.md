@@ -366,6 +366,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Keyboard navigation through a long adult multiple-choice list now keeps the
+  focused option clear of the answer region's overflow fades and hints at both
+  edges.
+
 - Choice-card notes can no longer silently describe the wrong option after a
   shuffle. `generate` and AI note augmentation reject position-dependent notes,
   while `doctor` diagnoses authored notes that name an option by number, letter,
