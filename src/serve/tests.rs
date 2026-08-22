@@ -2617,7 +2617,7 @@ fn an_unparseable_config_keeps_the_current_dir() {
     assert_eq!(current.path(), dir);
 }
 
-/// The reachability law (ruling 3's serving half): the diagram unit's
+/// The reachability law: the diagram unit's
 /// /img/<key> URL and the session image allowlist must agree on the key,
 /// or the PNG 404s: nothing else registers frozen rasters.
 #[cfg(unix)]

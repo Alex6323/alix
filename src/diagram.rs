@@ -109,8 +109,8 @@ pub fn fences(lines: &[String]) -> Vec<Fence> {
 /// would invalidate every diagram in every shared deck on any upgrade, for a
 /// recipient who may not even have the renderer installed. Re-rendering stays
 /// a deliberate authoring act.
-/// CRLF terminators are normalized to LF before hashing (Alex's ruling,
-/// 2026-08-20): the scanner reads raw lines and the parser reads
+/// CRLF terminators are normalized to LF before hashing: the scanner
+/// reads raw lines and the parser reads
 /// terminator-stripped ones, so a byte-sensitive preimage would give one
 /// fence two fingerprints depending on who asked. A lone CR is NOT
 /// normalized: it is content, deliberately.

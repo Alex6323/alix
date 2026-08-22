@@ -506,8 +506,8 @@ mod tests {
 
     #[test]
     fn the_default_introduction_cooldown_is_five_minutes() {
-        // Deliberately pinned: raised from the old 1-min gap on 2026-07-14
-        // (user request). Changing it changes every default session's rhythm.
+        // Deliberately pinned: changing it changes every default session's
+        // rhythm.
         assert_eq!(5 * 60 * 1000, DEFAULT_INTRODUCTION_COOLDOWN_MS);
     }
 

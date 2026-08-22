@@ -2917,8 +2917,7 @@ fn choices_keep_their_order_across_state_pulls_while_the_card_is_on_screen() {
     // Returning from the tutor re-pulls /api/state while the client keeps its
     // answered feedback as INDICES (chosen/correct). If the served option
     // order shifts between the answer and that re-pull, the indices decorate
-    // the wrong options and a wrong pick renders as "correct" (user report,
-    // 2026-07-14).
+    // the wrong options and a wrong pick renders as "correct".
     let (base, _guard) = spawn_full_server(None);
     let resp = post_json(
         &base,
@@ -2944,7 +2943,7 @@ fn choices_keep_their_order_across_state_pulls_while_the_card_is_on_screen() {
 
 #[test]
 fn choices_keep_their_order_across_a_full_tutor_round_trip() {
-    // The exact user flow of the 2026-07-14 report: answer a choice card, open
+    // The reported flow: answer a choice card, open
     // the tutor, ask a question, save the conversation as a note (which
     // rewrites the deck file and mutates the in-memory card), close the tutor
     // (the client re-pulls /api/state) — the option order must survive it all.
@@ -3029,7 +3028,7 @@ fn recognize_is_unavailable_and_empty_on_an_unaugmented_deck() {
 
 #[test]
 fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
-    // High-fidelity shape of the 2026-07-14 report: a two-hole cloze card whose
+    // The reported shape at full fidelity: a two-hole cloze card whose
     // hole has AI distractors cached, served as a choice, answered, then the
     // state re-pulled (the tutor-close pull). The order must hold on both the
     // Recognize path (seen card) and the introduction path (unseen card).
@@ -3094,8 +3093,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
 /// else: the DTO carries the gap — how many cards wait at Recall, and how
 /// many no pick can be built for — so the summary can point at the two real
 /// exits (continue at Recall, or augment choices) instead of "come back
-/// later" (user report 2026-08-01, deck 59: 2 authored picks recognized, 13
-/// cards invisible forever).
+/// later".
 #[test]
 fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
     const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicemixed\"\n---\n\
@@ -3194,8 +3192,8 @@ fn reveal_endpoint_is_gone_and_abandonment_reintroduces_as_new() {
 
 /// Introducing every fresh pick of a Recognize sitting parks them behind the
 /// introduction floor: the done summary then shows "N still due" beside a disabled
-/// Continue — a contradiction unless the state says when one opens (user
-/// report 2026-08-01). `next_due_ms` must carry the floor-open instant even
+/// Continue: a contradiction unless the state says when one opens.
+/// `next_due_ms` must carry the floor-open instant even
 /// at Recognize, where the schedule-wide next-due is undefined.
 #[test]
 fn a_recognize_done_with_floored_cards_says_when_one_opens() {
@@ -3298,8 +3296,8 @@ fn post_api_choose_without_a_card_id_yields_400() {
 
 /// The revision proves the client saw *a* transition, not that it is looking
 /// at the card it is answering: a transition that forgot to bump the revision
-/// would let a pick be graded against whatever card the server moved on to
-/// (the wrong-answer grading bug of 2026-07-31). Naming the card closes that
+/// would let a pick be graded against whatever card the server moved on to.
+/// Naming the card closes that
 /// by construction, so no future transition can reopen it.
 #[test]
 fn post_api_choose_naming_another_card_yields_409() {

@@ -969,8 +969,7 @@ impl AugmentCache {
     }
 
     pub fn missing_choices(&self, cards: &[Card]) -> Vec<WarmItem> {
-        // Region cards are gated out of AI choices until the MC-family spec
-        // rules them (Alex, 2026-08-18).
+        // Region cards are deliberately excluded.
         self.missing(
             cards,
             |card| card.region.is_none(),
@@ -2004,7 +2003,7 @@ mod tests {
         assert_eq!(
             ["b"],
             missing.as_slice(),
-            "region cards are gated out of choices augmentation (ruling A)"
+            "region cards are gated out of choices augmentation"
         );
     }
 

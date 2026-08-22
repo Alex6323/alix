@@ -5,9 +5,9 @@ use crate::store::HoleFingerprint;
 // set, so it can never occur in real card text.
 const HOLE_MASK: &str = "\u{0}";
 
-// Reserved codepoints, not prose (Alex, 2026-08-20): the parser rejects
-// them in authored text, so a mask signal can never be counterfeited and
-// literal ____ / [...] stay ordinary prose everywhere.
+// Reserved codepoints, not prose: the parser rejects them in authored
+// text, so a mask signal can never be counterfeited and literal ____ and
+// [...] stay ordinary prose everywhere.
 pub const BLANK: &str = "⍰";
 
 pub const HIDDEN: &str = "⬚";

@@ -769,9 +769,9 @@ mod tests {
         }]
     }
 
-    /// Ruling 3's slot law: the rendered diagram replaces its own fence in
-    /// the ordered stream; surrounding prose keeps its position, and only
-    /// a matching resolved stamp swaps.
+    /// A rendered diagram replaces its own fence in the ordered stream:
+    /// surrounding prose keeps its position, and only a matching resolved
+    /// stamp swaps.
     #[test]
     fn a_resolved_mermaid_fence_becomes_a_diagram_unit_in_its_own_slot() {
         let source = "flowchart LR\n A-->B";

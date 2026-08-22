@@ -93,8 +93,7 @@ pub fn build_authored(
 }
 
 pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
-    // Region cards take no choice question until the MC-family spec rules
-    // them (Alex, 2026-08-18); this holds even against stale cached
+    // Region cards are deliberately excluded, even against stale cached
     // distractors the eligibility gate never minted.
     if card.region.is_some() {
         return false;
@@ -425,7 +424,7 @@ mod tests {
         region.authored_distractors = vec!["x".into(), "y".into(), "z".into()];
         assert!(
             !can_build(&region, &ai(&["p", "q", "r"])),
-            "cached or authored distractors never build a region choice (ruling A)"
+            "cached or authored distractors never build a region choice"
         );
         assert!(!can_sample(&region, &[region.clone()]));
     }

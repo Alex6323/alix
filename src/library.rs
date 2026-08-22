@@ -334,8 +334,8 @@ pub fn removal_preview(deck_path: &Path, store: &Store) -> RemovalPreview {
 
 /// Deletes the deck and every artifact that is its alone: the deck file,
 /// its progress document, its frozen assets, its augment sidecar file, and
-/// any `.bak` of those. Total by decision (2026-08-01): no backup is
-/// written and existing backups go too. Deletion is deck-file-first, so a
+/// any `.bak` of those. The removal is total: no backup is written and
+/// existing backups go too. Deletion is deck-file-first, so a
 /// mid-set failure leaves only the orphan class doctor already detects.
 pub fn remove_deck(deck_path: &Path, store: &Store) -> Result<RemovalReport> {
     let dependents = crate::deck::dependents(deck_path);

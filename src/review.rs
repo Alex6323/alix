@@ -148,7 +148,7 @@ fn image_views(
 
 /// A cover reveals with the answer only on a card whose block poses no
 /// sibling questions the cover could give away: neither a region card nor a
-/// cloze sub-card (Alex, 2026-08-19; the cloze ruling closes the step-B gap).
+/// cloze sub-card.
 pub(crate) fn covers_reveal(card: &Card) -> bool {
     card.region.is_none() && card.hole.is_none()
 }
@@ -1134,7 +1134,7 @@ mod tests {
             "## The classic test pyramid, bottom to top\n\\blank{Unit} tests, \\blank{integration} tests, \\blank{end-to-end} tests.\n",
         );
         seen(&mut store, &cards);
-        // The real cached sets from Alex's deck, per hole.
+        // Cached sets copied from a real deck, per hole.
         let per_hole = [
             ("Unit", ["Acceptance", "Smoke", "Manual"]),
             ("integration", ["component", "contract", "system"]),
@@ -1809,7 +1809,7 @@ mod tests {
         assert_eq!(RegionRole::Cover, cover.role);
         assert!(
             cover.reveal_on_answer,
-            "a plain card has no sibling questions to protect, so its cover reveals (Alex, 2026-08-19)"
+            "a plain card has no sibling questions to protect, so its cover reveals"
         );
     }
 

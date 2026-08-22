@@ -93,9 +93,8 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
 }
 
 pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card]) -> bool {
-    // Region cards are not recognizable until the MC-family spec rules how
-    // their choices work, cached or authored distractors notwithstanding
-    // (Alex, 2026-08-18).
+    // Region cards are deliberately excluded, even when distractors are
+    // cached or authored.
     if card.region.is_some() {
         return false;
     }
@@ -156,7 +155,7 @@ mod tests {
         );
         assert!(
             !card_recognizable(region_card, &cache, &cards),
-            "the MC-family gate holds even against cached distractors (ruling A)"
+            "the choice gate holds even against cached distractors"
         );
         assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }

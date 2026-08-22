@@ -760,9 +760,8 @@ fn workspace_deadline_rejects_non_workspace_non_decks_dir() {
 
 #[test]
 fn workspace_deadline_rejects_a_decks_folder_without_a_manifest() {
-    // DECISION 2026-07-15: deadline keys apply only inside a real workspace
-    // (manifest present); a plain decks folder is rejected and pointed at the
-    // upgrade path, rather than silently accepted like before.
+    // Deadline keys apply only inside a real workspace (manifest present);
+    // a plain decks folder is rejected and pointed at the upgrade path.
     let dir = TempDir::new().unwrap();
     let plain = dir.path().join("plain");
     std::fs::create_dir(&plain).unwrap();
@@ -966,7 +965,7 @@ fn a_corrupt_sibling_outside_the_target_is_never_parsed_or_touched() {
 
 #[test]
 fn unrelated_damage_never_changes_a_targeted_commands_outcome() {
-    // The excess-footprint law (Alex, 2026-08-21): a command given an
+    // The excess-footprint law: a command given an
     // explicit target must not couple to the health of any store outside
     // that target. Every row runs its command against self-contained
     // workspaces while the CONFIGURED decks folder's store holds a garbage

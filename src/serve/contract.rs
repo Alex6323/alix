@@ -2056,8 +2056,8 @@ fn remotegeneratedto_error_wire_shape() {
     );
 }
 
-/// The rendered-diagram unit occupies the fence's slot in the unit stream
-/// (maintainer ruling, 2026-08-20): src is the opaque /img/<key> URL,
+/// The rendered-diagram unit occupies the fence's slot in the unit
+/// stream: src is the opaque /img/<key> URL,
 /// width/height are LOGICAL pixels (the raster is 2x), alt carries the
 /// fence source while nothing is masked. The server resolves availability:
 /// an unfrozen or stale fence arrives as a plain code unit instead, in the
