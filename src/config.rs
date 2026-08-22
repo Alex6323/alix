@@ -1739,35 +1739,60 @@ mod tests {
             && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
     }
 
-    /// Every review action the config template offers must actually
-    /// deserialize: `RawReview` denies unknown fields, so a documented but
-    /// unwired key costs the user their whole config, not one binding.
+    /// Every action the manual names as rebindable must actually
+    /// deserialize. The raw key structs deny unknown fields, so a documented
+    /// but unwired action does not cost the user one binding: the whole
+    /// config fails to parse and every other setting goes with it.
     #[test]
-    fn every_offered_review_binding_is_settable() {
-        for action in [
-            "failed",
-            "partly",
-            "passed",
-            "up",
-            "down",
-            "reveal",
-            "hint",
-            "submit",
-            "skip",
-            "remove",
-            "continue",
-            "restart",
-            "ask",
-            "context",
-            "make_note",
-            "make_card",
-            "quit",
-        ] {
-            let toml = format!("[keys.review]\n{action} = [\"z\"]\n");
-            assert!(
-                Config::from_toml(&toml).is_ok(),
-                "[keys.review] {action} must deserialize"
-            );
+    fn every_action_the_manual_names_is_settable() {
+        let named: [(&str, &[&str]); 2] = [
+            (
+                "review",
+                &[
+                    "failed",
+                    "partly",
+                    "passed",
+                    "up",
+                    "down",
+                    "reveal",
+                    "hint",
+                    "submit",
+                    "skip",
+                    "remove",
+                    "continue",
+                    "restart",
+                    "ask",
+                    "context",
+                    "make_note",
+                    "make_card",
+                    "quit",
+                ],
+            ),
+            (
+                "picker",
+                &[
+                    "up",
+                    "down",
+                    "open",
+                    "back",
+                    "filter",
+                    "mastered",
+                    "depth",
+                    "recognize",
+                    "recall",
+                    "reconstruct",
+                    "cram",
+                ],
+            ),
+        ];
+        for (surface, actions) in named {
+            for action in actions {
+                let toml = format!("[keys.{surface}]\n{action} = [\"z\"]\n");
+                assert!(
+                    Config::from_toml(&toml).is_ok(),
+                    "[keys.{surface}] {action} must deserialize"
+                );
+            }
         }
     }
 
