@@ -151,7 +151,7 @@ export function createPicker({
   });
 
   // The deck-selection screen, mirroring the terminal picker. Three sections —
-  // Workspaces (each with its last-progress time), Recent loose decks, and
+  // Workspaces (each with its last-progress time), loose Decks, and
   // Folders — and single-launch: click a deck to start it (a trace walks, a deck
   // reviews, an exam-due deck sits its exam) or open a workspace/folder to drill
   // into its unlock dependency tree. 🔒 exam locked (still drillable) · 🕒 nothing due ·
@@ -867,8 +867,8 @@ export function createPicker({
       };
       doc.addEventListener("focusout", stage._refocusOut);
 
-      // No filter → show each row's default set (Recent hides finished/locked and
-      // non-recent decks); with a filter → search every row by label. Empty
+      // No filter → show each row's default set (Decks hides finished and locked
+      // rows); with a filter → search every row by label. Empty
       // section headers hide themselves, and the tree flattens.
       function applyFilter() {
         const q = filter.value.trim().toLowerCase();
@@ -970,9 +970,9 @@ export function createPicker({
       const sections = [];
       if (workspaces.length) sections.push({ title: "Workspaces", rows: workspaces.map(openRow) });
       if (recent.length) sections.push({
-        title: "Recent",
-        // Recent hides finished/locked and non-recent decks until you filter.
-        rows: recent.map(d => deckRow(d, true, null, d.recent && d.state !== "finished" && !d.locked)),
+        title: "Decks",
+        // Finished and locked decks remain reachable through search.
+        rows: recent.map(d => deckRow(d, true, null, d.state !== "finished" && !d.locked)),
       });
       if (folders.length) sections.push({ title: "Folders", rows: folders.map(openRow) });
       renderList({

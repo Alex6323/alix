@@ -382,6 +382,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The adult picker now shows loose decks that have never been opened alongside
+  workspace groups. Previously they existed in the search results but were
+  invisible in the ordinary picker, leaving mixed deck roots looking empty.
+
 - The adult picker's action footer no longer shifts when focus moves between
   decks whose early exam is available and decks whose exam is still locked.
 
