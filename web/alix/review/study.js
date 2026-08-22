@@ -377,21 +377,6 @@ export function createStudy({
       }
       crumbStrip.appendChild(bc);
     }
-    // `c` swaps the section INTO the question's place: the learner asked for
-    // orientation, not for the question with an aid stapled beside it.
-    if (sectionView) {
-      appendContext(
-        q,
-        c.section_context,
-        c.section_context_runs,
-        c.section_context_units,
-        "context section",
-        contextDiagram,
-      );
-      fillBottom();
-      renderLegend();
-      return;
-    }
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
     // Where context is the question (a cloze sentence) it leads and the front
     // steps back to a topic; where it only labels the front (a table title) the
@@ -468,15 +453,49 @@ export function createStudy({
     chip("Leave", "", closeBrowse, "esc");
   }
 
-  // Fills the answer region for the current mode/phase, and shows the note (with
-  // its own divider) only when it should be visible.
+  function appendRegionToggle(parent, className, title, icon, key, action) {
+    const toggle = el("button", `region-toggle ${className}`);
+    toggle.type = "button";
+    toggle.title = title;
+    toggle.setAttribute("aria-label", title);
+    toggle.appendChild(el("span", "ci", icon));
+    toggle.appendChild(el("span", "k", key));
+    toggle.addEventListener("click", event => {
+      event.stopPropagation();
+      action();
+    });
+    parent.appendChild(toggle);
+  }
+
+  function noteVisibleForCurrentCard() {
+    if (isIntroducing()) {
+      if (effectiveDraw()) return revealed > 0;
+      if (isIntroChoice()) return !!feedback;
+      return revealed > 0;
+    }
+    if (feedback) return true;
+    if (isChoice() || isInput() || isTypeLine()) return false;
+    return fullyRevealed();
+  }
+
   function fillBottom() {
     const a = doc.getElementById("ansRegion");
     if (!a) return;
     a.innerHTML = "";
     const citations = state.card.citations || [];
     const citable = citations.length > 0 && isAnswered();
-    if (citable && citationView) {
+    const showingSection = hasSection() && sectionView;
+    if (showingSection) {
+      appendContext(
+        a,
+        state.card.section_context,
+        state.card.section_context_runs,
+        state.card.section_context_units,
+        "context section",
+        contextDiagram,
+      );
+      setNote(noteVisibleForCurrentCard());
+    } else if (citable && citationView) {
       // Source view: all cited excerpts take the answer's place in authored order.
       renderSourceCitations(a, citations);
       setNote(true);
@@ -516,36 +535,49 @@ export function createStudy({
       cardEl.classList.toggle("answered", isAnswered());
       syncDiagramAnswerState(cardEl);
     }
-    // A cited card: the whole region toggles answer ⟷ source (click it, or `s`).
-    // The pill both marks the card as having a source and labels where it is.
-    a.classList.toggle("citable", citable);
-    a.onclick = citable ? onCiteClick : null;
-    if (citable) {
-      const grp = el("span", "cite-toggle");
-      grp.title = citationView
+    const toggles = el("div", "region-toggles");
+    const citationActive = citable && !showingSection;
+    a.classList.toggle("citable", citationActive);
+    a.classList.toggle("sectioned", showingSection);
+    a.onclick = showingSection ? onSectionClick : citationActive ? onCiteClick : null;
+    if (hasSection()) {
+      appendRegionToggle(
+        toggles,
+        "section-toggle",
+        showingSection ? "hide section context" : "show section context",
+        "§",
+        "c",
+        toggleSection,
+      );
+    }
+    if (citationActive) {
+      const title = citationView
         ? "show answer"
         : citations.length === 1
           ? "show source " + citations[0].locator
           : `show ${citations.length} sources`;
-      grp.appendChild(el("span", "ci", citationView ? "¶" : "</>"));
-      grp.appendChild(el("span", "k", "s"));
-      a.appendChild(grp);
+      appendRegionToggle(toggles, "cite-toggle", title, citationView ? "¶" : "</>", "s", toggleCitation);
     }
     // Introduction recall: the same corner-cue mechanism as the source swap, here hiding /
     // un-hiding the revealed answer in place so you can self-test the encoding. `h` (or
     // a tap on the region) flips it both ways. Shown only once the answer is revealed
     // (nothing to hide before then), and never on a cited card — citation owns the corner.
-    const hidable = isIntroducing() && !effectiveDraw() && !isIntroChoice() && citations.length === 0 && revealed > 0;
+    const hidable = !showingSection && isIntroducing() && !effectiveDraw() && !isIntroChoice()
+      && citations.length === 0 && revealed > 0;
     a.classList.toggle("hidable", hidable);
     a.classList.toggle("concealed", hidable && answerConcealed);
     if (hidable) {
       a.onclick = onIntroToggleClick;
-      const grp = el("span", "cite-toggle");
-      grp.title = answerConcealed ? "show answer" : "hide the answer to self-test";
-      grp.appendChild(el("span", "ci", answerConcealed ? "⊙" : "⊘"));
-      grp.appendChild(el("span", "k", "h"));
-      a.appendChild(grp);
+      appendRegionToggle(
+        toggles,
+        "cite-toggle",
+        answerConcealed ? "show answer" : "hide the answer to self-test",
+        answerConcealed ? "⊙" : "⊘",
+        "h",
+        introToggle,
+      );
     }
+    if (toggles.childElementCount) a.appendChild(toggles);
     // keep the newest visible line in view without scrolling into the hidden
     // footprint reserved for later lines
     if (state.mode === "line" && revealed > 0) {
@@ -565,7 +597,7 @@ export function createStudy({
     // and stays top-aligned and scrollable. The pre-reveal badge/hint alone isn't
     // body to center.
     a.classList.toggle("has-body", !!a.querySelector(
-      ".reveal, .options, .inputs, .source-excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
+      ".reveal, .options, .inputs, .source-excerpt, .context.section, .kp-list, .explain-answer, img.card-img, .cite-err"));
     updateFade(a);
   }
 
@@ -576,10 +608,12 @@ export function createStudy({
   function toggleSection() {
     if (!hasSection()) return;
     sectionView = !sectionView;
-    // `rerender`, not the local `render`: only the app-level one clears the
-    // stage, and appending a second card shell leaves the question on screen
-    // beside the section.
-    rerender();
+    fillBottom();
+  }
+
+  function onSectionClick() {
+    if (win.getSelection && String(win.getSelection())) return;
+    toggleSection();
   }
 
   // Swap the answer region between the worded answer and the cited source excerpt.
@@ -1507,6 +1541,7 @@ export function createStudy({
     const cue = a.querySelector(".cite-toggle");
     if (!cue) return;
     cue.title = answerConcealed ? "show answer" : "hide the answer to self-test";
+    cue.setAttribute("aria-label", cue.title);
     const ci = cue.querySelector(".ci");
     if (ci) ci.textContent = answerConcealed ? "⊙" : "⊘";
   }
@@ -1598,8 +1633,7 @@ export function createStudy({
         }
         return;
       }
-      // `c` swaps the question for the card's section and back. The section
-      // rides the card, so this issues no request and records nothing.
+      // `c` swaps the answer content for the card's section and back locally.
       if (hasSection() && hit(e, keys.context)) { e.preventDefault(); toggleSection(); return; }
       // `s` swaps a cited card between its answer and its source, once answered.
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {

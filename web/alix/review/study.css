@@ -72,20 +72,23 @@
     margin-top: auto;
     background: linear-gradient(90deg, transparent, var(--note-line) 18%, var(--note-line) 82%, transparent);
   }
-  /* a cited card's answer region is tappable to swap answer <-> source; a corner
-     icon marks it ( </> = view the source, ¶ = back to the answer ) */
-  .region.a.citable, .region.a.hidable { position: relative; cursor: pointer; }
-  .cite-toggle { position: absolute; top: 6px; right: 10px; display: inline-flex; align-items: center; gap: 6px;
-                 color: var(--dim); user-select: none; transition: color 0.12s; }
-  .cite-toggle .ci { font-family: var(--mono); font-size: 0.9rem; line-height: 1; }
-  .cite-toggle .k { font-family: var(--mono); font-size: 0.66rem; border: 1px solid var(--line);
-                    border-radius: 5px; padding: 1px 5px; }
-  .region.a.citable:hover .cite-toggle, .region.a.hidable:hover .cite-toggle { color: var(--bolt); }
-  .region.a.citable:hover .cite-toggle .k, .region.a.hidable:hover .cite-toggle .k { border-color: var(--bolt); }
+  .region.a.citable, .region.a.hidable, .region.a.sectioned { cursor: pointer; }
+  .region-toggles { position: absolute; top: 6px; right: 10px; z-index: 2;
+                    display: flex; align-items: center; gap: 10px;
+                    max-width: calc(100% - 20px); overflow: hidden; white-space: nowrap; }
+  .region-toggle { appearance: none; border: 0; background: none; padding: 0;
+                   display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+                   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                   color: var(--dim); user-select: none; cursor: pointer; transition: color 0.12s; }
+  .region-toggle .ci { flex: none; font-family: var(--mono); font-size: 0.9rem; line-height: 1; }
+  .region-toggle .k { flex: none; font-family: var(--mono); font-size: 0.66rem; border: 1px solid var(--line);
+                      border-radius: 5px; padding: 1px 5px; }
+  .region-toggle:hover { color: var(--bolt); }
+  .region-toggle:hover .k { border-color: var(--bolt); }
   /* Hide (introduction self-test): conceal ONLY the answer's content, visibility-only so
      its box keeps its exact size and position — the note, the footer, and the layout
      never move. The corner cue is excluded so you can still un-hide. */
-  .region.a.concealed > *:not(.cite-toggle) { visibility: hidden; }
+  .region.a.concealed > *:not(.region-toggles) { visibility: hidden; }
   .cite-err { color: var(--warn); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
 
   /* The topological orientation breadcrumb: each region is its name over a thin

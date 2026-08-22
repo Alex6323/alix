@@ -108,12 +108,13 @@ where it is rather than fixed:
       for the multi-line regression test (`tests/kids-multiline.spec.ts`).
     * `decks/fronts.md`, `decks/math.md`, `decks/source-fact.md`,
       `decks/source-stale.md`, `decks/trace-inline.md`, `decks/sectioned.md`,
-      and `decks/gated.md`: one deck per
+      `decks/section-context-pill.md`, and `decks/gated.md`: one deck per
       regression surface — front rendering, LaTeX math (`adult-math.spec.ts`,
       `kids-math.spec.ts`), live and stale source excerpts
       (`adult-source-excerpt.spec.ts`), the inline trace walk
       (`adult-walk-inline.spec.ts`), section context (`kids-review.spec.ts`),
-      and the sub-card graduation lock (`adult-review.spec.ts`).
+      the adult context-pill layout, and the sub-card graduation lock
+      (`adult-review.spec.ts`).
     * `source-fact.rs`, `source-stale.rs`, and `trace-source.txt`: the live
       source files those decks cite; `source-stale.rs` deliberately drifts
       from its deck's frozen excerpt.

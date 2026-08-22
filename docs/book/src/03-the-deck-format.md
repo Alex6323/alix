@@ -290,9 +290,10 @@ Pressure rises by about one atmosphere per ten metres.
 About 4 atmospheres.
 ```
 
-Context is not shown while you answer; that would give the card away. Ask for
-it: in the web app press `c` and the section replaces the question until you
-press `c` again.
+The adult web app keeps section context behind the compact `§ c` control below
+the question. Press `c` to replace the answer area with that context while the
+question stays in place; press it again to return to the answer. The kids client
+does not expose section context.
 
 A section heading is a heading, nothing more. It takes no directives and no card
 ID, and an empty one is an error, because a section owns no card to bind either

@@ -428,6 +428,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Long section context no longer replaces the adult review question and pushes
+  the card's answer choices down the page. A compact control below the divider
+  now swaps context into the answer area while the question stays fixed.
+
 - The adult picker now shows loose decks that have never been opened alongside
   workspace groups. Previously they existed in the search results but were
   invisible in the ordinary picker, leaving mixed deck roots looking empty.

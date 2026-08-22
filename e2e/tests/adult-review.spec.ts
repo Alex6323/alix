@@ -1205,45 +1205,66 @@ test.fixme("grading fires POST /api/grade and advances the session", async ({ pa
   await expect(page.locator(".front-text")).not.toHaveText(firstFront ?? "");
 });
 
-test("`c` swaps the section into the question's place, costs no request, and resets on the next card", async ({ page }) => {
+test("`c` keeps the question in place and swaps section context into the answer region", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
-  await adultDeckRow(page, "Sectioned").click();
+  await adultDeckRow(page, "Section context, a demonstration").click();
   await page.getByTitle("choose a depth").click();
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/select")),
-    page.getByRole("button", { name: /^Recall/ }).click(),
+    page.getByRole("button", { name: /^Recognize/ }).click(),
   ]);
 
-  // Neither `.region.q` nor `#card` is unique here, so assert on the page.
-  const card = page.locator("body");
-  await expect(card).toContainText("sunlight zone");
-  // The section is not on screen until it is asked for.
+  const card = page.locator("#card");
+  const question = card.locator(".region.q");
+  const answer = card.locator("#ansRegion");
+  const sectionToggle = answer.locator(".section-toggle");
+  await expect(question).toContainText("Which German verb means");
+  await expect(answer.locator(".options")).toBeVisible();
   await expect(page.locator(".context.section")).toHaveCount(0);
+  await expect(sectionToggle).toBeVisible();
+  await expect(sectionToggle).toHaveAttribute("title", "show section context");
 
-  // Nothing may be requested while the section is toggled: it rode in on the
-  // card, so a round trip here would be a bug the eye cannot see.
+  const dividerBox = await card.locator(":scope > .divider").boundingBox();
+  const toggleBox = await sectionToggle.boundingBox();
+  expect(dividerBox).not.toBeNull();
+  expect(toggleBox).not.toBeNull();
+  expect(toggleBox?.y ?? 0).toBeGreaterThan(dividerBox?.y ?? Number.MAX_SAFE_INTEGER);
+
   const calls: string[] = [];
   page.on("request", (req) => { if (req.url().includes("/api/")) calls.push(req.url()); });
 
-  await page.keyboard.press("c");
-  // One line element per authored line, so assert on the region's text.
-  await expect(card).toContainText("Ocean depths");
-  await expect(card).toContainText("Sunlight reaches only the top layer.");
-  // The swap is in place: the front element is not rendered at all.
-  await expect(page.locator(".front-text")).toHaveCount(0);
+  await sectionToggle.click();
+  await expect(question).toContainText("Which German verb means");
+  await expect(question.locator(".front-text")).toHaveCount(1);
+  await expect(answer.locator(".options")).toHaveCount(0);
+  await expect(answer).toContainText("Verbs of arguing");
+  await expect(answer).toContainText("must not displace the question");
+  await expect(question.locator(".context.section")).toHaveCount(0);
+  await expect(sectionToggle).toHaveAttribute("title", "hide section context");
 
   await page.keyboard.press("c");
   await expect(page.locator(".context.section")).toHaveCount(0);
-  await expect(page.locator(".front-text")).toHaveCount(1);
-  await expect(card).toContainText("sunlight zone");
+  await expect(question.locator(".front-text")).toHaveCount(1);
+  await expect(answer.locator(".options")).toBeVisible();
   expect(calls).toEqual([]);
 
-  // Held open across a reveal, the next card starts closed again.
+  const front = await question.textContent();
+  const correct = front?.includes("advocate") ? "befürworten" : "einräumen";
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/choose")),
+    page.getByRole("button", { name: new RegExp(correct) }).click(),
+  ]);
+  const note = card.locator("#noteRegion");
+  await expect(note).toBeVisible();
   await page.keyboard.press("c");
-  await expect(page.locator(".context.section").first()).toBeVisible();
-  await page.keyboard.press(" ");
-  await page.getByRole("button", { name: "Seen" }).click();
-  await expect(card).toContainText("What lies below it?");
+  await expect(answer.locator(".context.section").first()).toBeVisible();
+  await expect(note).toBeVisible();
+  await expect(note.locator(".context.section")).toHaveCount(0);
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/introduce")),
+    page.getByRole("button", { name: "Seen" }).click(),
+  ]);
+  await expect(question).not.toContainText(front ?? "");
   await expect(page.locator(".context.section")).toHaveCount(0);
 });
 
