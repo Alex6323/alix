@@ -556,11 +556,9 @@ struct AugmentArgs {
     /// The deck file to augment.
     deck: PathBuf,
 
-    /// What to augment, mirroring the review concepts: `choices` (distractors),
-    /// `notes` (trivia / mnemonics), `questions` (reworded phrasings rotated at
-    /// review), or `order` (a graph of how the cards relate plus a suggested
-    /// walk that puts foundations first). All are cached in the workspace's
-    /// augmentation document, never written into the deck; review reads them.
+    /// What to augment, mirroring the review concepts. Each value describes
+    /// itself below. All are cached in the workspace's augmentation document,
+    /// never written into the deck; review reads them.
     #[arg(long, value_enum)]
     target: AugmentTarget,
 
