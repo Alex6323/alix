@@ -1,15 +1,22 @@
 # 0036: A heading is study structure, not deck metadata
 
-- Status: Proposed
-- Evidence: none, proposed; literal markers replace this line at
-  acceptance, alongside the implementation
+- Status: Accepted
+- Evidence: section_context_units in src/serve/dto.rs;
+  PointlessTerminator in src/parser/mod.rs
 - Recorded: 2026-08-21
 - Retrospective: No
-- Open before acceptance: a section's fence is always code, because nothing
-  freezes it and a `#` heading may carry no directive to bind a stamp to.
-  Where a section's frozen diagram stamp would live is a deck-grammar
-  decision and is unsettled; accepting this record accepts the section
-  grammar, so settle it first.
+- Open before acceptance: none on the grammar since 2026-08-22. The two
+  post-approval deck-grammar decisions are ruled in the working spec (D21,
+  D22): a section's frozen diagram stamp lives in the section's own prose,
+  fingerprint-matched to its fence, and a section image takes an optional
+  `crop:`; the `#` heading still carries no directive. The section
+  terminator is a blank-surrounded `---` line (amended ruling
+  2026-08-22, superseding the same-day bare-`#` terminator): cards
+  after it carry no context, and a `---` in neither the divider shape
+  (non-blank next line) nor a valid terminator position fails loudly.
+  A depth-1 heading with empty text (`#` or `# `) is a line-numbered
+  parse error. The amended grammar landed on main (`9ec6558b`,
+  2026-08-22), closing the last open item; accepted the same day.
 
 ## Context
 
