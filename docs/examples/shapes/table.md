@@ -1,10 +1,10 @@
 ---
-format-version: 1
-id: "deck-3s76rwy8znjmmzt2f8hdmnhdnj"
 title: "Card tables: paired items"
 description: >-
   Paired material is one row per pair. Recognize options come from the row's
   own column, so the wrong answers are real siblings and cost no AI call.
+format-version: 1
+id: "deck-3s76rwy8znjmmzt2f8hdmnhdnj"
 ---
 
 ## Verbs of arguing

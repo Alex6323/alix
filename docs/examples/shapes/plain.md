@@ -1,10 +1,10 @@
 ---
-format-version: 1
-id: "deck-7kw6vh479e00pzxbhc3t9b6h34"
 title: "Plain cards: the default, and not a failure"
 description: >-
   Most material has no structure to exploit. A plain card drilled well
   beats a clever shape drilled badly.
+format-version: 1
+id: "deck-7kw6vh479e00pzxbhc3t9b6h34"
 ---
 
 ## Why does TCP open with a three-way handshake?

@@ -1,10 +1,10 @@
 ---
-format-version: 1
-id: "deck-3na8f2nm1bcqhd2cacvam3y23c"
 title: "Cloze: the sentence cues the term"
 description: >-
   Wrap the hidden span as \blank{...} in an answer line. The context does
   the cueing, so recall is anchored where the term will be used.
+format-version: 1
+id: "deck-3na8f2nm1bcqhd2cacvam3y23c"
 ---
 
 ## Ownership in Rust

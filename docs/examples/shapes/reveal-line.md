@@ -1,11 +1,11 @@
 ---
-format-version: 1
-id: "deck-7yen1at9rgkttb00kvbyer46mh"
 title: "reveal: line: ordered steps"
 description: >-
   Order is graded and the answer uncovers one line at a time, so recall is
   stepwise. A flip card cannot test order at all.
 reveal: line
+format-version: 1
+id: "deck-7yen1at9rgkttb00kvbyer46mh"
 ---
 
 ## How does a TCP connection open?

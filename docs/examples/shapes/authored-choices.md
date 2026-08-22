@@ -1,10 +1,10 @@
 ---
-format-version: 1
-id: "deck-4pw3s7ceswqmr0w2adks32qqf8"
 title: "Authored choices: the distractors teach"
 description: >-
   One `- [x]` and two or more `- [ ]`. Write them only if you can say what
   mistaken belief each wrong option represents.
+format-version: 1
+id: "deck-4pw3s7ceswqmr0w2adks32qqf8"
 ---
 
 ## Which number is prime?
