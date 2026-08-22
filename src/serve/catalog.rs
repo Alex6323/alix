@@ -358,7 +358,12 @@ pub(super) fn workspace_members(
             (blocked, m.label.clone())
         })
         .collect();
-    let members = picker::dependency_forest(&parent, &key)
+    let order = crate::listing::dependency_forest_by(&parent, &key, |left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| crate::title::natural_cmp(&left.1, &right.1))
+    });
+    let members = order
         .into_iter()
         .map(|(i, prefix)| {
             let m = &e.members[i];

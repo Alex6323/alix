@@ -55,7 +55,7 @@ fn dir_candidates(
             is_workspace,
         })
         .collect();
-    cands.sort_by(|a, b| a.name.cmp(&b.name));
+    cands.sort_by(|a, b| title::natural_cmp(&a.name, &b.name));
     Ok(cands)
 }
 
@@ -349,6 +349,22 @@ mod tests {
         assert_eq!(vec!["mid.md", "alpha.md", "zeta.md"], names);
         assert!(cands[0].last_used_ms.is_some());
         assert!(cands[1].last_used_ms.is_none());
+    }
+
+    #[test]
+    fn directory_candidates_order_numbered_names_naturally() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["10.md", "100.md", "11.md"] {
+            write_initialized(&dir.path().join(name), "## q\na\n");
+        }
+
+        let candidates = dir_candidates(dir.path(), &mut DeckCache::default()).unwrap();
+        let names: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.name.as_str())
+            .collect();
+
+        assert_eq!(["10.md", "11.md", "100.md"], names.as_slice());
     }
 
     #[test]

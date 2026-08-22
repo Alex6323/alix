@@ -9,7 +9,7 @@ use crate::{
     scheduler::Fsrs,
     session,
     store::{self, Store},
-    workspace,
+    title, workspace,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,7 +53,13 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
     let mut names: Vec<PathBuf> = std::fs::read_dir(root)
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
-    names.sort();
+    names.sort_by(|left, right| {
+        title::natural_cmp(
+            &left.file_name().unwrap_or_default().to_string_lossy(),
+            &right.file_name().unwrap_or_default().to_string_lossy(),
+        )
+        .then_with(|| left.cmp(right))
+    });
     let mut out = Vec::new();
     for path in names {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -103,7 +109,12 @@ pub fn list_members(
             (blocked, row.title.clone())
         })
         .collect();
-    dependency_forest(&parent, &key)
+    let order = dependency_forest_by(&parent, &key, |left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| title::natural_cmp(&left.1, &right.1))
+    });
+    order
         .into_iter()
         .map(|(i, prefix)| {
             let mut row = rows[i].0.clone();
@@ -591,6 +602,14 @@ pub fn member_parents(members: &[PathBuf], decks_dir: &Path) -> Vec<Option<usize
 /// Each branch segment is exactly 3 chars wide, so a caller recovers nesting
 /// depth as `prefix.chars().count() / 3`.
 pub fn dependency_forest<K: Ord>(parent: &[Option<usize>], key: &[K]) -> Vec<(usize, String)> {
+    dependency_forest_by(parent, key, Ord::cmp)
+}
+
+pub(crate) fn dependency_forest_by<K>(
+    parent: &[Option<usize>],
+    key: &[K],
+    mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+) -> Vec<(usize, String)> {
     let n = parent.len();
     let mut children = vec![Vec::new(); n];
     let mut roots = Vec::new();
@@ -600,9 +619,9 @@ pub fn dependency_forest<K: Ord>(parent: &[Option<usize>], key: &[K]) -> Vec<(us
             _ => roots.push(i),
         }
     }
-    roots.sort_by(|a, b| key[*a].cmp(&key[*b]));
+    roots.sort_by(|a, b| compare(&key[*a], &key[*b]));
     for kids in &mut children {
-        kids.sort_by(|a, b| key[*a].cmp(&key[*b]));
+        kids.sort_by(|a, b| compare(&key[*a], &key[*b]));
     }
 
     let mut out = Vec::new();
@@ -787,6 +806,19 @@ mod tests {
                 ("c-plain", true),
             ]
         );
+    }
+
+    #[test]
+    fn root_listing_orders_numbered_decks_naturally() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["10.md", "100.md", "11.md"] {
+            write(&dir.path().join(name), "## q <!-- id: card-q -->\na\n");
+        }
+
+        let rows = list_root(dir.path(), &ReviewConfig::default(), T0);
+        let titles: Vec<&str> = rows.iter().map(|row| row.title.as_str()).collect();
+
+        assert_eq!(["10", "11", "100"], titles.as_slice());
     }
 
     #[test]

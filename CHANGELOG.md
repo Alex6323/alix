@@ -379,6 +379,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   longer matches. Previously an empty result could still show the hidden deck's
   description and heatmap above the `No decks match.` message.
 
+- Deck lists now order numeric runs by value, so numbered titles appear as
+  `10`, `11`, `100` instead of `10`, `100`, `11`. The same comparison governs
+  root entries and dependency-tree siblings while preserving recent-first,
+  prerequisite, and blocked-last ordering.
+
 - The advertised `curl -sSf https://alix.study/install.sh | sh` install has
   been failing since 2026-08-03. GitHub's `/releases/latest` is repo-wide, and
   the `mobile-v0.3.0` APK release took that slot, so the installer resolved to
