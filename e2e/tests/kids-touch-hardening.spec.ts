@@ -22,6 +22,8 @@ test("a touch option suppresses the browser menu and still reaches choose", asyn
 
   const option = page.locator(".opt-btn").first();
   await expect(option).toBeVisible();
+  const optionHeight = await option.evaluate((element) => element.getBoundingClientRect().height);
+  expect(optionHeight, "a coarse-pointer answer needs a child-sized touch target").toBeGreaterThanOrEqual(76);
   const touchStyles = await option.evaluate((element) => {
     const styles = getComputedStyle(element.ownerDocument.body);
     return { touchAction: styles.touchAction, userSelect: styles.userSelect };
@@ -54,4 +56,8 @@ test("a touch option suppresses the browser menu and still reaches choose", asyn
   ]);
   expect(chooseResponse.status()).toBe(200);
   await expect(page.locator(".opt-correct")).toHaveCount(1);
+  const next = page.getByRole("button", { name: "Got it! Next" });
+  await expect(next).toBeVisible();
+  const nextHeight = await next.evaluate((element) => element.getBoundingClientRect().height);
+  expect(nextHeight, "the post-answer action needs a child-sized touch target").toBeGreaterThanOrEqual(68);
 });

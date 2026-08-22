@@ -70,13 +70,6 @@
 }
 .opt-btn:active { transform: translateY(1px); }
 .opt-btn:disabled { cursor: default; }
-/* Touch devices: a kid's finger needs bigger targets than a mouse. */
-@media (pointer: coarse) {
-  .opt-btn { min-height: 76px; font-size: 26px; }
-  .rev-options { gap: 16px; }
-  .show-btn, .rate-btn { min-height: 68px; font-size: 24px; }
-  .bar-mid { min-height: 68px; }
-}
 .opt-correct { background: rgba(47, 185, 104, 0.14); border-color: #2fb968; color: #1f9b53; box-shadow: none; }
 .opt-wrong { background: rgba(255, 111, 97, 0.12); border-color: #ff6f61; color: #d9544a; box-shadow: none; }
 .opt-dim { background: #fff; border-color: #f3e6d8; color: #c9b6a4; box-shadow: none; }
@@ -127,6 +120,14 @@
 .ghost-home {
   padding: 10px 16px; border: none; border-radius: 14px; background: transparent;
   color: var(--muted-2); font-family: inherit; font-weight: 700; font-size: 16px; cursor: pointer;
+}
+/* Touch devices: a kid's finger needs bigger targets than a mouse. Keep this
+   after every base button rule so the coarse-pointer sizes win the cascade. */
+@media (pointer: coarse) {
+  .opt-btn { min-height: 76px; font-size: 26px; }
+  .rev-options { gap: 16px; }
+  .show-btn, .rate-btn { min-height: 68px; font-size: 24px; }
+  .bar-mid { min-height: 68px; }
 }
 .ask-btn {
   display: inline-flex; align-items: center; gap: 8px;
