@@ -164,3 +164,10 @@
   .draw-tool.on { color: var(--ink); border-color: var(--bolt); }
   .draw-frozen { width: 100%; margin-bottom: 8px; flex: none; }
   .draw-frozen img { max-width: 100%; max-height: 30vh; border: 1px solid var(--line); border-radius: 12px; display: block; margin: 0 auto; }
+  .draw-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; width: 100%; align-items: stretch; }
+  .draw-comparison-pane { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .draw-comparison-label { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+  .draw-comparison-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
+  .draw-comparison .draw-frozen { margin: 0; }
+  .draw-comparison .draw-frozen img { width: 100%; object-fit: contain; }
+  @media (max-width: 640px) { .draw-comparison { grid-template-columns: 1fr; } }

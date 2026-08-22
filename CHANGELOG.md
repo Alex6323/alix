@@ -392,6 +392,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   appear below them, instead of recentering the growing answer upward after
   every step. The remaining-content indicator is now a compact pill.
 
+- Adult draw cards now place the learner's frozen sketch beside the expected
+  answer in labeled comparison panes. Narrow screens stack the same panes so
+  neither side becomes unreadably small.
+
 - The advertised `curl -sSf https://alix.study/install.sh | sh` install has
   been failing since 2026-08-03. GitHub's `/releases/latest` is repo-wide, and
   the `mobile-v0.3.0` APK release took that slot, so the installer resolved to

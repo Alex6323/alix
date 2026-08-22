@@ -485,8 +485,8 @@ export function createStudy({
         // Attempt-first, ungraded: draw your answer, then reveal it to compare.
         if (revealed === 0) { renderDrawCanvas(a); setNote(false); }
         else {
-          if (drawSnapshot) a.appendChild(frozenDrawImg(drawSnapshot)); // your attempt, kept for comparison
-          fillIntroduction(a); setNote(true);         // then the answer (still just "Seen")
+          renderDrawComparison(a, fillIntroduction);
+          setNote(true);
         }
       } else if (isIntroChoice()) {
         if (feedback) renderChoiceFeedback(a); else renderChoices(a);
@@ -505,9 +505,8 @@ export function createStudy({
     else if (effectiveDraw()) {
       if (revealed === 0) { renderDrawCanvas(a); setNote(false); }
       else {
-        if (drawSnapshot) a.appendChild(frozenDrawImg(drawSnapshot)); // your drawing, for comparison
-        if (isExplain()) { renderExplain(a); setNote(true); }         // key-points checklist reveal
-        else { fillAnswer(a); setNote(true); }                        // flip reveal (back / images_back)
+        renderDrawComparison(a, isExplain() ? renderExplain : fillAnswer);
+        setNote(true);
       }
     }
     else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
@@ -1022,6 +1021,23 @@ export function createStudy({
     img.alt = "your drawing";
     wrap.appendChild(img);
     return wrap;
+  }
+  function renderDrawComparison(a, renderExpected) {
+    const comparison = el("div", "draw-comparison");
+    const attempt = el("section", "draw-comparison-pane");
+    attempt.appendChild(el("div", "draw-comparison-label", "Your answer"));
+    const attemptBody = el("div", "draw-comparison-body");
+    if (drawSnapshot) attemptBody.appendChild(frozenDrawImg(drawSnapshot));
+    attempt.appendChild(attemptBody);
+    comparison.appendChild(attempt);
+
+    const expected = el("section", "draw-comparison-pane");
+    expected.appendChild(el("div", "draw-comparison-label", "Expected answer"));
+    const expectedBody = el("div", "draw-comparison-body");
+    renderExpected(expectedBody);
+    expected.appendChild(expectedBody);
+    comparison.appendChild(expected);
+    a.appendChild(comparison);
   }
 
   // A reshaped multi-item answer (the `format` augment's list) reveals with
