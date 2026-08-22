@@ -22,7 +22,9 @@ mod stream;
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Hole, Seg, Side, hash_repr, hole_fingerprints, scan_markers, seg_display};
-pub use frontmatter::{Frontmatter, PERSONAL_PARENT_KEY, parse_sampling, yaml_quote};
+pub use frontmatter::{
+    Frontmatter, PERSONAL_PARENT_KEY, Reorder, parse_sampling, reorder_frontmatter, yaml_quote,
+};
 use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 pub use sidecar::{SidecarNote, notes, without_notes};
 

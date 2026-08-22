@@ -6917,3 +6917,34 @@ fn doctor_repair_diagrams_refuses_to_modify_a_standalone_deck() {
         "the workspace-only repair unexpectedly accepted a standalone deck"
     );
 }
+
+#[test]
+fn doctor_repair_frontmatter_order_moves_machine_lines_last() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "scrambled.md",
+        "---\nid: \"deck-mathdeck\"\ntitle: Scrambled\n---\n## What is 2 + 2? <!-- id: card-math1 -->\n4\n",
+    );
+
+    let out = alix(&["doctor", "--repair-frontmatter-order", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("reordered frontmatter"),
+        "stdout: {}",
+        stdout(&out)
+    );
+    let repaired = std::fs::read_to_string(&deck).unwrap();
+    assert!(
+        repaired.starts_with("---\ntitle: Scrambled\nid: \"deck-mathdeck\"\n---\n"),
+        "{repaired}"
+    );
+
+    let out = alix(&["doctor", "--repair-frontmatter-order", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        !stdout(&out).contains("reordered"),
+        "a second run is already canonical: {}",
+        stdout(&out)
+    );
+}

@@ -243,6 +243,12 @@ struct DoctorArgs {
     #[arg(long)]
     repair_diagrams: bool,
 
+    /// Rewrite each checked deck's frontmatter into the canonical key order:
+    /// authored keys first, machine lines last. Opt-in only; an author's own
+    /// order is never diagnosed against it.
+    #[arg(long)]
+    repair_frontmatter_order: bool,
+
     /// Delete every backup (`*.bak`) file under the checked folder, after one
     /// confirmation. The backups are what `alix deck restore` swaps in.
     #[arg(long)]

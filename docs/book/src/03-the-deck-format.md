@@ -341,6 +341,12 @@ These five are yours to fill in and alix never changes them.
 Apart from `id`, frontmatter carries only what differs from the defaults, and a command-line flag always overrides it. The full set of
 frontmatter and per-card keys gets its own *Directives reference* chapter.
 
+Key order never matters and yours is never diagnosed. Frontmatter alix itself
+writes follows one canonical order: authored keys first (`title` and
+`description` up front), machine lines like `id` last. To rewrite an existing
+deck into that order, opt in with `alix doctor <deck>
+--repair-frontmatter-order`.
+
 ## Escaping
 
 Because `##`, `>`, `---`, and the fence and cloze markers are structural, an answer

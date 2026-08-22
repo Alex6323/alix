@@ -286,3 +286,270 @@ pub(super) fn bad_value(line: usize, key: &str, value: String) -> Lint {
 pub fn yaml_quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
+
+/// What `reorder_frontmatter` did with a document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reorder {
+    Unchanged,
+    Reordered(String),
+    Skipped(&'static str),
+}
+
+/// The canonical order for frontmatter alix itself writes and for the opt-in
+/// doctor repair: authored keys first, machine lines last. An author's own
+/// order is never diagnosed against it.
+const CANONICAL_KEY_ORDER: [&str; 17] = [
+    "title",
+    "description",
+    "trace",
+    "authors",
+    "license",
+    "created-at",
+    "language",
+    "revision",
+    "reveal",
+    "order",
+    "input",
+    "direction",
+    "sampling",
+    "source",
+    "requires",
+    "link",
+    "format-version",
+];
+
+const UNKNOWN_KEY_RANK: usize = CANONICAL_KEY_ORDER.len();
+
+fn key_rank(key: &str) -> usize {
+    match key {
+        PERSONAL_PARENT_KEY => UNKNOWN_KEY_RANK + 1,
+        "id" => UNKNOWN_KEY_RANK + 2,
+        _ => CANONICAL_KEY_ORDER
+            .iter()
+            .position(|k| *k == key)
+            .unwrap_or(UNKNOWN_KEY_RANK),
+    }
+}
+
+fn line_content(line: &str) -> &str {
+    line.trim_end_matches(['\n', '\r'])
+}
+
+fn is_key_line(content: &str) -> Option<&str> {
+    let colon = content.find(':')?;
+    let key = &content[..colon];
+    (!key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+    .then_some(key)
+}
+
+pub fn reorder_frontmatter(text: &str) -> Reorder {
+    let (bom, body) = match text.strip_prefix('\u{feff}') {
+        Some(rest) => ("\u{feff}", rest),
+        None => ("", text),
+    };
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    let Some(open) = lines
+        .iter()
+        .position(|line| !trim_ws(line_content(line)).is_empty())
+    else {
+        return Reorder::Unchanged;
+    };
+    if line_content(lines[open]) != "---" {
+        return Reorder::Unchanged;
+    }
+    let Some(close) = lines[open + 1..]
+        .iter()
+        .position(|line| closes_frontmatter(line_content(line)))
+        .map(|i| open + 1 + i)
+    else {
+        return Reorder::Skipped("unclosed frontmatter");
+    };
+
+    let mut blocks: Vec<(usize, Vec<&str>)> = Vec::new();
+    for line in &lines[open + 1..close] {
+        let content = line_content(line);
+        if trim_ws(content).is_empty() {
+            return Reorder::Skipped("a blank line inside the frontmatter");
+        }
+        if content.starts_with('#') {
+            return Reorder::Skipped("a comment inside the frontmatter");
+        }
+        let continuation =
+            content.starts_with([' ', '\t']) || content == "-" || content.starts_with("- ");
+        if continuation {
+            let Some((_, block)) = blocks.last_mut() else {
+                return Reorder::Skipped("a continuation line without a key");
+            };
+            block.push(line);
+            continue;
+        }
+        let Some(key) = is_key_line(content) else {
+            return Reorder::Skipped("an unrecognized frontmatter line");
+        };
+        blocks.push((key_rank(key), vec![line]));
+    }
+
+    blocks.sort_by_key(|(rank, _)| *rank);
+    let mut out = String::with_capacity(text.len());
+    out.push_str(bom);
+    out.extend(lines[..=open].iter().copied());
+    for (_, block) in &blocks {
+        out.extend(block.iter().copied());
+    }
+    out.extend(lines[close..].iter().copied());
+    if out == text {
+        Reorder::Unchanged
+    } else {
+        Reorder::Reordered(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reordered(text: &str) -> String {
+        match reorder_frontmatter(text) {
+            Reorder::Reordered(out) => out,
+            other => panic!("expected Reordered, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_machine_id_line_moves_last_and_title_first() {
+        assert_eq!(
+            "---\ntitle: T\ndescription: D\nid: \"deck-x\"\n---\n## q\na\n",
+            reordered("---\nid: \"deck-x\"\ntitle: T\ndescription: D\n---\n## q\na\n")
+        );
+    }
+
+    #[test]
+    fn the_whole_canonical_order_is_pinned_as_one_law() {
+        let mut every_key = vec![
+            "id",
+            "for",
+            "format-version",
+            "link",
+            "requires",
+            "source",
+            "sampling",
+            "direction",
+            "input",
+            "order",
+            "reveal",
+            "revision",
+            "language",
+            "created-at",
+            "license",
+            "authors",
+            "trace",
+            "description",
+            "title",
+        ];
+        every_key.sort_by_key(|key| key_rank(key));
+        assert_eq!(
+            vec![
+                "title",
+                "description",
+                "trace",
+                "authors",
+                "license",
+                "created-at",
+                "language",
+                "revision",
+                "reveal",
+                "order",
+                "input",
+                "direction",
+                "sampling",
+                "source",
+                "requires",
+                "link",
+                "format-version",
+                "for",
+                "id",
+            ],
+            every_key
+        );
+        assert!(key_rank("some-unknown") > key_rank("format-version"));
+        assert!(key_rank("some-unknown") < key_rank("for"));
+    }
+
+    #[test]
+    fn unknown_keys_keep_their_relative_order_between_authored_and_machine() {
+        assert_eq!(
+            "---\ntitle: T\nzeta: 1\nalpha: 2\nid: \"deck-x\"\n---\n",
+            reordered("---\nid: \"deck-x\"\nzeta: 1\ntitle: T\nalpha: 2\n---\n")
+        );
+    }
+
+    #[test]
+    fn a_multi_line_value_travels_with_its_key() {
+        assert_eq!(
+            "---\ntitle: T\ndescription: >-\n  two\n  lines\nid: \"deck-x\"\n---\n",
+            reordered("---\nid: \"deck-x\"\ndescription: >-\n  two\n  lines\ntitle: T\n---\n")
+        );
+    }
+
+    #[test]
+    fn a_column_zero_list_item_travels_with_its_key() {
+        assert_eq!(
+            "---\ntitle: T\nsource:\n- a\n- b\nid: \"deck-x\"\n---\n",
+            reordered("---\nid: \"deck-x\"\nsource:\n- a\n- b\ntitle: T\n---\n")
+        );
+    }
+
+    #[test]
+    fn an_already_canonical_block_reports_unchanged() {
+        assert_eq!(
+            Reorder::Unchanged,
+            reorder_frontmatter("---\ntitle: T\nid: \"deck-x\"\n---\n## q\na\n")
+        );
+    }
+
+    #[test]
+    fn reordering_twice_is_idempotent() {
+        let once = reordered("---\nid: \"deck-x\"\ntitle: T\n---\n");
+        assert_eq!(Reorder::Unchanged, reorder_frontmatter(&once));
+    }
+
+    #[test]
+    fn crlf_endings_survive_reordering_byte_for_byte() {
+        assert_eq!(
+            "---\r\ntitle: T\r\nid: \"deck-x\"\r\n---\r\n## q\r\na\r\n",
+            reordered("---\r\nid: \"deck-x\"\r\ntitle: T\r\n---\r\n## q\r\na\r\n")
+        );
+    }
+
+    #[test]
+    fn a_bom_stays_first_through_reordering() {
+        assert_eq!(
+            "\u{feff}---\ntitle: T\nid: \"deck-x\"\n---\n",
+            reordered("\u{feff}---\nid: \"deck-x\"\ntitle: T\n---\n")
+        );
+    }
+
+    #[test]
+    fn a_comment_line_defers_the_repair() {
+        assert_eq!(
+            Reorder::Skipped("a comment inside the frontmatter"),
+            reorder_frontmatter("---\nid: \"deck-x\"\n# mine\ntitle: T\n---\n")
+        );
+    }
+
+    #[test]
+    fn a_blank_line_defers_the_repair() {
+        assert_eq!(
+            Reorder::Skipped("a blank line inside the frontmatter"),
+            reorder_frontmatter("---\nid: \"deck-x\"\n\ntitle: T\n---\n")
+        );
+    }
+
+    #[test]
+    fn a_document_without_frontmatter_reports_unchanged() {
+        assert_eq!(Reorder::Unchanged, reorder_frontmatter("## q\na\n"));
+    }
+}

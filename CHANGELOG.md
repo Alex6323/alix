@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix doctor --repair-frontmatter-order` rewrites each checked deck's
+  frontmatter into the canonical key order. Opt-in only; frontmatter it
+  cannot safely permute (a blank line or comment inside the block) is left
+  as-is with a note.
+
 - Mermaid diagrams render into decks: a ```` ```mermaid ```` fence in a
   workspace member freezes at `alix deck init` time into a deck-owned PNG
   plus a label-geometry file (rendering shells out to the optional `sekien`
@@ -206,6 +211,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Frontmatter alix writes follows one canonical key order: authored keys
+  first (`title`, `description`, directives, `source`/`link`), machine lines
+  last, so a minted deck `id` now lands at the bottom of the block instead
+  of the top. An author's own order still never matters and is never
+  diagnosed.
 - **`format-version` is now a reserved key; a deck that does not declare it
   is format version 1 (breaking).** `alix deck init` and the personal
   sidecar writer no longer write the key, and a deck with an `id` but no

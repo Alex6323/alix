@@ -1072,6 +1072,34 @@ fn repair_positions(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+fn repair_frontmatter_order(paths: &[PathBuf]) -> Result<()> {
+    use alix::parser::Reorder;
+    for path in paths {
+        let text = std::fs::read_to_string(path)?;
+        match alix::parser::reorder_frontmatter(&text) {
+            Reorder::Unchanged => {}
+            Reorder::Reordered(repaired) => {
+                alix::parser::parse(
+                    path.file_stem().and_then(|s| s.to_str()).unwrap_or("deck"),
+                    &repaired,
+                )
+                .with_context(|| format!("{}: the repair would not parse", path.display()))?;
+                let tmp = path.with_extension("md.tmp");
+                std::fs::write(&tmp, &repaired)?;
+                std::fs::rename(&tmp, path)?;
+                println!("reordered frontmatter in {}", path.display());
+            }
+            Reorder::Skipped(reason) => {
+                eprintln!(
+                    "warning: {}: frontmatter left as-is: {reason}",
+                    path.display()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn repair_diagrams(paths: &[PathBuf]) -> Result<()> {
     for path in paths {
         let (removed, report) = alix::assets::repair_diagrams(path)?;
@@ -1213,6 +1241,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             if args.repair_diagrams {
                 repair_diagrams(std::slice::from_ref(path))?;
             }
+            if args.repair_frontmatter_order {
+                repair_frontmatter_order(std::slice::from_ref(path))?;
+            }
             return check(vec![path.clone()]);
         }
         if alix::workspace::is_workspace(path) {
@@ -1224,6 +1255,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             }
             if args.repair_diagrams {
                 repair_diagrams(&alix::workspace::deck_files(path))?;
+            }
+            if args.repair_frontmatter_order {
+                repair_frontmatter_order(&alix::workspace::deck_files(path))?;
             }
             check(vec![path.clone()])?;
         }
@@ -1264,6 +1298,14 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             .is_some_and(alix::workspace::is_workspace)
     {
         repair_diagrams(&alix::workspace::deck_files(&decks_dir))?;
+    }
+    if args.repair_frontmatter_order
+        && !args
+            .dir
+            .as_deref()
+            .is_some_and(alix::workspace::is_workspace)
+    {
+        repair_frontmatter_order(&alix::workspace::deck_files(&decks_dir))?;
     }
     if args.remove_backup_files {
         let baks = doctor::backup_files(&decks_dir);
@@ -2112,6 +2154,7 @@ printf ']}}'
         let args = |repair_source_locators| DoctorArgs {
             repair_positions: false,
             repair_diagrams: false,
+            repair_frontmatter_order: false,
             dir: Some(dir.path().to_path_buf()),
             backends: false,
             all_backends: false,

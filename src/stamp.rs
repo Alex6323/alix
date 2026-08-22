@@ -85,8 +85,8 @@ pub enum StampError {
 enum DeckAction {
     None,
     Prepend,
-    /// The 1-based line number of the frontmatter's opening `---`, to splice
-    /// an `id:` after it.
+    /// The 1-based line number of the frontmatter's closing `---`, to splice
+    /// an `id:` before it: machine lines sit last in the canonical order.
     Splice(usize),
 }
 
@@ -257,7 +257,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     } else {
         match deck.frontmatter_span {
             None => DeckAction::Prepend,
-            Some((open, _close)) if !deck.frontmatter.unspliceable => DeckAction::Splice(open),
+            Some((_open, close)) if !deck.frontmatter.unspliceable => DeckAction::Splice(close),
             Some(_) => return Err(StampError::UnspliceableFrontmatter),
         }
     };
@@ -362,8 +362,8 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     minted_cards.extend(container_mints.iter().map(|(_, tok)| tok.clone()));
     let mut prepend = String::new();
     match (&deck_action, &deck_token) {
-        (DeckAction::Splice(open), Some(tok)) => {
-            let offset = line_start_of_next(body, *open).ok_or(StampError::MissingLine(*open))?;
+        (DeckAction::Splice(close), Some(tok)) => {
+            let offset = nth_line_start(body, *close).ok_or(StampError::MissingLine(*close))?;
             inserts.push((offset, AFTER_BLOCK, 0, format!("id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
@@ -927,8 +927,9 @@ mod tests {
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
         assert_eq!(
-            format!("---\nid: \"{deck_tok}\"\nsource: notes.md\n---\n"),
-            stamped[..stamped.find("## q").unwrap()]
+            format!("---\nsource: notes.md\nid: \"{deck_tok}\"\n---\n"),
+            stamped[..stamped.find("## q").unwrap()],
+            "the machine id line splices last, per the canonical key order"
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert_eq!(Some(deck_tok.as_str()), parsed.deck_token.as_deref());
