@@ -313,7 +313,6 @@ for the cards below it.
 
 ```
 ---
-format-version: 1
 id: "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"
 title: French vocabulary, chapter 4
 description: The verbs from the chapter's dialogue, plus their prepositions.
@@ -328,19 +327,18 @@ order: sequential
 `description` is a short summary. The web picker shows it when you open a
 deck's drawer; nothing else reads it.
 
-`format-version` is the version of the deck *format*, not of the deck itself.
-`alix deck init` writes it above `id`, it stays `1`, and alix refuses a deck
-declaring any other number rather than guessing at a format it does not know.
-It is written first because it says how to read everything below it, but alix
-accepts it anywhere in the block.
+`format-version` is a reserved key: the version of the deck *format*, not of
+the deck itself. A deck that does not declare it is format version 1, so alix
+never writes the key. Declaring `format-version: 1` by hand is accepted; alix
+refuses a deck declaring any other number rather than guessing at a format it
+does not know.
 
 `authors` takes one value or a list; `title`, `description`, `license`, and
 `created-at` are single strings, by convention an SPDX identifier and an ISO
 8601 date for the last two. Put both people and any AI that helped in `authors`.
 These five are yours to fill in and alix never changes them.
 
-Apart from `id` and `format-version`, frontmatter carries only what differs from
-the defaults, and a command-line flag always overrides it. The full set of
+Apart from `id`, frontmatter carries only what differs from the defaults, and a command-line flag always overrides it. The full set of
 frontmatter and per-card keys gets its own *Directives reference* chapter.
 
 ## Escaping
@@ -385,7 +383,6 @@ it belongs to:
 
 ```
 ---
-format-version: 1
 for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
 ---
 

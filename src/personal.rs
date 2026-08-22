@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     card::Card,
     deck::{Deck, DeckError, write_deck_text},
-    parser::{DECK_FORMAT_VERSION, PERSONAL_PARENT_KEY, SidecarNote},
+    parser::{PERSONAL_PARENT_KEY, SidecarNote},
     sidecar::SidecarBlock,
 };
 
@@ -80,7 +80,7 @@ pub fn append_note(
 }
 
 fn header(deck_id: &str) -> String {
-    format!("---\nformat-version: {DECK_FORMAT_VERSION}\n{PERSONAL_PARENT_KEY}: {deck_id}\n---\n")
+    format!("---\n{PERSONAL_PARENT_KEY}: {deck_id}\n---\n")
 }
 
 fn marker(card_id: &str) -> String {
@@ -216,7 +216,7 @@ mod tests {
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(
-            "---\nformat-version: 1\nfor: deck-abc\n---\n\n\
+            "---\nfor: deck-abc\n---\n\n\
              <!-- note: card-one -->\n> mine\n",
             text
         );
@@ -316,10 +316,7 @@ mod tests {
 
         assert_eq!(before, std::fs::read(&deck).unwrap());
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
-        assert!(
-            text.starts_with("---\nformat-version: 1\nfor: deck-abc\n---\n"),
-            "{text}"
-        );
+        assert!(text.starts_with("---\nfor: deck-abc\n---\n"), "{text}");
         let cards =
             crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text)).unwrap();
         assert_eq!(1, cards.len());

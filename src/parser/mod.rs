@@ -22,9 +22,7 @@ mod stream;
 pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Hole, Seg, Side, hash_repr, hole_fingerprints, scan_markers, seg_display};
-pub use frontmatter::{
-    DECK_FORMAT_VERSION, Frontmatter, PERSONAL_PARENT_KEY, parse_sampling, yaml_quote,
-};
+pub use frontmatter::{Frontmatter, PERSONAL_PARENT_KEY, parse_sampling, yaml_quote};
 use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 pub use sidecar::{SidecarNote, notes, without_notes};
 
@@ -126,8 +124,6 @@ pub enum ParseError {
     InvalidDeckId { line: usize, value: String },
     #[error("line {line}: a card `<!-- id: -->` must hold a base `card-<token>` id, got `{value}`")]
     InvalidCardId { line: usize, value: String },
-    #[error("line {0}: an initialized deck must declare `format-version: 1`")]
-    MissingDeckVersion(usize),
     #[error(
         "line {line}: deck format version {version} is not supported; this deck was written by a newer alix, so upgrade alix rather than editing the deck"
     )]
@@ -210,7 +206,6 @@ impl ParseError {
             Self::NonStringId { .. } => "non_string_id",
             Self::InvalidDeckId { .. } => "invalid_deck_id",
             Self::InvalidCardId { .. } => "invalid_card_id",
-            Self::MissingDeckVersion(_) => "missing_deck_version",
             Self::UnsupportedDeckVersion { .. } => "unsupported_deck_version",
             Self::NonIntegerVersion { .. } => "non_integer_version",
             Self::ControlChar { .. } => "control_character",
@@ -245,7 +240,6 @@ impl ParseError {
     pub(crate) fn line(&self) -> usize {
         match self {
             Self::UnclosedFrontmatter(line)
-            | Self::MissingDeckVersion(line)
             | Self::EmptyFront(line)
             | Self::FrontWithoutAnswer(line)
             | Self::HeadingTooDeep(line)
@@ -3183,10 +3177,11 @@ a
     }
 
     #[test]
-    fn an_initialized_deck_without_a_version_is_a_hard_error() {
+    fn an_initialized_deck_without_a_version_parses() {
+        let deck = parse("---\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n");
         assert_eq!(
-            ParseError::MissingDeckVersion(2),
-            err("---\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n")
+            Some("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"),
+            deck.deck_token.as_deref()
         );
     }
 
@@ -3206,7 +3201,10 @@ a
         let deck = parse(
             "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n",
         );
-        assert_eq!(Some(1), deck.frontmatter.format_version);
+        assert_eq!(
+            Some("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"),
+            deck.deck_token.as_deref()
+        );
     }
 
     #[test]
@@ -3252,10 +3250,9 @@ a
     }
 
     #[test]
-    fn an_uninitialized_deck_needs_no_version() {
+    fn a_deck_without_frontmatter_parses_with_no_id() {
         let deck = parse("## q\na\n");
         assert_eq!(None, deck.frontmatter.id);
-        assert_eq!(None, deck.frontmatter.format_version);
     }
 
     #[test]
@@ -4764,7 +4761,6 @@ the answer
         assert_eq!(
             Frontmatter {
                 id: Some("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f".into()),
-                format_version: Some(1),
                 authors: vec!["someone".into()],
                 created_at: Some("2026-07-19".into()),
                 license: Some("MIT".into()),

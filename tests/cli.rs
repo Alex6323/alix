@@ -5103,10 +5103,7 @@ fn deck_init_stamps_an_intended_markdown_deck() {
         stdout(&out)
     );
     let stamped = std::fs::read_to_string(&deck).unwrap();
-    assert!(
-        stamped.starts_with("---\nformat-version: 1\nid: \"deck-"),
-        "{stamped}"
-    );
+    assert!(stamped.starts_with("---\nid: \"deck-"), "{stamped}");
     assert_eq!(1, stamped.matches("<!-- id: ").count(), "{stamped}");
 }
 

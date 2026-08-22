@@ -7,7 +7,7 @@ use std::{
 
 use thiserror::Error;
 
-use crate::{parser, parser::DECK_FORMAT_VERSION, token};
+use crate::{parser, token};
 
 /// Mirrors the L1 parser's whitespace set exactly, so token-value spans are
 /// located the same way the parser reads them.
@@ -364,17 +364,10 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     match (&deck_action, &deck_token) {
         (DeckAction::Splice(open), Some(tok)) => {
             let offset = line_start_of_next(body, *open).ok_or(StampError::MissingLine(*open))?;
-            // An author may already have written the version by hand; splicing
-            // a second one is a duplicate YAML key, which makes the deck
-            // unloadable.
-            let version = match deck.frontmatter.format_version {
-                Some(_) => String::new(),
-                None => format!("format-version: {DECK_FORMAT_VERSION}\n"),
-            };
-            inserts.push((offset, AFTER_BLOCK, 0, format!("{version}id: \"{tok}\"\n")));
+            inserts.push((offset, AFTER_BLOCK, 0, format!("id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
-            prepend = format!("---\nformat-version: {DECK_FORMAT_VERSION}\nid: \"{tok}\"\n---\n\n");
+            prepend = format!("---\nid: \"{tok}\"\n---\n\n");
         }
         _ => {}
     }
@@ -835,7 +828,7 @@ mod tests {
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
-        let deck_span = format!("format-version: 1\nid: \"{deck_tok}\"\n");
+        let deck_span = format!("id: \"{deck_tok}\"\n");
         assert_eq!(1, reconstructed.matches(&deck_span).count());
         reconstructed = reconstructed.replacen(&deck_span, "", 1);
 
@@ -843,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn stamping_a_deck_without_frontmatter_prepends_the_canonical_four_line_block() {
+    fn stamping_a_deck_without_frontmatter_prepends_the_canonical_three_line_block() {
         let dir = tempfile::tempdir().unwrap();
         let original = "## q\na\n## r\nb\n";
         let path = write(&dir, "deck.md", original);
@@ -853,9 +846,7 @@ mod tests {
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
         assert!(
-            stamped.starts_with(&format!(
-                "---\nformat-version: 1\nid: \"{deck_tok}\"\n---\n\n"
-            )),
+            stamped.starts_with(&format!("---\nid: \"{deck_tok}\"\n---\n\n")),
             "{stamped:?}"
         );
         assert!(deck_tok.starts_with("deck-"), "{deck_tok}");
@@ -881,9 +872,7 @@ mod tests {
 
         assert!(stamped.starts_with(BOM));
         assert!(!stamped[BOM.len()..].starts_with(BOM));
-        assert!(stamped.starts_with(&format!(
-            "{BOM}---\nformat-version: 1\nid: \"{deck_tok}\"\n---\n\n"
-        )));
+        assert!(stamped.starts_with(&format!("{BOM}---\nid: \"{deck_tok}\"\n---\n\n")));
     }
 
     #[test]
@@ -938,7 +927,7 @@ mod tests {
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
         assert_eq!(
-            format!("---\nformat-version: 1\nid: \"{deck_tok}\"\nsource: notes.md\n---\n"),
+            format!("---\nid: \"{deck_tok}\"\nsource: notes.md\n---\n"),
             stamped[..stamped.find("## q").unwrap()]
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
@@ -1160,7 +1149,7 @@ mod tests {
         let stamped = fs::read_to_string(&path).unwrap();
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
-        let prefix = format!("---\nformat-version: 1\nid: \"{deck_tok}\"\n---\n\n");
+        let prefix = format!("---\nid: \"{deck_tok}\"\n---\n\n");
         assert!(stamped.starts_with(&prefix), "{stamped:?}");
         let mut reconstructed = stamped[prefix.len()..].to_string();
         for tok in &outcome.minted_cards {
@@ -1189,7 +1178,7 @@ mod tests {
             );
         }
 
-        let deck_span = format!("format-version: 1\nid: \"{deck_tok}\"\n");
+        let deck_span = format!("id: \"{deck_tok}\"\n");
         assert_eq!(1, stamped.matches(&deck_span).count());
         let mut reconstructed = stamped.replacen(&deck_span, "", 1);
         for tok in &outcome.minted_cards {

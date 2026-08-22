@@ -162,7 +162,7 @@ pub fn after_note() -> Effects {
     Effects {
         deck: DECK.to_string(),
         sidecar: Some(
-            "---\nformat-version: 1\nfor: deck-parityparityparityparit\n---\n\n\
+            "---\nfor: deck-parityparityparityparit\n---\n\n\
              <!-- note: card-parityparityparityparit -->\n> the condensed insight\n"
                 .to_string(),
         ),
@@ -180,7 +180,7 @@ pub fn after_mint() -> Effects {
     Effects {
         deck: DECK.to_string(),
         sidecar: Some(format!(
-            "---\nformat-version: 1\nfor: deck-parityparityparityparit\n---\n\n\
+            "---\nfor: deck-parityparityparityparit\n---\n\n\
              ## {MINTED_FRONT} <!-- id: {MINTED} -->\n{MINTED_BACK}\n"
         )),
         scheduled: vec![MINTED.to_string()],

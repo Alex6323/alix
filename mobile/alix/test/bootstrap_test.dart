@@ -73,8 +73,6 @@ void main() {
     ];
     for (final path in seeded) {
       final text = File(path).readAsStringSync();
-      expect(text, contains('format-version: 1'),
-          reason: '$path must carry stamped frontmatter to be discovered');
       expect(text, matches(RegExp(r'id: "deck-[0-9a-z]{26}"')),
           reason: '$path must carry a minted deck id to be discovered');
     }

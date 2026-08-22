@@ -14,7 +14,6 @@ pub const PERSONAL_PARENT_KEY: &str = "for";
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
     pub id: Option<String>,
-    pub format_version: Option<u32>,
     pub authors: Vec<String>,
     pub license: Option<String>,
     pub created_at: Option<String>,
@@ -93,7 +92,6 @@ fn load_frontmatter(
     if trim_ws(&text).starts_with('{') {
         frontmatter.unspliceable = true;
     }
-    let mut id_line = first_line;
     for (key_node, value) in &mapping {
         let Yaml::String(key) = key_node else {
             lints.push(Lint {
@@ -115,7 +113,6 @@ fn load_frontmatter(
                         });
                     }
                     frontmatter.id = Some(s.clone());
-                    id_line = line;
                 }
                 other => {
                     return Err(ParseError::NonStringId {
@@ -125,9 +122,7 @@ fn load_frontmatter(
                 }
             },
             "format-version" => match value {
-                Yaml::Integer(n) if *n == i64::from(DECK_FORMAT_VERSION) => {
-                    frontmatter.format_version = Some(DECK_FORMAT_VERSION);
-                }
+                Yaml::Integer(n) if *n == i64::from(DECK_FORMAT_VERSION) => {}
                 Yaml::Integer(n) => {
                     return Err(ParseError::UnsupportedDeckVersion { line, version: *n });
                 }
@@ -204,9 +199,6 @@ fn load_frontmatter(
                 kind: LintKind::UnknownKey { key: key.clone() },
             }),
         }
-    }
-    if frontmatter.id.is_some() && frontmatter.format_version.is_none() {
-        return Err(ParseError::MissingDeckVersion(id_line));
     }
     Ok(frontmatter)
 }

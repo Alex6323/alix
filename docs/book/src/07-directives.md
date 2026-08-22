@@ -15,7 +15,7 @@ full.
 | `###`/`####` front | card | A sub-card of the card one level shallower, withheld from review until that parent graduates. Nothing goes deeper than `####`. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
 | `>` line | card | A note, shown after you answer. [→ ch 3](03-the-deck-format.md) |
 | `<!-- -->` | anywhere | A comment with no recognized key: ignored. |
-| `format-version` | deck | The deck **format's** version, not the deck's own. Written by `alix deck init` above `id`, stays `1`, and any other number is refused rather than guessed at. Mandatory once a deck has an `id`. [→ ch 3](03-the-deck-format.md) |
+| `format-version` | deck | Reserved. The deck **format's** version, not the deck's own. Absence means `1`, so alix never writes it; any number other than `1` is refused rather than guessed at. [→ ch 3](03-the-deck-format.md) |
 | `id` | deck | The frontmatter deck ID (`deck-<token>`) marks an initialized deck and authorizes maintenance of missing card IDs. Its `deck-` prefix is what tells alix's decks apart. [→ ch 3](03-the-deck-format.md) |
 | `id` | card | The HTML-comment card ID (`card-<token>`) anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. After a card table it is the table's container ID; each row's card composes it with the row stamp (`r:`) in the row's first cell. [→ ch 3](03-the-deck-format.md) |
 | `reveal` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default) or line. Cloze is triggered by `\blank{...}` markers, never by a `reveal:` value. |

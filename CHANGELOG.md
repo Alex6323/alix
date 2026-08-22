@@ -206,6 +206,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`format-version` is now a reserved key; a deck that does not declare it
+  is format version 1 (breaking).** `alix deck init` and the personal
+  sidecar writer no longer write the key, and a deck with an `id` but no
+  `format-version` parses instead of failing. A hand-written
+  `format-version: 1` is still accepted, and any other number is still
+  refused.
 - **A deck body starts with a heading (breaking).** A line that sits before
   the first `#` or `##`, outside any card, is now a parse error rather than
   silently becoming the section context of the cards above the first heading.
