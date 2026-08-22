@@ -141,15 +141,22 @@ The open-position shape.
 ![](g-major-tab.png)
 ```
 
-An image `src` is a path relative to the deck file, exactly the way a standard
-Markdown viewer resolves it: a bare filename means the image sits next to the
-deck, and `sub/moon.png` means a subdirectory. An absolute path is used as-is.
-The brackets can carry alt text: `![the open-position shape](g-major-tab.png)`.
+For a deck on its own, an image `src` is a path relative to the deck file,
+exactly the way a standard Markdown viewer resolves it: a bare filename means
+the image sits next to the deck, and `sub/moon.png` means a subdirectory. An
+absolute path is used as-is. The brackets can carry alt text:
+`![the open-position shape](g-major-tab.png)`. Because the paths are ordinary
+Markdown, such a deck renders identically in the web app and in any Markdown
+viewer that opens the file directly (GitHub, Obsidian, a plain preview pane).
+`alix doctor` warns about an image file it can't find, but doesn't fail on it.
 
-Because the paths are ordinary Markdown, the same deck renders identically in
-the web app and in any Markdown viewer that opens the file directly (GitHub,
-Obsidian, a plain preview pane). `alix doctor` warns about an image file it
-can't find, but doesn't fail on it.
+Inside a [workspace](08-workspaces.md) the base is the **workspace root**, the
+folder holding `alix.toml`, not the `decks/` folder the member sits in. So a
+bare `![](moon.png)` in `decks/phases.md` means `moon.png` beside `alix.toml`.
+Initializing the member then copies each local image into the deck's own
+`assets/deck-<token>/` under its SHA-256 name and rewrites the reference to
+point there, which is what makes the member shareable and what keeps it
+working on a machine that never had the original.
 
 ## Image occlusion: `blank:`, `cover:` & `crop:`
 
