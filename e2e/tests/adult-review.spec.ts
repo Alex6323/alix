@@ -905,3 +905,45 @@ test.fixme("grading fires POST /api/grade and advances the session", async ({ pa
 
   await expect(page.locator(".front-text")).not.toHaveText(firstFront ?? "");
 });
+
+test("`c` swaps the section into the question's place, costs no request, and resets on the next card", async ({ page }) => {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "Sectioned").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+
+  // Neither `.region.q` nor `#card` is unique here, so assert on the page.
+  const card = page.locator("body");
+  await expect(card).toContainText("sunlight zone");
+  // The section is not on screen until it is asked for.
+  await expect(page.locator(".context.section")).toHaveCount(0);
+
+  // Nothing may be requested while the section is toggled: it rode in on the
+  // card, so a round trip here would be a bug the eye cannot see.
+  const calls: string[] = [];
+  page.on("request", (req) => { if (req.url().includes("/api/")) calls.push(req.url()); });
+
+  await page.keyboard.press("c");
+  // One line element per authored line, so assert on the region's text.
+  await expect(card).toContainText("Ocean depths");
+  await expect(card).toContainText("Sunlight reaches only the top layer.");
+  // The swap is in place: the front element is not rendered at all.
+  await expect(page.locator(".front-text")).toHaveCount(0);
+
+  await page.keyboard.press("c");
+  await expect(page.locator(".context.section")).toHaveCount(0);
+  await expect(page.locator(".front-text")).toHaveCount(1);
+  await expect(card).toContainText("sunlight zone");
+  expect(calls).toEqual([]);
+
+  // Held open across a reveal, the next card starts closed again.
+  await page.keyboard.press("c");
+  await expect(page.locator(".context.section").first()).toBeVisible();
+  await page.keyboard.press(" ");
+  await page.getByRole("button", { name: "Seen" }).click();
+  await expect(card).toContainText("What lies below it?");
+  await expect(page.locator(".context.section")).toHaveCount(0);
+});

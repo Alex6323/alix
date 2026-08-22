@@ -68,6 +68,7 @@ export function createStudy({
   let state = clientModel.state;
   let revealed = clientModel.revealed;
   let citationView = clientModel.citationView;
+  let sectionView = clientModel.sectionView;
   let answerConcealed = clientModel.answerConcealed;
   let feedback = clientModel.feedback;
   let typelineChecked = clientModel.typelineChecked;
@@ -183,6 +184,7 @@ export function createStudy({
       walk: walkData(),
       revealed,
       citationView,
+      sectionView,
       answerConcealed,
       feedback,
       typelineChecked,
@@ -199,6 +201,7 @@ export function createStudy({
     replaceWalk(clientModel.walk);
     revealed = clientModel.revealed;
     citationView = clientModel.citationView;
+    sectionView = clientModel.sectionView;
     answerConcealed = clientModel.answerConcealed;
     feedback = clientModel.feedback;
     typelineChecked = clientModel.typelineChecked;
@@ -373,6 +376,21 @@ export function createStudy({
       }
       crumbStrip.appendChild(bc);
     }
+    // `c` swaps the section INTO the question's place: the learner asked for
+    // orientation, not for the question with an aid stapled beside it.
+    if (sectionView) {
+      appendContext(
+        q,
+        c.section_context,
+        c.section_context_runs,
+        c.section_context_units,
+        "context section",
+        contextDiagram,
+      );
+      fillBottom();
+      renderLegend();
+      return;
+    }
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
     // Where context is the question (a cloze sentence) it leads and the front
     // steps back to a topic; where it only labels the front (a table title) the
@@ -544,6 +562,19 @@ export function createStudy({
   }
 
   // Swap the answer region between the worded answer and the cited source excerpt.
+  function hasSection() {
+    return !!(state && state.card && (state.card.section_context || []).length);
+  }
+
+  function toggleSection() {
+    if (!hasSection()) return;
+    sectionView = !sectionView;
+    // `rerender`, not the local `render`: only the app-level one clears the
+    // stage, and appending a second card shell leaves the question on screen
+    // beside the section.
+    rerender();
+  }
+
   function toggleCitation() {
     if (!state || !state.card || !(state.card.citations || []).length || !isAnswered()) return;
     citationView = !citationView;
@@ -1502,6 +1533,9 @@ export function createStudy({
         }
         return;
       }
+      // `c` swaps the question for the card's section and back. The section
+      // rides the card, so this issues no request and records nothing.
+      if (hasSection() && hit(e, keys.context)) { e.preventDefault(); toggleSection(); return; }
       // `s` swaps a cited card between its answer and its source, once answered.
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
