@@ -333,8 +333,8 @@ export function createStudy({
     a.addEventListener("scroll", () => updateFade(a));
     card.appendChild(a);
     if (moreHint) {
-      card.appendChild(el("div", "more-hint"));      // "more below", pinned to the answer's bottom edge
-      card.appendChild(el("div", "more-hint top"));  // "more above", pinned to the answer's top edge
+      card.appendChild(el("div", "more-hint answer-hint"));      // "more below", pinned to the answer's bottom edge
+      card.appendChild(el("div", "more-hint answer-hint top"));  // "more above", pinned to the answer's top edge
     }
     stack.appendChild(card);
     stage.appendChild(stack);
@@ -619,28 +619,43 @@ export function createStudy({
     a.classList.toggle("filled", !hasBody || hints.overflows);
     a.classList.toggle("fade-top", hints.showTop);
     a.classList.toggle("fade-bottom", hints.showBottom);
-    const parent = a.parentElement;
+    const n = hiddenLineCount(a);
+    updateHintPills(
+      a,
+      hints,
+      "answer-hint",
+      n > 0 ? `⌵ ${n} more line${n === 1 ? "" : "s"}` : "⌵ more below",
+    );
+  }
+
+  function updateHintPills(region, hints, hintClass, belowText) {
+    const parent = region.parentElement;
     if (!parent) return;
-    const below = parent.querySelector(".more-hint:not(.top)");
-    const above = parent.querySelector(".more-hint.top");
-    // Pin the hints to the answer region's own top/bottom edges (not the card's),
-    // so "more below" sits above the note's divider instead of over the note.
-    const cardH = a.offsetParent ? a.offsetParent.clientHeight : parent.clientHeight;
-    const aTop = a.offsetTop;
-    const aBottom = a.offsetTop + a.offsetHeight;
+    const below = parent.querySelector(`.${hintClass}:not(.top)`);
+    const above = parent.querySelector(`.${hintClass}.top`);
+    const cardH = region.offsetParent ? region.offsetParent.clientHeight : parent.clientHeight;
+    const regionTop = region.offsetTop;
+    const regionBottom = region.offsetTop + region.offsetHeight;
     if (below) {
-      below.style.bottom = Math.max(0, cardH - aBottom + 8) + "px";
+      below.style.bottom = Math.max(0, cardH - regionBottom + 8) + "px";
       if (hints.showBottom) {
-        const n = hiddenLineCount(a);
-        below.textContent = n > 0 ? `⌵ ${n} more line${n === 1 ? "" : "s"}` : "⌵ more below";
+        below.textContent = belowText;
         below.classList.add("show");
       } else below.classList.remove("show");
     }
     if (above) {
-      above.style.top = (aTop + 8) + "px";
+      above.style.top = (regionTop + 8) + "px";
       if (hints.showTop) { above.textContent = "⌃ more above"; above.classList.add("show"); }
       else above.classList.remove("show");
     }
+  }
+
+  function updateNoteFade(n) {
+    if (!n) return;
+    const hints = overflowHints(n);
+    n.classList.toggle("fade-top", hints.showTop);
+    n.classList.toggle("fade-bottom", hints.showBottom);
+    updateHintPills(n, hints, "note-hint", "⌵ more below");
   }
 
   // Adds (or removes) the note region and a divider before it. Because content is
@@ -654,12 +669,23 @@ export function createStudy({
     const has = state.card.note && state.card.note.length > 0;
     if (show && has) {
       if (!divider) { divider = el("div", "divider"); divider.id = "noteDivider"; card.appendChild(divider); }
-      if (!n) { n = el("div", "region n"); n.id = "noteRegion"; card.appendChild(n); }
+      if (!n) {
+        n = el("div", "region n");
+        n.id = "noteRegion";
+        n.addEventListener("scroll", () => updateNoteFade(n));
+        card.appendChild(n);
+      }
+      if (!card.querySelector(".note-hint:not(.top)")) {
+        card.appendChild(el("div", "more-hint note-hint"));
+        card.appendChild(el("div", "more-hint note-hint top"));
+      }
       n.innerHTML = "";
       renderNote(n, state.card.note);
+      updateNoteFade(n);
     } else {
       if (divider) divider.remove();
       if (n) n.remove();
+      card.querySelectorAll(".note-hint").forEach(hint => hint.remove());
     }
   }
 

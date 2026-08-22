@@ -366,6 +366,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Long notes in adult review now show edge fades and `more below` or
+  `more above` pills, so hidden parts of an authored explanation remain
+  discoverable and reachable while scrolling.
+
 - Keyboard navigation through a long adult multiple-choice list now keeps the
   focused option clear of the answer region's overflow fades and hints at both
   edges.

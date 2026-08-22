@@ -343,8 +343,8 @@ test("long answer variants start at the first line and show scroll hints", async
     await variant.open();
 
     const answer = page.locator(".region.a");
-    const below = page.locator(".more-hint:not(.top)");
-    const above = page.locator(".more-hint.top");
+    const below = page.locator(".answer-hint:not(.top)");
+    const above = page.locator(".answer-hint.top");
     await expect(answer, variant.name).toHaveClass(/filled/);
     expect(await answer.evaluate((element) => ({
       scrollTop: element.scrollTop,
@@ -368,6 +368,47 @@ test("long answer variants start at the first line and show scroll hints", async
   }
 });
 
+test("a long introduction note shows overflow hints at both edges", async ({ page }) => {
+  const state = {
+    ...longContentState({
+      answerLines: ["The revealed answer remains above the note."],
+      note: Array.from(
+        { length: 16 },
+        (_, index) => ({
+          kind: "sentence",
+          text: `Note paragraph ${index + 1} remains reachable in the authored explanation.`,
+        }),
+      ),
+    }),
+    introducing: true,
+  };
+  await page.unroute("**/api/state");
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+  await page.getByRole("button", { name: "Reveal" }).click();
+
+  const note = page.locator("#noteRegion");
+  const below = page.locator(".note-hint:not(.top)");
+  const above = page.locator(".note-hint.top");
+  await expect(page.getByRole("button", { name: "Seen" })).toBeVisible();
+  expect(await note.evaluate((element) => ({
+    scrollTop: element.scrollTop,
+    overflows: element.scrollHeight > element.clientHeight + 2,
+  }))).toEqual({ scrollTop: 0, overflows: true });
+  await expect(note).toHaveClass(/fade-bottom/);
+  await expect(below).toHaveClass(/show/);
+  await expect(above).not.toHaveClass(/show/);
+
+  await note.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll"));
+  });
+  await expect(note).toHaveClass(/fade-top/);
+  await expect(note).not.toHaveClass(/fade-bottom/);
+  await expect(above).toHaveClass(/show/);
+  await expect(below).not.toHaveClass(/show/);
+});
+
 test("keyboard-focused choices stay clear of both overflow hints", async ({ page }) => {
   const choices = Array.from(
     { length: 18 },
@@ -389,13 +430,13 @@ test("keyboard-focused choices stay clear of both overflow hints", async ({ page
 
   const answer = page.locator(".region.a");
   const focused = page.locator(".option.focused");
-  const above = page.locator(".more-hint.top");
+  const above = page.locator(".answer-hint.top");
   await expect(focused.locator(".num")).toHaveText("5");
   await expect(answer).toHaveClass(/fade-top/);
   await expect(above).toHaveClass(/show/);
   const upperEdge = await focused.evaluate((element) => {
     const focusedBox = element.getBoundingClientRect();
-    const hint = document.querySelector(".more-hint.top");
+    const hint = document.querySelector(".answer-hint.top");
     if (!(hint instanceof HTMLElement)) throw new Error("missing upper overflow hint");
     return {
       focusedTop: focusedBox.top,
@@ -408,13 +449,13 @@ test("keyboard-focused choices stay clear of both overflow hints", async ({ page
   ).toBeGreaterThanOrEqual(upperEdge.safeTop);
 
   for (let step = 0; step < 6; step += 1) await page.keyboard.press("ArrowDown");
-  const below = page.locator(".more-hint:not(.top)");
+  const below = page.locator(".answer-hint:not(.top)");
   await expect(focused.locator(".num")).toHaveText("11");
   await expect(answer).toHaveClass(/fade-bottom/);
   await expect(below).toHaveClass(/show/);
   const lowerEdge = await focused.evaluate((element) => {
     const focusedBox = element.getBoundingClientRect();
-    const hint = document.querySelector(".more-hint:not(.top)");
+    const hint = document.querySelector(".answer-hint:not(.top)");
     if (!(hint instanceof HTMLElement)) throw new Error("missing lower overflow hint");
     return {
       focusedBottom: focusedBox.bottom,

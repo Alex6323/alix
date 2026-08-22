@@ -34,20 +34,20 @@
   }
   .region::-webkit-scrollbar { width: 0; height: 0; }   /* WebKit: no scrollbar */
   /* instead of a scrollbar, fade the edge that has hidden content */
-  .region.a.fade-top {
+  .region.fade-top {
     mask-image: linear-gradient(to bottom, transparent, #000 34px);
     -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px);
   }
-  .region.a.fade-bottom {
+  .region.fade-bottom {
     mask-image: linear-gradient(to top, transparent, #000 34px);
     -webkit-mask-image: linear-gradient(to top, transparent, #000 34px);
   }
-  .region.a.fade-top.fade-bottom {
+  .region.fade-top.fade-bottom {
     mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
     -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
   }
   .region.a .option { scroll-margin-block: 34px; }
-  /* a clear "there's more below" marker when the answer/excerpt overflows the card */
+  /* clear edge markers when an answer, excerpt, or note overflows its region */
   .more-hint { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
   .more-hint.show { opacity: 0.94; }
   /* The question reserves space beneath itself, so a clear gap between question
