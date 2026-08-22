@@ -55,8 +55,9 @@ go: authored `- [x]`/`- [ ]` options on a card, AI-generated distractors
 (`alix deck augment --target choices`, or the web Augment screen), or a
 [card table's](03-the-deck-format.md) own column; otherwise it's Recall.
 
-- **Recognize**: unscheduled, boolean, and **pick-only**. There's no FSRS state
-  for it at all, just a per-card *recognized* flag. It's a genuine multiple-choice
+- **Recognize**: **pick-only**, and scheduled on its own FSRS state at a laxer
+  desired retention (`recognize_retention`, default 0.85), because recognition
+  holds far longer than production. It's a genuine multiple-choice
   pick, built from a card's authored task-list options (`- [x]`/`- [ ]`), the
   deck's cached AI distractors (`alix deck augment --target choices`), or, for
   a [card table's](03-the-deck-format.md) rows, the other rows of the same

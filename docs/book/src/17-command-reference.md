@@ -65,8 +65,9 @@ relevant documents in memory without creating an authoritative combined file.
 
 - `alix stats <target>`: progress overview, completion state, and a
   per-depth due count.
-- `alix list <target>`: every card with its Recall/Reconstruct schedule
-  state, a ✓ once it's recognized, and its due time.
+- `alix list <target>`: every card with three per-depth cells, shallow to
+  deep (Recognize | Recall | Reconstruct), each carrying that depth's state
+  and due time; a retired card reads `resting` instead.
 - `alix reset <target>`: clear progress (`--card`, `--all`; `-y` to
   skip the prompt). On a workspace it also clears the mastered flags and
   personal-card schedules in the workspace's own store, after one confirmation.

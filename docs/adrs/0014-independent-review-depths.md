@@ -4,6 +4,12 @@
 - Evidence: recall_and_reconstruct_schedules_are_independent in src/store.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
+- Details evolved by
+  [ADR 0033](0033-recognize-is-a-scheduled-depth.md): Recognize carries its own
+  FSRS schedule at its own desired retention, not a boolean timestamp. The
+  Recall/Reconstruct independence accepted here is unchanged. References below
+  to `recognized_ms` and to Recognize being unscheduled describe the originally
+  accepted design.
 - Details evolved: one pass-only downward credit ships — a full Reconstruct
   pass also applies a Pass to the card's existing Recall schedule, recorded
   in history as *propagated* (`src/scheduler.rs`); partials and fails never

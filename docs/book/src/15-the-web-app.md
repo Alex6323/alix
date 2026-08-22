@@ -26,7 +26,9 @@ beneath it: it shows the deck's frontmatter `description:`, if any, and
 a per-card **tier heatmap**: neutral for an untouched card, grey for one merely
 **seen** (shown to you at least once), white once **introduced** (correct at least
 once), green/yellow/red for a **learned** card by how well you'd recall it right
-now, purple once retired. When the deck has a [review order](05-scheduling.md) that
+now, purple once retired, and an unfilled **outline** for a
+[sub-card](03-the-deck-format.md#sections-and-sub-cards) still gated on its
+parent's graduation. When the deck has a [review order](05-scheduling.md) that
 heatmap splits into named regions you can pick to drill (click one or step
 through with **← / →**); otherwise it is a single whole-deck bar. On a workspace row instead,
 → enters it, and Esc or Backspace backs out. After a session, **Leave** (on the summary)
@@ -51,7 +53,7 @@ listing.
 
 ## Library actions
 
-The picker's **☰ menu** carries five actions that used to be terminal-only:
+The picker's **☰ menu** carries six actions that used to be terminal-only:
 everything below is an `/api/*` endpoint, so it's also on the wire for other
 clients (see `docs/API.md`):
 

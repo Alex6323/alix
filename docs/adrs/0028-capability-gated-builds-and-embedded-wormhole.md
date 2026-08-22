@@ -7,8 +7,9 @@
   the tense as a shipped claim. **Deferred 2026-08-18 by Alex: "keep the CLI,
   defer embedding."** The paired-sharing ruling removed embedding's mobile
   motivation; the paired share/receive endpoints build against the existing
-  subprocess worker, and the desktop onboarding friction is met by the
-  install script offering `pipx install magic-wormhole` instead. Embedding
+  subprocess worker, and the desktop onboarding friction is met by `alix
+  doctor`'s share check and the share error path, which name
+  `pipx install magic-wormhole` when the CLI is missing. Embedding
   activates with the deferred on-device arc, or if the subprocess path or
   install friction becomes a named problem; nothing else in this record
   changes, and while deferred the EUPL counsel sign-offs are moot because no

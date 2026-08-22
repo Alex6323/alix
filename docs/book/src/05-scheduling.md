@@ -91,10 +91,12 @@ depths, picked when you start it (the web picker's Depth…
 menu). See [Reveal & session depths](04-review-modes.md) for the full check
 matrix. In short:
 
-- **Recognize** has no FSRS schedule at all: just a boolean *recognized* flag.
-- **Recall** and **Reconstruct** each keep their **own** FSRS schedule per
-  card, so a card can be due for one and not the other; nothing
+- **Recognize**, **Recall**, and **Reconstruct** each keep their **own** FSRS
+  schedule per card, so a card can be due for one and not the other; nothing
   cross-credits between them, with one downward exception below.
+- Recognize schedules at its own desired retention (`recognize_retention`,
+  default 0.85) rather than the deck-wide `retention`: one mechanism, two
+  tunings.
 
 Nothing climbs or descends between depths on its own. A card doesn't get
 harder over time just by surviving reviews. Which depth you exercise, and
@@ -216,8 +218,11 @@ card's answer. Under each region is a **card-tier heatmap**: one small cell
 per card. Neutral means untouched; grey means **seen** (the card was shown to
 you at least once, right or wrong); white means **introduced** (you got it right
 at least once); a **learned** (graduated) card is green, yellow, or red by how
-well you'd recall it right now; purple means retired. A region visibly greens
-up as you master it, and the breadcrumb doubles as a progress map.
+well you'd recall it right now; purple means retired. An **outlined** cell,
+unfilled, is a [sub-card](03-the-deck-format.md#sections-and-sub-cards) still
+gated on its parent's graduation, which is why it is usually untouched as well.
+A region visibly greens up as you master it, and the breadcrumb doubles as a
+progress map.
 
 To **drill one weak region** on its own, tap its heatmap in the focus drawer to
 scope the launch to it.

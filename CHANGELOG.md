@@ -521,12 +521,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   authored front order and the adult app, instead of hoisting the image
   over the question.
 
-- A Recognize sitting no longer ends in "you reviewed 0 cards": the
-  session tallies recognize answers (right / almost / missed) separately
-  from FSRS reviews, the review state (`StateDto`) carries `recognized`,
-  `recognize_partly`, and `recognize_missed`, and both web summaries show
-  every kind of work done (introduced, recognized, reviewed). A sitting
-  with no work at all no longer celebrates.
+- A Recognize sitting no longer ends in "you reviewed 0 cards": a
+  Recognize grade is an ordinary FSRS review and lands in
+  `reviews`/`passed`/`failed` with every other depth, with one `partial`
+  counter on `StateDto` for the middle grade, and both web summaries show
+  every kind of work done (introduced, reviewed). A sitting with no work
+  at all no longer celebrates.
 
 - The `alix generate --review` and `alix deck augment` help texts name
   the AI backend neutrally instead of hardcoding Claude, the augment

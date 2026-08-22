@@ -4,6 +4,8 @@
 - Evidence: recognize_retention in src/scheduler.rs
 - Recorded: 2026-08-17
 - Retrospective: No
+- Evolves the Recognize half of
+  [ADR 0014](0014-independent-review-depths.md)
 
 ## Context
 

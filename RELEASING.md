@@ -144,10 +144,10 @@ at. **crates.io is not automated.**
    list), commit `Release vX.Y.Z`, and confirm a final `make preflight` is green
    with a clean tree.
 8. **Tag & push:** push `main` first and let CI go green, then
-   `git tag vX.Y.Z && git push origin vX.Y.Z`. Tagging fires the release workflow
-   immediately (it is not gated on CI), so tag only after CI is green on the
-   release commit. The workflow creates the GitHub Release and attaches the
-   binaries.
+   `git tag vX.Y.Z && git push origin vX.Y.Z`. The release workflow re-runs
+   every blocking CI job on the tag's exact SHA (`exact-tag-ci`) before any
+   publishing job runs, so green checks on other bytes cannot authorize a
+   release. Then it creates the GitHub Release and attaches the binaries.
 9. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
    `Cargo.toml`'s `include` allowlist: only `src/**`, `web/**`, and the
    root README/CHANGELOG/licenses ship). `make package-check` (also run inside
