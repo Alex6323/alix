@@ -8,8 +8,8 @@ description: >-
 direction: both
 ---
 
-## la conocimiento
-knowledge
+## la mano
+the hand
 > Feminine despite the -o ending, which is why it is worth drilling
 > both ways.
 <!-- id: card-2m5b9qj3zd8g0fccdh0d1t5b3k -->

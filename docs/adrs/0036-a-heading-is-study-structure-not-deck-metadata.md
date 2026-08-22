@@ -5,6 +5,11 @@
   acceptance, alongside the implementation
 - Recorded: 2026-08-21
 - Retrospective: No
+- Open before acceptance: a section's fence is always code, because nothing
+  freezes it and a `#` heading may carry no directive to bind a stamp to.
+  Where a section's frozen diagram stamp would live is a deck-grammar
+  decision and is unsettled; accepting this record accepts the section
+  grammar, so settle it first.
 
 ## Context
 

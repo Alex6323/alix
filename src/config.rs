@@ -723,6 +723,7 @@ struct RawReview {
     r#continue: Option<Vec<String>>,
     restart: Option<Vec<String>>,
     ask: Option<Vec<String>>,
+    context: Option<Vec<String>>,
     make_note: Option<Vec<String>>,
     make_card: Option<Vec<String>>,
     quit: Option<Vec<String>>,
@@ -760,6 +761,7 @@ impl Config {
         assign(&mut keys.cont, review.r#continue, "review.continue")?;
         assign(&mut keys.restart, review.restart, "review.restart")?;
         assign(&mut keys.ask, review.ask, "review.ask")?;
+        assign(&mut keys.context, review.context, "review.context")?;
         assign(&mut keys.make_note, review.make_note, "review.make_note")?;
         assign(&mut keys.make_card, review.make_card, "review.make_card")?;
         assign(&mut keys.quit, review.quit, "review.quit")?;
@@ -1139,6 +1141,7 @@ pub fn default_config_toml() -> &'static str {
 # continue = ["enter", "space"] # leave the feedback screen
 # restart = ["r"]               # start a new session from the summary screen
 # ask = ["?"]                   # ask the tutor about an answered card
+# context = ["c"]               # swap the question for the card's section
 # make_note = ["ctrl-n"]        # ask view: condense the conversation into a note
 # make_card = ["ctrl-d"]        # ask view: distill the conversation into a card
 # quit = ["esc", "ctrl-c"]      # quit the session
@@ -1734,6 +1737,38 @@ mod tests {
         !key.is_empty()
             && !matches!(key, "decks_dir" | "max_session" | "new_cards_percent")
             && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+    }
+
+    /// Every review action the config template offers must actually
+    /// deserialize: `RawReview` denies unknown fields, so a documented but
+    /// unwired key costs the user their whole config, not one binding.
+    #[test]
+    fn every_offered_review_binding_is_settable() {
+        for action in [
+            "failed",
+            "partly",
+            "passed",
+            "up",
+            "down",
+            "reveal",
+            "hint",
+            "submit",
+            "skip",
+            "remove",
+            "continue",
+            "restart",
+            "ask",
+            "context",
+            "make_note",
+            "make_card",
+            "quit",
+        ] {
+            let toml = format!("[keys.review]\n{action} = [\"z\"]\n");
+            assert!(
+                Config::from_toml(&toml).is_ok(),
+                "[keys.review] {action} must deserialize"
+            );
+        }
     }
 
     #[test]

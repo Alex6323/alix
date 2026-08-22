@@ -121,8 +121,8 @@ A cloze marker may sit inside math:
 $$a^2 - b^2 = \blank{(a-b)}\blank{(a+b)}$$
 ```
 
-During review, the active hole becomes an underline and another hidden hole
-becomes an ellipsis inside the rendered formula. The substitution is display
+During review, the active hole renders as a boxed question mark and another
+hidden hole as a boxed ellipsis inside the formula. The substitution is display
 only and never reveals either answer. If RaTeX rejects a recognized formula,
 review shows its source plus "math could not render" rather than a blank or a
 plausible substitute.
