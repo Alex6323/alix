@@ -342,6 +342,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The advertised `curl -sSf https://alix.study/install.sh | sh` install has
+  been failing since 2026-08-03. GitHub's `/releases/latest` is repo-wide, and
+  the `mobile-v0.3.0` APK release took that slot, so the installer resolved to
+  a release carrying no desktop archive and got a 404. The APK release now
+  publishes with `make_latest: false`, leaving the slot to the desktop `v*`
+  release, and `make toolchain-check` fails if that pin is ever dropped.
+
 - A deck whose cards are all inside the introduction cooldown can be
   crammed again from the **web** picker: the depth control stayed
   disabled once nothing was due, so the deck could not be reopened at

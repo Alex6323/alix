@@ -144,3 +144,8 @@ jobs:
           name: alix mobile v${{ env.MOBILE_VERSION }}
           body_path: /tmp/notes.md
           files: alix-arm64-v8a.apk
+          # `/releases/latest` is what the install script and the README's
+          # headline command resolve, and it is repo-wide: an APK release
+          # taking that slot points every desktop install at a release with
+          # no desktop assets.
+          make_latest: false

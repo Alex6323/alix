@@ -166,6 +166,9 @@ require_literal .github/workflows/backend-drift.yml "toolchain: stable" \
 require_literal .github/dependabot.yml 'package-ecosystem: "github-actions"' \
     "Dependabot maintains Action SHA pins"
 
+require_literal .github/workflows/mobile-release.yml "make_latest: false" \
+    "the APK release leaves the repo-wide latest slot to the desktop release"
+
 if grep -R -n 'cargo-bins/cargo-binstall@' .github/workflows >/dev/null; then
     bad "workflows must not execute the mutable cargo-binstall action"
 else
