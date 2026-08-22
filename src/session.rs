@@ -1,6 +1,7 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::PathBuf,
+    sync::Arc,
 };
 
 use rs_fsrs::Parameters;
@@ -108,6 +109,7 @@ pub struct Session {
     // schedules only pick-capable cards), so the done summary can say what
     // still waits beyond the depth instead of "nothing".
     depth_excluded: Vec<Card>,
+    locks: Locks,
     pub initial_size: usize,
     pub stats: SessionStats,
 }
@@ -138,8 +140,17 @@ impl Session {
         now_ms: u64,
     ) -> Self {
         let floors = HashMap::new();
-        let roster: Vec<usize> =
-            build_queue(&cards, store, &*scheduler, &options, &floors, now_ms).into();
+        let locks = Locks::evaluate(&cards, store);
+        let roster: Vec<usize> = build_queue(
+            &cards,
+            store,
+            &*scheduler,
+            &options,
+            &floors,
+            now_ms,
+            &locks,
+        )
+        .into();
         let initial_size = roster.len();
         let appearances = vec![0; cards.len()];
 
@@ -155,6 +166,7 @@ impl Session {
             scheduler,
             options,
             depth_excluded: Vec::new(),
+            locks,
             initial_size,
             stats: SessionStats::default(),
         };
@@ -192,6 +204,7 @@ impl Session {
         // selection below skips a card still cooling instead of re-facing it.
         // `served` survives too, so the backlog count keeps shrinking across the
         // chain rather than reading the same figure every restart.
+        self.locks = Locks::evaluate(&self.cards, store);
         let roster: Vec<usize> = build_queue(
             &self.cards,
             store,
@@ -199,6 +212,7 @@ impl Session {
             &self.options,
             &self.floors,
             now_ms,
+            &self.locks,
         )
         .into();
         if roster.is_empty() {
@@ -220,6 +234,7 @@ impl Session {
             &self.options,
             &self.floors,
             now_ms,
+            &Locks::evaluate(&self.cards, store),
         )
         .is_empty()
     }
@@ -241,13 +256,14 @@ impl Session {
     /// heavy day knows to chain another sitting.
     pub fn remaining_split(&self, store: &Store, now_ms: u64) -> (usize, usize) {
         let depth = self.options.depth;
+        let locks = Locks::evaluate(&self.cards, store);
         let mut due_left = 0;
         let mut new_left = 0;
         for card in &self.cards {
             let Some(id) = card.id() else {
                 continue;
             };
-            if is_retired(card, store, self.options.retire_after_days) {
+            if is_retired(card, store, self.options.retire_after_days) || locks.is_locked(card) {
                 continue;
             }
             if self.served.contains(&id) {
@@ -294,8 +310,10 @@ impl Session {
     }
 
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {
+        let locks = Locks::evaluate(&self.cards, store);
         self.cards
             .iter()
+            .filter(|c| !locks.is_locked(c))
             .filter_map(|c| c.id())
             .filter_map(|id| store.progress(&id))
             .map(|state| self.scheduler.due_at(state, self.options.depth))
@@ -692,6 +710,7 @@ fn build_queue(
     options: &SessionOptions,
     floors: &HashMap<String, u64>,
     now_ms: u64,
+    locks: &Locks,
 ) -> VecDeque<usize> {
     let depth = options.depth;
     let cooldown = scheduler.introduction_cooldown_ms();
@@ -706,6 +725,7 @@ fn build_queue(
             continue;
         };
         if is_retired(card, store, options.retire_after_days)
+            || locks.is_locked(card)
             || !floor_passed(floors, &id, cooldown, now_ms)
         {
             continue;
@@ -938,7 +958,89 @@ fn card_tier(
     }
 }
 
-pub fn is_reviewable(
+struct BlockGating {
+    parent: Option<usize>,
+    graduated: bool,
+}
+
+/// Which authored blocks are gated behind a parent that has not graduated, so
+/// no unit of them may be served. One evaluation answers for a whole card set;
+/// a set without sub-cards allocates nothing.
+#[derive(Clone, Debug, Default)]
+pub struct Locks {
+    blocks: HashMap<Arc<str>, HashSet<usize>>,
+}
+
+impl Locks {
+    pub fn evaluate(cards: &[Card], store: &Store) -> Self {
+        if !cards.iter().any(|card| card.parent_block.is_some()) {
+            return Self::default();
+        }
+        let mut decks: HashMap<Arc<str>, BTreeMap<usize, BlockGating>> = HashMap::new();
+        for card in cards {
+            let graduated = card.id().is_some_and(|id| {
+                store
+                    .progress(&id)
+                    .and_then(|state| state.recall.as_ref())
+                    .is_some_and(crate::store::FsrsState::graduated)
+            });
+            decks
+                .entry(Arc::clone(&card.deck_id))
+                .or_default()
+                .entry(card.block_line)
+                .and_modify(|block| block.graduated &= graduated)
+                .or_insert(BlockGating {
+                    parent: card.parent_block,
+                    graduated,
+                });
+        }
+        let mut blocks = HashMap::new();
+        for (deck_id, gating) in &decks {
+            // Ascending block line, so a parent is always decided before the
+            // child that reads it and a locked chain propagates downward.
+            let mut locked: HashSet<usize> = HashSet::new();
+            for (line, block) in gating {
+                let Some(parent) = block.parent else {
+                    continue;
+                };
+                let open = gating.get(&parent).is_some_and(|p| p.graduated);
+                if !open || locked.contains(&parent) {
+                    locked.insert(*line);
+                }
+            }
+            if !locked.is_empty() {
+                blocks.insert(Arc::clone(deck_id), locked);
+            }
+        }
+        Self { blocks }
+    }
+
+    pub fn is_locked(&self, card: &Card) -> bool {
+        card.parent_block.is_some()
+            && self
+                .blocks
+                .get(&*card.deck_id)
+                .is_some_and(|lines| lines.contains(&card.block_line))
+    }
+}
+
+/// The one answer to "may this card be served in a sitting?": due at this
+/// depth AND not gated behind an ungraduated parent. Every queue, count and
+/// status reader goes through it, so a locked card can never be counted due
+/// by one reader and withheld by another.
+pub fn eligible_for_session(
+    card: &Card,
+    store: &Store,
+    scheduler: &dyn Scheduler,
+    depth: Depth,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+    locks: &Locks,
+) -> bool {
+    !locks.is_locked(card) && due_at_depth(card, store, scheduler, depth, now_ms, retire_after_days)
+}
+
+fn due_at_depth(
     card: &Card,
     store: &Store,
     scheduler: &dyn Scheduler,
@@ -962,7 +1064,7 @@ pub fn is_reviewable(
     }
 }
 
-pub fn has_reviewable(
+pub fn has_eligible(
     cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
@@ -970,22 +1072,42 @@ pub fn has_reviewable(
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
-    cards
-        .iter()
-        .any(|card| is_reviewable(card, store, scheduler, depth, now_ms, retire_after_days))
+    let locks = Locks::evaluate(cards, store);
+    cards.iter().any(|card| {
+        eligible_for_session(
+            card,
+            store,
+            scheduler,
+            depth,
+            now_ms,
+            retire_after_days,
+            &locks,
+        )
+    })
 }
 
-pub fn count_reviewable(
-    cards: &[&Card],
+pub fn count_eligible(
+    cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
     depth: Depth,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> usize {
+    let locks = Locks::evaluate(cards, store);
     cards
         .iter()
-        .filter(|card| is_reviewable(card, store, scheduler, depth, now_ms, retire_after_days))
+        .filter(|card| {
+            eligible_for_session(
+                card,
+                store,
+                scheduler,
+                depth,
+                now_ms,
+                retire_after_days,
+                &locks,
+            )
+        })
         .count()
 }
 
@@ -2274,12 +2396,12 @@ mod tests {
     }
 
     #[test]
-    fn has_reviewable_counts_new_and_due_not_cooldown_or_retired() {
+    fn has_eligible_counts_new_and_due_not_cooldown_or_retired() {
         let (mut store, _dir) = empty_store();
         let sched = sched();
         let now = 10_000_000;
 
-        assert!(has_reviewable(
+        assert!(has_eligible(
             &cards(1),
             &store,
             sched.as_ref(),
@@ -2294,7 +2416,7 @@ mod tests {
         s.introduced_ms = Some(now);
         let one = std::slice::from_ref(&c);
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
-        assert!(!has_reviewable(
+        assert!(!has_eligible(
             one,
             &store,
             sched.as_ref(),
@@ -2302,7 +2424,7 @@ mod tests {
             now,
             cap
         ));
-        assert!(has_reviewable(
+        assert!(has_eligible(
             one,
             &store,
             sched.as_ref(),
@@ -2312,7 +2434,7 @@ mod tests {
         ));
 
         store.get_or_insert(&c.id().unwrap()).recall = Some(retired_fsrs());
-        assert!(!has_reviewable(
+        assert!(!has_eligible(
             std::slice::from_ref(&c),
             &store,
             sched.as_ref(),
@@ -3174,16 +3296,9 @@ mod tests {
         let personal = [due, not_due, archived];
         assert_eq!(
             1,
-            count_reviewable(
-                &personal.iter().collect::<Vec<_>>(),
-                &store,
-                sched.as_ref(),
-                Depth::Recall,
-                now,
-                cap
-            )
+            count_eligible(&personal, &store, sched.as_ref(), Depth::Recall, now, cap)
         );
-        assert!(has_reviewable(
+        assert!(has_eligible(
             &personal,
             &store,
             sched.as_ref(),
@@ -3256,8 +3371,8 @@ mod tests {
         assert!(session.is_finished());
         assert_eq!(
             0,
-            count_reviewable(
-                &[&synth],
+            count_eligible(
+                std::slice::from_ref(&synth),
                 &store,
                 sched().as_ref(),
                 Depth::Recall,
@@ -3283,8 +3398,8 @@ mod tests {
         let sched = sched();
         assert_eq!(
             0,
-            count_reviewable(
-                &[&synth],
+            count_eligible(
+                std::slice::from_ref(&synth),
                 &store,
                 sched.as_ref(),
                 Depth::Recall,
@@ -3294,8 +3409,8 @@ mod tests {
         );
         assert_eq!(
             1,
-            count_reviewable(
-                &[&synth],
+            count_eligible(
+                std::slice::from_ref(&synth),
                 &store,
                 sched.as_ref(),
                 Depth::Recall,
@@ -3325,7 +3440,7 @@ mod tests {
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         assert_eq!(
             0,
-            count_reviewable(&[&synth], &store, sched().as_ref(), Depth::Recall, now, cap)
+            count_eligible(&[synth], &store, sched().as_ref(), Depth::Recall, now, cap)
         );
     }
 
@@ -4291,13 +4406,219 @@ mod tests {
         assert_eq!(2, count, "exactly `in window` and `at edge`");
     }
 
+    const PARENT_ID: &str = "card-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+    const CHILD_ID: &str = "card-3k5m9q2w7x4c1t8z0v6b2n4d8f";
+    const GRANDCHILD_ID: &str = "card-7t2v5b9n4d8f3k5m9q2w7x4c1z";
+
+    const GATED_DECK: &str = "## Parent\nparent answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+
+    fn gated_cards(text: &str) -> Vec<Card> {
+        crate::parser::parse_str("gated", text).expect("the fixture parses")
+    }
+
+    fn find<'a>(cards: &'a [Card], id: &str) -> &'a Card {
+        cards
+            .iter()
+            .find(|card| card.id().as_deref() == Some(id))
+            .unwrap_or_else(|| panic!("no card {id} in the fixture"))
+    }
+
+    /// Seed one card so `card_tiers` reports exactly `tier` at `now`.
+    fn seed_tier(store: &mut Store, id: &str, tier: CardTier, now: u64) {
+        let day = 86_400_000u64;
+        match tier {
+            CardTier::Unseen => {}
+            CardTier::Seen => store.get_or_insert(id).introduced_ms = Some(now),
+            CardTier::Learning => {
+                store
+                    .get_or_insert(id)
+                    .record_review(now, Grade::Pass, Depth::Recall, false);
+            }
+            CardTier::LearnedStrong | CardTier::LearnedFading | CardTier::LearnedWeak => {
+                let elapsed = match tier {
+                    CardTier::LearnedStrong => 0,
+                    CardTier::LearnedFading => 30 * day,
+                    _ => 100 * day,
+                };
+                store.get_or_insert(id).recall = Some(FsrsState {
+                    stability: 10.0,
+                    state: 2,
+                    last_review_ms: now.saturating_sub(elapsed),
+                    ..Default::default()
+                });
+            }
+            // A real retired card graduated first: the interval only grows
+            // that far through passes.
+            CardTier::Retired => {
+                store.get_or_insert(id).recall = Some(FsrsState {
+                    stability: 10.0,
+                    state: 2,
+                    scheduled_days: DEFAULT_RETIRE_AFTER_DAYS,
+                    last_review_ms: now,
+                    ..Default::default()
+                });
+            }
+        }
+    }
+
+    /// Spec law 3: the gate is the parent's RECALL schedule reaching Review,
+    /// swept over every published tier so no band is decided by assertion.
     #[test]
-    fn no_cards_means_nothing_is_reviewable() {
+    fn a_sub_card_is_gated_on_its_parents_recall_schedule_at_every_tier() {
+        let now = 200 * 86_400_000u64;
+        for (tier, unlocks) in [
+            (CardTier::Unseen, false),
+            (CardTier::Seen, false),
+            (CardTier::Learning, false),
+            (CardTier::LearnedWeak, true),
+            (CardTier::LearnedFading, true),
+            (CardTier::LearnedStrong, true),
+            (CardTier::Retired, true),
+        ] {
+            let (mut store, _dir) = empty_store();
+            let cards = gated_cards(GATED_DECK);
+            seed_tier(&mut store, PARENT_ID, tier, now);
+            assert_eq!(
+                vec![tier],
+                card_tiers(&[PARENT_ID.to_string()], &store, now, CAP),
+                "the fixture did not actually put the parent at {tier:?}"
+            );
+            let locks = Locks::evaluate(&cards, &store);
+            assert_eq!(
+                !unlocks,
+                locks.is_locked(find(&cards, CHILD_ID)),
+                "child gating with the parent at {tier:?}"
+            );
+            assert!(
+                !locks.is_locked(find(&cards, PARENT_ID)),
+                "a top-level card is never gated ({tier:?})"
+            );
+        }
+    }
+
+    /// Spec law 3, the remaining rows: only the Recall schedule opens the
+    /// gate, and an explicit reset of the parent closes it again.
+    #[test]
+    fn only_recall_graduation_opens_the_gate_and_a_parent_reset_closes_it() {
+        let (mut store, _dir) = empty_store();
+        let cards = gated_cards(GATED_DECK);
+        let child = find(&cards, CHILD_ID);
+
+        let graduated = FsrsState {
+            stability: 10.0,
+            state: 2,
+            ..Default::default()
+        };
+        store.get_or_insert(PARENT_ID).recognize = Some(graduated);
+        store.get_or_insert(PARENT_ID).reconstruct = Some(graduated);
+        assert!(
+            Locks::evaluate(&cards, &store).is_locked(child),
+            "Recognize and Reconstruct in Review must not unlock the child"
+        );
+
+        store.get_or_insert(PARENT_ID).recall = Some(graduated);
+        assert!(
+            !Locks::evaluate(&cards, &store).is_locked(child),
+            "a graduated Recall schedule unlocks the child"
+        );
+
+        store.get_or_insert(PARENT_ID).recall = Some(FsrsState {
+            stability: 10.0,
+            state: 3,
+            ..Default::default()
+        });
+        assert!(
+            !Locks::evaluate(&cards, &store).is_locked(child),
+            "Relearning is still graduated, so the child stays open"
+        );
+
+        assert!(
+            store.remove(PARENT_ID),
+            "reset --card drops the parent's row"
+        );
+        assert!(
+            Locks::evaluate(&cards, &store).is_locked(child),
+            "resetting the parent re-locks the child"
+        );
+    }
+
+    /// Spec law 4: a parent is open only when EVERY unit it expands to has
+    /// graduated, and a locked parent locks its own children in turn.
+    #[test]
+    fn a_parent_opens_only_when_every_unit_it_expands_to_has_graduated() {
+        let cloze = "## Parent\n\\blank{one} and \\blank{two}\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+        let table = "## Parent\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+        for (label, text) in [("a two-hole cloze", cloze), ("a titled table", table)] {
+            let cards = gated_cards(text);
+            let units: Vec<String> = cards
+                .iter()
+                .filter(|card| card.id().as_deref() != Some(CHILD_ID))
+                .filter_map(|card| card.id())
+                .collect();
+            assert_eq!(2, units.len(), "{label} must expand to two units");
+            let child = find(&cards, CHILD_ID);
+
+            let (mut store, _dir) = empty_store();
+            store.get_or_insert(&units[0]).recall = Some(FsrsState {
+                stability: 10.0,
+                state: 2,
+                ..Default::default()
+            });
+            assert!(
+                Locks::evaluate(&cards, &store).is_locked(child),
+                "{label}: one graduated unit is not a graduated parent"
+            );
+            store.get_or_insert(&units[1]).recall = Some(FsrsState {
+                stability: 10.0,
+                state: 2,
+                ..Default::default()
+            });
+            assert!(
+                !Locks::evaluate(&cards, &store).is_locked(child),
+                "{label}: every unit graduated opens the parent"
+            );
+        }
+    }
+
+    /// Spec law 4, the chain: a grandchild reads its own parent, and a locked
+    /// parent keeps it locked even when the grandchild's parent graduated.
+    #[test]
+    fn a_locked_parent_keeps_its_own_children_locked() {
+        let text = "## Parent\nparent answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n\n#### Grandchild\ngrandchild answer\n<!-- id: card-7t2v5b9n4d8f3k5m9q2w7x4c1z -->\n";
+        let cards = gated_cards(text);
+        let (mut store, _dir) = empty_store();
+        let graduated = FsrsState {
+            stability: 10.0,
+            state: 2,
+            ..Default::default()
+        };
+        store.get_or_insert(CHILD_ID).recall = Some(graduated);
+        let locks = Locks::evaluate(&cards, &store);
+        assert!(
+            locks.is_locked(find(&cards, CHILD_ID)),
+            "the child's own parent has not graduated"
+        );
+        assert!(
+            locks.is_locked(find(&cards, GRANDCHILD_ID)),
+            "a graduated but locked parent must not open its child"
+        );
+
+        store.get_or_insert(PARENT_ID).recall = Some(graduated);
+        let locks = Locks::evaluate(&cards, &store);
+        assert!(!locks.is_locked(find(&cards, CHILD_ID)));
+        assert!(
+            !locks.is_locked(find(&cards, GRANDCHILD_ID)),
+            "the whole chain opens once every ancestor has graduated"
+        );
+    }
+
+    #[test]
+    fn no_cards_means_nothing_is_eligible() {
         let (store, _dir) = empty_store();
         let sched = sched();
         assert_eq!(
             0,
-            count_reviewable(&[], &store, sched.as_ref(), Depth::Recall, 1_000, None)
+            count_eligible(&[], &store, sched.as_ref(), Depth::Recall, 1_000, None)
         );
     }
 }

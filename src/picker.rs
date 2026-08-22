@@ -233,6 +233,60 @@ mod tests {
         std::fs::write(path, text).unwrap();
     }
 
+    /// One display chain, three surfaces: `title:` beats a condensed
+    /// `trace:` beats the filename stem. The picker labels from its own cache
+    /// rather than from `Deck::display_name`, so the two can drift apart
+    /// unless something asserts they agree.
+    #[test]
+    fn every_surface_names_a_deck_by_the_same_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = "How does a borrow end?";
+        let cases = [
+            (
+                "titled.md",
+                format!("---\ntitle: Real Title\ntrace: {trace}\n---\n## q\na\n"),
+                "Real Title".to_string(),
+            ),
+            (
+                "traced.md",
+                format!("---\ntrace: {trace}\n---\n## q\na\n"),
+                title::condense(trace),
+            ),
+            (
+                "bare-name.md",
+                "## q\na\n".to_string(),
+                "bare-name".to_string(),
+            ),
+        ];
+        for (file, text, _) in &cases {
+            write_initialized(&dir.path().join(file), text);
+        }
+
+        let rows = crate::listing::list_root(
+            dir.path(),
+            &crate::config::ReviewConfig::default(),
+            1_000_000,
+        );
+        for (file, _, expected) in &cases {
+            let path = dir.path().join(file);
+            assert_eq!(
+                *expected,
+                crate::deck::Deck::load(&path).unwrap().display_name(),
+                "display_name for {file}"
+            );
+            assert_eq!(
+                *expected,
+                deck_label(&path).unwrap_or_else(|| stem(file)),
+                "the picker label for {file}"
+            );
+            let row = rows
+                .iter()
+                .find(|row| row.path == path)
+                .unwrap_or_else(|| panic!("no listing row for {file}"));
+            assert_eq!(*expected, row.title, "the listing row for {file}");
+        }
+    }
+
     #[test]
     fn workspace_progress_reports_past_equal_and_future_reviews() {
         assert_eq!("1s ago", progress_age(1_000, 2_000));

@@ -349,12 +349,20 @@ fn deck_due(
     let retire = review.retire_after_days;
     // Recognize needs both due AND recognizable, or an un-augmented deck
     // over-reports as due.
+    let locks = session::Locks::evaluate(&deck.cards, store);
     let recognize_due = deck.cards.iter().any(|c| {
-        session::is_reviewable(c, store, &scheduler, Depth::Recognize, now_ms, retire)
-            && depth::card_recognizable(c, augment, &deck.cards)
+        session::eligible_for_session(
+            c,
+            store,
+            &scheduler,
+            Depth::Recognize,
+            now_ms,
+            retire,
+            &locks,
+        ) && depth::card_recognizable(c, augment, &deck.cards)
     });
     recognize_due
-        || session::has_reviewable(
+        || session::has_eligible(
             &deck.cards,
             store,
             &scheduler,
@@ -362,7 +370,7 @@ fn deck_due(
             now_ms,
             retire,
         )
-        || session::has_reviewable(
+        || session::has_eligible(
             &deck.cards,
             store,
             &scheduler,
@@ -370,7 +378,7 @@ fn deck_due(
             now_ms,
             retire,
         )
-        || session::has_reviewable(
+        || session::has_eligible(
             &crate::personal::read(&deck.path, &deck.subject).cards,
             store,
             &scheduler,
@@ -485,25 +493,27 @@ pub fn deck_status(
     let now = session::now_ms();
     // A card counts only if it's both unrecognized AND recognizable; an
     // un-augmented card must never count as due.
+    let locks = session::Locks::evaluate(&deck.cards, store);
     let reviewable_recognize = deck.cards.iter().any(|card| {
-        session::is_reviewable(
+        session::eligible_for_session(
             card,
             store,
             &scheduler,
             Depth::Recognize,
             now,
             review.retire_after_days,
+            &locks,
         ) && depth::card_recognizable(card, augment, &deck.cards)
     });
     let can_recognize = depth::deck_recognizable(&deck.cards, augment);
-    let reviewable_recall = session::has_reviewable(
+    let reviewable_recall = session::has_eligible(
         &deck.cards,
         store,
         &scheduler,
         Depth::Recall,
         now,
         review.retire_after_days,
-    ) || session::has_reviewable(
+    ) || session::has_eligible(
         &personal,
         store,
         &scheduler,
@@ -513,7 +523,7 @@ pub fn deck_status(
     );
     // A deck fully settled at Recall reads due again immediately at
     // Reconstruct (the scheduler's cross-depth immediacy rule), not a bug.
-    let reviewable_reconstruct = session::has_reviewable(
+    let reviewable_reconstruct = session::has_eligible(
         &deck.cards,
         store,
         &scheduler,
@@ -529,10 +539,9 @@ pub fn deck_status(
         || reviewable_recall
         || reviewable_reconstruct;
     let (badge_depth, badge_dotted) = badge_depth_for(deck_id, &deck.cards, store);
-    let new_cards = deck
-        .cards
-        .iter()
-        .any(|card| card.id().and_then(|id| store.progress(&id)).is_none());
+    let new_cards = deck.cards.iter().any(|card| {
+        !locks.is_locked(card) && card.id().and_then(|id| store.progress(&id)).is_none()
+    });
     // An unreadable progress document voids every progress-derived claim:
     // the empty view would otherwise read as fresh-and-due, and any session
     // or exam it invites would mint fresh progress over the damaged file.
@@ -1455,6 +1464,187 @@ mod tests {
         );
         assert!(status.reviewable);
         assert_eq!("done ✓", status.badge);
+    }
+
+    const GATE_PARENT: &str = "card-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+    const GATE_CHILD: &str = "card-3k5m9q2w7x4c1t8z0v6b2n4d8f";
+    const GATE_DECK: &str = "---\nformat-version: 1\nid: \"deck-gate\"\n---\n## Parent\nparent answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+
+    /// Spec law 5: one fixture (a `##` parent still in Learning, an unseen
+    /// `###` child) asked of every count, status and queue reader, in each
+    /// order mode. A reader that skipped the gate would claim work the queue
+    /// refuses to serve.
+    #[test]
+    fn every_reader_agrees_a_locked_sub_card_is_neither_due_nor_new() {
+        use crate::session::{Order, Session, SessionOptions};
+
+        let now = session::now_ms();
+        for (label, order, topology) in [
+            ("scheduled", Order::Scheduled, false),
+            ("sequential", Order::Sequential, false),
+            ("topology", Order::Scheduled, true),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let deck_path = dir.path().join("gate.md");
+            write(&deck_path, GATE_DECK);
+            let deck = Deck::load(&deck_path).unwrap();
+            assert_eq!(2, deck.cards.len(), "{label}: fixture shape");
+
+            let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+            store.get_or_insert(GATE_PARENT).recall = Some(crate::store::FsrsState {
+                stability: 10.0,
+                state: 1,
+                last_review_ms: now,
+                due_ms: now + 30 * 86_400_000,
+                ..Default::default()
+            });
+            assert!(
+                !store
+                    .progress(GATE_PARENT)
+                    .and_then(|state| state.recall.as_ref())
+                    .is_some_and(crate::store::FsrsState::graduated),
+                "{label}: the parent must still be in Learning"
+            );
+
+            let options = SessionOptions {
+                order,
+                topology: topology.then(|| {
+                    crate::augment::TopologyOrder::from_walk(&[
+                        GATE_PARENT.to_string(),
+                        GATE_CHILD.to_string(),
+                    ])
+                }),
+                ..Default::default()
+            };
+            let scheduler = crate::scheduler::Fsrs::new(
+                0.9,
+                crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS,
+            );
+            let session = Session::new(
+                deck.cards.clone(),
+                &mut store,
+                Box::new(scheduler),
+                options,
+                now,
+            );
+
+            assert_eq!(0, session.initial_size, "{label}: queue serves nothing");
+            assert!(
+                !session.has_due_now(&store, now),
+                "{label}: has_due_now agrees with the empty queue"
+            );
+            assert_eq!(
+                (0, 0),
+                session.remaining_split(&store, now),
+                "{label}: the done summary claims no backlog"
+            );
+            assert_eq!(
+                Some(
+                    store
+                        .progress(GATE_PARENT)
+                        .unwrap()
+                        .recall
+                        .as_ref()
+                        .unwrap()
+                        .due_ms
+                ),
+                session.next_due_at(&store),
+                "{label}: next_due_at reports the parent, never the locked child"
+            );
+            assert_eq!(
+                (1, 2),
+                session.deck_progress(&store),
+                "{label}: a locked card still counts toward the deck total"
+            );
+
+            let status = deck_status(
+                &deck,
+                &store,
+                &no_augment(),
+                None,
+                false,
+                ReviewConfig::default(),
+            );
+            assert!(
+                !status.new_cards,
+                "{label}: a locked card is not new work to offer"
+            );
+            assert!(
+                !status.reviewable_recall,
+                "{label}: the picker agrees nothing is drillable at Recall"
+            );
+
+            // The parent graduates while the sitting stands: the built roster
+            // is frozen, the backlog readers move.
+            store.get_or_insert(GATE_PARENT).recall = Some(crate::store::FsrsState {
+                stability: 10.0,
+                state: 2,
+                last_review_ms: now,
+                due_ms: now + 30 * 86_400_000,
+                ..Default::default()
+            });
+            assert_eq!(
+                0, session.initial_size,
+                "{label}: the running roster does not mutate under the learner"
+            );
+            assert_eq!(
+                (0, 1),
+                session.remaining_split(&store, now),
+                "{label}: the done summary surfaces the freed child"
+            );
+            assert!(
+                session.has_due_now(&store, now),
+                "{label}: a restart would now find work"
+            );
+            let status = deck_status(
+                &deck,
+                &store,
+                &no_augment(),
+                None,
+                false,
+                ReviewConfig::default(),
+            );
+            assert!(
+                status.new_cards,
+                "{label}: the picker offers the freed child"
+            );
+
+            let mut session = session;
+            assert!(
+                session.restart(&mut store, now),
+                "{label}: restart picks the freed child up"
+            );
+            assert_eq!(1, session.initial_size, "{label}: only the child is left");
+            assert_eq!(
+                Some(GATE_CHILD.to_string()),
+                session.current_id(),
+                "{label}: and it is what gets served"
+            );
+
+            // Resetting the parent re-locks a child that already carries a
+            // schedule: the one shape where a LOCKED card has a due time.
+            store.get_or_insert(GATE_CHILD).recall = Some(crate::store::FsrsState {
+                stability: 10.0,
+                state: 2,
+                last_review_ms: now,
+                due_ms: now + 1,
+                ..Default::default()
+            });
+            assert!(
+                store.remove(GATE_PARENT),
+                "{label}: reset --card the parent"
+            );
+            assert_eq!(
+                None,
+                session.next_due_at(&store),
+                "{label}: a re-locked child is never the next review"
+            );
+            assert_eq!(
+                (0, 1),
+                session.remaining_split(&store, now + 2),
+                "{label}: the reset parent is new work again, the child is not due"
+            );
+        }
     }
 
     #[test]

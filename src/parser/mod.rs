@@ -525,6 +525,9 @@ struct RawCard {
     /// 2 for a `## ` card, 3 or 4 for a sub-card. Gating reads it; identity
     /// never does, so re-heading a card keeps its token.
     depth: usize,
+    /// The block line of the enclosing `## `/`### ` block, when this is a
+    /// sub-card.
+    parent: Option<usize>,
     front: String,
     front_extra: Vec<(usize, String)>,
     back: Vec<(usize, String)>,
@@ -697,7 +700,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     let mut blocks: Vec<RawBlock> = Vec::new();
     let mut current: Option<RawCard> = None;
     let mut table: Option<RawTable> = None;
-    let mut open_depths: Vec<usize> = Vec::new();
+    let mut open_depths: Vec<(usize, usize)> = Vec::new();
     let mut section: Vec<String> = Vec::new();
     let mut skip_delimiter = false;
     let mut fence: Option<(char, usize)> = None;
@@ -862,10 +865,11 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             // The stack rule: a front at depth N closes every open chain at
             // depth >= N, then requires the next-shallower one to still be
             // open. Depth 2 always opens.
-            while open_depths.last().is_some_and(|open| *open >= depth) {
+            while open_depths.last().is_some_and(|(open, _)| *open >= depth) {
                 open_depths.pop();
             }
-            if depth > 2 && open_depths.last() != Some(&(depth - 1)) {
+            let parent = open_depths.last().map(|(_, line)| *line);
+            if depth > 2 && open_depths.last().map(|(open, _)| *open) != Some(depth - 1) {
                 return Err(ParseError::OrphanSubCard(lineno));
             }
             if let Some(card) = current.take() {
@@ -875,11 +879,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if front.is_empty() {
                 return Err(ParseError::EmptyFront(lineno));
             }
-            open_depths.push(depth);
+            open_depths.push((depth, lineno));
             current = Some(RawCard {
                 line: lineno,
                 section: section.clone(),
                 depth,
+                parent,
                 front,
                 front_extra: Vec::new(),
                 back: Vec::new(),
@@ -1403,9 +1408,12 @@ fn build_table_cards(
 ) -> Result<(), ParseError> {
     let start = cards.len();
     let section = raw.section.clone();
+    let block_line = raw.line;
     let out = build_table_cards_inner(subject, deck_id, raw, cards);
     for card in &mut cards[start..] {
         card.section_context = section.clone();
+        card.block_line = block_line;
+        card.parent_block = None;
     }
     out
 }
@@ -1724,9 +1732,13 @@ fn build_card(
 ) -> Result<Option<BlockProse>, ParseError> {
     let start = cards.len();
     let section = raw.section.clone();
+    let block_line = raw.line;
+    let parent = raw.parent;
     let out = build_card_inner(subject, deck_id, raw, cards, lints);
     for card in &mut cards[start..] {
         card.section_context = section.clone();
+        card.block_line = block_line;
+        card.parent_block = parent;
     }
     out
 }
@@ -1743,6 +1755,8 @@ fn build_card_inner(
         // The wrapper stamps it onto every card this block emits.
         section: _,
         depth: _,
+        // The wrapper stamps it onto every card this block emits.
+        parent: _,
         front: heading,
         front_extra,
         back,
@@ -2583,6 +2597,62 @@ mod tests {
         // An editorial comment is not a directive and stays allowed.
         let deck = parse("# Topic <!-- editorial note -->\n## q\na\n");
         assert_eq!(1, deck.cards.len());
+    }
+
+    /// Every review unit one authored block expands to shares one
+    /// `block_line`, and a sub-card points at its parent's. Gating reads
+    /// nothing else, so a wrong stamp here silently ungates a whole deck.
+    #[test]
+    fn every_unit_of_a_block_shares_its_block_line_and_sub_cards_point_at_the_parent() {
+        let chain = parse_str(
+            "t",
+            "## A\na\n\n### B\nb\n\n#### C\nc\n\n# Section\n\n## D\nd\n\n### E\ne\n",
+        )
+        .expect("the chain parses");
+        let seen: Vec<(String, usize, Option<usize>)> = chain
+            .iter()
+            .map(|card| (card.front.clone(), card.block_line, card.parent_block))
+            .collect();
+        assert_eq!(
+            vec![
+                ("A".to_string(), 1, None),
+                ("B".to_string(), 4, Some(1)),
+                ("C".to_string(), 7, Some(4)),
+                ("D".to_string(), 12, None),
+                ("E".to_string(), 15, Some(12)),
+            ],
+            seen,
+            "a section clears the chain; depth 4 hangs off depth 3"
+        );
+
+        let cloze = parse_str("t", "## Q\n\\blank{one} and \\blank{two}\n").expect("cloze parses");
+        assert_eq!(2, cloze.len(), "two holes are two units");
+        assert!(
+            cloze.iter().all(|card| card.block_line == 1),
+            "both holes belong to the block on line 1"
+        );
+
+        let table = parse_str(
+            "t",
+            "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins |\n| two | zwei |\n",
+        )
+        .expect("the titled table parses");
+        assert_eq!(2, table.len(), "two rows are two units");
+        assert!(
+            table.iter().all(|card| card.block_line == 1),
+            "every row belongs to the title's block, not to its own line"
+        );
+        assert!(
+            table.iter().all(|card| card.parent_block.is_none()),
+            "a table title sits at depth 2"
+        );
+
+        let reversed = chain[1].reversed();
+        assert_eq!(
+            (chain[1].block_line, chain[1].parent_block),
+            (reversed.block_line, reversed.parent_block),
+            "the reverse half is gated with its forward half"
+        );
     }
 
     /// Done-list law: identity is independent of depth, so re-filing a card

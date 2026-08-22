@@ -155,6 +155,12 @@ pub struct Card {
     pub back: Vec<String>,
     pub note: Option<String>,
     pub line: usize,
+    /// The authored block's first line: a heading card's own line, a table
+    /// row's table line. Every review unit one block expands to shares it.
+    pub block_line: usize,
+    /// The `block_line` of the `## `/`### ` block this sub-card hangs under.
+    /// `None` for a top-level card, so gating never asks about it.
+    pub parent_block: Option<usize>,
     pub hash_lines: Option<Vec<String>>,
     pub reveal: Option<Reveal>,
     pub input: Option<Input>,
@@ -216,6 +222,8 @@ impl Card {
             back,
             note,
             line,
+            block_line: line,
+            parent_block: None,
             hash_lines: None,
             reveal: None,
             input: None,
@@ -260,6 +268,8 @@ impl Card {
         // Built after the parser has finished, so the builder's stamp never
         // reaches it: the reverse half must carry the section itself.
         card.section_context = self.section_context.clone();
+        card.block_line = self.block_line;
+        card.parent_block = self.parent_block;
         card.reveal = self.reveal;
         card.input = self.input;
         card.images = self.images_back.clone();

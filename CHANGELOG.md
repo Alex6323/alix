@@ -206,6 +206,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Headings are study structure, not deck metadata (breaking).** A `# `
+  heading is now the SECTION CONTEXT for the cards beneath it, `###` and
+  `####` are SUB-CARDS of the card above them, and a deck's name and
+  description move into the frontmatter as `title:` and `description:`.
+  A deck whose first line was an `# ` title now reads that title as a
+  section, so every deck needs converting; `tags:` is no longer parsed. A
+  sub-card is withheld from selection until every review unit its parent
+  expands to has graduated at Recall (a two-hole cloze needs both holes, a
+  titled table every row), and an `alix reset --card` of the parent closes
+  the gate again. A withheld card counts toward a deck's totals but toward
+  no due, new, or reviewable claim, so the picker, the queue, the backlog
+  counts and the done summary agree. The gate is read when a sitting is
+  assembled: a parent graduating mid-sitting frees its children for the
+  next one, never under the card in front of you.
+
 - The mask markers are now reserved codepoints: an asked blank shows as `⍰`
   and a hidden one as `⬚` (matching the boxed-`?` a masked formula renders),
   and authored deck text may not contain either character, the same way

@@ -89,8 +89,8 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         // Personal cards count toward "due" (now and within 24h), never toward
         // the card count below: they aren't deck content.
         let personal = alix::personal::read(&deck.path, &deck.subject).cards;
-        due_now += alix::session::count_reviewable(
-            &personal.iter().collect::<Vec<_>>(),
+        due_now += alix::session::count_eligible(
+            &personal,
             &store,
             &scheduler,
             Depth::Recall,
