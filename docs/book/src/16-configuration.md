@@ -23,7 +23,7 @@ passed = ["l"]
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
 rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
-`remove` (default `ctrl-x`), `ask` (default `?`),
+`remove` (default `ctrl-x`), `ask` (default `?`), `context` (default `c`),
 `continue`, `restart` (default `r`), `quit`, `up`/`down`
 (defaults `k`/`j`) to move within a multiple-choice or key-point list (the arrow keys always work too),
 and the tutor's distill actions `make_note` (default `ctrl-n`) and `make_card` (default `ctrl-d`). While

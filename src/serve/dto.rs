@@ -408,6 +408,7 @@ pub(super) struct ReviewKeys {
     remove: Vec<KeyDto>,
     restart: Vec<KeyDto>,
     ask: Vec<KeyDto>,
+    context: Vec<KeyDto>,
     make_note: Vec<KeyDto>,
     make_card: Vec<KeyDto>,
 }
@@ -425,8 +426,59 @@ impl ReviewKeys {
             remove: key_list(&b.remove),
             restart: key_list(&b.restart),
             ask: key_list(&b.ask),
+            context: key_list(&b.context),
             make_note: key_list(&b.make_note),
             make_card: key_list(&b.make_card),
+        }
+    }
+}
+
+#[cfg(test)]
+mod review_keys_parity {
+    /// Every review binding reaches the clients. `ReviewKeys` is hand-written
+    /// beside `Bindings`, so a binding added to one and forgotten in the other
+    /// is silent: the config accepts a key the web client never receives.
+    /// Deliberate exclusions are listed, so dropping one is a decision.
+    #[test]
+    fn every_binding_is_either_served_or_deliberately_withheld() {
+        // `Bindings` fields are `pub`, `ReviewKeys` fields are private, so the
+        // scrape keys on the `name: Type,` shape both share.
+        let fields = |source: &str, marker: &str| -> Vec<String> {
+            let at = source
+                .find(marker)
+                .expect("the struct moved or was renamed");
+            let body = &source[at..];
+            let end = body.find("\n}").expect("the struct closes");
+            body[..end]
+                .lines()
+                .skip(1)
+                .map(|line| line.trim().trim_start_matches("pub "))
+                .filter(|line| line.ends_with(',') && !line.starts_with("//"))
+                .filter_map(|line| line.split_once(": "))
+                .map(|(name, _)| name.to_string())
+                .collect()
+        };
+        let bindings = fields(include_str!("../config.rs"), "pub struct Bindings {");
+        let served: Vec<String> = fields(include_str!("dto.rs"), "struct ReviewKeys {")
+            .into_iter()
+            .collect();
+        // Terminal-only actions: the browser has its own affordances for
+        // these and never binds them.
+        let withheld = ["hint", "submit", "cont", "quit"];
+
+        assert!(bindings.len() > 10, "the scrape found {bindings:?}");
+        for name in &bindings {
+            assert!(
+                served.contains(name) || withheld.contains(&name.as_str()),
+                "binding `{name}` is neither served in ReviewKeys nor listed as \
+                 deliberately withheld"
+            );
+        }
+        for name in &served {
+            assert!(
+                bindings.contains(name),
+                "ReviewKeys serves `{name}`, which is not a binding"
+            );
         }
     }
 }
