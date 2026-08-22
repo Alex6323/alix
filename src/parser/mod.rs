@@ -94,6 +94,9 @@ pub enum LintKind {
     ClozeInHole,
     UnclosedComment,
     UnclosedFence,
+    /// A blank-surrounded `---` that terminates nothing: no card follows
+    /// before the next `#` heading or the end of the deck.
+    PointlessTerminator,
     ImageMalformed,
     ChoiceAnswerMixed,
     ChoiceNeedsBothSides,
@@ -198,6 +201,14 @@ pub enum ParseError {
     TableDuplicateStamp { line: usize, value: String },
     #[error("line {0}: only directive comments may follow a card table before the next `## ` card")]
     TableTrailing(usize),
+    #[error(
+        "line {0}: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"
+    )]
+    StrayDivider(usize),
+    #[error(
+        "line {0}: prose after a `---` section terminator belongs to no section; open a heading first"
+    )]
+    ProseAfterTerminator(usize),
 }
 
 impl ParseError {
@@ -236,6 +247,8 @@ impl ParseError {
             Self::TableRowStamp { .. } => "table_row_stamp",
             Self::TableDuplicateStamp { .. } => "table_duplicate_stamp",
             Self::TableTrailing(_) => "table_trailing",
+            Self::StrayDivider(_) => "stray_divider",
+            Self::ProseAfterTerminator(_) => "prose_after_terminator",
         }
     }
 
@@ -259,7 +272,9 @@ impl ParseError {
             | Self::TableLineMalformed(line)
             | Self::TableCellHole(line)
             | Self::TableCellImage(line)
-            | Self::TableTrailing(line) => *line,
+            | Self::TableTrailing(line)
+            | Self::StrayDivider(line)
+            | Self::ProseAfterTerminator(line) => *line,
             Self::InvalidTitle { line, .. }
             | Self::FrontmatterSyntax { line, .. }
             | Self::NonStringId { line, .. }
@@ -507,7 +522,11 @@ pub(crate) fn heading_depth(raw: &str) -> Option<(usize, &str)> {
     if hashes == 0 {
         return None;
     }
-    raw[hashes..].strip_prefix(' ').map(|rest| (hashes, rest))
+    let rest = &raw[hashes..];
+    if rest.is_empty() {
+        return Some((hashes, ""));
+    }
+    rest.strip_prefix(' ').map(|rest| (hashes, rest))
 }
 
 fn escaped_marker(line: &str, marker: usize) -> bool {
@@ -715,6 +734,7 @@ type ScannedBody = Vec<RawBlock>;
 fn section_line(
     section: &mut Vec<String>,
     seen_heading: bool,
+    terminated: Option<usize>,
     lineno: usize,
     line: String,
 ) -> Result<(), ParseError> {
@@ -722,6 +742,9 @@ fn section_line(
     // heading rule either: its lines are notes and personal cards.
     if sidecar_mode() {
         return Ok(());
+    }
+    if terminated.is_some() {
+        return Err(ParseError::ProseAfterTerminator(lineno));
     }
     if !seen_heading {
         return Err(ParseError::ProseBeforeFirstHeading(lineno));
@@ -741,6 +764,9 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     let mut fence: Option<(char, usize)> = None;
     let mut prev_blank = false;
     let mut prev_heading = false;
+    let mut pending_plain = false;
+    let mut terminated: Option<usize> = None;
+    let mut idle_terminators: Vec<usize> = Vec::new();
 
     for (idx, raw) in lines.iter().enumerate().skip(start) {
         let lineno = idx + 1;
@@ -754,6 +780,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         // A fence never opens while a table is active (every non-table line
         // inside a table's scope is either a flush or a loud error).
         if let Some(tbl) = table.as_mut() {
+            pending_plain = false;
             let next = lines.get(idx + 1).copied();
             if table_line(tbl, raw, lineno, next, lints)? {
                 prev_blank = trim_ws(raw).is_empty();
@@ -775,11 +802,18 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if let Some((ch, _)) = fence {
+            pending_plain = false;
             if closes_fence(raw, ch) {
                 fence = None;
             }
             if current.is_none() {
-                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
+                section_line(
+                    &mut section,
+                    seen_heading,
+                    terminated,
+                    lineno,
+                    raw.to_string(),
+                )?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -791,9 +825,16 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if let Some(ch) = fence_opener(raw) {
+            pending_plain = false;
             fence = Some((ch, lineno));
             if current.is_none() {
-                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
+                section_line(
+                    &mut section,
+                    seen_heading,
+                    terminated,
+                    lineno,
+                    raw.to_string(),
+                )?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -864,6 +905,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 end_line: lineno + 1,
             });
             skip_delimiter = true;
+            idle_terminators.clear();
+            pending_plain = false;
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -872,6 +915,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some((depth, rest)) = heading_depth(raw)
             && !(sidecar_mode() && depth != 2)
         {
+            pending_plain = false;
             if depth > 4 {
                 return Err(ParseError::HeadingTooDeep(lineno));
             }
@@ -891,6 +935,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 if trim_ws(&text).is_empty() {
                     return Err(ParseError::EmptySection(lineno));
                 }
+                for line in idle_terminators.drain(..) {
+                    lints.push(Lint {
+                        line,
+                        kind: LintKind::PointlessTerminator,
+                    });
+                }
+                terminated = None;
                 open_depths.clear();
                 seen_heading = true;
                 section = vec![text];
@@ -915,6 +966,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if front.is_empty() {
                 return Err(ParseError::EmptyFront(lineno));
             }
+            idle_terminators.clear();
             seen_heading = true;
             open_depths.push((depth, lineno));
             current = Some(RawCard {
@@ -946,8 +998,15 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some(rest) = t.strip_prefix('\\')
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
+            pending_plain = false;
             if current.is_none() {
-                section_line(&mut section, seen_heading, lineno, rest.to_string())?;
+                section_line(
+                    &mut section,
+                    seen_heading,
+                    terminated,
+                    lineno,
+                    rest.to_string(),
+                )?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -959,15 +1018,43 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if t == "---" {
+            if pending_plain {
+                pending_plain = false;
+                if current.is_none() {
+                    section_line(
+                        &mut section,
+                        seen_heading,
+                        terminated,
+                        lineno,
+                        "---".to_string(),
+                    )?;
+                } else {
+                    push_content(&mut current, lineno, "---".to_string());
+                }
+                prev_blank = false;
+                prev_heading = false;
+                continue;
+            }
+            let attached = lines
+                .get(idx + 1)
+                .is_some_and(|line| !trim_ws(line).is_empty());
             let divides =
                 current.as_ref().is_some_and(|card| !card.divided) && (prev_blank || prev_heading);
-            if divides && let Some(card) = current.as_mut() {
-                card.divided = true;
-                card.divider_line = Some(lineno);
-            } else if current.is_none() {
-                section_line(&mut section, seen_heading, lineno, "---".to_string())?;
+            if attached && divides {
+                if let Some(card) = current.as_mut() {
+                    card.divided = true;
+                    card.divider_line = Some(lineno);
+                }
+            } else if !attached && prev_blank {
+                if let Some(card) = current.take() {
+                    blocks.push(RawBlock::Card(card));
+                }
+                open_depths.clear();
+                section.clear();
+                terminated = Some(lineno);
+                idle_terminators.push(lineno);
             } else {
-                push_content(&mut current, lineno, "---".to_string());
+                return Err(ParseError::StrayDivider(lineno));
             }
             prev_blank = false;
             prev_heading = false;
@@ -975,12 +1062,19 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if let Some(rest) = t.strip_prefix('>') {
+            pending_plain = false;
             let text = rest.strip_prefix(' ').unwrap_or(rest);
             match current.as_mut() {
                 Some(card) => append_note(card, text),
                 // A section has no note to append to, so the line is
                 // ordinary section prose rather than a dropped quote.
-                None => section_line(&mut section, seen_heading, lineno, t.to_string())?,
+                None => section_line(
+                    &mut section,
+                    seen_heading,
+                    terminated,
+                    lineno,
+                    t.to_string(),
+                )?,
             }
             prev_blank = false;
             prev_heading = false;
@@ -989,6 +1083,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
 
         if t.starts_with("<!--") {
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
+                if trim_ws(body) == "plain" {
+                    pending_plain = true;
+                    prev_blank = false;
+                    prev_heading = false;
+                    continue;
+                }
+                pending_plain = false;
                 if let Some((key, value)) = directive(body) {
                     match current.as_mut() {
                         Some(card) => {
@@ -1025,6 +1126,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             // The line stays content.
         }
 
+        pending_plain = false;
+
         if t.starts_with("## ") {
             lints.push(Lint {
                 line: lineno,
@@ -1037,7 +1140,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         // has no sections at all (D16), so nothing accumulates there and a
         // personal card stays context-free.
         if current.is_none() {
-            section_line(&mut section, seen_heading, lineno, t.to_string())?;
+            section_line(
+                &mut section,
+                seen_heading,
+                terminated,
+                lineno,
+                t.to_string(),
+            )?;
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -1059,6 +1168,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     }
     if let Some(card) = current.take() {
         blocks.push(RawBlock::Card(card));
+    }
+    for line in idle_terminators {
+        lints.push(Lint {
+            line,
+            kind: LintKind::PointlessTerminator,
+        });
     }
     Ok(blocks)
 }
@@ -2561,9 +2676,6 @@ mod tests {
         for (label, body, at) in [
             ("plain prose", "Applies throughout.\n## q\na\n", 1),
             ("a quote", "> quoted\n## q\na\n", 1),
-            // A bare `---` opens frontmatter, so this one needs a real
-            // block above it before the divider can reach the section.
-            ("a divider", "---\ntitle: T\n---\n---\n\n## q\na\n", 4),
             ("an escape", "\\## escaped\n## q\na\n", 1),
             ("a fence opener", "```\n## q\na\n", 1),
             ("a fence body", "```\ncode\n```\n## q\na\n", 1),
@@ -2604,7 +2716,7 @@ mod tests {
     /// section when no card is open, or it is silently dropped.
     #[test]
     fn section_prose_keeps_fences_quotes_dividers_and_escapes() {
-        let deck = parse("# S\nplain\n> quoted\n---\n\\## escaped\n```\ncode\n```\n## q\na\n");
+        let deck = parse("# S\nplain\n> quoted\n\\---\n\\## escaped\n```\ncode\n```\n## q\na\n");
         assert_eq!(
             vec![
                 "S",
@@ -2965,8 +3077,8 @@ a
             (
                 "a section closes a front, so its answerless card errors at ITS line",
                 "## line one
-# S
 ---
+# S
 a
 "
                 .into(),
@@ -3089,9 +3201,10 @@ a
         assert_eq!(Some("a walk".to_string()), deck.frontmatter.trace);
         assert_eq!(1, deck.cards.len());
 
-        let deck = parse("# S\n---\nid: nope\n---\n## q\na\n");
-        assert_eq!(Frontmatter::default(), deck.frontmatter);
-        assert_eq!(None, deck.deck_token);
+        assert_eq!(
+            ParseError::StrayDivider(2),
+            err("# S\n---\nid: nope\n---\n## q\na\n")
+        );
     }
 
     #[test]
@@ -3605,7 +3718,7 @@ a
     #[test]
     fn a_card_with_no_answer_is_an_error() {
         assert_eq!(ParseError::FrontWithoutAnswer(1), err("## q\n## r\nb\n"));
-        assert_eq!(ParseError::FrontWithoutAnswer(1), err("## q\n---\n"));
+        assert_eq!(ParseError::FrontWithoutAnswer(1), err("## q\n"));
     }
 
     // ── Divider, answer, notes ──
@@ -3618,19 +3731,156 @@ a
     }
 
     #[test]
-    fn a_divider_needs_a_blank_line_or_the_heading_before_it() {
-        let deck = parse("## Q\ntext\n---\nanswer\n");
-        assert_eq!("Q", deck.cards[0].front);
-        assert_eq!(vec!["text", "---", "answer"], deck.cards[0].back);
+    fn later_dividers_need_the_escape_and_four_dashes_stay_content() {
+        let deck = parse("## Q\n\n---\na\n\\---\n----\nb\n");
+        assert_eq!(vec!["a", "---", "----", "b"], deck.cards[0].back);
+    }
 
-        let deck = parse("## Q\n---\nanswer\n");
-        assert_eq!(vec!["answer"], deck.cards[0].back);
+    // ── The ruled `---` grammar (element 41 / D22 amendment) ──
+
+    #[test]
+    fn an_attached_divider_right_under_the_heading_divides() {
+        let deck = parse("## q\n---\na\n");
+        assert_eq!("q", deck.cards[0].front);
+        assert_eq!(vec!["a"], deck.cards[0].back);
+    }
+
+    /// Spec law (D22 amendment): every `---` is a front divider (attached
+    /// to the answer below it, in divider position), a blank-surrounded
+    /// section terminator, or a loud error. Rows are the error cases.
+    #[test]
+    fn a_dash_line_in_neither_divider_nor_terminator_shape_errors() {
+        for (name, text, line) in [
+            (
+                "divider then blank then prose (probe p15)",
+                "## q\nans\n---\n\nprose\n",
+                3,
+            ),
+            ("blank after, heading before", "## q\n---\n\na\n", 2),
+            (
+                "attached but prose directly above",
+                "## q\ntext\n---\nanswer\n",
+                3,
+            ),
+            (
+                "attached inside an already-divided card",
+                "## q\n\n---\na\n---\nb\n",
+                5,
+            ),
+            (
+                "attached in section prose",
+                "# S\n---\ntext\n\n## q\na\n",
+                2,
+            ),
+            (
+                "leading the body directly after frontmatter",
+                "---\ntitle: T\n---\n---\n\n## q\na\n",
+                4,
+            ),
+            ("dangling at EOF under the heading", "## q\n---\n", 2),
+        ] {
+            assert_eq!(
+                ParseError::StrayDivider(line),
+                super::parse("deck.md", text).unwrap_err(),
+                "{name}"
+            );
+        }
     }
 
     #[test]
-    fn later_dividers_and_four_dashes_are_content() {
-        let deck = parse("## Q\n\n---\na\n\n---\n----\nb\n");
-        assert_eq!(vec!["a", "---", "----", "b"], deck.cards[0].back);
+    fn a_blank_surrounded_dash_line_terminates_the_section() {
+        let deck = parse("# S\nctx\n\n## a\nx\n\n---\n\n## b\ny\n");
+        assert_eq!(
+            vec!["S".to_string(), "ctx".to_string()],
+            deck.cards[0].section_context,
+            "the card before the terminator keeps its context"
+        );
+        assert!(
+            deck.cards[1].section_context.is_empty(),
+            "the card after the terminator carries none, got {:?}",
+            deck.cards[1].section_context
+        );
+        assert!(deck.lints.is_empty(), "a useful terminator draws no lint");
+
+        let deck = parse("# S\nctx\n\n---\n\n## q\na\n");
+        assert!(
+            deck.cards[0].section_context.is_empty(),
+            "a terminator with no card open still clears the section"
+        );
+    }
+
+    #[test]
+    fn prose_after_a_terminator_before_any_heading_errors() {
+        assert_eq!(
+            ParseError::ProseAfterTerminator(8),
+            err("# S\n\n## a\nx\n\n---\n\nstray\n")
+        );
+    }
+
+    #[test]
+    fn a_card_the_terminator_closes_without_an_answer_errors() {
+        assert_eq!(
+            ParseError::FrontWithoutAnswer(2),
+            err("# S\n## q\n\n---\n\n## r\ny\n")
+        );
+    }
+
+    #[test]
+    fn a_pointless_terminator_is_a_doctor_finding_not_an_error() {
+        for (name, text, lines) in [
+            ("nothing follows at EOF", "## a\nx\n\n---\n", vec![4]),
+            (
+                "the next heading arrives before any card",
+                "# S\n\n## a\nx\n\n---\n\n# T\n\n## b\ny\n",
+                vec![6],
+            ),
+            (
+                "two in a row, both idle",
+                "## a\nx\n\n---\n\n---\n",
+                vec![4, 6],
+            ),
+        ] {
+            let deck = parse(text);
+            let got: Vec<usize> = deck
+                .lints
+                .iter()
+                .filter(|l| l.kind == LintKind::PointlessTerminator)
+                .map(|l| l.line)
+                .collect();
+            assert_eq!(lines, got, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_plain_marked_dash_line_is_literal_content() {
+        let deck = parse("## q\nans\n\n<!-- plain -->\n---\n\nmore\n");
+        assert_eq!(vec!["ans", "---", "more"], deck.cards[0].back);
+
+        let deck = parse("# S\n\n<!-- plain -->\n---\n\n## q\na\n");
+        assert_eq!(
+            vec!["S".to_string(), "---".to_string()],
+            deck.cards[0].section_context
+        );
+    }
+
+    #[test]
+    fn an_eol_terminated_hash_run_is_a_heading_so_empty_text_errors() {
+        assert_eq!(ParseError::EmptySection(1), err("#\n\n## q\na\n"));
+        assert_eq!(ParseError::EmptySection(1), err("# \n\n## q\na\n"));
+        assert_eq!(ParseError::EmptyFront(2), err("# S\n##\n"));
+        assert_eq!(
+            ParseError::ProseBeforeFirstHeading(1),
+            err("#foo\n## q\na\n"),
+            "no space and no EOL after the run stays prose, per CommonMark"
+        );
+    }
+
+    #[test]
+    fn a_sub_card_chain_does_not_cross_a_terminator() {
+        assert_eq!(
+            ParseError::OrphanSubCard(8),
+            err("# S\n\n## p\na\n\n---\n\n### s\nb\n")
+        );
     }
 
     #[test]
@@ -4865,11 +5115,11 @@ the answer
     }
 
     #[test]
-    fn without_a_blank_line_the_divider_is_content_and_the_image_lands_on_the_back() {
-        let deck = parse("## q\n![](x.png)\n---\nWaxing\n");
-        let card = &deck.cards[0];
-        assert!(card.images.is_empty());
-        assert_eq!(vec![PathBuf::from("x.png")], img_srcs(&card.images_back));
+    fn a_divider_directly_under_an_image_is_a_stray() {
+        assert_eq!(
+            ParseError::StrayDivider(3),
+            err("## q\n![](x.png)\n---\nWaxing\n")
+        );
     }
 
     #[test]
@@ -5511,7 +5761,7 @@ the answer
     #[test]
     fn a_media_element_takes_at_most_one_crop() {
         let error = err(
-            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n<!-- crop: rect x=1 y=1 width=2 height=2 -->\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n<!-- crop: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -5522,7 +5772,7 @@ the answer
     #[test]
     fn one_media_element_carries_one_unit_across_regions_and_crop() {
         let error = err(
-            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n<!-- blank: rect x=1% y=1% width=2% height=2% -->\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n<!-- blank: rect x=1% y=1% width=2% height=2% -->\n\n---\nanswer\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -5530,7 +5780,7 @@ the answer
         assert!(message.contains("same unit"), "{message}");
 
         let error = err(
-            "## q\n![](a.png)\n<!-- crop: rect x=0% y=0% width=9% height=9% -->\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0% y=0% width=9% height=9% -->\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -6249,7 +6499,7 @@ the answer
         let back = err("## q\nthe parts ![x](hand.png) are labeled\n");
         assert_eq!(ParseError::MixedImageLine(2), back);
 
-        let front = err("## q\npress ![gear](gear.png) now\n---\nanswer\n");
+        let front = err("## q\npress ![gear](gear.png) now\n\n---\nanswer\n");
         assert_eq!(ParseError::MixedImageLine(2), front);
 
         let indented = parse("## q\n  ![x](hand.png)\nanswer\n");

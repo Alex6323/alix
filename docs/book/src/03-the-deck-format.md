@@ -117,6 +117,7 @@ ends and the answer begins:
 ```
 ## What does `lo` control in this signature?
 def bisect_right(a, x, lo=0, hi=None)
+
 ---
 The lowest index the search considers; entries below `lo` are ignored.
 ```
@@ -125,6 +126,12 @@ Here the front is two lines (the prose question plus the code it's asking about)
 and without the `---` alix couldn't tell where the question stops and the answer
 starts. (A one-line question needs no divider: the answer just follows on the next
 line, as in the cards above.)
+
+The divider's shape is strict, so a stray `---` fails loudly instead of silently
+joining a card: a front divider sits directly above its answer, with a blank line
+(or the card's own heading) above it, once per card. A `---` anywhere else is
+either a [section terminator](#-section-context) or a parse error; a literal
+`---` line is written `\---` (see [Escaping](#escaping)).
 
 ## Multiple-choice (checkbox) cards
 
@@ -275,6 +282,13 @@ A section heading is a heading, nothing more. It takes no directives and no card
 ID, and an empty one is an error, because a section owns no card to bind either
 to.
 
+A section runs to the next `#` heading, or to a **terminator**: a `---` alone
+with blank lines on both sides ends the open card and the section early, so the
+cards after it carry no context (a sub-card chain does not cross it either).
+Prose directly after a terminator belongs to no section and is an error; open a
+heading first. A terminator that ends nothing before the next `#` heading or the
+end of the deck still parses, and `alix doctor` points it out.
+
 ### `###` and `####` — sub-cards
 
 A card written one level deeper than the card above it is a **sub-card** of it:
@@ -352,6 +366,8 @@ deck into that order, opt in with `alix doctor <deck>
 Because `##`, `>`, `---`, and the fence and cloze markers are structural, an answer
 line that must *start* with one literally is escaped with a leading backslash:
 `\##`, `\>`, `\---`. The backslash is consumed; the line displays without it.
+For a line that is exactly `---`, `<!-- plain -->` on the line above keeps it as
+content too, as a literal thematic break.
 
 ```
 ## How do you write a second-level heading in Markdown?

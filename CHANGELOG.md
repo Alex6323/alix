@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A blank-surrounded `---` ends a section early: the cards after it carry no
+  context until the next `#` heading, and a sub-card chain does not cross it.
+  Prose directly after it, before any heading, is a parse error, and a
+  terminator that ends nothing is an `alix doctor` finding.
+
 - `alix doctor --repair-frontmatter-order` rewrites each checked deck's
   frontmatter into the canonical key order. Opt-in only; frontmatter it
   cannot safely permute (a blank line or comment inside the block) is left
@@ -211,23 +216,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Every `---` body line has exactly three legal shapes (breaking).** A
+  front divider sits directly above its answer with a blank line or the
+  card's own heading above it; a `---` alone with blank lines on both sides
+  terminates the open card and section; any other `---` is now a loud parse
+  error instead of silently joining the answer as content. A literal `---`
+  line is written `\---`, or kept as content by `<!-- plain -->` on the line
+  above. A bare `#` or `##` with no text after the hashes is now an empty
+  heading, an error, rather than prose.
+
 - Frontmatter alix writes follows one canonical key order: authored keys
   first (`title`, `description`, directives, `source`/`link`), machine lines
   last, so a minted deck `id` now lands at the bottom of the block instead
   of the top. An author's own order still never matters and is never
   diagnosed.
+
 - **`format-version` is now a reserved key; a deck that does not declare it
   is format version 1 (breaking).** `alix deck init` and the personal
   sidecar writer no longer write the key, and a deck with an `id` but no
   `format-version` parses instead of failing. A hand-written
   `format-version: 1` is still accepted, and any other number is still
   refused.
+
 - **A deck body starts with a heading (breaking).** A line that sits before
   the first `#` or `##`, outside any card, is now a parse error rather than
   silently becoming the section context of the cards above the first heading.
   A deck of plain cards still needs no section: opening with `##` is fine and
   those cards have no context. What a deck is about belongs in `title:` and
   `description:`.
+
 - Every shipped deck now declares its name in frontmatter. The tutorial, the
   four decks bundled with the mobile app, and the nine committed examples
   carried an `# ` heading from the era when that heading was the deck's
@@ -235,6 +252,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   showing as their filename stems. Each now has `title:` (and, where the
   intro prose was doing that job, `description:`), and the example
   screenshots were retaken against the checkout.
+
 - **Heatmap, topology and crumb cells are objects now (breaking wire
   change).** A cell was a bare tier string; it is `{tier, locked}`, where
   `tier` keeps the same seven values and `locked` says the card is a sub-card
@@ -242,6 +260,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   usually still `unseen`. A card served in a session also carries its
   `section_context` with per-line runs and fence units, so a client can show
   the section a card sits under. Both are documented in `docs/API.md`.
+
 - The prebuilt installer now resolves one immutable release tag and verifies
   the downloaded archive against that release's SHA-256 record before
   extracting or installing it. Missing, malformed, mismatched, and corrupt
@@ -261,6 +280,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts and the done summary agree. The gate is read when a sitting is
   assembled: a parent graduating mid-sitting frees its children for the
   next one, never under the card in front of you.
+
 - The mask markers are now reserved codepoints: an asked blank shows as `⍰`
   and a hidden one as `⬚` (matching the boxed-`?` a masked formula renders),
   and authored deck text may not contain either character, the same way

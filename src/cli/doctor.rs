@@ -651,6 +651,9 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnclosedComment => {
             "a `<!--` line that never closes with `-->` stays content".to_string()
         }
+        LintKind::PointlessTerminator => "this `---` section terminator ends nothing: no card \
+                                           follows before the next heading or the end of the deck"
+            .to_string(),
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),
