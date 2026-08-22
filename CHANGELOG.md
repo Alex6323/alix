@@ -384,6 +384,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   root entries and dependency-tree siblings while preserving recent-first,
   prerequisite, and blocked-last ordering.
 
+- A never-seen ordered card in the adult app now reveals one authored line at
+  a time. `Reveal next` remains available until the sequence is complete, and
+  only then changes to `Seen`; the same transition works from the Space key.
+
 - The advertised `curl -sSf https://alix.study/install.sh | sh` install has
   been failing since 2026-08-03. GitHub's `/releases/latest` is repo-wide, and
   the `mobile-v0.3.0` APK release took that slot, so the installer resolved to

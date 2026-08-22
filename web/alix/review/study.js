@@ -1042,16 +1042,20 @@ export function createStudy({
   }
 
   // Fill the answer region for reveal modes (flip / line / choice fallback).
-  // The introduction view: a never-seen card shown answer-first, so you read it before
-  // it's ever quizzed. One key ("Seen") records it; its first quiz comes ~1 min later.
-  // Only a reshaped list wants a flush-left block: its lines are steps or bullets.
+  // The introduction view: a never-seen flip card shows its answer before it is
+  // ever quizzed. An ordered card keeps its authored line-reveal contract, then
+  // "Seen" records the encounter after the final line. Only a reshaped list wants
+  // a flush-left block: its lines are steps or bullets.
   function leftAlignAnswer(c) { return isReshapedList(c); }
   function fillIntroduction(a) {
     if (!a) return;
+    if (state.mode === "line") {
+      fillAnswer(a);
+      return;
+    }
     const c = state.card;
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
-    if (state.mode === "line") appendReveal(sec, c.back, c.back_runs, false, c.back_units);
-    else if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true, c.back_units);
+    if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true, c.back_units);
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
@@ -1225,6 +1229,9 @@ export function createStudy({
         }
       } else if (isIntroChoice()) {
         chip("Skip", "", skip, label(keys.skip));            // options are tappable
+      } else if (revealed > 0 && state.mode === "line" && !fullyRevealed()) {
+        chip("Reveal next", "primary", reveal, label(keys.reveal));
+        chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
       } else if (revealed > 0) {
         chip("Seen", "primary", introduce, label(keys.reveal)); // hide⟷show is the corner `h` toggle, not a footer button
         chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
@@ -1572,13 +1579,16 @@ export function createStudy({
           return;
         }
         // `h` toggles the answer hidden ⟷ shown, both directions on one key (the
-        // source⟷answer swap's principle); space reveals, then acknowledges ("Seen").
+        // source⟷answer swap's principle). Space reveals every ordered line before
+        // it acknowledges the completed introduction with "Seen".
         if (e.key.toLowerCase() === "h" && !e.ctrlKey) { e.preventDefault(); introToggle(); return; }
         if (revealed === 0) {
           if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
           if (hit(e, keys.reveal)) { e.preventDefault(); reveal(); return; }
         } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
-          e.preventDefault(); introduce();
+          e.preventDefault();
+          if (state.mode === "line" && !fullyRevealed()) reveal();
+          else introduce();
         }
         return;
       }
