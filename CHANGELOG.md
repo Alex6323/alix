@@ -388,6 +388,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a time. `Reveal next` remains available until the sequence is complete, and
   only then changes to `Seen`; the same transition works from the Space key.
 
+- Adult ordered-card reveals now keep earlier lines fixed while later lines
+  appear below them, instead of recentering the growing answer upward after
+  every step. The remaining-content indicator is now a compact pill.
+
 - The advertised `curl -sSf https://alix.study/install.sh | sh` install has
   been failing since 2026-08-03. GitHub's `/releases/latest` is repo-wide, and
   the `mobile-v0.3.0` APK release took that slot, so the installer resolved to

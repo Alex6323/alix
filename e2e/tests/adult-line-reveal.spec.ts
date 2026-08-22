@@ -3,6 +3,7 @@
 // shared fixtures, then removes it even when an assertion fails.
 import fs from "node:fs";
 import path from "node:path";
+import type { Page } from "@playwright/test";
 import { test, expect } from "./helpers";
 import { adultDeckRow, openApp } from "./helpers";
 
@@ -14,6 +15,15 @@ const LINE_WORKSPACE = path.join(
   "decks",
   "line-introduction",
 );
+
+async function firstAnswerTop(page: Page): Promise<number> {
+  await page.locator(".reveal").evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+  return page.locator(".reveal .answer:not(.pending):not(.line-reserve)").first().evaluate(
+    (element) => element.getBoundingClientRect().top,
+  );
+}
 
 test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
@@ -55,18 +65,31 @@ Init brings up services.
   await expect(page.locator(".front-text")).toHaveText("The boot sequence, in order");
   await page.getByRole("button", { name: "Reveal" }).click();
 
-  const answerLines = page.locator(".reveal .answer:not(.pending)");
+  const answerLines = page.locator(".reveal .answer:not(.pending):not(.line-reserve)");
   await expect(answerLines).toHaveText(["Firmware runs from ROM."]);
   await expect(page.getByRole("button", { name: "Reveal next" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Seen" })).toHaveCount(0);
+  const firstTop = await firstAnswerTop(page);
 
   await page.keyboard.press("Space");
   await expect(answerLines).toHaveText([
     "Firmware runs from ROM.",
     "The bootloader loads the kernel.",
   ]);
+  const secondTop = await firstAnswerTop(page);
+  expect.soft(Math.abs(secondTop - firstTop), "the first revealed line moved").toBeLessThan(1);
+
+  const continuation = page.locator(".answer.pending");
+  await expect.soft(continuation).toHaveCSS("border-top-style", "solid");
+  await expect.soft(continuation).toHaveCSS("border-radius", "999px");
+
   await page.getByRole("button", { name: "Reveal next" }).click();
+  const thirdTop = await firstAnswerTop(page);
+  expect.soft(Math.abs(thirdTop - firstTop), "the first revealed line moved").toBeLessThan(1);
   await page.getByRole("button", { name: "Reveal next" }).click();
+  const fourthTop = await firstAnswerTop(page);
+  expect.soft(Math.abs(fourthTop - firstTop), "the first revealed line moved").toBeLessThan(1);
+  await expect(continuation).toBeHidden();
 
   await expect(answerLines).toHaveText([
     "Firmware runs from ROM.",

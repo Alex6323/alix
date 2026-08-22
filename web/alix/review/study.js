@@ -547,13 +547,21 @@ export function createStudy({
       grp.appendChild(el("span", "k", "h"));
       a.appendChild(grp);
     }
-    // keep the newest line in view as a verse is revealed line by line
-    if (state.mode === "line" && revealed > 0) a.scrollTop = a.scrollHeight;
+    // keep the newest visible line in view without scrolling into the hidden
+    // footprint reserved for later lines
+    if (state.mode === "line" && revealed > 0) {
+      const visible = a.querySelectorAll(".reveal.line .answer:not(.pending):not(.line-reserve)");
+      const newest = visible[visible.length - 1];
+      if (newest) {
+        const bottom = newest.offsetTop + newest.offsetHeight;
+        if (bottom > a.scrollTop + a.clientHeight) a.scrollTop = bottom - a.clientHeight;
+      }
+    }
     // Content-aware placement (applied by updateFade): a short answer centers below
     // the midline once there's real body content, sitting clearly separated from the
-    // prompt. A line card centers too — it grows as each line reveals and re-settles,
-    // which is fine; if it grows past the region it overflows into `filled` and the
-    // per-line auto-scroll (above) keeps the newest line reachable. A short cited
+    // prompt. A line card reserves its final footprint, so the block centers once
+    // and revealed lines grow downward. If it overflows into `filled`, the per-line
+    // auto-scroll (above) keeps the newest line reachable. A short cited
     // source follows the same centering rule; a long one overflows into `filled`
     // and stays top-aligned and scrollable. The pre-reveal badge/hint alone isn't
     // body to center.
@@ -1068,15 +1076,23 @@ export function createStudy({
 
     const c = state.card;
     const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
-    const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
+    const sec = el("div", "reveal" + (state.mode === "line" ? " line" : leftAlignAnswer(c) ? " list" : ""));
     if (state.mode === "line") {
       appendReveal(sec, c.back.slice(0, shown), c.back_runs && c.back_runs.slice(0, shown), false, c.back_units);
+      const pending = el("div", "answer pending" + (shown < c.back.length ? "" : " complete"), "···");
+      pending.setAttribute("aria-hidden", "true");
+      sec.appendChild(pending);
+      const reserveStart = sec.children.length;
+      appendReveal(sec, c.back.slice(shown), c.back_runs && c.back_runs.slice(shown), false, c.back_units);
+      for (const child of Array.from(sec.children).slice(reserveStart)) {
+        child.classList.add("line-reserve");
+        child.setAttribute("aria-hidden", "true");
+      }
     } else if (isReshapedList(c)) {
       appendReveal(sec, c.back, c.back_runs, true, c.back_units);
     } else {
       appendAnswerUnits(sec, c.back_units);
     }
-    if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
     a.appendChild(sec);
     // Attach the answer image to the region itself (a flex column), not to the
     // `.reveal` block, so it can be bounded by the region and scaled to fit.
