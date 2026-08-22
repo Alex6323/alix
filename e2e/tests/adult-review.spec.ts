@@ -593,6 +593,25 @@ test("concealing a new card restores its diagram mask and masked alt", async ({ 
   await expect(diagram).toHaveAttribute("alt", "diagram labels: …, …");
 });
 
+test("a revealed new card does not repeat when it will be quizzed", async ({ page }) => {
+  const state = {
+    ...longContentState({ answerLines: ["Read this answer once."] }),
+    introducing: true,
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+
+  await expect(
+    page.getByText("new card: try to recall it, then reveal.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Reveal" }).click();
+
+  await expect(page.getByRole("button", { name: "Seen" })).toBeVisible();
+  await expect(
+    page.getByText("new card: you'll be quizzed on it in about a minute.", { exact: true }),
+  ).toHaveCount(0);
+});
+
 test("a cloze context fence renders its diagram in the question region", async ({ page }) => {
   const original = longContentState({ answerLines: ["Answer"] });
   const state = {

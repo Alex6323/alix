@@ -1055,7 +1055,6 @@ export function createStudy({
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
-    a.appendChild(el("div", "introduction-hint", "new card: you'll be quizzed on it in about a minute."));
   }
 
   function fillAnswer(a) {
