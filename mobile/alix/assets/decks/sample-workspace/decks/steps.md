@@ -1,7 +1,7 @@
 ---
+title: Tea Steps
 reveal: line
 ---
-# Tea Steps
 
 ## How do you brew green tea, in order?
 boil water

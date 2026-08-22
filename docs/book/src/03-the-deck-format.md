@@ -319,7 +319,7 @@ order: sequential
 ---
 ```
 
-`description` is a one-line summary. The web picker shows it when you open a
+`description` is a short summary. The web picker shows it when you open a
 deck's drawer; nothing else reads it.
 
 `format-version` is the version of the deck *format*, not of the deck itself.

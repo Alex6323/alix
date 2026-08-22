@@ -1,4 +1,6 @@
-# Capitals
+---
+title: Capitals
+---
 
 ## Capital of France?
 Paris

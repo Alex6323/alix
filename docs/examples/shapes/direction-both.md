@@ -1,12 +1,12 @@
 ---
 format-version: 1
 id: "deck-2eeft2w6yt4fd1q69b2gxzpf5p"
+title: "direction: both: recall from either side"
+description: >-
+  One authoring act, two cards. Reach for it when both directions are
+  genuinely useful; it doubles the review load.
 direction: both
 ---
-# direction: both: recall from either side
-
-One authoring act, two cards. Reach for it when both directions are
-genuinely useful; it doubles the review load.
 
 ## la conocimiento
 knowledge

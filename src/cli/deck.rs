@@ -372,9 +372,8 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 args.store.clone(),
                 &config,
             )?;
-            // Cloze, promoted, and retired cards are excluded (mirrors the
-            // review's injection filters), so a card is never formatted twice
-            // or after resting.
+            // The filters below mirror the review's injection filters, so a
+            // card is never formatted twice or after resting.
             let subject: Arc<str> = Arc::from(deck.subject.as_str());
             let deck_ids: std::collections::HashSet<String> =
                 deck.cards.iter().filter_map(Card::id).collect();

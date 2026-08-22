@@ -1,8 +1,10 @@
-# The alix tutorial
-
-A guided first deck: every card teaches one thing about using alix while
-you actually review it. When it has nothing left to teach you, delete it;
-alix will not re-create it.
+---
+title: The alix tutorial
+description: >-
+  A guided first deck: every card teaches one thing about using alix while
+  you actually review it. When it has nothing left to teach you, delete it;
+  alix will not re-create it.
+---
 
 ## What is alix for?
 understanding what you learn, and keeping it for the long run

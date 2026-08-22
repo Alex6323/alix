@@ -233,10 +233,26 @@ function waitForServer(base, timeoutMs = 60_000) {
   })();
 }
 
+// Photograph the checkout, not whatever `alix` happens to be installed: an
+// older binary treats a new frontmatter key as unknown and silently
+// photographs the fallback.
+let alixBinary = null;
+function buildAlix() {
+  if (!alixBinary) {
+    log("building the checkout (cargo build --release)");
+    execFileSync("cargo", ["build", "--release", "--quiet"], {
+      cwd: REPO_ROOT,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    alixBinary = path.join(REPO_ROOT, "target", "release", "alix");
+  }
+  return alixBinary;
+}
+
 function startServer(dir, port, extraArgs = []) {
   const args = [dir, "--port", String(port), "--session", "20", ...extraArgs];
   log("starting: alix", args.join(" "));
-  const child = spawn("alix", args, { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(buildAlix(), args, { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.on("data", (d) => process.stdout.write(`[alix:${port}] ${d}`));
   child.stderr.on("data", (d) => process.stderr.write(`[alix:${port}] ${d}`));
   children.push(child);

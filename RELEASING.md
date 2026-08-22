@@ -119,7 +119,7 @@ at. **crates.io is not automated.**
    diagnostic rerun is fine, but do not discard a failure and release merely
    because a later run got lucky.
 4b. **Card-shape evaluation.** Run `make shape-eval` when the deck generator,
-   its prompt, or `docs/card-shapes.md` changed. Deterministic tests prove the
+   its prompt, or `docs/include/card-shapes.md` changed. Deterministic tests prove the
    rule reaches the prompt; only this proves the rule still steers a real
    model, which is the failure a prompt that reads well can hide. Costed,
    non-deterministic, authenticated, manual, and judged under the same rule as

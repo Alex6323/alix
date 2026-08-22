@@ -3,7 +3,7 @@
 Two sets, answering two different questions.
 
 **`shapes/`** answers *which shape does this material deserve?* One deck
-per row of [`../card-shapes.md`](../card-shapes.md), the guide the book
+per row of [`../include/card-shapes.md`](../include/card-shapes.md), the guide the book
 and the deck generator both read. Each deck carries the syntax the guide
 deliberately leaves out, and each is held to the shape it advertises by
 `every_shape_example_produces_the_shape_it_advertises` in `tests/api.rs`.

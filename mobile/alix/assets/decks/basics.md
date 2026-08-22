@@ -1,4 +1,6 @@
-# Alix Basics
+---
+title: Alix Basics
+---
 
 ## What does spaced repetition space out?
 reviews

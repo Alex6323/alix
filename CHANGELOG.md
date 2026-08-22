@@ -142,7 +142,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   formula is silent: it is drawn rather than typed.
 
 - Deck authoring has a written rule for which card shape suits which
-  material, and one worked example per shape. `docs/card-shapes.md`
+  material, and one worked example per shape. `docs/include/card-shapes.md`
   marks each row structural (the material has a property the shape
   exploits, so any other shape wastes it) or judgement (more than one
   shape is defensible), the manual includes it, and
@@ -206,6 +206,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Every shipped deck now declares its name in frontmatter. The tutorial, the
+  four decks bundled with the mobile app, and the nine committed examples
+  carried an `# ` heading from the era when that heading was the deck's
+  title; under the current rule it is section context, so those decks were
+  showing as their filename stems. Each now has `title:` (and, where the
+  intro prose was doing that job, `description:`), and the example
+  screenshots were retaken against the checkout.
 - **Heatmap, topology and crumb cells are objects now (breaking wire
   change).** A cell was a bare tier string; it is `{tier, locked}`, where
   `tier` keeps the same seven values and `locked` says the card is a sub-card

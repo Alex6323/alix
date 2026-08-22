@@ -26,7 +26,7 @@ full.
 | `strictness` | workspace | [Exam](12-the-ai-exam.md) grading rigor for the members, in `alix.toml`'s `[defaults]` only: a learner setting, so a deck declaring it gets an unknown-key lint. |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `title` | deck | The deck's display name, a single non-empty line. Without it a deck is named by its condensed `trace:`, else by its filename stem; a `#` heading is never the name. [→ ch 3](03-the-deck-format.md) |
-| `description` | deck | A one-line summary, shown in the web picker's deck drawer. [→ ch 3](03-the-deck-format.md) |
+| `description` | deck | A short summary, shown in the web picker's deck drawer. [→ ch 3](03-the-deck-format.md) |
 | `authors` | deck | Who made the deck: one value or a list. Holds people and any AI that helped, so there is no separate generated-by key. Yours to fill in; alix never rewrites it. |
 | `license` | deck | The deck's licence, a single string, by convention an SPDX identifier. |
 | `created-at` | deck | When the deck was made, a single string, by convention an ISO 8601 date. Stored verbatim and not validated. |

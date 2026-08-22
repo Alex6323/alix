@@ -1,15 +1,14 @@
 ---
 format-version: 1
 id: "deck-12x3e6yg9qkhxfjwgg9q4gwp7x"
+title: "Cloze inside a formula"
+description: >-
+  `\blank{...}` works inside `$...$` and `$$...$$`. The hidden span is a
+  piece of the formula, so what is asked is the step, not the sentence
+  around it. Hide something that can be typed: the hole's content is the
+  answer, and a control sequence like `\pm` would make the card a spelling
+  test for LaTeX.
 ---
-
-# Cloze inside a formula
-
-`\blank{...}` works inside `$...$` and `$$...$$`. The hidden span is a
-piece of the formula, so what is asked is the step, not the sentence
-around it. Hide something that can be typed: the hole's content is the
-answer, and a control sequence like `\pm` would make the card a spelling
-test for LaTeX.
 
 ## The quadratic formula
 $$x = \frac{-b \pm \sqrt{b^2 - \blank{4ac}}}{2a}$$

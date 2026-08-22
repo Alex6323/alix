@@ -32,6 +32,18 @@ function log(...parts) {
   process.stderr.write(`${parts.join(" ")}\n`);
 }
 
+// Photograph the checkout, not whatever `alix` happens to be installed: an
+// older binary treats a new frontmatter key as unknown and silently
+// photographs the fallback.
+function buildAlix() {
+  log("building the checkout (cargo build --release)");
+  execFileSync("cargo", ["build", "--release", "--quiet"], {
+    cwd: REPO_ROOT,
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  return path.join(REPO_ROOT, "target", "release", "alix");
+}
+
 function requireCwebp() {
   try {
     execFileSync("cwebp", ["-version"], { stdio: "ignore" });
@@ -256,7 +268,7 @@ async function main() {
     fs.copyFileSync(deck.source, path.join(WORK, `${deck.name}.md`));
   }
 
-  const server = spawn("alix", [WORK, "--port", String(PORT), "--session", "20"], {
+  const server = spawn(buildAlix(), [WORK, "--port", String(PORT), "--session", "20"], {
     cwd: REPO_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
   });

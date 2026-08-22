@@ -1,12 +1,12 @@
 ---
 format-version: 1
 id: "deck-6yf0skkfjn0eekf5m60xc3br68"
+title: "input: draw: answers you cannot type"
+description: >-
+  The learner sketches, then reveals and self-grades. Typing a diagram is
+  not a check, it is a workaround.
 input: draw
 ---
-# input: draw: answers you cannot type
-
-The learner sketches, then reveals and self-grades. Typing a diagram is
-not a check, it is a workaround.
 
 ## Draw the hiragana for "ka".
 か

@@ -1,12 +1,11 @@
 ---
 format-version: 1
 id: "deck-1ncnncxh9zz2c80ntnffh7jx03"
+title: "Math rendering showcase"
+description: >-
+  This deck is for manually checking every authored card surface that can carry LaTeX math.
+  One card near the end is intentionally malformed so the visible error fallback can be inspected.
 ---
-
-# Math rendering showcase
-
-This deck is for manually checking every authored card surface that can carry LaTeX math.
-One card near the end is intentionally malformed so the visible error fallback can be inspected.
 
 ## Inline math in a question: what theorem uses $a^2 + b^2 = c^2$?
 The Pythagorean theorem.

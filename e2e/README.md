@@ -107,11 +107,13 @@ where it is rather than fixed:
       its own file so editing it can never disturb `wild.md`. Exists solely
       for the multi-line regression test (`tests/kids-multiline.spec.ts`).
     * `decks/fronts.md`, `decks/math.md`, `decks/source-fact.md`,
-      `decks/source-stale.md`, and `decks/trace-inline.md`: one deck per
+      `decks/source-stale.md`, `decks/trace-inline.md`, `decks/sectioned.md`,
+      and `decks/gated.md`: one deck per
       regression surface — front rendering, LaTeX math (`adult-math.spec.ts`,
       `kids-math.spec.ts`), live and stale source excerpts
-      (`adult-source-excerpt.spec.ts`), and the inline trace walk
-      (`adult-walk-inline.spec.ts`).
+      (`adult-source-excerpt.spec.ts`), the inline trace walk
+      (`adult-walk-inline.spec.ts`), section context (`kids-review.spec.ts`),
+      and the sub-card graduation lock (`adult-review.spec.ts`).
     * `source-fact.rs`, `source-stale.rs`, and `trace-source.txt`: the live
       source files those decks cite; `source-stale.rs` deliberately drifts
       from its deck's frozen excerpt.
