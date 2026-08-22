@@ -117,10 +117,8 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
             if (2..=4).contains(&depth) {
                 heading_line = n;
             } else {
-                // A section closes the card chain, so an id below it belongs
-                // to no card. Leaving the previous heading open would credit
-                // that orphan to it, report a false duplicate against a
-                // healthy deck elsewhere, and remint the healthy card.
+                // A section closes the card chain: an id below it belongs
+                // to no card, so no heading may stay open to claim it.
                 heading_line = 0;
             }
         }
