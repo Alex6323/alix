@@ -6,7 +6,7 @@ use crate::{
     inline::InlineRun,
     math::MathView,
     render::{ChecklistItem, NoteUnit},
-    session::CardTier,
+    session::{CardTier, Cell},
 };
 
 fn pin<T: serde::Serialize>(anchor: &str, dto: &T, expected: serde_json::Value) {
@@ -210,7 +210,7 @@ fn statedto_review_phase_wire_shape() {
             crumb: Some(CrumbDto {
                 regions: vec!["intro".to_string(), "body".to_string()],
                 current: 1,
-                cells: vec![vec![CardTier::Seen], vec![CardTier::LearnedStrong]],
+                cells: vec![vec![Cell { tier: CardTier::Seen, locked: false }], vec![Cell { tier: CardTier::LearnedStrong, locked: false }]],
             }),
         }),
         choices: Some(vec!["owner".to_string(), "borrower".to_string()]),
@@ -319,7 +319,10 @@ fn statedto_review_phase_wire_shape() {
                 "crumb": {
                     "regions": ["intro", "body"],
                     "current": 1,
-                    "cells": [["seen"], ["learned-strong"]]
+                    "cells": [
+                        [{"tier": "seen", "locked": false}],
+                        [{"tier": "learned-strong", "locked": false}]
+                    ]
                 }
             },
             "choices": ["owner", "borrower"],
@@ -1277,20 +1280,50 @@ fn deckdrawerdto_wire_shape() {
     let dto = DeckDrawerDto {
         description: Some("A short intro from the frontmatter.".to_string()),
         heatmap: vec![
-            CardTier::Unseen,
-            CardTier::Seen,
-            CardTier::Learning,
-            CardTier::LearnedStrong,
-            CardTier::LearnedFading,
-            CardTier::LearnedWeak,
-            CardTier::Retired,
+            Cell {
+                tier: CardTier::Unseen,
+                locked: false,
+            },
+            Cell {
+                tier: CardTier::Seen,
+                locked: false,
+            },
+            Cell {
+                tier: CardTier::Learning,
+                locked: false,
+            },
+            Cell {
+                tier: CardTier::LearnedStrong,
+                locked: false,
+            },
+            Cell {
+                tier: CardTier::LearnedFading,
+                locked: false,
+            },
+            Cell {
+                tier: CardTier::LearnedWeak,
+                locked: false,
+            },
+            Cell {
+                tier: CardTier::Retired,
+                locked: false,
+            },
         ],
         topologies: vec![TopologyInfoDto {
             name: "north-south".to_string(),
             principle: "north to south".to_string(),
             regions: vec![RegionInfoDto {
                 name: "north".to_string(),
-                cells: vec![CardTier::Seen, CardTier::LearnedFading],
+                cells: vec![
+                    Cell {
+                        tier: CardTier::Seen,
+                        locked: false,
+                    },
+                    Cell {
+                        tier: CardTier::LearnedFading,
+                        locked: false,
+                    },
+                ],
             }],
         }],
         total: 7,
@@ -1304,18 +1337,21 @@ fn deckdrawerdto_wire_shape() {
         json!({
             "description": "A short intro from the frontmatter.",
             "heatmap": [
-                "unseen",
-                "seen",
-                "learning",
-                "learned-strong",
-                "learned-fading",
-                "learned-weak",
-                "retired"
+                {"tier": "unseen", "locked": false},
+                {"tier": "seen", "locked": false},
+                {"tier": "learning", "locked": false},
+                {"tier": "learned-strong", "locked": false},
+                {"tier": "learned-fading", "locked": false},
+                {"tier": "learned-weak", "locked": false},
+                {"tier": "retired", "locked": false}
             ],
             "topologies": [{
                 "name": "north-south",
                 "principle": "north to south",
-                "regions": [{"name": "north", "cells": ["seen", "learned-fading"]}]
+                "regions": [{"name": "north", "cells": [
+                    {"tier": "seen", "locked": false},
+                    {"tier": "learned-fading", "locked": false}
+                ]}]
             }],
             "total": 7,
             "seen": 6,

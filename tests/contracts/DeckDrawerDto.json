@@ -2,13 +2,34 @@
   "description": "A short intro from the frontmatter.",
   "graduated": 4,
   "heatmap": [
-    "unseen",
-    "seen",
-    "learning",
-    "learned-strong",
-    "learned-fading",
-    "learned-weak",
-    "retired"
+    {
+      "locked": false,
+      "tier": "unseen"
+    },
+    {
+      "locked": false,
+      "tier": "seen"
+    },
+    {
+      "locked": false,
+      "tier": "learning"
+    },
+    {
+      "locked": false,
+      "tier": "learned-strong"
+    },
+    {
+      "locked": false,
+      "tier": "learned-fading"
+    },
+    {
+      "locked": false,
+      "tier": "learned-weak"
+    },
+    {
+      "locked": false,
+      "tier": "retired"
+    }
   ],
   "retired": 1,
   "seen": 6,
@@ -19,8 +40,14 @@
       "regions": [
         {
           "cells": [
-            "seen",
-            "learned-fading"
+            {
+              "locked": false,
+              "tier": "seen"
+            },
+            {
+              "locked": false,
+              "tier": "learned-fading"
+            }
           ],
           "name": "north"
         }

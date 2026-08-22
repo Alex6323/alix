@@ -121,7 +121,7 @@ export function createPicker({
     return box;
   }
 
-  function paintHeatCell(cell, tier) {
+  function paintHeatCell(cell, { tier }) {
     cell.classList.add(tier === "unseen" ? "empty" : tier);
   }
 

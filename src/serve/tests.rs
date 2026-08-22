@@ -22,7 +22,7 @@ use crate::{
     recent::RecentDecks,
     render::NoteUnit,
     scheduler::{Fsrs, Grade},
-    session::{CardTier, Session, now_ms},
+    session::{CardTier, Cell, Session, now_ms},
     store::Store,
     trace::{Delta, Walk},
 };
@@ -2553,7 +2553,19 @@ fn deck_drawer_dto_exposes_the_description_and_a_flat_heatmap() {
     let dto = deck_drawer_dto(&augment, &store, &deck, None);
     assert_eq!(Some("A short intro."), dto.description.as_deref());
     // One cell per stamped card; a never-presented card is the untouched tier.
-    assert_eq!(vec![CardTier::Unseen, CardTier::Unseen], dto.heatmap);
+    assert_eq!(
+        vec![
+            Cell {
+                tier: CardTier::Unseen,
+                locked: false
+            },
+            Cell {
+                tier: CardTier::Unseen,
+                locked: false
+            }
+        ],
+        dto.heatmap
+    );
     assert!(dto.topologies.is_empty());
 }
 

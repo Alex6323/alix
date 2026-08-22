@@ -2332,7 +2332,7 @@ fn post_api_deck_drawer_returns_a_flat_heatmap_for_the_fixture_deck() {
     // Both fixture cards are stamped but never shown (a fresh store), so each
     // reads as the unseen tier: one heatmap cell per card.
     assert_eq!(
-        serde_json::json!(["unseen", "unseen"]),
+        serde_json::json!([{"tier": "unseen", "locked": false}, {"tier": "unseen", "locked": false}]),
         body["heatmap"],
         "body: {body}"
     );
@@ -2359,7 +2359,7 @@ fn post_api_deck_drawer_reads_acknowledged_and_shown_cards_both_as_seen() {
     let cells = body["heatmap"].as_array().unwrap();
     assert_eq!(2, cells.len(), "one cell per card: {body}");
     assert_eq!(
-        serde_json::json!(["seen", "unseen"]),
+        serde_json::json!([{"tier": "seen", "locked": false}, {"tier": "unseen", "locked": false}]),
         body["heatmap"],
         "the acknowledged card is seen; the merely displayed one is nothing: {body}"
     );
@@ -2381,7 +2381,7 @@ fn post_api_deck_drawer_counts_nothing_after_a_bare_select() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(
-        serde_json::json!(["unseen", "unseen"]),
+        serde_json::json!([{"tier": "unseen", "locked": false}, {"tier": "unseen", "locked": false}]),
         body["heatmap"],
         "being shown a card records nothing: {body}"
     );

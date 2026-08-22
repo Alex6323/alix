@@ -53,10 +53,16 @@
     "crumb": {
       "cells": [
         [
-          "seen"
+          {
+            "locked": false,
+            "tier": "seen"
+          }
         ],
         [
-          "learned-strong"
+          {
+            "locked": false,
+            "tier": "learned-strong"
+          }
         ]
       ],
       "current": 1,

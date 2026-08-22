@@ -739,9 +739,9 @@ the fence's mermaid source as `alt`. Example payload:
 
 ### CrumbDto
 
-`regions: [string]`, `current: number`, `cells: [[string]]` (one card tier per
-region per card; the same seven-value tier vocabulary as
-`DeckDrawerDto.heatmap`) *(presentational)*.
+`regions: [string]`, `current: number`, `cells: [[Cell]]` (one cell per card
+per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
+*(presentational)*.
 
 ### BrowseDto
 
@@ -802,7 +802,8 @@ never a group.
 ### DeckDrawerDto
 
 `description: string | null` (the deck's frontmatter `description:`, if any),
-`heatmap: [string]` (one tier per card in file order, from the seven-value
+`heatmap: [Cell]` (one cell per card in file order). A `Cell` is
+`{tier: string, locked: bool}`. `tier` comes from the seven-value
 vocabulary `"unseen"` | `"seen"` | `"learning"` | `"learned-strong"` |
 `"learned-fading"` | `"learned-weak"` | `"retired"`). The tiers are a ladder
 of what the learner DID: `unseen` has no store entry; `seen` has one but no
@@ -813,10 +814,13 @@ values are a graduated card banded by its CURRENT Recall retrievability
 `< 0.7`; fading between; the thresholds live lib-side, clients only map the
 strings to colors); `retired` is past the retire cap, evaluated before the
 bands because a retired card's long interval decays its retrievability and
-would otherwise paint the best-known cards `learned-weak`.
-`topologies: [{name, principle, regions: [{name, cells: [string]}]}]` (present
-only when the deck has a topology augmentation; `cells` use the same tier
-vocabulary as `heatmap`), and a nested progress funnel `total`, `seen`,
+would otherwise paint the best-known cards `learned-weak`. `locked` is
+orthogonal to the tier: it is true when the card is a sub-card whose parent
+has not graduated, so it is typically true alongside `unseen`. A locked card
+counts toward the deck totals but is served by no session.
+`topologies: [{name, principle, regions: [{name, cells: [Cell]}]}]` (present
+only when the deck has a topology augmentation; `cells` are the same shape as
+`heatmap`), and a nested progress funnel `total`, `seen`,
 `graduated`, `retired` (all `number`). `total` is the deck's card count (not
 derivable from `heatmap`, which lists only stamped cards); the rest count cards
 at or past a stage and nest `retired <= graduated <= seen <= total`: `seen` was

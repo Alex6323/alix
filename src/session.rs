@@ -338,6 +338,10 @@ impl Session {
             .min()
     }
 
+    pub fn locks(&self, store: &Store) -> Locks {
+        self.lock_graph.evaluate(store)
+    }
+
     pub fn depth(&self) -> Depth {
         self.options.depth
     }
@@ -931,6 +935,32 @@ impl serde::Serialize for CardTier {
     }
 }
 
+/// A heatmap, topology or crumb cell: the published tier plus whether the
+/// card is gated behind an ungraduated parent. Locked is orthogonal to the
+/// tier, since a locked card is typically still unseen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct Cell {
+    pub tier: CardTier,
+    pub locked: bool,
+}
+
+pub fn card_cells(
+    card_ids: &[String],
+    locked: &HashSet<String>,
+    store: &Store,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> Vec<Cell> {
+    card_tiers(card_ids, store, now_ms, retire_after_days)
+        .into_iter()
+        .zip(card_ids)
+        .map(|(tier, id)| Cell {
+            tier,
+            locked: locked.contains(id),
+        })
+        .collect()
+}
+
 pub fn card_tiers(
     card_ids: &[String],
     store: &Store,
@@ -1064,6 +1094,19 @@ pub struct Locks {
 }
 
 impl Locks {
+    /// The ids of every locked card in `cards`. The GRAPH is already the
+    /// complete deck's, so a filtered sitting may be passed here safely.
+    pub fn locked_ids(&self, cards: &[Card]) -> HashSet<String> {
+        if self.blocks.is_empty() {
+            return HashSet::new();
+        }
+        cards
+            .iter()
+            .filter(|card| self.is_locked(card))
+            .filter_map(|card| card.id())
+            .collect()
+    }
+
     pub fn is_locked(&self, card: &Card) -> bool {
         card.parent_block.is_some()
             && self

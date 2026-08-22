@@ -13,7 +13,7 @@ use crate::{
     inline::{DisplayProjector, InlineRun},
     render::NoteUnit,
     review::{self, CardView},
-    session::{CardTier, now_ms},
+    session::{Cell, now_ms},
     source::{Excerpt, relabel_for_display},
     store::Store,
     trace::{Delta, Phase},
@@ -68,13 +68,13 @@ pub(super) struct ImageDto {
 pub(super) struct CrumbDto {
     pub(super) regions: Vec<String>,
     pub(super) current: usize,
-    pub(super) cells: Vec<Vec<CardTier>>,
+    pub(super) cells: Vec<Vec<Cell>>,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub(super) struct DeckDrawerDto {
     pub(super) description: Option<String>,
-    pub(super) heatmap: Vec<CardTier>,
+    pub(super) heatmap: Vec<Cell>,
     pub(super) topologies: Vec<TopologyInfoDto>,
     /// Total cards in the deck. Not derivable from `heatmap.len()`, which counts
     /// only stamped cards.
@@ -97,7 +97,7 @@ pub(super) struct TopologyInfoDto {
 #[derive(Debug, Serialize)]
 pub(super) struct RegionInfoDto {
     pub(super) name: String,
-    pub(super) cells: Vec<CardTier>,
+    pub(super) cells: Vec<Cell>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1053,6 +1053,7 @@ pub(super) fn review_state(
                         .map(|(rg, cur)| (t, rg, cur))
                 })
         {
+            let locked = session.locks(store).locked_ids(session.cards());
             dto.crumb = Some(CrumbDto {
                 regions: regions.into_iter().map(str::to_string).collect(),
                 current,
@@ -1060,8 +1061,9 @@ pub(super) fn review_state(
                     .regions
                     .iter()
                     .map(|reg| {
-                        crate::session::card_tiers(
+                        crate::session::card_cells(
                             &reg.cards,
+                            &locked,
                             store,
                             now_ms(),
                             session.retire_after_days(),
@@ -1160,7 +1162,10 @@ pub(super) fn deck_drawer_dto(
     // bands are pinned to Recall retrievability: a deck-wide signal, not
     // per-session.
     let ids: Vec<String> = deck.cards.iter().filter_map(|c| c.id()).collect();
-    let heatmap = crate::session::card_tiers(&ids, store, now, retire_after_days);
+    let locked = crate::session::LockGraph::build(&deck.cards)
+        .evaluate(store)
+        .locked_ids(&deck.cards);
+    let heatmap = crate::session::card_cells(&ids, &locked, store, now, retire_after_days);
     let topologies = augment
         .topologies_for(&deck_tokens)
         .into_iter()
@@ -1172,7 +1177,13 @@ pub(super) fn deck_drawer_dto(
                 .iter()
                 .map(|r| RegionInfoDto {
                     name: r.name.clone(),
-                    cells: crate::session::card_tiers(&r.cards, store, now, retire_after_days),
+                    cells: crate::session::card_cells(
+                        &r.cards,
+                        &locked,
+                        store,
+                        now,
+                        retire_after_days,
+                    ),
                 })
                 .collect(),
         })

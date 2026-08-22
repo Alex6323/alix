@@ -206,6 +206,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Heatmap, topology and crumb cells are objects now (breaking wire
+  change).** A cell was a bare tier string; it is `{tier, locked}`, where
+  `tier` keeps the same seven values and `locked` says the card is a sub-card
+  whose parent has not graduated. The two are orthogonal: a locked card is
+  usually still `unseen`. A card served in a session also carries its
+  `section_context` with per-line runs and fence units, so a client can show
+  the section a card sits under. Both are documented in `docs/API.md`.
+
 - **Headings are study structure, not deck metadata (breaking).** A `# `
   heading is now the SECTION CONTEXT for the cards beneath it, `###` and
   `####` are SUB-CARDS of the card above them, and a deck's name and
