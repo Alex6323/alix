@@ -435,6 +435,11 @@ pub fn select(
         }
     }
 
+    // The gate is a property of the DECK, so its graph is captured while the
+    // vector is still complete: both filters below drop cards a parent block's
+    // graduation is folded from.
+    let lock_graph = crate::session::LockGraph::build(&cards);
+
     let topology = resolve_topology(topology_sel, &augment, &deck_tokens)?;
     let topology_name = topology.map(|t| t.name.clone());
     let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
@@ -549,7 +554,7 @@ pub fn select(
     } else {
         cards
     };
-    let mut session = Session::new(
+    let mut session = Session::from_subset(
         cards,
         store,
         Box::new(Fsrs::tuned(
@@ -560,6 +565,7 @@ pub fn select(
         )),
         options,
         now,
+        lock_graph,
     );
     session.set_depth_excluded(depth_excluded);
 
@@ -994,6 +1000,149 @@ it reads line two\n\
             },
             instance_store: None,
         }
+    }
+
+    #[test]
+    fn recognize_selection_keeps_excluded_parent_units_in_the_lock_fold() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("gated.md");
+        write_initialized(
+            &deck_path,
+            "## Parent\n\\blank{one} and \\blank{two}\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
+        );
+        let loaded = Deck::load(&deck_path).unwrap();
+        let parents: Vec<&Card> = loaded
+            .cards
+            .iter()
+            .filter(|card| card.parent_block.is_none())
+            .collect();
+        let child = loaded
+            .cards
+            .iter()
+            .find(|card| card.parent_block.is_some())
+            .expect("the child parses");
+        assert_eq!(2, parents.len(), "the parent expands to two review units");
+
+        let mut store = state::open_store(&deck_path, dir.path()).unwrap();
+        let first_parent_id = parents[0].id().unwrap();
+        store.get_or_insert(&first_parent_id).recall = Some(crate::store::FsrsState {
+            stability: 10.0,
+            state: 2,
+            ..Default::default()
+        });
+        assert!(
+            crate::session::LockGraph::build(&loaded.cards)
+                .evaluate(&store)
+                .is_locked(child),
+            "the unseen second parent unit keeps the child locked"
+        );
+
+        let child_id = child.id().unwrap();
+        let mut cache =
+            AugmentCache::open_for_decks(dir.path(), std::slice::from_ref(&loaded)).unwrap();
+        for card in [parents[0], child] {
+            cache.set_distractors(
+                &card.id().unwrap(),
+                vec!["wrong one".into(), "wrong two".into(), "wrong three".into()],
+                card.content_fingerprint,
+            );
+        }
+        cache.save().unwrap();
+
+        let Selected::Review(build) = select(
+            vec![deck_path],
+            &mut store,
+            &test_config(),
+            &SelectOptions {
+                depth: Some(Depth::Recognize),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("a fact deck selects a review session");
+        };
+        assert!(
+            build
+                .session
+                .cards()
+                .iter()
+                .any(|card| card.id().as_deref() == Some(child_id.as_str())),
+            "the child itself is recognizable and reaches the session"
+        );
+        assert_eq!(
+            1, build.session.initial_size,
+            "only the graduated parent unit may be served; the child still waits on its excluded sibling"
+        );
+    }
+
+    #[test]
+    fn region_selection_keeps_the_graduated_parent_in_the_lock_fold() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("gated.md");
+        write_initialized(
+            &deck_path,
+            "## Parent\nparent answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
+        );
+        let loaded = Deck::load(&deck_path).unwrap();
+        let parent = loaded
+            .cards
+            .iter()
+            .find(|card| card.parent_block.is_none())
+            .expect("the parent parses");
+        let child = loaded
+            .cards
+            .iter()
+            .find(|card| card.parent_block.is_some())
+            .expect("the child parses");
+        let parent_id = parent.id().unwrap();
+        let child_id = child.id().unwrap();
+
+        let mut store = state::open_store(&deck_path, dir.path()).unwrap();
+        store.get_or_insert(&parent_id).recall = Some(crate::store::FsrsState {
+            stability: 10.0,
+            state: 2,
+            ..Default::default()
+        });
+        assert!(
+            !crate::session::LockGraph::build(&loaded.cards)
+                .evaluate(&store)
+                .is_locked(child),
+            "the graduated parent unlocks its child in the complete deck"
+        );
+
+        let mut cache = AugmentCache::open_for_deck(&loaded).unwrap();
+        cache.add_topology(Topology {
+            name: "child-only".to_string(),
+            principle: "review the child".to_string(),
+            edges: Vec::new(),
+            walk: vec![child_id.clone()],
+            regions: vec![augment::TopologyRegion {
+                name: "child".to_string(),
+                cards: vec![child_id.clone()],
+            }],
+            deck_token: loaded.deck_token.clone().unwrap(),
+        });
+        cache.save().unwrap();
+
+        let Selected::Review(build) = select(
+            vec![deck_path],
+            &mut store,
+            &test_config(),
+            &SelectOptions {
+                depth: Some(Depth::Recall),
+                topology: Some("child-only".to_string()),
+                region: Some("child".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("a fact deck selects a review session");
+        };
+        assert_eq!(
+            Some(child_id),
+            build.session.current_id(),
+            "a child-only region remains reviewable after its parent graduated"
+        );
     }
 
     #[test]

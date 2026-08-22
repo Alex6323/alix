@@ -349,7 +349,7 @@ fn deck_due(
     let retire = review.retire_after_days;
     // Recognize needs both due AND recognizable, or an un-augmented deck
     // over-reports as due.
-    let locks = session::Locks::evaluate(&deck.cards, store);
+    let locks = session::LockGraph::build(&deck.cards).evaluate(store);
     let recognize_due = deck.cards.iter().any(|c| {
         session::eligible_for_session(
             c,
@@ -493,7 +493,7 @@ pub fn deck_status(
     let now = session::now_ms();
     // A card counts only if it's both unrecognized AND recognizable; an
     // un-augmented card must never count as due.
-    let locks = session::Locks::evaluate(&deck.cards, store);
+    let locks = session::LockGraph::build(&deck.cards).evaluate(store);
     let reviewable_recognize = deck.cards.iter().any(|card| {
         session::eligible_for_session(
             card,

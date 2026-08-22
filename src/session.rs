@@ -109,7 +109,7 @@ pub struct Session {
     // schedules only pick-capable cards), so the done summary can say what
     // still waits beyond the depth instead of "nothing".
     depth_excluded: Vec<Card>,
-    locks: Locks,
+    lock_graph: LockGraph,
     pub initial_size: usize,
     pub stats: SessionStats,
 }
@@ -132,6 +132,9 @@ pub struct RecognizeGap {
 }
 
 impl Session {
+    /// The cards must be the COMPLETE decks of this sitting. A sitting built
+    /// from a subset of them uses `from_subset`, which takes the gate's graph
+    /// separately.
     pub fn new(
         cards: Vec<Card>,
         store: &mut Store,
@@ -139,8 +142,23 @@ impl Session {
         options: SessionOptions,
         now_ms: u64,
     ) -> Self {
+        let lock_graph = LockGraph::build(&cards);
+        Self::from_subset(cards, store, scheduler, options, now_ms, lock_graph)
+    }
+
+    /// For a sitting whose cards are a SUBSET of their decks (a topology
+    /// region, the Recognize partition): the gate is a property of the whole
+    /// deck, so its graph is built before the filter and handed in here.
+    pub fn from_subset(
+        cards: Vec<Card>,
+        store: &mut Store,
+        scheduler: Box<dyn Scheduler>,
+        options: SessionOptions,
+        now_ms: u64,
+        lock_graph: LockGraph,
+    ) -> Self {
         let floors = HashMap::new();
-        let locks = Locks::evaluate(&cards, store);
+        let locks = lock_graph.evaluate(store);
         let roster: Vec<usize> = build_queue(
             &cards,
             store,
@@ -166,7 +184,7 @@ impl Session {
             scheduler,
             options,
             depth_excluded: Vec::new(),
-            locks,
+            lock_graph,
             initial_size,
             stats: SessionStats::default(),
         };
@@ -204,7 +222,7 @@ impl Session {
         // selection below skips a card still cooling instead of re-facing it.
         // `served` survives too, so the backlog count keeps shrinking across the
         // chain rather than reading the same figure every restart.
-        self.locks = Locks::evaluate(&self.cards, store);
+        let locks = self.lock_graph.evaluate(store);
         let roster: Vec<usize> = build_queue(
             &self.cards,
             store,
@@ -212,7 +230,7 @@ impl Session {
             &self.options,
             &self.floors,
             now_ms,
-            &self.locks,
+            &locks,
         )
         .into();
         if roster.is_empty() {
@@ -234,7 +252,7 @@ impl Session {
             &self.options,
             &self.floors,
             now_ms,
-            &Locks::evaluate(&self.cards, store),
+            &self.lock_graph.evaluate(store),
         )
         .is_empty()
     }
@@ -256,7 +274,7 @@ impl Session {
     /// heavy day knows to chain another sitting.
     pub fn remaining_split(&self, store: &Store, now_ms: u64) -> (usize, usize) {
         let depth = self.options.depth;
-        let locks = Locks::evaluate(&self.cards, store);
+        let locks = self.lock_graph.evaluate(store);
         let mut due_left = 0;
         let mut new_left = 0;
         for card in &self.cards {
@@ -310,7 +328,7 @@ impl Session {
     }
 
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {
-        let locks = Locks::evaluate(&self.cards, store);
+        let locks = self.lock_graph.evaluate(store);
         self.cards
             .iter()
             .filter(|c| !locks.is_locked(c))
@@ -958,44 +976,67 @@ fn card_tier(
     }
 }
 
-struct BlockGating {
+#[derive(Clone, Debug)]
+struct BlockUnits {
     parent: Option<usize>,
-    graduated: bool,
+    units: Vec<String>,
+    /// A block with an unstamped unit can never be proven graduated: the
+    /// missing id carries no evidence, and silence must not read as a pass.
+    unstamped: bool,
 }
 
-/// Which authored blocks are gated behind a parent that has not graduated, so
-/// no unit of them may be served. One evaluation answers for a whole card set;
-/// a set without sub-cards allocates nothing.
+impl BlockUnits {
+    fn graduated(&self, store: &Store) -> bool {
+        !self.unstamped
+            && self.units.iter().all(|id| {
+                store
+                    .progress(id)
+                    .and_then(|state| state.recall.as_ref())
+                    .is_some_and(crate::store::FsrsState::graduated)
+            })
+    }
+}
+
+/// Which authored block hangs under which, and which review units each one
+/// expands to. Parsed once from a DECK; graduation is folded from the store
+/// on demand, so a sitting can re-decide after a review without holding the
+/// deck.
 #[derive(Clone, Debug, Default)]
-pub struct Locks {
-    blocks: HashMap<Arc<str>, HashSet<usize>>,
+pub struct LockGraph {
+    decks: HashMap<Arc<str>, BTreeMap<usize, BlockUnits>>,
 }
 
-impl Locks {
-    pub fn evaluate(cards: &[Card], store: &Store) -> Self {
+impl LockGraph {
+    /// Build from the COMPLETE decks, never from a filtered sitting. A subset
+    /// mis-answers in both directions: a missing ungraduated sibling leaves
+    /// its block looking fully graduated, and a missing parent leaves its
+    /// child looking parentless.
+    pub fn build(cards: &[Card]) -> Self {
         if !cards.iter().any(|card| card.parent_block.is_some()) {
             return Self::default();
         }
-        let mut decks: HashMap<Arc<str>, BTreeMap<usize, BlockGating>> = HashMap::new();
+        let mut decks: HashMap<Arc<str>, BTreeMap<usize, BlockUnits>> = HashMap::new();
         for card in cards {
-            let graduated = card.id().is_some_and(|id| {
-                store
-                    .progress(&id)
-                    .and_then(|state| state.recall.as_ref())
-                    .is_some_and(crate::store::FsrsState::graduated)
-            });
-            decks
+            let block = decks
                 .entry(Arc::clone(&card.deck_id))
                 .or_default()
                 .entry(card.block_line)
-                .and_modify(|block| block.graduated &= graduated)
-                .or_insert(BlockGating {
+                .or_insert_with(|| BlockUnits {
                     parent: card.parent_block,
-                    graduated,
+                    units: Vec::new(),
+                    unstamped: false,
                 });
+            match card.id() {
+                Some(id) => block.units.push(id),
+                None => block.unstamped = true,
+            }
         }
-        let mut blocks = HashMap::new();
-        for (deck_id, gating) in &decks {
+        Self { decks }
+    }
+
+    pub fn evaluate(&self, store: &Store) -> Locks {
+        let mut blocks: HashMap<Arc<str>, HashSet<usize>> = HashMap::new();
+        for (deck_id, gating) in &self.decks {
             // Ascending block line, so a parent is always decided before the
             // child that reads it and a locked chain propagates downward.
             let mut locked: HashSet<usize> = HashSet::new();
@@ -1003,7 +1044,7 @@ impl Locks {
                 let Some(parent) = block.parent else {
                     continue;
                 };
-                let open = gating.get(&parent).is_some_and(|p| p.graduated);
+                let open = gating.get(&parent).is_some_and(|p| p.graduated(store));
                 if !open || locked.contains(&parent) {
                     locked.insert(*line);
                 }
@@ -1012,9 +1053,17 @@ impl Locks {
                 blocks.insert(Arc::clone(deck_id), locked);
             }
         }
-        Self { blocks }
+        Locks { blocks }
     }
+}
 
+/// The blocks withheld from one sitting, as of one store state.
+#[derive(Clone, Debug, Default)]
+pub struct Locks {
+    blocks: HashMap<Arc<str>, HashSet<usize>>,
+}
+
+impl Locks {
     pub fn is_locked(&self, card: &Card) -> bool {
         card.parent_block.is_some()
             && self
@@ -1064,6 +1113,8 @@ fn due_at_depth(
     }
 }
 
+/// `cards` must be a complete card set (a whole deck, or a personal file),
+/// never a filtered sitting: the gate folds parent graduation across it.
 pub fn has_eligible(
     cards: &[Card],
     store: &Store,
@@ -1072,7 +1123,7 @@ pub fn has_eligible(
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
-    let locks = Locks::evaluate(cards, store);
+    let locks = LockGraph::build(cards).evaluate(store);
     cards.iter().any(|card| {
         eligible_for_session(
             card,
@@ -1086,6 +1137,7 @@ pub fn has_eligible(
     })
 }
 
+/// Same completeness requirement as `has_eligible`.
 pub fn count_eligible(
     cards: &[Card],
     store: &Store,
@@ -1094,7 +1146,7 @@ pub fn count_eligible(
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> usize {
-    let locks = Locks::evaluate(cards, store);
+    let locks = LockGraph::build(cards).evaluate(store);
     cards
         .iter()
         .filter(|card| {
@@ -4483,7 +4535,7 @@ mod tests {
                 card_tiers(&[PARENT_ID.to_string()], &store, now, CAP),
                 "the fixture did not actually put the parent at {tier:?}"
             );
-            let locks = Locks::evaluate(&cards, &store);
+            let locks = LockGraph::build(&cards).evaluate(&store);
             assert_eq!(
                 !unlocks,
                 locks.is_locked(find(&cards, CHILD_ID)),
@@ -4512,13 +4564,13 @@ mod tests {
         store.get_or_insert(PARENT_ID).recognize = Some(graduated);
         store.get_or_insert(PARENT_ID).reconstruct = Some(graduated);
         assert!(
-            Locks::evaluate(&cards, &store).is_locked(child),
+            LockGraph::build(&cards).evaluate(&store).is_locked(child),
             "Recognize and Reconstruct in Review must not unlock the child"
         );
 
         store.get_or_insert(PARENT_ID).recall = Some(graduated);
         assert!(
-            !Locks::evaluate(&cards, &store).is_locked(child),
+            !LockGraph::build(&cards).evaluate(&store).is_locked(child),
             "a graduated Recall schedule unlocks the child"
         );
 
@@ -4528,7 +4580,7 @@ mod tests {
             ..Default::default()
         });
         assert!(
-            !Locks::evaluate(&cards, &store).is_locked(child),
+            !LockGraph::build(&cards).evaluate(&store).is_locked(child),
             "Relearning is still graduated, so the child stays open"
         );
 
@@ -4537,7 +4589,7 @@ mod tests {
             "reset --card drops the parent's row"
         );
         assert!(
-            Locks::evaluate(&cards, &store).is_locked(child),
+            LockGraph::build(&cards).evaluate(&store).is_locked(child),
             "resetting the parent re-locks the child"
         );
     }
@@ -4565,7 +4617,7 @@ mod tests {
                 ..Default::default()
             });
             assert!(
-                Locks::evaluate(&cards, &store).is_locked(child),
+                LockGraph::build(&cards).evaluate(&store).is_locked(child),
                 "{label}: one graduated unit is not a graduated parent"
             );
             store.get_or_insert(&units[1]).recall = Some(FsrsState {
@@ -4574,10 +4626,61 @@ mod tests {
                 ..Default::default()
             });
             assert!(
-                !Locks::evaluate(&cards, &store).is_locked(child),
+                !LockGraph::build(&cards).evaluate(&store).is_locked(child),
                 "{label}: every unit graduated opens the parent"
             );
         }
+    }
+
+    /// An unstamped unit has no store row, so it can never be shown to have
+    /// graduated. A table block is the shape that can be stamped in part:
+    /// counting only the stamped rows would open a child on partial evidence.
+    #[test]
+    fn one_unstamped_row_keeps_its_block_from_ever_opening() {
+        let both = "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+        let partial = "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+
+        let graduate_every_row = |cards: &[Card]| {
+            let (mut store, dir) = empty_store();
+            for card in cards {
+                if card.id().as_deref() != Some(CHILD_ID)
+                    && let Some(id) = card.id()
+                {
+                    store.get_or_insert(&id).recall = Some(FsrsState {
+                        stability: 10.0,
+                        state: 2,
+                        ..Default::default()
+                    });
+                }
+            }
+            (store, dir)
+        };
+
+        let cards = gated_cards(both);
+        let (store, _dir) = graduate_every_row(&cards);
+        assert!(
+            !LockGraph::build(&cards)
+                .evaluate(&store)
+                .is_locked(find(&cards, CHILD_ID)),
+            "every row stamped and graduated opens the child"
+        );
+
+        let cards = gated_cards(partial);
+        assert_eq!(
+            1,
+            cards
+                .iter()
+                .filter(|card| card.parent_block.is_none() && card.id().is_none())
+                .count(),
+            "the fixture must leave exactly one row unstamped"
+        );
+        let (store, _dir) = graduate_every_row(&cards);
+        assert!(
+            LockGraph::build(&cards)
+                .evaluate(&store)
+                .is_locked(find(&cards, CHILD_ID)),
+            "an unstamped row is missing evidence, never a pass"
+        );
     }
 
     /// Spec law 4, the chain: a grandchild reads its own parent, and a locked
@@ -4593,7 +4696,7 @@ mod tests {
             ..Default::default()
         };
         store.get_or_insert(CHILD_ID).recall = Some(graduated);
-        let locks = Locks::evaluate(&cards, &store);
+        let locks = LockGraph::build(&cards).evaluate(&store);
         assert!(
             locks.is_locked(find(&cards, CHILD_ID)),
             "the child's own parent has not graduated"
@@ -4604,7 +4707,7 @@ mod tests {
         );
 
         store.get_or_insert(PARENT_ID).recall = Some(graduated);
-        let locks = Locks::evaluate(&cards, &store);
+        let locks = LockGraph::build(&cards).evaluate(&store);
         assert!(!locks.is_locked(find(&cards, CHILD_ID)));
         assert!(
             !locks.is_locked(find(&cards, GRANDCHILD_ID)),
