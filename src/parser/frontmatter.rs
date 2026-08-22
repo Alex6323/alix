@@ -11,6 +11,28 @@ pub const DECK_FORMAT_VERSION: u32 = 1;
 /// parser, the header writer, and every message that names it.
 pub const PERSONAL_PARENT_KEY: &str = "for";
 
+/// A named content mapping: what a bare shape becomes when invoked, and
+/// the `plain` escape that keeps the shape literal under a deck default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mapping {
+    Plain,
+    ChoicesSingle,
+    ChoicesMultiple,
+    Cards,
+}
+
+impl Mapping {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "plain" => Some(Self::Plain),
+            "choices-single" => Some(Self::ChoicesSingle),
+            "choices-multiple" => Some(Self::ChoicesMultiple),
+            "cards" => Some(Self::Cards),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
     pub id: Option<String>,
@@ -28,6 +50,8 @@ pub struct Frontmatter {
     pub input: Option<Input>,
     pub direction: Option<Direction>,
     pub sampling: Option<bool>,
+    pub tasklist: Option<Mapping>,
+    pub table: Option<Mapping>,
     pub unspliceable: bool,
     pub personal_for: Option<String>,
 }
@@ -159,6 +183,16 @@ fn load_frontmatter(
             "sampling" => match value.as_str().and_then(parse_sampling) {
                 Some(sampling) => frontmatter.sampling = Some(sampling),
                 None => lints.push(bad_value(line, key, describe(value))),
+            },
+            "tasklist" => match value.as_str().and_then(Mapping::parse) {
+                Some(m @ (Mapping::ChoicesSingle | Mapping::ChoicesMultiple)) => {
+                    frontmatter.tasklist = Some(m);
+                }
+                _ => lints.push(bad_value(line, key, describe(value))),
+            },
+            "table" => match value.as_str().and_then(Mapping::parse) {
+                Some(Mapping::Cards) => frontmatter.table = Some(Mapping::Cards),
+                _ => lints.push(bad_value(line, key, describe(value))),
             },
             "authors" => frontmatter.authors = string_list(key, value, line, lints),
             // The deck's display name: trimmed, non-empty, single line. An
@@ -298,7 +332,7 @@ pub enum Reorder {
 /// The canonical order for frontmatter alix itself writes and for the opt-in
 /// doctor repair: authored keys first, machine lines last. An author's own
 /// order is never diagnosed against it.
-const CANONICAL_KEY_ORDER: [&str; 17] = [
+const CANONICAL_KEY_ORDER: [&str; 19] = [
     "title",
     "description",
     "trace",
@@ -312,6 +346,8 @@ const CANONICAL_KEY_ORDER: [&str; 17] = [
     "input",
     "direction",
     "sampling",
+    "tasklist",
+    "table",
     "source",
     "requires",
     "link",
@@ -435,6 +471,8 @@ mod tests {
             "link",
             "requires",
             "source",
+            "table",
+            "tasklist",
             "sampling",
             "direction",
             "input",
@@ -465,6 +503,8 @@ mod tests {
                 "input",
                 "direction",
                 "sampling",
+                "tasklist",
+                "table",
                 "source",
                 "requires",
                 "link",

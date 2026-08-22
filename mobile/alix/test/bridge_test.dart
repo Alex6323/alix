@@ -135,6 +135,7 @@ void main() {
     writeTestDeck(
       choiceDeck,
       '## What does \$E = mc^2\$ describe? <!-- id: card-choice -->\n'
+      '<!-- choices-single -->\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
       '> Energy and mass use \$E = mc^2\$.\n'
@@ -781,6 +782,7 @@ void main() {
     writeTestDeck(
       choiceDeck,
       '## What does \$E = mc^2\$ describe? <!-- id: card-choice -->\n'
+      '<!-- choices-single -->\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
       '> Energy and mass use \$E = mc^2\$.\n'

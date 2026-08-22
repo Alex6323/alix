@@ -51,14 +51,14 @@ of the three (on the keyboard: `v`, then `1`/`2`/`3`; `Esc` cancels; rebindable 
 tick-box (`c`); see [Cramming](05-scheduling.md). Plain **Learn** reuses the
 deck's own last-used depth, remembered per deck. The first time you ever open a
 deck, that default is Recognize if a genuine multiple-choice pick is ready to
-go: authored `- [x]`/`- [ ]` options on a card, AI-generated distractors
+go: authored choice options on a card (an invoked task list), AI-generated distractors
 (`alix deck augment --target choices`, or the web Augment screen), or a
 [card table's](03-the-deck-format.md) own column; otherwise it's Recall.
 
 - **Recognize**: **pick-only**, and scheduled on its own FSRS state at a laxer
   desired retention (`recognize_retention`, default 0.85), because recognition
   holds far longer than production. It's a genuine multiple-choice
-  pick, built from a card's authored task-list options (`- [x]`/`- [ ]`), the
+  pick, built from a card's authored choice options (an invoked task list), the
   deck's cached AI distractors (`alix deck augment --target choices`), or, for
   a [card table's](03-the-deck-format.md) rows, the other rows of the same
   column: a cloze card asks you to pick its gap, a line card to pick the whole

@@ -64,6 +64,7 @@ fn render_table(table: &GenTable) -> String {
     if let Some(title) = &table.title {
         out.push_str(&format!("## {title}\n"));
     }
+    out.push_str("<!-- cards -->\n");
     out.push_str(&format!("| {} |\n", table.header.join(" | ")));
     out.push_str(&format!(
         "|{}\n",
@@ -138,6 +139,7 @@ fn render_card(card: &GenCard) -> String {
             out.push_str(&format!("{} {}\n", card.answers[0], gaps.join(" and ")));
         }
         CardShape::Choice { distractors } => {
+            out.push_str("<!-- choices-single -->\n");
             out.push_str(&format!("- [x] {}\n", card.answers[0]));
             for i in 0..*distractors {
                 out.push_str(&format!("- [ ] wrong option {i}\n"));

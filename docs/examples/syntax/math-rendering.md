@@ -63,11 +63,12 @@ $$a^2 - b^2 = \blank{(a-b)}\blank{(a+b)}$$
 <!-- id: card-44a77x675j7bwyjve4r5xhe9z8 -->
 
 ## Which derivative is correct for $f(x)=x^3$?
+<!-- id: card-76xft3gym5tn20pmyh1y6qns6d -->
+<!-- choices-single -->
 - [ ] $f'(x)=x^2$
 - [x] $f'(x)=3x^2$
 - [ ] $f'(x)=3x$
 - [ ] $f'(x)=x^4$
-<!-- id: card-76xft3gym5tn20pmyh1y6qns6d -->
 
 ## Inspect these formulas as static front checkboxes.
 - [x] $\sin^2 x + \cos^2 x = 1$

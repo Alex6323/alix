@@ -23,7 +23,8 @@ pub use canonical::{canonical_content, content_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Hole, Seg, Side, hash_repr, hole_fingerprints, scan_markers, seg_display};
 pub use frontmatter::{
-    Frontmatter, PERSONAL_PARENT_KEY, Reorder, parse_sampling, reorder_frontmatter, yaml_quote,
+    Frontmatter, Mapping, PERSONAL_PARENT_KEY, Reorder, parse_sampling, reorder_frontmatter,
+    yaml_quote,
 };
 use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 pub use sidecar::{SidecarNote, notes, without_notes};
@@ -103,6 +104,13 @@ pub enum LintKind {
     DuplicateChoiceOption,
     ChoiceMultiCorrectUnsupported,
     ChoiceNoteNamesPosition,
+    /// One `[x]` under `choices-multiple`: legal select-all authoring, but
+    /// usually a `choices-single` card wearing the wrong invocation.
+    DegenerateMultipleChoice,
+    /// A bare single-token comment that names no known invocation; the
+    /// block below it stays literal, which is silent exactly when the
+    /// author meant to invoke.
+    UnknownInvocation,
     UntypableHole {
         answer: String,
     },
@@ -165,6 +173,8 @@ pub enum ParseError {
     InvalidLocator { line: usize, message: String },
     #[error("line {line}: {message}")]
     InvalidRegion { line: usize, message: String },
+    #[error("line {line}: {message}")]
+    ChoiceShape { line: usize, message: String },
     #[error(
         "line {0}: a hole name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`, closed by `]` and followed by `{{answer}}`: `\\blank[base]{{Unit}}`"
     )]
@@ -235,6 +245,7 @@ impl ParseError {
             Self::SubCardTableTitle(_) => "sub_card_table_title",
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
+            Self::ChoiceShape { .. } => "choice_shape",
             Self::InvalidHoleName(_) => "invalid_hole_name",
             Self::UnclosedHole(_) => "unclosed_hole",
             Self::EmptyHole(_) => "empty_hole",
@@ -285,6 +296,7 @@ impl ParseError {
             | Self::ControlChar { line, .. }
             | Self::InvalidLocator { line, .. }
             | Self::InvalidRegion { line, .. }
+            | Self::ChoiceShape { line, .. }
             | Self::TableColumns { line, .. }
             | Self::TableRowWidth { line, .. }
             | Self::TableRowStamp { line, .. }
@@ -305,7 +317,14 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
         match block {
             RawBlock::Card(raw) => {
                 let block_start = cards.len();
-                let prose = build_card(&subject, &deck_id, raw, &mut cards, &mut lints)?;
+                let prose = build_card(
+                    &subject,
+                    &deck_id,
+                    raw,
+                    document.frontmatter.tasklist,
+                    &mut cards,
+                    &mut lints,
+                )?;
                 build_region_cards(block_start, &mut cards, prose.as_ref())?;
             }
             RawBlock::Table(raw) => {
@@ -571,6 +590,7 @@ struct RawCard {
     divider_line: Option<usize>,
     note: Option<String>,
     directives: CardDirectives,
+    mapping: Option<Mapping>,
 }
 
 struct RawTable {
@@ -668,7 +688,8 @@ fn parse_document(text: &str) -> Result<Document, ParseError> {
     let lines = prepare(text)?;
     let mut lints = Vec::new();
     let (frontmatter, body_start, frontmatter_span) = parse_frontmatter(&lines, &mut lints)?;
-    let blocks = scan(&lines, body_start, &mut lints)?;
+    let table_default = frontmatter.table == Some(Mapping::Cards);
+    let blocks = scan(&lines, body_start, table_default, &mut lints)?;
     Ok(Document {
         frontmatter,
         blocks,
@@ -753,7 +774,12 @@ fn section_line(
     Ok(())
 }
 
-fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
+fn scan(
+    lines: &[&str],
+    start: usize,
+    table_default: bool,
+    lints: &mut Vec<Lint>,
+) -> Result<ScannedBody, ParseError> {
     let mut blocks: Vec<RawBlock> = Vec::new();
     let mut current: Option<RawCard> = None;
     let mut table: Option<RawTable> = None;
@@ -764,7 +790,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     let mut fence: Option<(char, usize)> = None;
     let mut prev_blank = false;
     let mut prev_heading = false;
-    let mut pending_plain = false;
+    let mut pending: Option<Mapping> = None;
     let mut terminated: Option<usize> = None;
     let mut idle_terminators: Vec<usize> = Vec::new();
 
@@ -780,7 +806,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         // A fence never opens while a table is active (every non-table line
         // inside a table's scope is either a flush or a loud error).
         if let Some(tbl) = table.as_mut() {
-            pending_plain = false;
+            pending = None;
             let next = lines.get(idx + 1).copied();
             if table_line(tbl, raw, lineno, next, lints)? {
                 prev_blank = trim_ws(raw).is_empty();
@@ -798,11 +824,20 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     open_depths.clear();
                 }
                 blocks.push(RawBlock::Table(tbl));
+                // A directly-adjacent header continues the invoked run: the
+                // one-shot scope covers the contiguous block, not one table.
+                if raw.starts_with('|')
+                    && lines
+                        .get(idx + 1)
+                        .is_some_and(|n| n.starts_with('|') && is_delimiter_row(n))
+                {
+                    pending = Some(Mapping::Cards);
+                }
             }
         }
 
         if let Some((ch, _)) = fence {
-            pending_plain = false;
+            pending = None;
             if closes_fence(raw, ch) {
                 fence = None;
             }
@@ -825,7 +860,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if let Some(ch) = fence_opener(raw) {
-            pending_plain = false;
+            pending = None;
             fence = Some((ch, lineno));
             if current.is_none() {
                 section_line(
@@ -849,6 +884,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             && let Some(next) = lines.get(idx + 1)
             && next.starts_with('|')
             && is_delimiter_row(next)
+            && (pending == Some(Mapping::Cards)
+                || (table_default && pending != Some(Mapping::Plain)))
         {
             // An empty-bodied heading directly above the table is its TITLE,
             // not a card; any content or note keeps it a card.
@@ -906,7 +943,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             });
             skip_delimiter = true;
             idle_terminators.clear();
-            pending_plain = false;
+            pending = None;
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -915,7 +952,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some((depth, rest)) = heading_depth(raw)
             && !(sidecar_mode() && depth != 2)
         {
-            pending_plain = false;
+            pending = None;
             if depth > 4 {
                 return Err(ParseError::HeadingTooDeep(lineno));
             }
@@ -981,6 +1018,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 divider_line: None,
                 note: None,
                 directives,
+                mapping: None,
             });
             prev_blank = false;
             prev_heading = true;
@@ -998,7 +1036,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some(rest) = t.strip_prefix('\\')
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
-            pending_plain = false;
+            pending = None;
             if current.is_none() {
                 section_line(
                     &mut section,
@@ -1018,8 +1056,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if t == "---" {
-            if pending_plain {
-                pending_plain = false;
+            if matches!(pending.take(), Some(Mapping::Plain)) {
                 if current.is_none() {
                     section_line(
                         &mut section,
@@ -1062,7 +1099,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if let Some(rest) = t.strip_prefix('>') {
-            pending_plain = false;
+            pending = None;
             let text = rest.strip_prefix(' ').unwrap_or(rest);
             match current.as_mut() {
                 Some(card) => append_note(card, text),
@@ -1083,13 +1120,17 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
 
         if t.starts_with("<!--") {
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
-                if trim_ws(body) == "plain" {
-                    pending_plain = true;
+                if let Some(mapping) = Mapping::parse(trim_ws(body)) {
+                    if mapping != Mapping::Cards
+                        && let Some(card) = current.as_mut()
+                    {
+                        card.mapping = Some(mapping);
+                    }
+                    pending = Some(mapping);
                     prev_blank = false;
                     prev_heading = false;
                     continue;
                 }
-                pending_plain = false;
                 if let Some((key, value)) = directive(body) {
                     match current.as_mut() {
                         Some(card) => {
@@ -1114,6 +1155,14 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                         }
                         None => {}
                     }
+                } else {
+                    let body = trim_ws(body);
+                    if !body.is_empty() && !body.contains(char::is_whitespace) {
+                        lints.push(Lint {
+                            line: lineno,
+                            kind: LintKind::UnknownInvocation,
+                        });
+                    }
                 }
                 prev_blank = false;
                 prev_heading = false;
@@ -1126,7 +1175,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             // The line stays content.
         }
 
-        pending_plain = false;
+        pending = None;
 
         if t.starts_with("## ") {
             lints.push(Lint {
@@ -1877,6 +1926,7 @@ fn build_card(
     subject: &Arc<str>,
     deck_id: &Arc<str>,
     raw: RawCard,
+    tasklist_default: Option<Mapping>,
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
 ) -> Result<Option<BlockProse>, ParseError> {
@@ -1884,7 +1934,7 @@ fn build_card(
     let section = raw.section.clone();
     let block_line = raw.line;
     let parent = raw.parent;
-    let out = build_card_inner(subject, deck_id, raw, cards, lints);
+    let out = build_card_inner(subject, deck_id, raw, tasklist_default, cards, lints);
     for card in &mut cards[start..] {
         card.section_context = section.clone();
         card.block_line = block_line;
@@ -1897,6 +1947,7 @@ fn build_card_inner(
     subject: &Arc<str>,
     deck_id: &Arc<str>,
     raw: RawCard,
+    tasklist_default: Option<Mapping>,
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
 ) -> Result<Option<BlockProse>, ParseError> {
@@ -1914,6 +1965,7 @@ fn build_card_inner(
         divider_line,
         note,
         directives,
+        mapping,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
@@ -2193,20 +2245,26 @@ fn build_card_inner(
             None => has_other = true,
         }
     }
-    if !task_lines.is_empty()
-        && let Some(line) = first_blank_line
+    let mapping = match mapping.or(tasklist_default) {
+        Some(m @ (Mapping::ChoicesSingle | Mapping::ChoicesMultiple)) => Some(m),
+        _ => None,
+    };
+    if let Some(mapping) = mapping
+        && !task_lines.is_empty()
     {
-        return Err(ParseError::InvalidRegion {
-            line,
-            message: "a `blank:` region cannot share a block with a task-list answer".into(),
-        });
-    }
-    if !task_lines.is_empty() && has_other {
-        lints.push(Lint {
-            line: task_lines[0].0,
-            kind: LintKind::ChoiceAnswerMixed,
-        });
-    } else if !task_lines.is_empty() {
+        if let Some(line) = first_blank_line {
+            return Err(ParseError::InvalidRegion {
+                line,
+                message: "a `blank:` region cannot share a block with a task-list answer".into(),
+            });
+        }
+        if has_other {
+            return Err(ParseError::ChoiceShape {
+                line: task_lines[0].0,
+                message: "an invoked choice card mixes its task list with other answer content"
+                    .into(),
+            });
+        }
         let choice_line = task_lines[0].0;
         let mut seen = HashSet::new();
         let mut options = Vec::new();
@@ -2227,43 +2285,69 @@ fn build_card_inner(
             });
         }
         let checked_count = options.iter().filter(|(checked, _)| *checked).count();
-        if checked_count > 1 {
+        if note.as_deref().is_some_and(choice::note_names_position) {
             lints.push(Lint {
                 line: choice_line,
-                kind: LintKind::ChoiceMultiCorrectUnsupported,
+                kind: LintKind::ChoiceNoteNamesPosition,
             });
-        } else {
-            let distractors: Vec<String> = options
-                .iter()
-                .filter(|(checked, _)| !checked)
-                .map(|(_, text)| text.clone())
-                .collect();
-            if note.as_deref().is_some_and(choice::note_names_position) {
-                lints.push(Lint {
-                    line: choice_line,
-                    kind: LintKind::ChoiceNoteNamesPosition,
-                });
+        }
+        let correct: Vec<String> = options
+            .iter()
+            .filter(|(checked, _)| *checked)
+            .map(|(_, text)| text.clone())
+            .collect();
+        let distractors: Vec<String> = options
+            .into_iter()
+            .filter(|(checked, _)| !checked)
+            .map(|(_, text)| text)
+            .collect();
+        match mapping {
+            Mapping::ChoicesSingle => {
+                if checked_count != 1 {
+                    return Err(ParseError::ChoiceShape {
+                        line: choice_line,
+                        message: format!(
+                            "`choices-single` needs exactly one `[x]`, found {checked_count}"
+                        ),
+                    });
+                }
+                if distractors.is_empty() {
+                    return Err(ParseError::ChoiceShape {
+                        line: choice_line,
+                        message: "`choices-single` needs at least one unchecked `[ ]` distractor"
+                            .into(),
+                    });
+                }
             }
-            if checked_count == 0 || distractors.is_empty() {
-                lints.push(Lint {
-                    line: choice_line,
-                    kind: LintKind::ChoiceNeedsBothSides,
-                });
-            } else if let Some((_, correct)) = options.into_iter().find(|(checked, _)| *checked) {
-                let mut card = Card::plain(Arc::clone(subject), front, vec![correct], note, line);
-                card.deck_id = Arc::clone(deck_id);
-                card.token = directives.token.as_deref().map(Arc::from);
-                card.images = images;
-                card.images_back = images_back;
-                card.span_regions = span_regions;
-                card.citations = directives.citations;
-                card.diagrams = directives.diagrams;
-                card.givens = directives.givens;
-                card.authored_distractors = distractors;
-                cards.push(card);
-                return Ok(None);
+            _ => {
+                if checked_count == 0 {
+                    return Err(ParseError::ChoiceShape {
+                        line: choice_line,
+                        message: "`choices-multiple` checks no option; mark at least one `[x]`"
+                            .into(),
+                    });
+                }
+                if checked_count == 1 {
+                    lints.push(Lint {
+                        line: choice_line,
+                        kind: LintKind::DegenerateMultipleChoice,
+                    });
+                }
             }
         }
+        let mut card = Card::plain(Arc::clone(subject), front, correct, note, line);
+        card.deck_id = Arc::clone(deck_id);
+        card.token = directives.token.as_deref().map(Arc::from);
+        card.images = images;
+        card.images_back = images_back;
+        card.span_regions = span_regions;
+        card.citations = directives.citations;
+        card.diagrams = directives.diagrams;
+        card.givens = directives.givens;
+        card.authored_distractors = distractors;
+        card.multiple_choice = mapping == Mapping::ChoicesMultiple;
+        cards.push(card);
+        return Ok(None);
     }
 
     /// Whether the whole answer is one LaTeX command: `\pm` yes, `2a` and
@@ -2825,7 +2909,7 @@ mod tests {
 
         let table = parse_str(
             "t",
-            "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins |\n| two | zwei |\n",
+            "## Vocabulary\n<!-- cards -->\n| word | meaning |\n|---|---|\n| one | eins |\n| two | zwei |\n",
         )
         .expect("the titled table parses");
         assert_eq!(2, table.len(), "two rows are two units");
@@ -3088,6 +3172,7 @@ a
             (
                 "a section closes an open table",
                 "## Capitals
+<!-- cards -->
 | c | a |
 | --- | --- |
 | DE | Berlin |
@@ -3103,6 +3188,7 @@ answer
                 "## q
 a
 ### t
+<!-- cards -->
 | c | a |
 | --- | --- |
 | DE | Berlin |
@@ -3113,13 +3199,14 @@ a
             (
                 "a sub-card under a zero-row titled table has no parent",
                 "## Empty
+<!-- cards -->
 | c | a |
 | --- | --- |
 ### Dependent
 answer
 "
                 .into(),
-                Err(4),
+                Err(5),
             ),
             // ── directives and ids on a section line ──
             (
@@ -3891,7 +3978,8 @@ a
 
     #[test]
     fn an_all_task_list_answer_is_a_single_correct_checkbox_card() {
-        let deck = parse("## Which is prime?\n- [ ] 4\n- [x] 5\n- [ ] 6\n");
+        let deck =
+            parse("## Which is prime?\n<!-- choices-single -->\n- [ ] 4\n- [x] 5\n- [ ] 6\n");
         let card = &deck.cards[0];
         assert_eq!(vec!["5"], card.back);
         assert_eq!(
@@ -3902,9 +3990,126 @@ a
         assert!(deck.lints.is_empty(), "{:?}", deck.lints);
     }
 
+    // ── The opt-in mapping doctrine (task #164): bare is literal, ──
+    // ── invocation is named, loudness follows invocation (A1/A2)   ──
+
+    #[test]
+    fn a_bare_task_list_is_literal_answer_content() {
+        let deck = parse("## q\n- [x] a\n- [ ] b\n");
+        assert_eq!(vec!["- [x] a", "- [ ] b"], deck.cards[0].back);
+        assert!(deck.cards[0].authored_distractors.is_empty());
+        assert_eq!(Vec::<Lint>::new(), deck.lints, "bare is literal and silent");
+    }
+
+    #[test]
+    fn an_invocation_above_the_task_list_makes_the_choice_card() {
+        let deck = parse("## q\n<!-- choices-single -->\n- [x] a\n- [ ] b\n");
+        assert_eq!(vec!["a"], deck.cards[0].back);
+        assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+    }
+
+    #[test]
+    fn a_single_invocation_with_two_checks_fails_loudly() {
+        let error = err("## q\n<!-- choices-single -->\n- [x] a\n- [x] b\n- [ ] c\n");
+        assert!(
+            matches!(error, ParseError::ChoiceShape { line: 3, .. }),
+            "expected ChoiceShape at the first task line, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_multiple_invocation_collects_every_checked_option() {
+        let deck = parse("## q\n<!-- choices-multiple -->\n- [x] a\n- [ ] b\n- [x] c\n");
+        assert_eq!(vec!["a", "c"], deck.cards[0].back);
+        assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+    }
+
+    #[test]
+    fn one_check_under_multiple_is_a_degenerate_finding_not_an_error() {
+        let deck = parse("## q\n<!-- choices-multiple -->\n- [x] a\n- [ ] b\n");
+        assert_eq!(vec!["a"], deck.cards[0].back);
+        assert_eq!(1, deck.lints.len(), "exactly the degenerate finding");
+        assert!(matches!(
+            deck.lints[0].kind,
+            LintKind::DegenerateMultipleChoice
+        ));
+    }
+
+    #[test]
+    fn a_bare_pipe_table_is_literal_not_cards() {
+        let deck = parse("# S\n| a | b |\n|---|---|\n| x | y |\n\n## q\nans\n");
+        assert_eq!(1, deck.cards.len(), "no row cards from a bare table");
+        assert!(
+            deck.cards[0]
+                .section_context
+                .contains(&"| x | y |".to_string()),
+            "the table rides the section literally, got {:?}",
+            deck.cards[0].section_context
+        );
+    }
+
+    #[test]
+    fn an_invoked_table_still_births_row_cards() {
+        let deck = parse("# S\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("x", deck.cards[0].front);
+    }
+
+    #[test]
+    fn a_tasklist_deck_default_invokes_without_per_card_markers() {
+        let deck = parse("---\ntasklist: choices-single\n---\n## q\n- [x] a\n- [ ] b\n");
+        assert_eq!(vec!["a"], deck.cards[0].back);
+        assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
+        assert_eq!(Vec::<Lint>::new(), deck.lints, "a known key never lints");
+    }
+
+    #[test]
+    fn a_per_block_invocation_overrides_the_deck_default() {
+        let deck = parse(
+            "---\ntasklist: choices-multiple\n---\n## q\n<!-- choices-single -->\n- [x] a\n- [ ] b\n",
+        );
+        assert_eq!(vec!["a"], deck.cards[0].back);
+        assert_eq!(
+            Vec::<Lint>::new(),
+            deck.lints,
+            "single overrides, so no degenerate-multiple finding"
+        );
+    }
+
+    #[test]
+    fn a_plain_marker_escapes_the_deck_default() {
+        let deck =
+            parse("---\ntasklist: choices-single\n---\n## q\n<!-- plain -->\n- [x] a\n- [ ] b\n");
+        assert_eq!(vec!["- [x] a", "- [ ] b"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn a_table_deck_default_invokes_cards() {
+        let deck = parse("---\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y |\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("x", deck.cards[0].front);
+    }
+
+    #[test]
+    fn a_typoed_invocation_shaped_comment_draws_a_lint() {
+        let deck = parse("## q\n<!-- choices-singel -->\n- [x] a\n- [ ] b\n");
+        assert_eq!(
+            vec!["- [x] a", "- [ ] b"],
+            deck.cards[0].back,
+            "the block stays literal"
+        );
+        assert_eq!(1, deck.lints.len());
+        assert!(matches!(deck.lints[0].kind, LintKind::UnknownInvocation));
+        assert_eq!(2, deck.lints[0].line);
+    }
+
     #[test]
     fn blank_and_image_only_lines_do_not_turn_authored_choices_into_prose() {
-        let deck = parse("## Which is prime?\n\n- [ ] 4\n![](number-line.png)\n- [x] 5\n");
+        let deck = parse(
+            "## Which is prime?\n<!-- choices-single -->\n\n- [ ] 4\n![](number-line.png)\n- [x] 5\n",
+        );
         assert_eq!(vec!["5"], deck.cards[0].back);
         assert_eq!(vec!["4".to_string()], deck.cards[0].authored_distractors);
         assert_eq!(
@@ -3916,7 +4121,9 @@ a
 
     #[test]
     fn a_divided_checkbox_card_takes_options_from_the_answer_region() {
-        let deck = parse("## Pick one\nsome stimulus\n\n---\n- [x] yes\n- [ ] no\n");
+        let deck = parse(
+            "## Pick one\nsome stimulus\n\n---\n<!-- choices-single -->\n- [x] yes\n- [ ] no\n",
+        );
         let card = &deck.cards[0];
         assert_eq!("Pick one\nsome stimulus", card.front);
         assert_eq!(vec!["yes"], card.back);
@@ -3924,39 +4131,47 @@ a
     }
 
     #[test]
-    fn a_mix_of_task_list_and_prose_is_a_plain_card_and_lints() {
+    fn a_bare_mix_of_task_list_and_prose_is_silent_and_an_invoked_one_errors() {
         let deck = parse("## q\n- [x] a\nnot an option\n");
         assert!(deck.cards[0].authored_distractors.is_empty());
         assert_eq!(vec!["- [x] a", "not an option"], deck.cards[0].back);
+        assert_eq!(
+            Vec::<Lint>::new(),
+            deck.lints,
+            "bare is literal, no finding"
+        );
+
+        let error = err("## q\n<!-- choices-single -->\n- [x] a\nnot an option\n");
         assert!(
-            deck.lints
-                .iter()
-                .any(|lint| lint.kind == LintKind::ChoiceAnswerMixed)
+            matches!(error, ParseError::ChoiceShape { line: 3, .. }),
+            "loudness follows invocation, got {error:?}"
         );
     }
 
     #[test]
-    fn all_checked_or_no_distractor_lints_needs_both_sides_and_is_plain() {
-        let deck = parse("## q\n- [x] a\n- [x] b\n");
-        assert!(deck.cards[0].authored_distractors.is_empty());
-        assert!(
-            deck.lints
-                .iter()
-                .any(|lint| lint.kind == LintKind::ChoiceMultiCorrectUnsupported)
-        );
-
-        let deck = parse("## q\n- [ ] a\n- [ ] b\n");
-        assert!(deck.cards[0].authored_distractors.is_empty());
-        assert!(
-            deck.lints
-                .iter()
-                .any(|lint| lint.kind == LintKind::ChoiceNeedsBothSides)
-        );
+    fn single_rejects_extra_missing_or_undistracted_checks_loudly() {
+        for (name, text) in [
+            (
+                "two checks",
+                "## q\n<!-- choices-single -->\n- [x] a\n- [x] b\n",
+            ),
+            (
+                "no check",
+                "## q\n<!-- choices-single -->\n- [ ] a\n- [ ] b\n",
+            ),
+            ("no distractor", "## q\n<!-- choices-single -->\n- [x] a\n"),
+        ] {
+            let error = err(text);
+            assert!(
+                matches!(error, ParseError::ChoiceShape { line: 3, .. }),
+                "{name}: expected ChoiceShape, got {error:?}"
+            );
+        }
     }
 
     #[test]
     fn a_duplicate_option_lints_and_keeps_first() {
-        let deck = parse("## q\n- [x] a\n- [ ] b\n- [ ] b\n");
+        let deck = parse("## q\n<!-- choices-single -->\n- [x] a\n- [ ] b\n- [ ] b\n");
         assert_eq!(vec!["b".to_string()], deck.cards[0].authored_distractors);
         assert!(
             deck.lints
@@ -3968,7 +4183,7 @@ a
     #[test]
     fn a_choice_note_cannot_name_an_option_position_that_shuffle_changes() {
         let deck = parse(
-            "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 confuses identity with sampling.\n",
+            "## Pick one\n<!-- choices-single -->\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 confuses identity with sampling.\n",
         );
 
         assert_eq!(
@@ -3989,7 +4204,7 @@ a
 
     #[test]
     fn option_text_preserves_source_while_grading_uses_content() {
-        let deck = parse("## q\n- [x] **Paris**\n- [ ] London\n");
+        let deck = parse("## q\n<!-- choices-single -->\n- [x] **Paris**\n- [ ] London\n");
         assert_eq!(vec!["**Paris**"], deck.cards[0].back);
         assert_eq!("Paris", crate::inline::strip_inline(&deck.cards[0].back[0]));
         assert_eq!(
@@ -4000,7 +4215,7 @@ a
 
     #[test]
     fn math_checkbox_options_preserve_authored_source() {
-        let deck = parse("## q\n- [x] $x^2$\n- [ ] $x^3$\n");
+        let deck = parse("## q\n<!-- choices-single -->\n- [x] $x^2$\n- [ ] $x^3$\n");
         assert_eq!(vec!["$x^2$"], deck.cards[0].back);
         assert_eq!(
             vec!["$x^3$".to_string()],
@@ -4011,7 +4226,7 @@ a
 
     #[test]
     fn formatted_and_plain_checkbox_options_are_content_duplicates() {
-        let deck = parse("## q\n- [x] $x$\n- [ ] x\n- [ ] y\n");
+        let deck = parse("## q\n<!-- choices-single -->\n- [x] $x$\n- [ ] x\n- [ ] y\n");
         assert_eq!(vec!["$x$"], deck.cards[0].back);
         assert_eq!(vec!["y".to_string()], deck.cards[0].authored_distractors);
         assert!(
@@ -4023,10 +4238,11 @@ a
 
     #[test]
     fn editing_only_a_distractor_preserves_identity_and_fingerprint() {
-        let before =
-            parse("## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] wrong\n");
+        let before = parse(
+            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n<!-- choices-single -->\n- [x] right\n- [ ] wrong\n",
+        );
         let after = parse(
-            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] different\n",
+            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n<!-- choices-single -->\n- [x] right\n- [ ] different\n",
         );
         assert_eq!(before.cards[0].id(), after.cards[0].id());
         assert_eq!(
@@ -4989,6 +5205,8 @@ reveal: line
 order: sequential
 input: draw
 direction: both
+tasklist: choices-single
+table: cards
 title: The Title
 license: MIT
 authors: someone
@@ -5027,6 +5245,8 @@ the answer
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
                 sampling: None,
+                tasklist: Some(Mapping::ChoicesSingle),
+                table: Some(Mapping::Cards),
                 unspliceable: false,
                 personal_for: None,
             },
@@ -5042,7 +5262,7 @@ the answer
                 crops: Vec::new(),
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(29),
+                reveal_line: Some(31),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 sampling: None,
@@ -5050,7 +5270,7 @@ the answer
                     locator: "src/caching.rs:46-66".into(),
                     fingerprint: Some(0x0123456789abcdef),
                     asset: Some("sha256-abc123.rs".into()),
-                    line: 32,
+                    line: 34,
                 }],
                 diagrams: Vec::new(),
                 givens: vec![
@@ -5076,7 +5296,7 @@ the answer
                 locator: "src/caching.rs:46-66".into(),
                 fingerprint: Some(0x0123456789abcdef),
                 asset: Some("sha256-abc123.rs".into()),
-                line: 32,
+                line: 34,
             }],
             card.citations
         );
@@ -5257,7 +5477,7 @@ the answer
     #[test]
     fn a_two_column_table_emits_one_card_per_row() {
         let text = format!(
-            "| word | meaning |\n|---|---|\n| hund | dog | <!-- r:4k2x9w -->\n| katze | cat | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
+            "<!-- cards -->\n| word | meaning |\n|---|---|\n| hund | dog | <!-- r:4k2x9w -->\n| katze | cat | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -5269,17 +5489,17 @@ the answer
         assert_eq!(Some(CONTAINER), first.token.as_deref());
         assert_eq!(Some("4k2x9w"), first.row.as_deref());
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), first.id());
-        assert_eq!(3, first.line);
+        assert_eq!(4, first.line);
         let second = &deck.cards[1];
         assert_eq!("katze", second.front);
         assert_eq!(Some(format!("{CONTAINER}-t7m3p5q")), second.id());
-        assert_eq!(4, second.line);
+        assert_eq!(5, second.line);
     }
 
     #[test]
     fn a_three_column_table_carries_the_note_and_context() {
         let text = format!(
-            "| word | meaning | note |\n|---|---|---|\n| a | b | care | <!-- r:4k2x9w -->\n| c | d | | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
+            "<!-- cards -->\n| word | meaning | note |\n|---|---|---|\n| a | b | care | <!-- r:4k2x9w -->\n| c | d | | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -5291,7 +5511,7 @@ the answer
     #[test]
     fn an_unstamped_row_stays_id_less_even_under_a_container() {
         let text = format!(
-            "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- id: {CONTAINER} -->\n"
+            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
@@ -5303,7 +5523,7 @@ the answer
     #[test]
     fn table_directives_apply_to_every_row_card() {
         let text = format!(
-            "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:7m3p5q -->\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
+            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:7m3p5q -->\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -5321,14 +5541,14 @@ the answer
 
     #[test]
     fn a_bare_heading_directly_above_a_table_titles_it_instead_of_erroring() {
-        let deck = parse("## q\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## q\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["q"], deck.cards[0].context);
     }
 
     #[test]
     fn a_table_after_a_complete_card_is_its_own_block() {
-        let deck = parse("## q\n---\nanswer\n\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## q\n---\nanswer\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(2, deck.cards.len());
         assert_eq!(vec!["answer"], deck.cards[0].back);
         assert_eq!("x", deck.cards[1].front);
@@ -5347,75 +5567,78 @@ the answer
     #[test]
     fn a_table_line_without_a_closing_pipe_is_malformed() {
         assert_eq!(
-            ParseError::TableLineMalformed(1),
-            err("| a | b\n|---|---|\n")
+            ParseError::TableLineMalformed(2),
+            err("<!-- cards -->\n| a | b\n|---|---|\n")
         );
         assert_eq!(
-            ParseError::TableLineMalformed(3),
-            err("| a | b |\n|---|---|\n| x | y\n")
+            ParseError::TableLineMalformed(4),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y\n")
         );
-        assert_eq!(ParseError::TableLineMalformed(1), err("|\n|---|\n"));
+        assert_eq!(
+            ParseError::TableLineMalformed(2),
+            err("<!-- cards -->\n|\n|---|\n")
+        );
     }
 
     #[test]
     fn a_table_needs_two_or_three_columns() {
         assert_eq!(
-            ParseError::TableColumns { line: 1, found: 1 },
-            err("| a |\n|---|\n| x |\n")
+            ParseError::TableColumns { line: 2, found: 1 },
+            err("<!-- cards -->\n| a |\n|---|\n| x |\n")
         );
         assert_eq!(
-            ParseError::TableColumns { line: 1, found: 4 },
-            err("| a | b | c | d |\n|---|---|---|---|\n")
+            ParseError::TableColumns { line: 2, found: 4 },
+            err("<!-- cards -->\n| a | b | c | d |\n|---|---|---|---|\n")
         );
     }
 
     #[test]
     fn an_empty_table_ends_on_its_delimiter() {
-        let deck = parse("| a | b |\n|---|---|\n");
-        assert_eq!(2, deck.tables[0].end_line);
+        let deck = parse("<!-- cards -->\n| a | b |\n|---|---|\n");
+        assert_eq!(3, deck.tables[0].end_line);
     }
 
     #[test]
     fn every_table_line_matches_the_header_width() {
         assert_eq!(
             ParseError::TableRowWidth {
-                line: 2,
+                line: 3,
                 found: 1,
                 expected: 2
             },
-            err("| a | b |\n|---|\n")
+            err("<!-- cards -->\n| a | b |\n|---|\n")
         );
         assert_eq!(
             ParseError::TableRowWidth {
-                line: 3,
+                line: 4,
                 found: 3,
                 expected: 2
             },
-            err("| a | b |\n|---|---|\n| x | y | z |\n")
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y | z |\n")
         );
     }
 
     #[test]
     fn a_blank_marker_or_image_in_a_cell_is_refused() {
         assert_eq!(
-            ParseError::TableCellHole(3),
-            err("| a | b |\n|---|---|\n| x | \\blank{y} |\n")
+            ParseError::TableCellHole(4),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | \\blank{y} |\n")
         );
         assert_eq!(
-            ParseError::TableCellImage(3),
-            err("| a | b |\n|---|---|\n| ![alt](x.png) | y |\n")
+            ParseError::TableCellImage(4),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| ![alt](x.png) | y |\n")
         );
     }
 
     #[test]
     fn escaped_images_in_cells_stay_legal_and_a_real_one_after_them_still_refuses() {
-        let deck = parse("| a | b |\n|---|---|\n| \\![x] \\![y] | z |\n");
+        let deck = parse("<!-- cards -->\n| a | b |\n|---|---|\n| \\![x] \\![y] | z |\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("\\![x] \\![y]", deck.cards[0].front);
 
         assert_eq!(
-            ParseError::TableCellImage(3),
-            err("| a | b |\n|---|---|\n| \\![x] ![y](p.png) | z |\n")
+            ParseError::TableCellImage(4),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| \\![x] ![y](p.png) | z |\n")
         );
     }
 
@@ -5423,51 +5646,53 @@ the answer
     fn an_invalid_or_duplicate_row_stamp_is_refused() {
         assert_eq!(
             ParseError::TableRowStamp {
-                line: 3,
+                line: 4,
                 value: "xyz".into()
             },
-            err("| a | b |\n|---|---|\n| x | y | <!-- r:xyz -->\n")
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:xyz -->\n")
         );
         assert_eq!(
             ParseError::TableDuplicateStamp {
-                line: 4,
+                line: 5,
                 value: "4k2x9w".into()
             },
-            err("| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:4k2x9w -->\n")
+            err(
+                "<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:4k2x9w -->\n"
+            )
         );
     }
 
     #[test]
     fn only_directive_comments_may_follow_a_table() {
         assert_eq!(
-            ParseError::TableTrailing(4),
-            err("| a | b |\n|---|---|\n| x | y |\nstray prose\n")
-        );
-        assert_eq!(
-            ParseError::TableTrailing(4),
-            err("| a | b |\n|---|---|\n| x | y |\n> a note\n")
+            ParseError::TableTrailing(5),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\nstray prose\n")
         );
         assert_eq!(
             ParseError::TableTrailing(5),
-            err("| a | b |\n|---|---|\n| x | y |\n\n| z | w |\n")
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n> a note\n")
+        );
+        assert_eq!(
+            ParseError::TableTrailing(6),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n\n| z | w |\n")
         );
     }
 
     #[test]
     fn an_empty_front_or_back_cell_is_refused() {
         assert_eq!(
-            ParseError::EmptyFront(3),
-            err("| a | b |\n|---|---|\n| | y | <!-- r:4k2x9w -->\n")
+            ParseError::EmptyFront(4),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| | y | <!-- r:4k2x9w -->\n")
         );
         assert_eq!(
-            ParseError::FrontWithoutAnswer(3),
-            err("| a | b |\n|---|---|\n| x | |\n")
+            ParseError::FrontWithoutAnswer(4),
+            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | |\n")
         );
     }
 
     #[test]
     fn an_escaped_pipe_stays_in_the_cell() {
-        let deck = parse("| a | b |\n|---|---|\n| x \\| y | z |\n");
+        let deck = parse("<!-- cards -->\n| a | b |\n|---|---|\n| x \\| y | z |\n");
         assert_eq!("x | y", deck.cards[0].front);
     }
 
@@ -5475,20 +5700,22 @@ the answer
     fn a_single_hyphen_delimiter_is_valid_gfm_and_accepted() {
         // GFM defines a delimiter cell as `:?-+:?` with no minimum hyphen
         // count, so `| - |` is a table in every GFM renderer.
-        let deck = parse("| front | back |\n| - | -- |\n| question | answer |\n");
+        let deck = parse("<!-- cards -->\n| front | back |\n| - | -- |\n| question | answer |\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("question", deck.cards[0].front);
     }
 
     #[test]
     fn alignment_colons_in_the_delimiter_are_accepted() {
-        let deck = parse("| a | b |\n|:---|---:|\n| x | y |\n");
+        let deck = parse("<!-- cards -->\n| a | b |\n|:---|---:|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());
     }
 
     #[test]
     fn adjacent_tables_split_on_the_second_header() {
-        let deck = parse("| a | b |\n|---|---|\n| x | y |\n| c | d |\n|---|---|\n| z | w |\n");
+        let deck = parse(
+            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n| c | d |\n|---|---|\n| z | w |\n",
+        );
         assert_eq!(2, deck.cards.len());
         assert!(deck.cards[0].context.is_empty());
         assert!(deck.cards[1].context.is_empty());
@@ -5497,7 +5724,7 @@ the answer
     #[test]
     fn an_empty_heading_above_a_table_becomes_its_title() {
         let text = format!(
-            "## Verbs of arguing\n| word | meaning |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: {CONTAINER} -->\n"
+            "## Verbs of arguing\n<!-- cards -->\n| word | meaning |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(1, deck.cards.len(), "the heading is a title, not a card");
@@ -5507,7 +5734,7 @@ the answer
 
     #[test]
     fn a_heading_with_answer_content_before_a_table_stays_a_card() {
-        let deck = parse("## q\nanswer\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## q\nanswer\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(2, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(vec!["answer"], deck.cards[0].back);
@@ -5518,14 +5745,14 @@ the answer
     fn a_heading_with_only_a_note_keeps_being_a_card_and_fails_loudly() {
         assert_eq!(
             ParseError::FrontWithoutAnswer(1),
-            err("## q\n> a note\n| a | b |\n|---|---|\n| x | y |\n")
+            err("## q\n> a note\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n")
         );
     }
 
     #[test]
     fn a_heading_id_becomes_the_tables_container_id() {
         let text = format!(
-            "## Title <!-- id: {CONTAINER} -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n"
+            "## Title <!-- id: {CONTAINER} -->\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n"
         );
         let deck = parse(&text);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
@@ -5546,7 +5773,7 @@ the answer
 
     #[test]
     fn a_blank_line_between_title_and_table_still_titles() {
-        let deck = parse("## Title\n\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## Title\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["Title"], deck.cards[0].context);
     }
@@ -5555,11 +5782,11 @@ the answer
     fn a_table_id_line_must_hold_a_base_card_id() {
         assert_eq!(
             ParseError::InvalidCardId {
-                line: 4,
+                line: 5,
                 value: format!("{CONTAINER}-2"),
             },
             err(&format!(
-                "| a | b |\n|---|---|\n| x | y |\n<!-- id: {CONTAINER}-2 -->\n"
+                "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n<!-- id: {CONTAINER}-2 -->\n"
             ))
         );
     }
@@ -5830,8 +6057,9 @@ the answer
 
     #[test]
     fn a_region_directive_on_a_card_table_is_rejected_not_dropped() {
-        let error =
-            err("| a | b |\n|---|---|\n| x | y |\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n");
+        let error = err(
+            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n",
+        );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
         };
@@ -6076,7 +6304,7 @@ the answer
     #[test]
     fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
         let error = err(&format!(
-            "## pick <!-- id: {RTOK} -->\n---\n- [x] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+            "## pick <!-- id: {RTOK} -->\n---\n<!-- choices-single -->\n- [x] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -6087,7 +6315,7 @@ the answer
     #[test]
     fn an_incomplete_task_list_plus_a_blank_region_is_still_a_composition_error() {
         let error = err(&format!(
-            "## pick <!-- id: {RTOK} -->\n---\n- [ ] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+            "## pick <!-- id: {RTOK} -->\n---\n<!-- choices-single -->\n- [ ] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -6107,7 +6335,7 @@ the answer
         assert_eq!(1, cloze.cards[0].images[0].regions.len());
 
         let choice = parse(&format!(
-            "## pick <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n"
+            "## pick <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n<!-- choices-single -->\n- [x] alpha\n- [ ] beta\n"
         ));
         assert_eq!(1, choice.cards.len());
         assert!(!choice.cards[0].authored_distractors.is_empty());

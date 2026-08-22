@@ -210,7 +210,7 @@ mod tests {
     fn a_table_deck_is_recognizable_by_column_sampling_alone() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let text = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+        let text = "<!-- cards -->\n| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
         assert!(
             cards
@@ -225,7 +225,7 @@ mod tests {
     fn a_three_row_table_cannot_fill_a_pick_and_stays_recall() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let text = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+        let text = "<!-- cards -->\n| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
         assert!(
             cards
@@ -250,7 +250,7 @@ mod tests {
         ];
         for (deck_key, table_directive, expected) in cases {
             let text = format!(
-                "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n{deck_key}---\n| w | m |\n|---|---|\n{rows}{table_directive}<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n"
+                "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n{deck_key}---\n| w | m |\n|---|---|\n{rows}{table_directive}<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n"
             );
             let path = dir.path().join("t.md");
             std::fs::write(&path, &text).unwrap();

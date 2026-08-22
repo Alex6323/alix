@@ -4246,7 +4246,7 @@ fn generate_single_deck_passes_goal_language_and_card_style_to_the_model() {
     let reply = dir.path().join("reply.txt");
     std::fs::write(
         &reply,
-        "## Welche Stadt ist die Hauptstadt?\n- [ ] Hamburg\n- [x] Berlin\n- [ ] München\n",
+        "---\ntasklist: choices-single\n---\n## Welche Stadt ist die Hauptstadt?\n- [ ] Hamburg\n- [x] Berlin\n- [ ] München\n",
     )
     .unwrap();
     let cli = dir.path().join("fake-claude");

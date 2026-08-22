@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d754e12697c573dee90990466353f868b2dc26ec11ab59545ee40fb273d77547 # shrinks to card = GenCard { front: "A", answers: ["0"], note: None, shape: Choice { distractors: 1 }, token: None }
+cc 7c3e062258fcc42254fc6649d0d0fa2baf658ce88dccec3ff6fe4fe52f18f117 # shrinks to (blocks, crlf) = ([Table(GenTable { title: None, header: ["A", "a", "A"], rows: [GenRow { cells: ["a", "A", "0"], stamp: Some("000000") }, GenRow { cells: ["0", "0", "A"], stamp: Some("000001") }, GenRow { cells: ["A", "a", "a"], stamp: Some("000002") }, GenRow { cells: ["a", "a", "A"], stamp: Some("4ph7q9") }], container: Some("card-7j3n75rrd9cfe6dac09ffmztsa") })], false)
+cc f87966f8376234c99054d1acf8b6e5e3cad87ff6bb3d6f2284d64b599e084af5 # shrinks to table = GenTable { title: None, header: ["A", "A"], rows: [GenRow { cells: ["0", "a"], stamp: None }], container: None }

@@ -479,6 +479,7 @@ mod tests {
         let parsed = crate::parser::parse(
             "deck.md",
             "## Front $\\frac{1$\n\
+             <!-- choices-single -->\n\
              - [x] $\\sqrt{$\n\
              - [ ] $\\left($\n\
              > note $\\begin{pmatrix}$\n\

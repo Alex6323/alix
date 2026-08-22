@@ -7,6 +7,7 @@ id: "deck-3s76rwy8znjmmzt2f8hdmnhdnj"
 ---
 
 ## Verbs of arguing
+<!-- cards -->
 | English | German | usage |
 |---------|--------|-------|
 | to advocate | befürworten | eine Sache befürworten | <!-- r:32x23k -->

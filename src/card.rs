@@ -192,6 +192,9 @@ pub struct Card {
     /// `content_fingerprint` stays the card's own effective question.
     pub block_fingerprint: u64,
     pub authored_distractors: Vec<String>,
+    /// `choices-multiple`: every line of `back` is a correct option and the
+    /// reviewer selects all that apply; false means one correct answer.
+    pub multiple_choice: bool,
     /// `span`-shaped regions bound to the answer block (ADR 0034), in file
     /// order; geometric regions ride their media element in `images`.
     pub span_regions: Vec<crate::parser::region::RawRegion>,
@@ -246,6 +249,7 @@ impl Card {
             content_fingerprint,
             block_fingerprint,
             authored_distractors: Vec::new(),
+            multiple_choice: false,
             span_regions: Vec::new(),
             region: None,
             answer_fences: Vec::new(),

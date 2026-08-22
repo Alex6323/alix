@@ -654,6 +654,13 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::PointlessTerminator => "this `---` section terminator ends nothing: no card \
                                            follows before the next heading or the end of the deck"
             .to_string(),
+        LintKind::DegenerateMultipleChoice => "this `choices-multiple` list checks exactly one \
+             option; a one-answer question usually wants `choices-single`"
+            .to_string(),
+        LintKind::UnknownInvocation => "this comment names no known invocation, so the block \
+             below it stays literal; known names: `choices-single`, `choices-multiple`, \
+             `cards`, `plain`"
+            .to_string(),
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),
@@ -3088,7 +3095,7 @@ printf ']}}'
     #[test]
     fn unstamped_table_rows_are_reported_as_content_without_ids() {
         let dir = tempfile::tempdir().unwrap();
-        let head = "---\nformat-version: 1\nid: deck-tbl\n---\n";
+        let head = "---\nformat-version: 1\nid: deck-tbl\ntable: cards\n---\n";
         let rows = "| a | alpha | <!-- r:aaaaaa -->\n| b | beta |\n| c | gamma |\n";
         let container = "<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
 

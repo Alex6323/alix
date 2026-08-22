@@ -14,7 +14,12 @@ full.
 | `#` heading | section | Opens a section: its text and the prose under it are the shared context of every card below, shown on demand (`c` in the web app), never while you answer. Takes no directives and no card ID. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
 | `###`/`####` front | card | A sub-card of the card one level shallower, withheld from review until that parent graduates. Nothing goes deeper than `####`. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
 | `>` line | card | A note, shown after you answer. [→ ch 3](03-the-deck-format.md) |
-| `<!-- -->` | anywhere | A comment with no recognized key: ignored. |
+| `<!-- -->` | anywhere | A comment with no recognized key: ignored. A single-token comment that names no known invocation draws a doctor finding, since a typo'd invocation would otherwise silently leave its block literal. |
+| `choices-single` / `choices-multiple` | card | Invocation comment on the line above a task list: maps it to a [choice card](03-the-deck-format.md#choice-cards-task-lists), one correct answer or select-all-that-apply. A bare task list stays a literal checklist. |
+| `cards` | card | Invocation comment on the line above a pipe table: maps it to a [card table](03-the-deck-format.md#card-tables). A bare table renders literally. |
+| `plain` | card | On the line above a task list, a table, or a blank-surrounded `---`: keeps that one shape literal, escaping a deck default (or, for the `---`, the divider grammar). |
+| `tasklist` | deck | Deck-wide default task-list mapping: `choices-single` or `choices-multiple`. A per-card invocation overrides it. [→ ch 3](03-the-deck-format.md#choice-cards-task-lists) |
+| `table` | deck | Deck-wide default table mapping: `cards`. [→ ch 3](03-the-deck-format.md#card-tables) |
 | `format-version` | deck | Reserved. The deck **format's** version, not the deck's own. Absence means `1`, so alix never writes it; any number other than `1` is refused rather than guessed at. [→ ch 3](03-the-deck-format.md) |
 | `id` | deck | The frontmatter deck ID (`deck-<token>`) marks an initialized deck and authorizes maintenance of missing card IDs. Its `deck-` prefix is what tells alix's decks apart. [→ ch 3](03-the-deck-format.md) |
 | `id` | card | The HTML-comment card ID (`card-<token>`) anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. After a card table it is the table's container ID; each row's card composes it with the row stamp (`r:`) in the row's first cell. [→ ch 3](03-the-deck-format.md) |

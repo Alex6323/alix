@@ -218,6 +218,7 @@ code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 Begin the file with exactly this frontmatter block:
 ---
 source: {source}
+tasklist: choices-single
 
 ---
 The `source:` key ties the deck to its source, so `alix exam` can later grade \
@@ -881,7 +882,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(
             dir.path(),
-            "## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+            "---\ntasklist: choices-single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
         );
         let spec = GenerationSpec {
             goal: "learn it".to_string(),
@@ -942,7 +943,7 @@ mod tests {
 
     #[test]
     fn a_generated_choice_note_cannot_name_a_position_that_shuffle_changes() {
-        let deck = "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 reverses the relation.\n";
+        let deck = "---\ntasklist: choices-single\n---\n## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 reverses the relation.\n";
 
         for card_style in [GenerateCardStyle::Mixed, GenerateCardStyle::AuthoredChoices] {
             let spec = GenerationSpec {
@@ -970,7 +971,7 @@ mod tests {
             ),
             (
                 GenerateCardStyle::AuthoredChoices,
-                "## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+                "---\ntasklist: choices-single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
             ),
         ];
 
@@ -1010,7 +1011,7 @@ mod tests {
 
         let cloze = validate_card_style("## Complete it\nIt is \\blank{done}.\n", &spec);
         let choices = validate_card_style(
-            "## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+            "---\ntasklist: choices-single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
             &spec,
         );
 

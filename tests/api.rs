@@ -355,7 +355,7 @@ const CHOICE_ARMED_DECK: &str = "---\nformat-version: 1\nid: \"deck-choicearmed\
 
 /// A stamped five-row card table, no augment cache: at Recognize its picks
 /// come from column sampling alone, and the header renders as context.
-const TABLE_DECK: &str = "---\nformat-version: 1\nid: \"deck-vocabtable\"\n---\n\
+const TABLE_DECK: &str = "---\nformat-version: 1\nid: \"deck-vocabtable\"\ntable: cards\n---\n\
 ## German numbers\n| word | meaning |\n|---|---|\n\
 | eins | one | <!-- r:aaaaa2 -->\n\
 | zwei | two | <!-- r:aaaaa3 -->\n\
@@ -3096,7 +3096,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
 /// later".
 #[test]
 fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
-    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicemixed\"\n---\n\
+    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicemixed\"\ntasklist: choices-single\n---\n\
         ## pick 1 <!-- id: card-cm1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n\n\
         ## pick 2 <!-- id: card-cm2 -->\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n\n\
         ## plain 1 <!-- id: card-cm3 -->\nback 3\n\n\
@@ -3197,7 +3197,7 @@ fn reveal_endpoint_is_gone_and_abandonment_reintroduces_as_new() {
 /// at Recognize, where the schedule-wide next-due is undefined.
 #[test]
 fn a_recognize_done_with_floored_cards_says_when_one_opens() {
-    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicecool\"\n---\n\
+    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicecool\"\ntasklist: choices-single\n---\n\
         ## cool 1 <!-- id: card-cc1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n\n\
         ## cool 2 <!-- id: card-cc2 -->\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n\n\
         ## cool plain <!-- id: card-cc3 -->\nback\n";

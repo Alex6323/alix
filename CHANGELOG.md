@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Named mapping invocations: `<!-- choices-single -->` or
+  `<!-- choices-multiple -->` above a task list makes it a choice card (one
+  correct answer, or select-all-that-apply), `<!-- cards -->` above a pipe
+  table makes it a card table, and the `tasklist:` / `table:` frontmatter
+  keys declare a deck-wide default with `<!-- plain -->` as the per-block
+  escape. A `choices-multiple` list that checks exactly one option and a
+  single-token comment naming no known invocation are `alix doctor`
+  findings.
+
 - A blank-surrounded `---` ends a section early: the cards after it carry no
   context until the next `#` heading, and a sub-card chain does not cross it.
   Prose directly after it, before any heading, is a parse error, and a
@@ -215,6 +224,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+
+- **Bare content shapes render literally (breaking).** A task list or pipe
+  table without an invocation (or deck default) no longer becomes a choice
+  card or card table: it stays literal content, so a pasted GFM document
+  loads without acquiring study semantics. Existing decks that relied on
+  auto-recognition must opt in via the new invocations or frontmatter
+  defaults; generated decks declare `tasklist: choices-single` themselves.
+  Under an invocation, shape violations that used to be lints (mixed
+  content, a wrong `[x]` count, a missing distractor) fail loudly.
 
 - **Every `---` body line has exactly three legal shapes (breaking).** A
   front divider sits directly above its answer with a blank line or the

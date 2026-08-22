@@ -5,13 +5,14 @@ description: Math rendering fixtures for every card surface.
 ---
 
 ## What does $E = mc^2$ describe?
+<!-- id: card-mathchoice -->
+<!-- choices-single -->
 - [x] **$E = mc^2$**
 - [ ] $F = ma$
 - [ ] $p = mv$
 > Einstein related **energy** and mass with $E = mc^2$.
 > - [x] Includes $c^2$
 > - [ ] Includes `$c^2$` as code
-<!-- id: card-mathchoice -->
 
 ## Evaluate this display formula
 $$\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}$$

@@ -1151,10 +1151,10 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         write_initialized(
             &path,
-            "## q1 <!-- id: card-q1 -->\n- [x] a1\n- [ ] w1\n\
-             ## q2 <!-- id: card-q2 -->\n- [x] a2\n- [ ] w2\n\
-             ## q3 <!-- id: card-q3 -->\n- [x] a3\n- [ ] w3\n\
-             ## q4 <!-- id: card-q4 -->\n- [x] a4\n- [ ] w4\n",
+            "## q1 <!-- id: card-q1 -->\n<!-- choices-single -->\n- [x] a1\n- [ ] w1\n\
+             ## q2 <!-- id: card-q2 -->\n<!-- choices-single -->\n- [x] a2\n- [ ] w2\n\
+             ## q3 <!-- id: card-q3 -->\n<!-- choices-single -->\n- [x] a3\n- [ ] w3\n\
+             ## q4 <!-- id: card-q4 -->\n<!-- choices-single -->\n- [x] a4\n- [ ] w4\n",
         );
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
 

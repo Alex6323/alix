@@ -170,6 +170,7 @@ void main() {
     writeTestDeck(
       deck,
       '## Capital of France? <!-- id: card-choice -->\n'
+      '<!-- choices-single -->\n'
       '- [x] Paris\n- [ ] Rome\n- [ ] Bern\n- [ ] Madrid\n',
     );
     makeDue(deck, root.path);

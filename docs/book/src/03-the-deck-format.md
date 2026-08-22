@@ -133,39 +133,55 @@ joining a card: a front divider sits directly above its answer, with a blank lin
 either a [section terminator](#-section-context) or a parse error; a literal
 `---` line is written `\---` (see [Escaping](#escaping)).
 
-## Multiple-choice (checkbox) cards
+## Choice cards (task lists)
 
-Write the answer as a GitHub task list to supply your own Recognize options:
+A bare GitHub task list is a literal checklist: mappings are opt-in. Name the
+mapping on the line above the list to make it a choice card:
 
 ```
 ## Which number is prime?
+<!-- choices-single -->
 - [ ] 4
 - [x] 5
 - [ ] 6
 ```
 
-The single `[x]` item is the correct answer. Alix shows only that answer at
-Recall and expects it at Reconstruct; the `[ ]` items are distractors shown with
-it at Recognize. Every option is used, so the card needs no AI `choices`
-augmentation and is skipped by that augment target. The Rust core shuffles the
-options: their order stays fixed while one question is on screen, then receives
-a fresh seed when the card reappears or a new study session starts. As with any
-shuffle, two appearances can still produce the same order by chance.
+Under `choices-single` the one `[x]` item is the correct answer. Alix shows
+only that answer at Recall and expects it at Reconstruct; the `[ ]` items are
+distractors shown with it at Recognize. Every option is used, so the card
+needs no AI `choices` augmentation and is skipped by that augment target. The
+Rust core shuffles the options: their order stays fixed while one question is
+on screen, then receives a fresh seed when the card reappears or a new study
+session starts. As with any shuffle, two appearances can still produce the
+same order by chance.
 
-A checkbox card needs exactly one checked item and at least one unchecked item.
-Use `-`, `*`, or `+` bullets, with `[x]` or `[X]` for the answer. Put a literal
-task list inside a fenced code block to keep it a plain card answer. Task lists
-inside notes or a card's front before the `---` divider render as static
-checkboxes rather than interactive choices.
+`choices-single` demands exactly one checked item and at least one unchecked
+item; any other shape fails loudly. Use `-`, `*`, or `+` bullets, with `[x]`
+or `[X]` for the answer. Task lists inside notes or a card's front before the
+`---` divider render as static checkboxes rather than interactive choices.
+
+`choices-multiple` is select-all-that-apply: every `[x]` is a correct option
+and the reviewer picks all of them. A `choices-multiple` list that checks
+exactly one item parses, but `alix doctor` points it out, since it usually
+means `choices-single` was intended.
+
+A deck built of choice cards declares the mapping once in frontmatter instead
+of once per card: `tasklist: choices-single` (or `choices-multiple`). A
+per-card invocation overrides the deck default, and `<!-- plain -->` on the
+line above one task list keeps that one literal.
 
 ## Card tables
 
 Flat material at scale (a vocabulary list, countries and capitals, dates) can
-be one Markdown pipe table instead of a `##` block per fact. Each row is a
-card: first column front, second column back, optional third column note. The
-header row is shown as the card's context, never tested:
+be one Markdown pipe table instead of a `##` block per fact. A bare pipe table
+renders literally; `<!-- cards -->` on the line above maps it (or `table:
+cards` in frontmatter maps every table in the deck, with `<!-- plain -->`
+above one table keeping it literal). Each row is a card: first column front,
+second column back, optional third column note. The header row is shown as
+the card's context, never tested:
 
 ```
+<!-- cards -->
 | word      | meaning   | note                 |
 |-----------|-----------|----------------------|
 | purported | angeblich | often in legal prose |
