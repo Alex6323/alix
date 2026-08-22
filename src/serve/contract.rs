@@ -762,6 +762,34 @@ fn examdto_cooldown_phase_wire_shape() {
 /// uses, so a client skips them in prose and renders the unit instead. Math
 /// is asserted in the lib's projection law, never pinned here: a rendered SVG
 /// is the renderer's business, not the wire's.
+/// Spec law 7: showing a section costs nothing and asks nobody. It rides the
+/// card it belongs to, so no route serves it and no client can be tempted to
+/// fetch it, which is what keeps the `c` press free of a round trip.
+#[test]
+fn no_route_serves_section_context() {
+    let source = include_str!("mod.rs");
+    let routes: Vec<&str> = source
+        .match_indices("\"/api/")
+        .filter_map(|(at, _)| {
+            let rest = &source[at + 1..];
+            rest.find('"').map(|end| &rest[..end])
+        })
+        .collect();
+    assert!(
+        routes.len() > 20,
+        "the scrape found {} routes, so it stopped matching the source",
+        routes.len()
+    );
+    let offenders: Vec<&&str> = routes
+        .iter()
+        .filter(|route| route.contains("context") || route.contains("section"))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "a section is delivered on its card, never fetched: {offenders:?}"
+    );
+}
+
 #[test]
 fn carddto_sectioned_wire_shape() {
     let text =

@@ -1162,6 +1162,39 @@ mod tests {
         );
     }
 
+    /// Spec law 8: the exam grades against the SOURCE, never against a deck's
+    /// own explanations. A section is teaching material, so a builder that
+    /// could accept one would let the deck grade itself. Asserted on the
+    /// signatures, because a string search false-fails whenever a heading
+    /// legitimately matches source text.
+    #[test]
+    fn no_exam_prompt_builder_accepts_deck_body_or_context() {
+        let source = include_str!("exam.rs");
+        let builders = [
+            "fn questions_prompt(",
+            "fn grade_prompt(",
+            "fn grade_compression_prompt(",
+            "fn remediation_prompt(",
+        ];
+        for builder in builders {
+            let at = source
+                .find(builder)
+                .unwrap_or_else(|| panic!("{builder} moved or was renamed"));
+            let rest = &source[at..];
+            let end = rest
+                .find(" -> ")
+                .unwrap_or_else(|| panic!("{builder} signature"));
+            let params = &rest[..end];
+            for banned in ["context", "section", "cards", "deck_body"] {
+                assert!(
+                    !params.contains(banned),
+                    "{builder} takes `{banned}`: an exam prompt must be built from the \
+                     source and the answers, never from the deck's own text.\n{params}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn questions_prompt_labels_deck_and_workspace_layers() {
         let sources = SourceLayers {

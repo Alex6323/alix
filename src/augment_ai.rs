@@ -1120,6 +1120,42 @@ mod tests {
         assert_eq!("pedagogical order", blank.name);
     }
 
+    /// Spec law 9, the augmentation half: a section NEVER reaches an augment
+    /// prompt. Two reasons, and either alone would settle it. A section may
+    /// give the answer away, so it would poison distractors rather than
+    /// sharpen them. And augmentations are cached against the card's own
+    /// fingerprints, so feeding them a section would make a typo in one
+    /// heading invalidate every cached choice under it.
+    #[test]
+    fn no_augment_prompt_builder_accepts_section_context() {
+        let source = include_str!("augment_ai.rs");
+        let builders = [
+            "fn topology_prompt(",
+            "fn format_prompt(",
+            "fn distractors_prompt(",
+            "fn notes_prompt(",
+            "fn keypoints_prompt(",
+            "fn variants_prompt(",
+        ];
+        for builder in builders {
+            let at = source
+                .find(builder)
+                .unwrap_or_else(|| panic!("{builder} moved or was renamed"));
+            let rest = &source[at..];
+            let end = rest
+                .find(" -> ")
+                .unwrap_or_else(|| panic!("{builder} signature"));
+            let params = &rest[..end];
+            for banned in ["section", "context", "heading"] {
+                assert!(
+                    !params.contains(banned),
+                    "{builder} takes `{banned}`: augmentation sees the card's own \
+                     question and answer, never the section around it.\n{params}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn topology_prompt_defaults_to_a_pedagogical_order_and_guidance_overrides_it() {
         let items = [item(1, "q", "a")];
