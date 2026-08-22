@@ -1,5 +1,4 @@
 ---
-format-version: 1
 id: "deck-00000000000000000000000010"
 title: Gated
 description: A deck whose second card waits on the first.

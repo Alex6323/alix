@@ -3,7 +3,6 @@ title: "Math rendering showcase"
 description: >-
   This deck is for manually checking every authored card surface that can carry LaTeX math.
   One card near the end is intentionally malformed so the visible error fallback can be inspected.
-format-version: 1
 id: "deck-1ncnncxh9zz2c80ntnffh7jx03"
 ---
 

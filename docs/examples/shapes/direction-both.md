@@ -4,7 +4,6 @@ description: >-
   One authoring act, two cards. Reach for it when both directions are
   genuinely useful; it doubles the review load.
 direction: both
-format-version: 1
 id: "deck-2eeft2w6yt4fd1q69b2gxzpf5p"
 ---
 

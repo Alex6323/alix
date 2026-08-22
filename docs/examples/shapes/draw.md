@@ -4,7 +4,6 @@ description: >-
   The learner sketches, then reveals and self-grades. Typing a diagram is
   not a check, it is a workaround.
 input: draw
-format-version: 1
 id: "deck-6yf0skkfjn0eekf5m60xc3br68"
 ---
 

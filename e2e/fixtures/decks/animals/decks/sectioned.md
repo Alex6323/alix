@@ -1,5 +1,4 @@
 ---
-format-version: 1
 id: "deck-00000000000000000000000009"
 title: Sectioned
 description: A deck whose cards sit under a section heading.

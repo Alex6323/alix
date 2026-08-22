@@ -6,7 +6,6 @@ description: >-
   around it. Hide something that can be typed: the hole's content is the
   answer, and a control sequence like `\pm` would make the card a spelling
   test for LaTeX.
-format-version: 1
 id: "deck-12x3e6yg9qkhxfjwgg9q4gwp7x"
 ---
 
