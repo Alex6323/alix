@@ -1,6 +1,5 @@
   :root {
     --card-w: min(94vw, 1200px);
-    --card-h: min(88vh, 780px);
   }
   * { box-sizing: border-box; }
   /* A blinking caret should only ever appear inside a real text input or a

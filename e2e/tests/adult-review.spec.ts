@@ -409,6 +409,51 @@ test("a long introduction note shows overflow hints at both edges", async ({ pag
   await expect(below).not.toHaveClass(/show/);
 });
 
+test("a tall review window keeps the card close to both shell edges", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1200 });
+  const state = {
+    ...longContentState({
+      answerLines: ["The card should use the height available between shell bars."],
+      front: "Where should the study card sit in a tall review window?",
+      note: Array.from(
+        { length: 5 },
+        (_, index) => ({
+          kind: "sentence",
+          text: `Authored explanation paragraph ${index + 1}.`,
+        }),
+      ),
+    }),
+    introducing: true,
+  };
+  await page.unroute("**/api/state");
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(page.getByRole("button", { name: "Seen" })).toBeVisible();
+
+  const gaps = await page.evaluate(() => {
+    const deck = document.querySelector(".bar .deck");
+    const mode = document.querySelector(".mode-tag");
+    const note = document.querySelector("#noteRegion");
+    const footer = document.querySelector(".legend");
+    if (![deck, mode, note, footer].every((node) => node instanceof HTMLElement)) {
+      throw new Error("missing review shell geometry");
+    }
+    const deckBox = deck.getBoundingClientRect();
+    const modeBox = mode.getBoundingClientRect();
+    const noteBox = note.getBoundingClientRect();
+    const footerBox = footer.getBoundingClientRect();
+    return {
+      top: modeBox.top - deckBox.bottom,
+      bottom: footerBox.top - noteBox.bottom,
+    };
+  });
+  expect(
+    { topFits: gaps.top <= 72, bottomFits: gaps.bottom <= 48 },
+    `mode gap ${gaps.top}px must be <= 72px; note gap ${gaps.bottom}px must be <= 48px`,
+  ).toEqual({ topFits: true, bottomFits: true });
+});
+
 test("keyboard-focused choices stay clear of both overflow hints", async ({ page }) => {
   const choices = Array.from(
     { length: 18 },

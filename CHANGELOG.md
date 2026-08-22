@@ -366,6 +366,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Adult review cards now use the height available between the header and
+  footer on tall windows, keeping the mode and question near the deck title
+  and the authored note near the review controls.
+
 - Long notes in adult review now show edge fades and `more below` or
   `more above` pills, so hidden parts of an authored explanation remain
   discoverable and reachable while scrolling.
