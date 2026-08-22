@@ -253,9 +253,10 @@ number survives any script). Review never reads it; it is the drift signal.
 When you later edit the block and the hidden text moves, `alix doctor`
 reports the divergence with both readings and the exact edit for each: keep
 the text you authored (run `alix doctor <deck> --repair-positions` and the
-anchor is rewritten to where the span binds today), or keep the old target by
-setting `occurrence=` yourself. Doctor never rewrites a diverged span on its
-own.
+anchor is rewritten to where the span binds today), accept the new binding by
+writing that `position:` in yourself, or keep the old target by setting
+`occurrence=` (offered only when the region carries a minted occurrence to
+name). Doctor never rewrites a diverged span on its own.
 
 A span may sit inside a formula. Its hidden text must then be a complete
 structural unit of the math: no half of a `\command`, no split `{...}` group,
