@@ -882,7 +882,13 @@ export function createPicker({
           }
           if (sec.header) sec.header.style.display = shown ? "" : "none";
         }
-        emptyHint.style.display = (q && !visibleRows().length) ? "" : "none";
+        const visible = visibleRows();
+        if (focusedEl && !visible.includes(focusedEl)) {
+          focusedEl = null;
+          syncPrimary();
+          syncDrawer(null);
+        }
+        emptyHint.style.display = (q && !visible.length) ? "" : "none";
       }
 
       filter.oninput = applyFilter;

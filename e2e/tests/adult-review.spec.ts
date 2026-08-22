@@ -824,6 +824,17 @@ test("focusing a deck opens the drawer with its description, size and heatmap, n
   await drawer.screenshot({ path: testInfo.outputPath("drawer.png") });
 });
 
+test("filtering a focused deck out closes its drawer", async ({ page }) => {
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await expect(page.locator(".drawer").filter({ hasText: "2 cards" })).toHaveCount(1);
+
+  await page.locator("#barFilter").fill("no deck has this name");
+
+  await expect(page.getByText("No decks match.", { exact: true })).toBeVisible();
+  await expect(page.locator(".drawer")).toHaveCount(0);
+});
+
 test("jumping to the last deck with G reveals its drawer, not just opens it", async ({ page }) => {
   // A viewport short enough that the last row sits at the bottom edge: the
   // drawer opens *below* it, so merely existing is not enough. This is the

@@ -375,6 +375,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Seen` action already communicate that state, so the extra sentence made the
   card busier without giving the learner another choice.
 
+- Adult deck filtering now closes the focus drawer when its selected row no
+  longer matches. Previously an empty result could still show the hidden deck's
+  description and heatmap above the `No decks match.` message.
+
 - The advertised `curl -sSf https://alix.study/install.sh | sh` install has
   been failing since 2026-08-03. GitHub's `/releases/latest` is repo-wide, and
   the `mobile-v0.3.0` APK release took that slot, so the installer resolved to
