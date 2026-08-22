@@ -39,6 +39,8 @@ Rules that hold whatever the shape:
 - Every card needs at least one answer line.
 - Most cards deserve a `> ` note: an example, a caveat, a mnemonic, or
   why it matters. Never a restatement of the answer.
+- A choice card's note names the option's claim or mistaken premise, never
+  its number, letter, or screen position. Options shuffle between appearances.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.

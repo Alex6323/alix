@@ -366,6 +366,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Choice-card notes can no longer silently describe the wrong option after a
+  shuffle. `generate` and AI note augmentation reject position-dependent notes,
+  while `doctor` diagnoses authored notes that name an option by number, letter,
+  or screen position.
+
 - Adult review now draws a visible note-coloured divider between a revealed
   answer or source excerpt and its authored note. The generic hairline blended
   into the card background, making the two sections appear joined.

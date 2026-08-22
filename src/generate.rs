@@ -5,6 +5,7 @@ use anyhow::{Result, bail};
 use crate::{
     ask,
     backend::{ensure_source_reachable, supports_structured_progress},
+    choice,
     config::{AskConfig, GenerateCardStyle, GenerateDeckConfig},
     deck::is_url,
     parser,
@@ -362,8 +363,9 @@ fn build_review_prompt(deck: &str, spec: &GenerationSpec) -> String {
     let review = REVIEW_PROMPT.replace("{mapping_review}", review_mapping(spec.card_style));
     let card_format = card_format(spec.card_style);
     format!(
-        "{review}{}\n\n{}\n\nThe deck to review:\n\n{deck}",
+        "{review}{}\n\nNOTE SAFETY:\n- {}\n\n{}\n\nThe deck to review:\n\n{deck}",
         spec.requirements(),
+        choice::NOTE_POSITION_INSTRUCTION,
         card_format
     )
 }
@@ -430,15 +432,35 @@ fn build_prompt(
             prompt.push_str(card_format.as_ref());
         }
     }
+    prompt.push_str("\n\nNOTE SAFETY:\n- ");
+    prompt.push_str(choice::NOTE_POSITION_INSTRUCTION);
     prompt
 }
 
 pub(crate) fn validate_card_style(deck: &str, spec: &GenerationSpec) -> Result<()> {
+    let parsed = match parser::parse("generated.md", deck) {
+        Ok(parsed) => parsed,
+        Err(_) if spec.card_style == GenerateCardStyle::Mixed => return Ok(()),
+        Err(error) => {
+            return Err(anyhow::anyhow!(
+                "cannot verify generated card style: {error}"
+            ));
+        }
+    };
+    if parsed
+        .lints
+        .iter()
+        .any(|lint| lint.kind == parser::LintKind::ChoiceNoteNamesPosition)
+    {
+        bail!(
+            "the model returned an authored-choice note that names an option by position; \
+             options are shuffled, so name the claim or mistaken premise instead"
+        );
+    }
     if spec.card_style == GenerateCardStyle::Mixed {
         return Ok(());
     }
-    let cards = parser::parse_str("generated.md", deck)
-        .map_err(|error| anyhow::anyhow!("cannot verify generated card style: {error}"))?;
+    let cards = parsed.cards;
     if cards.is_empty() {
         bail!("the model returned no cards");
     }
@@ -761,6 +783,7 @@ mod tests {
         assert!(p.contains("- [x]"));
         assert!(p.contains("- [ ]"));
         assert!(p.contains("exactly one checked"));
+        assert!(p.contains(choice::NOTE_POSITION_INSTRUCTION));
         assert!(!p.contains("no bullet"));
     }
 
@@ -836,7 +859,18 @@ mod tests {
         assert!(p.contains("authored multiple-choice"));
         assert!(p.contains("exactly one checked"));
         assert!(p.contains("one pair per"));
+        assert!(p.contains(choice::NOTE_POSITION_INSTRUCTION));
         assert!(!p.contains("as one cloze card"));
+    }
+
+    #[test]
+    fn custom_generation_prompts_still_forbid_position_dependent_choice_notes() {
+        let mut config = cfg(5);
+        config.prompt = Some("Custom prompt for {source}.".to_string());
+
+        let prompt = build_prompt("notes.md", false, &config, &spec());
+
+        assert!(prompt.contains(choice::NOTE_POSITION_INSTRUCTION));
     }
 
     #[test]
@@ -907,6 +941,26 @@ mod tests {
     }
 
     #[test]
+    fn a_generated_choice_note_cannot_name_a_position_that_shuffle_changes() {
+        let deck = "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 reverses the relation.\n";
+
+        for card_style in [GenerateCardStyle::Mixed, GenerateCardStyle::AuthoredChoices] {
+            let spec = GenerationSpec {
+                goal: "learn it".to_string(),
+                language: None,
+                audience: None,
+                card_style,
+            };
+            let error = validate_card_style(deck, &spec).unwrap_err();
+
+            assert!(
+                format!("{error:#}").contains("shuffled"),
+                "{card_style:?}: {error:#}"
+            );
+        }
+    }
+
+    #[test]
     fn each_explicit_card_style_accepts_its_canonical_shape() {
         let cases = [
             (GenerateCardStyle::Plain, "## Question\nAnswer\n"),
@@ -965,11 +1019,13 @@ mod tests {
     }
 
     #[test]
-    fn full_prompt_override_replaces_template() {
+    fn full_prompt_override_replaces_template_but_keeps_note_safety() {
         let mut g = cfg(5);
         g.prompt = Some("Make {max_cards} cards from {url}.".to_string());
         let p = build_prompt("U", true, &g, &spec());
-        assert_eq!("Make 5 cards from U.", p);
+        assert!(p.starts_with("Make 5 cards from U."));
+        assert!(p.contains(choice::NOTE_POSITION_INSTRUCTION));
+        assert!(!p.contains("four layers"));
     }
 
     #[test]

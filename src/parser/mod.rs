@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::{
     answer::Input,
     card::{Card, CardImage, Direction},
+    choice,
     depth::Reveal,
     token,
 };
@@ -98,6 +99,7 @@ pub enum LintKind {
     ChoiceNeedsBothSides,
     DuplicateChoiceOption,
     ChoiceMultiCorrectUnsupported,
+    ChoiceNoteNamesPosition,
     UntypableHole {
         answer: String,
     },
@@ -2125,6 +2127,12 @@ fn build_card_inner(
                 .filter(|(checked, _)| !checked)
                 .map(|(_, text)| text.clone())
                 .collect();
+            if note.as_deref().is_some_and(choice::note_names_position) {
+                lints.push(Lint {
+                    line: choice_line,
+                    kind: LintKind::ChoiceNoteNamesPosition,
+                });
+            }
             if checked_count == 0 || distractors.is_empty() {
                 lints.push(Lint {
                     line: choice_line,
@@ -3706,6 +3714,20 @@ a
                 .iter()
                 .any(|lint| lint.kind == LintKind::DuplicateChoiceOption)
         );
+    }
+
+    #[test]
+    fn a_choice_note_cannot_name_an_option_position_that_shuffle_changes() {
+        let deck = parse(
+            "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 confuses identity with sampling.\n",
+        );
+
+        assert_eq!(
+            1,
+            deck.lints.len(),
+            "a position-dependent note must be diagnosed before a shuffle makes it lie"
+        );
+        assert_eq!(LintKind::ChoiceNoteNamesPosition, deck.lints[0].kind);
     }
 
     #[test]

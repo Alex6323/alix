@@ -10,6 +10,52 @@ use crate::card::Card;
 // One correct option plus three distractors.
 pub const NUM_OPTIONS: usize = 4;
 
+#[cfg(feature = "full")]
+pub(crate) const NOTE_POSITION_INSTRUCTION: &str = "Never refer to an option by number, letter, \
+    or screen position; options are shuffled, so name the claim or mistaken premise itself.";
+
+pub(crate) fn note_names_position(note: &str) -> bool {
+    let mut tokens = note
+        .split(|character: char| !(character.is_alphanumeric() || character == '#'))
+        .filter(|token| !token.is_empty());
+
+    let option = |token: &str| {
+        ["option", "options", "choice", "choices"]
+            .iter()
+            .any(|candidate| token.eq_ignore_ascii_case(candidate))
+    };
+    let numbered_position = |token: &str| {
+        let token = token.strip_prefix('#').unwrap_or(token);
+        token.parse::<usize>().is_ok_and(|value| value > 0)
+            || ["st", "nd", "rd", "th"].iter().any(|suffix| {
+                token
+                    .strip_suffix(suffix)
+                    .is_some_and(|number| number.parse::<usize>().is_ok_and(|value| value > 0))
+            })
+            || ["first", "second", "third", "fourth", "fifth", "last"]
+                .iter()
+                .any(|candidate| token.eq_ignore_ascii_case(candidate))
+    };
+    let label = |token: &str| {
+        ["a", "b", "c", "d", "e"]
+            .iter()
+            .any(|candidate| token.eq_ignore_ascii_case(candidate))
+    };
+
+    let Some(mut previous) = tokens.next() else {
+        return false;
+    };
+    for current in tokens {
+        if (option(previous) && (numbered_position(current) || label(current)))
+            || (numbered_position(previous) && option(current))
+        {
+            return true;
+        }
+        previous = current;
+    }
+    false
+}
+
 #[derive(Debug)]
 pub struct ChoiceQuestion {
     pub options: Vec<String>,
@@ -192,6 +238,26 @@ mod tests {
 
     fn ai(distractors: &[&str]) -> Vec<String> {
         distractors.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn position_dependent_choice_note_references_are_recognized_narrowly() {
+        for unsafe_note in [
+            "Option 2 reverses the relation.",
+            "Choice #3 omits the guard.",
+            "The second option is too broad.",
+            "Option B confuses identity with sampling.",
+        ] {
+            assert!(note_names_position(unsafe_note), "{unsafe_note}");
+        }
+        for safe_note in [
+            "The length-limit claim invents a grammar rule.",
+            "There are 2 independent reasons.",
+            "Option parsing happens before sampling.",
+            "Scoping was a choice, not a parser limitation.",
+        ] {
+            assert!(!note_names_position(safe_note), "{safe_note}");
+        }
     }
 
     fn table_card(token: &str, row: &str, back: &str, reversed: bool) -> Card {

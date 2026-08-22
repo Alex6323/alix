@@ -671,6 +671,11 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::ChoiceMultiCorrectUnsupported => {
             "multiple checked answers are not supported yet; treating the card as plain".to_string()
         }
+        LintKind::ChoiceNoteNamesPosition => {
+            "the note identifies an option by number, letter, or position, but choices are \
+             shuffled; name the option's claim or mistaken premise instead"
+                .to_string()
+        }
     };
     format!("{}: line {}: {detail}", path.display(), lint.line)
 }

@@ -14,6 +14,7 @@ use crate::{
     answer::Mode,
     ask,
     augment::{Format, Topology, TopologyEdge, TopologyRegion, WarmItem},
+    choice,
     config::{AiConfig, AskConfig},
 };
 
@@ -178,6 +179,13 @@ pub fn generate_notes(
         if let Some(note) = parsed.get(key) {
             let note = note.trim();
             if !note.is_empty() {
+                if choice::note_names_position(note) {
+                    anyhow::bail!(
+                        "generated note for card {} names an option by position; options are \
+                         shuffled, so name the claim or mistaken premise instead",
+                        item.id
+                    );
+                }
                 out.insert(item.id.clone(), note.to_string());
             }
         }
@@ -686,6 +694,8 @@ fn notes_prompt(cards_block: &str, guidance: Option<&str>) -> String {
          recall. Keep each note tight and factual, and do not simply restate the \
          answer.\n",
     );
+    s.push_str(choice::NOTE_POSITION_INSTRUCTION);
+    s.push('\n');
     if let Some(g) = guidance {
         s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
     }
@@ -1045,6 +1055,34 @@ mod tests {
         let out = generate_notes(&items, None, &ask_config(&cli), None).unwrap();
         assert!(!out.contains_key("1"));
         assert_eq!("real note", out["2"]);
+    }
+
+    #[test]
+    fn a_generated_choice_note_cannot_name_a_position_that_shuffle_changes() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(
+            dir.path(),
+            r#"{"0": "Option 2 is tempting because it reverses the relation."}"#,
+        );
+
+        let error = generate_notes(
+            &[item(1, "Which relation holds?", "A exceeds B")],
+            None,
+            &ask_config(&cli),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(format!("{error:#}").contains("shuffled"), "{error:#}");
+    }
+
+    #[test]
+    fn the_choice_note_prompt_forbids_position_dependent_prose() {
+        let prompt = notes_prompt("0. question - answer", None);
+
+        assert!(prompt.contains("options are shuffled"), "{prompt}");
+        assert!(prompt.contains("name the claim"), "{prompt}");
     }
 
     #[test]
