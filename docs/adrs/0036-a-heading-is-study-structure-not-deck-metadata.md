@@ -1,8 +1,8 @@
 # 0036: A heading is study structure, not deck metadata
 
 - Status: Accepted
-- Evidence: section_context_units in src/serve/dto.rs;
-  PointlessTerminator in src/parser/mod.rs
+- Evidence: section_context_units in src/serve/dto.rs
+- Evidence: PointlessTerminator in src/parser/mod.rs
 - Recorded: 2026-08-21
 - Retrospective: No
 - Open before acceptance: none on the grammar since 2026-08-22. The two
