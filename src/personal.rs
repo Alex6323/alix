@@ -320,7 +320,8 @@ mod tests {
             text.starts_with("---\nformat-version: 1\nfor: deck-abc\n---\n"),
             "{text}"
         );
-        let cards = crate::parser::parse_str("sidecar", &text).unwrap();
+        let cards =
+            crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text)).unwrap();
         assert_eq!(1, cards.len());
         assert_eq!(Some("card-two".to_string()), cards[0].id());
     }
@@ -334,7 +335,8 @@ mod tests {
         append_cards(&deck, "deck-abc", "## two <!-- id: card-bb -->\ny\n").unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
-        let cards = crate::parser::parse_str("sidecar", &text).unwrap();
+        let cards =
+            crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text)).unwrap();
         assert_eq!(
             vec![Some("card-aa".to_string()), Some("card-bb".to_string())],
             cards.iter().map(|c| c.id()).collect::<Vec<_>>()
@@ -351,7 +353,12 @@ mod tests {
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(1, crate::parser::notes(&text).len());
-        assert_eq!(1, crate::parser::parse_str("sidecar", &text).unwrap().len());
+        assert_eq!(
+            1,
+            crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text))
+                .unwrap()
+                .len()
+        );
     }
 
     #[test]

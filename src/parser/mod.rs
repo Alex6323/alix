@@ -146,6 +146,8 @@ pub enum ParseError {
     HeadingTooDeep(usize),
     #[error("line {0}: this sub-card has no open parent one level above it")]
     OrphanSubCard(usize),
+    #[error("line {0}: a deck body starts with a heading; this line is before the first one")]
+    ProseBeforeFirstHeading(usize),
     #[error("line {0}: section heading is empty")]
     EmptySection(usize),
     #[error("line {0}: a section heading takes no directives and no card id")]
@@ -216,6 +218,7 @@ impl ParseError {
             Self::FrontWithoutAnswer(_) => "front_without_answer",
             Self::HeadingTooDeep(_) => "heading_too_deep",
             Self::OrphanSubCard(_) => "orphan_sub_card",
+            Self::ProseBeforeFirstHeading(_) => "prose_before_first_heading",
             Self::EmptySection(_) => "empty_section",
             Self::SectionDirective(_) => "section_directive",
             Self::OrphanCardId(_) => "orphan_card_id",
@@ -245,6 +248,7 @@ impl ParseError {
             | Self::FrontWithoutAnswer(line)
             | Self::HeadingTooDeep(line)
             | Self::OrphanSubCard(line)
+            | Self::ProseBeforeFirstHeading(line)
             | Self::EmptySection(line)
             | Self::SectionDirective(line)
             | Self::OrphanCardId(line)
@@ -353,11 +357,23 @@ pub fn card_front_lines(text: &str) -> Result<Vec<usize>, ParseError> {
     Ok(lines)
 }
 
+fn opens_frontmatter(text: &str) -> bool {
+    text.strip_prefix('\u{feff}')
+        .unwrap_or(text)
+        .lines()
+        .find(|line| !trim_ws(line).is_empty())
+        .is_some_and(|line| trim_ws(line) == "---")
+}
+
 pub fn is_deck_content(text: &str) -> bool {
     match parse("deck.md", text) {
         Ok(deck) => !deck.cards.is_empty() || deck.frontmatter_span.is_some(),
-        // A parse failure counts as deck content too: a broken deck should
-        // surface to doctor rather than silently vanish from the listing.
+        // An ordinary document may sit in a decks folder untouched, and one
+        // that opens with prose trips the body-starts-with-a-heading rule
+        // without ever claiming to be a deck. Frontmatter is the claim.
+        Err(ParseError::ProseBeforeFirstHeading(_)) => opens_frontmatter(text),
+        // Any other parse failure counts as deck content: a broken deck
+        // should surface to doctor rather than silently vanish.
         Err(_) => true,
     }
 }
@@ -696,12 +712,33 @@ pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
 
 type ScannedBody = Vec<RawBlock>;
 
+/// A deck body opens with a heading. Before the first one there is no
+/// section to join, so a line that would join it is the error instead.
+fn section_line(
+    section: &mut Vec<String>,
+    seen_heading: bool,
+    lineno: usize,
+    line: String,
+) -> Result<(), ParseError> {
+    // A sidecar has no sections at all (D16), so it has no body-opens-with-a-
+    // heading rule either: its lines are notes and personal cards.
+    if sidecar_mode() {
+        return Ok(());
+    }
+    if !seen_heading {
+        return Err(ParseError::ProseBeforeFirstHeading(lineno));
+    }
+    section.push(line);
+    Ok(())
+}
+
 fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
     let mut blocks: Vec<RawBlock> = Vec::new();
     let mut current: Option<RawCard> = None;
     let mut table: Option<RawTable> = None;
     let mut open_depths: Vec<(usize, usize)> = Vec::new();
     let mut section: Vec<String> = Vec::new();
+    let mut seen_heading = false;
     let mut skip_delimiter = false;
     let mut fence: Option<(char, usize)> = None;
     let mut prev_blank = false;
@@ -744,7 +781,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 fence = None;
             }
             if current.is_none() {
-                section.push(raw.to_string());
+                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -758,7 +795,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some(ch) = fence_opener(raw) {
             fence = Some((ch, lineno));
             if current.is_none() {
-                section.push(raw.to_string());
+                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -857,6 +894,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     return Err(ParseError::EmptySection(lineno));
                 }
                 open_depths.clear();
+                seen_heading = true;
                 section = vec![text];
                 prev_blank = false;
                 prev_heading = true;
@@ -879,6 +917,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if front.is_empty() {
                 return Err(ParseError::EmptyFront(lineno));
             }
+            seen_heading = true;
             open_depths.push((depth, lineno));
             current = Some(RawCard {
                 line: lineno,
@@ -910,7 +949,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
             if current.is_none() {
-                section.push(rest.to_string());
+                section_line(&mut section, seen_heading, lineno, rest.to_string())?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -928,7 +967,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 card.divided = true;
                 card.divider_line = Some(lineno);
             } else if current.is_none() {
-                section.push("---".to_string());
+                section_line(&mut section, seen_heading, lineno, "---".to_string())?;
             } else {
                 push_content(&mut current, lineno, "---".to_string());
             }
@@ -943,7 +982,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 Some(card) => append_note(card, text),
                 // A section has no note to append to, so the line is
                 // ordinary section prose rather than a dropped quote.
-                None => section.push(t.to_string()),
+                None => section_line(&mut section, seen_heading, lineno, t.to_string())?,
             }
             prev_blank = false;
             prev_heading = false;
@@ -1000,9 +1039,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         // has no sections at all (D16), so nothing accumulates there and a
         // personal card stays context-free.
         if current.is_none() {
-            if !sidecar_mode() {
-                section.push(t.to_string());
-            }
+            section_line(&mut section, seen_heading, lineno, t.to_string())?;
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -2512,12 +2549,50 @@ mod tests {
         assert_eq!(vec!["Other"], deck.cards[2].section_context);
     }
 
-    /// Ruled D3: before any heading the section is simply the prose, so no
-    /// line in a deck file is parsed and then shown nowhere.
+    /// A body opens with a heading or it does not open. Every line class
+    /// that can reach the section must refuse to before the first heading,
+    /// or one of them becomes a quiet way back in.
     #[test]
-    fn leading_prose_is_the_context_of_the_cards_above_the_first_heading() {
-        let deck = parse("Applies throughout.\n## q\na\n# Later\n## r\nb\n");
-        assert_eq!(vec!["Applies throughout."], deck.cards[0].section_context);
+    fn every_line_class_refuses_to_open_a_deck_before_the_first_heading() {
+        for (label, body, at) in [
+            ("plain prose", "Applies throughout.\n## q\na\n", 1),
+            ("a quote", "> quoted\n## q\na\n", 1),
+            // A bare `---` opens frontmatter, so this one needs a real
+            // block above it before the divider can reach the section.
+            ("a divider", "---\ntitle: T\n---\n---\n\n## q\na\n", 4),
+            ("an escape", "\\## escaped\n## q\na\n", 1),
+            ("a fence opener", "```\n## q\na\n", 1),
+            ("a fence body", "```\ncode\n```\n## q\na\n", 1),
+        ] {
+            let err = err(body);
+            assert!(
+                matches!(err, ParseError::ProseBeforeFirstHeading(line) if line == at),
+                "{label} before the first heading must error at line {at}, got {err:?}"
+            );
+        }
+    }
+
+    /// The bar is a HEADING, not a section: a deck of plain cards has no
+    /// section at all and must still parse.
+    #[test]
+    fn a_body_that_opens_with_a_card_parses_with_no_section() {
+        let deck = parse("## q\na\n");
+        assert!(
+            deck.cards[0].section_context.is_empty(),
+            "a sectionless deck carries no context, got {:?}",
+            deck.cards[0].section_context
+        );
+    }
+
+    /// Prose still joins the section it sits under; only the region before
+    /// the first heading is closed.
+    #[test]
+    fn prose_under_a_heading_is_still_that_sections_context() {
+        let deck = parse("# S\nApplies throughout.\n## q\na\n# Later\n## r\nb\n");
+        assert_eq!(
+            vec!["S", "Applies throughout."],
+            deck.cards[0].section_context
+        );
         assert_eq!(vec!["Later"], deck.cards[1].section_context);
     }
 
@@ -3010,7 +3085,7 @@ a
         assert_eq!(Some("a walk".to_string()), deck.frontmatter.trace);
         assert_eq!(1, deck.cards.len());
 
-        let deck = parse("intro prose\n---\nid: nope\n---\n## q\na\n");
+        let deck = parse("# S\n---\nid: nope\n---\n## q\na\n");
         assert_eq!(Frontmatter::default(), deck.frontmatter);
         assert_eq!(None, deck.deck_token);
     }
@@ -3315,6 +3390,24 @@ a
 
     // ── Document structure ──
 
+    /// A decks folder may hold ordinary documents. Only a file that claims
+    /// to be a deck (frontmatter, or real cards) may fail as one.
+    #[test]
+    fn an_ordinary_document_that_opens_with_prose_is_not_deck_content() {
+        assert!(
+            !is_deck_content("Just my notes.\n\nNothing to do with alix.\n"),
+            "a plain note in a decks folder is not a deck"
+        );
+        assert!(
+            is_deck_content("---\ntitle: T\n---\n\nstray prose\n\n## q\na\n"),
+            "frontmatter claims deckhood, so the same mistake must surface"
+        );
+        assert!(
+            is_deck_content("## q\na\n"),
+            "a card is a claim too, with or without frontmatter"
+        );
+    }
+
     #[test]
     fn a_file_with_no_h2_fronts_is_a_zero_card_deck() {
         let deck = parse("---\ntitle: Title\n---\n# A section\njust prose\n");
@@ -3386,15 +3479,18 @@ a
     /// These three shapes must all still parse to their cards.
     #[test]
     fn body_prose_never_becomes_deck_metadata() {
-        for text in [
-            "# T\nline one\nline two\n\n## q\na\n",
-            "# T\n\n## q\na\n",
-            "just an intro\n\n## q\na\n",
-        ] {
+        for text in ["# T\nline one\nline two\n\n## q\na\n", "# T\n\n## q\na\n"] {
             let deck = parse(text);
             assert_eq!(None, deck.title, "no title without frontmatter: {text:?}");
             assert_eq!(1, deck.cards.len(), "{text:?}");
         }
+        assert!(
+            matches!(
+                err("just an intro\n\n## q\na\n"),
+                ParseError::ProseBeforeFirstHeading(1)
+            ),
+            "an intro line has no heading to belong to, so it cannot be metadata either"
+        );
     }
 
     #[test]
@@ -4021,7 +4117,10 @@ a
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
 
-        assert!(parse("\u{feff}\u{feff}## q\n---\na\n").cards.is_empty());
+        assert!(matches!(
+            err("\u{feff}\u{feff}## q\n---\na\n"),
+            ParseError::ProseBeforeFirstHeading(1)
+        ));
     }
 
     #[test]

@@ -1344,7 +1344,7 @@ mod tests {
     #[test]
     fn empty_deck_is_not_started() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "e.md", "only a comment\n");
+        let path = write_deck(dir.path(), "e.md", "# only a section\n");
         let deck = Deck::load(&path).unwrap();
         let (store, _s) = empty_store();
         assert!(deck.cards.is_empty());
@@ -2178,7 +2178,7 @@ mod tests {
     fn no_directives_yields_empty_settings() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(&path, "just a comment\n\n## f\nb\n").unwrap();
+        std::fs::write(&path, "# a section\n\n## f\nb\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(None, deck.settings.reveal);

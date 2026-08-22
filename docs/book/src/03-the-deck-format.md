@@ -250,7 +250,13 @@ and `###`/`####` are sub-cards.
 
 A single-`#` heading opens a **section**. Its text, plus any prose that follows
 it outside a card, is the shared context for every card below it until the next
-`#`. Prose written before the first heading is section context too.
+`#`.
+
+A deck body starts with a heading. Before the first one there is no section to
+belong to and no card to be part of, so a line there is an error rather than
+text that lands nowhere. A deck of plain cards needs no section at all: opening
+with `##` is fine, and those cards simply have no context. Whatever a deck is
+about goes in `title:` and `description:`.
 
 ```
 # Ocean depths

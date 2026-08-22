@@ -76,7 +76,9 @@ fn deck_findings(path: &Path, report: &mut Report) {
     let deck = match alix::parser::parse(name, &text) {
         Ok(deck) => deck,
         Err(e) => {
-            report.error(format!("{}: {e}", path.display()));
+            if alix::parser::is_deck_content(&text) {
+                report.error(format!("{}: {e}", path.display()));
+            }
             return;
         }
     };
@@ -1613,6 +1615,32 @@ mod tests {
         assert!(stderr.contains("1 error(s), 0 warning(s)"), "{stderr}");
         assert!(stderr.contains("0 error(s), 1 warning(s)"), "{stderr}");
         assert_eq!(2, stderr.matches("error(s),").count(), "{stderr}");
+    }
+
+    /// A decks folder holds what the user puts there. Doctor reports a
+    /// parse failure only for a file that claims to be a deck.
+    #[test]
+    fn a_parse_failure_is_reported_only_for_files_that_claim_deckhood() {
+        for (name, text, reported) in [
+            ("notes.md", "Just my notes.\n\nNothing about alix.\n", false),
+            (
+                "broken.md",
+                "---\ntitle: Broken\n---\n\nstray prose\n\n## q\na\n",
+                true,
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            w(dir.path(), name, text);
+            let mut report = Report::default();
+            deck_findings(&dir.path().join(name), &mut report);
+            assert_eq!(
+                reported,
+                !report.errors.is_empty(),
+                "{name} should{} report, got {:#?}",
+                if reported { "" } else { " not" },
+                report.errors
+            );
+        }
     }
 
     #[test]

@@ -206,6 +206,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A deck body starts with a heading (breaking).** A line that sits before
+  the first `#` or `##`, outside any card, is now a parse error rather than
+  silently becoming the section context of the cards above the first heading.
+  A deck of plain cards still needs no section: opening with `##` is fine and
+  those cards have no context. What a deck is about belongs in `title:` and
+  `description:`.
 - Every shipped deck now declares its name in frontmatter. The tutorial, the
   four decks bundled with the mobile app, and the nine committed examples
   carried an `# ` heading from the era when that heading was the deck's
