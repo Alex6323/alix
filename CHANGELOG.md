@@ -258,8 +258,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   content: setext `===` underlines, indented code blocks, nested `> >`
   quotes, and `***`/`___` breaks inside a card (paragraph and task-list
   continuations, fence interiors, and standalone `===` lines stay
-  legal). Trailing-space hard breaks are a non-spelling: content lines
-  shed trailing whitespace.
+  legal). In the section-context view a `***`/`___` line renders as a
+  horizontal rule, keeping a pasted document's topic separators.
+  Trailing-space hard breaks are a non-spelling: content lines shed
+  trailing whitespace.
 
 - Markup-rejection parse errors are onboarding surfaces: every message
   that fires on ordinary pasted Markdown (an answerless heading, a deep

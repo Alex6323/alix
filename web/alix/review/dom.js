@@ -305,6 +305,16 @@ export function maskedImage(img, regions, prefix, onAskedGone) {
   return wrap;
 }
 
+function isRuleLine(line) {
+  const t = String(line || "").trim();
+  if (!t) return false;
+  return ["*", "_"].some(
+    (marker) =>
+      [...t].every((c) => c === marker || c === " " || c === "\t") &&
+      [...t].filter((c) => c === marker).length >= 3
+  );
+}
+
 export function appendReveal(parent, lines, runs, isList, units, makeDiagram) {
   walkFences(parent, lines, units, (index) => {
     const line = el("div", "answer");
@@ -319,6 +329,10 @@ export function appendReveal(parent, lines, runs, isList, units, makeDiagram) {
 // math, the labelling style); only fence slots consume context_units.
 export function appendContext(parent, lines, runs, units, cls, makeDiagram) {
   walkFences(parent, lines || [], units, (index) => {
+    if (isRuleLine(lines[index])) {
+      parent.appendChild(el("hr", "context-rule"));
+      return;
+    }
     parent.appendChild(contextLine(lines[index], runs && runs[index], cls));
   }, makeDiagram);
 }

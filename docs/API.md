@@ -629,7 +629,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `front_units` | [NoteUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
 | `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question, so a client shows it only on demand and never by default. Image syntax inside it is prose, not a media element. |
 | `section_context_runs` | [[InlineRun]] | Display projection per section line, same shape as `context_runs`. |
-| `section_context_units` | [NoteUnitDto] | The section's fence-shaped units only, in fence order, same alignment law as `context_units`. Always `code`: nothing freezes a section's fence, so a section never yields a `diagram`. |
+| `section_context_units` | [NoteUnitDto] | The section's fence-shaped units only, in fence order, same alignment law as `context_units`. Always `code`: nothing freezes a section's fence, so a section never yields a `diagram`. A `***`/`___` break line in the section renders as a horizontal rule; clients detect it from the line, like fences, so no unit carries it. |
 | `context` | [string] | Context lines: a cloze card's sentence, or a card table's title. |
 | `context_leads` | bool | True when `context` is the question and the front is a topic above it (cloze); false when `context` only labels the front, which keeps the lead (table title). |
 | `context_runs` | [[InlineRun]] | Display projection per cloze context line. |

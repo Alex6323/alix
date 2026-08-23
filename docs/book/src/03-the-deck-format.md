@@ -356,7 +356,8 @@ blank line or a heading (wrap the code in a ``` fence; ordinary paragraph
 and task-list continuation lines are unaffected), a nested `> >` quote
 (notes are flat, one `>` deep; put literal `>` text in a fence), and a
 `***` or `___` thematic break inside a card (delete it, or move the
-material to a section). Inside fenced code every shape is literal, as
+material to a section, where the break renders as a horizontal rule in the
+section view). Inside fenced code every shape is literal, as
 always. A trailing-two-space hard break is not a spelling at all: content
 lines shed trailing whitespace when the deck is read.
 
