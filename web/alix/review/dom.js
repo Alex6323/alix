@@ -150,6 +150,11 @@ export function frontEl(text, runs, units) {
   return wrap;
 }
 
+function closesFence(line, marker) {
+  const t = line.trim();
+  return t.length >= marker.length && [...t].every((c) => c === marker[0]);
+}
+
 // The ONE fence walk (docs/API.md alignment law): fence-shaped units arrive
 // in the same document order as the raw fences, the nth closed fence
 // consumes the nth unit, and a resolved diagram replaces its fence only
@@ -163,12 +168,12 @@ function walkFences(parent, lines, units, onLine, makeDiagram) {
   let fenceIndex = 0;
   let index = 0;
   while (index < lines.length) {
-    const fence = lines[index].trim().match(/^(```|~~~)/);
+    const fence = lines[index].trim().match(/^(`{3,}|~{3,})/);
     if (fence) {
       const marker = fence[1];
       const code = [];
       index++;
-      while (index < lines.length && lines[index].trim() !== marker) {
+      while (index < lines.length && !closesFence(lines[index], marker)) {
         code.push(lines[index]);
         index++;
       }

@@ -40,7 +40,7 @@ type BuiltPiece = (String, bool, Vec<(usize, usize)>);
 pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -> MaskableStream {
     let mut text = String::new();
     let mut lines = Vec::new();
-    let mut fence: Option<char> = None;
+    let mut fence: Option<(char, usize)> = None;
     let mut first = true;
     let mut include =
         |built: Vec<BuiltPiece>, index: usize, text: &mut String, lines: &mut Vec<StreamLine>| {
@@ -64,8 +64,8 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
             });
         };
     for (index, ((_, raw), segments)) in answer.iter().zip(parsed).enumerate() {
-        if let Some(ch) = fence {
-            if super::closes_fence(raw, ch) {
+        if let Some((ch, open)) = fence {
+            if super::closes_fence(raw, ch, open) {
                 fence = None;
                 continue;
             }
@@ -79,8 +79,8 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
             include(vec![(raw.clone(), true, map)], index, &mut text, &mut lines);
             continue;
         }
-        if let Some(ch) = super::fence_opener(raw) {
-            fence = Some(ch);
+        if let Some(opened) = super::fence_opener(raw) {
+            fence = Some(opened);
             continue;
         }
         if segments.iter().any(|seg| matches!(seg, Seg::Image { .. })) {
@@ -325,6 +325,12 @@ mod tests {
             "fenced code contents are matchable"
         );
         assert_eq!(Some((1, 4..5)), s.splice(&(4..5)));
+    }
+
+    #[test]
+    fn a_shorter_delimiter_inside_a_longer_fence_is_matchable_content() {
+        let s = stream(&["````", "inner", "```", "also", "````"]);
+        assert_eq!("inner\n```\nalso", s.text);
     }
 
     #[test]

@@ -259,10 +259,13 @@ fn project_lines(
 ) -> (Vec<String>, Vec<Vec<InlineRun>>) {
     let mut content = Vec::with_capacity(lines.len());
     let mut display = Vec::with_capacity(lines.len());
-    let mut code_fence = None;
+    let mut code_fence: Option<(char, usize)> = None;
     for line in lines {
         let marker = fence_marker(line);
-        let fence = marker.is_some_and(|marker| code_fence.is_none() || code_fence == Some(marker));
+        let fence = marker.is_some_and(|(ch, run)| match code_fence {
+            None => true,
+            Some((open, len)) => open == ch && run >= len,
+        });
         let runs = if code_fence.is_some() || fence {
             literal_runs(line)
         } else {
@@ -277,12 +280,16 @@ fn project_lines(
     (content, display)
 }
 
-fn fence_marker(line: &str) -> Option<char> {
+fn fence_marker(line: &str) -> Option<(char, usize)> {
     let trimmed = line.trim_start();
-    trimmed
-        .starts_with("```")
-        .then_some('`')
-        .or_else(|| trimmed.starts_with("~~~").then_some('~'))
+    let ch = if trimmed.starts_with("```") {
+        '`'
+    } else if trimmed.starts_with("~~~") {
+        '~'
+    } else {
+        return None;
+    };
+    Some((ch, trimmed.chars().take_while(|c| *c == ch).count()))
 }
 
 fn literal_runs(text: &str) -> Vec<InlineRun> {
@@ -648,6 +655,17 @@ mod tests {
     #[test]
     fn only_the_matching_marker_closes_a_projected_code_fence() {
         let lines = ["```", "$x$", "~~~", "$y$", "```", "$z$"]
+            .map(str::to_string)
+            .to_vec();
+        let mut projector = DisplayProjector::default();
+        let (_, runs) = project_lines(&lines, &mut projector);
+        assert!(runs[..5].iter().flatten().all(|run| run.math.is_none()));
+        assert!(runs[5].iter().any(|run| run.math.is_some()));
+    }
+
+    #[test]
+    fn a_shorter_marker_does_not_close_a_longer_projected_fence() {
+        let lines = ["````", "$x$", "```", "$y$", "````", "$z$"]
             .map(str::to_string)
             .to_vec();
         let mut projector = DisplayProjector::default();

@@ -8,16 +8,16 @@ use super::{closes_fence, collapse, fence_opener};
 // a silent refactor.
 pub fn canonical_content(front: &str, back: &[String]) -> String {
     let mut out = collapse(&crate::inline::strip_inline(front));
-    let mut fence: Option<char> = None;
+    let mut fence: Option<(char, usize)> = None;
     let mut prose = String::new();
     for line in back {
-        if let Some(ch) = fence {
+        if let Some((ch, open)) = fence {
             out.push('\n');
             out.push_str(line);
-            if closes_fence(line, ch) {
+            if closes_fence(line, ch, open) {
                 fence = None;
             }
-        } else if let Some(ch) = fence_opener(line) {
+        } else if let Some(opened) = fence_opener(line) {
             if !prose.is_empty() {
                 out.push('\n');
                 out.push_str(&prose);
@@ -25,7 +25,7 @@ pub fn canonical_content(front: &str, back: &[String]) -> String {
             }
             out.push('\n');
             out.push_str(line);
-            fence = Some(ch);
+            fence = Some(opened);
         } else {
             let collapsed = collapse(&crate::inline::strip_inline(line));
             if !collapsed.is_empty() {

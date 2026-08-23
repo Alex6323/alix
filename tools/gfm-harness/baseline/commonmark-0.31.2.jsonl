@@ -121,10 +121,10 @@
 {"e":121,"g":[4],"cards":1,"back":"exact"}
 {"e":122,"g":[4],"cards":1,"back":"exact"}
 {"e":123,"g":[4],"cards":1,"back":"exact"}
-{"e":124,"g":[4],"lints":["Lint { line: 5, kind: UnclosedFence }"],"cards":1,"back":"ws"}
-{"e":125,"g":[4],"lints":["Lint { line: 5, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":124,"g":[4],"cards":1,"back":"exact"}
+{"e":125,"g":[4],"cards":1,"back":"exact"}
 {"e":126,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
-{"e":127,"g":[4],"cards":1,"back":"exact"}
+{"e":127,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
 {"e":128,"g":[4],"cards":1,"back":"div"}
 {"e":129,"g":[4],"cards":1,"back":"exact"}
 {"e":130,"g":[4],"cards":1,"back":"exact"}

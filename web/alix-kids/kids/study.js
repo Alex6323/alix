@@ -278,6 +278,11 @@ function renderLines(card) {
   return wrap;
 }
 
+function closesFence(line, marker) {
+  const t = line.trim();
+  return t.length >= marker.length && [...t].every((c) => c === marker[0]);
+}
+
 // The ONE fence walk (the same alignment law as the adult client):
 // fence-shaped units arrive in document order, the nth closed fence
 // consumes the nth such unit, a resolved diagram replaces its fence in
@@ -291,12 +296,12 @@ function walkFences(parent, lines, shown, units, onLine, makeDiagram) {
   let fenceIndex = 0;
   let i = 0;
   while (i < shown) {
-    const fence = lines[i].trim().match(/^(```|~~~)/);
+    const fence = lines[i].trim().match(/^(`{3,}|~{3,})/);
     if (fence) {
       const marker = fence[1];
       const code = [];
       i++;
-      while (i < shown && lines[i].trim() !== marker) {
+      while (i < shown && !closesFence(lines[i], marker)) {
         code.push(lines[i]);
         i++;
       }

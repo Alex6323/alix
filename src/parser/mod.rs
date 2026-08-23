@@ -728,19 +728,20 @@ fn collapse(s: &str) -> String {
         .join(" ")
 }
 
-pub(crate) fn fence_opener(line: &str) -> Option<char> {
-    if line.starts_with("```") {
-        Some('`')
+pub(crate) fn fence_opener(line: &str) -> Option<(char, usize)> {
+    let ch = if line.starts_with("```") {
+        '`'
     } else if line.starts_with("~~~") {
-        Some('~')
+        '~'
     } else {
-        None
-    }
+        return None;
+    };
+    Some((ch, line.chars().take_while(|c| *c == ch).count()))
 }
 
-pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
+pub(crate) fn closes_fence(line: &str, ch: char, open: usize) -> bool {
     let run = line.chars().take_while(|c| *c == ch).count();
-    run >= 3 && line.chars().skip(run).all(|c| WHITESPACE.contains(&c))
+    run >= open && line.chars().skip(run).all(|c| WHITESPACE.contains(&c))
 }
 
 // ── The line scanner ──
@@ -784,7 +785,7 @@ fn scan(
     let mut section: Vec<String> = Vec::new();
     let mut seen_heading = false;
     let mut skip_delimiter = false;
-    let mut fence: Option<(char, usize)> = None;
+    let mut fence: Option<(char, usize, usize)> = None;
     let mut prev_blank = false;
     let mut prev_heading = false;
     let mut pending: Option<Mapping> = None;
@@ -833,9 +834,9 @@ fn scan(
             }
         }
 
-        if let Some((ch, _)) = fence {
+        if let Some((ch, open, _)) = fence {
             pending = None;
-            if closes_fence(raw, ch) {
+            if closes_fence(raw, ch, open) {
                 fence = None;
             }
             if current.is_none() {
@@ -856,9 +857,9 @@ fn scan(
             continue;
         }
 
-        if let Some(ch) = fence_opener(raw) {
+        if let Some((ch, open)) = fence_opener(raw) {
             pending = None;
-            fence = Some((ch, lineno));
+            fence = Some((ch, open, lineno));
             if current.is_none() {
                 section_line(
                     &mut section,
@@ -1203,7 +1204,7 @@ fn scan(
         prev_heading = false;
     }
 
-    if let Some((_, open_line)) = fence {
+    if let Some((_, _, open_line)) = fence {
         lints.push(Lint {
             line: open_line,
             kind: LintKind::UnclosedFence,
@@ -1392,10 +1393,10 @@ fn capture_answer_fences(
 ) -> Vec<crate::card::AnswerFence> {
     use crate::render::{fence_info, fence_marker};
     let mut fences = Vec::new();
-    let mut open: Option<(char, bool, usize)> = None;
+    let mut open: Option<(char, usize, bool, usize)> = None;
     for (index, (_, text)) in answer.iter().enumerate() {
         match (open, fence_marker(text)) {
-            (Some((ch, mermaid, from)), Some(marker)) if ch == marker => {
+            (Some((ch, len, mermaid, from)), Some((marker, run))) if ch == marker && run >= len => {
                 open = None;
                 if !mermaid {
                     continue;
@@ -1429,9 +1430,9 @@ fn capture_answer_fences(
                 });
             }
             (Some(_), _) => {}
-            (None, Some(marker)) => {
+            (None, Some((marker, run))) => {
                 let mermaid = fence_info(text, marker).eq_ignore_ascii_case("mermaid");
-                open = Some((marker, mermaid, index + 1));
+                open = Some((marker, run, mermaid, index + 1));
             }
             (None, None) => {}
         }
@@ -2222,15 +2223,15 @@ fn build_card_inner(
     let mut has_other = false;
     let mut fence = None;
     for ((lineno, text), segments) in answer.iter().zip(&parsed) {
-        if let Some(ch) = fence {
-            if closes_fence(text, ch) {
+        if let Some((ch, open)) = fence {
+            if closes_fence(text, ch, open) {
                 fence = None;
             }
             has_other = true;
             continue;
         }
-        if let Some(ch) = fence_opener(text) {
-            fence = Some(ch);
+        if let Some(opened) = fence_opener(text) {
+            fence = Some(opened);
             has_other = true;
             continue;
         }
@@ -3717,6 +3718,68 @@ a
         let deck = parse("## q\n---\n```\n## not a front\n```\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["```", "## not a front", "```"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn fence_openers_carry_their_run_and_closers_need_at_least_it() {
+        assert_eq!(Some(('`', 3)), fence_opener("```rust"));
+        assert_eq!(Some(('~', 4)), fence_opener("~~~~ info"));
+        assert_eq!(None, fence_opener("``"));
+        assert!(closes_fence("`````", '`', 4), "longer closes");
+        assert!(
+            closes_fence("````\t ", '`', 4),
+            "trailing whitespace closes"
+        );
+        assert!(!closes_fence("```", '`', 4), "shorter never closes");
+        assert!(
+            !closes_fence("```` x", '`', 4),
+            "trailing text is not a closer"
+        );
+        assert!(
+            !closes_fence("~~~~", '`', 4),
+            "the other character never closes"
+        );
+    }
+
+    #[test]
+    fn a_shorter_delimiter_inside_a_longer_fence_is_content() {
+        for (label, text) in [
+            (
+                "backtick",
+                "## q\n---\n````\n```\n## not a front\n```\n````\ntail\n",
+            ),
+            (
+                "tilde",
+                "## q\n---\n~~~~\n~~~\n## not a front\n~~~\n~~~~\ntail\n",
+            ),
+        ] {
+            let deck = parse(text);
+            assert_eq!(1, deck.cards.len(), "{label}: nothing leaks out");
+            assert!(
+                deck.cards[0].back.iter().any(|l| l == "## not a front"),
+                "{label}: the inner heading stays fenced content, got {:?}",
+                deck.cards[0].back
+            );
+        }
+    }
+
+    #[test]
+    fn a_shorter_delimiter_never_closes_a_longer_fence() {
+        let deck = parse("## q\n---\n````\ncode\n```\n");
+        assert_eq!(
+            vec![Lint {
+                line: 3,
+                kind: LintKind::UnclosedFence
+            }],
+            deck.lints,
+            "a three-run delimiter cannot close a four-run fence"
+        );
+    }
+
+    #[test]
+    fn a_longer_delimiter_still_closes_a_shorter_fence() {
+        let deck = parse("## q\n---\n```\ncode\n`````\nafter\n");
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
     }
 
     #[test]
@@ -5834,6 +5897,20 @@ the answer
         let card = &deck.cards[0];
         assert_eq!(1, card.span_regions.len());
         assert!(card.images.is_empty() && card.images_back.is_empty());
+    }
+
+    #[test]
+    fn a_nested_fence_records_one_interior_including_the_shorter_delimiter() {
+        let deck = parse(
+            "## q\n````mermaid\nflowchart LR\n```\n  A[Load] --> B\n````\n<!-- blank: span hidden=\"Load\" -->\n",
+        );
+        let card = &deck.cards[0];
+        assert_eq!(1, card.answer_fences.len(), "{:?}", card.answer_fences);
+        assert_eq!(
+            "flowchart LR\n```\n  A[Load] --> B",
+            card.answer_fences[0].interior.as_ref(),
+            "the inner delimiter is interior, not a closer"
+        );
     }
 
     #[test]

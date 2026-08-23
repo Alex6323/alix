@@ -128,15 +128,17 @@ fn text_units_with(
     diagrams: &[crate::card::ResolvedDiagram],
 ) -> Vec<NoteUnit> {
     let mut units = Vec::new();
-    let mut code_fence: Option<(char, String)> = None;
+    let mut code_fence: Option<(char, usize, String)> = None;
     let mut code: Vec<String> = Vec::new();
     let mut prose = String::new();
     let mut checklist = Vec::new();
 
     for logical in text.lines() {
-        if let Some(marker) = fence_marker(logical) {
+        if let Some((marker, run)) = fence_marker(logical) {
             match &code_fence {
-                Some((open_marker, info)) if *open_marker == marker => {
+                Some((open_marker, open_run, info))
+                    if *open_marker == marker && run >= *open_run =>
+                {
                     // An empty fence keeps its unit slot: clients consume one
                     // fence-shaped unit per closed raw fence.
                     let block = std::mem::take(&mut code);
@@ -147,7 +149,7 @@ fn text_units_with(
                     flush_checklist(&mut checklist, &mut units);
                     flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
                     let info = fence_info(logical, marker);
-                    code_fence = Some((marker, info.to_string()));
+                    code_fence = Some((marker, run, info.to_string()));
                     code.clear();
                 }
                 Some(_) => {
@@ -190,7 +192,7 @@ fn text_units_with(
     flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
-        let info = code_fence.map(|(_, info)| info).unwrap_or_default();
+        let info = code_fence.map(|(_, _, info)| info).unwrap_or_default();
         units.push(fence_unit(&info, code, diagrams));
     }
     units
@@ -231,20 +233,20 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
     let fences = &card.answer_fences;
     let mut units = Vec::new();
     let mut records = fences.iter();
-    let mut open: Option<(char, bool)> = None;
+    let mut open: Option<(char, usize, bool)> = None;
     let mut interior: Vec<String> = Vec::new();
     for line in context {
         match (open, fence_marker(line)) {
-            (Some((ch, mermaid)), Some(marker)) if ch == marker => {
+            (Some((ch, len, mermaid)), Some((marker, run))) if ch == marker && run >= len => {
                 open = None;
                 let lines = std::mem::take(&mut interior);
                 let record = if mermaid { records.next() } else { None };
                 units.push(context_fence_unit(card, mermaid, lines, record, diagrams));
             }
             (Some(_), _) => interior.push(line.clone()),
-            (None, Some(marker)) => {
+            (None, Some((marker, run))) => {
                 let mermaid = fence_info(line, marker).eq_ignore_ascii_case("mermaid");
-                open = Some((marker, mermaid));
+                open = Some((marker, run, mermaid));
             }
             (None, None) => {}
         }
@@ -261,18 +263,18 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
 /// freezes a section's fence, so there is no record to resolve it against.
 pub(crate) fn section_units(lines: &[String]) -> Vec<NoteUnit> {
     let mut units = Vec::new();
-    let mut open: Option<char> = None;
+    let mut open: Option<(char, usize)> = None;
     let mut interior: Vec<String> = Vec::new();
     for line in lines {
         match (open, fence_marker(line)) {
-            (Some(ch), Some(marker)) if ch == marker => {
+            (Some((ch, len)), Some((marker, run))) if ch == marker && run >= len => {
                 open = None;
                 units.push(NoteUnit::Code {
                     lines: std::mem::take(&mut interior),
                 });
             }
             (Some(_), _) => interior.push(line.clone()),
-            (None, Some(marker)) => open = Some(marker),
+            (None, Some(opened)) => open = Some(opened),
             (None, None) => {}
         }
     }
@@ -407,12 +409,16 @@ fn masked_diagram_unit(
     })
 }
 
-pub(crate) fn fence_marker(line: &str) -> Option<char> {
+pub(crate) fn fence_marker(line: &str) -> Option<(char, usize)> {
     let trimmed = line.trim_start();
-    trimmed
-        .starts_with("```")
-        .then_some('`')
-        .or_else(|| trimmed.starts_with("~~~").then_some('~'))
+    let ch = if trimmed.starts_with("```") {
+        '`'
+    } else if trimmed.starts_with("~~~") {
+        '~'
+    } else {
+        return None;
+    };
+    Some((ch, trimmed.chars().take_while(|c| *c == ch).count()))
 }
 
 pub(crate) fn fence_info(line: &str, marker: char) -> &str {
@@ -600,6 +606,17 @@ mod tests {
             panic!("display math should be a sentence unit");
         };
         assert!(runs[0].math.as_ref().unwrap().display);
+    }
+
+    #[test]
+    fn a_nested_fence_is_one_note_code_unit_to_its_matching_closer() {
+        let units = note_units(&card_with_note("````\n```\ncode\n```\n````"));
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["```".into(), "code".into(), "```".into()]
+            }]
+        );
     }
 
     #[test]
@@ -823,6 +840,21 @@ mod tests {
         );
         assert_eq!(source, alt, "the fence source is the accessible text");
         assert!(matches!(&units[2], NoteUnit::Sentence { text, .. } if text == "after"));
+    }
+
+    #[test]
+    fn a_nested_context_fence_is_one_code_unit_to_its_matching_closer() {
+        let context: Vec<String> = ["````", "a", "```", "b", "````"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let units = context_units_with(&context_card(&context, Vec::new(), Vec::new()));
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["a".into(), "```".into(), "b".into()]
+            }]
+        );
     }
 
     fn context_card(

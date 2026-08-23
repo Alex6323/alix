@@ -515,17 +515,17 @@ fn clean_output(raw: &str) -> String {
 fn space_cards(lines: &[&str]) -> String {
     let mut out: Vec<&str> = Vec::with_capacity(lines.len());
     let mut seen_card = false;
-    let mut fence: Option<char> = None;
+    let mut fence: Option<(char, usize)> = None;
     for &line in lines {
         match fence {
-            Some(ch) => {
-                if crate::parser::closes_fence(line, ch) {
+            Some((ch, open)) => {
+                if crate::parser::closes_fence(line, ch, open) {
                     fence = None;
                 }
             }
             None => {
-                if let Some(ch) = crate::parser::fence_opener(line) {
-                    fence = Some(ch);
+                if let Some(opened) = crate::parser::fence_opener(line) {
+                    fence = Some(opened);
                 } else if line.starts_with("## ") {
                     if seen_card && out.last().is_some_and(|prev| !prev.trim().is_empty()) {
                         out.push("");

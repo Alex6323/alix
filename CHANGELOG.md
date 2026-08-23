@@ -431,6 +431,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Code fences follow the CommonMark closing-length rule: a fence closes only
+  on a delimiter of its own character at least as long as its opener. A
+  four-backtick fence can now wrap a three-backtick sample the way GitHub
+  renders it, instead of splitting into two blocks and leaking the sample as
+  prose; a shorter delimiter leaves the fence open, reported by the
+  unclosed-fence lint at the opener line.
+
 - Frontmatter holding more than one YAML document is rejected loudly. A
   mid-line carriage return could smuggle a `---` document separator past
   the line scanner; the stamper then spliced the deck id into the

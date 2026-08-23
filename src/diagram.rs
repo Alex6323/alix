@@ -68,7 +68,7 @@ pub fn fences(lines: &[String]) -> Vec<Fence> {
     // has to be consumed, or its interior could be read as a diagram, but it
     // never yields one. An Option carries that where a magic index would not:
     // both exit paths must handle it, so neither can drop the distinction.
-    let mut open: Option<(char, Option<usize>, Vec<String>)> = None;
+    let mut open: Option<(char, usize, Option<usize>, Vec<String>)> = None;
     let close = |opener: Option<usize>, body: Vec<String>, found: &mut Vec<Fence>| {
         if let Some(opener) = opener {
             found.push(Fence {
@@ -79,24 +79,24 @@ pub fn fences(lines: &[String]) -> Vec<Fence> {
     };
     for (index, line) in lines.iter().enumerate() {
         match &mut open {
-            Some((ch, _, body)) => {
-                if crate::parser::closes_fence(line, *ch) {
-                    let (_, opener, body) = open.take().expect("the fence is open");
+            Some((ch, len, _, body)) => {
+                if crate::parser::closes_fence(line, *ch, *len) {
+                    let (_, _, opener, body) = open.take().expect("the fence is open");
                     close(opener, body, &mut found);
                 } else {
                     body.push(line.clone());
                 }
             }
             None => {
-                if let Some(ch) = crate::parser::fence_opener(line) {
+                if let Some((ch, len)) = crate::parser::fence_opener(line) {
                     let info = line.trim_start_matches(ch).trim();
                     let opener = info.eq_ignore_ascii_case(LANGUAGE).then_some(index);
-                    open = Some((ch, opener, Vec::new()));
+                    open = Some((ch, len, opener, Vec::new()));
                 }
             }
         }
     }
-    if let Some((_, opener, body)) = open {
+    if let Some((_, _, opener, body)) = open {
         close(opener, body, &mut found);
     }
     found
@@ -334,7 +334,7 @@ pub fn attached_stamp_freshness(
 /// already on the line after it. Frontmatter lines are skipped.
 pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> DocumentFences {
     let mut found = DocumentFences::default();
-    let mut open: Option<(char, Option<Vec<String>>)> = None;
+    let mut open: Option<(char, usize, Option<Vec<String>>)> = None;
     let mut pending: Option<RawFence> = None;
     let mut offset = 0;
     for (index, raw_line) in text.split_inclusive('\n').enumerate() {
@@ -363,9 +363,9 @@ pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> Do
             found.fences.push(fence);
         }
         match &mut open {
-            Some((ch, body)) => {
-                if crate::parser::closes_fence(line, *ch) {
-                    let (_, body) = open.take().expect("the fence is open");
+            Some((ch, len, body)) => {
+                if crate::parser::closes_fence(line, *ch, *len) {
+                    let (_, _, body) = open.take().expect("the fence is open");
                     if let Some(body) = body {
                         pending = Some(RawFence {
                             source: body.join("\n"),
@@ -378,10 +378,10 @@ pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> Do
                 }
             }
             None => {
-                if let Some(ch) = crate::parser::fence_opener(line) {
+                if let Some((ch, len)) = crate::parser::fence_opener(line) {
                     let info = line.trim_start_matches(ch).trim();
                     let body = info.eq_ignore_ascii_case(LANGUAGE).then(Vec::new);
-                    open = Some((ch, body));
+                    open = Some((ch, len, body));
                 }
             }
         }
@@ -389,7 +389,7 @@ pub fn fences_in_document(text: &str, frontmatter: Option<(usize, usize)>) -> Do
     if let Some(fence) = pending {
         found.fences.push(fence);
     }
-    if let Some((_, body)) = open {
+    if let Some((_, _, body)) = open {
         found.unclosed = body.is_some();
     }
     found
@@ -1477,6 +1477,14 @@ mod tests {
     fn a_mermaid_line_inside_another_fence_is_not_a_diagram() {
         let block = lines("```text\n```mermaid\nflowchart LR\n A-->B\n```\n```");
         assert_eq!(Vec::<Fence>::new(), fences(&block));
+    }
+
+    #[test]
+    fn a_shorter_delimiter_stays_inside_a_longer_mermaid_fence() {
+        let block = lines("````mermaid\nflowchart LR\n```\n A-->B\n````");
+        let found = fences(&block);
+        assert_eq!(1, found.len(), "{found:?}");
+        assert_eq!("flowchart LR\n```\n A-->B", found[0].source);
     }
 
     #[test]

@@ -109,6 +109,10 @@ echo hi
 ```
 ````
 
+A fence closes only on a delimiter of its own character at least as long as
+its opener (the CommonMark closing-length rule); that is what lets the
+four-backtick fence above contain the three-backtick one.
+
 ## Multi-line fronts
 
 When the question itself spans more than one line, a `---` divider marks where it

@@ -1518,17 +1518,17 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
     let mut open = false;
     let mut blocks: Vec<Vec<&str>> = Vec::new();
     // Tracks fences so a `## ` line inside a code fence doesn't start a bogus block.
-    let mut fence: Option<char> = None;
+    let mut fence: Option<(char, usize)> = None;
     for raw in text.lines() {
         match fence {
-            Some(ch) => {
-                if crate::parser::closes_fence(raw, ch) {
+            Some((ch, open)) => {
+                if crate::parser::closes_fence(raw, ch, open) {
                     fence = None;
                 }
             }
             None => {
-                if let Some(ch) = crate::parser::fence_opener(raw) {
-                    fence = Some(ch);
+                if let Some(opened) = crate::parser::fence_opener(raw) {
+                    fence = Some(opened);
                 } else if let Some((depth, _)) = crate::parser::heading_depth(raw) {
                     if (2..=4).contains(&depth) {
                         blocks.push(vec![raw]);
@@ -2855,6 +2855,12 @@ mod tests {
         assert!(blocks[0].contains("<!-- reveal: line -->"));
         assert!(blocks[0].contains("#[derive(Clone)]"));
         assert!(blocks[0].contains("#? not a front"));
+    }
+
+    #[test]
+    fn split_card_blocks_keeps_a_front_inside_a_nested_fence_in_its_block() {
+        let blocks = split_card_blocks("## q\n````\n```\n## nope\n```\n````\n");
+        assert_eq!(1, blocks.len(), "{blocks:?}");
     }
 
     #[test]

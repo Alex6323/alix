@@ -493,7 +493,7 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), StampError> {
 
 fn block_end_line(text: &str, front_line: usize) -> usize {
     let mut last = front_line;
-    let mut fence: Option<char> = None;
+    let mut fence: Option<(char, usize)> = None;
     let mut line = front_line;
     loop {
         line += 1;
@@ -503,15 +503,15 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
         let rest = &text[start..];
         let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
 
-        if let Some(ch) = fence {
-            if parser::closes_fence(raw, ch) {
+        if let Some((ch, open)) = fence {
+            if parser::closes_fence(raw, ch, open) {
                 fence = None;
             }
             last = line;
             continue;
         }
-        if let Some(ch) = parser::fence_opener(raw) {
-            fence = Some(ch);
+        if let Some(opened) = parser::fence_opener(raw) {
+            fence = Some(opened);
             last = line;
             continue;
         }
@@ -555,19 +555,19 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
 pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
     let lines: Vec<&str> = text.lines().collect();
     let mut found = Vec::new();
-    let mut fence: Option<char> = None;
+    let mut fence: Option<(char, usize)> = None;
     let mut block_end: Option<usize> = None;
     for (index, raw) in lines.iter().enumerate() {
         let raw = *raw;
         let line = index + 1;
-        if let Some(ch) = fence {
-            if parser::closes_fence(raw, ch) {
+        if let Some((ch, open)) = fence {
+            if parser::closes_fence(raw, ch, open) {
                 fence = None;
             }
             continue;
         }
-        if let Some(ch) = parser::fence_opener(raw) {
-            fence = Some(ch);
+        if let Some(opened) = parser::fence_opener(raw) {
+            fence = Some(opened);
             continue;
         }
         if raw.starts_with('|')
@@ -807,6 +807,12 @@ mod tests {
     #[test]
     fn a_marker_lookalike_inside_a_fence_is_not_a_marker() {
         let text = "## q\na\n```\n<!-- id: card-fake -->\n```\n<!-- id: card-q1 -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
+    }
+
+    #[test]
+    fn a_marker_after_a_shorter_delimiter_is_still_inside_the_fence() {
+        let text = "## q\na\n````\n```\n<!-- id: card-fake -->\n````\n<!-- id: card-q1 -->\n";
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
     }
 
@@ -1458,6 +1464,20 @@ mod tests {
             original,
             fs::read_to_string(&path).unwrap(),
             "a refusal must not write: the id would land inside the fence"
+        );
+    }
+
+    #[test]
+    fn a_shorter_delimiter_does_not_close_the_fence_for_stamping() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\n~~~~\nc\n~~~\n";
+        let path = write(&dir, "deck.md", original);
+
+        let error = stamp_deck(&path).unwrap_err();
+
+        assert!(
+            matches!(&error, StampError::UnclosedFence { line: 6, .. }),
+            "{error:?}"
         );
     }
 
