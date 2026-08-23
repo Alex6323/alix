@@ -98,6 +98,12 @@ fn load_frontmatter(
         line: first_line + e.marker().line().saturating_sub(1),
         message: e.info().to_string(),
     })?;
+    if docs.len() > 1 {
+        return Err(ParseError::FrontmatterSyntax {
+            line: first_line,
+            message: "the block holds more than one yaml document".into(),
+        });
+    }
     let Some(root) = docs.into_iter().next() else {
         return Ok(frontmatter);
     };

@@ -3546,6 +3546,15 @@ a
     }
 
     #[test]
+    fn a_second_yaml_document_smuggled_by_a_carriage_return_is_rejected() {
+        let e = err("---\n:\r---\n---\n## q\na\n");
+        let ParseError::FrontmatterSyntax { message, .. } = e else {
+            panic!("expected FrontmatterSyntax, got {e:?}");
+        };
+        assert!(message.contains("more than one yaml document"), "{message}");
+    }
+
+    #[test]
     fn an_empty_frontmatter_is_fine() {
         let deck = parse("---\n---\n## q\na\n");
         assert_eq!(Frontmatter::default(), deck.frontmatter);

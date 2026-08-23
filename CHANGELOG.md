@@ -429,6 +429,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Frontmatter holding more than one YAML document is rejected loudly. A
+  mid-line carriage return could smuggle a `---` document separator past
+  the line scanner; the stamper then spliced the deck id into the
+  invisible second document and a second stamp failed on the duplicate
+  key (found by the weekly stamper fuzzing).
+
 - Long section context no longer replaces the adult review question and pushes
   the card's answer choices down the page. A compact control below the divider
   now swaps context into the answer area while the question stays fixed.
