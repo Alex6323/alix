@@ -103,7 +103,18 @@ type RootMeta = Vec<(PathBuf, Option<(SystemTime, u64)>)>;
 
 fn stat(path: &Path) -> Option<(SystemTime, u64)> {
     let meta = std::fs::metadata(path).ok()?;
-    Some((meta.modified().ok()?, meta.len()))
+    let modified = meta.modified().ok()?;
+    // A directory's len discriminates nothing (0 on Windows, a frozen block
+    // size on ext4), so a same-tick member add was invisible; the entry
+    // count sees it on every platform.
+    let size = if meta.is_dir() {
+        std::fs::read_dir(path)
+            .map(|entries| entries.count() as u64)
+            .unwrap_or(0)
+    } else {
+        meta.len()
+    };
+    Some((modified, size))
 }
 
 fn root_meta(decks_dir: &Path, recent: &RecentDecks) -> RootMeta {
@@ -803,6 +814,21 @@ mod tests {
 
         std::fs::rename(&away, &root).unwrap();
         assert!(matches!(s.resolve("alpha.md"), Resolved::One(_)));
+    }
+
+    #[test]
+    fn a_tracked_directorys_meta_changes_with_its_entry_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().join("members");
+        std::fs::create_dir(&d).unwrap();
+        std::fs::write(d.join("one.md"), "x").unwrap();
+        let first = stat(&d).unwrap();
+        std::fs::write(d.join("two.md"), "y").unwrap();
+        let second = stat(&d).unwrap();
+        assert_ne!(
+            first.1, second.1,
+            "an added entry must move the size component, mtime ticks aside"
+        );
     }
 
     #[test]
