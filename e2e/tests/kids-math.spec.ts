@@ -57,6 +57,8 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
         reveal: kids.revealKidsAnswer,
         backCount: kids.kidsBackCount,
         choiceMode: kids.kidsChoiceMode,
+        multiMode: kids.kidsMultiMode,
+        toggle: kids.toggleKidsChoice,
         revealDone: kids.kidsRevealDone,
         screen: kids.kidsStudyScreen,
       },

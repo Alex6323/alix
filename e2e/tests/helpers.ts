@@ -37,7 +37,8 @@ export async function openApp(page: Page): Promise<void> {
 }
 
 export function kidsDeckRow(page: Page, name: string): Locator {
-  return page.locator(".deck-row").filter({ has: page.locator(".deck-label", { hasText: name, exact: true }) });
+  const exact = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+  return page.locator(".deck-row").filter({ has: page.locator(".deck-label", { hasText: exact }) });
 }
 
 // Same idea for the adult picker's `.deckrow` (name in a `.name` span,
