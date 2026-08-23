@@ -1236,7 +1236,13 @@ fn scan(
         if let Some(rest) = t.strip_prefix('>') {
             pending = None;
             let text = rest.strip_prefix(' ').unwrap_or(rest);
-            if text.starts_with('>') {
+            // Inside an open note `$$` block the text after the one note
+            // marker is verbatim math source, so a leading `>` is the
+            // comparison operator, not a nested quote.
+            let note_math_open = current
+                .as_ref()
+                .is_some_and(|card| card.open_note_math.is_some());
+            if text.starts_with('>') && !note_math_open {
                 return Err(ParseError::NestedQuote(lineno));
             }
             match current.as_mut() {
@@ -4580,6 +4586,12 @@ a
             ParseError::UnclosedDisplayMath(3),
             "a note uses the same display-math spelling and hard-error contract"
         );
+    }
+
+    #[test]
+    fn a_display_math_note_keeps_a_greater_than_source_line() {
+        let deck = parse("## Q\nanswer\n> $$\n> x^2\n> > 0\n> $$\n");
+        assert_eq!(deck.cards[0].note.as_deref(), Some("$$\nx^2\n> 0\n$$"));
     }
 
     #[test]
