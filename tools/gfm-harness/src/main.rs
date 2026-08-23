@@ -485,7 +485,7 @@ mod tests {
 
         let broken = measure("test", example("##### five\nbody\n", "ATX headings"));
         let line = digest_line(&broken);
-        assert!(line.err.is_some(), "deep heading errors today: {line:?}");
+        assert!(line.err.is_some(), "a parentless deep heading errors: {line:?}");
         assert_eq!(None, line.cards);
         assert_eq!(None, line.back);
     }

@@ -150,8 +150,6 @@ pub enum ParseError {
     EmptyFront(usize),
     #[error("line {0}: card front without an answer")]
     FrontWithoutAnswer(usize),
-    #[error("line {0}: a heading deeper than `#### ` has no meaning")]
-    HeadingTooDeep(usize),
     #[error("line {0}: this sub-card has no open parent one level above it")]
     OrphanSubCard(usize),
     #[error("line {0}: a deck body starts with a heading; this line is before the first one")]
@@ -233,7 +231,6 @@ impl ParseError {
             Self::InvalidTitle { .. } => "invalid_title",
             Self::EmptyFront(_) => "empty_front",
             Self::FrontWithoutAnswer(_) => "front_without_answer",
-            Self::HeadingTooDeep(_) => "heading_too_deep",
             Self::OrphanSubCard(_) => "orphan_sub_card",
             Self::ProseBeforeFirstHeading(_) => "prose_before_first_heading",
             Self::EmptySection(_) => "empty_section",
@@ -265,7 +262,6 @@ impl ParseError {
             Self::UnclosedFrontmatter(line)
             | Self::EmptyFront(line)
             | Self::FrontWithoutAnswer(line)
-            | Self::HeadingTooDeep(line)
             | Self::OrphanSubCard(line)
             | Self::ProseBeforeFirstHeading(line)
             | Self::EmptySection(line)
@@ -535,7 +531,8 @@ fn section_carries_directive(rest: &str, line: usize) -> bool {
 
 pub(crate) fn heading_depth(raw: &str) -> Option<(usize, &str)> {
     let hashes = raw.len() - raw.trim_start_matches('#').len();
-    if hashes == 0 {
+    // ATX stops at six: seven or more hashes are ordinary prose (CommonMark).
+    if hashes == 0 || hashes > 6 {
         return None;
     }
     let rest = &raw[hashes..];
@@ -951,9 +948,6 @@ fn scan(
             && !(sidecar_mode() && depth != 2)
         {
             pending = None;
-            if depth > 4 {
-                return Err(ParseError::HeadingTooDeep(lineno));
-            }
             if depth == 1 {
                 if let Some(card) = current.take() {
                     blocks.push(RawBlock::Card(card));
@@ -2999,7 +2993,7 @@ c
                 Cards(3),
             ),
             (
-                "h5 is reserved",
+                "h5 is a sub-card under the full chain",
                 "## q
 a
 ### s
@@ -3010,10 +3004,38 @@ c
 d
 "
                 .into(),
-                Err(7),
+                Cards(4),
             ),
             (
-                "h6 is reserved",
+                "h6 completes the six-depth chain",
+                "## q
+a
+### s
+b
+#### t
+c
+##### u
+d
+###### v
+e
+"
+                .into(),
+                Cards(5),
+            ),
+            (
+                "h5 skipping h4 is an orphan",
+                "## q
+a
+### s
+b
+##### u
+d
+"
+                .into(),
+                Err(5),
+            ),
+            (
+                "h6 straight under h2 is an orphan",
                 "## q
 a
 ###### u
@@ -3021,6 +3043,15 @@ d
 "
                 .into(),
                 Err(3),
+            ),
+            (
+                "seven hashes are ordinary content",
+                "## q
+a
+####### deep
+"
+                .into(),
+                Cards(1),
             ),
             // ── the stack rule ──
             (

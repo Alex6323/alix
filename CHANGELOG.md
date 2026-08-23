@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Sub-cards now stack to `######`: heading depths 5 and 6 are sub-card
+  depths 3 and 4 under the same one-level-parent rule, so every ATX depth
+  has a meaning. Seven or more hashes are ordinary answer text per
+  CommonMark instead of an error.
+
 - `~~strikethrough~~` renders struck through on every client, as GitHub
   renders it: pure presentation with no study semantics, and grading keeps
   comparing the unstruck content. Exactly the double-tilde pair strikes; a

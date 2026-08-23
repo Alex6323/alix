@@ -59,8 +59,8 @@
 {"e":59,"g":[1],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
 {"e":60,"g":[1],"cards":1,"back":"exact"}
 {"e":61,"g":[1],"cards":1,"back":"exact"}
-{"e":62,"g":[13],"err":"line 6: a heading deeper than `#### ` has no meaning"}
-{"e":63,"g":[13],"err":"line 2: a heading deeper than `#### ` has no meaning"}
+{"e":62,"g":[13],"err":"line 1: card front without an answer"}
+{"e":63,"g":[13],"cards":1,"back":"exact"}
 {"e":64,"g":[13],"cards":1,"back":"ws"}
 {"e":65,"g":[13],"cards":1,"back":"div"}
 {"e":66,"g":[13],"err":"line 1: card front without an answer"}
@@ -69,7 +69,7 @@
 {"e":69,"g":[13],"cards":1,"back":"ws"}
 {"e":70,"g":[13],"cards":1,"back":"ws"}
 {"e":71,"g":[13],"err":"line 1: card front without an answer"}
-{"e":72,"g":[13],"err":"line 3: a heading deeper than `#### ` has no meaning"}
+{"e":72,"g":[13],"err":"line 3: this sub-card has no open parent one level above it"}
 {"e":73,"g":[13],"err":"line 1: card front without an answer"}
 {"e":74,"g":[13],"err":"line 1: card front without an answer"}
 {"e":75,"g":[13],"err":"line 1: card front without an answer"}

@@ -1530,7 +1530,7 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
                 if let Some(opened) = crate::parser::fence_opener(raw) {
                     fence = Some(opened);
                 } else if let Some((depth, _)) = crate::parser::heading_depth(raw) {
-                    if (2..=4).contains(&depth) {
+                    if (2..=6).contains(&depth) {
                         blocks.push(vec![raw]);
                         open = true;
                     } else {

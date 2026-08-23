@@ -278,7 +278,7 @@ answer doesn't give it away on the sibling cards. See
 ## Sections and sub-cards
 
 Heading depth decides a line's role. `##` is a card front, `#` opens a section,
-and `###`/`####` are sub-cards.
+and `###` through `######` are sub-cards.
 
 ### `#` — section context
 
@@ -317,7 +317,7 @@ Prose directly after a terminator belongs to no section and is an error; open a
 heading first. A terminator that ends nothing before the next `#` heading or the
 end of the deck still parses, and `alix doctor` points it out.
 
-### `###` and `####` — sub-cards
+### `###` to `######` — sub-cards
 
 A card written one level deeper than the card above it is a **sub-card** of it:
 the same card syntax, gated on the parent. A sub-card stays out of review until
@@ -333,13 +333,13 @@ An agreed starting sequence number in each direction.
 The SYN may have been lost; nothing else can distinguish that from a slow peer.
 ```
 
-Depth stacks: `####` hangs off the `###` above it. Two rules are enforced when
-the deck is read, so a mis-indented heading fails loudly instead of silently
-becoming a top-level card:
-
-- a sub-card needs its parent one level shallower actually open, so a `###`
-  with no `##` above it, or a `####` directly under a `##`, is an error;
-- nothing goes deeper than `####`.
+Depth stacks: `####` hangs off the `###` above it, down to `######` at the
+deepest, matching ATX's own ceiling. One rule is enforced when the deck is
+read, so a mis-indented heading fails loudly instead of silently becoming a
+top-level card: a sub-card needs its parent one level shallower actually
+open, so a `###` with no `##` above it, or a `####` directly under a `##`,
+is an error. Seven or more hashes are not a heading at all and stay ordinary
+answer text, as CommonMark reads them.
 
 A `##` closes every open sub-card chain, and a `#` clears the chain entirely.
 
