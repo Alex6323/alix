@@ -142,9 +142,11 @@ depth you picked: a flip or cloze reveal, a line reveal (it auto-scrolls to
 the newest line), a typing Reconstruct check (each line marked ✓/✗ with the
 correct answer shown, then you grade), an explain Reconstruct check, and the
 multiple-choice pick: a new card's attempt-first on-ramp, or a genuine
-Recognize-session question (tap an option; a correct pick offers the quiet "I
-guessed" undo). A revealed note uses the same content-column width and text
-size as the answer or choices above it. Controls are big tap targets and
+Recognize-session question. Pick-one cards submit when you tap an option;
+select-all cards let you toggle each answer independently, then submit the
+whole set at once. A correct pick offers the quiet "I guessed" undo. A
+revealed note uses the same content-column width and text size as the answer
+or choices above it. Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The

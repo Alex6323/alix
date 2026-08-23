@@ -71,6 +71,7 @@ export function createStudy({
   let sectionView = clientModel.sectionView;
   let answerConcealed = clientModel.answerConcealed;
   let feedback = clientModel.feedback;
+  let selectedChoices = new Set();
   let typelineChecked = clientModel.typelineChecked;
   let confirmingLeave = clientModel.confirmingLeave;
   let explainInput = clientModel.explainInput;
@@ -205,6 +206,7 @@ export function createStudy({
     sectionView = clientModel.sectionView;
     answerConcealed = clientModel.answerConcealed;
     feedback = clientModel.feedback;
+    selectedChoices = new Set();
     typelineChecked = clientModel.typelineChecked;
     confirmingLeave = clientModel.confirmingLeave;
     explainInput = clientModel.explainInput;
@@ -222,6 +224,7 @@ export function createStudy({
   // First encounter as a recognition question (strictly-augmented atomic card).
   function isIntroChoice() { return isIntroducing() && !!state.choices; }
   function isChoice() { return state.mode === "choice" && state.choices; }
+  function isMultiChoice() { return isChoice() && state.choices_multiple === true; }
   function isInput() { return state.mode === "typing"; }
   function isTypeLine() { return state.mode === "typeline"; }
   function isExplain() { return state.mode === "explain"; }
@@ -260,6 +263,22 @@ export function createStudy({
       feedback = f;
       // Only the answer changed. A full rerender() rebuilds the question too, which
       // reads as a flicker (and re-rasterises any math in it).
+      fillBottom();
+      renderLegend();
+    });
+  }
+  function toggleChoice(i) {
+    if (selectedChoices.has(i)) selectedChoices.delete(i);
+    else selectedChoices.add(i);
+    choiceFocus = i;
+    fillBottom();
+    renderLegend();
+  }
+  function submitMultiChoice() {
+    if (!selectedChoices.size) return;
+    const indices = Array.from(selectedChoices).sort((a, b) => a - b);
+    api("/api/choose", post({ indices, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
+      feedback = f;
       fillBottom();
       renderLegend();
     });
@@ -804,13 +823,25 @@ export function createStudy({
     opts[choiceFocus].scrollIntoView({ block: "nearest" });
   }
   function renderChoices(a) {
+    const previousFocus = isMultiChoice() ? choiceFocus : -1;
     choiceFocus = -1;
     const first = appendChoiceOptions(a, {
       choices: state.choices,
       choiceRuns: state.choice_runs,
-      onChoose: choose,
+      onChoose: isMultiChoice() ? toggleChoice : choose,
     });
-    if (first) { choiceFocus = 0; first.classList.add("focused"); }
+    const options = a.querySelectorAll(".options .option");
+    if (isMultiChoice()) {
+      options.forEach((option, index) => {
+        const selected = selectedChoices.has(index);
+        option.classList.toggle("selected", selected);
+        option.setAttribute("aria-pressed", String(selected));
+      });
+    }
+    if (first) {
+      choiceFocus = previousFocus >= 0 && previousFocus < options.length ? previousFocus : 0;
+      options[choiceFocus].classList.add("focused");
+    }
   }
 
   // Typing: an input per answer line, submitted with Enter or the chip.
@@ -867,9 +898,18 @@ export function createStudy({
   function renderChoiceFeedback(a) {
     a.classList.add("choices");
     const wrap = el("div", "options");
+    const chosen = isMultiChoice() ? new Set(feedback.chosen) : null;
+    const correct = isMultiChoice() ? new Set(feedback.correct) : null;
     state.choices.forEach((opt, i) => {
       let cls = "option";
-      if (i === feedback.correct) cls += " correct";
+      const wasChosen = chosen ? chosen.has(i) : false;
+      const wasCorrect = correct ? correct.has(i) : false;
+      if (isMultiChoice()) {
+        if (wasChosen) cls += " chosen";
+        if (wasCorrect) cls += " correct";
+        else if (wasChosen) cls += " wrong";
+        else cls += " dim";
+      } else if (i === feedback.correct) cls += " correct";
       else if (i === feedback.chosen) cls += " wrong";
       else cls += " dim";
       const row = el("div", cls);
@@ -878,6 +918,12 @@ export function createStudy({
       if (state.choice_runs && state.choice_runs[i]) appendRuns(text, state.choice_runs[i]);
       else text.textContent = opt;
       row.appendChild(text);
+      if (isMultiChoice() && (wasChosen || wasCorrect)) {
+        const status = wasChosen
+          ? (wasCorrect ? "chosen · correct" : "chosen · incorrect")
+          : "correct";
+        row.appendChild(el("span", "choice-status", status));
+      }
       wrap.appendChild(row);
     });
     a.appendChild(wrap);
@@ -1320,6 +1366,10 @@ export function createStudy({
           chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
         }
       } else if (isIntroChoice()) {
+        if (isMultiChoice()) {
+          const submit = chip("Submit", "primary", submitMultiChoice, "enter");
+          submit.disabled = selectedChoices.size === 0;
+        }
         chip("Skip", "", skip, label(keys.skip));            // options are tappable
       } else if (revealed > 0 && state.mode === "line" && !fullyRevealed()) {
         chip("Reveal next", "primary", reveal, label(keys.reveal));
@@ -1335,6 +1385,10 @@ export function createStudy({
       chip("Reveal", "primary", drawReveal, label(keys.reveal));
       chip("Skip", "", skip, label(keys.skip));
     } else if (isChoice()) {
+      if (isMultiChoice()) {
+        const submit = chip("Submit", "primary", submitMultiChoice, "enter");
+        submit.disabled = selectedChoices.size === 0;
+      }
       chip("Skip", "", skip, label(keys.skip));
     } else if (isInput()) {
       chip("Submit", "primary", submitCheck, "enter");
@@ -1660,6 +1714,15 @@ export function createStudy({
             if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
             if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
             if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
+            if (isMultiChoice()) {
+              if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
+              if (e.key === "Enter") { e.preventDefault(); submitMultiChoice(); return; }
+              if (e.key >= "1" && e.key <= "9") {
+                const i = +e.key - 1;
+                if (i < state.choices.length) { e.preventDefault(); toggleChoice(i); }
+              }
+              return;
+            }
             if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
             if (e.key >= "1" && e.key <= "9") {
               const i = +e.key - 1;
@@ -1733,6 +1796,15 @@ export function createStudy({
         if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
         if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
         if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
+        if (isMultiChoice()) {
+          if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
+          if (e.key === "Enter") { e.preventDefault(); submitMultiChoice(); return; }
+          if (e.key >= "1" && e.key <= "9") {
+            const i = +e.key - 1;
+            if (i < state.choices.length) { e.preventDefault(); toggleChoice(i); }
+          }
+          return;
+        }
         if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
         if (e.key >= "1" && e.key <= "9") {
           const i = +e.key - 1;

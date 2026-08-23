@@ -113,6 +113,9 @@
   .option .num { font-family: var(--mono); font-size: 0.85rem; color: var(--faint); }
   .option .opt { white-space: pre-wrap; }
   .option.focused { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 10%, transparent); }
+  .option.selected { border-color: var(--bolt-hi); background: color-mix(in srgb, var(--bolt) 18%, transparent); }
+  .option.selected .num { color: var(--bolt-hi); }
+  .option .choice-status { margin-left: auto; font-size: 0.72rem; color: currentColor; white-space: nowrap; }
   button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
   .option.correct { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
   .option.correct .num { color: var(--good); }

@@ -22,8 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `POST /api/choose {indices, card}` grades the pick by exact set equality
   (`MultiChooseFeedbackDto`). Select-all builds only from the authored
   option set, so these cards are never AI-distractor gaps, and a
-  cross-shape submission fails loudly. Client select-all rendering ships
-  separately.
+  cross-shape submission fails loudly. The adult web reviewer toggles these
+  options independently, sends no request before its explicit Submit action,
+  and marks chosen, missed-correct, and chosen-wrong options from the reply.
 
 - A blank-surrounded `---` ends a section early: the cards after it carry no
   context until the next `#` heading, and a sub-card chain does not cross it.
