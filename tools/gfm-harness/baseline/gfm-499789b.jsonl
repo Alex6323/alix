@@ -3,7 +3,7 @@
 {"e":3,"cards":1,"back":"ws"}
 {"e":4,"cards":1,"back":"ws"}
 {"e":5,"cards":1,"back":"ws"}
-{"e":6,"err":"line 1: card front without an answer"}
+{"e":6,"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":7,"cards":1,"back":"exact"}
 {"e":8,"cards":1,"back":"ws"}
 {"e":9,"cards":1,"back":"ws"}
@@ -29,24 +29,24 @@
 {"e":29,"g":[1],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
 {"e":30,"g":[1],"cards":1,"back":"exact"}
 {"e":31,"g":[1],"cards":1,"back":"exact"}
-{"e":32,"g":[13],"err":"line 1: card front without an answer"}
+{"e":32,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":33,"g":[13],"cards":1,"back":"exact"}
 {"e":34,"g":[13],"cards":1,"back":"ws"}
 {"e":35,"g":[13],"cards":1,"back":"div"}
-{"e":36,"g":[13],"err":"line 1: card front without an answer"}
-{"e":37,"g":[13],"err":"line 1: card front without an answer"}
+{"e":36,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":37,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":38,"g":[13],"lints":["Lint { line: 3, kind: IndentedH2 }"],"cards":1,"back":"ws"}
 {"e":39,"g":[13],"cards":1,"back":"ws"}
 {"e":40,"g":[13],"cards":1,"back":"ws"}
-{"e":41,"g":[13],"err":"line 1: card front without an answer"}
-{"e":42,"g":[13],"err":"line 3: this sub-card has no open parent one level above it"}
-{"e":43,"g":[13],"err":"line 1: card front without an answer"}
-{"e":44,"g":[13],"err":"line 1: card front without an answer"}
-{"e":45,"g":[13],"err":"line 1: card front without an answer"}
-{"e":46,"g":[13],"err":"line 1: card front without an answer"}
+{"e":41,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":42,"g":[13],"err":"line 3: this sub-card has no open parent one level above it; add that parent heading first, or remove `#`s until the depth one above is open"}
+{"e":43,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":44,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":45,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":46,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":47,"g":[13],"cards":2,"back":"div"}
 {"e":48,"g":[13],"cards":1,"back":"div"}
-{"e":49,"g":[13,14],"err":"line 2: card front is empty"}
+{"e":49,"g":[13,14],"err":"line 2: card front is empty; write the question on the heading line"}
 {"e":50,"g":[13],"cards":1,"back":"ws"}
 {"e":51,"g":[13],"cards":1,"back":"exact"}
 {"e":52,"g":[13],"cards":1,"back":"ws"}
@@ -82,7 +82,7 @@
 {"e":82,"g":[3,12],"cards":1,"back":"ws"}
 {"e":83,"g":[3,12],"cards":1,"back":"ws"}
 {"e":84,"g":[3,12],"cards":1,"back":"ws"}
-{"e":85,"g":[3,12],"err":"line 1: card front without an answer"}
+{"e":85,"g":[3,12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":86,"g":[3,12],"cards":1,"back":"ws"}
 {"e":87,"g":[3,12],"cards":1,"back":"ws"}
 {"e":88,"g":[3,12],"cards":1,"back":"ws"}
@@ -149,7 +149,7 @@
 {"e":149,"g":[10,12],"cards":1,"back":"ws"}
 {"e":150,"g":[10,12],"cards":1,"back":"exact"}
 {"e":151,"g":[10,12],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":152,"g":[6,10,12],"err":"line 1: card front without an answer"}
+{"e":152,"g":[6,10,12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":153,"g":[10,12],"cards":1,"back":"ws"}
 {"e":154,"g":[10,12],"cards":1,"back":"exact"}
 {"e":155,"g":[10,12],"cards":1,"back":"exact"}
@@ -180,7 +180,7 @@
 {"e":180,"g":[8],"cards":1,"back":"ws"}
 {"e":181,"g":[8],"cards":1,"back":"ws"}
 {"e":182,"g":[8],"cards":1,"back":"ws"}
-{"e":183,"g":[8],"err":"line 1: card front without an answer"}
+{"e":183,"g":[8],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":184,"g":[8],"cards":1,"back":"exact"}
 {"e":185,"g":[8],"cards":1,"back":"exact"}
 {"e":186,"g":[8],"cards":1,"back":"ws"}
@@ -203,10 +203,10 @@
 {"e":203,"g":[9],"cards":1,"back":"exact"}
 {"e":204,"g":[9],"cards":1,"back":"exact"}
 {"e":205,"g":[9],"cards":1,"back":"exact"}
-{"e":206,"g":[12],"err":"line 1: card front without an answer"}
-{"e":207,"g":[12],"err":"line 1: card front without an answer"}
-{"e":208,"g":[12],"err":"line 1: card front without an answer"}
-{"e":209,"g":[12],"err":"line 1: card front without an answer"}
+{"e":206,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":207,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":208,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":209,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":210,"g":[12],"cards":1,"back":"div"}
 {"e":211,"g":[12],"cards":1,"back":"div"}
 {"e":212,"g":[12],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
@@ -214,28 +214,28 @@
 {"e":214,"g":[12],"cards":1,"back":"div"}
 {"e":215,"g":[12],"lints":["Lint { line: 4, kind: UnclosedFence }"],"cards":1,"back":"div"}
 {"e":216,"g":[12],"cards":1,"back":"div"}
-{"e":217,"g":[12],"err":"line 1: card front without an answer"}
-{"e":218,"g":[12],"err":"line 1: card front without an answer"}
-{"e":219,"g":[12],"err":"line 1: card front without an answer"}
-{"e":220,"g":[12],"err":"line 1: card front without an answer"}
-{"e":221,"g":[12],"err":"line 1: card front without an answer"}
-{"e":222,"g":[12],"err":"line 1: card front without an answer"}
+{"e":217,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":218,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":219,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":220,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":221,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":222,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":223,"g":[12],"cards":1,"back":"div"}
 {"e":224,"g":[12],"cards":1,"back":"div"}
 {"e":225,"g":[12],"cards":1,"back":"div"}
 {"e":226,"g":[12],"cards":1,"back":"div"}
 {"e":227,"g":[12],"cards":1,"back":"div"}
 {"e":228,"g":[12],"cards":1,"back":"div"}
-{"e":229,"g":[12],"err":"line 1: card front without an answer"}
-{"e":230,"g":[12],"err":"line 1: card front without an answer"}
+{"e":229,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":230,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":231,"g":[3,12],"cards":1,"back":"div"}
 {"e":232,"g":[3,12],"cards":1,"back":"div"}
 {"e":233,"g":[3,12],"cards":1,"back":"ws"}
 {"e":234,"g":[3,12],"cards":1,"back":"ws"}
 {"e":235,"g":[3,12],"cards":1,"back":"ws"}
 {"e":236,"g":[3,12],"cards":1,"back":"ws"}
-{"e":237,"g":[3,12],"err":"line 1: card front without an answer"}
-{"e":238,"g":[3,12],"err":"line 1: card front without an answer"}
+{"e":237,"g":[3,12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":238,"g":[3,12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":239,"g":[3,12],"cards":1,"back":"ws"}
 {"e":240,"g":[3,12],"cards":1,"back":"ws"}
 {"e":241,"g":[3,12],"cards":1,"back":"div"}
@@ -268,7 +268,7 @@
 {"e":268,"g":[3,12],"cards":1,"back":"div"}
 {"e":269,"g":[3,12],"cards":1,"back":"ws"}
 {"e":270,"g":[3,12],"cards":1,"back":"div"}
-{"e":271,"g":[3,12],"err":"line 1: card front without an answer"}
+{"e":271,"g":[3,12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":272,"g":[3,12],"cards":1,"back":"ws"}
 {"e":273,"g":[3,12],"cards":1,"back":"ws"}
 {"e":274,"g":[3,12],"cards":1,"back":"ws"}
@@ -663,8 +663,8 @@
 {"e":663,"g":[5],"cards":1,"back":"exact"}
 {"e":664,"g":[5],"cards":1,"back":"exact"}
 {"e":665,"g":[5],"cards":1,"back":"ws"}
-{"e":666,"g":[5],"err":"line 1: card front without an answer"}
-{"e":667,"g":[5],"err":"line 1: card front without an answer"}
+{"e":666,"g":[5],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":667,"g":[5],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":668,"cards":1,"back":"exact"}
 {"e":669,"cards":1,"back":"ws"}
 {"e":670,"cards":1,"back":"exact"}

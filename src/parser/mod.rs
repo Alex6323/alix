@@ -146,15 +146,21 @@ pub enum ParseError {
     ReservedMarker(usize),
     #[error("line {line}: `title:` must be a non-empty single line, found {value:?}")]
     InvalidTitle { line: usize, value: String },
-    #[error("line {0}: card front is empty")]
+    #[error("line {0}: card front is empty; write the question on the heading line")]
     EmptyFront(usize),
-    #[error("line {0}: card front without an answer")]
+    #[error(
+        "line {0}: card front without an answer; a card heading asks a question, so give it at least one answer line below"
+    )]
     FrontWithoutAnswer(usize),
-    #[error("line {0}: this sub-card has no open parent one level above it")]
+    #[error(
+        "line {0}: this sub-card has no open parent one level above it; add that parent heading first, or remove `#`s until the depth one above is open"
+    )]
     OrphanSubCard(usize),
-    #[error("line {0}: a deck body starts with a heading; this line is before the first one")]
+    #[error(
+        "line {0}: a deck body starts with a heading; open a `# ` section or `## ` card above this line"
+    )]
     ProseBeforeFirstHeading(usize),
-    #[error("line {0}: section heading is empty")]
+    #[error("line {0}: section heading is empty; write the section title after `# `")]
     EmptySection(usize),
     #[error("line {0}: a section heading takes no directives and no card id")]
     SectionDirective(usize),
@@ -182,13 +188,15 @@ pub enum ParseError {
         "line {0}: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"
     )]
     MixedImageLine(usize),
-    #[error("line {0}: a table line must start and end with `|`")]
+    #[error("line {0}: a table line must start and end with `|`; add the missing outer pipe")]
     TableLineMalformed(usize),
     #[error(
-        "line {line}: a card table has 2 or 3 columns (front | back | note), this line has {found}"
+        "line {line}: a card table has 2 or 3 columns (front | back | note), this line has {found}; merge or split cells, or write the row as a `##` card"
     )]
     TableColumns { line: usize, found: usize },
-    #[error("line {line}: this table line has {found} cells but the header has {expected}")]
+    #[error(
+        "line {line}: this table line has {found} cells but the header has {expected}; pad with empty `|` cells or drop the extras"
+    )]
     TableRowWidth {
         line: usize,
         found: usize,

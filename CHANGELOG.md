@@ -253,6 +253,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Markup-rejection parse errors are onboarding surfaces: every message
+  that fires on ordinary pasted Markdown (an answerless heading, a deep
+  heading without its parent, prose before the first heading, empty
+  headings, malformed or mis-sized card-table lines) now names the line,
+  why the shape is rejected, and a concrete supported rewrite.
+
 - **Bare content shapes render literally (breaking).** A task list or pipe
   table without an invocation (or deck default) no longer becomes a choice
   card or card table: it stays literal content, so a pasted GFM document
