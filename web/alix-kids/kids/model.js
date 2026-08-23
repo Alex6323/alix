@@ -1,9 +1,9 @@
 export function createKidsStudyModel() {
-  return { state: null, revealed: 0, chosen: null };
+  return { state: null, revealed: 0, chosen: null, selected: [] };
 }
 
 export function applyKidsStudyState(model, state) {
-  return { ...model, state, revealed: 0, chosen: null };
+  return { ...model, state, revealed: 0, chosen: null, selected: [] };
 }
 
 export function clearKidsStudyState(model) {
@@ -12,6 +12,13 @@ export function clearKidsStudyState(model) {
 
 export function chooseKidsAnswer(model, chosen) {
   return { ...model, chosen };
+}
+
+export function toggleKidsChoice(model, index) {
+  const selected = model.selected.includes(index)
+    ? model.selected.filter((picked) => picked !== index)
+    : [...model.selected, index].sort((a, b) => a - b);
+  return { ...model, selected };
 }
 
 export function revealKidsAnswer(model) {
@@ -29,6 +36,10 @@ export function kidsBackCount(model) {
 
 export function kidsChoiceMode(model) {
   return !!(model.state && model.state.mode === "choice" && Array.isArray(model.state.choices));
+}
+
+export function kidsMultiMode(model) {
+  return kidsChoiceMode(model) && model.state.choices_multiple === true;
 }
 
 export function kidsRevealDone(model) {

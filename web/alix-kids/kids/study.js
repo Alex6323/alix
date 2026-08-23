@@ -21,7 +21,7 @@ const {
   stage,
 } = ui;
 let studyModel = model.create();
-let { state, revealed, chosen } = studyModel;
+let { state, revealed, chosen, selected } = studyModel;
 
 // Mirrors the adult client: `save_error` is stateful, so the banner shows
 // exactly as long as the server keeps reporting it. Raw error on the tooltip.
@@ -50,10 +50,11 @@ function apply(s) {
 
 function syncStudyModel(next) {
   studyModel = next;
-  ({ state, revealed, chosen } = studyModel);
+  ({ state, revealed, chosen, selected } = studyModel);
 }
 function backCount() { return model.backCount(studyModel); }
 function isChoiceMode() { return model.choiceMode(studyModel); }
+function isMultiMode() { return model.multiMode(studyModel); }
 // Has the answer been fully revealed (so the mascot "why" + rate bar show)?
 function revealDone() {
   return model.revealDone(studyModel);
@@ -349,11 +350,15 @@ function appendContextLines(parent, card, done) {
   });
 }
 
-// Tap-the-answer options. Before a pick each is tappable; after a pick (chosen
-// = ChooseFeedbackDto) the correct one greens, a wrong pick reds, the rest dim.
+// Tap-the-answer options. Single: a tap is the pick; after it (chosen =
+// ChooseFeedbackDto) the correct one greens, a wrong pick reds, the rest dim.
+// Select-all (choices_multiple): taps toggle locally, the bar's Done submits,
+// and the reply (MultiChooseFeedbackDto) greens every correct option, reds
+// wrong picks, dims the rest.
 function renderOptions() {
   const wrap = el("div", "rev-options");
   const opts = state.choices || [];
+  const multi = isMultiMode();
   opts.forEach((label, i) => {
     const b = el("button", "opt-btn");
     b.type = "button";
@@ -361,9 +366,16 @@ function renderOptions() {
     else b.textContent = label;
     if (chosen) {
       b.disabled = true;
-      if (i === chosen.correct) b.classList.add("opt-correct");
-      else if (i === chosen.chosen) b.classList.add("opt-wrong");
+      const right = multi ? chosen.correct.includes(i) : i === chosen.correct;
+      const picked = multi ? chosen.chosen.includes(i) : i === chosen.chosen;
+      if (right) b.classList.add("opt-correct");
+      else if (picked) b.classList.add("opt-wrong");
       else b.classList.add("opt-dim");
+    } else if (multi) {
+      const picked = selected.includes(i);
+      b.classList.toggle("opt-picked", picked);
+      b.setAttribute("aria-pressed", String(picked));
+      b.addEventListener("click", () => toggleChoice(i));
     } else {
       b.addEventListener("click", () => choose(i));
     }
@@ -426,11 +438,16 @@ function renderReviewBar(done, introducing, lineMode, choiceMode) {
 
   const mid = el("div", "bar-mid");
   if (!done) {
-    // Still attempting. In choice mode the answer is tapped in the card itself,
-    // so the centre stays empty; the other modes get their reveal control.
+    // Still attempting. In single choice mode the answer is tapped in the card
+    // itself, so the centre stays empty; select-all puts its Done submit here;
+    // the other modes get their reveal control.
     if (!choiceMode) {
       const lbl = lineMode ? (revealed === 0 ? "Show me 👀" : "Show me next 👀") : "Show me 👀";
       mid.appendChild(barBtn(lbl, "show-btn", reveal));
+    } else if (isMultiMode()) {
+      const submit = barBtn("Done ✅", "show-btn", submitMulti);
+      submit.disabled = selected.length === 0;
+      mid.appendChild(submit);
     }
   } else if (introducing) {
     // Attempted, but never seen before: the engine grades nothing on a first
@@ -487,6 +504,16 @@ function reveal() {
 // grade is separate, via the rate bar / /api/grade. Same card stays on screen.
 function choose(i) {
   api("/api/choose", post({ index: i, card: state.card.id })).then((f) => {
+    syncStudyModel(model.choose(studyModel, f));
+    rerender();
+  }).catch(resync);
+}
+function toggleChoice(i) {
+  syncStudyModel(model.toggle(studyModel, i));
+  rerender();
+}
+function submitMulti() {
+  api("/api/choose", post({ indices: studyModel.selected, card: state.card.id })).then((f) => {
     syncStudyModel(model.choose(studyModel, f));
     rerender();
   }).catch(resync);

@@ -70,6 +70,7 @@
 }
 .opt-btn:active { transform: translateY(1px); }
 .opt-btn:disabled { cursor: default; }
+.opt-picked { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
 .opt-correct { background: rgba(47, 185, 104, 0.14); border-color: #2fb968; color: #1f9b53; box-shadow: none; }
 .opt-wrong { background: rgba(255, 111, 97, 0.12); border-color: #ff6f61; color: #d9544a; box-shadow: none; }
 .opt-dim { background: #fff; border-color: #f3e6d8; color: #c9b6a4; box-shadow: none; }

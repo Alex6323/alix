@@ -5,7 +5,9 @@ import {
   applyKidsStudyState,
   clearKidsStudyState,
   createKidsStudyModel,
+  kidsMultiMode,
   kidsStudyScreen,
+  toggleKidsChoice,
 } from "../../web/alix-kids/kids/model.js";
 
 test("applying kids study state resets only per card state", () => {
@@ -60,4 +62,28 @@ test("clearing kids study state does not blanket reset view state", () => {
   assert.equal(next.revealed, 2);
   assert.deepEqual(next.chosen, { correct: 0 });
   assert.equal(next.ownerSentinel, sentinel);
+});
+
+test("toggling a kids choice adds, sorts, and removes indices", () => {
+  const model = createKidsStudyModel();
+  const one = toggleKidsChoice(model, 2);
+  assert.deepEqual(one.selected, [2]);
+  const two = toggleKidsChoice(one, 0);
+  assert.deepEqual(two.selected, [0, 2]);
+  const back = toggleKidsChoice(two, 2);
+  assert.deepEqual(back.selected, [0]);
+});
+
+test("applying kids study state clears the multi selection", () => {
+  const model = { ...createKidsStudyModel(), selected: [1, 3] };
+  const next = applyKidsStudyState(model, { kind: "review" });
+  assert.deepEqual(next.selected, []);
+});
+
+test("kids multi mode requires choice mode and the flag", () => {
+  const state = { mode: "choice", choices: ["a", "b"], choices_multiple: true };
+  const base = { ...createKidsStudyModel(), state };
+  assert.equal(kidsMultiMode(base), true);
+  assert.equal(kidsMultiMode({ ...base, state: { ...state, choices_multiple: false } }), false);
+  assert.equal(kidsMultiMode({ ...base, state: { ...state, mode: "line" } }), false);
 });

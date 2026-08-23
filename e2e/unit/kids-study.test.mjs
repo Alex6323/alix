@@ -16,8 +16,10 @@ import {
   createKidsStudyModel,
   kidsBackCount,
   kidsChoiceMode,
+  kidsMultiMode,
   kidsRevealDone,
   kidsStudyScreen,
+  toggleKidsChoice,
   revealKidsAnswer,
 } from "../../web/alix-kids/kids/model.js";
 import { createKidsStudy } from "../../web/alix-kids/kids/study.js";
@@ -91,6 +93,8 @@ function harness(initial = review()) {
       reveal: revealKidsAnswer,
       backCount: kidsBackCount,
       choiceMode: kidsChoiceMode,
+      multiMode: kidsMultiMode,
+      toggle: toggleKidsChoice,
       revealDone: kidsRevealDone,
       screen: kidsStudyScreen,
     },

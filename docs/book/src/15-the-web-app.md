@@ -205,7 +205,8 @@ A **box** is a workspace: the home screen shows the boxes as a grid, tap one
 to see its decks with a ⭐ mastery indicator per deck, tap a deck, then pick
 that deck's depth: **👆 Tap the answer** (Recognize) or **🗣️ Say it
 yourself** (Recall); a caught-up choice disables itself instead of starting
-an empty session. Review works the same
+an empty session. On a select-all card, taps mark options instead of
+answering, and one **Done** button submits the whole set. Review works the same
 way underneath as the regular app (reveal, then the mascot says a short
 "why" instead of a bare note, then self-rate) with a **💬 Ask Alix** button
 that opens a kid-safe tutor overlay scoped to the current card.
