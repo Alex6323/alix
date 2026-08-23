@@ -26,6 +26,11 @@ function styledRunNode(run, text) {
     italic.appendChild(node);
     node = italic;
   }
+  if (run.strike) {
+    const strike = document.createElement("del");
+    strike.appendChild(node);
+    node = strike;
+  }
   if (run.bold) {
     const bold = document.createElement("strong");
     bold.appendChild(node);

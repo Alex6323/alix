@@ -7,6 +7,7 @@ InlineRunModel inlineRunFromBridge(bridge.InlineRun run) {
     text: run.text,
     bold: run.bold,
     italic: run.italic,
+    strike: run.strike,
     code: run.code,
     math: math == null
         ? null

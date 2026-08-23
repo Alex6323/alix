@@ -1687,14 +1687,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   InlineRun dco_decode_inline_run(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return InlineRun(
       text: dco_decode_String(arr[0]),
       bold: dco_decode_bool(arr[1]),
       italic: dco_decode_bool(arr[2]),
-      code: dco_decode_bool(arr[3]),
-      math: dco_decode_opt_box_autoadd_math_view(arr[4]),
+      strike: dco_decode_bool(arr[3]),
+      code: dco_decode_bool(arr[4]),
+      math: dco_decode_opt_box_autoadd_math_view(arr[5]),
     );
   }
 
@@ -2598,12 +2599,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_text = sse_decode_String(deserializer);
     var var_bold = sse_decode_bool(deserializer);
     var var_italic = sse_decode_bool(deserializer);
+    var var_strike = sse_decode_bool(deserializer);
     var var_code = sse_decode_bool(deserializer);
     var var_math = sse_decode_opt_box_autoadd_math_view(deserializer);
     return InlineRun(
       text: var_text,
       bold: var_bold,
       italic: var_italic,
+      strike: var_strike,
       code: var_code,
       math: var_math,
     );
@@ -3715,6 +3718,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.text, serializer);
     sse_encode_bool(self.bold, serializer);
     sse_encode_bool(self.italic, serializer);
+    sse_encode_bool(self.strike, serializer);
     sse_encode_bool(self.code, serializer);
     sse_encode_opt_box_autoadd_math_view(self.math, serializer);
   }

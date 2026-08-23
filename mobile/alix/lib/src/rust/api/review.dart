@@ -366,6 +366,7 @@ class InlineRun {
   final String text;
   final bool bold;
   final bool italic;
+  final bool strike;
   final bool code;
   final MathView? math;
 
@@ -373,6 +374,7 @@ class InlineRun {
     required this.text,
     required this.bold,
     required this.italic,
+    required this.strike,
     required this.code,
     this.math,
   });
@@ -382,6 +384,7 @@ class InlineRun {
       text.hashCode ^
       bold.hashCode ^
       italic.hashCode ^
+      strike.hashCode ^
       code.hashCode ^
       math.hashCode;
 
@@ -393,6 +396,7 @@ class InlineRun {
           text == other.text &&
           bold == other.bold &&
           italic == other.italic &&
+          strike == other.strike &&
           code == other.code &&
           math == other.math;
 }

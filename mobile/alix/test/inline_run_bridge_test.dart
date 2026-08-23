@@ -10,6 +10,7 @@ void main() {
       text: r'x^2',
       bold: true,
       italic: true,
+      strike: true,
       code: false,
       math: bridge.MathView(display: true, svg: '<svg/>', error: 'fallback'),
     );
@@ -22,6 +23,7 @@ void main() {
         text: r'x^2',
         bold: true,
         italic: true,
+        strike: true,
         code: false,
         math: InlineMathModel(display: true, svg: '<svg/>', error: 'fallback'),
       ),
@@ -33,6 +35,7 @@ void main() {
       text: 'plain',
       bold: false,
       italic: false,
+      strike: false,
       code: true,
     );
 

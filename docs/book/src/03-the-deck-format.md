@@ -55,7 +55,9 @@ line reveal and line typing preserve them individually.
 ## Inline formatting
 
 Card fronts, answer lines, and note prose support `**bold**`, `*italic*` or
-`_italic_`, and inline `` `code` ``. Inline code is verbatim, so
+`_italic_`, `~~strikethrough~~` (the double-tilde pair exactly; a single or
+triple tilde run stays ordinary text), and inline `` `code` ``. Inline code is
+verbatim, so
 `` `**literal**` `` displays the asterisks instead of bold text.
 
 Formatting has two projections: styled display and plain content. Grading uses

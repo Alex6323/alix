@@ -202,6 +202,7 @@ class InlineRuns extends StatelessWidget {
       fontFamily: run.code ? _mono : style.fontFamily,
       fontWeight: run.bold ? FontWeight.w700 : style.fontWeight,
       fontStyle: run.italic ? FontStyle.italic : style.fontStyle,
+      decoration: run.strike ? TextDecoration.lineThrough : style.decoration,
     );
   }
 }

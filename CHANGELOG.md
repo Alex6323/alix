@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `~~strikethrough~~` renders struck through on every client, as GitHub
+  renders it: pure presentation with no study semantics, and grading keeps
+  comparing the unstruck content. Exactly the double-tilde pair strikes; a
+  single or triple tilde run stays ordinary text, and line-start tilde
+  fences are unaffected.
+
 - Named mapping invocations: `<!-- choices-single -->` or
   `<!-- choices-multiple -->` above a task list makes it a choice card (one
   correct answer, or select-all-that-apply), `<!-- cards -->` above a pipe

@@ -17,6 +17,7 @@ function styledRunNode(run, text) {
   let node = document.createTextNode(text);
   if (run.code) { const code = document.createElement("code"); code.appendChild(node); node = code; }
   if (run.italic) { const italic = document.createElement("em"); italic.appendChild(node); node = italic; }
+  if (run.strike) { const strike = document.createElement("del"); strike.appendChild(node); node = strike; }
   if (run.bold) { const bold = document.createElement("strong"); bold.appendChild(node); node = bold; }
   return node;
 }

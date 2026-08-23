@@ -13,6 +13,8 @@ pub struct InlineRun {
     pub bold: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub italic: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub strike: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub code: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -109,6 +111,7 @@ struct LineClassification {
     glyphs: Vec<Glyph>,
     bold: Vec<bool>,
     italic: Vec<bool>,
+    strike: Vec<bool>,
     removed: Vec<bool>,
 }
 
@@ -119,6 +122,7 @@ fn classify_line(text: &str) -> LineClassification {
     let delimiters = emphasis_delimiters(&glyphs);
     let mut bold = vec![false; glyphs.len()];
     let mut italic = vec![false; glyphs.len()];
+    let mut strike = vec![false; glyphs.len()];
     let mut removed = vec![false; glyphs.len()];
     let mut remaining: Vec<usize> = delimiters.iter().map(|delimiter| delimiter.len).collect();
     let mut consumed_left = vec![0; delimiters.len()];
@@ -134,6 +138,7 @@ fn classify_line(text: &str) -> LineClassification {
                 break;
             };
             let opener_index = open[open_pos];
+            let strike_pair = delimiter.marker == '~';
             while remaining[opener_index] >= 2 && remaining[delimiter_index] >= 2 {
                 consume_delimiters(
                     &delimiters,
@@ -144,10 +149,10 @@ fn classify_line(text: &str) -> LineClassification {
                     &mut consumed_left,
                     &mut consumed_right,
                     &mut removed,
-                    &mut bold,
+                    if strike_pair { &mut strike } else { &mut bold },
                 );
             }
-            if remaining[opener_index] > 0 && remaining[delimiter_index] > 0 {
+            if !strike_pair && remaining[opener_index] > 0 && remaining[delimiter_index] > 0 {
                 consume_delimiters(
                     &delimiters,
                     opener_index,
@@ -173,6 +178,7 @@ fn classify_line(text: &str) -> LineClassification {
         glyphs,
         bold,
         italic,
+        strike,
         removed,
     }
 }
@@ -187,6 +193,7 @@ fn project_line(
         glyphs,
         bold,
         italic,
+        strike,
         removed,
     } = classify_line(text);
     let mut runs = Vec::new();
@@ -216,14 +223,14 @@ fn project_line(
             index += 1;
             continue;
         }
-        let style = (bold[index], italic[index], glyph.code);
         push_run(
             &mut runs,
             InlineRun {
                 text: glyph.ch.to_string(),
-                bold: style.0,
-                italic: style.1,
-                code: style.2,
+                bold: bold[index],
+                italic: italic[index],
+                strike: strike[index],
+                code: glyph.code,
                 math: None,
             },
         );
@@ -637,7 +644,11 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
     let mut index = 0;
     while index < glyphs.len() {
         let glyph = glyphs[index];
-        if glyph.escaped || glyph.code || glyph.math.is_some() || !matches!(glyph.ch, '*' | '_') {
+        if glyph.escaped
+            || glyph.code
+            || glyph.math.is_some()
+            || !matches!(glyph.ch, '*' | '_' | '~')
+        {
             index += 1;
             continue;
         }
@@ -652,6 +663,12 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
             end += 1;
         }
         let len = end - index;
+        // GFM strikethrough is the double-tilde pair alone; any other tilde
+        // run is ordinary text, never a delimiter.
+        if glyph.ch == '~' && len != 2 {
+            index = end;
+            continue;
+        }
         let previous = index.checked_sub(1).and_then(|pos| glyphs.get(pos));
         let next = glyphs.get(end);
         let intraword = glyph.ch == '_'
@@ -835,6 +852,7 @@ mod tests {
             text: s.into(),
             bold: false,
             italic: false,
+            strike: false,
             code: false,
             math: None,
         }
@@ -845,6 +863,7 @@ mod tests {
             text: s.into(),
             bold: true,
             italic: false,
+            strike: false,
             code: false,
             math: None,
         }
@@ -855,6 +874,7 @@ mod tests {
             text: s.into(),
             bold: false,
             italic: true,
+            strike: false,
             code: false,
             math: None,
         }
@@ -865,8 +885,26 @@ mod tests {
             text: s.into(),
             bold: false,
             italic: false,
+            strike: false,
             code: true,
             math: None,
+        }
+    }
+
+    fn strike(s: &str) -> InlineRun {
+        InlineRun {
+            text: s.to_string(),
+            strike: true,
+            ..InlineRun::default()
+        }
+    }
+
+    fn strike_bold(s: &str) -> InlineRun {
+        InlineRun {
+            text: s.to_string(),
+            strike: true,
+            bold: true,
+            ..InlineRun::default()
         }
     }
 
@@ -875,6 +913,7 @@ mod tests {
             text: s.into(),
             bold: true,
             italic: true,
+            strike: false,
             code: false,
             math: None,
         }
@@ -965,6 +1004,36 @@ mod tests {
             vec![bold("a "), bold_italic("b"), bold(" c")],
             parse_inline("**a _b_ c**"),
         );
+    }
+
+    #[test]
+    fn double_tilde_strikes_and_the_markers_leave_content() {
+        assert_eq!(vec![strike("gone")], parse_inline("~~gone~~"));
+        assert_eq!("gone", strip_inline("~~gone~~"));
+    }
+
+    #[test]
+    fn strikethrough_nests_with_emphasis() {
+        assert_eq!(
+            vec![strike("a "), strike_bold("b"), strike(" c")],
+            parse_inline("~~a **b** c~~"),
+        );
+    }
+
+    #[test]
+    fn other_tilde_runs_stay_literal() {
+        for (label, input) in [
+            ("a single pair", "~one~"),
+            ("a triple pair", "~~~three~~~"),
+            ("an unclosed opener", "a ~~ b"),
+        ] {
+            assert_eq!(vec![plain(input)], parse_inline(input), "{label}");
+        }
+    }
+
+    #[test]
+    fn an_escaped_tilde_breaks_the_strike_pair() {
+        assert_eq!(vec![plain("~~kept~~")], parse_inline("\\~~kept~~"));
     }
 
     #[test]

@@ -50,6 +50,7 @@ pub struct _InlineRun {
     pub text: String,
     pub bold: bool,
     pub italic: bool,
+    pub strike: bool,
     pub code: bool,
     pub math: Option<MathView>,
 }
