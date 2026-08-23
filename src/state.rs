@@ -412,4 +412,25 @@ mod tests {
             assert!(doc.is_file(), "{kind}: the document must stay in place");
         }
     }
+
+    #[test]
+    fn progress_document_files_require_both_the_progress_parent_and_json_extension() {
+        let root = Path::new("/decks");
+        assert_eq!(
+            root.join("progress/deck-next.json"),
+            progress_document_for(&root.join("progress/deck-current.json"), "deck-next").unwrap()
+        );
+        assert_eq!(
+            root.join("progress/deck-next.json"),
+            progress_document_for(&root.join("progress"), "deck-next").unwrap()
+        );
+        assert!(matches!(
+            progress_document_for(&root.join("progress/deck-current.txt"), "deck-next"),
+            Err(StateError::InvalidStorePath { .. })
+        ));
+        assert!(matches!(
+            progress_document_for(&root.join("other/deck-current.json"), "deck-next"),
+            Err(StateError::InvalidStorePath { .. })
+        ));
+    }
 }

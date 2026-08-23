@@ -4767,6 +4767,24 @@ mod tests {
             count_eligible(&[], &store, sched.as_ref(), Depth::Recall, 1_000, None)
         );
     }
+
+    #[test]
+    fn session_locks_report_exactly_the_gated_card_ids() {
+        let cards = gated_cards(GATED_DECK);
+        let (mut store, _dir) = empty_store();
+        let session = Session::new(
+            cards.clone(),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            0,
+        );
+
+        assert_eq!(
+            HashSet::from([CHILD_ID.to_string()]),
+            session.locks(&store).locked_ids(&cards)
+        );
+    }
 }
 
 #[cfg(all(test, feature = "full"))]
