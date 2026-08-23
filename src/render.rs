@@ -131,7 +131,15 @@ fn fence_unit(
     info: &str,
     lines: Vec<String>,
     diagrams: &[crate::card::ResolvedDiagram],
+    projector: &mut DisplayProjector,
 ) -> NoteUnit {
+    if info.eq_ignore_ascii_case("math") && lines.iter().any(|line| !line.trim().is_empty()) {
+        let source = lines.join("\n");
+        return NoteUnit::Sentence {
+            runs: projector.project_display_math(&source),
+            text: source,
+        };
+    }
     if info.eq_ignore_ascii_case("mermaid") && !lines.is_empty() {
         let source = lines.join("\n");
         let print = crate::diagram::fingerprint(&source);
@@ -178,7 +186,7 @@ fn text_units_with(
                     // An empty fence keeps its unit slot: clients consume one
                     // fence-shaped unit per closed raw fence.
                     let block = std::mem::take(&mut code);
-                    units.push(fence_unit(info, block, diagrams));
+                    units.push(fence_unit(info, block, diagrams, projector));
                     code_fence = None;
                 }
                 None => {
@@ -264,7 +272,7 @@ fn text_units_with(
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
         let info = code_fence.map(|(_, _, info)| info).unwrap_or_default();
-        units.push(fence_unit(&info, code, diagrams));
+        units.push(fence_unit(&info, code, diagrams, projector));
     }
     units
 }
@@ -679,6 +687,60 @@ mod tests {
         assert_eq!(units.len(), 3);
         let NoteUnit::Sentence { runs, .. } = &units[1] else {
             panic!("display math should be a sentence unit");
+        };
+        assert!(runs[0].math.as_ref().unwrap().display);
+    }
+
+    #[test]
+    fn a_math_fence_is_one_display_math_unit() {
+        let units = note_units(&card_with_note(
+            "Before.\n```math\nx^2 + y^2\n= z^2\n```\nAfter.",
+        ));
+        assert_eq!(units.len(), 3, "{units:?}");
+        let NoteUnit::Sentence { text, runs } = &units[1] else {
+            panic!("a math fence should be a sentence unit: {units:?}");
+        };
+        assert_eq!(text, "x^2 + y^2\n= z^2", "the body joins as one source");
+        assert_eq!(runs.len(), 1);
+        let math = runs[0].math.as_ref().unwrap();
+        assert!(math.display);
+        assert!(
+            math.svg
+                .as_deref()
+                .is_some_and(|svg| svg.starts_with("<svg")),
+            "a multi-line body still renders: {math:?}"
+        );
+        assert_eq!(units[2], sentence("After."));
+    }
+
+    #[test]
+    fn a_math_fence_body_is_source_not_dollar_scanned() {
+        let units = note_units(&card_with_note("```math\n$x^2$\n```"));
+        let NoteUnit::Sentence { text, runs } = &units[0] else {
+            panic!("expected a sentence unit: {units:?}");
+        };
+        assert_eq!(text, "$x^2$", "dollars in the body stay source");
+        assert_eq!(runs[0].text, "$x^2$");
+        assert!(runs[0].math.as_ref().unwrap().display);
+    }
+
+    #[test]
+    fn an_empty_math_fence_stays_a_code_block() {
+        for note in ["```math\n```", "```math\n   \n```"] {
+            let units = note_units(&card_with_note(note));
+            assert!(
+                matches!(units.as_slice(), [NoteUnit::Code { .. }]),
+                "{note}: {units:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_math_fence_makes_front_units_structural() {
+        let units = front_units("Ready?\n```math\nx^2\n```").unwrap();
+        assert_eq!(units.len(), 2, "{units:?}");
+        let NoteUnit::Sentence { runs, .. } = &units[1] else {
+            panic!("expected the math unit: {units:?}");
         };
         assert!(runs[0].math.as_ref().unwrap().display);
     }

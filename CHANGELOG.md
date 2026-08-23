@@ -14,6 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ordinary text, and a code span that opens before the dollar keeps its
   priority.
 
+- A ```` ```math ```` fence renders as display math on every card
+  surface: the body is one verbatim math source (dollars and newlines
+  included), shown exactly like a `$$...$$` line. An all-blank body
+  stays an ordinary code block, and dollars inside every other fence
+  stay literal as before. Kids and mobile inherit the rendering through
+  the existing math-run wire with no client change.
+
 - Bare pipe tables render as real aligned tables on every card surface
   (adult web, kids fronts, mobile): alignment colons in the delimiter row
   set column alignment, short rows pad, long rows truncate to the header

@@ -35,6 +35,15 @@ impl DisplayProjector {
         project_text(text, Some(&mut self.renderer), true)
     }
 
+    pub(crate) fn project_display_math(&mut self, source: &str) -> Vec<InlineRun> {
+        let math = self.renderer.view(source, true, false);
+        vec![InlineRun {
+            text: source.to_string(),
+            math: Some(math),
+            ..InlineRun::default()
+        }]
+    }
+
     #[cfg(test)]
     pub(crate) fn render_count(&self) -> usize {
         self.renderer.render_count()
