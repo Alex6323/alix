@@ -537,6 +537,13 @@ fn section_carries_directive(rest: &str, line: usize) -> bool {
     false
 }
 
+/// Depth 1 is a section; 2 through 6 are card depths (a card and four
+/// sub-card levels). Every consumer asks this instead of spelling the
+/// range: two depth widenings each left range literals behind.
+pub(crate) fn is_card_depth(depth: usize) -> bool {
+    (2..=6).contains(&depth)
+}
+
 pub(crate) fn heading_depth(raw: &str) -> Option<(usize, &str)> {
     let hashes = raw.len() - raw.trim_start_matches('#').len();
     // ATX stops at six: seven or more hashes are ordinary prose (CommonMark).

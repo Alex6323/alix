@@ -114,7 +114,7 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
             continue;
         }
         if let Some((depth, _)) = crate::parser::heading_depth(line) {
-            if (2..=4).contains(&depth) {
+            if crate::parser::is_card_depth(depth) {
                 heading_line = n;
             } else {
                 // A section closes the card chain: an id below it belongs
@@ -130,7 +130,8 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
         prev_pipe = line.starts_with('|');
         let candidate = if line.trim().starts_with("<!--") {
             line.trim()
-        } else if crate::parser::heading_depth(line).is_some_and(|(d, _)| (2..=4).contains(&d))
+        } else if crate::parser::heading_depth(line)
+            .is_some_and(|(d, _)| crate::parser::is_card_depth(d))
             && let Some(pos) = line.find("<!--")
         {
             line[pos..].trim()
@@ -342,12 +343,43 @@ mod tests {
     /// same proposition.
     #[test]
     fn existing_ids_are_found_at_every_card_depth() {
-        let text = "## a <!-- id: card-a1 -->\n1\n### b <!-- id: card-b1 -->\n2\n#### c <!-- id: card-c1 -->\n3\n";
+        let text = "## a <!-- id: card-a1 -->\n1\n### b <!-- id: card-b1 -->\n2\n#### c <!-- id: card-c1 -->\n3\n##### d <!-- id: card-d1 -->\n4\n###### e <!-- id: card-e1 -->\n5\n";
         let (_, ids) = extract_ids(text);
         let found: Vec<&str> = ids.iter().map(|(id, _)| id.as_str()).collect();
-        for want in ["card-a1", "card-b1", "card-c1"] {
+        for want in ["card-a1", "card-b1", "card-c1", "card-d1", "card-e1"] {
             assert!(found.contains(&want), "{want} missing from {found:?}");
         }
+    }
+
+    #[test]
+    fn the_fast_scan_matches_the_full_scan_for_a_copied_depth_six_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let chain = |deck: &str, leaf: &str| {
+            format!(
+                "---\nformat-version: 1\nid: \"{deck}\"\n---\n\
+                 ## a\n1\n### b\n2\n#### c\n3\n##### d\n4\n\
+                 ###### e <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n{leaf}\n"
+            )
+        };
+        std::fs::write(
+            dir.path().join("a.md"),
+            chain("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f", "first"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("b.md"),
+            chain("deck-6v3c7x4k1m8q3z5t0b2n4d8f9w", "copy"),
+        )
+        .unwrap();
+
+        let full = scan_dir(dir.path());
+        let fast = scan_dir_fast(dir.path());
+
+        assert_eq!(1, full.card_dupes.len(), "the parser sees the copied card");
+        assert_eq!(
+            full, fast,
+            "review-open must not miss a copied card merely because its legal front is depth six"
+        );
     }
 
     #[test]

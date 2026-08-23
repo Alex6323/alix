@@ -584,7 +584,7 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
             continue;
         }
         if let Some((depth, rest)) = parser::heading_depth(raw) {
-            if (2..=6).contains(&depth) {
+            if crate::parser::is_card_depth(depth) {
                 block_end = Some(block_end_line(text, line));
                 if heading_id_marker(rest) {
                     found.push(line);
@@ -746,7 +746,8 @@ mod tests {
             .lines()
             .enumerate()
             .filter(|(_, l)| {
-                crate::parser::heading_depth(l).is_some_and(|(depth, _)| (2..=6).contains(&depth))
+                crate::parser::heading_depth(l)
+                    .is_some_and(|(depth, _)| crate::parser::is_card_depth(depth))
             })
             .map(|(i, _)| i + 1)
             .collect();

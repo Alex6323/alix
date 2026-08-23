@@ -18,6 +18,9 @@
 .rev-prompt .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
 .rev-prompt .checklist-box { flex: none; font-family: ui-monospace, monospace; }
 .rev-prompt pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: #fff3e6; border-radius: 12px; font: 16px/1.45 ui-monospace, monospace; }
+.table-scroll { overflow-x: auto; margin: 8px 0; }
+.unit-table { border-collapse: collapse; margin: 0 auto; text-align: left; }
+.unit-table th, .unit-table td { border: 1px solid #f0c9a0; padding: 5px 10px; }
 .rev-context { font-weight: 600; font-size: 19px; line-height: 1.4; color: var(--muted); margin: 4px 0; }
 .math-run { color: inherit; background: none; }
 .math-run[role="img"] { outline: none; }

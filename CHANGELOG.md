@@ -8,10 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - Bare pipe tables render as real aligned tables on every card surface
-  (adult web, mobile): alignment colons in the delimiter row set column
-  alignment, short rows pad, long rows truncate to the header width. Mapped
-  card tables keep their strict column rules; the kids client shows bare
-  tables as literal lines for now.
+  (adult web, kids fronts, mobile): alignment colons in the delimiter row
+  set column alignment, short rows pad, long rows truncate to the header
+  width. Mapped card tables keep their strict column rules; kids answers
+  show bare tables as literal lines for now.
 
 - Sub-cards now stack to `######`: heading depths 5 and 6 are sub-card
   depths 3 and 4 under the same one-level-parent rule, so every ATX depth
@@ -453,6 +453,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+
+- Two consumers of the card-depth rule missed the depths 5/6 widening,
+  found by Codex during reciprocal review: the fast duplicate scan at
+  review open ignored copied depth-5/6 cards (two cards could keep one
+  identity and alias their review history), and a reader-authored
+  depth-5/6 note label leaked into a personal card's answer. Card depth
+  is now one named predicate every consumer asks, so the next depth
+  change cannot strand a range literal.
 
 - A fence-shaped line carrying an info string (like a nested ```` ```rust ````
   opener quoted inside a longer outer fence) no longer closes the fence during

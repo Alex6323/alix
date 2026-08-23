@@ -1037,16 +1037,16 @@ fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
 /// A generated block counts as cards when it carries a front at any card
 /// depth; a section heading alone is prose.
 fn has_card_fronts(text: &str) -> bool {
-    text.lines()
-        .any(|l| crate::parser::heading_depth(l).is_some_and(|(d, _)| (2..=4).contains(&d)))
+    text.lines().any(|l| {
+        crate::parser::heading_depth(l).is_some_and(|(d, _)| crate::parser::is_card_depth(d))
+    })
 }
 
 fn clean_deck_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    let Some(start) = lines
-        .iter()
-        .position(|l| crate::parser::heading_depth(l).is_some_and(|(d, _)| (2..=4).contains(&d)))
-    else {
+    let Some(start) = lines.iter().position(|l| {
+        crate::parser::heading_depth(l).is_some_and(|(d, _)| crate::parser::is_card_depth(d))
+    }) else {
         return raw.trim().to_string();
     };
     let end = lines[start + 1..]

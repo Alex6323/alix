@@ -40,7 +40,7 @@ pub fn without_notes(text: &str) -> String {
         // A label the reader wrote above their own note; alix never writes one.
         if index > 0
             && super::heading_depth(trim_ws(lines[index - 1]))
-                .is_some_and(|(depth, _)| (2..=4).contains(&depth))
+                .is_some_and(|(depth, _)| super::is_card_depth(depth))
         {
             dropped[index - 1] = true;
         }
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn a_note_label_is_absorbed_at_every_card_depth() {
-        for label in ["## why", "### why", "#### why"] {
+        for label in ["## why", "### why", "#### why", "##### why", "###### why"] {
             let text = format!("{label}\n<!-- note: card-q1 -->\n> because\n");
             let stripped = without_notes(&text);
             assert!(
@@ -104,6 +104,22 @@ mod tests {
                 "label {label:?} survived into the deck text: {stripped:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_depth_six_note_label_never_leaks_into_a_personal_cards_answer() {
+        let text = "## personal <!-- id: card-p1 -->\nanswer\n\n\
+                    ###### why\n<!-- note: card-q1 -->\n> because\n";
+        let stripped = without_notes(text);
+        let cards = crate::parser::parse_sidecar("deck.personal.md", &stripped)
+            .expect("a legal note label must not make the personal file unparseable");
+        assert_eq!(1, cards.len());
+        assert_eq!(Some("card-p1".to_string()), cards[0].id());
+        assert_eq!(
+            vec!["answer"],
+            cards[0].back,
+            "the label belongs to the following note, not the preceding personal card"
+        );
     }
 
     #[test]

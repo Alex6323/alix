@@ -7,6 +7,36 @@ test.beforeEach(async ({ page, request }) => {
   await openApp(page);
 });
 
+test("kids keeps the content of a bare table front visible", async ({ page }) => {
+  await page.evaluate(async () => {
+    const kids = await import("/kids.js");
+    const dom = kids.createKidsDom({ document });
+    const raw = "Before launch\n| check | state |\n|---|---|\n| fuel | ready |";
+    const prompt = dom.frontPrompt({
+      front: raw,
+      front_runs: [{ text: raw }],
+      front_units: [
+        { kind: "sentence", text: "Before launch", runs: [{ text: "Before launch" }] },
+        {
+          kind: "table",
+          aligns: ["none", "none"],
+          header: [[{ text: "check" }], [{ text: "state" }]],
+          rows: [[[{ text: "fuel" }], [{ text: "ready" }]]],
+        },
+      ],
+    });
+    prompt.classList.add("table-front-repro");
+    document.body.appendChild(prompt);
+  });
+
+  const prompt = page.locator(".table-front-repro");
+  await expect(prompt).toContainText("Before launch");
+  await expect(prompt).toContainText("check");
+  await expect(prompt).toContainText("state");
+  await expect(prompt).toContainText("fuel");
+  await expect(prompt).toContainText("ready");
+});
+
 test("kids card surfaces render shared math SVGs safely", async ({ page, request }, testInfo) => {
   const browseResponse = await request.post("/api/browse", {
     data: { deck: "animals/math.md" },
