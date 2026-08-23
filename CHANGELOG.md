@@ -24,9 +24,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   option set, so these cards are never AI-distractor gaps, and a
   cross-shape submission fails loudly. The adult web reviewer toggles these
   options independently, sends no request before its explicit Submit action,
-  and marks chosen, missed-correct, and chosen-wrong options from the reply.
-  The kids reviewer gets the same select-all flow: taps toggle marks and one
-  Done action submits the set.
+  supports Space, digit, and Enter controls with focus reset for every new
+  card, and marks chosen, missed-correct, and chosen-wrong options from the
+  reply. The kids reviewer gets the same select-all flow: taps toggle marks
+  and one Done action submits the set.
 
 - A blank-surrounded `---` ends a section early: the cards after it carry no
   context until the next `#` heading, and a sub-card chain does not cross it.

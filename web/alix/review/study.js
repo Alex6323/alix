@@ -207,6 +207,7 @@ export function createStudy({
     answerConcealed = clientModel.answerConcealed;
     feedback = clientModel.feedback;
     selectedChoices = new Set();
+    choiceFocus = -1;
     typelineChecked = clientModel.typelineChecked;
     confirmingLeave = clientModel.confirmingLeave;
     explainInput = clientModel.explainInput;
@@ -905,7 +906,6 @@ export function createStudy({
       const wasChosen = chosen ? chosen.has(i) : false;
       const wasCorrect = correct ? correct.has(i) : false;
       if (isMultiChoice()) {
-        if (wasChosen) cls += " chosen";
         if (wasCorrect) cls += " correct";
         else if (wasChosen) cls += " wrong";
         else cls += " dim";
