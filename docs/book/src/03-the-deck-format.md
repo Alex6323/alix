@@ -80,19 +80,33 @@ Use `$...$` for a formula inside prose:
 It is the Pythagorean theorem.
 ```
 
-Use `$$...$$` for display math. The two delimiters and the formula must occupy
-one whole logical line; a multi-line `$$` block is not supported:
+Use `$$...$$` for display math, either on one whole logical line or as a
+block: a line holding only `$$` opens the block, the next such line closes
+it, and everything between is one formula. A ```` ```math ```` fence carries
+its body the same way. All three render identically:
 
 ```markdown
 ## What is the Gaussian integral?
 $$\int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}$$
+
+## State the quadratic formula.
+$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}
+         {2a}
+$$
 ```
+
+A card that opens a `$$` block without closing it fails to load, with an
+error naming the opener's line. In a section (outside any card), `$$` lines
+stay ordinary text.
 
 An opening dollar must touch the first formula character, and a closing dollar
 must touch the last one. A closing inline `$` cannot be followed by a digit, so
-`$5 and $10` stays literal currency. Escape a literal dollar as `\$`. Unmatched
+`$5 and $10` stays literal currency. GitHub's backtick-anchored spelling also
+works: ``$`x^2`$`` renders exactly like `$x^2$`, with the backtick-quoted body
+as the verbatim formula. Escape a literal dollar as `\$`. Unmatched
 dollars and `$$...$$` surrounded by prose also stay literal. Dollars inside
-inline code or fenced code are always verbatim.
+inline code or fenced code (other than a `math` fence) are always verbatim.
 
 Graphical clients render recognized math with the shared RaTeX renderer. If the
 delimiters are valid but the LaTeX is malformed, the card still loads and shows
