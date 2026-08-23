@@ -909,7 +909,9 @@ mod tests {
         let root = dir.path();
         write_deck(
             &root.join("math.md"),
-            "## What does $E = mc^2$ describe? <!-- id: card-math -->\n\
+            "## What does $E = mc^2$ describe?\n\
+             <!-- id: card-math -->\n\
+             <!-- choices-single -->\n\
              - [x] **$E = mc^2$**\n\
              - [ ] $F = ma$\n\
              > Energy and mass use $E = mc^2$.\n\
