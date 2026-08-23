@@ -414,7 +414,12 @@ fn push_run(runs: &mut Vec<InlineRun>, run: InlineRun) {
     if run.math.is_none()
         && let Some(previous) = runs.last_mut()
         && previous.math.is_none()
-        && (previous.bold, previous.italic, previous.code) == (run.bold, run.italic, run.code)
+        && (
+            previous.bold,
+            previous.italic,
+            previous.strike,
+            previous.code,
+        ) == (run.bold, run.italic, run.strike, run.code)
     {
         previous.text.push_str(&run.text);
     } else {
@@ -1197,6 +1202,20 @@ mod tests {
     fn double_tilde_strikes_and_the_markers_leave_content() {
         assert_eq!(vec![strike("gone")], parse_inline("~~gone~~"));
         assert_eq!("gone", strip_inline("~~gone~~"));
+    }
+
+    #[test]
+    fn a_strike_boundary_survives_run_merging() {
+        assert_eq!(
+            vec![strike("ab"), plain("cd")],
+            parse_inline("~~ab~~cd"),
+            "trailing plain text must not inherit the strike"
+        );
+        assert_eq!(
+            vec![plain("ab"), strike("cd")],
+            parse_inline("ab~~cd~~"),
+            "a struck tail must not flatten into the plain head"
+        );
     }
 
     #[test]
