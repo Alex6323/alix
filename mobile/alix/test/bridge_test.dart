@@ -9,6 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/review_bridge.dart';
 import 'package:alix_mobile/main.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
@@ -263,6 +264,118 @@ void main() {
     expect(table.rows[1][1], isEmpty, reason: 'the padded cell is empty');
   });
 
+  test('review bridge serves a select-all card and grades the exact set', () {
+    final root = Directory.systemTemp.createTempSync('alix-multi-bridge-');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final deck = '${root.path}/multi.md';
+    writeTestDeck(
+      deck,
+      '## Which are even? <!-- id: card-multi -->\n'
+      '<!-- choices-multiple -->\n'
+      '- [x] two\n'
+      '- [ ] three\n'
+      '- [x] four\n',
+    );
+    final session = ReviewSession.open(
+      deckPath: deck,
+      rootDir: root.path,
+      nowMs: t0,
+    );
+    final state = session.state();
+    expect(state.choicesMultiple, isTrue, reason: 'the wire flags select-all');
+    expect(state.choices!.toSet(), {
+      'two',
+      'three',
+      'four',
+    }, reason: 'every authored option is served');
+
+    final correct = <int>[
+      state.choices!.indexOf('two'),
+      state.choices!.indexOf('four'),
+    ];
+    final wrong = session.chooseMulti(
+      chosen: [state.choices!.indexOf('three')],
+    );
+    expect(wrong!.passed, isFalse, reason: 'a wrong set fails');
+    expect(
+      wrong.correct.toSet(),
+      correct.map(BigInt.from).toSet(),
+      reason: 'the feedback surfaces the full correct set',
+    );
+
+    final right = session.chooseMulti(chosen: correct);
+    expect(
+      right!.passed,
+      isTrue,
+      reason: 'exact set equality passes regardless of pick order',
+    );
+
+    final singleDeck = '${root.path}/single.md';
+    writeTestDeck(
+      singleDeck,
+      '## Pick one <!-- id: card-single -->\n'
+      '<!-- choices-single -->\n'
+      '- [x] yes\n'
+      '- [ ] no\n',
+    );
+    final single = ReviewSession.open(
+      deckPath: singleDeck,
+      rootDir: root.path,
+      nowMs: t0,
+    );
+    expect(
+      single.chooseMulti(chosen: const [0]),
+      isNull,
+      reason: 'a cross-shape submission is refused, not graded',
+    );
+
+    final portDeck = '${root.path}/multi-port.md';
+    writeTestDeck(
+      portDeck,
+      '## Which are odd? <!-- id: card-multiport -->\n'
+      '<!-- choices-multiple -->\n'
+      '- [ ] two\n'
+      '- [x] three\n'
+      '- [x] five\n',
+    );
+    final port = const ReviewBridgeFactory().open(
+      deckPath: portDeck,
+      rootDir: root.path,
+    );
+    final portState = port.state;
+    expect(
+      portState.choicesMultiple,
+      isTrue,
+      reason: 'the port model carries the select-all flag',
+    );
+    final mapped = port.chooseMulti([
+      portState.choices!.indexOf('three'),
+      portState.choices!.indexOf('five'),
+    ]);
+    expect(mapped!.passed, isTrue, reason: 'the port grades the exact set');
+    expect(
+      mapped.chosen,
+      {portState.choices!.indexOf('three'), portState.choices!.indexOf('five')},
+      reason: 'the port model returns int index sets, chosen as submitted',
+    );
+    expect(
+      mapped.correct,
+      mapped.chosen,
+      reason: 'a passing submission equals the correct set',
+    );
+    final missed = port.chooseMulti([portState.choices!.indexOf('two')]);
+    expect(missed!.chosen, {
+      portState.choices!.indexOf('two'),
+    }, reason: 'the port keeps the submitted picks as chosen');
+    expect(
+      missed.correct,
+      {portState.choices!.indexOf('three'), portState.choices!.indexOf('five')},
+      reason: 'the port keeps the authored answers as correct, not the picks',
+    );
+    expect(missed.passed, isFalse);
+  });
+
   test('a grade persists into the workspace store, on injected time', () {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
@@ -413,7 +526,10 @@ void main() {
     addTearDown(() => rootA.deleteSync(recursive: true));
     final rootB = Directory.systemTemp.createTempSync('alix-shared-');
     addTearDown(() => rootB.deleteSync(recursive: true));
-    writeTestDeck('${rootB.path}/shared.md', '---\ntitle: Shared Deck\n---\n## q\na\n');
+    writeTestDeck(
+      '${rootB.path}/shared.md',
+      '---\ntitle: Shared Deck\n---\n## q\na\n',
+    );
 
     await tester.pumpWidget(
       AlixApp(

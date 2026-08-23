@@ -9,7 +9,7 @@ pub use alix::{
     inline::InlineRun,
     math::MathView,
     render::{CellAlign, ChecklistItem, NoteUnit},
-    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, RegionRole, RegionView, ReviewState},
+    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
     trace::Phase as WalkPhase,
 };
@@ -194,6 +194,13 @@ pub struct _RecognizeGap {
 pub struct _ChoiceFeedback {
     pub chosen: usize,
     pub correct: usize,
+    pub passed: bool,
+}
+
+#[flutter_rust_bridge::frb(mirror(MultiChoiceFeedback))]
+pub struct _MultiChoiceFeedback {
+    pub chosen: Vec<usize>,
+    pub correct: Vec<usize>,
     pub passed: bool,
 }
 
@@ -414,6 +421,12 @@ impl ReviewSession {
     #[flutter_rust_bridge::frb(sync)]
     pub fn choose(&self, chosen: u32) -> Option<ChoiceFeedback> {
         alix::review::choose(&self.session, &self.store, &self.augment, chosen as usize)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn choose_multi(&self, chosen: Vec<u32>) -> Option<MultiChoiceFeedback> {
+        let indices: Vec<usize> = chosen.iter().map(|&index| index as usize).collect();
+        alix::review::choose_multi(&self.session, &self.store, &self.augment, &indices)
     }
 
     #[flutter_rust_bridge::frb(sync)]

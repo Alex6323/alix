@@ -21,6 +21,8 @@ void main() {
     controller.reveal();
     controller.revealNextLine();
     controller.choose(1);
+    controller.toggleChoice(2);
+    controller.submitChoices();
     controller.check(const ['answer']);
     controller.openAttempt();
     controller.toggleKeypoint(0);
@@ -30,11 +32,13 @@ void main() {
     expect(controller.revealed, isTrue);
     expect(controller.revealedLines, 1);
     expect(controller.choice?.chosen, 1);
+    expect(controller.multiSelected, {2});
+    expect(controller.multiChoice?.chosen, {2});
     expect(controller.checkFeedback?.passed, isTrue);
     expect(controller.attemptOpen, isTrue);
     expect(controller.tickedKeypoints, {0});
     expect(controller.foreignWriter, isNull);
-    expect(notifications, 8);
+    expect(notifications, 10);
   });
 
   test('install resets card interaction state after introduce and grade', () {
@@ -54,12 +58,16 @@ void main() {
     controller.reveal();
     controller.openAttempt();
     controller.toggleKeypoint(0);
+    controller.toggleChoice(1);
+    controller.submitChoices();
     controller.introduce();
 
     expect(controller.state, same(second));
     expect(controller.revealed, isFalse);
     expect(controller.attemptOpen, isFalse);
     expect(controller.tickedKeypoints, isEmpty);
+    expect(controller.multiSelected, isEmpty);
+    expect(controller.multiChoice, isNull);
 
     controller.reveal();
     controller.grade(ReviewGrade.pass);
@@ -187,6 +195,15 @@ class _FakeReviewPort implements ReviewPort {
   @override
   ReviewChoiceFeedbackModel? choose(int chosen) {
     return ReviewChoiceFeedbackModel(chosen: chosen, correct: 1, passed: true);
+  }
+
+  @override
+  ReviewMultiChoiceFeedbackModel? chooseMulti(List<int> chosen) {
+    return ReviewMultiChoiceFeedbackModel(
+      chosen: chosen,
+      correct: const [2],
+      passed: chosen.length == 1 && chosen.single == 2,
+    );
   }
 
   @override

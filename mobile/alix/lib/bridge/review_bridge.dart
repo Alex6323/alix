@@ -94,6 +94,18 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
+  ReviewMultiChoiceFeedbackModel? chooseMulti(List<int> chosen) {
+    final feedback = _session.chooseMulti(chosen: chosen);
+    return feedback == null
+        ? null
+        : ReviewMultiChoiceFeedbackModel(
+            chosen: [for (final index in feedback.chosen) index.toInt()],
+            correct: [for (final index in feedback.correct) index.toInt()],
+            passed: feedback.passed,
+          );
+  }
+
+  @override
   ReviewCheckFeedbackModel? check(List<String> lines) {
     final check = _session.check(lines: lines);
     return check == null
@@ -174,6 +186,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
     choiceRuns: state.choiceRuns == null
         ? null
         : [for (final runs in state.choiceRuns!) inlineRunsFromBridge(runs)],
+    choicesMultiple: state.choicesMultiple,
     keypoints: state.keypoints,
     keypointRuns: state.keypointRuns == null
         ? null

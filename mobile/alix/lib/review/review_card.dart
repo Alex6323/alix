@@ -21,6 +21,8 @@ class ReviewCardView extends StatelessWidget {
     required this.revealed,
     required this.revealedLines,
     required this.choice,
+    required this.multiChoice,
+    required this.multiSelected,
     required this.checkFeedback,
     required this.tickedKeypoints,
     required this.sketch,
@@ -37,6 +39,8 @@ class ReviewCardView extends StatelessWidget {
     required this.tutorCard,
     required this.verdictGrade,
     required this.onChoose,
+    required this.onToggleChoice,
+    required this.onSubmitChoices,
     required this.onCheck,
     required this.onOpenAttempt,
     required this.onToggleKeypoint,
@@ -51,6 +55,8 @@ class ReviewCardView extends StatelessWidget {
   final bool revealed;
   final int revealedLines;
   final ReviewChoiceFeedbackModel? choice;
+  final ReviewMultiChoiceFeedbackModel? multiChoice;
+  final Set<int> multiSelected;
   final ReviewCheckFeedbackModel? checkFeedback;
   final Set<int> tickedKeypoints;
   final Sketch sketch;
@@ -67,6 +73,8 @@ class ReviewCardView extends StatelessWidget {
   final ReviewTutorCardModel? tutorCard;
   final ReviewGrade verdictGrade;
   final ValueChanged<int> onChoose;
+  final ValueChanged<int> onToggleChoice;
+  final VoidCallback onSubmitChoices;
   final ValueChanged<List<String>> onCheck;
   final VoidCallback onOpenAttempt;
   final ValueChanged<int> onToggleKeypoint;
@@ -77,6 +85,7 @@ class ReviewCardView extends StatelessWidget {
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
 
   bool get _hasChoices => state.choices?.isNotEmpty ?? false;
+  bool get _isMulti => state.choicesMultiple == true;
   bool get _isTyping =>
       state.mode == ReviewMode.typing || state.mode == ReviewMode.typeLine;
   bool get _isExplain =>
@@ -113,7 +122,7 @@ class ReviewCardView extends StatelessWidget {
 
   String _modeLabel() {
     if (state.introducing) return 'new';
-    if (_hasChoices) return 'choice';
+    if (_hasChoices) return _isMulti ? 'select all' : 'choice';
     return switch (state.mode) {
       ReviewMode.typeLine => 'typing · line',
       ReviewMode.typing => 'typing',
@@ -128,7 +137,11 @@ class ReviewCardView extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = theme.alix;
     final answered =
-        revealed || checkFeedback != null || choice != null || _lineDone(card);
+        revealed ||
+        checkFeedback != null ||
+        choice != null ||
+        multiChoice != null ||
+        _lineDone(card);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -326,7 +339,9 @@ class ReviewCardView extends StatelessWidget {
   }
 
   Widget _diagram(ReviewDiagramModel unit, {required bool answered}) {
-    final alt = answered && unit.revealedAlt != null ? unit.revealedAlt! : unit.alt;
+    final alt = answered && unit.revealedAlt != null
+        ? unit.revealedAlt!
+        : unit.alt;
     if (unit.regions.isEmpty) {
       return Semantics(
         label: alt,
@@ -764,6 +779,7 @@ class ReviewCardView extends StatelessWidget {
     List<InlineRunModel>? runs,
     AlixTokens tokens,
   ) {
+    if (_isMulti) return _multiOptionRow(index, option, runs, tokens);
     final feedback = choice;
     final locked = feedback != null;
     Color numberColor = tokens.faint;
@@ -784,6 +800,78 @@ class ReviewCardView extends StatelessWidget {
         opacity = 0.45;
       }
     }
+    return _optionTile(
+      index: index,
+      option: option,
+      runs: runs,
+      tokens: tokens,
+      numberColor: numberColor,
+      textColor: textColor,
+      borderColor: borderColor,
+      fill: fill,
+      opacity: opacity,
+      locked: locked,
+      onTap: () => onChoose(index),
+    );
+  }
+
+  Widget _multiOptionRow(
+    int index,
+    String option,
+    List<InlineRunModel>? runs,
+    AlixTokens tokens,
+  ) {
+    final feedback = multiChoice;
+    final locked = feedback != null;
+    Color numberColor = tokens.faint;
+    Color textColor = tokens.text;
+    Color borderColor = tokens.line;
+    Color? fill = Colors.white.withValues(alpha: 0.03);
+    double opacity = 1;
+    if (feedback != null) {
+      final correct = feedback.correct.contains(index);
+      final picked = feedback.chosen.contains(index);
+      if (correct) {
+        numberColor = textColor = borderColor = tokens.good;
+        if (picked) fill = tokens.good.withValues(alpha: 0.12);
+      } else if (picked) {
+        numberColor = textColor = borderColor = tokens.again;
+        fill = tokens.again.withValues(alpha: 0.13);
+      } else {
+        opacity = 0.45;
+      }
+    } else if (multiSelected.contains(index)) {
+      numberColor = borderColor = tokens.text;
+      fill = Colors.white.withValues(alpha: 0.1);
+    }
+    return _optionTile(
+      index: index,
+      option: option,
+      runs: runs,
+      tokens: tokens,
+      numberColor: numberColor,
+      textColor: textColor,
+      borderColor: borderColor,
+      fill: fill,
+      opacity: opacity,
+      locked: locked,
+      onTap: () => onToggleChoice(index),
+    );
+  }
+
+  Widget _optionTile({
+    required int index,
+    required String option,
+    required List<InlineRunModel>? runs,
+    required AlixTokens tokens,
+    required Color numberColor,
+    required Color textColor,
+    required Color borderColor,
+    required Color? fill,
+    required double opacity,
+    required bool locked,
+    required VoidCallback onTap,
+  }) {
     final inner = Container(
       constraints: const BoxConstraints(minHeight: 52),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
@@ -831,7 +919,7 @@ class ReviewCardView extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => onChoose(index),
+        onTap: onTap,
         child: inner,
       ),
     );
@@ -1167,7 +1255,7 @@ class ReviewCardView extends StatelessWidget {
   }
 
   bool _attempted(ReviewCardModel card) {
-    if (_hasChoices) return choice != null;
+    if (_hasChoices) return _isMulti ? multiChoice != null : choice != null;
     if (state.introducing) return revealed;
     if (state.mode == ReviewMode.lineByLine) return _lineDone(card);
     if (_isTyping) return checkFeedback != null;
@@ -1192,6 +1280,23 @@ class ReviewCardView extends StatelessWidget {
   List<Widget> _modeChips(ReviewCardModel card) {
     if (state.introducing) {
       if (_hasChoices) {
+        if (_isMulti) {
+          return multiChoice == null
+              ? [
+                  ReviewChip(
+                    label: 'Submit',
+                    kind: ReviewChipKind.primary,
+                    onTap: onSubmitChoices,
+                  ),
+                ]
+              : [
+                  ReviewChip(
+                    label: 'Seen',
+                    kind: ReviewChipKind.primary,
+                    onTap: onIntroduce,
+                  ),
+                ];
+        }
         return choice == null
             ? const []
             : [
@@ -1219,28 +1324,22 @@ class ReviewCardView extends StatelessWidget {
             ];
     }
     if (_hasChoices) {
+      if (_isMulti) {
+        final feedback = multiChoice;
+        if (feedback == null) {
+          return [
+            ReviewChip(
+              label: 'Submit',
+              kind: ReviewChipKind.primary,
+              onTap: onSubmitChoices,
+            ),
+          ];
+        }
+        return _choiceVerdictChips(feedback.passed);
+      }
       final feedback = choice;
       if (feedback == null) return const [];
-      return feedback.passed
-          ? [
-              ReviewChip(
-                label: 'Next',
-                kind: ReviewChipKind.primary,
-                onTap: () => onGrade(ReviewGrade.pass),
-              ),
-              ReviewChip(
-                label: 'I guessed',
-                kind: ReviewChipKind.quiet,
-                onTap: () => onGrade(ReviewGrade.fail),
-              ),
-            ]
-          : [
-              ReviewChip(
-                label: 'Continue',
-                kind: ReviewChipKind.primary,
-                onTap: () => onGrade(ReviewGrade.fail),
-              ),
-            ];
+      return _choiceVerdictChips(feedback.passed);
     }
     if (state.mode == ReviewMode.lineByLine) {
       if (!_lineDone(card)) {
@@ -1311,6 +1410,29 @@ class ReviewCardView extends StatelessWidget {
       ];
     }
     return _gradeTrio();
+  }
+
+  List<Widget> _choiceVerdictChips(bool passed) {
+    return passed
+        ? [
+            ReviewChip(
+              label: 'Next',
+              kind: ReviewChipKind.primary,
+              onTap: () => onGrade(ReviewGrade.pass),
+            ),
+            ReviewChip(
+              label: 'I guessed',
+              kind: ReviewChipKind.quiet,
+              onTap: () => onGrade(ReviewGrade.fail),
+            ),
+          ]
+        : [
+            ReviewChip(
+              label: 'Continue',
+              kind: ReviewChipKind.primary,
+              onTap: () => onGrade(ReviewGrade.fail),
+            ),
+          ];
   }
 
   List<Widget> _gradeTrio() => [

@@ -10,13 +10,32 @@ void main() {
         'lib/review/review_controller.dart',
         'notifyListeners();',
       ),
-      [84, 89, 94, 99, 104, 109, 114, 119, 124, 129, 134, 139, 144, 149, 154, 159],
+      [
+        88,
+        93,
+        98,
+        103,
+        108,
+        113,
+        118,
+        123,
+        128,
+        133,
+        138,
+        143,
+        148,
+        153,
+        158,
+        163,
+        168,
+        173,
+      ],
       reason:
-          'setServerLive, install, choose, check, openAttempt, '
-          'toggleKeypoint, reveal, the six sketch transitions '
-          '(tool, begin, extend, end, undo, clear), revealNextLine, '
-          'dismissForeignWriter, and restart own every ReviewController '
-          'mutation',
+          'setServerLive, install, choose, toggleChoice, submitChoices, '
+          'check, openAttempt, toggleKeypoint, reveal, the six sketch '
+          'transitions (tool, begin, extend, end, undo, clear), '
+          'revealNextLine, dismissForeignWriter, and restart own every '
+          'ReviewController mutation',
     );
     expect(_linesContaining('lib/picker_screen.dart', 'setState('), isEmpty);
     expect(

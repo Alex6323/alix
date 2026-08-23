@@ -181,10 +181,12 @@ class ReviewCardModel {
   final List<InlineRunModel> frontRuns;
   final List<ReviewNoteUnitModel>? frontUnits;
   final List<String> context;
+
   /// Whether `context` is the question (a cloze sentence) or a label for the
   /// front (a card table's title).
   final bool contextLeads;
   final List<List<InlineRunModel>> contextRuns;
+
   /// The context's fence-shaped units only, in fence order (the nth raw
   /// fence consumes the nth unit); context prose keeps its line rendering.
   final List<ReviewNoteUnitModel> contextUnits;
@@ -206,6 +208,19 @@ class ReviewChoiceFeedbackModel {
 
   final int chosen;
   final int correct;
+  final bool passed;
+}
+
+class ReviewMultiChoiceFeedbackModel {
+  ReviewMultiChoiceFeedbackModel({
+    required Iterable<int> chosen,
+    required Iterable<int> correct,
+    required this.passed,
+  }) : chosen = Set.unmodifiable(chosen),
+       correct = Set.unmodifiable(correct);
+
+  final Set<int> chosen;
+  final Set<int> correct;
   final bool passed;
 }
 
@@ -282,6 +297,7 @@ class ReviewStateModel {
     required this.introducing,
     Iterable<String>? choices,
     Iterable<Iterable<InlineRunModel>>? choiceRuns,
+    this.choicesMultiple,
     Iterable<String>? keypoints,
     Iterable<Iterable<InlineRunModel>>? keypointRuns,
     required this.finished,
@@ -312,6 +328,7 @@ class ReviewStateModel {
   final bool introducing;
   final List<String>? choices;
   final List<List<InlineRunModel>>? choiceRuns;
+  final bool? choicesMultiple;
   final List<String>? keypoints;
   final List<List<InlineRunModel>>? keypointRuns;
   final bool finished;

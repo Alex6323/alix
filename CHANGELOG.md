@@ -43,7 +43,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   supports Space, digit, and Enter controls with focus reset for every new
   card, and marks chosen, missed-correct, and chosen-wrong options from the
   reply. The kids reviewer gets the same select-all flow: taps toggle marks
-  and one Done action submits the set.
+  and one Done action submits the set. The mobile reviewer completes the
+  three clients: options toggle, a Submit chip grades the set through the
+  embedded core, and the feedback marks the same three option states.
 
 - A blank-surrounded `---` ends a section early: the cards after it carry no
   context until the next `#` heading, and a sub-card chain does not cross it.

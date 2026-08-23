@@ -36,6 +36,8 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
   ChoiceFeedback? choose({required int chosen});
 
+  MultiChoiceFeedback? chooseMulti({required List<int> chosen});
+
   CrumbState? crumb({BigInt? nowMs});
 
   bool deckHasExam();
@@ -426,6 +428,30 @@ class MathView {
 }
 
 enum Mode { flip, typing, typeLine, choice, lineByLine, explain }
+
+class MultiChoiceFeedback {
+  final Uint64List chosen;
+  final Uint64List correct;
+  final bool passed;
+
+  const MultiChoiceFeedback({
+    required this.chosen,
+    required this.correct,
+    required this.passed,
+  });
+
+  @override
+  int get hashCode => chosen.hashCode ^ correct.hashCode ^ passed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MultiChoiceFeedback &&
+          runtimeType == other.runtimeType &&
+          chosen == other.chosen &&
+          correct == other.correct &&
+          passed == other.passed;
+}
 
 @freezed
 sealed class NoteUnit with _$NoteUnit {

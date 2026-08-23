@@ -22,6 +22,8 @@ abstract interface class ReviewPort {
 
   ReviewChoiceFeedbackModel? choose(int chosen);
 
+  ReviewMultiChoiceFeedbackModel? chooseMulti(List<int> chosen);
+
   ReviewCheckFeedbackModel? check(List<String> lines);
 
   ReviewStateModel introduce();

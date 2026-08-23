@@ -65,6 +65,8 @@ class ReviewView extends StatelessWidget {
     required this.revealed,
     required this.revealedLines,
     required this.choice,
+    required this.multiChoice,
+    required this.multiSelected,
     required this.checkFeedback,
     required this.tickedKeypoints,
     required this.sketch,
@@ -85,6 +87,8 @@ class ReviewView extends StatelessWidget {
     required this.confirmLeave,
     required this.onDismissForeignWriter,
     required this.onChoose,
+    required this.onToggleChoice,
+    required this.onSubmitChoices,
     required this.onCheck,
     required this.onOpenAttempt,
     required this.onToggleKeypoint,
@@ -103,6 +107,8 @@ class ReviewView extends StatelessWidget {
   final bool revealed;
   final int revealedLines;
   final ReviewChoiceFeedbackModel? choice;
+  final ReviewMultiChoiceFeedbackModel? multiChoice;
+  final Set<int> multiSelected;
   final ReviewCheckFeedbackModel? checkFeedback;
   final Set<int> tickedKeypoints;
   final Sketch sketch;
@@ -123,6 +129,8 @@ class ReviewView extends StatelessWidget {
   final Future<bool> Function(BuildContext context) confirmLeave;
   final VoidCallback onDismissForeignWriter;
   final ValueChanged<int> onChoose;
+  final ValueChanged<int> onToggleChoice;
+  final VoidCallback onSubmitChoices;
   final ValueChanged<List<String>> onCheck;
   final VoidCallback onOpenAttempt;
   final ValueChanged<int> onToggleKeypoint;
@@ -188,6 +196,8 @@ class ReviewView extends StatelessWidget {
                         revealed: revealed,
                         revealedLines: revealedLines,
                         choice: choice,
+                        multiChoice: multiChoice,
+                        multiSelected: multiSelected,
                         checkFeedback: checkFeedback,
                         tickedKeypoints: tickedKeypoints,
                         sketch: sketch,
@@ -204,6 +214,8 @@ class ReviewView extends StatelessWidget {
                         tutorCard: tutorCard,
                         verdictGrade: verdictGrade,
                         onChoose: onChoose,
+                        onToggleChoice: onToggleChoice,
+                        onSubmitChoices: onSubmitChoices,
                         onCheck: onCheck,
                         onOpenAttempt: onOpenAttempt,
                         onToggleKeypoint: onToggleKeypoint,

@@ -38,6 +38,8 @@ class ReviewController extends ChangeNotifier {
   bool _revealed = false;
   int _revealedLines = 0;
   ReviewChoiceFeedbackModel? _choice;
+  ReviewMultiChoiceFeedbackModel? _multiChoice;
+  final Set<int> _multiSelected = {};
   ReviewCheckFeedbackModel? _checkFeedback;
   final Set<int> _tickedKeypoints = {};
   final Sketch _sketch = Sketch();
@@ -55,6 +57,8 @@ class ReviewController extends ChangeNotifier {
   bool get revealed => _revealed;
   int get revealedLines => _revealedLines;
   ReviewChoiceFeedbackModel? get choice => _choice;
+  ReviewMultiChoiceFeedbackModel? get multiChoice => _multiChoice;
+  Set<int> get multiSelected => Set.unmodifiable(_multiSelected);
   ReviewCheckFeedbackModel? get checkFeedback => _checkFeedback;
   Set<int> get tickedKeypoints => Set.unmodifiable(_tickedKeypoints);
   Sketch get sketch => _sketch;
@@ -91,6 +95,16 @@ class ReviewController extends ChangeNotifier {
 
   void choose(int chosen) {
     _choice = _requirePort().choose(chosen);
+    notifyListeners();
+  }
+
+  void toggleChoice(int index) {
+    if (!_multiSelected.remove(index)) _multiSelected.add(index);
+    notifyListeners();
+  }
+
+  void submitChoices() {
+    _multiChoice = _requirePort().chooseMulti(_multiSelected.toList());
     notifyListeners();
   }
 
@@ -218,6 +232,8 @@ class ReviewController extends ChangeNotifier {
     _revealed = false;
     _revealedLines = 0;
     _choice = null;
+    _multiChoice = null;
+    _multiSelected.clear();
     _checkFeedback = null;
     _tickedKeypoints.clear();
     _sketch.reset();

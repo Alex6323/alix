@@ -119,6 +119,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MathView dco_decode_box_autoadd_math_view(dynamic raw);
 
   @protected
+  MultiChoiceFeedback dco_decode_box_autoadd_multi_choice_feedback(dynamic raw);
+
+  @protected
   RecognizeGap dco_decode_box_autoadd_recognize_gap(dynamic raw);
 
   @protected
@@ -218,10 +221,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
 
   @protected
+  List<int> dco_decode_list_prim_u_32_loose(dynamic raw);
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  Uint64List dco_decode_list_prim_usize_strict(dynamic raw);
 
   @protected
   List<RegionView> dco_decode_list_region_view(dynamic raw);
@@ -237,6 +246,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Mode dco_decode_mode(dynamic raw);
+
+  @protected
+  MultiChoiceFeedback dco_decode_multi_choice_feedback(dynamic raw);
 
   @protected
   NoteUnit dco_decode_note_unit(dynamic raw);
@@ -273,6 +285,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MathView? dco_decode_opt_box_autoadd_math_view(dynamic raw);
+
+  @protected
+  MultiChoiceFeedback? dco_decode_opt_box_autoadd_multi_choice_feedback(
+    dynamic raw,
+  );
 
   @protected
   RecognizeGap? dco_decode_opt_box_autoadd_recognize_gap(dynamic raw);
@@ -446,6 +463,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer);
 
   @protected
+  MultiChoiceFeedback sse_decode_box_autoadd_multi_choice_feedback(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RecognizeGap sse_decode_box_autoadd_recognize_gap(
     SseDeserializer deserializer,
   );
@@ -553,10 +575,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteUnit> sse_decode_list_note_unit(SseDeserializer deserializer);
 
   @protected
+  List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer);
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  Uint64List sse_decode_list_prim_usize_strict(SseDeserializer deserializer);
 
   @protected
   List<RegionView> sse_decode_list_region_view(SseDeserializer deserializer);
@@ -572,6 +600,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Mode sse_decode_mode(SseDeserializer deserializer);
+
+  @protected
+  MultiChoiceFeedback sse_decode_multi_choice_feedback(
+    SseDeserializer deserializer,
+  );
 
   @protected
   NoteUnit sse_decode_note_unit(SseDeserializer deserializer);
@@ -616,6 +649,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MathView? sse_decode_opt_box_autoadd_math_view(SseDeserializer deserializer);
+
+  @protected
+  MultiChoiceFeedback? sse_decode_opt_box_autoadd_multi_choice_feedback(
+    SseDeserializer deserializer,
+  );
 
   @protected
   RecognizeGap? sse_decode_opt_box_autoadd_recognize_gap(
@@ -825,6 +863,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_multi_choice_feedback(
+    MultiChoiceFeedback self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_recognize_gap(
     RecognizeGap self,
     SseSerializer serializer,
@@ -963,6 +1007,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_note_unit(List<NoteUnit> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_prim_u_32_loose(
+    List<int> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
     Uint32List self,
     SseSerializer serializer,
@@ -971,6 +1021,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_usize_strict(
+    Uint64List self,
     SseSerializer serializer,
   );
 
@@ -994,6 +1050,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_mode(Mode self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_multi_choice_feedback(
+    MultiChoiceFeedback self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_note_unit(NoteUnit self, SseSerializer serializer);
@@ -1052,6 +1114,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_math_view(
     MathView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_multi_choice_feedback(
+    MultiChoiceFeedback? self,
     SseSerializer serializer,
   );
 
