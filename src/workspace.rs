@@ -497,6 +497,23 @@ mod tests {
     }
 
     #[test]
+    fn load_propagates_a_missing_root_without_a_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = Workspace::load(dir.path().join("missing")).unwrap_err();
+
+        assert_eq!(io::ErrorKind::NotFound, error.kind());
+    }
+
+    #[test]
+    fn load_rejects_a_file_instead_of_treating_it_as_an_empty_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("notes.md");
+        write(&file, "ordinary notes\n");
+
+        assert!(Workspace::load(file).is_err());
+    }
+
+    #[test]
     fn manifest_source_accepts_a_string_or_a_list() {
         let dir = tempfile::tempdir().unwrap();
         write(
