@@ -166,6 +166,7 @@ fn text_units_with(
     let mut units = Vec::new();
     let mut code_fence: Option<(char, usize, String)> = None;
     let mut code: Vec<String> = Vec::new();
+    let mut math_block: Option<Vec<String>> = None;
     let mut prose = String::new();
     let mut checklist = Vec::new();
 
@@ -204,6 +205,27 @@ fn text_units_with(
         }
         if code_fence.is_some() {
             code.push(logical.to_string());
+            continue;
+        }
+        if let Some(body) = math_block.as_mut() {
+            if logical.trim() == "$$" {
+                let source = std::mem::take(body).join("\n");
+                math_block = None;
+                if !source.trim().is_empty() {
+                    units.push(NoteUnit::Sentence {
+                        runs: projector.project_display_math(&source),
+                        text: source,
+                    });
+                }
+            } else {
+                body.push(logical.to_string());
+            }
+            continue;
+        }
+        if logical.trim() == "$$" {
+            flush_checklist(&mut checklist, &mut units);
+            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            math_block = Some(Vec::new());
             continue;
         }
         if logical.starts_with('|')
@@ -269,6 +291,14 @@ fn text_units_with(
 
     flush_checklist(&mut checklist, &mut units);
     flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+    // The parser rejects an unclosed card `$$`, so this tail only fires on
+    // free text: the gathered lines degrade to a code block, like the
+    // unterminated fence below.
+    if let Some(body) = math_block.take()
+        && !body.is_empty()
+    {
+        units.push(NoteUnit::Code { lines: body });
+    }
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
         let info = code_fence.map(|(_, _, info)| info).unwrap_or_default();
@@ -689,6 +719,58 @@ mod tests {
             panic!("display math should be a sentence unit");
         };
         assert!(runs[0].math.as_ref().unwrap().display);
+    }
+
+    #[test]
+    fn a_multi_line_dollar_block_is_one_display_math_unit() {
+        let units = note_units(&card_with_note("Before.\n$$\nx^2 +\ny^2\n$$\nAfter."));
+        assert_eq!(units.len(), 3, "{units:?}");
+        let NoteUnit::Sentence { text, runs } = &units[1] else {
+            panic!("a dollar block should be a sentence unit: {units:?}");
+        };
+        assert_eq!(text, "x^2 +\ny^2", "the body joins, markers drop");
+        assert_eq!(runs.len(), 1);
+        let math = runs[0].math.as_ref().unwrap();
+        assert!(math.display);
+        assert!(
+            math.svg
+                .as_deref()
+                .is_some_and(|svg| svg.starts_with("<svg"))
+        );
+        assert_eq!(units[2], sentence("After."));
+    }
+
+    #[test]
+    fn an_empty_dollar_pair_emits_no_unit() {
+        let units = note_units(&card_with_note("Before.\n$$\n$$\nAfter."));
+        assert_eq!(
+            units,
+            vec![sentence("Before."), sentence("After.")],
+            "two markers with no content show nothing"
+        );
+    }
+
+    #[test]
+    fn a_dollar_line_inside_a_fence_stays_code() {
+        let units = note_units(&card_with_note("```\n$$\nx^2\n$$\n```"));
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["$$".into(), "x^2".into(), "$$".into()]
+            }]
+        );
+    }
+
+    #[test]
+    fn an_unterminated_dollar_block_in_free_text_degrades_to_code() {
+        let units = note_units(&card_with_note("$$\nx^2"));
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["x^2".into()]
+            }],
+            "only free text can reach this: the parser rejects an unclosed card opener"
+        );
     }
 
     #[test]

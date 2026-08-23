@@ -235,6 +235,10 @@ pub enum ParseError {
     )]
     SetextUnderline(usize),
     #[error(
+        "line {0}: this `$$` opens display math but never closes before the card ends; add a closing `$$` line, or write a one-line formula as `$$formula$$`"
+    )]
+    UnclosedDisplayMath(usize),
+    #[error(
         "line {0}: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"
     )]
     IndentedCode(usize),
@@ -288,6 +292,7 @@ impl ParseError {
             Self::StrayDivider(_) => "stray_divider",
             Self::ProseAfterTerminator(_) => "prose_after_terminator",
             Self::SetextUnderline(_) => "setext_underline",
+            Self::UnclosedDisplayMath(_) => "unclosed_display_math",
             Self::IndentedCode(_) => "indented_code",
             Self::NestedQuote(_) => "nested_quote",
             Self::CardThematicBreak(_) => "card_thematic_break",
@@ -317,6 +322,7 @@ impl ParseError {
             | Self::StrayDivider(line)
             | Self::ProseAfterTerminator(line)
             | Self::SetextUnderline(line)
+            | Self::UnclosedDisplayMath(line)
             | Self::IndentedCode(line)
             | Self::NestedQuote(line)
             | Self::CardThematicBreak(line) => *line,
@@ -634,6 +640,9 @@ struct RawCard {
     note: Option<String>,
     directives: CardDirectives,
     mapping: Option<Mapping>,
+    /// The line of a bare `$$` opener still unclosed; a card may not end
+    /// with one open.
+    open_math: Option<usize>,
 }
 
 struct RawTable {
@@ -967,7 +976,7 @@ fn scan(
             {
                 return Err(ParseError::SubCardTableTitle(card.line));
             }
-            if let Some(card) = current.take() {
+            if let Some(card) = take_card(&mut current)? {
                 if card.front_extra.is_empty()
                     && card.back.is_empty()
                     && card.note.is_none()
@@ -1020,7 +1029,7 @@ fn scan(
         {
             pending = None;
             if depth == 1 {
-                if let Some(card) = current.take() {
+                if let Some(card) = take_card(&mut current)? {
                     blocks.push(RawBlock::Card(card));
                 }
                 // Scanned like any other heading, so an editorial comment
@@ -1059,7 +1068,7 @@ fn scan(
             if depth > 2 && open_depths.last().map(|(open, _)| *open) != Some(depth - 1) {
                 return Err(ParseError::OrphanSubCard(lineno));
             }
-            if let Some(card) = current.take() {
+            if let Some(card) = take_card(&mut current)? {
                 blocks.push(RawBlock::Card(card));
             }
             let (front, directives) = heading(rest, lineno, lints)?;
@@ -1082,6 +1091,7 @@ fn scan(
                 note: None,
                 directives,
                 mapping: None,
+                open_math: None,
             });
             prev_blank = false;
             prev_heading = true;
@@ -1104,6 +1114,14 @@ fn scan(
         }
         if thematic_break_shape(t) && indent_width(raw) < 4 && current.is_some() {
             return Err(ParseError::CardThematicBreak(lineno));
+        }
+        if t == "$$"
+            && let Some(card) = current.as_mut()
+        {
+            card.open_math = match card.open_math {
+                None => Some(lineno),
+                Some(_) => None,
+            };
         }
 
         if let Some(rest) = t.strip_prefix('\\')
@@ -1158,7 +1176,7 @@ fn scan(
                     card.divider_line = Some(lineno);
                 }
             } else if !attached && prev_blank {
-                if let Some(card) = current.take() {
+                if let Some(card) = take_card(&mut current)? {
                     blocks.push(RawBlock::Card(card));
                 }
                 open_depths.clear();
@@ -1295,7 +1313,7 @@ fn scan(
     if let Some(tbl) = table.take() {
         blocks.push(RawBlock::Table(tbl));
     }
-    if let Some(card) = current.take() {
+    if let Some(card) = take_card(&mut current)? {
         blocks.push(RawBlock::Card(card));
     }
     for line in idle_terminators {
@@ -1751,6 +1769,14 @@ fn build_table_cards_inner(
     Ok(())
 }
 
+fn take_card(current: &mut Option<RawCard>) -> Result<Option<RawCard>, ParseError> {
+    let card = current.take();
+    if let Some(line) = card.as_ref().and_then(|card| card.open_math) {
+        return Err(ParseError::UnclosedDisplayMath(line));
+    }
+    Ok(card)
+}
+
 fn push_content(current: &mut Option<RawCard>, lineno: usize, text: String) {
     if let Some(card) = current.as_mut() {
         if card.divided {
@@ -2048,6 +2074,7 @@ fn build_card_inner(
         note,
         directives,
         mapping,
+        open_math: _,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
@@ -4394,6 +4421,57 @@ a
         let deck = parse("# S\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("x", deck.cards[0].front);
+    }
+
+    #[test]
+    fn an_unclosed_display_math_opener_fails_at_its_line_and_neighbors_stay_legal() {
+        let error_rows = [
+            ("## Q\nanswer\n$$\nx^2\n", 3, "unclosed at end of file"),
+            (
+                "## Q\n$$\nx^2\n## R\nb\n",
+                2,
+                "unclosed at the next heading",
+            ),
+            (
+                "## Q\n$$\nx\n$$\ntext\n$$\ntail\n",
+                6,
+                "a second opener reopens",
+            ),
+        ];
+        for (deck, line, why) in error_rows {
+            assert_eq!(
+                err(deck),
+                ParseError::UnclosedDisplayMath(line),
+                "{why}: {deck:?}"
+            );
+        }
+        let legal_rows = [
+            ("## Q\n$$\nx^2\n$$\n", "a closed pair is legal"),
+            ("## Q\n```\n$$\n```\n", "a fence interior never toggles"),
+            (
+                "# S\n\n$$\nx\n\n## Q\na\n",
+                "section content keeps literal dollars",
+            ),
+            ("## Q\n$$x^2$$\n", "the single-line spelling is untouched"),
+            (
+                "## Q\n\\$$\nx\n",
+                "an escaped marker is content, not an opener",
+            ),
+        ];
+        for (text, why) in legal_rows {
+            let deck = parse(text);
+            let kept: String = deck
+                .cards
+                .iter()
+                .flat_map(|card| card.back.iter())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                text.starts_with("# S") || kept.contains('$'),
+                "{why}: the dollars stay content, {kept:?}"
+            );
+        }
     }
 
     #[test]

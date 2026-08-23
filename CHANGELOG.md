@@ -7,19 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- GitHub's backtick-anchored inline math spelling is recognized: a
-  dollar, a backtick-quoted body, a dollar (as in ``$`x^2`$``) renders
-  exactly like `$x^2$`, with all four anchor characters as markers and
-  the body as verbatim math source. An empty or unclosed anchor stays
-  ordinary text, and a code span that opens before the dollar keeps its
-  priority.
-
-- A ```` ```math ```` fence renders as display math on every card
-  surface: the body is one verbatim math source (dollars and newlines
-  included), shown exactly like a `$$...$$` line. An all-blank body
-  stays an ordinary code block, and dollars inside every other fence
-  stay literal as before. Kids and mobile inherit the rendering through
-  the existing math-run wire with no client change.
+- The math spellings aligned with GitHub (decision 11). Display math
+  gains its two block spellings: a bare `$$` line opens a block that the
+  next bare `$$` line closes, and a ```` ```math ```` fence carries its
+  body the same way; both render as one display formula on every card
+  surface, exactly like a `$$...$$` line, with the body as verbatim
+  math source. A card that opens a `$$` block without closing it fails
+  loud at the opener's line instead of swallowing the rest of the card.
+  Inline math gains the backtick-anchored spelling: a dollar, a
+  backtick-quoted body, a dollar (as in ``$`x^2`$``) renders exactly
+  like `$x^2$`. Fence interiors, escaped markers, empty bodies, and
+  section content stay literal; kids and mobile inherit everything
+  through the existing math-run wire with no client change.
 
 - Bare pipe tables render as real aligned tables on every card surface
   (adult web, kids fronts, mobile): alignment colons in the delimiter row
