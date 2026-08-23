@@ -464,6 +464,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The kids reviewer now shows a bare-table note after reveal, found by
+  Codex during reciprocal review: the table renderer existed but was
+  never handed to the kids study view, so a note authored as a
+  comparison table left the explanation bubble empty.
+
+- A card table whose delimiter row is narrower than its header gets its
+  own diagnosis naming the valid rewrite (a `---` cell per header
+  column), found by Codex during reciprocal review: the previous message
+  recommended padding with empty cells, which is invalid in a delimiter
+  row and led from one parse failure into another.
+
 - Two consumers of the card-depth rule missed the depths 5/6 widening,
   found by Codex during reciprocal review: the fast duplicate scan at
   review open ignored copied depth-5/6 cards (two cards could keep one

@@ -203,6 +203,14 @@ pub enum ParseError {
         expected: usize,
     },
     #[error(
+        "line {line}: this delimiter row has {found} cells but the header has {expected}; give every header column its own `---` cell"
+    )]
+    TableDelimiterWidth {
+        line: usize,
+        found: usize,
+        expected: usize,
+    },
+    #[error(
         "line {0}: `\\blank{{...}}` in a table cell is not supported; write that row as a `##` card"
     )]
     TableCellHole(usize),
@@ -271,6 +279,7 @@ impl ParseError {
             Self::TableLineMalformed(_) => "table_line_malformed",
             Self::TableColumns { .. } => "table_columns",
             Self::TableRowWidth { .. } => "table_row_width",
+            Self::TableDelimiterWidth { .. } => "table_delimiter_width",
             Self::TableCellHole(_) => "table_cell_hole",
             Self::TableCellImage(_) => "table_cell_image",
             Self::TableRowStamp { .. } => "table_row_stamp",
@@ -324,6 +333,7 @@ impl ParseError {
             | Self::ChoiceShape { line, .. }
             | Self::TableColumns { line, .. }
             | Self::TableRowWidth { line, .. }
+            | Self::TableDelimiterWidth { line, .. }
             | Self::TableRowStamp { line, .. }
             | Self::TableDuplicateStamp { line, .. } => *line,
         }
@@ -981,7 +991,7 @@ fn scan(
             let delimiter =
                 split_cells(next).expect("is_delimiter_row only passes splittable lines");
             if delimiter.len() != header.len() {
-                return Err(ParseError::TableRowWidth {
+                return Err(ParseError::TableDelimiterWidth {
                     line: lineno + 1,
                     found: delimiter.len(),
                     expected: header.len(),
@@ -4387,6 +4397,27 @@ a
     }
 
     #[test]
+    fn a_short_delimiter_row_recommends_a_valid_delimiter_cell() {
+        let error = err("<!-- cards -->\n| front | back |\n|---|\n| one | two |\n");
+        assert!(
+            matches!(
+                error,
+                ParseError::TableDelimiterWidth {
+                    line: 3,
+                    found: 1,
+                    expected: 2,
+                }
+            ),
+            "the malformed delimiter row must be diagnosed at its own line: {error:?}"
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains("`---` cell"),
+            "an empty cell is invalid in a delimiter row, so the rewrite must name a valid dash cell: {message}"
+        );
+    }
+
+    #[test]
     fn a_tasklist_deck_default_invokes_without_per_card_markers() {
         let deck = parse("---\ntasklist: choices-single\n---\n## q\n- [x] a\n- [ ] b\n");
         assert_eq!(vec!["a"], deck.cards[0].back);
@@ -5930,7 +5961,7 @@ the answer
     #[test]
     fn every_table_line_matches_the_header_width() {
         assert_eq!(
-            ParseError::TableRowWidth {
+            ParseError::TableDelimiterWidth {
                 line: 3,
                 found: 1,
                 expected: 2

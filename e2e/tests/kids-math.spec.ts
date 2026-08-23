@@ -37,6 +37,90 @@ test("kids keeps the content of a bare table front visible", async ({ page }) =>
   await expect(prompt).toContainText("ready");
 });
 
+test("kids keeps the content of a bare table note visible", async ({ page, request }) => {
+  const selectResponse = await request.post("/api/select", {
+    data: { deck: "animals/math.md", depth: "recall" },
+  });
+  expect(selectResponse.ok(), await selectResponse.text()).toBeTruthy();
+  const selected = await selectResponse.json();
+
+  await page.evaluate(async (reviewState) => {
+    const kids = await import("/kids.js");
+    const dom = kids.createKidsDom({ document });
+    const stage = dom.el("main");
+    const actionbar = dom.el("footer");
+    let study: any;
+    const paint = () => {
+      stage.replaceChildren();
+      actionbar.replaceChildren();
+      study.render();
+    };
+    study = kids.createKidsStudy({
+      api: async () => study.state(),
+      post: (body: object) => ({ method: "POST", body }),
+      model: {
+        create: kids.createKidsStudyModel,
+        apply: kids.applyKidsStudyState,
+        clear: kids.clearKidsStudyState,
+        choose: kids.chooseKidsAnswer,
+        reveal: kids.revealKidsAnswer,
+        backCount: kids.kidsBackCount,
+        choiceMode: kids.kidsChoiceMode,
+        multiMode: kids.kidsMultiMode,
+        toggle: kids.toggleKidsChoice,
+        revealDone: kids.kidsRevealDone,
+        screen: kids.kidsStudyScreen,
+      },
+      rerender: paint,
+      openTutor: () => {},
+      openPicker: () => {},
+      refreshPicker: () => {},
+      reportError: () => {},
+      ui: {
+        actionbar,
+        appendChecklist: dom.appendChecklist,
+        appendRuns: dom.appendRuns,
+        appendTable: dom.appendTable,
+        contextLine: dom.contextLine,
+        document,
+        el: dom.el,
+        frontPrompt: dom.frontPrompt,
+        mascot: dom.mascot,
+        stage,
+      },
+    });
+    study.apply({
+      ...reviewState,
+      kind: "review",
+      phase: "review",
+      introducing: false,
+      mode: "fill",
+      choices: null,
+      card: {
+        ...reviewState.card,
+        note: [{
+          kind: "table",
+          aligns: ["none", "none"],
+          header: [[{ text: "reason" }], [{ text: "detail" }]],
+          rows: [[[{ text: "mass" }], [{ text: "energy" }]]],
+        }],
+      },
+    });
+    const show = actionbar.querySelector(".show-btn") as HTMLButtonElement | null;
+    if (!show) throw new Error("missing reveal control");
+    show.click();
+    const host = dom.el("div", "table-note-repro");
+    host.append(stage, actionbar);
+    document.body.appendChild(host);
+  }, selected);
+
+  const note = page.locator(".table-note-repro .rev-why");
+  await expect(note).toContainText("reason");
+  await expect(note).toContainText("detail");
+  await expect(note).toContainText("mass");
+  await expect(note).toContainText("energy");
+});
+
 test("kids card surfaces render shared math SVGs safely", async ({ page, request }, testInfo) => {
   const browseResponse = await request.post("/api/browse", {
     data: { deck: "animals/math.md" },

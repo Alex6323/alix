@@ -184,5 +184,5 @@ function mascotEl(extra) {
   return m;
 }
 
-return { appendChecklist, appendRuns, contextLine, el, frontPrompt, mascot: mascotEl };
+return { appendChecklist, appendRuns, appendTable, contextLine, el, frontPrompt, mascot: mascotEl };
 }

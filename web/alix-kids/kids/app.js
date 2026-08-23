@@ -21,7 +21,7 @@ const askInput = document.getElementById("askInput");
 const askSendBtn = document.getElementById("askSendBtn");
 const askCloseBtn = document.getElementById("askCloseBtn");
 
-const { appendChecklist, appendRuns, contextLine, el, frontPrompt, mascot: mascotEl } = createKidsDom({ document });
+const { appendChecklist, appendRuns, appendTable, contextLine, el, frontPrompt, mascot: mascotEl } = createKidsDom({ document });
 
 const settings = createKidsSettings({
   theme,
@@ -90,7 +90,7 @@ study = createKidsStudy({
   openPicker: () => picker.home(),
   refreshPicker: () => picker.load(),
   reportError: showOops,
-  ui: { actionbar, appendChecklist, appendRuns, contextLine, document, el, frontPrompt, mascot: mascotEl, stage },
+  ui: { actionbar, appendChecklist, appendRuns, appendTable, contextLine, document, el, frontPrompt, mascot: mascotEl, stage },
 });
 
 picker = createKidsPicker({

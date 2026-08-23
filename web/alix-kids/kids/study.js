@@ -13,6 +13,7 @@ const {
   actionbar,
   appendChecklist,
   appendRuns,
+  appendTable,
   contextLine,
   document: doc,
   el,
@@ -417,6 +418,7 @@ function renderWhy(parent, card) {
       txt.appendChild(img);
     }
     else if (u.kind === "checklist") appendChecklist(txt, u.items);
+    else if (u.kind === "table") appendTable(txt, u);
   }
   if (keypoints.length) {
     const list = el("ul", "rev-keypoints");
