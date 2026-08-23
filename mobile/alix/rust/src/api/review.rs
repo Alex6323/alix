@@ -8,7 +8,7 @@ pub use alix::{
     depth::Depth,
     inline::InlineRun,
     math::MathView,
-    render::{ChecklistItem, NoteUnit},
+    render::{CellAlign, ChecklistItem, NoteUnit},
     review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
     trace::Phase as WalkPhase,
@@ -75,6 +75,19 @@ pub enum _NoteUnit {
         revealed_alt: Option<String>,
     },
     Checklist { items: Vec<ChecklistItem> },
+    Table {
+        aligns: Vec<CellAlign>,
+        header: Vec<Vec<InlineRun>>,
+        rows: Vec<Vec<Vec<InlineRun>>>,
+    },
+}
+
+#[flutter_rust_bridge::frb(mirror(CellAlign))]
+pub enum _CellAlign {
+    None,
+    Left,
+    Center,
+    Right,
 }
 
 #[flutter_rust_bridge::frb(mirror(RegionRole))]
@@ -950,7 +963,9 @@ mod tests {
                 NoteUnit::Checklist { items } => {
                     items.iter().flat_map(|item| item.runs.iter()).collect()
                 }
-                NoteUnit::Code { .. } | NoteUnit::Diagram { .. } => Vec::new(),
+                NoteUnit::Code { .. } | NoteUnit::Diagram { .. } | NoteUnit::Table { .. } => {
+                    Vec::new()
+                }
             })
             .collect();
         assert!(note_runs.iter().any(|run| run.text == "E = mc^2"));

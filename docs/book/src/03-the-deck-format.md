@@ -184,8 +184,11 @@ line above one task list keeps that one literal.
 ## Card tables
 
 Flat material at scale (a vocabulary list, countries and capitals, dates) can
-be one Markdown pipe table instead of a `##` block per fact. A bare pipe table
-renders literally; `<!-- cards -->` on the line above maps it (or `table:
+be one Markdown pipe table instead of a `##` block per fact. A bare pipe
+table renders as a real aligned table: the delimiter row's alignment colons
+set each column's alignment, short rows pad with empty cells, and long rows
+truncate to the header width. It never becomes cards on its own;
+`<!-- cards -->` on the line above maps it (or `table:
 cards` in frontmatter maps every table in the deck, with `<!-- plain -->`
 above one table keeping it literal). Each row is a card: first column front,
 second column back, optional third column note. The header row is shown as

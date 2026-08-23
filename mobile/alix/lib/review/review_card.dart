@@ -277,7 +277,52 @@ class ReviewCardView extends StatelessWidget {
       ),
       ReviewDiagramModel() => _diagram(unit, answered: true),
       ReviewChecklistModel(:final items) => _checklist(items, tokens, style),
+      ReviewTableModel() => _table(unit, tokens, style),
     };
+  }
+
+  Widget _table(ReviewTableModel unit, AlixTokens tokens, TextStyle style) {
+    TextAlign cellAlign(int index) => switch (index < unit.aligns.length
+        ? unit.aligns[index]
+        : ReviewCellAlign.none) {
+      ReviewCellAlign.center => TextAlign.center,
+      ReviewCellAlign.right => TextAlign.right,
+      ReviewCellAlign.none || ReviewCellAlign.left => TextAlign.left,
+    };
+    Widget cell(List<InlineRunModel> runs, int index, TextStyle cellStyle) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: _runsOrText(
+          runs,
+          '',
+          style: cellStyle,
+          textAlign: cellAlign(index),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Table(
+        defaultColumnWidth: const IntrinsicColumnWidth(),
+        border: TableBorder.all(color: tokens.dim.withValues(alpha: 0.4)),
+        children: [
+          TableRow(
+            children: [
+              for (final (index, runs) in unit.header.indexed)
+                cell(runs, index, style.copyWith(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          for (final row in unit.rows)
+            TableRow(
+              children: [
+                for (final (index, runs) in row.indexed)
+                  cell(runs, index, style),
+              ],
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _diagram(ReviewDiagramModel unit, {required bool answered}) {
@@ -1083,6 +1128,11 @@ class ReviewCardView extends StatelessWidget {
                   ReviewDiagramModel() => _diagram(note, answered: true),
                   ReviewChecklistModel(:final items) => _checklist(
                     items,
+                    tokens,
+                    TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+                  ),
+                  ReviewTableModel() => _table(
+                    note,
                     tokens,
                     TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
                   ),

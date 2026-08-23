@@ -187,6 +187,8 @@ class CardView {
           citations == other.citations;
 }
 
+enum CellAlign { none, left, center, right }
+
 class CheckFeedback {
   final List<TypedResult> results;
   final bool passed;
@@ -444,6 +446,11 @@ sealed class NoteUnit with _$NoteUnit {
   }) = NoteUnit_Diagram;
   const factory NoteUnit.checklist({required List<ChecklistItem> items}) =
       NoteUnit_Checklist;
+  const factory NoteUnit.table({
+    required List<CellAlign> aligns,
+    required List<List<InlineRun>> header,
+    required List<List<List<InlineRun>>> rows,
+  }) = NoteUnit_Table;
 }
 
 class RecognizeGap {

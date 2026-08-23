@@ -1,0 +1,102 @@
+{
+  "back": [
+    "| a | b | c | d |",
+    "| --- | :-- | :-: | --: |",
+    "| 1 | **2** | 3 |"
+  ],
+  "back_runs": [
+    [
+      {
+        "text": "| a | b | c | d |"
+      }
+    ],
+    [
+      {
+        "text": "| --- | :-- | :-: | --: |"
+      }
+    ],
+    [
+      {
+        "text": "| 1 | "
+      },
+      {
+        "bold": true,
+        "text": "2"
+      },
+      {
+        "text": " | 3 |"
+      }
+    ]
+  ],
+  "back_units": [
+    {
+      "aligns": [
+        "none",
+        "left",
+        "center",
+        "right"
+      ],
+      "header": [
+        [
+          {
+            "text": "a"
+          }
+        ],
+        [
+          {
+            "text": "b"
+          }
+        ],
+        [
+          {
+            "text": "c"
+          }
+        ],
+        [
+          {
+            "text": "d"
+          }
+        ]
+      ],
+      "kind": "table",
+      "rows": [
+        [
+          [
+            {
+              "text": "1"
+            }
+          ],
+          [
+            {
+              "bold": true,
+              "text": "2"
+            }
+          ],
+          [
+            {
+              "text": "3"
+            }
+          ],
+          []
+        ]
+      ]
+    }
+  ],
+  "citations": [],
+  "context": [],
+  "context_leads": false,
+  "context_runs": [],
+  "context_units": [],
+  "crumb": null,
+  "front": "Name the columns",
+  "front_runs": [
+    {
+      "text": "Name the columns"
+    }
+  ],
+  "id": "card-9w2c7xkq4m",
+  "images": [],
+  "images_back": [],
+  "note": [],
+  "reshaped": true
+}

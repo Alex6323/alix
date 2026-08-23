@@ -281,6 +281,24 @@ ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
           runs: inlineRunsFromBridge(item.runs),
         ),
     ]),
+    bridge.NoteUnit_Table(:final aligns, :final header, :final rows) =>
+      ReviewTableModel(
+        aligns: [for (final align in aligns) _cellAlignFromBridge(align)],
+        header: [for (final cell in header) inlineRunsFromBridge(cell)],
+        rows: [
+          for (final row in rows)
+            [for (final cell in row) inlineRunsFromBridge(cell)],
+        ],
+      ),
+  };
+}
+
+ReviewCellAlign _cellAlignFromBridge(bridge.CellAlign align) {
+  return switch (align) {
+    bridge.CellAlign.none => ReviewCellAlign.none,
+    bridge.CellAlign.left => ReviewCellAlign.left,
+    bridge.CellAlign.center => ReviewCellAlign.center,
+    bridge.CellAlign.right => ReviewCellAlign.right,
   };
 }
 

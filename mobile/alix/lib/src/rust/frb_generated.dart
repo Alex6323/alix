@@ -1522,6 +1522,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CellAlign dco_decode_cell_align(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return CellAlign.values[raw as int];
+  }
+
+  @protected
   CheckFeedback dco_decode_check_feedback(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1712,6 +1718,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<CellAlign> dco_decode_list_cell_align(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_cell_align).toList();
+  }
+
+  @protected
   List<ChecklistItem> dco_decode_list_checklist_item(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_checklist_item).toList();
@@ -1745,6 +1757,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<List<InlineRun>> dco_decode_list_list_inline_run(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_list_inline_run).toList();
+  }
+
+  @protected
+  List<List<List<InlineRun>>> dco_decode_list_list_list_inline_run(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_list_list_inline_run).toList();
   }
 
   @protected
@@ -1825,6 +1845,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 3:
         return NoteUnit_Checklist(
           items: dco_decode_list_checklist_item(raw[1]),
+        );
+      case 4:
+        return NoteUnit_Table(
+          aligns: dco_decode_list_cell_align(raw[1]),
+          header: dco_decode_list_list_inline_run(raw[2]),
+          rows: dco_decode_list_list_list_inline_run(raw[3]),
         );
       default:
         throw Exception("unreachable");
@@ -2425,6 +2451,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CellAlign sse_decode_cell_align(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return CellAlign.values[inner];
+  }
+
+  @protected
   CheckFeedback sse_decode_check_feedback(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_results = sse_decode_list_typed_result(deserializer);
@@ -2632,6 +2665,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<CellAlign> sse_decode_list_cell_align(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <CellAlign>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_cell_align(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<ChecklistItem> sse_decode_list_checklist_item(
     SseDeserializer deserializer,
   ) {
@@ -2703,6 +2748,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <List<InlineRun>>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_list_inline_run(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<List<List<InlineRun>>> sse_decode_list_list_list_inline_run(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <List<List<InlineRun>>>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_list_list_inline_run(deserializer));
     }
     return ans_;
   }
@@ -2816,6 +2875,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 3:
         var var_items = sse_decode_list_checklist_item(deserializer);
         return NoteUnit_Checklist(items: var_items);
+      case 4:
+        var var_aligns = sse_decode_list_cell_align(deserializer);
+        var var_header = sse_decode_list_list_inline_run(deserializer);
+        var var_rows = sse_decode_list_list_list_inline_run(deserializer);
+        return NoteUnit_Table(
+          aligns: var_aligns,
+          header: var_header,
+          rows: var_rows,
+        );
       default:
         throw UnimplementedError('');
     }
@@ -3593,6 +3661,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_cell_align(CellAlign self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_check_feedback(CheckFeedback self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_typed_result(self.results, serializer);
@@ -3739,6 +3813,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_cell_align(
+    List<CellAlign> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_cell_align(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_checklist_item(
     List<ChecklistItem> self,
     SseSerializer serializer,
@@ -3807,6 +3893,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_list_inline_run(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_list_list_inline_run(
+    List<List<List<InlineRun>>> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_list_list_inline_run(item, serializer);
     }
   }
 
@@ -3921,6 +4019,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case NoteUnit_Checklist(items: final items):
         sse_encode_i_32(3, serializer);
         sse_encode_list_checklist_item(items, serializer);
+      case NoteUnit_Table(
+        aligns: final aligns,
+        header: final header,
+        rows: final rows,
+      ):
+        sse_encode_i_32(4, serializer);
+        sse_encode_list_cell_align(aligns, serializer);
+        sse_encode_list_list_inline_run(header, serializer);
+        sse_encode_list_list_list_inline_run(rows, serializer);
     }
   }
 

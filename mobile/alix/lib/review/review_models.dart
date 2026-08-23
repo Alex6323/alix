@@ -131,6 +131,24 @@ class ReviewChecklistModel extends ReviewNoteUnitModel {
   final List<ReviewChecklistItemModel> items;
 }
 
+enum ReviewCellAlign { none, left, center, right }
+
+class ReviewTableModel extends ReviewNoteUnitModel {
+  ReviewTableModel({
+    required Iterable<ReviewCellAlign> aligns,
+    required Iterable<Iterable<InlineRunModel>> header,
+    required Iterable<Iterable<Iterable<InlineRunModel>>> rows,
+  }) : aligns = List.unmodifiable(aligns),
+       header = _freezeRunLines(header),
+       rows = List.unmodifiable([for (final row in rows) _freezeRunLines(row)]);
+
+  final List<ReviewCellAlign> aligns;
+  final List<List<InlineRunModel>> header;
+
+  /// Every row matches the header width: the lib pads and truncates.
+  final List<List<List<InlineRunModel>>> rows;
+}
+
 class ReviewCardModel {
   ReviewCardModel({
     required this.front,

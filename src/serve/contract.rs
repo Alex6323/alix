@@ -5,7 +5,7 @@ use crate::{
     answer::TypedResult,
     inline::InlineRun,
     math::MathView,
-    render::{ChecklistItem, NoteUnit},
+    render::{CellAlign, ChecklistItem, NoteUnit},
     session::{CardTier, Cell},
 };
 
@@ -1104,6 +1104,104 @@ fn carddto_math_wire_shape() {
                 }]
             }],
             "reshaped": false,
+            "note": [],
+            "images": [],
+            "images_back": [],
+            "citations": [],
+            "crumb": null
+        }),
+    );
+}
+
+#[test]
+fn carddto_table_wire_shape() {
+    let dto = CardDto {
+        id: Some("card-9w2c7xkq4m".to_string()),
+        front: "Name the columns".to_string(),
+        front_runs: crate::inline::parse_inline("Name the columns"),
+        front_units: None,
+        section_context: Vec::new(),
+        section_context_runs: Vec::new(),
+        section_context_units: Vec::new(),
+        context: Vec::new(),
+        context_leads: false,
+        context_runs: Vec::new(),
+        context_units: Vec::new(),
+        back: vec![
+            "| a | b | c | d |".to_string(),
+            "| --- | :-- | :-: | --: |".to_string(),
+            "| 1 | **2** | 3 |".to_string(),
+        ],
+        back_runs: vec![
+            crate::inline::parse_inline("| a | b | c | d |"),
+            crate::inline::parse_inline("| --- | :-- | :-: | --: |"),
+            crate::inline::parse_inline("| 1 | **2** | 3 |"),
+        ],
+        back_units: vec![NoteUnit::Table {
+            aligns: vec![
+                CellAlign::None,
+                CellAlign::Left,
+                CellAlign::Center,
+                CellAlign::Right,
+            ],
+            header: vec![
+                crate::inline::parse_inline("a"),
+                crate::inline::parse_inline("b"),
+                crate::inline::parse_inline("c"),
+                crate::inline::parse_inline("d"),
+            ],
+            rows: vec![vec![
+                crate::inline::parse_inline("1"),
+                crate::inline::parse_inline("**2**"),
+                crate::inline::parse_inline("3"),
+                Vec::new(),
+            ]],
+        }],
+        reshaped: true,
+        note: Vec::new(),
+        images: Vec::new(),
+        images_back: Vec::new(),
+        citations: Vec::new(),
+        crumb: None,
+    };
+    pin(
+        "CardDto.table",
+        &dto,
+        json!({
+            "id": "card-9w2c7xkq4m",
+            "front": "Name the columns",
+            "front_runs": [{"text": "Name the columns"}],
+            "context": [],
+            "context_leads": false,
+            "context_runs": [],
+            "context_units": [],
+            "back": [
+                "| a | b | c | d |",
+                "| --- | :-- | :-: | --: |",
+                "| 1 | **2** | 3 |"
+            ],
+            "back_runs": [
+                [{"text": "| a | b | c | d |"}],
+                [{"text": "| --- | :-- | :-: | --: |"}],
+                [{"text": "| 1 | "}, {"text": "2", "bold": true}, {"text": " | 3 |"}]
+            ],
+            "back_units": [{
+                "kind": "table",
+                "aligns": ["none", "left", "center", "right"],
+                "header": [
+                    [{"text": "a"}],
+                    [{"text": "b"}],
+                    [{"text": "c"}],
+                    [{"text": "d"}]
+                ],
+                "rows": [[
+                    [{"text": "1"}],
+                    [{"text": "2", "bold": true}],
+                    [{"text": "3"}],
+                    []
+                ]]
+            }],
+            "reshaped": true,
             "note": [],
             "images": [],
             "images_back": [],

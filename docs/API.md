@@ -626,7 +626,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `id` | string? | The card's prefixed id (`card-<token>`, `card-<token>-N` for a cloze hole, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed, and send it back on `POST /api/choose`; it is stable across edits to the card's text. |
 | `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
-| `front_units` | [NoteUnitDto]? | Present when the front contains a task list, fenced code, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
+| `front_units` | [NoteUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
 | `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question, so a client shows it only on demand and never by default. Image syntax inside it is prose, not a media element. |
 | `section_context_runs` | [[InlineRun]] | Display projection per section line, same shape as `context_runs`. |
 | `section_context_units` | [NoteUnitDto] | The section's fence-shaped units only, in fence order, same alignment law as `context_units`. Always `code`: nothing freezes a section's fence, so a section never yields a `diagram`. |
@@ -636,7 +636,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `context_units` | [NoteUnitDto] | The context's fence-shaped units only (`code` / `diagram`), in fence order. Context prose keeps its per-line rendering; clients consume one unit per closed raw fence in `context` (the same alignment law as `back_units`). Empty when the context has no fences. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
-| `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, and checklists remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
+| `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. |
 | `note` | [NoteUnitDto] | Post-answer note, as a tagged union. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
@@ -711,10 +711,22 @@ LaTeX renderer.
 `{"kind":"code", "lines": [string]}`,
 `{"kind":"diagram", "src": string, "width": number, "height": number,
 "alt": string, "regions"?: [RegionDto], "revealed_alt"?: string}`, or
-`{"kind":"checklist", "items": [ChecklistItemDto]}`. Sentence `text` remains
+`{"kind":"checklist", "items": [ChecklistItemDto]}`, or
+`{"kind":"table", "aligns": [string], "header": [[InlineRun]],
+"rows": [[[InlineRun]]]}`. Sentence `text` remains
 the authored text; `runs` is its display projection. `ChecklistItemDto` is
 `{checked: bool, text: string, runs: [InlineRun]}`; `text` is the content
 projection and `runs` preserves inline formatting for display.
+
+A `table` unit is a bare pipe table (one no card mapping claimed): a `|`
+line whose next line is a delimiter row, plus the `|` lines that follow.
+`aligns` holds one of `none` / `left` / `center` / `right` per column, read
+from the delimiter row's colons; `header` is one run list per header cell and
+`rows` are the body cells, each padded or truncated to the header width for
+display (only the mapped-card table enforces widths). Table units appear in
+`back_units`, `front_units`, and `note`; `context_units` and
+`section_context_units` stay fence-shaped only. Example payload:
+`tests/contracts/CardDto.table.json`.
 
 A `diagram` unit is a frozen mermaid fence, rendered: it occupies the
 fence's own position in the unit stream. `src` is a `/img/<key>` URL (see

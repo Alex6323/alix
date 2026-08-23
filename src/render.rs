@@ -41,6 +41,34 @@ pub enum NoteUnit {
     Checklist {
         items: Vec<ChecklistItem>,
     },
+    /// A bare pipe table (one no mapping claimed), aligned per the GFM
+    /// delimiter-row colons. Rows are padded or truncated to the header
+    /// width for display; only the mapped-card table enforces widths.
+    Table {
+        aligns: Vec<CellAlign>,
+        header: Vec<Vec<crate::inline::InlineRun>>,
+        rows: Vec<Vec<Vec<crate::inline::InlineRun>>>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CellAlign {
+    None,
+    Left,
+    Center,
+    Right,
+}
+
+fn cell_align(delimiter_cell: &str) -> CellAlign {
+    let left = delimiter_cell.starts_with(':');
+    let right = delimiter_cell.ends_with(':');
+    match (left, right) {
+        (true, true) => CellAlign::Center,
+        (true, false) => CellAlign::Left,
+        (false, true) => CellAlign::Right,
+        (false, false) => CellAlign::None,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,7 +161,11 @@ fn text_units_with(
     let mut prose = String::new();
     let mut checklist = Vec::new();
 
-    for logical in text.lines() {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut index = 0;
+    while index < lines.len() {
+        let logical = lines[index];
+        index += 1;
         if let Some((marker, run)) = fence_marker(logical) {
             match &code_fence {
                 Some((open_marker, open_run, info))
@@ -160,6 +192,41 @@ fn text_units_with(
         }
         if code_fence.is_some() {
             code.push(logical.to_string());
+            continue;
+        }
+        if logical.starts_with('|')
+            && lines
+                .get(index)
+                .is_some_and(|next| crate::parser::is_delimiter_row(next))
+            && let Some(header) = crate::parser::split_cells(logical)
+            && let Some(delimiter) = crate::parser::split_cells(lines[index])
+            && delimiter.len() == header.len()
+        {
+            flush_checklist(&mut checklist, &mut units);
+            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            let aligns = delimiter.iter().map(|cell| cell_align(cell)).collect();
+            index += 1;
+            let mut rows = Vec::new();
+            while let Some(cells) = lines
+                .get(index)
+                .filter(|line| line.starts_with('|'))
+                .and_then(|line| crate::parser::split_cells(line))
+            {
+                let mut cells = cells;
+                cells.resize(header.len(), String::new());
+                rows.push(
+                    cells
+                        .iter()
+                        .map(|cell| projector.project(cell))
+                        .collect::<Vec<_>>(),
+                );
+                index += 1;
+            }
+            units.push(NoteUnit::Table {
+                aligns,
+                header: header.iter().map(|cell| projector.project(cell)).collect(),
+                rows,
+            });
             continue;
         }
         let trimmed = logical.trim();
@@ -212,7 +279,7 @@ pub(crate) fn front_units_with(
     units
         .iter()
         .any(|unit| match unit {
-            NoteUnit::Checklist { .. } => true,
+            NoteUnit::Checklist { .. } | NoteUnit::Table { .. } => true,
             NoteUnit::Sentence { runs, .. } => runs
                 .iter()
                 .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
@@ -606,6 +673,78 @@ mod tests {
             panic!("display math should be a sentence unit");
         };
         assert!(runs[0].math.as_ref().unwrap().display);
+    }
+
+    #[test]
+    fn a_bare_table_becomes_one_aligned_table_unit() {
+        let units = note_units(&card_with_note(
+            "before\n| h1 | h2 |\n|:---|---:|\n| **a** | b |\n| c |\ntail",
+        ));
+        assert_eq!(3, units.len(), "{units:?}");
+        let NoteUnit::Table {
+            aligns,
+            header,
+            rows,
+        } = &units[1]
+        else {
+            panic!("the pipe block is a table unit: {units:?}");
+        };
+        assert_eq!(&[CellAlign::Left, CellAlign::Right], aligns.as_slice());
+        assert_eq!(
+            vec!["h1", "h2"],
+            header
+                .iter()
+                .map(|runs| runs.iter().map(|run| run.text.as_str()).collect::<String>())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(2, rows.len(), "{rows:?}");
+        assert!(
+            rows[0][0].iter().any(|run| run.bold),
+            "cell text renders inline styling: {rows:?}"
+        );
+        assert_eq!(
+            2,
+            rows[1].len(),
+            "a short row pads to the header width: {rows:?}"
+        );
+        assert!(rows[1][1].is_empty(), "the padded cell is empty: {rows:?}");
+        assert!(
+            matches!(&units[2], NoteUnit::Sentence { text, .. } if text == "tail"),
+            "prose resumes after the table: {units:?}"
+        );
+    }
+
+    #[test]
+    fn a_pipe_line_without_a_delimiter_row_stays_prose() {
+        let units = note_units(&card_with_note("| not | a table |\njust prose"));
+        assert!(
+            units
+                .iter()
+                .all(|unit| matches!(unit, NoteUnit::Sentence { .. })),
+            "{units:?}"
+        );
+    }
+
+    #[test]
+    fn a_table_inside_a_fence_stays_code() {
+        let units = note_units(&card_with_note("```\n| a | b |\n|---|---|\n```"));
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["| a | b |".into(), "|---|---|".into()]
+            }]
+        );
+    }
+
+    #[test]
+    fn a_mismatched_delimiter_width_is_not_a_table() {
+        let units = note_units(&card_with_note("| a | b |\n|---|\nafter"));
+        assert!(
+            units
+                .iter()
+                .all(|unit| matches!(unit, NoteUnit::Sentence { .. })),
+            "{units:?}"
+        );
     }
 
     #[test]

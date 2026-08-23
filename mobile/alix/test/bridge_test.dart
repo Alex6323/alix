@@ -161,6 +161,7 @@ void main() {
           noteRuns.addAll(items.expand((item) => item.runs));
         case NoteUnit_Code():
         case NoteUnit_Diagram():
+        case NoteUnit_Table():
           break;
       }
     }
@@ -231,6 +232,35 @@ void main() {
       explain.keypointRuns!.expand((runs) => runs).toList(),
       r'x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}',
     );
+  });
+
+  test('review bridge carries a bare pipe table as an aligned table unit', () {
+    final root = Directory.systemTemp.createTempSync('alix-table-bridge-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = '${root.path}/table.md';
+    writeTestDeck(
+      deck,
+      '## Name the columns <!-- id: card-table -->\n'
+      '| h1 | h2 |\n'
+      '|:---|---:|\n'
+      '| **a** | b |\n'
+      '| c |\n',
+    );
+    final card = ReviewSession.open(
+      deckPath: deck,
+      rootDir: root.path,
+      nowMs: t0,
+    ).state().card!;
+    final table = card.backUnits.whereType<NoteUnit_Table>().single;
+    expect(table.aligns, [CellAlign.left, CellAlign.right]);
+    expect(
+      table.header.map((cell) => cell.map((run) => run.text).join()).toList(),
+      ['h1', 'h2'],
+    );
+    expect(table.rows, hasLength(2));
+    expect(table.rows[0][0].single.bold, isTrue, reason: 'cell styling holds');
+    expect(table.rows[1], hasLength(2), reason: 'a short row pads');
+    expect(table.rows[1][1], isEmpty, reason: 'the padded cell is empty');
   });
 
   test('a grade persists into the workspace store, on injected time', () {

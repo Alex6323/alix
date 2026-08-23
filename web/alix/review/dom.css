@@ -54,6 +54,9 @@
   .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
+  .table-scroll { overflow-x: auto; margin: 8px 0; }
+  .unit-table { border-collapse: collapse; margin: 0 auto; text-align: left; }
+  .unit-table th, .unit-table td { border: 1px solid var(--line); padding: 5px 10px; }
   code { font-family: var(--mono); color: var(--code); }
   pre code { color: inherit; font-family: inherit; }
   .math-run { color: inherit; background: none; }

@@ -1297,7 +1297,7 @@ fn table_line(
     Err(ParseError::TableTrailing(lineno))
 }
 
-fn split_cells(line: &str) -> Option<Vec<String>> {
+pub(crate) fn split_cells(line: &str) -> Option<Vec<String>> {
     let line = trim_ws(line);
     let mut boundaries = Vec::new();
     for (i, b) in line.bytes().enumerate() {

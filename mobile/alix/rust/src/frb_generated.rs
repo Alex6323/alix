@@ -1613,6 +1613,15 @@ const _: fn() = || {
         crate::api::review::NoteUnit::Checklist { items } => {
             let _: Vec<crate::api::review::ChecklistItem> = items;
         }
+        crate::api::review::NoteUnit::Table {
+            aligns,
+            header,
+            rows,
+        } => {
+            let _: Vec<crate::api::review::CellAlign> = aligns;
+            let _: Vec<Vec<crate::api::review::InlineRun>> = header;
+            let _: Vec<Vec<Vec<crate::api::review::InlineRun>>> = rows;
+        }
     }
     {
         let RecognizeGap = None::<crate::api::review::RecognizeGap>.unwrap();
@@ -1785,6 +1794,20 @@ impl SseDecode for crate::api::review::CardView {
             images: var_images,
             images_back: var_imagesBack,
             citations: var_citations,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::CellAlign {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::review::CellAlign::None,
+            1 => crate::api::review::CellAlign::Left,
+            2 => crate::api::review::CellAlign::Center,
+            3 => crate::api::review::CellAlign::Right,
+            _ => unreachable!("Invalid variant for CellAlign: {}", inner),
         };
     }
 }
@@ -2036,6 +2059,18 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::api::review::CellAlign> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::review::CellAlign>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::review::ChecklistItem> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2105,6 +2140,20 @@ impl SseDecode for Vec<Vec<crate::api::review::InlineRun>> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<Vec<crate::api::review::InlineRun>>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<Vec<Vec<crate::api::review::InlineRun>>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(
                 deserializer,
             ));
         }
@@ -2252,6 +2301,18 @@ impl SseDecode for crate::api::review::NoteUnit {
                 let mut var_items =
                     <Vec<crate::api::review::ChecklistItem>>::sse_decode(deserializer);
                 return crate::api::review::NoteUnit::Checklist { items: var_items };
+            }
+            4 => {
+                let mut var_aligns = <Vec<crate::api::review::CellAlign>>::sse_decode(deserializer);
+                let mut var_header =
+                    <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
+                let mut var_rows =
+                    <Vec<Vec<Vec<crate::api::review::InlineRun>>>>::sse_decode(deserializer);
+                return crate::api::review::NoteUnit::Table {
+                    aligns: var_aligns,
+                    header: var_header,
+                    rows: var_rows,
+                };
             }
             _ => {
                 unimplemented!("");
@@ -2948,6 +3009,29 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::CardView>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CellAlign> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::review::CellAlign::None => 0.into_dart(),
+            crate::api::review::CellAlign::Left => 1.into_dart(),
+            crate::api::review::CellAlign::Center => 2.into_dart(),
+            crate::api::review::CellAlign::Right => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::CellAlign>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::CellAlign>>
+    for crate::api::review::CellAlign
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::CellAlign> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CheckFeedback> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3322,6 +3406,17 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::NoteUnit> 
             crate::api::review::NoteUnit::Checklist { items } => {
                 [3.into_dart(), items.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::review::NoteUnit::Table {
+                aligns,
+                header,
+                rows,
+            } => [
+                4.into_dart(),
+                aligns.into_into_dart().into_dart(),
+                header.into_into_dart().into_dart(),
+                rows.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -3723,6 +3818,24 @@ impl SseEncode for crate::api::review::CardView {
     }
 }
 
+impl SseEncode for crate::api::review::CellAlign {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::review::CellAlign::None => 0,
+                crate::api::review::CellAlign::Left => 1,
+                crate::api::review::CellAlign::Center => 2,
+                crate::api::review::CellAlign::Right => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::review::CheckFeedback {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3912,6 +4025,16 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::api::review::CellAlign> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::review::CellAlign>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::review::ChecklistItem> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3968,6 +4091,16 @@ impl SseEncode for Vec<Vec<crate::api::review::InlineRun>> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <Vec<crate::api::review::InlineRun>>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<Vec<Vec<crate::api::review::InlineRun>>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(item, serializer);
         }
     }
 }
@@ -4093,6 +4226,16 @@ impl SseEncode for crate::api::review::NoteUnit {
             crate::api::review::NoteUnit::Checklist { items } => {
                 <i32>::sse_encode(3, serializer);
                 <Vec<crate::api::review::ChecklistItem>>::sse_encode(items, serializer);
+            }
+            crate::api::review::NoteUnit::Table {
+                aligns,
+                header,
+                rows,
+            } => {
+                <i32>::sse_encode(4, serializer);
+                <Vec<crate::api::review::CellAlign>>::sse_encode(aligns, serializer);
+                <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(header, serializer);
+                <Vec<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(rows, serializer);
             }
             _ => {
                 unimplemented!("");

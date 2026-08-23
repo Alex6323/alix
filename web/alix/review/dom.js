@@ -101,6 +101,40 @@ export function appendChecklist(parent, items) {
   parent.appendChild(checklist);
 }
 
+export function appendTable(parent, unit) {
+  const scroll = el("div", "table-scroll");
+  const table = el("table", "unit-table");
+  const aligns = unit.aligns || [];
+  const alignCell = (cell, index) => {
+    const align = aligns[index];
+    if (align && align !== "none") cell.style.textAlign = align;
+  };
+  const head = el("thead");
+  const headRow = el("tr");
+  (unit.header || []).forEach((runs, index) => {
+    const cell = el("th");
+    alignCell(cell, index);
+    appendRuns(cell, runs);
+    headRow.appendChild(cell);
+  });
+  head.appendChild(headRow);
+  table.appendChild(head);
+  const body = el("tbody");
+  for (const row of unit.rows || []) {
+    const tr = el("tr");
+    row.forEach((runs, index) => {
+      const cell = el("td");
+      alignCell(cell, index);
+      appendRuns(cell, runs);
+      tr.appendChild(cell);
+    });
+    body.appendChild(tr);
+  }
+  table.appendChild(body);
+  scroll.appendChild(table);
+  parent.appendChild(scroll);
+}
+
 export function frontEl(text, runs, units) {
   if (units) {
     const wrap = el("div", "front-text multi");
@@ -121,6 +155,8 @@ export function frontEl(text, runs, units) {
         wrap.appendChild(pre);
       } else if (unit.kind === "checklist") {
         appendChecklist(wrap, unit.items);
+      } else if (unit.kind === "table") {
+        appendTable(wrap, unit);
       }
     }
     return wrap;
@@ -340,6 +376,8 @@ export function renderNote(parent, units) {
       note.appendChild(pre);
     } else if (unit.kind === "checklist") {
       appendChecklist(note, unit.items);
+    } else if (unit.kind === "table") {
+      appendTable(note, unit);
     }
   }
   parent.appendChild(note);

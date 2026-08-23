@@ -225,6 +225,17 @@ pub fn diagnostics(cards: &[Card], augment: Option<&AugmentCache>) -> Vec<MathDi
                         );
                     }
                 }
+                NoteUnit::Table { header, rows, .. } => {
+                    for runs in header.iter().chain(rows.iter().flatten()) {
+                        collect_run_diagnostics(
+                            card.line,
+                            "note table",
+                            runs,
+                            &mut seen,
+                            &mut diagnostics,
+                        );
+                    }
+                }
                 NoteUnit::Code { .. } | NoteUnit::Diagram { .. } => {}
             }
         }

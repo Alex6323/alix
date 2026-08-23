@@ -90,6 +90,7 @@ study = createStudy({
     appendKeypointList,
     appendReveal,
     appendRuns,
+    appendTable,
     chip,
     clearLegendSides,
     computedStyle: window.getComputedStyle.bind(window),

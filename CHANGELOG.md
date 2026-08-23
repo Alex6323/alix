@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Bare pipe tables render as real aligned tables on every card surface
+  (adult web, mobile): alignment colons in the delimiter row set column
+  alignment, short rows pad, long rows truncate to the header width. Mapped
+  card tables keep their strict column rules; the kids client shows bare
+  tables as literal lines for now.
 
 - Sub-cards now stack to `######`: heading depths 5 and 6 are sub-card
   depths 3 and 4 under the same one-level-parent rule, so every ATX depth

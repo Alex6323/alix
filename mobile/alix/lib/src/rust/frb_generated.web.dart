@@ -137,6 +137,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CardView dco_decode_card_view(dynamic raw);
 
   @protected
+  CellAlign dco_decode_cell_align(dynamic raw);
+
+  @protected
   CheckFeedback dco_decode_check_feedback(dynamic raw);
 
   @protected
@@ -188,6 +191,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<CellAlign> dco_decode_list_cell_align(dynamic raw);
+
+  @protected
   List<ChecklistItem> dco_decode_list_checklist_item(dynamic raw);
 
   @protected
@@ -204,6 +210,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<List<InlineRun>> dco_decode_list_list_inline_run(dynamic raw);
+
+  @protected
+  List<List<List<InlineRun>>> dco_decode_list_list_list_inline_run(dynamic raw);
 
   @protected
   List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
@@ -457,6 +466,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CardView sse_decode_card_view(SseDeserializer deserializer);
 
   @protected
+  CellAlign sse_decode_cell_align(SseDeserializer deserializer);
+
+  @protected
   CheckFeedback sse_decode_check_feedback(SseDeserializer deserializer);
 
   @protected
@@ -508,6 +520,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<CellAlign> sse_decode_list_cell_align(SseDeserializer deserializer);
+
+  @protected
   List<ChecklistItem> sse_decode_list_checklist_item(
     SseDeserializer deserializer,
   );
@@ -526,6 +541,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<List<InlineRun>> sse_decode_list_list_inline_run(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<List<List<InlineRun>>> sse_decode_list_list_list_inline_run(
     SseDeserializer deserializer,
   );
 
@@ -835,6 +855,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_card_view(CardView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_cell_align(CellAlign self, SseSerializer serializer);
+
+  @protected
   void sse_encode_check_feedback(CheckFeedback self, SseSerializer serializer);
 
   @protected
@@ -889,6 +912,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_cell_align(
+    List<CellAlign> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_checklist_item(
     List<ChecklistItem> self,
     SseSerializer serializer,
@@ -921,6 +950,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_list_inline_run(
     List<List<InlineRun>> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_list_list_inline_run(
+    List<List<List<InlineRun>>> self,
     SseSerializer serializer,
   );
 

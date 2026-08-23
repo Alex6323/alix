@@ -38,6 +38,7 @@ export function createStudy({
     appendKeypointList,
     appendReveal,
     appendRuns,
+    appendTable,
     chip,
     diagramImage,
     maskedImage,
@@ -1167,6 +1168,8 @@ export function createStudy({
         sec.appendChild(img);
       } else if (unit.kind === "checklist") {
         appendChecklist(sec, unit.items);
+      } else if (unit.kind === "table") {
+        appendTable(sec, unit);
       }
     }
   }
