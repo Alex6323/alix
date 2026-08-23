@@ -64,6 +64,11 @@ literal, escape them with backslashes such as `2\*3\*4`, or wrap the text in
 inline code such as `` `2*3*4` ``. Run `alix doctor <deck>` to find card text
 that will render as emphasis.
 
+Inline escaping follows the CommonMark rule: a backslash before any ASCII
+punctuation character yields that literal character, and a backslash before
+anything else (letters, digits, spaces) stays a literal backslash. That is
+why `\blank{...}` needs no escaping to survive.
+
 ## LaTeX math
 
 Use `$...$` for a formula inside prose:

@@ -592,7 +592,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
         }
         if chars[index] == '\\'
             && let Some(next) = chars.get(index + 1)
-            && matches!(next, '*' | '_' | '`' | '$' | '\\')
+            && next.is_ascii_punctuation()
             && math[index + 1].is_none()
             && !removed[index + 1]
         {
@@ -965,6 +965,34 @@ mod tests {
             vec![bold("a "), bold_italic("b"), bold(" c")],
             parse_inline("**a _b_ c**"),
         );
+    }
+
+    #[test]
+    fn backslash_before_any_ascii_punctuation_yields_the_literal() {
+        for ch in (0u8..=127)
+            .map(char::from)
+            .filter(char::is_ascii_punctuation)
+        {
+            let input = format!("a\\{ch}b");
+            let expected = format!("a{ch}b");
+            assert_eq!(
+                vec![plain(&expected)],
+                parse_inline(&input),
+                "backslash-{ch} must yield the literal {ch}"
+            );
+        }
+    }
+
+    #[test]
+    fn backslash_before_anything_else_stays_literal() {
+        for (label, input, expected) in [
+            ("a letter keeps \\blank intact", "\\blank", "\\blank"),
+            ("a digit", "a\\1b", "a\\1b"),
+            ("a space", "a\\ b", "a\\ b"),
+            ("line end", "tail\\", "tail\\"),
+        ] {
+            assert_eq!(vec![plain(expected)], parse_inline(input), "{label}");
+        }
     }
 
     #[test]

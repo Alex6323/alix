@@ -432,6 +432,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Inline backslash escapes follow the CommonMark punctuation rule: a
+  backslash before any ASCII punctuation character yields the literal
+  character (it previously worked for only five characters), and a
+  backslash before anything else stays literal, so `\blank{...}` is
+  untouched. Grading keeps comparing the unescaped content.
+
 - Code fences follow the CommonMark closing-length rule: a fence closes only
   on a delimiter of its own character at least as long as its opener. A
   four-backtick fence can now wrap a three-backtick sample the way GitHub
