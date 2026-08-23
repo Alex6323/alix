@@ -643,6 +643,9 @@ struct RawCard {
     /// The line of a bare `$$` opener still unclosed; a card may not end
     /// with one open.
     open_math: Option<usize>,
+    /// The same rule for the note stream: a `> $$` opener, tracked on the
+    /// stripped note text.
+    open_note_math: Option<usize>,
 }
 
 struct RawTable {
@@ -934,6 +937,27 @@ fn scan(
             continue;
         }
 
+        // Between a card's `$$` opener and its bare closer every line is
+        // verbatim math source: no card grammar (blank, note, heading,
+        // table, divider, checklist, fence) may reinterpret it. An open
+        // fence still wins above, so a `$$` inside code stays code.
+        if current
+            .as_ref()
+            .is_some_and(|card| card.open_math.is_some())
+        {
+            pending = None;
+            if trim_ws(raw) == "$$"
+                && let Some(card) = current.as_mut()
+            {
+                card.open_math = None;
+            }
+            push_content(&mut current, lineno, raw.to_string());
+            prev_blank = false;
+            prev_heading = false;
+            prev_prose = true;
+            continue;
+        }
+
         if let Some((ch, open)) = fence_opener(raw) {
             pending = None;
             fence = Some((ch, open, lineno));
@@ -1092,6 +1116,7 @@ fn scan(
                 directives,
                 mapping: None,
                 open_math: None,
+                open_note_math: None,
             });
             prev_blank = false;
             prev_heading = true;
@@ -1115,13 +1140,11 @@ fn scan(
         if thematic_break_shape(t) && indent_width(raw) < 4 && current.is_some() {
             return Err(ParseError::CardThematicBreak(lineno));
         }
+        // Only ever an opener here: the open state is consumed above.
         if t == "$$"
             && let Some(card) = current.as_mut()
         {
-            card.open_math = match card.open_math {
-                None => Some(lineno),
-                Some(_) => None,
-            };
+            card.open_math = Some(lineno);
         }
 
         if let Some(rest) = t.strip_prefix('\\')
@@ -1198,7 +1221,15 @@ fn scan(
                 return Err(ParseError::NestedQuote(lineno));
             }
             match current.as_mut() {
-                Some(card) => append_note(card, text),
+                Some(card) => {
+                    if trim_ws(text) == "$$" {
+                        card.open_note_math = match card.open_note_math {
+                            None => Some(lineno),
+                            Some(_) => None,
+                        };
+                    }
+                    append_note(card, text);
+                }
                 // A section has no note to append to, so the line is
                 // ordinary section prose rather than a dropped quote.
                 None => section_line(
@@ -1771,7 +1802,10 @@ fn build_table_cards_inner(
 
 fn take_card(current: &mut Option<RawCard>) -> Result<Option<RawCard>, ParseError> {
     let card = current.take();
-    if let Some(line) = card.as_ref().and_then(|card| card.open_math) {
+    if let Some(line) = card
+        .as_ref()
+        .and_then(|card| card.open_math.or(card.open_note_math))
+    {
         return Err(ParseError::UnclosedDisplayMath(line));
     }
     Ok(card)
@@ -2075,6 +2109,7 @@ fn build_card_inner(
         directives,
         mapping,
         open_math: _,
+        open_note_math: _,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
@@ -4472,6 +4507,15 @@ a
                 "{why}: the dollars stay content, {kept:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_unclosed_display_math_note_fails_at_its_opener_line() {
+        assert_eq!(
+            err("## Q\nanswer\n> $$\n> x^2\n"),
+            ParseError::UnclosedDisplayMath(3),
+            "a note uses the same display-math spelling and hard-error contract"
+        );
     }
 
     #[test]
