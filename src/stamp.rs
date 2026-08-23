@@ -445,17 +445,22 @@ fn mint_card_id() -> Result<String, StampError> {
 /// quoted values, where the same characters could appear as answer text.
 fn stamp_token_offset(line: &str, stamp: &str) -> Option<usize> {
     let needle = format!("b:{stamp}");
-    let bytes = line.as_bytes();
+    let mut characters = line.char_indices();
     let mut quoted = false;
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\\' if quoted => i += 1,
-            b'"' => quoted = !quoted,
-            _ if !quoted && line[i..].starts_with(&needle) => return Some(i),
-            _ => {}
+    while let Some((offset, character)) = characters.next() {
+        if quoted {
+            if character == '\\' {
+                let _ = characters.next();
+            } else if character == '"' {
+                quoted = false;
+            }
+            continue;
         }
-        i += 1;
+        if character == '"' {
+            quoted = true;
+        } else if line[offset..].starts_with(&needle) {
+            return Some(offset);
+        }
     }
     None
 }
@@ -2014,13 +2019,10 @@ mod tests {
     }
 
     #[test]
-    fn a_stamp_matching_text_inside_a_quoted_value_is_not_the_token() {
-        let line =
-            r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="say b:a1b2c3 aloud" b:a1b2c3 -->"#;
+    fn stamp_token_scanning_skips_escaped_quoted_decoys_and_terminates_when_absent() {
+        let line = r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="say \"b:a1b2c3\" and \\ b:a1b2c3" b:a1b2c3 -->"#;
         let offset = stamp_token_offset(line, "a1b2c3").unwrap();
-        assert!(
-            line[..offset].ends_with("aloud\" "),
-            "the quoted decoy is skipped; found at {offset}: {line}"
-        );
+        assert_eq!(line.rfind("b:a1b2c3"), Some(offset));
+        assert_eq!(None, stamp_token_offset(line, "d4e5f6"));
     }
 }

@@ -1467,4 +1467,14 @@ mod tests {
         let excerpt = excerpt_at(&missing_base, Some(&file), "notes.md:2").unwrap();
         assert_eq!(vec![(2, "b".to_string())], excerpt.lines);
     }
+
+    #[test]
+    fn line_specs_require_every_present_bound_to_be_numeric() {
+        for valid in ["1", "1-2", " 1 - 2 "] {
+            assert!(is_line_spec(valid), "{valid:?}");
+        }
+        for invalid in ["", "x", "1-x", "x-2", "1-", "-2", "1-2-3"] {
+            assert!(!is_line_spec(invalid), "{invalid:?}");
+        }
+    }
 }
