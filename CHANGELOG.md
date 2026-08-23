@@ -40,6 +40,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   single or triple tilde run stays ordinary text, and line-start tilde
   fences are unaffected.
 
+- HTML tag shapes are a loud parse error (decision 10, first slice): a
+  `<` directly followed by a letter, or `</`, on any deck surface
+  (content, sections, fronts, notes, table cells) fails with the line,
+  the column, and the two outs (backticks for literal markup, `\<` for
+  a lone bracket). alix does not render HTML, so the shape is reserved
+  instead of silently shown as text. Code spans, fence interiors,
+  verbatim math, comment lines, image destinations, non-tag brackets
+  (`a < b`, `<3`), autolink shapes (`<https://...>`, `<user@host>`),
+  and the `<sub>`/`<sup>`/`<ins>` pairs stay legal; autolinks and the
+  styled subset render as plain text until their styling lands.
+
 - Named mapping invocations: `<!-- choices-single -->` or
   `<!-- choices-multiple -->` above a task list makes it a choice card (one
   correct answer, or select-all-that-apply), `<!-- cards -->` above a pipe

@@ -239,6 +239,10 @@ pub enum ParseError {
     )]
     UnclosedDisplayMath(usize),
     #[error(
+        "line {line}: `<` followed by a letter (column {column}) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"
+    )]
+    TagShape { line: usize, column: usize },
+    #[error(
         "line {0}: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"
     )]
     IndentedCode(usize),
@@ -293,6 +297,7 @@ impl ParseError {
             Self::ProseAfterTerminator(_) => "prose_after_terminator",
             Self::SetextUnderline(_) => "setext_underline",
             Self::UnclosedDisplayMath(_) => "unclosed_display_math",
+            Self::TagShape { .. } => "tag_shape",
             Self::IndentedCode(_) => "indented_code",
             Self::NestedQuote(_) => "nested_quote",
             Self::CardThematicBreak(_) => "card_thematic_break",
@@ -339,6 +344,7 @@ impl ParseError {
             | Self::ChoiceShape { line, .. }
             | Self::TableColumns { line, .. }
             | Self::TableRowWidth { line, .. }
+            | Self::TagShape { line, .. }
             | Self::TableDelimiterWidth { line, .. }
             | Self::TableRowStamp { line, .. }
             | Self::TableDuplicateStamp { line, .. } => *line,
@@ -885,6 +891,12 @@ fn scan(
         // inside a table's scope is either a flush or a loud error).
         if let Some(tbl) = table.as_mut() {
             pending = None;
+            if let Some(column) = crate::inline::tag_shape_column(raw) {
+                return Err(ParseError::TagShape {
+                    line: lineno,
+                    column,
+                });
+            }
             let next = lines.get(idx + 1).copied();
             if table_line(tbl, raw, lineno, next, lints)? {
                 prev_blank = trim_ws(raw).is_empty();
@@ -956,6 +968,13 @@ fn scan(
             prev_heading = false;
             prev_prose = true;
             continue;
+        }
+
+        if let Some(column) = crate::inline::tag_shape_column(raw) {
+            return Err(ParseError::TagShape {
+                line: lineno,
+                column,
+            });
         }
 
         if let Some((ch, open)) = fence_opener(raw) {
@@ -4456,6 +4475,51 @@ a
         let deck = parse("# S\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("x", deck.cards[0].front);
+    }
+
+    #[test]
+    fn tag_shapes_error_on_every_deck_surface_and_the_outs_stay_legal() {
+        let error_rows = [
+            ("## Q\na <div> b\n", 2, "card content"),
+            ("# S\n\nprose with <span>\n", 3, "section content"),
+            ("## What does <div> do?\nanswer\n", 1, "a heading front"),
+            ("## Q\nanswer\n> note with <b>bold</b>\n", 3, "a note line"),
+            (
+                "<!-- cards -->\n| a | <div> |\n|---|---|\n| x | y |\n",
+                2,
+                "a table header cell",
+            ),
+            (
+                "<!-- cards -->\n| a | b |\n|---|---|\n| x | <div> |\n",
+                4,
+                "a table body cell",
+            ),
+        ];
+        for (deck, line, why) in error_rows {
+            match err(deck) {
+                ParseError::TagShape { line: at, .. } => {
+                    assert_eq!(at, line, "{why}: wrong line");
+                }
+                other => panic!("{why}: expected TagShape, got {other:?}"),
+            }
+        }
+        let legal_rows = [
+            ("## Q\nsee <https://alix.study> now\n", "a uri autolink"),
+            ("## Q\nH<sub>2</sub>O\n", "a subset pair"),
+            ("## Q\n`<div>` in code\n", "a code span"),
+            ("## Q\n![d](<old image.png>)\na\n", "an image destination"),
+            (
+                "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n",
+                "the invocation comment",
+            ),
+            ("## Q\n```\n<div>\n```\n", "a fence interior"),
+            ("## Q\na < b and x<3\n", "non-tag brackets"),
+            ("## Q\n$$\na<b\n$$\n", "verbatim math source"),
+        ];
+        for (deck, why) in legal_rows {
+            parse(deck);
+            let _ = why;
+        }
     }
 
     #[test]

@@ -560,6 +560,158 @@ fn find_unescaped(chars: &[char], start: usize, needle: char) -> Option<usize> {
     (start..chars.len()).find(|index| chars[*index] == needle && !is_escaped(chars, *index))
 }
 
+/// The column (1-based) of the first reserved tag-shape angle run.
+/// Precedence per angle run: comment, autolink, styled subset,
+/// tag-shape, literal prose. None means the line is legal.
+pub(crate) fn tag_shape_column(text: &str) -> Option<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut open_subset: [Option<usize>; 3] = [None; 3];
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '`' && !is_escaped(&chars, index) {
+            index = code_span_end(&chars, index);
+            continue;
+        }
+        if chars[index] != '<' || is_escaped(&chars, index) {
+            index += 1;
+            continue;
+        }
+        if index >= 2
+            && chars[index - 1] == '('
+            && chars[index - 2] == ']'
+            && let Some(close) = (index + 1..chars.len()).find(|&i| chars[i] == '>')
+        {
+            index = close + 1;
+            continue;
+        }
+        if matches_at(&chars, index, "<!--") {
+            match find_at(&chars, index + 4, "-->") {
+                Some(close) => {
+                    index = close + 3;
+                    continue;
+                }
+                None => break,
+            }
+        }
+        if let Some(end) = autolink_end(&chars, index) {
+            index = end + 1;
+            continue;
+        }
+        if let Some((slot, len, closing)) = subset_tag(&chars, index) {
+            if closing {
+                if open_subset[slot].take().is_some() {
+                    index += len;
+                    continue;
+                }
+                return Some(index + 1);
+            }
+            if open_subset[slot].is_none() {
+                open_subset[slot] = Some(index + 1);
+                index += len;
+                continue;
+            }
+            return Some(index + 1);
+        }
+        let tag = match chars.get(index + 1) {
+            Some('/') => chars
+                .get(index + 2)
+                .is_some_and(|ch| ch.is_ascii_alphabetic()),
+            Some(ch) => ch.is_ascii_alphabetic(),
+            None => false,
+        };
+        if tag {
+            return Some(index + 1);
+        }
+        index += 1;
+    }
+    open_subset.into_iter().flatten().min()
+}
+
+/// The index just past a code span opened at `start` (a backtick run
+/// closes only on a run of exactly its own length), or past the
+/// unmatched opening run when no close exists.
+fn code_span_end(chars: &[char], start: usize) -> usize {
+    let run = chars[start..].iter().take_while(|ch| **ch == '`').count();
+    let mut index = start + run;
+    while index < chars.len() {
+        if chars[index] != '`' {
+            index += 1;
+            continue;
+        }
+        let close = chars[index..].iter().take_while(|ch| **ch == '`').count();
+        index += close;
+        if close == run {
+            return index;
+        }
+    }
+    start + run
+}
+
+fn matches_at(chars: &[char], start: usize, needle: &str) -> bool {
+    needle
+        .chars()
+        .enumerate()
+        .all(|(offset, ch)| chars.get(start + offset) == Some(&ch))
+}
+
+fn find_at(chars: &[char], start: usize, needle: &str) -> Option<usize> {
+    (start..chars.len()).find(|&index| matches_at(chars, index, needle))
+}
+
+const SUBSET_TAGS: [&str; 3] = ["sub", "sup", "ins"];
+
+fn subset_tag(chars: &[char], start: usize) -> Option<(usize, usize, bool)> {
+    let closing = chars.get(start + 1) == Some(&'/');
+    let name_start = if closing { start + 2 } else { start + 1 };
+    for (slot, name) in SUBSET_TAGS.iter().enumerate() {
+        if matches_at(chars, name_start, name) && chars.get(name_start + name.len()) == Some(&'>') {
+            return Some((slot, name.len() + if closing { 3 } else { 2 }, closing));
+        }
+    }
+    None
+}
+
+fn autolink_end(chars: &[char], start: usize) -> Option<usize> {
+    let close = (start + 1..chars.len()).find(|&index| chars[index] == '>')?;
+    let body: String = chars[start + 1..close].iter().collect();
+    (is_uri_autolink(&body) || is_email_autolink(&body)).then_some(close)
+}
+
+fn is_uri_autolink(body: &str) -> bool {
+    let Some((scheme, rest)) = body.split_once(':') else {
+        return false;
+    };
+    (2..=32).contains(&scheme.len())
+        && scheme.starts_with(|ch: char| ch.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '.' | '-'))
+        && !rest.is_empty()
+        && rest
+            .chars()
+            .all(|ch| !ch.is_whitespace() && ch != '<' && ch != '>')
+}
+
+fn is_email_autolink(body: &str) -> bool {
+    let Some((local, domain)) = body.split_once('@') else {
+        return false;
+    };
+    let local_ok = !local.is_empty()
+        && local
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(ch));
+    let label_ok = |label: &str| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+    };
+    local_ok && !domain.is_empty() && domain.split('.').all(label_ok)
+}
+
 fn is_escaped(chars: &[char], index: usize) -> bool {
     chars[..index]
         .iter()
@@ -1138,6 +1290,62 @@ mod tests {
         );
         assert!(math.error.is_none());
         assert!(!runs[1].bold && !runs[1].italic && !runs[1].code);
+    }
+
+    #[test]
+    fn tag_shapes_error_and_their_neighbors_stay_legal() {
+        let error_rows = [
+            ("<div>", 1, "an open tag"),
+            ("</div>", 1, "a close tag"),
+            (
+                "before <span class=x> after",
+                8,
+                "a mid-line tag with attributes",
+            ),
+            ("<B>", 1, "uppercase is still a letter"),
+            ("<sub>unclosed", 1, "an unpaired subset open"),
+            ("</sub>", 1, "a bare subset close"),
+            ("<sub><sub>x</sub></sub>", 6, "a doubled subset open"),
+            ("<sub><div></sub>", 6, "a tag inside a subset pair"),
+            ("<SUB>x</SUB>", 1, "the subset is lowercase-exact"),
+            ("<http//no-colon>", 1, "a malformed autolink near-miss"),
+            ("<mailto:with space>", 1, "whitespace kills the uri form"),
+            ("![d](<div", 6, "an unclosed destination is a near-miss"),
+        ];
+        for (text, column, why) in error_rows {
+            assert_eq!(tag_shape_column(text), Some(column), "{why}: {text}");
+        }
+        let legal_rows = [
+            ("a < b", "spaced comparison"),
+            ("a<3 and 2<4", "digits after the bracket"),
+            ("x <= y", "an operator"),
+            ("<", "a lone bracket at line end"),
+            (r"\<div>", "the escaped bracket"),
+            ("`<div>`", "a code span"),
+            ("``<div> and <span>``", "a double-backtick code span"),
+            ("<!-- cards -->", "the comment channel"),
+            (
+                "text <!-- <div> inside --> tail",
+                "a tag inside a closed comment",
+            ),
+            ("text <!-- <div> unclosed", "a tag inside an open comment"),
+            ("<https://alix.study/deck>", "a uri autolink"),
+            ("<mailto:hi@alix.study>", "a mailto autolink"),
+            ("<hi@alix.study>", "an email autolink"),
+            ("<sub>2</sub>", "a paired subscript"),
+            ("<sup>2</sup>", "a paired superscript"),
+            ("<ins>new</ins>", "a paired insertion"),
+            (
+                "H<sub>2</sub>O and E=mc<sup>2</sup>",
+                "two pairs on one line",
+            ),
+            ("<sub>i<sup>2</sup></sub>", "nested distinct subset pairs"),
+            ("![d](<old image.png>)", "an image destination in angles"),
+            ("[t](<a b c>)", "a link destination in angles"),
+        ];
+        for (text, why) in legal_rows {
+            assert_eq!(tag_shape_column(text), None, "{why}: {text}");
+        }
     }
 
     #[test]

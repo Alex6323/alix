@@ -18,7 +18,7 @@
 {"e":18,"g":[5],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":19,"g":[5],"cards":1,"back":"exact"}
 {"e":20,"g":[5],"cards":1,"back":"exact"}
-{"e":21,"g":[5],"cards":1,"back":"exact"}
+{"e":21,"g":[5],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":22,"g":[5],"cards":1,"back":"exact"}
 {"e":23,"g":[5],"cards":1,"back":"ws"}
 {"e":24,"g":[5],"cards":1,"back":"exact"}
@@ -28,7 +28,7 @@
 {"e":28,"g":[10,12],"cards":1,"back":"exact"}
 {"e":29,"g":[10,12],"cards":1,"back":"exact"}
 {"e":30,"g":[10,12],"cards":1,"back":"exact"}
-{"e":31,"g":[10,12],"cards":1,"back":"exact"}
+{"e":31,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":32,"g":[10,12],"cards":1,"back":"exact"}
 {"e":33,"g":[10,12],"cards":1,"back":"ws"}
 {"e":34,"g":[10,12],"cards":1,"back":"exact"}
@@ -88,7 +88,7 @@
 {"e":88,"g":[13],"cards":1,"back":"ws"}
 {"e":89,"g":[13],"cards":1,"back":"ws"}
 {"e":90,"g":[13],"cards":1,"back":"exact"}
-{"e":91,"g":[1,13],"err":"line 7: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":91,"g":[1,13],"err":"line 6: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":92,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
 {"e":93,"g":[13],"err":"line 4: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":94,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
@@ -107,7 +107,7 @@
 {"e":107,"g":[3,12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":108,"g":[3,12],"err":"line 4: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":109,"g":[3,12],"err":"line 4: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":110,"g":[3,12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
+{"e":110,"g":[3,12],"err":"line 2: `<` followed by a letter (column 5) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":111,"g":[3,12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":112,"g":[3,12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":113,"g":[3,12],"cards":1,"back":"ws"}
@@ -145,60 +145,60 @@
 {"e":145,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
 {"e":146,"g":[4],"cards":1,"back":"exact"}
 {"e":147,"g":[4],"cards":1,"back":"exact"}
-{"e":148,"g":[10,12],"cards":1,"back":"ws"}
-{"e":149,"g":[10,12],"cards":1,"back":"ws"}
-{"e":150,"g":[10,12],"cards":1,"back":"ws"}
-{"e":151,"g":[10,12],"cards":1,"back":"exact"}
-{"e":152,"g":[10,12],"cards":1,"back":"ws"}
-{"e":153,"g":[10,12],"cards":1,"back":"ws"}
-{"e":154,"g":[10,12],"cards":1,"back":"ws"}
-{"e":155,"g":[10,12],"cards":1,"back":"ws"}
-{"e":156,"g":[10,12],"cards":1,"back":"exact"}
-{"e":157,"g":[10,12],"cards":1,"back":"exact"}
-{"e":158,"g":[10,12],"cards":1,"back":"exact"}
-{"e":159,"g":[10,12],"cards":1,"back":"exact"}
-{"e":160,"g":[10,12],"cards":1,"back":"exact"}
-{"e":161,"g":[10,12],"cards":1,"back":"exact"}
-{"e":162,"g":[10,12],"cards":1,"back":"exact"}
-{"e":163,"g":[10,12],"cards":1,"back":"exact"}
-{"e":164,"g":[10,12],"cards":1,"back":"exact"}
-{"e":165,"g":[10,12],"cards":1,"back":"exact"}
-{"e":166,"g":[10,12],"cards":1,"back":"exact"}
-{"e":167,"g":[10,12],"cards":1,"back":"ws"}
-{"e":168,"g":[10,12],"cards":1,"back":"exact"}
-{"e":169,"g":[10,12],"cards":1,"back":"ws"}
-{"e":170,"g":[10,12],"cards":1,"back":"ws"}
-{"e":171,"g":[10,12],"cards":1,"back":"ws"}
-{"e":172,"g":[10,12],"cards":1,"back":"ws"}
-{"e":173,"g":[10,12],"cards":1,"back":"ws"}
-{"e":174,"g":[10,12],"cards":1,"back":"div"}
-{"e":175,"g":[10,12],"cards":1,"back":"exact"}
-{"e":176,"g":[10,12],"cards":1,"back":"exact"}
+{"e":148,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":149,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":150,"g":[10,12],"err":"line 2: `<` followed by a letter (column 2) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":151,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":152,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":153,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":154,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":155,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":156,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":157,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":158,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":159,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":160,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":161,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":162,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":163,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":164,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":165,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":166,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":167,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":168,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":169,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":170,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":171,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":172,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":173,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":174,"g":[10,12],"err":"line 2: `<` followed by a letter (column 3) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":175,"g":[10,12],"err":"line 2: `<` followed by a letter (column 3) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":176,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":177,"g":[6,10,12],"lints":["Lint { line: 2, kind: UnclosedComment }"],"cards":1,"back":"exact"}
-{"e":178,"g":[10,12],"cards":1,"back":"exact"}
+{"e":178,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":179,"g":[6,10,12],"lints":["Lint { line: 2, kind: UnclosedComment }"],"cards":1,"back":"ws"}
 {"e":180,"g":[10,12],"cards":1,"back":"ws"}
 {"e":181,"g":[10,12],"cards":1,"back":"exact"}
 {"e":182,"g":[10,12],"err":"line 10: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":183,"g":[6,10,12],"err":"line 4: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":184,"g":[10,12],"err":"line 4: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":185,"g":[10,12],"cards":1,"back":"exact"}
-{"e":186,"g":[10,12],"cards":1,"back":"exact"}
-{"e":187,"g":[10,12],"cards":1,"back":"exact"}
-{"e":188,"g":[10,12],"cards":1,"back":"ws"}
-{"e":189,"g":[10,12],"cards":1,"back":"exact"}
-{"e":190,"g":[10,12],"cards":1,"back":"ws"}
-{"e":191,"g":[10,12],"err":"line 6: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
+{"e":184,"g":[10,12],"err":"line 2: `<` followed by a letter (column 3) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":185,"g":[10,12],"err":"line 3: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":186,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":187,"g":[10,12],"err":"line 3: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":188,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":189,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":190,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":191,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":192,"g":[8],"cards":1,"back":"ws"}
 {"e":193,"g":[8],"cards":1,"back":"ws"}
 {"e":194,"g":[8],"cards":1,"back":"ws"}
-{"e":195,"g":[8],"cards":1,"back":"ws"}
+{"e":195,"g":[8],"err":"line 3: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":196,"g":[8],"cards":1,"back":"ws"}
 {"e":197,"g":[8],"cards":1,"back":"ws"}
 {"e":198,"g":[8],"cards":1,"back":"ws"}
 {"e":199,"g":[8],"cards":1,"back":"ws"}
 {"e":200,"g":[8],"cards":1,"back":"ws"}
-{"e":201,"g":[8],"cards":1,"back":"ws"}
+{"e":201,"g":[8],"err":"line 2: `<` followed by a letter (column 8) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":202,"g":[8],"cards":1,"back":"ws"}
 {"e":203,"g":[8],"cards":1,"back":"ws"}
 {"e":204,"g":[8],"cards":1,"back":"ws"}
@@ -341,7 +341,7 @@
 {"e":341,"cards":1,"back":"exact"}
 {"e":342,"cards":1,"back":"exact"}
 {"e":343,"cards":1,"back":"exact"}
-{"e":344,"cards":1,"back":"exact"}
+{"e":344,"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":345,"cards":1,"back":"exact"}
 {"e":346,"cards":1,"back":"exact"}
 {"e":347,"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
@@ -472,9 +472,9 @@
 {"e":472,"cards":1,"back":"exact"}
 {"e":473,"cards":1,"back":"exact"}
 {"e":474,"cards":1,"back":"exact"}
-{"e":475,"cards":1,"back":"exact"}
-{"e":476,"cards":1,"back":"exact"}
-{"e":477,"cards":1,"back":"exact"}
+{"e":475,"err":"line 2: `<` followed by a letter (column 2) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":476,"err":"line 2: `<` followed by a letter (column 3) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":477,"err":"line 2: `<` followed by a letter (column 3) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":478,"cards":1,"back":"exact"}
 {"e":479,"cards":1,"back":"exact"}
 {"e":480,"cards":1,"back":"exact"}
@@ -488,10 +488,10 @@
 {"e":488,"g":[8],"cards":1,"back":"exact"}
 {"e":489,"g":[8],"cards":1,"back":"exact"}
 {"e":490,"g":[8],"cards":1,"back":"exact"}
-{"e":491,"g":[8],"cards":1,"back":"exact"}
+{"e":491,"g":[8],"err":"line 2: `<` followed by a letter (column 8) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":492,"g":[8],"cards":1,"back":"exact"}
 {"e":493,"g":[8],"cards":1,"back":"exact"}
-{"e":494,"g":[8],"cards":1,"back":"exact"}
+{"e":494,"g":[8],"err":"line 2: `<` followed by a letter (column 5) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":495,"g":[8],"cards":1,"back":"exact"}
 {"e":496,"g":[8],"cards":1,"back":"exact"}
 {"e":497,"g":[8],"cards":1,"back":"exact"}
@@ -521,7 +521,7 @@
 {"e":521,"g":[8],"cards":1,"back":"exact"}
 {"e":522,"g":[8],"cards":1,"back":"exact"}
 {"e":523,"g":[8],"cards":1,"back":"exact"}
-{"e":524,"g":[8],"cards":1,"back":"exact"}
+{"e":524,"g":[8],"err":"line 2: `<` followed by a letter (column 6) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":525,"g":[8],"cards":1,"back":"exact"}
 {"e":526,"g":[8],"cards":1,"back":"exact"}
 {"e":527,"g":[8],"cards":1,"back":"ws"}
@@ -533,7 +533,7 @@
 {"e":533,"g":[8],"cards":1,"back":"ws"}
 {"e":534,"g":[8],"cards":1,"back":"ws"}
 {"e":535,"g":[8],"cards":1,"back":"ws"}
-{"e":536,"g":[8],"cards":1,"back":"ws"}
+{"e":536,"g":[8],"err":"line 2: `<` followed by a letter (column 6) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":537,"g":[8],"cards":1,"back":"ws"}
 {"e":538,"g":[8],"cards":1,"back":"ws"}
 {"e":539,"g":[8],"cards":1,"back":"ws"}
@@ -599,37 +599,37 @@
 {"e":599,"g":[8],"cards":1,"back":"exact"}
 {"e":600,"g":[8],"cards":1,"back":"exact"}
 {"e":601,"g":[8],"cards":1,"back":"exact"}
-{"e":602,"g":[8],"cards":1,"back":"exact"}
+{"e":602,"g":[8],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":603,"g":[8],"cards":1,"back":"exact"}
 {"e":604,"g":[8],"cards":1,"back":"exact"}
 {"e":605,"g":[8],"cards":1,"back":"exact"}
-{"e":606,"g":[8],"cards":1,"back":"exact"}
+{"e":606,"g":[8],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":607,"g":[8],"cards":1,"back":"exact"}
 {"e":608,"g":[8],"cards":1,"back":"exact"}
-{"e":609,"g":[8],"cards":1,"back":"exact"}
-{"e":610,"g":[8],"cards":1,"back":"exact"}
+{"e":609,"g":[8],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":610,"g":[8],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":611,"g":[8],"cards":1,"back":"exact"}
 {"e":612,"g":[8],"cards":1,"back":"exact"}
-{"e":613,"g":[10,12],"cards":1,"back":"exact"}
-{"e":614,"g":[10,12],"cards":1,"back":"exact"}
-{"e":615,"g":[10,12],"cards":1,"back":"exact"}
-{"e":616,"g":[10,12],"cards":1,"back":"exact"}
-{"e":617,"g":[10,12],"cards":1,"back":"exact"}
+{"e":613,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":614,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":615,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":616,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":617,"g":[10,12],"err":"line 2: `<` followed by a letter (column 5) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":618,"g":[10,12],"cards":1,"back":"exact"}
-{"e":619,"g":[10,12],"cards":1,"back":"exact"}
-{"e":620,"g":[10,12],"cards":1,"back":"exact"}
-{"e":621,"g":[10,12],"cards":1,"back":"exact"}
-{"e":622,"g":[10,12],"cards":1,"back":"exact"}
-{"e":623,"g":[10,12],"cards":1,"back":"exact"}
-{"e":624,"g":[10,12],"cards":1,"back":"exact"}
+{"e":619,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":620,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":621,"g":[10,12],"err":"line 3: `<` followed by a letter (column 5) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":622,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":623,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":624,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":625,"g":[6,10,12],"cards":1,"back":"exact"}
 {"e":626,"g":[6,10,12],"cards":1,"back":"ws"}
 {"e":627,"g":[10,12],"cards":1,"back":"exact"}
 {"e":628,"g":[10,12],"cards":1,"back":"exact"}
 {"e":629,"g":[10,12],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
-{"e":630,"g":[10,12],"cards":1,"back":"exact"}
-{"e":631,"g":[10,12],"cards":1,"back":"exact"}
-{"e":632,"g":[10,12],"cards":1,"back":"exact"}
+{"e":630,"g":[10,12],"err":"line 2: `<` followed by a letter (column 5) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":631,"g":[10,12],"err":"line 2: `<` followed by a letter (column 5) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":632,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":633,"g":[5],"cards":1,"back":"ws"}
 {"e":634,"g":[5],"cards":1,"back":"exact"}
 {"e":635,"g":[5],"cards":1,"back":"ws"}
@@ -639,8 +639,8 @@
 {"e":639,"g":[5],"cards":1,"back":"exact"}
 {"e":640,"g":[5],"cards":1,"back":"ws"}
 {"e":641,"g":[5],"cards":1,"back":"exact"}
-{"e":642,"g":[5],"cards":1,"back":"ws"}
-{"e":643,"g":[5],"cards":1,"back":"exact"}
+{"e":642,"g":[5],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":643,"g":[5],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":644,"g":[5],"cards":1,"back":"exact"}
 {"e":645,"g":[5],"cards":1,"back":"ws"}
 {"e":646,"g":[5],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
