@@ -37,7 +37,7 @@ export async function openApp(page: Page): Promise<void> {
 }
 
 export function kidsDeckRow(page: Page, name: string): Locator {
-  const exact = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+  const exact = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
   return page.locator(".deck-row").filter({ has: page.locator(".deck-label", { hasText: exact }) });
 }
 
