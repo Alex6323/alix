@@ -79,6 +79,7 @@ struct MathSpan {
     content_start: usize,
     content_end: usize,
     display: bool,
+    delimiter_len: usize,
 }
 
 fn project_text(
@@ -448,6 +449,20 @@ fn math_spans(chars: &[char]) -> Vec<MathSpan> {
             index = find_double_close(chars, index + 2).map_or(index + 2, |end| end + 2);
             continue;
         }
+        if chars.get(index + 1) == Some(&'`') {
+            if let Some(close) = backtick_anchored_close(chars, index + 2) {
+                spans.push(MathSpan {
+                    content_start: index + 2,
+                    content_end: close,
+                    display: false,
+                    delimiter_len: 2,
+                });
+                index = close + 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
         if chars.get(index + 1).is_none_or(|next| next.is_whitespace()) {
             index += 1;
             continue;
@@ -460,10 +475,20 @@ fn math_spans(chars: &[char]) -> Vec<MathSpan> {
             content_start: index + 1,
             content_end: close,
             display: false,
+            delimiter_len: 1,
         });
         index = close + 1;
     }
     spans
+}
+
+fn backtick_anchored_close(chars: &[char], body_start: usize) -> Option<usize> {
+    let close = (body_start..chars.len()).find(|&index| chars[index] == '`')?;
+    if chars.get(close + 1) != Some(&'$') {
+        return None;
+    }
+    let body = &chars[body_start..close];
+    (!body.iter().all(|ch| ch.is_whitespace())).then_some(close)
 }
 
 fn display_math_span(chars: &[char]) -> Option<MathSpan> {
@@ -484,6 +509,7 @@ fn display_math_span(chars: &[char]) -> Option<MathSpan> {
         content_start: start + 2,
         content_end: close,
         display: true,
+        delimiter_len: 2,
     })
 }
 
@@ -575,8 +601,8 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
         math[span.content_start..span.content_end].fill(Some(span_index));
         removed[span.content_start..span.content_end].fill(false);
         if !span.display {
-            removed[span.content_start - 1] = true;
-            removed[span.content_end] = true;
+            removed[span.content_start - span.delimiter_len..span.content_start].fill(true);
+            removed[span.content_end..span.content_end + span.delimiter_len].fill(true);
         }
     }
     let mut glyphs = Vec::with_capacity(chars.len());
@@ -1103,6 +1129,51 @@ mod tests {
         );
         assert!(math.error.is_none());
         assert!(!runs[1].bold && !runs[1].italic && !runs[1].code);
+    }
+
+    #[test]
+    fn backtick_anchored_inline_math_renders_like_bare_dollars() {
+        let runs = parse_inline("Why does $`a^2 + b^2 = c^2`$ hold?");
+        assert_eq!(runs.len(), 3, "prose, math, prose: {runs:?}");
+        assert_eq!(runs[1].text, "a^2 + b^2 = c^2");
+        let math = runs[1].math.as_ref().unwrap();
+        assert!(!math.display);
+        assert!(
+            math.svg
+                .as_deref()
+                .is_some_and(|svg| svg.starts_with("<svg"))
+        );
+        assert_eq!(
+            strip_inline("Why does $`a^2 + b^2 = c^2`$ hold?"),
+            "Why does a^2 + b^2 = c^2 hold?",
+            "the four anchor chars are markers, not content"
+        );
+        let styled = parse_inline("$`**x**`$");
+        assert_eq!(styled.len(), 1);
+        assert_eq!(styled[0].text, "**x**", "the body is verbatim math source");
+        assert!(styled[0].math.is_some());
+        assert!(!styled[0].bold, "math is protected from emphasis");
+    }
+
+    #[test]
+    fn backtick_anchored_math_boundaries_stay_literal() {
+        assert_eq!(parse_inline("$`x"), vec![plain("$`x")]);
+        for text in ["$``$", "$` `$", "$`x` y", r"\$`x`$"] {
+            let runs = parse_inline(text);
+            assert!(
+                runs.iter().all(|run| run.math.is_none()),
+                "an empty or whitespace anchored body is not math: {runs:?}"
+            );
+            assert!(
+                runs.first().is_some_and(|run| run.text.starts_with('$')),
+                "the dollars stay literal text: {runs:?}"
+            );
+        }
+        let code_first = parse_inline("`a $` b `$ c`");
+        assert!(
+            code_first.iter().all(|run| run.math.is_none()),
+            "a code span opening before the dollar keeps priority: {code_first:?}"
+        );
     }
 
     #[test]

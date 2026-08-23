@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- GitHub's backtick-anchored inline math spelling is recognized: a
+  dollar, a backtick-quoted body, a dollar (as in ``$`x^2`$``) renders
+  exactly like `$x^2$`, with all four anchor characters as markers and
+  the body as verbatim math source. An empty or unclosed anchor stays
+  ordinary text, and a code span that opens before the dollar keeps its
+  priority.
+
 - Bare pipe tables render as real aligned tables on every card surface
   (adult web, kids fronts, mobile): alignment colons in the delimiter row
   set column alignment, short rows pad, long rows truncate to the header
