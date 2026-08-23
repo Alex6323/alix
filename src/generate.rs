@@ -923,6 +923,31 @@ mod tests {
     }
 
     #[test]
+    fn malformed_output_is_tolerated_only_when_no_explicit_card_style_was_requested() {
+        let malformed = "---\nformat-version: 1\nbroken: [\n---\n## Question\nAnswer\n";
+
+        for card_style in [
+            GenerateCardStyle::Plain,
+            GenerateCardStyle::Cloze,
+            GenerateCardStyle::AuthoredChoices,
+        ] {
+            let spec = GenerationSpec {
+                goal: "learn it".to_string(),
+                language: None,
+                audience: None,
+                card_style,
+            };
+            let error = validate_card_style(malformed, &spec).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("cannot verify generated card style"),
+                "{card_style:?}: {error:#}"
+            );
+        }
+
+        validate_card_style(malformed, &spec()).unwrap();
+    }
+
+    #[test]
     fn authored_choices_require_three_to_five_options() {
         let spec = GenerationSpec {
             goal: "learn it".to_string(),
