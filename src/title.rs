@@ -202,4 +202,21 @@ mod tests {
         assert_eq!(Ordering::Less, natural_cmp("7a", "7b"));
         assert_eq!(Ordering::Less, natural_cmp("10. ASCII", "１０. Fullwidth"));
     }
+
+    #[test]
+    fn natural_order_is_total_at_equal_and_prefix_boundaries() {
+        assert_eq!(Ordering::Equal, natural_cmp("", ""));
+        assert_eq!(Ordering::Equal, natural_cmp("alpha", "alpha"));
+        assert_eq!(Ordering::Less, natural_cmp("alpha", "alphabet"));
+        assert_eq!(Ordering::Greater, natural_cmp("alphabet", "alpha"));
+    }
+
+    #[test]
+    fn title_word_cap_truncates_only_after_the_twelfth_word() {
+        let twelve = "one two three four five six seven eight nine ten eleven twelve";
+        let thirteen = format!("{twelve} thirteen");
+
+        assert!(!condense(twelve).ends_with('…'));
+        assert!(condense(&thirteen).ends_with('…'));
+    }
 }

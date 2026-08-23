@@ -12,13 +12,16 @@ pub const ROW_TOKEN_LEN: usize = 6;
 pub fn mint() -> Result<String, getrandom::Error> {
     let mut buf = [0u8; 16];
     getrandom::getrandom(&mut buf)?;
+    Ok(token_from_bytes(buf))
+}
+
+fn token_from_bytes(buf: [u8; 16]) -> String {
     let n = u128::from_be_bytes(buf);
     // Emits 5-bit groups most-significant-first, 26 chars for 128 bits.
-    let token: String = (0..26)
+    (0..26)
         .rev()
         .map(|i| TOKEN_ALPHABET[((n >> (5 * i)) & 31) as usize] as char)
-        .collect();
-    Ok(token)
+        .collect()
 }
 
 pub fn mint_row() -> Result<String, getrandom::Error> {
@@ -256,6 +259,15 @@ mod tests {
             assert!(is_canonical(&token), "not canonical: {token}");
             assert!(seen.insert(token), "duplicate token minted");
         }
+    }
+
+    #[test]
+    fn base_token_packing_uses_five_bit_groups_from_most_to_least_significant() {
+        assert_eq!("0".repeat(TOKEN_LEN), token_from_bytes([0; 16]));
+        assert_eq!(
+            format!("7{}", "z".repeat(TOKEN_LEN - 1)),
+            token_from_bytes([u8::MAX; 16])
+        );
     }
 
     #[test]
