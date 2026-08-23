@@ -46,10 +46,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the column, and the two outs (backticks for literal markup, `\<` for
   a lone bracket). alix does not render HTML, so the shape is reserved
   instead of silently shown as text. Code spans, fence interiors,
-  verbatim math, comment lines, image destinations, non-tag brackets
-  (`a < b`, `<3`), autolink shapes (`<https://...>`, `<user@host>`),
-  and the `<sub>`/`<sup>`/`<ins>` pairs stay legal; autolinks and the
-  styled subset render as plain text until their styling lands.
+  verbatim math, whole-line comments (the channel), complete image
+  destinations (`![d](<a b.png>)`), non-tag brackets (`a < b`, `<3`),
+  autolink shapes (`<https://...>`, `<user@host>`), and the
+  `<sub>`/`<sup>`/`<ins>` pairs stay legal; autolinks and the styled
+  subset render as plain text until their styling lands. The
+  boundaries are exact: subset pairs close in order on the same line
+  (nested, cross-nested, mismatched, doubled, and unclosed forms all
+  error), an image destination is exempt only as the complete
+  `![label](<...>)` form sealed by its paren (a link destination in
+  angles is not), and a comment protects nothing mid-line: a tag
+  inside `text <!-- <div> -->` errors like any other.
 
 - Named mapping invocations: `<!-- choices-single -->` or
   `<!-- choices-multiple -->` above a task list makes it a choice card (one

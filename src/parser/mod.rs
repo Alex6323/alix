@@ -4518,6 +4518,10 @@ a
                 "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n",
                 "the invocation comment",
             ),
+            (
+                "## Q\n<!-- <div> disabled -->\na\n",
+                "a channel comment line with a tag inside",
+            ),
             ("## Q\n```\n<div>\n```\n", "a fence interior"),
             ("## Q\na < b and x<3\n", "non-tag brackets"),
             ("## Q\n$$\na<b\n$$\n", "verbatim math source"),
@@ -4526,6 +4530,36 @@ a
             parse(deck);
             let _ = why;
         }
+    }
+
+    #[test]
+    fn cross_nested_subset_tags_fail_at_the_inner_opener() {
+        assert_eq!(
+            err("## Q\n<sub><sup>x</sub></sup>\n"),
+            ParseError::TagShape { line: 2, column: 6 }
+        );
+    }
+
+    #[test]
+    fn an_incomplete_image_destination_does_not_exempt_a_tag_shape() {
+        assert_eq!(
+            err("## Q\n![diagram](<diagram.png>\n"),
+            ParseError::TagShape {
+                line: 2,
+                column: 12
+            }
+        );
+    }
+
+    #[test]
+    fn an_inline_comment_does_not_create_a_second_comment_channel() {
+        assert_eq!(
+            err("## Q\ntext <!-- <div> inside -->\n"),
+            ParseError::TagShape {
+                line: 2,
+                column: 11
+            }
+        );
     }
 
     #[test]

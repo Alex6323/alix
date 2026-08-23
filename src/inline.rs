@@ -566,11 +566,23 @@ fn find_unescaped(chars: &[char], start: usize, needle: char) -> Option<usize> {
 }
 
 /// The column (1-based) of the first reserved tag-shape angle run.
-/// Precedence per angle run: comment, autolink, styled subset,
-/// tag-shape, literal prose. None means the line is legal.
+/// Precedence per angle run: image destination, autolink, styled
+/// subset, tag-shape, literal prose. A whole-line comment is the
+/// line-level `<!-- -->` channel and stays unexamined; a mid-line
+/// `<!--` is literal prose (`!` is not a letter). None means the
+/// line is legal.
 pub(crate) fn tag_shape_column(text: &str) -> Option<usize> {
+    let trimmed =
+        text.trim_matches(|ch: char| matches!(ch, '\t' | '\n' | '\x0B' | '\x0C' | '\r' | ' '));
+    if let Some(body) = trimmed
+        .strip_prefix("<!--")
+        .and_then(|rest| rest.strip_suffix("-->"))
+        && !body.contains("-->")
+    {
+        return None;
+    }
     let chars: Vec<char> = text.chars().collect();
-    let mut open_subset: [Option<usize>; 3] = [None; 3];
+    let mut open_subset: Option<(usize, usize)> = None;
     let mut index = 0;
     while index < chars.len() {
         if chars[index] == '`' && !is_escaped(&chars, index) {
@@ -581,41 +593,28 @@ pub(crate) fn tag_shape_column(text: &str) -> Option<usize> {
             index += 1;
             continue;
         }
-        if index >= 2
-            && chars[index - 1] == '('
-            && chars[index - 2] == ']'
-            && let Some(close) = (index + 1..chars.len()).find(|&i| chars[i] == '>')
-        {
+        if let Some(close) = image_destination_end(&chars, index) {
             index = close + 1;
             continue;
-        }
-        if matches_at(&chars, index, "<!--") {
-            match find_at(&chars, index + 4, "-->") {
-                Some(close) => {
-                    index = close + 3;
-                    continue;
-                }
-                None => break,
-            }
         }
         if let Some(end) = autolink_end(&chars, index) {
             index = end + 1;
             continue;
         }
         if let Some((slot, len, closing)) = subset_tag(&chars, index) {
-            if closing {
-                if open_subset[slot].take().is_some() {
+            match (open_subset, closing) {
+                (Some((open_slot, _)), true) if open_slot == slot => {
+                    open_subset = None;
                     index += len;
                     continue;
                 }
-                return Some(index + 1);
+                (None, false) => {
+                    open_subset = Some((slot, index + 1));
+                    index += len;
+                    continue;
+                }
+                _ => return Some(index + 1),
             }
-            if open_subset[slot].is_none() {
-                open_subset[slot] = Some(index + 1);
-                index += len;
-                continue;
-            }
-            return Some(index + 1);
         }
         let tag = match chars.get(index + 1) {
             Some('/') => chars
@@ -629,7 +628,45 @@ pub(crate) fn tag_shape_column(text: &str) -> Option<usize> {
         }
         index += 1;
     }
-    open_subset.into_iter().flatten().min()
+    open_subset.map(|(_, column)| column)
+}
+
+/// The closing `>` of a complete image destination: `start` sits on the
+/// `<` of `![label](<...>`, and the span must end `>)` to be exempt,
+/// mirroring the parser's image grammar (label is the nearest `![` left
+/// of the `]` with no `]` between; `\<` `\>` `\\` escape inside; a raw
+/// `<` breaks the form).
+fn image_destination_end(chars: &[char], start: usize) -> Option<usize> {
+    if start < 2 || chars[start - 1] != '(' || chars[start - 2] != ']' {
+        return None;
+    }
+    let mut label = start - 2;
+    loop {
+        if label == 0 {
+            return None;
+        }
+        label -= 1;
+        match chars[label] {
+            ']' => return None,
+            '[' if label >= 1 && chars[label - 1] == '!' && !is_escaped(chars, label - 1) => break,
+            _ => {}
+        }
+    }
+    let mut index = start + 1;
+    while index < chars.len() {
+        match chars[index] {
+            '\\' if chars
+                .get(index + 1)
+                .is_some_and(|ch| matches!(ch, '<' | '>' | '\\')) =>
+            {
+                index += 2;
+            }
+            '<' => return None,
+            '>' => return (chars.get(index + 1) == Some(&')')).then_some(index),
+            _ => index += 1,
+        }
+    }
+    None
 }
 
 /// The index just past a code span opened at `start` (a backtick run
@@ -657,10 +694,6 @@ fn matches_at(chars: &[char], start: usize, needle: &str) -> bool {
         .chars()
         .enumerate()
         .all(|(offset, ch)| chars.get(start + offset) == Some(&ch))
-}
-
-fn find_at(chars: &[char], start: usize, needle: &str) -> Option<usize> {
-    (start..chars.len()).find(|&index| matches_at(chars, index, needle))
 }
 
 const SUBSET_TAGS: [&str; 3] = ["sub", "sup", "ins"];
@@ -1330,6 +1363,41 @@ mod tests {
             ("<http//no-colon>", 1, "a malformed autolink near-miss"),
             ("<mailto:with space>", 1, "whitespace kills the uri form"),
             ("![d](<div", 6, "an unclosed destination is a near-miss"),
+            (
+                "<sub>i<sup>2</sup></sub>",
+                7,
+                "a nested distinct subset is a nested form",
+            ),
+            (
+                "<sub><sup>x</sub></sup>",
+                6,
+                "cross-nesting dies at the inner opener",
+            ),
+            ("<sub>x</sup>", 7, "a mismatched subset close"),
+            (
+                "text <!-- <div> inside --> tail",
+                11,
+                "a tag inside inline comment prose",
+            ),
+            (
+                "text <!-- <div> unclosed",
+                11,
+                "an unclosed inline comment hides nothing",
+            ),
+            (
+                "<!-- a --> <div> <!-- b -->",
+                12,
+                "a tag between two comments on one line",
+            ),
+            ("![d](<d.png>x)", 6, "a destination not sealed by the paren"),
+            (r"![d](<a\>b)", 6, "an escaped close leaves the form open"),
+            (
+                "[t](<a b c>)",
+                5,
+                "a link destination is not the image form",
+            ),
+            (r"\![d](<x.png>)", 7, "an escaped image marker is prose"),
+            ("![a]b](<x.png>)", 8, "a second bracket breaks the label"),
         ];
         for (text, column, why) in error_rows {
             assert_eq!(tag_shape_column(text), Some(column), "{why}: {text}");
@@ -1344,10 +1412,14 @@ mod tests {
             ("``<div> and <span>``", "a double-backtick code span"),
             ("<!-- cards -->", "the comment channel"),
             (
-                "text <!-- <div> inside --> tail",
-                "a tag inside a closed comment",
+                "<!-- <div> disabled -->",
+                "a whole-line comment is the channel",
             ),
-            ("text <!-- <div> unclosed", "a tag inside an open comment"),
+            ("  <!-- <q>? -->", "an indented channel line"),
+            (
+                "text <!-- note --> tail",
+                "inline comment prose without a tag",
+            ),
             ("<https://alix.study/deck>", "a uri autolink"),
             ("<mailto:hi@alix.study>", "a mailto autolink"),
             ("<hi@alix.study>", "an email autolink"),
@@ -1358,9 +1430,7 @@ mod tests {
                 "H<sub>2</sub>O and E=mc<sup>2</sup>",
                 "two pairs on one line",
             ),
-            ("<sub>i<sup>2</sup></sub>", "nested distinct subset pairs"),
             ("![d](<old image.png>)", "an image destination in angles"),
-            ("[t](<a b c>)", "a link destination in angles"),
         ];
         for (text, why) in legal_rows {
             assert_eq!(tag_shape_column(text), None, "{why}: {text}");
