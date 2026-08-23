@@ -448,6 +448,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A fence-shaped line carrying an info string (like a nested ```` ```rust ````
+  opener quoted inside a longer outer fence) no longer closes the fence during
+  review rendering. The parser already kept it inside the block; the web and
+  review projections now apply the same closing rule, so the rendered code
+  block matches the authored one instead of splitting into stray prose or
+  math. Found by Codex during reciprocal review.
+
 - Inline backslash escapes follow the CommonMark punctuation rule: a
   backslash before any ASCII punctuation character yields the literal
   character (it previously worked for only five characters), and a

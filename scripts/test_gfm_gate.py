@@ -44,6 +44,46 @@ class GfmGateContractTests(unittest.TestCase):
             package_version(harness_lock, "yaml-rust2"),
         )
 
+    def test_harness_uses_the_production_alix_dependency_tree(self):
+        def alix_tree(*extra):
+            completed = subprocess.run(
+                [
+                    "cargo",
+                    "tree",
+                    "--locked",
+                    "--edges",
+                    "normal",
+                    "--prefix",
+                    "none",
+                    "--format",
+                    "{p}",
+                    "-p",
+                    "alix",
+                    *extra,
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            return {
+                package.removesuffix(" (*)")
+                for package in completed.stdout.splitlines()
+                if not package.startswith("alix v")
+            }
+
+        production = alix_tree("--no-default-features")
+        measured = alix_tree(
+            "--manifest-path",
+            "tools/gfm-harness/Cargo.toml",
+        )
+        self.assertEqual(
+            production,
+            measured,
+            "the corpus gate must measure the production lean dependency graph"
+            " (remedy: scripts/sync_gfm_harness_lock.py)",
+        )
+
     def test_scope_includes_inputs_that_can_change_the_measured_binary(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         match = re.search(r"grep -qE '([^']+)'", workflow)

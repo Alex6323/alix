@@ -262,10 +262,10 @@ fn project_lines(
     let mut code_fence: Option<(char, usize)> = None;
     for line in lines {
         let marker = fence_marker(line);
-        let fence = marker.is_some_and(|(ch, run)| match code_fence {
-            None => true,
-            Some((open, len)) => open == ch && run >= len,
-        });
+        let fence = match code_fence {
+            None => marker.is_some(),
+            Some((open, len)) => crate::parser::closes_fence(line.trim_start(), open, len),
+        };
         let runs = if code_fence.is_some() || fence {
             literal_runs(line)
         } else {

@@ -169,7 +169,11 @@ fn text_units_with(
         if let Some((marker, run)) = fence_marker(logical) {
             match &code_fence {
                 Some((open_marker, open_run, info))
-                    if *open_marker == marker && run >= *open_run =>
+                    if crate::parser::closes_fence(
+                        logical.trim_start(),
+                        *open_marker,
+                        *open_run,
+                    ) =>
                 {
                     // An empty fence keeps its unit slot: clients consume one
                     // fence-shaped unit per closed raw fence.
@@ -754,6 +758,17 @@ mod tests {
             units,
             vec![NoteUnit::Code {
                 lines: vec!["```".into(), "code".into(), "```".into()]
+            }]
+        );
+    }
+
+    #[test]
+    fn a_fence_shaped_content_line_with_info_does_not_close_the_fence() {
+        let units = note_units(&card_with_note("````\n````rust\n$x$\n````"));
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["````rust".into(), "$x$".into()]
             }]
         );
     }
