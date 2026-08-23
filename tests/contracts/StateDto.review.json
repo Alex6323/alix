@@ -199,6 +199,7 @@
     "owner",
     "borrower"
   ],
+  "choices_multiple": null,
   "deck_total": 9,
   "depth": "recall",
   "due_left": 0,

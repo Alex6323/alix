@@ -17,6 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   single-token comment naming no known invocation are `alix doctor`
   findings.
 
+- The select-all wire: a `choices-multiple` card serves every authored
+  option with `choices_multiple: true` in the review state, and
+  `POST /api/choose {indices, card}` grades the pick by exact set equality
+  (`MultiChooseFeedbackDto`). Select-all builds only from the authored
+  option set, so these cards are never AI-distractor gaps, and a
+  cross-shape submission fails loudly. Client select-all rendering ships
+  separately.
+
 - A blank-surrounded `---` ends a section early: the cards after it carry no
   context until the next `#` heading, and a sub-card chain does not cross it.
   Prose directly after it, before any heading, is a parse error, and a

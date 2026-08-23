@@ -58,7 +58,8 @@ go: authored choice options on a card (an invoked task list), AI-generated distr
 - **Recognize**: **pick-only**, and scheduled on its own FSRS state at a laxer
   desired retention (`recognize_retention`, default 0.85), because recognition
   holds far longer than production. It's a genuine multiple-choice
-  pick, built from a card's authored choice options (an invoked task list), the
+  pick, built from a card's authored choice options (an invoked task list;
+  `choices-multiple` asks for every correct option, graded all-or-nothing), the
   deck's cached AI distractors (`alix deck augment --target choices`), or, for
   a [card table's](03-the-deck-format.md) rows, the other rows of the same
   column: a cloze card asks you to pick its gap, a line card to pick the whole

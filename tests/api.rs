@@ -2850,6 +2850,110 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
     assert_eq!(true, body["passed"], "body: {body}");
 }
 
+const MULTI_CHOICE_DECK: &str = "---\ntasklist: choices-multiple\nid: \"deck-multichoice\"\n---\n\
+## Which of these are even? <!-- id: card-m1 -->\n- [x] 2\n- [x] 4\n- [ ] 3\n- [ ] 5\n";
+
+fn post_choice_multi(base: &str, indices: &[usize]) -> HttpResp {
+    let state = http(base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap_or_default();
+    let revision = body["study_revision"].as_u64().unwrap_or(0).to_string();
+    let card = body["card"]["id"].as_str().unwrap_or_default();
+    let list = serde_json::to_string(indices).unwrap();
+    http(
+        base,
+        "POST",
+        "/api/choose",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision),
+        ],
+        format!(r#"{{"indices":{list},"card":"{card}"}}"#).as_bytes(),
+    )
+}
+
+#[test]
+fn a_choices_multiple_deck_serves_the_flag_and_grades_the_exact_set() {
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| std::fs::write(dir.join("multi.md"), MULTI_CHOICE_DECK).unwrap(),
+        |_opts| {},
+    );
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"multi.md","depth":"recognize"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["choices_multiple"], "body: {body}");
+    let choices = body["choices"]
+        .as_array()
+        .expect("a select-all pick is served");
+    assert_eq!(4, choices.len(), "body: {body}");
+    let correct: Vec<usize> = choices
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| matches!(c.as_str(), Some("2" | "4")))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(
+        2,
+        correct.len(),
+        "both correct options are among the pick: {body}"
+    );
+
+    let resp = post_choice_multi(&base, &[correct[1], correct[0], correct[0]]);
+    assert_eq!(200, resp.status);
+    let graded: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        true, graded["passed"],
+        "an unordered, duplicated exact set passes: {graded}"
+    );
+    assert_eq!(
+        serde_json::json!(correct),
+        graded["chosen"],
+        "the echo is normalized: {graded}"
+    );
+    assert_eq!(serde_json::json!(correct), graded["correct"], "{graded}");
+
+    let resp = post_choice_multi(&base, &correct[..1]);
+    assert_eq!(200, resp.status);
+    let graded: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(false, graded["passed"], "a subset fails: {graded}");
+}
+
+#[test]
+fn a_pick_shape_that_mismatches_its_question_yields_400() {
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| std::fs::write(dir.join("multi.md"), MULTI_CHOICE_DECK).unwrap(),
+        |_opts| {},
+    );
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"multi.md","depth":"recognize"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let resp = post_choice(&base, 0);
+    assert_eq!(
+        400, resp.status,
+        "a single index against a select-all question"
+    );
+
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice-armed.md","depth":"recognize"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let resp = post_choice_multi(&base, &[0]);
+    assert_eq!(
+        400, resp.status,
+        "an index set against a single-answer question"
+    );
+}
+
 #[test]
 fn a_table_deck_serves_sampled_choices_and_header_context_at_recognize() {
     let (base, _guard) = spawn_full_server(None);

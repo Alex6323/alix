@@ -140,6 +140,7 @@ pub struct _ReviewState {
     pub depth: Depth,
     pub introducing: bool,
     pub choices: Option<Vec<String>>,
+    pub choices_multiple: Option<bool>,
     pub choice_runs: Option<Vec<Vec<InlineRun>>>,
     pub keypoints: Option<Vec<String>>,
     pub keypoint_runs: Option<Vec<Vec<InlineRun>>>,

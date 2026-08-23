@@ -304,6 +304,12 @@ pub(super) enum StudyCommand {
         expected: u64,
         reply: Reply<Feedback<review::ChoiceFeedback>>,
     },
+    ChooseMulti {
+        indices: Vec<usize>,
+        card: String,
+        expected: u64,
+        reply: Reply<Feedback<review::MultiChoiceFeedback>>,
+    },
     Remove {
         expected: u64,
         reply: Reply<Option<StateDto>>,
@@ -472,6 +478,19 @@ impl StudyHandle {
     ) -> Option<Feedback<review::ChoiceFeedback>> {
         self.call(|reply| StudyCommand::Choose {
             index,
+            card,
+            expected,
+            reply,
+        })
+    }
+    pub(super) fn choose_multi(
+        &self,
+        indices: Vec<usize>,
+        card: String,
+        expected: u64,
+    ) -> Option<Feedback<review::MultiChoiceFeedback>> {
+        self.call(|reply| StudyCommand::ChooseMulti {
+            indices,
             card,
             expected,
             reply,
@@ -863,6 +882,27 @@ impl StudyState {
                         Some(f) => Feedback::Ok(f),
                         None => Feedback::Bad,
                     },
+                };
+                let _ = reply.send(out);
+            }
+            StudyCommand::ChooseMulti {
+                indices,
+                card,
+                expected,
+                reply,
+            } => {
+                let out = match self.reviewing.as_ref() {
+                    _ if self.revision != expected => Feedback::NoSession,
+                    None => Feedback::NoSession,
+                    Some(r) if r.session.current_id().as_deref() != Some(card.as_str()) => {
+                        Feedback::NoSession
+                    }
+                    Some(r) => {
+                        match review::choose_multi(&r.session, &self.store, &r.augment, &indices) {
+                            Some(f) => Feedback::Ok(f),
+                            None => Feedback::Bad,
+                        }
+                    }
                 };
                 let _ = reply.send(out);
             }

@@ -511,6 +511,7 @@ class ReviewState {
   final Depth depth;
   final bool introducing;
   final List<String>? choices;
+  final bool? choicesMultiple;
   final List<List<InlineRun>>? choiceRuns;
   final List<String>? keypoints;
   final List<List<InlineRun>>? keypointRuns;
@@ -539,6 +540,7 @@ class ReviewState {
     required this.depth,
     required this.introducing,
     this.choices,
+    this.choicesMultiple,
     this.choiceRuns,
     this.keypoints,
     this.keypointRuns,
@@ -569,6 +571,7 @@ class ReviewState {
       depth.hashCode ^
       introducing.hashCode ^
       choices.hashCode ^
+      choicesMultiple.hashCode ^
       choiceRuns.hashCode ^
       keypoints.hashCode ^
       keypointRuns.hashCode ^
@@ -601,6 +604,7 @@ class ReviewState {
           depth == other.depth &&
           introducing == other.introducing &&
           choices == other.choices &&
+          choicesMultiple == other.choicesMultiple &&
           choiceRuns == other.choiceRuns &&
           keypoints == other.keypoints &&
           keypointRuns == other.keypointRuns &&

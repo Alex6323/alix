@@ -130,11 +130,15 @@ so is every client.
    `study_revision`.
    For typed checks call `POST /api/check {lines}`; whether the lines pair
    by position (`typeline`) or match in any order is derived server-side
-   from the card's mode, never sent by the client. For a multiple-choice
-   pick call `POST /api/choose {index, card}`, where `card` is the `card.id`
+   from the card's mode, never sent by the client. For a choice pick call
+   `POST /api/choose {index, card}` (single answer) or
+   `POST /api/choose {indices, card}` (select-all, when the state carried
+   `choices_multiple`), where `card` is the `card.id`
    of the card the pick was made on: the revision proves the client saw a
    transition, the id proves it is answering the card it rendered, and a pick
-   naming any other card is a 409. **Both are evidence only**: they
+   naming any other card is a 409. A submission whose shape mismatches the
+   served question (an `index` against a select-all, `indices` against a
+   single answer, both, or neither) is a 400. **Both are evidence only**: they
    report input-vs-expected and leave the session on the same card. Nothing
    is recorded yet.
 4. `POST /api/grade` is **authoritative**: `{grade: "failed"|"partly"|"passed"}`
@@ -439,7 +443,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/skip` | – | `StateDto` | 409 |
 | POST | `/api/introduce` | – | `StateDto` | 409 |
 | POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
-| POST | `/api/choose` | `{index, card}` (`card`: the current `card.id`, required) | `ChooseFeedbackDto` | 400 bad body / no question; 409 no session / another card |
+| POST | `/api/choose` | `{index, card}` for a single pick, `{indices, card}` for select-all (`card`: the current `card.id`, required) | `ChooseFeedbackDto` \| `MultiChooseFeedbackDto` | 400 bad body / no question / shape mismatch; 409 no session / another card |
 | POST | `/api/remove` | – | `StateDto` | 409 |
 | POST | `/api/restart` | – | `StateDto` | 409 |
 
@@ -591,7 +595,8 @@ The review-session payload; returned by every review action.
 | `kind` | string | Always `"review"` — the discriminator vs `WalkDto`. |
 | `phase` | string | `"select"` \| `"review"` \| `"done"` *(closed)*. `done` is session end. |
 | `card` | CardDto? | Null in select phase and when done. |
-| `choices` | [string]? | Multiple-choice options; the correct index is never sent (see `ChooseFeedbackDto`). |
+| `choices` | [string]? | Choice options; the correct indices are never sent (see `ChooseFeedbackDto`). |
+| `choices_multiple` | bool? | `true` when the served pick is select-all-that-apply (`choices-multiple`): submit `indices`, not `index`. Absent on a single pick and off `choice` mode. |
 | `choice_runs` | [[InlineRun]]? | Display projection for `choices`, in exact index lockstep. Null when `choices` is null. |
 | `keypoints` | [string]? | Explain-check rubric lines. |
 | `keypoint_runs` | [[InlineRun]]? | Display projection for `keypoints`, in exact index lockstep. Null when `keypoints` is null. |
@@ -839,6 +844,13 @@ separately.
 
 `chosen: number`, `correct: number`, `passed: bool`. This is where the correct
 choice index is disclosed.
+
+### MultiChooseFeedbackDto
+
+The select-all reply (`choices_multiple` states): `chosen: [number]`,
+`correct: [number]`, `passed: bool`. Both lists are ascending and
+deduplicated; `chosen` echoes the submission after that normalization, and
+`passed` is exact set equality, no partial credit.
 
 ### AskDto / ExchangeDto / AskInfoDto / DraftCardDto
 

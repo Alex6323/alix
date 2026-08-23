@@ -60,6 +60,10 @@ pub(crate) fn note_names_position(note: &str) -> bool {
 pub struct ChoiceQuestion {
     pub options: Vec<String>,
     pub correct: usize,
+    pub multiple: bool,
+    /// Ascending option indices of every correct answer; `[correct]` on a
+    /// single-answer question.
+    pub correct_set: Vec<usize>,
 }
 
 fn answer_text(card: &Card) -> String {
@@ -109,7 +113,12 @@ pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<Choice
     let mut rng = Rng::new(seed);
     shuffle(&mut options, &mut rng);
     let correct = options.iter().position(|t| *t == correct_text)?;
-    Some(ChoiceQuestion { options, correct })
+    Some(ChoiceQuestion {
+        options,
+        correct,
+        multiple: false,
+        correct_set: vec![correct],
+    })
 }
 
 pub fn build_authored(
@@ -135,7 +144,55 @@ pub fn build_authored(
     let mut rng = Rng::new(seed);
     shuffle(&mut options, &mut rng);
     let correct = options.iter().position(|option| *option == correct_text)?;
-    Some(ChoiceQuestion { options, correct })
+    Some(ChoiceQuestion {
+        options,
+        correct,
+        multiple: false,
+        correct_set: vec![correct],
+    })
+}
+
+pub fn build_authored_multi(
+    card: &Card,
+    seed: u64,
+    authored_distractors: &[String],
+) -> Option<ChoiceQuestion> {
+    let mut seen = HashSet::new();
+    let mut correct_texts = Vec::new();
+    for line in &card.back {
+        let trimmed = line.trim();
+        let content = content(trimmed);
+        if !content.is_empty() && seen.insert(content) {
+            correct_texts.push(trimmed.to_string());
+        }
+    }
+    let mut options = correct_texts.clone();
+    let correct_count = options.len();
+    for distractor in authored_distractors {
+        let trimmed = distractor.trim();
+        let content = content(trimmed);
+        if !content.is_empty() && seen.insert(content) {
+            options.push(trimmed.to_string());
+        }
+    }
+    if correct_count == 0 || options.len() == correct_count {
+        return None;
+    }
+    let mut rng = Rng::new(seed);
+    shuffle(&mut options, &mut rng);
+    let correct_set: Vec<usize> = options
+        .iter()
+        .enumerate()
+        .filter(|(_, option)| correct_texts.contains(option))
+        .map(|(index, _)| index)
+        .collect();
+    let correct = *correct_set.first()?;
+    Some(ChoiceQuestion {
+        options,
+        correct,
+        multiple: true,
+        correct_set,
+    })
 }
 
 pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
@@ -238,6 +295,69 @@ mod tests {
 
     fn ai(distractors: &[&str]) -> Vec<String> {
         distractors.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn multi_card(back: &[&str]) -> Card {
+        let mut c = card(1, &back.join("\n"));
+        c.multiple_choice = true;
+        c
+    }
+
+    #[test]
+    fn a_multi_question_offers_every_correct_line_and_every_distractor() {
+        let c = multi_card(&["2", "4"]);
+        let q = build_authored_multi(&c, 7, &ai(&["3", "5"])).unwrap();
+        assert_eq!(4, q.options.len());
+        assert!(q.multiple);
+        assert_eq!(2, q.correct_set.len());
+        for &i in &q.correct_set {
+            assert!(
+                ["2", "4"].contains(&q.options[i].as_str()),
+                "index {i} must be correct"
+            );
+        }
+        assert_eq!(
+            q.correct, q.correct_set[0],
+            "correct mirrors the first correct index"
+        );
+    }
+
+    #[test]
+    fn a_multi_question_correct_set_is_ascending_and_seed_stable() {
+        let c = multi_card(&["alpha", "beta", "gamma"]);
+        let d = ai(&["delta", "epsilon"]);
+        let q1 = build_authored_multi(&c, 42, &d).unwrap();
+        let q2 = build_authored_multi(&c, 42, &d).unwrap();
+        assert_eq!(q1.options, q2.options, "same seed, same order");
+        assert_eq!(q1.correct_set, q2.correct_set);
+        assert!(
+            q1.correct_set.windows(2).all(|w| w[0] < w[1]),
+            "ascending: {:?}",
+            q1.correct_set
+        );
+    }
+
+    #[test]
+    fn a_multi_question_without_a_distractor_does_not_build() {
+        let c = multi_card(&["2", "4"]);
+        assert!(build_authored_multi(&c, 7, &[]).is_none());
+        assert!(
+            build_authored_multi(&c, 7, &ai(&["2"])).is_none(),
+            "a distractor duplicating a correct option deduplicates away"
+        );
+    }
+
+    #[test]
+    fn a_multi_question_deduplicates_correct_lines_by_content() {
+        let c = multi_card(&["**2**", "2", "4"]);
+        let q = build_authored_multi(&c, 7, &ai(&["3"])).unwrap();
+        assert_eq!(
+            3,
+            q.options.len(),
+            "styled duplicate collapses: {:?}",
+            q.options
+        );
+        assert_eq!(2, q.correct_set.len());
     }
 
     #[test]

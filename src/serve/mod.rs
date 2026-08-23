@@ -1015,16 +1015,31 @@ pub fn run_review(
                 };
                 #[derive(Deserialize)]
                 struct Body {
-                    index: usize,
+                    index: Option<usize>,
+                    indices: Option<Vec<usize>>,
                     card: String,
                 }
                 match json_body::<Body>(&mut request) {
                     None => respond_status(request, 400),
-                    Some(b) => match study.choose(b.index, b.card, expected) {
-                        None => respond_status(request, 503),
-                        Some(Feedback::NoSession) => respond_status(request, 409),
-                        Some(Feedback::Bad) => respond_status(request, 400),
-                        Some(Feedback::Ok(f)) => respond_json(request, &f),
+                    // Exactly one submission shape: `index` grades a single
+                    // pick, `indices` a select-all; both or neither is a bad
+                    // body, and the cross-shape pair 400s in the lib.
+                    Some(b) => match (b.index, b.indices) {
+                        (Some(index), None) => match study.choose(index, b.card, expected) {
+                            None => respond_status(request, 503),
+                            Some(Feedback::NoSession) => respond_status(request, 409),
+                            Some(Feedback::Bad) => respond_status(request, 400),
+                            Some(Feedback::Ok(f)) => respond_json(request, &f),
+                        },
+                        (None, Some(indices)) => {
+                            match study.choose_multi(indices, b.card, expected) {
+                                None => respond_status(request, 503),
+                                Some(Feedback::NoSession) => respond_status(request, 409),
+                                Some(Feedback::Bad) => respond_status(request, 400),
+                                Some(Feedback::Ok(f)) => respond_json(request, &f),
+                            }
+                        }
+                        _ => respond_status(request, 400),
                     },
                 }
             }

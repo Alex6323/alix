@@ -305,6 +305,10 @@ pub struct ReviewState {
     /// The correct index is deliberately absent here: it only travels in
     /// [`ChoiceFeedback`], so this payload can never leak the answer.
     pub choices: Option<Vec<String>>,
+    /// `Some(true)` when the served pick is select-all-that-apply
+    /// (`choices-multiple`); absent on a single pick and off `choice` mode.
+    #[serde(default)]
+    pub choices_multiple: Option<bool>,
     #[serde(default)]
     pub choice_runs: Option<Vec<Vec<InlineRun>>>,
     pub keypoints: Option<Vec<String>>,
@@ -356,6 +360,13 @@ pub struct ChoiceFeedback {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct MultiChoiceFeedback {
+    pub chosen: Vec<usize>,
+    pub correct: Vec<usize>,
+    pub passed: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CheckFeedback {
     pub results: Vec<answer::TypedResult>,
     pub passed: bool,
@@ -374,7 +385,12 @@ pub fn state(
         .map(|c| depth::check_for(c.reveal.unwrap_or_default(), depth, c))
         .unwrap_or_default();
     let introducing = session.current_fresh(store);
-    let choices = current_question(session, store, augment).map(|q| q.options);
+    let question = current_question(session, store, augment);
+    let choices_multiple = question
+        .as_ref()
+        .is_some_and(|q| q.multiple)
+        .then_some(true);
+    let choices = question.map(|q| q.options);
     // Falls back to Flip when no pick can be built (no distractors): claiming
     // a choice with nothing to choose would strand the card.
     let mode = if base_mode == Mode::Choice && choices.is_none() {
@@ -430,6 +446,7 @@ pub fn state(
         depth,
         introducing,
         choices,
+        choices_multiple,
         choice_runs,
         keypoints,
         keypoint_runs,
@@ -483,6 +500,15 @@ pub fn current_question(
     let card = session.current()?;
     let id = card.id()?;
     let seed = choice::seed_for(&id, session.choice_seed(), session.appearance(&id));
+    if card.multiple_choice {
+        // Select-all builds only from the authored option set: AI and sampled
+        // distractor pools are shaped for one correct answer.
+        let fresh = session.current_fresh(store);
+        if session.depth() != Depth::Recognize && !fresh {
+            return None;
+        }
+        return choice::build_authored_multi(card, seed, &card.authored_distractors);
+    }
     if session.depth() == Depth::Recognize {
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
@@ -513,10 +539,37 @@ pub fn choose(
     chosen: usize,
 ) -> Option<ChoiceFeedback> {
     let question = current_question(session, store, augment)?;
+    if question.multiple {
+        return None;
+    }
     Some(ChoiceFeedback {
         chosen,
         correct: question.correct,
         passed: chosen == question.correct,
+    })
+}
+
+pub fn choose_multi(
+    session: &Session,
+    store: &Store,
+    augment: &AugmentCache,
+    chosen: &[usize],
+) -> Option<MultiChoiceFeedback> {
+    let question = current_question(session, store, augment)?;
+    if !question.multiple {
+        return None;
+    }
+    let mut set: Vec<usize> = chosen.to_vec();
+    set.sort_unstable();
+    set.dedup();
+    if set.iter().any(|&index| index >= question.options.len()) {
+        return None;
+    }
+    let passed = set == question.correct_set;
+    Some(MultiChoiceFeedback {
+        chosen: set,
+        correct: question.correct_set,
+        passed,
     })
 }
 
@@ -1912,5 +1965,110 @@ mod tests {
                 "answering one hole must not uncover material that protects its sibling hole"
             );
         }
+    }
+
+    const MULTI: &str =
+        "---\ntasklist: choices-multiple\n---\n## evens\n- [x] 2\n- [x] 4\n- [ ] 3\n- [ ] 5\n";
+
+    #[test]
+    fn a_multiple_card_serves_its_full_option_set_and_flags_the_wire() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(MULTI);
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
+        let s = state(&session, &store, &augment, Some(NOW));
+        let options = s
+            .choices
+            .expect("an authored multiple card builds its pick");
+        assert_eq!(
+            4,
+            options.len(),
+            "both corrects and both distractors: {options:?}"
+        );
+        assert_eq!(Some(true), s.choices_multiple);
+        assert_eq!(Mode::Choice, s.mode);
+    }
+
+    #[test]
+    fn choose_multi_passes_only_the_exact_correct_set() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(MULTI);
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
+        let q = current_question(&session, &store, &augment).expect("multi question");
+        assert!(q.multiple);
+        let correct = q.correct_set.clone();
+        assert_eq!(2, correct.len());
+
+        let exact = choose_multi(&session, &store, &augment, &correct).unwrap();
+        assert!(exact.passed, "exact set passes");
+        assert_eq!(correct, exact.correct);
+
+        let mut noisy: Vec<usize> = correct.iter().rev().copied().collect();
+        noisy.push(correct[0]);
+        let normalized = choose_multi(&session, &store, &augment, &noisy).unwrap();
+        assert!(
+            normalized.passed,
+            "order and duplicates normalize before grading"
+        );
+        assert_eq!(
+            correct, normalized.chosen,
+            "feedback echoes the normalized set"
+        );
+
+        assert!(
+            !choose_multi(&session, &store, &augment, &correct[..1])
+                .unwrap()
+                .passed,
+            "a subset fails"
+        );
+        let distractor = (0..q.options.len()).find(|i| !correct.contains(i)).unwrap();
+        let mut superset = correct.clone();
+        superset.push(distractor);
+        assert!(
+            !choose_multi(&session, &store, &augment, &superset)
+                .unwrap()
+                .passed,
+            "a superset fails"
+        );
+        assert!(
+            choose_multi(&session, &store, &augment, &[q.options.len()]).is_none(),
+            "an out-of-range index is refused, not graded"
+        );
+    }
+
+    #[test]
+    fn single_and_multi_picks_refuse_each_others_questions() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(MULTI);
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recognize, NOW);
+        assert!(
+            choose(&session, &store, &augment, 0).is_none(),
+            "a single pick against a select-all question is refused"
+        );
+
+        let (mut store2, mut augment2, _dir2) = fixtures();
+        let single = parse(FOUR);
+        seen(&mut store2, &single);
+        arm(&mut augment2, &single);
+        let single_session = session_at(single, &mut store2, Depth::Recognize, NOW);
+        assert!(
+            choose_multi(&single_session, &store2, &augment2, &[0]).is_none(),
+            "a multi pick against a single question is refused"
+        );
+    }
+
+    #[test]
+    fn a_distractorless_multiple_card_serves_no_pick() {
+        let (store, augment, _dir) = fixtures();
+        let mut fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
+        let cards = parse("---\ntasklist: choices-multiple\n---\n## all\n- [x] a\n- [x] b\n");
+        let session = session_at(cards, &mut fresh_store, Depth::Recall, NOW);
+        let s = state(&session, &fresh_store, &augment, Some(NOW));
+        assert!(s.introducing);
+        assert_eq!(None, s.choices, "nothing to choose against, so no pick");
+        assert_eq!(None, s.choices_multiple);
+        drop(store);
     }
 }

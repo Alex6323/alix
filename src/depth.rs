@@ -98,6 +98,11 @@ pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card])
     if card.region.is_some() {
         return false;
     }
+    // Select-all builds only from its authored option set; AI and sampled
+    // pools are single-answer-shaped.
+    if card.multiple_choice {
+        return !card.authored_distractors.is_empty();
+    }
     if !card.authored_distractors.is_empty() {
         return true;
     }
@@ -317,6 +322,26 @@ mod tests {
             "\"recognize\"",
             serde_json::to_string(&Depth::Recognize).unwrap()
         );
+    }
+
+    #[test]
+    fn a_multiple_card_is_recognizable_only_with_authored_distractors() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = crate::augment::AugmentCache::open(dir.path().join("a.json"));
+        let mut multi = card("a\nb");
+        multi.multiple_choice = true;
+        cache.set_distractors(
+            &multi.id().unwrap(),
+            vec!["w1".into(), "w2".into(), "w3".into()],
+            multi.content_fingerprint,
+        );
+        let deck = vec![multi.clone(), card("other")];
+        assert!(
+            !card_recognizable(&multi, &cache, &deck),
+            "cached AI distractors must not admit a select-all card"
+        );
+        multi.authored_distractors = vec!["x".into()];
+        assert!(card_recognizable(&multi, &cache, &deck));
     }
 }
 

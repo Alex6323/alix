@@ -1404,6 +1404,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
+  }
+
+  @protected
   CardView dco_decode_box_autoadd_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_card_view(raw);
@@ -1831,6 +1837,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_bool(raw);
+  }
+
+  @protected
   CardView? dco_decode_opt_box_autoadd_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_card_view(raw);
@@ -1977,35 +1989,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 26)
-      throw Exception('unexpected arr length: expect 26 but see ${arr.length}');
+    if (arr.length != 27)
+      throw Exception('unexpected arr length: expect 27 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
       depth: dco_decode_depth(arr[2]),
       introducing: dco_decode_bool(arr[3]),
       choices: dco_decode_opt_list_String(arr[4]),
-      choiceRuns: dco_decode_opt_list_list_inline_run(arr[5]),
-      keypoints: dco_decode_opt_list_String(arr[6]),
-      keypointRuns: dco_decode_opt_list_list_inline_run(arr[7]),
-      input: dco_decode_input(arr[8]),
-      finished: dco_decode_bool(arr[9]),
-      remaining: dco_decode_u_32(arr[10]),
-      initial: dco_decode_u_32(arr[11]),
-      reviews: dco_decode_u_32(arr[12]),
-      passed: dco_decode_u_32(arr[13]),
-      failed: dco_decode_u_32(arr[14]),
-      introduced: dco_decode_u_32(arr[15]),
-      partial: dco_decode_u_32(arr[16]),
-      canRestart: dco_decode_bool(arr[17]),
-      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[18]),
-      dueLeft: dco_decode_u_32(arr[19]),
-      newLeft: dco_decode_u_32(arr[20]),
-      metTotal: dco_decode_u_32(arr[21]),
-      deckTotal: dco_decode_u_32(arr[22]),
-      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[23]),
-      saveError: dco_decode_opt_String(arr[24]),
-      loadWarnings: dco_decode_list_String(arr[25]),
+      choicesMultiple: dco_decode_opt_box_autoadd_bool(arr[5]),
+      choiceRuns: dco_decode_opt_list_list_inline_run(arr[6]),
+      keypoints: dco_decode_opt_list_String(arr[7]),
+      keypointRuns: dco_decode_opt_list_list_inline_run(arr[8]),
+      input: dco_decode_input(arr[9]),
+      finished: dco_decode_bool(arr[10]),
+      remaining: dco_decode_u_32(arr[11]),
+      initial: dco_decode_u_32(arr[12]),
+      reviews: dco_decode_u_32(arr[13]),
+      passed: dco_decode_u_32(arr[14]),
+      failed: dco_decode_u_32(arr[15]),
+      introduced: dco_decode_u_32(arr[16]),
+      partial: dco_decode_u_32(arr[17]),
+      canRestart: dco_decode_bool(arr[18]),
+      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[19]),
+      dueLeft: dco_decode_u_32(arr[20]),
+      newLeft: dco_decode_u_32(arr[21]),
+      metTotal: dco_decode_u_32(arr[22]),
+      deckTotal: dco_decode_u_32(arr[23]),
+      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[24]),
+      saveError: dco_decode_opt_String(arr[25]),
+      loadWarnings: dco_decode_list_String(arr[26]),
     );
   }
 
@@ -2263,6 +2276,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_bool(deserializer));
   }
 
   @protected
@@ -2811,6 +2830,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_bool(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   CardView? sse_decode_opt_box_autoadd_card_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -3072,6 +3102,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_depth = sse_decode_depth(deserializer);
     var var_introducing = sse_decode_bool(deserializer);
     var var_choices = sse_decode_opt_list_String(deserializer);
+    var var_choicesMultiple = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_choiceRuns = sse_decode_opt_list_list_inline_run(deserializer);
     var var_keypoints = sse_decode_opt_list_String(deserializer);
     var var_keypointRuns = sse_decode_opt_list_list_inline_run(deserializer);
@@ -3101,6 +3132,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       depth: var_depth,
       introducing: var_introducing,
       choices: var_choices,
+      choicesMultiple: var_choicesMultiple,
       choiceRuns: var_choiceRuns,
       keypoints: var_keypoints,
       keypointRuns: var_keypointRuns,
@@ -3406,6 +3438,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_bool(bool self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self, serializer);
   }
 
   @protected
@@ -3893,6 +3931,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_bool(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_card_view(
     CardView? self,
     SseSerializer serializer,
@@ -4153,6 +4201,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_depth(self.depth, serializer);
     sse_encode_bool(self.introducing, serializer);
     sse_encode_opt_list_String(self.choices, serializer);
+    sse_encode_opt_box_autoadd_bool(self.choicesMultiple, serializer);
     sse_encode_opt_list_list_inline_run(self.choiceRuns, serializer);
     sse_encode_opt_list_String(self.keypoints, serializer);
     sse_encode_opt_list_list_inline_run(self.keypointRuns, serializer);

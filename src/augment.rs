@@ -924,7 +924,8 @@ impl AugmentCache {
         let plain: Vec<&Card> = cards.iter().filter(|c| c.hash_lines.is_none()).collect();
         CoverageSummary {
             choices: coverage(&all, &|c| {
-                !c.authored_distractors.is_empty()
+                c.multiple_choice
+                    || !c.authored_distractors.is_empty()
                     || c.id()
                         .is_some_and(|id| self.distractors(&id, c.content_fingerprint).is_some())
             }),
@@ -972,7 +973,7 @@ impl AugmentCache {
         // Region cards are deliberately excluded.
         self.missing(
             cards,
-            |card| card.region.is_none(),
+            |card| card.region.is_none() && !card.multiple_choice,
             |c| {
                 !c.authored_distractors.is_empty()
                     || c.id()
@@ -2317,6 +2318,31 @@ mod tests {
             1,
             cache.missing_format(std::slice::from_ref(card)).len(),
             "it must resurface as a gap"
+        );
+    }
+
+    #[test]
+    fn a_multiple_card_is_never_a_choices_gap() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let mut multi = plain_card("a");
+        multi.multiple_choice = true;
+        let cards = vec![multi, plain_card("b")];
+        let missing: Vec<String> = cache
+            .missing_choices(&cards)
+            .iter()
+            .map(|item| item.answer.clone())
+            .collect();
+        assert_eq!(
+            ["b"],
+            missing.as_slice(),
+            "its option set is authored by declaration"
+        );
+
+        let summary = cache.summarize(&cards, &HashSet::new());
+        assert_eq!(
+            1, summary.choices.covered,
+            "covered without any cached distractors"
         );
     }
 }

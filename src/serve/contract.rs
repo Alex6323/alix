@@ -33,6 +33,7 @@ fn statedto_select_phase_wire_shape() {
         phase: "select",
         card: None,
         choices: None,
+        choices_multiple: None,
         choice_runs: None,
         keypoints: None,
         keypoint_runs: None,
@@ -67,6 +68,7 @@ fn statedto_select_phase_wire_shape() {
             "phase": "select",
             "card": null,
             "choices": null,
+            "choices_multiple": null,
             "choice_runs": null,
             "keypoints": null,
             "keypoint_runs": null,
@@ -214,6 +216,7 @@ fn statedto_review_phase_wire_shape() {
             }),
         }),
         choices: Some(vec!["owner".to_string(), "borrower".to_string()]),
+        choices_multiple: None,
         choice_runs: Some(vec![
             crate::inline::parse_inline("owner"),
             crate::inline::parse_inline("borrower"),
@@ -326,6 +329,7 @@ fn statedto_review_phase_wire_shape() {
                 }
             },
             "choices": ["owner", "borrower"],
+            "choices_multiple": null,
             "choice_runs": [[{"text": "owner"}], [{"text": "borrower"}]],
             "keypoints": ["one owner per value"],
             "keypoint_runs": [[{"text": "one owner per value"}]],
@@ -362,6 +366,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
         phase: "done",
         card: None,
         choices: None,
+        choices_multiple: None,
         choice_runs: None,
         keypoints: None,
         keypoint_runs: None,
@@ -396,6 +401,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
             "phase": "done",
             "card": null,
             "choices": null,
+            "choices_multiple": null,
             "choice_runs": null,
             "keypoints": null,
             "keypoint_runs": null,
@@ -433,6 +439,7 @@ fn statedto_done_phase_carries_the_recognize_gap() {
         phase: "done",
         card: None,
         choices: None,
+        choices_multiple: None,
         choice_runs: None,
         keypoints: None,
         keypoint_runs: None,
@@ -470,6 +477,7 @@ fn statedto_done_phase_carries_the_recognize_gap() {
             "phase": "done",
             "card": null,
             "choices": null,
+            "choices_multiple": null,
             "choice_runs": null,
             "keypoints": null,
             "keypoint_runs": null,
@@ -1454,6 +1462,20 @@ fn browsedto_wire_shape() {
 
 // Delegates to the core `review::choose`/`check_typed` types directly; the
 // anchor names are kept so docs/API.md sections and corpus filenames stay stable.
+#[test]
+fn multichoosefeedbackdto_wire_shape() {
+    let feedback = crate::review::MultiChoiceFeedback {
+        chosen: vec![0, 2],
+        correct: vec![0, 1],
+        passed: false,
+    };
+    pin(
+        "MultiChooseFeedbackDto",
+        &feedback,
+        json!({"chosen": [0, 2], "correct": [0, 1], "passed": false}),
+    );
+}
+
 #[test]
 fn choosefeedbackdto_wire_shape() {
     let feedback = crate::review::ChoiceFeedback {

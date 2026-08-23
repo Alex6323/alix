@@ -1635,6 +1635,7 @@ const _: fn() = || {
         let _: crate::api::review::Depth = ReviewState.depth;
         let _: bool = ReviewState.introducing;
         let _: Option<Vec<String>> = ReviewState.choices;
+        let _: Option<bool> = ReviewState.choices_multiple;
         let _: Option<Vec<Vec<crate::api::review::InlineRun>>> = ReviewState.choice_runs;
         let _: Option<Vec<String>> = ReviewState.keypoints;
         let _: Option<Vec<Vec<crate::api::review::InlineRun>>> = ReviewState.keypoint_runs;
@@ -2267,6 +2268,17 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<bool>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::review::CardView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2532,6 +2544,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_depth = <crate::api::review::Depth>::sse_decode(deserializer);
         let mut var_introducing = <bool>::sse_decode(deserializer);
         let mut var_choices = <Option<Vec<String>>>::sse_decode(deserializer);
+        let mut var_choicesMultiple = <Option<bool>>::sse_decode(deserializer);
         let mut var_choiceRuns =
             <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_decode(deserializer);
         let mut var_keypoints = <Option<Vec<String>>>::sse_decode(deserializer);
@@ -2562,6 +2575,7 @@ impl SseDecode for crate::api::review::ReviewState {
             depth: var_depth,
             introducing: var_introducing,
             choices: var_choices,
+            choices_multiple: var_choicesMultiple,
             choice_runs: var_choiceRuns,
             keypoints: var_keypoints,
             keypoint_runs: var_keypointRuns,
@@ -3399,6 +3413,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.depth.into_into_dart().into_dart(),
             self.0.introducing.into_into_dart().into_dart(),
             self.0.choices.into_into_dart().into_dart(),
+            self.0.choices_multiple.into_into_dart().into_dart(),
             self.0.choice_runs.into_into_dart().into_dart(),
             self.0.keypoints.into_into_dart().into_dart(),
             self.0.keypoint_runs.into_into_dart().into_dart(),
@@ -4091,6 +4106,16 @@ impl SseEncode for Option<String> {
     }
 }
 
+impl SseEncode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <bool>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::review::CardView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4317,6 +4342,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <crate::api::review::Depth>::sse_encode(self.depth, serializer);
         <bool>::sse_encode(self.introducing, serializer);
         <Option<Vec<String>>>::sse_encode(self.choices, serializer);
+        <Option<bool>>::sse_encode(self.choices_multiple, serializer);
         <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(self.choice_runs, serializer);
         <Option<Vec<String>>>::sse_encode(self.keypoints, serializer);
         <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(
