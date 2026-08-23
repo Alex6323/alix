@@ -104,9 +104,6 @@ pub enum LintKind {
     DuplicateChoiceOption,
     ChoiceMultiCorrectUnsupported,
     ChoiceNoteNamesPosition,
-    /// One `[x]` under `choices-multiple`: legal select-all authoring, but
-    /// usually a `choices-single` card wearing the wrong invocation.
-    DegenerateMultipleChoice,
     /// A bare single-token comment that names no known invocation; the
     /// block below it stays literal, which is silent exactly when the
     /// author meant to invoke.
@@ -2327,12 +2324,6 @@ fn build_card_inner(
                             .into(),
                     });
                 }
-                if checked_count == 1 {
-                    lints.push(Lint {
-                        line: choice_line,
-                        kind: LintKind::DegenerateMultipleChoice,
-                    });
-                }
             }
         }
         let mut card = Card::plain(Arc::clone(subject), front, correct, note, line);
@@ -4027,14 +4018,15 @@ a
     }
 
     #[test]
-    fn one_check_under_multiple_is_a_degenerate_finding_not_an_error() {
+    fn one_check_under_multiple_is_legal_and_silent() {
         let deck = parse("## q\n<!-- choices-multiple -->\n- [x] a\n- [ ] b\n");
         assert_eq!(vec!["a"], deck.cards[0].back);
-        assert_eq!(1, deck.lints.len(), "exactly the degenerate finding");
-        assert!(matches!(
-            deck.lints[0].kind,
-            LintKind::DegenerateMultipleChoice
-        ));
+        assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
+        assert_eq!(
+            Vec::<Lint>::new(),
+            deck.lints,
+            "a one-answer select-all is legal"
+        );
     }
 
     #[test]

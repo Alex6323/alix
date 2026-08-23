@@ -13,9 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   correct answer, or select-all-that-apply), `<!-- cards -->` above a pipe
   table makes it a card table, and the `tasklist:` / `table:` frontmatter
   keys declare a deck-wide default with `<!-- plain -->` as the per-block
-  escape. A `choices-multiple` list that checks exactly one option and a
-  single-token comment naming no known invocation are `alix doctor`
-  findings.
+  escape. A single-token comment naming no known invocation is an
+  `alix doctor` finding; a `choices-multiple` list that checks exactly one
+  option is legal and silent.
 
 - The select-all wire: a `choices-multiple` card serves every authored
   option with `choices_multiple: true` in the review state, and

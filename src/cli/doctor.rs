@@ -654,9 +654,6 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::PointlessTerminator => "this `---` section terminator ends nothing: no card \
                                            follows before the next heading or the end of the deck"
             .to_string(),
-        LintKind::DegenerateMultipleChoice => "this `choices-multiple` list checks exactly one \
-             option; a one-answer question usually wants `choices-single`"
-            .to_string(),
         LintKind::UnknownInvocation => "this comment names no known invocation, so the block \
              below it stays literal; known names: `choices-single`, `choices-multiple`, \
              `cards`, `plain`"

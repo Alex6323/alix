@@ -162,8 +162,8 @@ or `[X]` for the answer. Task lists inside notes or a card's front before the
 
 `choices-multiple` is select-all-that-apply: every `[x]` is a correct option
 and the reviewer picks all of them. A `choices-multiple` list that checks
-exactly one item parses, but `alix doctor` points it out, since it usually
-means `choices-single` was intended.
+exactly one item is legal: a one-answer select-all is a fair question when
+the learner must discover how many options are correct.
 
 A deck built of choice cards declares the mapping once in frontmatter instead
 of once per card: `tasklist: choices-single` (or `choices-multiple`). A
