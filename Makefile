@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust
+.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure
 
 # Compile the workspace.
 build:
@@ -39,6 +39,14 @@ test-inventory:
 # Unit-test dependency-free build and CI tooling.
 tooling-test:
 	@python3 -m unittest discover -s scripts -p 'test_*.py'
+
+# Regenerate the committed GFM/CommonMark corpus baselines
+# (tools/gfm-harness/baseline/*.jsonl) against the current parser, then show
+# what drifted; review the git diff and commit intentional changes.
+gfm-measure:
+	TMPDIR=$(HOME)/tmp cargo run --manifest-path tools/gfm-harness/Cargo.toml -- --digest commonmark-0.31.2 tools/gfm-harness/corpora/commonmark-0.31.2.json tools/gfm-harness/baseline/commonmark-0.31.2.jsonl
+	TMPDIR=$(HOME)/tmp cargo run --manifest-path tools/gfm-harness/Cargo.toml -- --digest gfm-499789b tools/gfm-harness/corpora/gfm-499789b49373bfa045d0e7547e5ee63444c77bca-spec.txt tools/gfm-harness/baseline/gfm-499789b.jsonl
+	@git status --short tools/gfm-harness/baseline
 
 # Lint, including tests and examples.
 lint:

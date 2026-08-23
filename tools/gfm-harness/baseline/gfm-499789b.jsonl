@@ -1,0 +1,672 @@
+{"e":1,"cards":1,"back":"ws"}
+{"e":2,"cards":1,"back":"ws"}
+{"e":3,"cards":1,"back":"ws"}
+{"e":4,"cards":1,"back":"ws"}
+{"e":5,"cards":1,"back":"ws"}
+{"e":6,"err":"line 1: card front without an answer"}
+{"e":7,"cards":1,"back":"exact"}
+{"e":8,"cards":1,"back":"ws"}
+{"e":9,"cards":1,"back":"ws"}
+{"e":10,"cards":1,"back":"exact"}
+{"e":11,"cards":1,"back":"ws"}
+{"e":12,"cards":1,"back":"exact"}
+{"e":13,"g":[1],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":14,"g":[1],"cards":1,"back":"exact"}
+{"e":15,"g":[1],"cards":1,"back":"exact"}
+{"e":16,"g":[1],"cards":1,"back":"exact"}
+{"e":17,"g":[1],"cards":1,"back":"ws"}
+{"e":18,"g":[1],"cards":1,"back":"ws"}
+{"e":19,"g":[1],"cards":1,"back":"ws"}
+{"e":20,"g":[1],"cards":1,"back":"exact"}
+{"e":21,"g":[1],"cards":1,"back":"ws"}
+{"e":22,"g":[1],"cards":1,"back":"ws"}
+{"e":23,"g":[1],"cards":1,"back":"exact"}
+{"e":24,"g":[1],"cards":1,"back":"ws"}
+{"e":25,"g":[1],"cards":1,"back":"ws"}
+{"e":26,"g":[1],"cards":1,"back":"ws"}
+{"e":27,"g":[1],"cards":1,"back":"exact"}
+{"e":28,"g":[1],"cards":1,"back":"exact"}
+{"e":29,"g":[1],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":30,"g":[1],"cards":1,"back":"exact"}
+{"e":31,"g":[1],"cards":1,"back":"exact"}
+{"e":32,"g":[13],"err":"line 6: a heading deeper than `#### ` has no meaning"}
+{"e":33,"g":[13],"err":"line 2: a heading deeper than `#### ` has no meaning"}
+{"e":34,"g":[13],"cards":1,"back":"ws"}
+{"e":35,"g":[13],"cards":1,"back":"div"}
+{"e":36,"g":[13],"err":"line 1: card front without an answer"}
+{"e":37,"g":[13],"err":"line 1: card front without an answer"}
+{"e":38,"g":[13],"lints":["Lint { line: 3, kind: IndentedH2 }"],"cards":1,"back":"ws"}
+{"e":39,"g":[13],"cards":1,"back":"ws"}
+{"e":40,"g":[13],"cards":1,"back":"ws"}
+{"e":41,"g":[13],"err":"line 1: card front without an answer"}
+{"e":42,"g":[13],"err":"line 3: a heading deeper than `#### ` has no meaning"}
+{"e":43,"g":[13],"err":"line 1: card front without an answer"}
+{"e":44,"g":[13],"err":"line 1: card front without an answer"}
+{"e":45,"g":[13],"err":"line 1: card front without an answer"}
+{"e":46,"g":[13],"err":"line 1: card front without an answer"}
+{"e":47,"g":[13],"cards":2,"back":"div"}
+{"e":48,"g":[13],"cards":1,"back":"div"}
+{"e":49,"g":[13,14],"err":"line 2: card front is empty"}
+{"e":50,"g":[13],"cards":1,"back":"ws"}
+{"e":51,"g":[13],"cards":1,"back":"exact"}
+{"e":52,"g":[13],"cards":1,"back":"ws"}
+{"e":53,"g":[13],"cards":1,"back":"ws"}
+{"e":54,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":55,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":56,"g":[13],"cards":1,"back":"ws"}
+{"e":57,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":58,"g":[13],"cards":1,"back":"ws"}
+{"e":59,"g":[13],"cards":1,"back":"ws"}
+{"e":60,"g":[13],"cards":1,"back":"exact"}
+{"e":61,"g":[1,13],"err":"line 7: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":62,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":63,"g":[13],"cards":1,"back":"div"}
+{"e":64,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":65,"g":[1,13],"err":"line 4: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":66,"g":[1,13],"err":"line 4: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":67,"g":[13],"cards":1,"back":"ws"}
+{"e":68,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":69,"g":[13],"cards":1,"back":"exact"}
+{"e":70,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":71,"g":[13],"cards":1,"back":"div"}
+{"e":72,"g":[13],"cards":1,"back":"div"}
+{"e":73,"g":[1,13],"err":"line 5: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":74,"g":[1,13],"err":"line 7: prose after a `---` section terminator belongs to no section; open a heading first"}
+{"e":75,"g":[13],"cards":1,"back":"exact"}
+{"e":76,"g":[13],"cards":1,"back":"div"}
+{"e":77,"g":[3,12],"cards":1,"back":"ws"}
+{"e":78,"g":[3,12],"cards":1,"back":"ws"}
+{"e":79,"g":[3,12],"cards":1,"back":"ws"}
+{"e":80,"g":[3,12],"cards":1,"back":"ws"}
+{"e":81,"g":[3,12],"cards":1,"back":"ws"}
+{"e":82,"g":[3,12],"cards":1,"back":"ws"}
+{"e":83,"g":[3,12],"cards":1,"back":"ws"}
+{"e":84,"g":[3,12],"cards":1,"back":"ws"}
+{"e":85,"g":[3,12],"err":"line 1: card front without an answer"}
+{"e":86,"g":[3,12],"cards":1,"back":"ws"}
+{"e":87,"g":[3,12],"cards":1,"back":"ws"}
+{"e":88,"g":[3,12],"cards":1,"back":"ws"}
+{"e":89,"g":[4],"cards":1,"back":"exact"}
+{"e":90,"g":[4],"cards":1,"back":"exact"}
+{"e":91,"g":[4],"cards":1,"back":"exact"}
+{"e":92,"g":[4],"cards":1,"back":"exact"}
+{"e":93,"g":[4],"cards":1,"back":"exact"}
+{"e":94,"g":[4],"lints":["Lint { line: 5, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":95,"g":[4],"lints":["Lint { line: 5, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":96,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":97,"g":[4],"cards":1,"back":"exact"}
+{"e":98,"g":[4],"cards":1,"back":"div"}
+{"e":99,"g":[4],"cards":1,"back":"exact"}
+{"e":100,"g":[4],"cards":1,"back":"exact"}
+{"e":101,"g":[4],"lints":["Lint { line: 5, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":102,"g":[4],"cards":1,"back":"ws"}
+{"e":103,"g":[4],"cards":1,"back":"ws"}
+{"e":104,"g":[4],"cards":1,"back":"ws"}
+{"e":105,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":106,"g":[4],"cards":1,"back":"ws"}
+{"e":107,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":108,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":109,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":110,"g":[4],"cards":1,"back":"exact"}
+{"e":111,"g":[4],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":112,"g":[4],"cards":1,"back":"exact"}
+{"e":113,"g":[4],"cards":1,"back":"exact"}
+{"e":114,"g":[4],"cards":1,"back":"exact"}
+{"e":115,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":116,"g":[4],"cards":1,"back":"exact"}
+{"e":117,"g":[4],"cards":1,"back":"exact"}
+{"e":118,"g":[10,12],"cards":1,"back":"ws"}
+{"e":119,"g":[10,12],"cards":1,"back":"ws"}
+{"e":120,"g":[10,12],"cards":1,"back":"ws"}
+{"e":121,"g":[10,12],"cards":1,"back":"exact"}
+{"e":122,"g":[10,12],"cards":1,"back":"ws"}
+{"e":123,"g":[10,12],"cards":1,"back":"ws"}
+{"e":124,"g":[10,12],"cards":1,"back":"ws"}
+{"e":125,"g":[10,12],"cards":1,"back":"ws"}
+{"e":126,"g":[10,12],"cards":1,"back":"exact"}
+{"e":127,"g":[10,12],"cards":1,"back":"exact"}
+{"e":128,"g":[10,12],"cards":1,"back":"exact"}
+{"e":129,"g":[10,12],"cards":1,"back":"exact"}
+{"e":130,"g":[10,12],"cards":1,"back":"exact"}
+{"e":131,"g":[10,12],"cards":1,"back":"exact"}
+{"e":132,"g":[10,12],"cards":1,"back":"exact"}
+{"e":133,"g":[10,12],"cards":1,"back":"exact"}
+{"e":134,"g":[10,12],"cards":1,"back":"exact"}
+{"e":135,"g":[10,12],"cards":1,"back":"exact"}
+{"e":136,"g":[10,12],"cards":1,"back":"exact"}
+{"e":137,"g":[10,12],"cards":1,"back":"ws"}
+{"e":138,"g":[10,12],"cards":1,"back":"exact"}
+{"e":139,"g":[10,12],"cards":1,"back":"ws"}
+{"e":140,"g":[10,12],"cards":1,"back":"ws"}
+{"e":141,"g":[10,12],"cards":1,"back":"ws"}
+{"e":142,"g":[10,12],"cards":1,"back":"ws"}
+{"e":143,"g":[10,12],"cards":1,"back":"div"}
+{"e":144,"g":[10,12],"cards":1,"back":"exact"}
+{"e":145,"g":[10,12],"cards":1,"back":"exact"}
+{"e":146,"g":[6,10,12],"lints":["Lint { line: 2, kind: UnclosedComment }"],"cards":1,"back":"exact"}
+{"e":147,"g":[10,12],"cards":1,"back":"exact"}
+{"e":148,"g":[6,10,12],"lints":["Lint { line: 2, kind: UnclosedComment }"],"cards":1,"back":"ws"}
+{"e":149,"g":[10,12],"cards":1,"back":"ws"}
+{"e":150,"g":[10,12],"cards":1,"back":"exact"}
+{"e":151,"g":[10,12],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":152,"g":[6,10,12],"err":"line 1: card front without an answer"}
+{"e":153,"g":[10,12],"cards":1,"back":"ws"}
+{"e":154,"g":[10,12],"cards":1,"back":"exact"}
+{"e":155,"g":[10,12],"cards":1,"back":"exact"}
+{"e":156,"g":[10,12],"cards":1,"back":"exact"}
+{"e":157,"g":[10,12],"cards":1,"back":"ws"}
+{"e":158,"g":[10,12],"cards":1,"back":"exact"}
+{"e":159,"g":[10,12],"cards":1,"back":"ws"}
+{"e":160,"g":[10,12],"cards":1,"back":"ws"}
+{"e":161,"g":[8],"cards":1,"back":"ws"}
+{"e":162,"g":[8],"cards":1,"back":"ws"}
+{"e":163,"g":[8],"cards":1,"back":"ws"}
+{"e":164,"g":[8],"cards":1,"back":"ws"}
+{"e":165,"g":[8],"cards":1,"back":"ws"}
+{"e":166,"g":[8],"cards":1,"back":"ws"}
+{"e":167,"g":[8],"cards":1,"back":"ws"}
+{"e":168,"g":[8],"cards":1,"back":"ws"}
+{"e":169,"g":[8],"cards":1,"back":"ws"}
+{"e":170,"g":[8],"cards":1,"back":"ws"}
+{"e":171,"g":[8],"cards":1,"back":"ws"}
+{"e":172,"g":[8],"cards":1,"back":"ws"}
+{"e":173,"g":[8],"cards":1,"back":"ws"}
+{"e":174,"g":[8],"cards":1,"back":"ws"}
+{"e":175,"g":[8],"cards":1,"back":"ws"}
+{"e":176,"g":[8],"cards":1,"back":"exact"}
+{"e":177,"g":[8],"cards":1,"back":"exact"}
+{"e":178,"g":[8],"cards":1,"back":"exact"}
+{"e":179,"g":[8],"cards":1,"back":"exact"}
+{"e":180,"g":[8],"cards":1,"back":"ws"}
+{"e":181,"g":[8],"cards":1,"back":"ws"}
+{"e":182,"g":[8],"cards":1,"back":"ws"}
+{"e":183,"g":[8],"err":"line 1: card front without an answer"}
+{"e":184,"g":[8],"cards":1,"back":"exact"}
+{"e":185,"g":[8],"cards":1,"back":"exact"}
+{"e":186,"g":[8],"cards":1,"back":"ws"}
+{"e":187,"g":[8],"cards":1,"back":"div"}
+{"e":188,"g":[8],"cards":1,"back":"exact"}
+{"e":189,"g":[3],"cards":1,"back":"ws"}
+{"e":190,"g":[3],"cards":1,"back":"ws"}
+{"e":191,"g":[3],"cards":1,"back":"ws"}
+{"e":192,"g":[3],"cards":1,"back":"ws"}
+{"e":193,"g":[3],"cards":1,"back":"ws"}
+{"e":194,"g":[3],"cards":1,"back":"ws"}
+{"e":195,"g":[3],"cards":1,"back":"ws"}
+{"e":196,"g":[3],"cards":1,"back":"ws"}
+{"e":197,"g":[3],"cards":1,"back":"div"}
+{"e":198,"g":[9],"cards":1,"back":"exact"}
+{"e":199,"g":[9],"cards":1,"back":"exact"}
+{"e":200,"g":[9],"cards":1,"back":"exact"}
+{"e":201,"g":[9],"cards":1,"back":"div"}
+{"e":202,"g":[9],"cards":1,"back":"ws"}
+{"e":203,"g":[9],"cards":1,"back":"exact"}
+{"e":204,"g":[9],"cards":1,"back":"exact"}
+{"e":205,"g":[9],"cards":1,"back":"exact"}
+{"e":206,"g":[12],"err":"line 1: card front without an answer"}
+{"e":207,"g":[12],"err":"line 1: card front without an answer"}
+{"e":208,"g":[12],"err":"line 1: card front without an answer"}
+{"e":209,"g":[12],"err":"line 1: card front without an answer"}
+{"e":210,"g":[12],"cards":1,"back":"div"}
+{"e":211,"g":[12],"cards":1,"back":"div"}
+{"e":212,"g":[12],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":213,"g":[12],"cards":1,"back":"div"}
+{"e":214,"g":[12],"cards":1,"back":"div"}
+{"e":215,"g":[12],"lints":["Lint { line: 4, kind: UnclosedFence }"],"cards":1,"back":"div"}
+{"e":216,"g":[12],"cards":1,"back":"div"}
+{"e":217,"g":[12],"err":"line 1: card front without an answer"}
+{"e":218,"g":[12],"err":"line 1: card front without an answer"}
+{"e":219,"g":[12],"err":"line 1: card front without an answer"}
+{"e":220,"g":[12],"err":"line 1: card front without an answer"}
+{"e":221,"g":[12],"err":"line 1: card front without an answer"}
+{"e":222,"g":[12],"err":"line 1: card front without an answer"}
+{"e":223,"g":[12],"cards":1,"back":"div"}
+{"e":224,"g":[12],"cards":1,"back":"div"}
+{"e":225,"g":[12],"cards":1,"back":"div"}
+{"e":226,"g":[12],"cards":1,"back":"div"}
+{"e":227,"g":[12],"cards":1,"back":"div"}
+{"e":228,"g":[12],"cards":1,"back":"div"}
+{"e":229,"g":[12],"err":"line 1: card front without an answer"}
+{"e":230,"g":[12],"err":"line 1: card front without an answer"}
+{"e":231,"g":[3,12],"cards":1,"back":"div"}
+{"e":232,"g":[3,12],"cards":1,"back":"div"}
+{"e":233,"g":[3,12],"cards":1,"back":"ws"}
+{"e":234,"g":[3,12],"cards":1,"back":"ws"}
+{"e":235,"g":[3,12],"cards":1,"back":"ws"}
+{"e":236,"g":[3,12],"cards":1,"back":"ws"}
+{"e":237,"g":[3,12],"err":"line 1: card front without an answer"}
+{"e":238,"g":[3,12],"err":"line 1: card front without an answer"}
+{"e":239,"g":[3,12],"cards":1,"back":"ws"}
+{"e":240,"g":[3,12],"cards":1,"back":"ws"}
+{"e":241,"g":[3,12],"cards":1,"back":"div"}
+{"e":242,"g":[3,12],"cards":1,"back":"ws"}
+{"e":243,"g":[3,12],"cards":1,"back":"exact"}
+{"e":244,"g":[3,12],"cards":1,"back":"exact"}
+{"e":245,"g":[3,12],"cards":1,"back":"exact"}
+{"e":246,"g":[3,12],"cards":1,"back":"exact"}
+{"e":247,"g":[3,12],"cards":1,"back":"exact"}
+{"e":248,"g":[3,12],"cards":1,"back":"ws"}
+{"e":249,"g":[3,12],"cards":1,"back":"ws"}
+{"e":250,"g":[3,12],"cards":1,"back":"ws"}
+{"e":251,"g":[3,12],"cards":1,"back":"ws"}
+{"e":252,"g":[3,12],"cards":1,"back":"ws"}
+{"e":253,"g":[3,12],"cards":1,"back":"ws"}
+{"e":254,"g":[3,12],"cards":1,"back":"ws"}
+{"e":255,"g":[3,12],"cards":1,"back":"ws"}
+{"e":256,"g":[3,12],"cards":1,"back":"ws"}
+{"e":257,"g":[3,12],"cards":1,"back":"ws"}
+{"e":258,"g":[3,12],"cards":1,"back":"ws"}
+{"e":259,"g":[3,12],"cards":1,"back":"exact"}
+{"e":260,"g":[3,12],"cards":1,"back":"ws"}
+{"e":261,"g":[3,12],"cards":1,"back":"exact"}
+{"e":262,"g":[3,12],"cards":1,"back":"exact"}
+{"e":263,"g":[3,12],"cards":1,"back":"ws"}
+{"e":264,"g":[3,12],"cards":1,"back":"div"}
+{"e":265,"g":[3,12],"cards":1,"back":"div"}
+{"e":266,"g":[3,12],"cards":1,"back":"div"}
+{"e":267,"g":[3,12],"cards":1,"back":"div"}
+{"e":268,"g":[3,12],"cards":1,"back":"div"}
+{"e":269,"g":[3,12],"cards":1,"back":"ws"}
+{"e":270,"g":[3,12],"cards":1,"back":"div"}
+{"e":271,"g":[3,12],"err":"line 1: card front without an answer"}
+{"e":272,"g":[3,12],"cards":1,"back":"ws"}
+{"e":273,"g":[3,12],"cards":1,"back":"ws"}
+{"e":274,"g":[3,12],"cards":1,"back":"ws"}
+{"e":275,"g":[3,12],"cards":1,"back":"ws"}
+{"e":276,"g":[3,12],"cards":1,"back":"exact"}
+{"e":277,"g":[3,12],"cards":1,"back":"exact"}
+{"e":278,"g":[3,12],"err":"line 4: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
+{"e":279,"g":[3,12],"cards":1,"back":"exact"}
+{"e":280,"g":[3,12],"cards":1,"back":"ws"}
+{"e":281,"g":[3,12],"cards":1,"back":"exact"}
+{"e":282,"g":[3,12],"cards":1,"back":"exact"}
+{"e":283,"g":[3,12],"cards":1,"back":"exact"}
+{"e":284,"g":[3,12],"cards":1,"back":"exact"}
+{"e":285,"g":[3,12],"cards":1,"back":"exact"}
+{"e":286,"g":[3,12],"cards":1,"back":"ws"}
+{"e":287,"g":[3,12],"cards":1,"back":"ws"}
+{"e":288,"g":[3,6,12],"cards":1,"back":"div"}
+{"e":289,"g":[3,6,12],"cards":1,"back":"div"}
+{"e":290,"g":[3,12],"cards":1,"back":"ws"}
+{"e":291,"g":[3,12],"cards":1,"back":"ws"}
+{"e":292,"g":[3,12],"cards":1,"back":"ws"}
+{"e":293,"g":[3,12],"cards":1,"back":"ws"}
+{"e":294,"g":[3,12],"cards":1,"back":"ws"}
+{"e":295,"g":[3,12],"cards":1,"back":"ws"}
+{"e":296,"g":[3,12],"cards":1,"back":"ws"}
+{"e":297,"g":[3,12],"cards":1,"back":"ws"}
+{"e":298,"g":[3,12],"cards":1,"back":"ws"}
+{"e":299,"g":[3,12],"cards":1,"back":"ws"}
+{"e":300,"g":[3,12],"cards":1,"back":"div"}
+{"e":301,"g":[3,12],"cards":1,"back":"div"}
+{"e":302,"g":[3,12],"cards":1,"back":"exact"}
+{"e":303,"g":[3,12],"cards":1,"back":"ws"}
+{"e":304,"g":[3,12],"cards":1,"back":"ws"}
+{"e":305,"g":[3,12],"cards":1,"back":"ws"}
+{"e":306,"g":[3,12],"cards":1,"back":"ws"}
+{"e":307,"cards":1,"back":"exact"}
+{"e":308,"g":[5],"cards":1,"back":"exact"}
+{"e":309,"g":[5],"cards":1,"back":"exact"}
+{"e":310,"g":[5],"cards":1,"back":"div"}
+{"e":311,"g":[5],"cards":1,"back":"exact"}
+{"e":312,"g":[5],"cards":1,"back":"exact"}
+{"e":313,"g":[5],"cards":1,"back":"exact"}
+{"e":314,"g":[5],"cards":1,"back":"ws"}
+{"e":315,"g":[5],"cards":1,"back":"exact"}
+{"e":316,"g":[5],"cards":1,"back":"exact"}
+{"e":317,"g":[5],"cards":1,"back":"exact"}
+{"e":318,"g":[5],"cards":1,"back":"exact"}
+{"e":319,"g":[5],"cards":1,"back":"ws"}
+{"e":320,"g":[5],"cards":1,"back":"exact"}
+{"e":321,"g":[10,12],"cards":1,"back":"exact"}
+{"e":322,"g":[10,12],"cards":1,"back":"exact"}
+{"e":323,"g":[10,12],"cards":1,"back":"exact"}
+{"e":324,"g":[10,12],"cards":1,"back":"exact"}
+{"e":325,"g":[10,12],"cards":1,"back":"exact"}
+{"e":326,"g":[10,12],"cards":1,"back":"exact"}
+{"e":327,"g":[10,12],"cards":1,"back":"exact"}
+{"e":328,"g":[10,12],"cards":1,"back":"exact"}
+{"e":329,"g":[10,12],"cards":1,"back":"ws"}
+{"e":330,"g":[10,12],"cards":1,"back":"exact"}
+{"e":331,"g":[10,12],"cards":1,"back":"exact"}
+{"e":332,"g":[10,12],"cards":1,"back":"ws"}
+{"e":333,"g":[10,12],"cards":1,"back":"exact"}
+{"e":334,"g":[10,12],"cards":1,"back":"ws"}
+{"e":335,"g":[10,12],"cards":1,"back":"exact"}
+{"e":336,"g":[10,12],"cards":1,"back":"exact"}
+{"e":337,"g":[10,12],"cards":1,"back":"exact"}
+{"e":338,"cards":1,"back":"exact"}
+{"e":339,"cards":1,"back":"exact"}
+{"e":340,"cards":1,"back":"exact"}
+{"e":341,"cards":1,"back":"exact"}
+{"e":342,"cards":1,"back":"exact"}
+{"e":343,"cards":1,"back":"exact"}
+{"e":344,"cards":1,"back":"exact"}
+{"e":345,"cards":1,"back":"ws"}
+{"e":346,"cards":1,"back":"ws"}
+{"e":347,"cards":1,"back":"ws"}
+{"e":348,"cards":1,"back":"exact"}
+{"e":349,"cards":1,"back":"exact"}
+{"e":350,"cards":1,"back":"exact"}
+{"e":351,"cards":1,"back":"exact"}
+{"e":352,"cards":1,"back":"exact"}
+{"e":353,"cards":1,"back":"exact"}
+{"e":354,"cards":1,"back":"exact"}
+{"e":355,"cards":1,"back":"exact"}
+{"e":356,"cards":1,"back":"exact"}
+{"e":357,"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":358,"cards":1,"back":"exact"}
+{"e":359,"cards":1,"back":"exact"}
+{"e":360,"cards":1,"back":"exact"}
+{"e":361,"cards":1,"back":"exact"}
+{"e":362,"cards":1,"back":"exact"}
+{"e":363,"cards":1,"back":"exact"}
+{"e":364,"cards":1,"back":"exact"}
+{"e":365,"cards":1,"back":"exact"}
+{"e":366,"cards":1,"back":"exact"}
+{"e":367,"cards":1,"back":"exact"}
+{"e":368,"cards":1,"back":"exact"}
+{"e":369,"cards":1,"back":"exact"}
+{"e":370,"cards":1,"back":"exact"}
+{"e":371,"cards":1,"back":"exact"}
+{"e":372,"cards":1,"back":"exact"}
+{"e":373,"cards":1,"back":"exact"}
+{"e":374,"cards":1,"back":"exact"}
+{"e":375,"cards":1,"back":"exact"}
+{"e":376,"cards":1,"back":"exact"}
+{"e":377,"cards":1,"back":"exact"}
+{"e":378,"cards":1,"back":"exact"}
+{"e":379,"cards":1,"back":"exact"}
+{"e":380,"cards":1,"back":"exact"}
+{"e":381,"cards":1,"back":"exact"}
+{"e":382,"cards":1,"back":"exact"}
+{"e":383,"cards":1,"back":"exact"}
+{"e":384,"cards":1,"back":"exact"}
+{"e":385,"cards":1,"back":"exact"}
+{"e":386,"cards":1,"back":"exact"}
+{"e":387,"cards":1,"back":"exact"}
+{"e":388,"cards":1,"back":"exact"}
+{"e":389,"cards":1,"back":"exact"}
+{"e":390,"cards":1,"back":"exact"}
+{"e":391,"cards":1,"back":"exact"}
+{"e":392,"cards":1,"back":"exact"}
+{"e":393,"cards":1,"back":"exact"}
+{"e":394,"cards":1,"back":"exact"}
+{"e":395,"cards":1,"back":"exact"}
+{"e":396,"cards":1,"back":"exact"}
+{"e":397,"cards":1,"back":"exact"}
+{"e":398,"cards":1,"back":"exact"}
+{"e":399,"cards":1,"back":"exact"}
+{"e":400,"cards":1,"back":"exact"}
+{"e":401,"cards":1,"back":"exact"}
+{"e":402,"cards":1,"back":"exact"}
+{"e":403,"cards":1,"back":"exact"}
+{"e":404,"cards":1,"back":"exact"}
+{"e":405,"cards":1,"back":"exact"}
+{"e":406,"cards":1,"back":"exact"}
+{"e":407,"cards":1,"back":"exact"}
+{"e":408,"cards":1,"back":"exact"}
+{"e":409,"cards":1,"back":"exact"}
+{"e":410,"cards":1,"back":"exact"}
+{"e":411,"cards":1,"back":"exact"}
+{"e":412,"cards":1,"back":"exact"}
+{"e":413,"cards":1,"back":"exact"}
+{"e":414,"cards":1,"back":"exact"}
+{"e":415,"cards":1,"back":"exact"}
+{"e":416,"cards":1,"back":"exact"}
+{"e":417,"cards":1,"back":"exact"}
+{"e":418,"cards":1,"back":"exact"}
+{"e":419,"cards":1,"back":"exact"}
+{"e":420,"cards":1,"back":"exact"}
+{"e":421,"cards":1,"back":"exact"}
+{"e":422,"cards":1,"back":"exact"}
+{"e":423,"cards":1,"back":"exact"}
+{"e":424,"cards":1,"back":"exact"}
+{"e":425,"cards":1,"back":"exact"}
+{"e":426,"cards":1,"back":"exact"}
+{"e":427,"cards":1,"back":"exact"}
+{"e":428,"cards":1,"back":"exact"}
+{"e":429,"cards":1,"back":"exact"}
+{"e":430,"cards":1,"back":"exact"}
+{"e":431,"cards":1,"back":"exact"}
+{"e":432,"cards":1,"back":"exact"}
+{"e":433,"cards":1,"back":"exact"}
+{"e":434,"cards":1,"back":"exact"}
+{"e":435,"cards":1,"back":"exact"}
+{"e":436,"cards":1,"back":"exact"}
+{"e":437,"cards":1,"back":"exact"}
+{"e":438,"cards":1,"back":"exact"}
+{"e":439,"cards":1,"back":"exact"}
+{"e":440,"cards":1,"back":"exact"}
+{"e":441,"cards":1,"back":"exact"}
+{"e":442,"cards":1,"back":"exact"}
+{"e":443,"cards":1,"back":"exact"}
+{"e":444,"cards":1,"back":"exact"}
+{"e":445,"cards":1,"back":"exact"}
+{"e":446,"cards":1,"back":"exact"}
+{"e":447,"cards":1,"back":"exact"}
+{"e":448,"cards":1,"back":"exact"}
+{"e":449,"cards":1,"back":"exact"}
+{"e":450,"cards":1,"back":"exact"}
+{"e":451,"cards":1,"back":"exact"}
+{"e":452,"cards":1,"back":"exact"}
+{"e":453,"cards":1,"back":"exact"}
+{"e":454,"cards":1,"back":"exact"}
+{"e":455,"cards":1,"back":"exact"}
+{"e":456,"cards":1,"back":"exact"}
+{"e":457,"cards":1,"back":"exact"}
+{"e":458,"cards":1,"back":"exact"}
+{"e":459,"cards":1,"back":"exact"}
+{"e":460,"cards":1,"back":"exact"}
+{"e":461,"cards":1,"back":"exact"}
+{"e":462,"cards":1,"back":"exact"}
+{"e":463,"cards":1,"back":"exact"}
+{"e":464,"cards":1,"back":"exact"}
+{"e":465,"cards":1,"back":"exact"}
+{"e":466,"cards":1,"back":"exact"}
+{"e":467,"cards":1,"back":"exact"}
+{"e":468,"cards":1,"back":"exact"}
+{"e":469,"cards":1,"back":"exact"}
+{"e":470,"cards":1,"back":"exact"}
+{"e":471,"cards":1,"back":"exact"}
+{"e":472,"cards":1,"back":"exact"}
+{"e":473,"cards":1,"back":"exact"}
+{"e":474,"cards":1,"back":"exact"}
+{"e":475,"cards":1,"back":"exact"}
+{"e":476,"cards":1,"back":"exact"}
+{"e":477,"cards":1,"back":"exact"}
+{"e":478,"cards":1,"back":"exact"}
+{"e":479,"cards":1,"back":"exact"}
+{"e":480,"cards":1,"back":"exact"}
+{"e":481,"cards":1,"back":"exact"}
+{"e":482,"cards":1,"back":"exact"}
+{"e":483,"cards":1,"back":"exact"}
+{"e":484,"cards":1,"back":"exact"}
+{"e":485,"cards":1,"back":"exact"}
+{"e":486,"cards":1,"back":"exact"}
+{"e":487,"cards":1,"back":"exact"}
+{"e":488,"cards":1,"back":"exact"}
+{"e":489,"cards":1,"back":"exact"}
+{"e":490,"cards":1,"back":"exact"}
+{"e":491,"g":[7],"cards":1,"back":"exact"}
+{"e":492,"g":[7],"cards":1,"back":"ws"}
+{"e":493,"g":[8],"cards":1,"back":"exact"}
+{"e":494,"g":[8],"cards":1,"back":"exact"}
+{"e":495,"g":[8],"cards":1,"back":"exact"}
+{"e":496,"g":[8],"cards":1,"back":"exact"}
+{"e":497,"g":[8],"cards":1,"back":"exact"}
+{"e":498,"g":[8],"cards":1,"back":"exact"}
+{"e":499,"g":[8],"cards":1,"back":"exact"}
+{"e":500,"g":[8],"cards":1,"back":"exact"}
+{"e":501,"g":[8],"cards":1,"back":"exact"}
+{"e":502,"g":[8],"cards":1,"back":"exact"}
+{"e":503,"g":[8],"cards":1,"back":"exact"}
+{"e":504,"g":[8],"cards":1,"back":"exact"}
+{"e":505,"g":[8],"cards":1,"back":"exact"}
+{"e":506,"g":[8],"cards":1,"back":"exact"}
+{"e":507,"g":[8],"cards":1,"back":"exact"}
+{"e":508,"g":[8],"cards":1,"back":"exact"}
+{"e":509,"g":[8],"cards":1,"back":"ws"}
+{"e":510,"g":[8],"cards":1,"back":"exact"}
+{"e":511,"g":[8],"cards":1,"back":"exact"}
+{"e":512,"g":[8],"cards":1,"back":"exact"}
+{"e":513,"g":[8],"cards":1,"back":"exact"}
+{"e":514,"g":[8],"cards":1,"back":"exact"}
+{"e":515,"g":[8],"cards":1,"back":"exact"}
+{"e":516,"g":[8],"cards":1,"back":"exact"}
+{"e":517,"g":[8],"cards":1,"back":"exact"}
+{"e":518,"g":[8],"cards":1,"back":"ws"}
+{"e":519,"g":[8],"cards":1,"back":"exact"}
+{"e":520,"g":[8],"cards":1,"back":"exact"}
+{"e":521,"g":[8],"cards":1,"back":"exact"}
+{"e":522,"g":[8],"cards":1,"back":"exact"}
+{"e":523,"g":[8],"cards":1,"back":"exact"}
+{"e":524,"g":[8],"cards":1,"back":"exact"}
+{"e":525,"g":[8],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
+{"e":526,"g":[8],"cards":1,"back":"exact"}
+{"e":527,"g":[8],"cards":1,"back":"exact"}
+{"e":528,"g":[8],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
+{"e":529,"g":[8],"cards":1,"back":"exact"}
+{"e":530,"g":[8],"cards":1,"back":"exact"}
+{"e":531,"g":[8],"cards":1,"back":"exact"}
+{"e":532,"g":[8],"cards":1,"back":"exact"}
+{"e":533,"g":[8],"cards":1,"back":"exact"}
+{"e":534,"g":[8],"cards":1,"back":"exact"}
+{"e":535,"g":[8],"cards":1,"back":"ws"}
+{"e":536,"g":[8],"cards":1,"back":"ws"}
+{"e":537,"g":[8],"cards":1,"back":"ws"}
+{"e":538,"g":[8],"cards":1,"back":"ws"}
+{"e":539,"g":[8],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
+{"e":540,"g":[8],"cards":1,"back":"ws"}
+{"e":541,"g":[8],"cards":1,"back":"ws"}
+{"e":542,"g":[8],"cards":1,"back":"ws"}
+{"e":543,"g":[8],"cards":1,"back":"ws"}
+{"e":544,"g":[8],"cards":1,"back":"ws"}
+{"e":545,"g":[8],"cards":1,"back":"ws"}
+{"e":546,"g":[8],"cards":1,"back":"ws"}
+{"e":547,"g":[8],"cards":1,"back":"ws"}
+{"e":548,"g":[8],"cards":1,"back":"ws"}
+{"e":549,"g":[8],"cards":1,"back":"ws"}
+{"e":550,"g":[8],"cards":1,"back":"ws"}
+{"e":551,"g":[8],"cards":1,"back":"ws"}
+{"e":552,"g":[8],"cards":1,"back":"ws"}
+{"e":553,"g":[8],"cards":1,"back":"ws"}
+{"e":554,"g":[8],"cards":1,"back":"ws"}
+{"e":555,"g":[8],"cards":1,"back":"ws"}
+{"e":556,"g":[8],"cards":1,"back":"ws"}
+{"e":557,"g":[8],"cards":1,"back":"ws"}
+{"e":558,"g":[8],"cards":1,"back":"ws"}
+{"e":559,"g":[8],"cards":1,"back":"ws"}
+{"e":560,"g":[8],"cards":1,"back":"ws"}
+{"e":561,"g":[8],"cards":1,"back":"ws"}
+{"e":562,"g":[8],"cards":1,"back":"ws"}
+{"e":563,"g":[8],"cards":1,"back":"ws"}
+{"e":564,"g":[8],"cards":1,"back":"ws"}
+{"e":565,"g":[8],"cards":1,"back":"ws"}
+{"e":566,"g":[8],"cards":1,"back":"ws"}
+{"e":567,"g":[8],"cards":1,"back":"ws"}
+{"e":568,"g":[8],"cards":1,"back":"ws"}
+{"e":569,"g":[8],"cards":1,"back":"ws"}
+{"e":570,"g":[8],"cards":1,"back":"ws"}
+{"e":571,"g":[8],"cards":1,"back":"ws"}
+{"e":572,"g":[8],"cards":1,"back":"ws"}
+{"e":573,"g":[8],"cards":1,"back":"ws"}
+{"e":574,"g":[8],"cards":1,"back":"ws"}
+{"e":575,"g":[8],"cards":1,"back":"ws"}
+{"e":576,"g":[8],"cards":1,"back":"ws"}
+{"e":577,"g":[8],"cards":1,"back":"ws"}
+{"e":578,"g":[8],"cards":1,"back":"ws"}
+{"e":579,"g":[8],"cards":1,"back":"ws"}
+{"e":580,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
+{"e":581,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":582,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
+{"e":583,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
+{"e":584,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":585,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":586,"g":[14],"cards":1,"back":"div"}
+{"e":587,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
+{"e":588,"g":[14],"cards":1,"back":"div"}
+{"e":589,"g":[14],"cards":1,"back":"div"}
+{"e":590,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":591,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":592,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":593,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":594,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":595,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":596,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":597,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":598,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":599,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":600,"g":[14],"cards":1,"back":"ws"}
+{"e":601,"g":[14],"cards":1,"back":"div"}
+{"e":602,"g":[8],"cards":1,"back":"exact"}
+{"e":603,"g":[8],"cards":1,"back":"exact"}
+{"e":604,"g":[8],"cards":1,"back":"exact"}
+{"e":605,"g":[8],"cards":1,"back":"exact"}
+{"e":606,"g":[8],"cards":1,"back":"exact"}
+{"e":607,"g":[8],"cards":1,"back":"exact"}
+{"e":608,"g":[8],"cards":1,"back":"exact"}
+{"e":609,"g":[8],"cards":1,"back":"exact"}
+{"e":610,"g":[8],"cards":1,"back":"exact"}
+{"e":611,"g":[8],"cards":1,"back":"exact"}
+{"e":612,"g":[8],"cards":1,"back":"exact"}
+{"e":613,"g":[8],"cards":1,"back":"exact"}
+{"e":614,"g":[8],"cards":1,"back":"exact"}
+{"e":615,"g":[8],"cards":1,"back":"exact"}
+{"e":616,"g":[8],"cards":1,"back":"exact"}
+{"e":617,"g":[8],"cards":1,"back":"exact"}
+{"e":618,"g":[8],"cards":1,"back":"exact"}
+{"e":619,"g":[8],"cards":1,"back":"exact"}
+{"e":620,"g":[8],"cards":1,"back":"exact"}
+{"e":621,"g":[8],"cards":1,"back":"exact"}
+{"e":622,"g":[8],"cards":1,"back":"exact"}
+{"e":623,"g":[8],"cards":1,"back":"ws"}
+{"e":624,"g":[8],"cards":1,"back":"ws"}
+{"e":625,"g":[8],"cards":1,"back":"exact"}
+{"e":626,"g":[8],"cards":1,"back":"ws"}
+{"e":627,"g":[8],"cards":1,"back":"exact"}
+{"e":628,"g":[8],"cards":1,"back":"ws"}
+{"e":629,"g":[8],"cards":1,"back":"exact"}
+{"e":630,"g":[8],"cards":1,"back":"exact"}
+{"e":631,"g":[8],"cards":1,"back":"ws"}
+{"e":632,"g":[10,12],"cards":1,"back":"exact"}
+{"e":633,"g":[10,12],"cards":1,"back":"exact"}
+{"e":634,"g":[10,12],"cards":1,"back":"exact"}
+{"e":635,"g":[10,12],"cards":1,"back":"exact"}
+{"e":636,"g":[10,12],"cards":1,"back":"exact"}
+{"e":637,"g":[10,12],"cards":1,"back":"exact"}
+{"e":638,"g":[10,12],"cards":1,"back":"exact"}
+{"e":639,"g":[10,12],"cards":1,"back":"exact"}
+{"e":640,"g":[10,12],"cards":1,"back":"exact"}
+{"e":641,"g":[10,12],"cards":1,"back":"exact"}
+{"e":642,"g":[10,12],"cards":1,"back":"exact"}
+{"e":643,"g":[10,12],"cards":1,"back":"exact"}
+{"e":644,"g":[6,10,12],"cards":1,"back":"exact"}
+{"e":645,"g":[6,10,12],"cards":1,"back":"ws"}
+{"e":646,"g":[10,12],"cards":1,"back":"exact"}
+{"e":647,"g":[10,12],"cards":1,"back":"exact"}
+{"e":648,"g":[10,12],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
+{"e":649,"g":[10,12],"cards":1,"back":"exact"}
+{"e":650,"g":[10,12],"cards":1,"back":"exact"}
+{"e":651,"g":[10,12],"cards":1,"back":"exact"}
+{"e":652,"g":[10,12],"cards":1,"back":"ws"}
+{"e":653,"g":[5],"cards":1,"back":"ws"}
+{"e":654,"g":[5],"cards":1,"back":"exact"}
+{"e":655,"g":[5],"cards":1,"back":"ws"}
+{"e":656,"g":[5],"cards":1,"back":"ws"}
+{"e":657,"g":[5],"cards":1,"back":"ws"}
+{"e":658,"g":[5],"cards":1,"back":"ws"}
+{"e":659,"g":[5],"cards":1,"back":"exact"}
+{"e":660,"g":[5],"cards":1,"back":"ws"}
+{"e":661,"g":[5],"cards":1,"back":"exact"}
+{"e":662,"g":[5],"cards":1,"back":"ws"}
+{"e":663,"g":[5],"cards":1,"back":"exact"}
+{"e":664,"g":[5],"cards":1,"back":"exact"}
+{"e":665,"g":[5],"cards":1,"back":"ws"}
+{"e":666,"g":[5],"err":"line 1: card front without an answer"}
+{"e":667,"g":[5],"err":"line 1: card front without an answer"}
+{"e":668,"cards":1,"back":"exact"}
+{"e":669,"cards":1,"back":"ws"}
+{"e":670,"cards":1,"back":"exact"}
+{"e":671,"cards":1,"back":"exact"}
+{"e":672,"cards":1,"back":"exact"}

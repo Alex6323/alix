@@ -1,0 +1,16 @@
+[package]
+name = "alix-gfm-corpus-harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The library under measurement, lean shape (no server features needed).
+alix = { path = "../..", default-features = false }
+# Corpus decode + measurement/digest encode.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Standalone on purpose: never joins the root workspace, so `make check`,
+# CI, and the published package are untouched by this tool.
+[workspace]
