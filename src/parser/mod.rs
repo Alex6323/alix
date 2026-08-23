@@ -1398,7 +1398,9 @@ fn capture_answer_fences(
     let mut open: Option<(char, usize, bool, usize)> = None;
     for (index, (_, text)) in answer.iter().enumerate() {
         match (open, fence_marker(text)) {
-            (Some((ch, len, mermaid, from)), Some((marker, run))) if ch == marker && run >= len => {
+            (Some((ch, len, mermaid, from)), Some(_))
+                if closes_fence(text.trim_start(), ch, len) =>
+            {
                 open = None;
                 if !mermaid {
                     continue;
@@ -5949,6 +5951,18 @@ the answer
             "flowchart LR\n```\n  A[Load] --> B",
             card.answer_fences[0].interior.as_ref(),
             "the inner delimiter is interior, not a closer"
+        );
+    }
+
+    #[test]
+    fn a_fence_shaped_line_with_info_is_captured_interior_not_a_closer() {
+        let deck = parse("## q\n````mermaid\n````x\ny\n````\n<!-- blank: span hidden=\"y\" -->\n");
+        let card = &deck.cards[0];
+        assert_eq!(1, card.answer_fences.len(), "{:?}", card.answer_fences);
+        assert_eq!(
+            "````x\ny",
+            card.answer_fences[0].interior.as_ref(),
+            "the capture agrees with the units walk: an info line never closes"
         );
     }
 

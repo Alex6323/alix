@@ -308,7 +308,9 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
     let mut interior: Vec<String> = Vec::new();
     for line in context {
         match (open, fence_marker(line)) {
-            (Some((ch, len, mermaid)), Some((marker, run))) if ch == marker && run >= len => {
+            (Some((ch, len, mermaid)), Some(_))
+                if crate::parser::closes_fence(line.trim_start(), ch, len) =>
+            {
                 open = None;
                 let lines = std::mem::take(&mut interior);
                 let record = if mermaid { records.next() } else { None };
@@ -338,7 +340,9 @@ pub(crate) fn section_units(lines: &[String]) -> Vec<NoteUnit> {
     let mut interior: Vec<String> = Vec::new();
     for line in lines {
         match (open, fence_marker(line)) {
-            (Some((ch, len)), Some((marker, run))) if ch == marker && run >= len => {
+            (Some((ch, len)), Some(_))
+                if crate::parser::closes_fence(line.trim_start(), ch, len) =>
+            {
                 open = None;
                 units.push(NoteUnit::Code {
                     lines: std::mem::take(&mut interior),
@@ -994,6 +998,52 @@ mod tests {
         );
         assert_eq!(source, alt, "the fence source is the accessible text");
         assert!(matches!(&units[2], NoteUnit::Sentence { text, .. } if text == "after"));
+    }
+
+    #[test]
+    fn a_section_fence_closes_only_on_its_own_marker() {
+        let lines: Vec<String> = ["```", "~~~", "text", "```"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            vec![NoteUnit::Code {
+                lines: vec!["~~~".into(), "text".into()]
+            }],
+            section_units(&lines),
+            "a tilde run never closes a backtick fence"
+        );
+    }
+
+    #[test]
+    fn a_section_fence_shaped_line_with_info_stays_inside() {
+        let lines: Vec<String> = ["````", "````rust", "x", "````"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            vec![NoteUnit::Code {
+                lines: vec!["````rust".into(), "x".into()]
+            }],
+            section_units(&lines),
+            "an info-carrying line is content, not a closer"
+        );
+    }
+
+    #[test]
+    fn a_context_fence_shaped_line_with_info_stays_inside() {
+        let context: Vec<String> = ["````", "````rust", "x", "````"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let units = context_units_with(&context_card(&context, Vec::new(), Vec::new()));
+        assert_eq!(
+            vec![NoteUnit::Code {
+                lines: vec!["````rust".into(), "x".into()]
+            }],
+            units,
+            "an info-carrying line is content, not a closer"
+        );
     }
 
     #[test]

@@ -119,3 +119,8 @@ src/parser/mod.rs:557: replace + with * in scan
 # scan holds other arithmetic.
 src/parser/sidecar.rs:39: replace + with * in without_notes
 
+# EQUIVALENT. key_rank's only consumer is a sort_by_key; only pairwise
+# order is observable. Ranks are canonical 0..=18, unknown 19, `for` 20,
+# `id` 21; under `* 2` id becomes 38, and no key can rank inside (21, 38),
+# so every pairwise comparison is unchanged for every input.
+src/parser/frontmatter.rs:368: replace + with * in key_rank

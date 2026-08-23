@@ -469,6 +469,21 @@ mod tests {
     }
 
     #[test]
+    fn a_key_line_needs_a_nonempty_ascii_word_key_before_the_colon() {
+        for (line, key) in [
+            ("some-key: v", Some("some-key")),
+            ("under_key: v", Some("under_key")),
+            ("k9: v", Some("k9")),
+            (": v", None),
+            ("a b: v", None),
+            ("käse: v", None),
+            ("no colon here", None),
+        ] {
+            assert_eq!(key, is_key_line(line), "{line:?}");
+        }
+    }
+
+    #[test]
     fn the_whole_canonical_order_is_pinned_as_one_law() {
         let mut every_key = vec![
             "id",
