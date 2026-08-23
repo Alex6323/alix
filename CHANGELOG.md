@@ -253,6 +253,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Four reserved Markdown shapes are now line-numbered errors with a
+  suggested rewrite instead of silently showing their markers as card
+  content: setext `===` underlines, indented code blocks, nested `> >`
+  quotes, and `***`/`___` breaks inside a card (paragraph and task-list
+  continuations, fence interiors, and standalone `===` lines stay
+  legal). Trailing-space hard breaks are a non-spelling: content lines
+  shed trailing whitespace.
+
 - Markup-rejection parse errors are onboarding surfaces: every message
   that fires on ordinary pasted Markdown (an answerless heading, a deep
   heading without its parent, prose before the first heading, empty

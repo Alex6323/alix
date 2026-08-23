@@ -222,6 +222,22 @@ pub enum ParseError {
         "line {0}: prose after a `---` section terminator belongs to no section; open a heading first"
     )]
     ProseAfterTerminator(usize),
+    #[error(
+        "line {0}: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"
+    )]
+    SetextUnderline(usize),
+    #[error(
+        "line {0}: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"
+    )]
+    IndentedCode(usize),
+    #[error(
+        "line {0}: quotes do not nest; keep the note one `>` deep, or put literal `>` text in a ``` fence"
+    )]
+    NestedQuote(usize),
+    #[error(
+        "line {0}: a `***`/`___` break has no meaning inside a card; delete the line, or move the material to a section"
+    )]
+    CardThematicBreak(usize),
 }
 
 impl ParseError {
@@ -262,6 +278,10 @@ impl ParseError {
             Self::TableTrailing(_) => "table_trailing",
             Self::StrayDivider(_) => "stray_divider",
             Self::ProseAfterTerminator(_) => "prose_after_terminator",
+            Self::SetextUnderline(_) => "setext_underline",
+            Self::IndentedCode(_) => "indented_code",
+            Self::NestedQuote(_) => "nested_quote",
+            Self::CardThematicBreak(_) => "card_thematic_break",
         }
     }
 
@@ -286,7 +306,11 @@ impl ParseError {
             | Self::TableCellImage(line)
             | Self::TableTrailing(line)
             | Self::StrayDivider(line)
-            | Self::ProseAfterTerminator(line) => *line,
+            | Self::ProseAfterTerminator(line)
+            | Self::SetextUnderline(line)
+            | Self::IndentedCode(line)
+            | Self::NestedQuote(line)
+            | Self::CardThematicBreak(line) => *line,
             Self::InvalidTitle { line, .. }
             | Self::FrontmatterSyntax { line, .. }
             | Self::NonStringId { line, .. }
@@ -784,6 +808,25 @@ fn section_line(
     Ok(())
 }
 
+fn indent_width(raw: &str) -> usize {
+    let mut width = 0;
+    for c in raw.chars() {
+        match c {
+            ' ' => width += 1,
+            '\t' => width += 4 - width % 4,
+            _ => break,
+        }
+    }
+    width
+}
+
+fn thematic_break_shape(t: &str) -> bool {
+    ['*', '_'].iter().any(|marker| {
+        t.chars().all(|c| c == *marker || c == ' ' || c == '\t')
+            && t.chars().filter(|c| c == marker).count() >= 3
+    })
+}
+
 fn scan(
     lines: &[&str],
     start: usize,
@@ -800,6 +843,7 @@ fn scan(
     let mut fence: Option<(char, usize, usize)> = None;
     let mut prev_blank = false;
     let mut prev_heading = false;
+    let mut prev_prose = false;
     let mut pending: Option<Mapping> = None;
     let mut terminated: Option<usize> = None;
     let mut idle_terminators: Vec<usize> = Vec::new();
@@ -807,6 +851,8 @@ fn scan(
     for (idx, raw) in lines.iter().enumerate().skip(start) {
         let lineno = idx + 1;
         let raw = *raw;
+        let was_prose = prev_prose;
+        prev_prose = false;
 
         if skip_delimiter {
             skip_delimiter = false;
@@ -1040,6 +1086,16 @@ fn scan(
             continue;
         }
 
+        if indent_width(raw) >= 4 && (prev_blank || prev_heading) {
+            return Err(ParseError::IndentedCode(lineno));
+        }
+        if was_prose && indent_width(raw) < 4 && t.chars().all(|c| c == '=') {
+            return Err(ParseError::SetextUnderline(lineno));
+        }
+        if thematic_break_shape(t) && indent_width(raw) < 4 && current.is_some() {
+            return Err(ParseError::CardThematicBreak(lineno));
+        }
+
         if let Some(rest) = t.strip_prefix('\\')
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
@@ -1054,11 +1110,13 @@ fn scan(
                 )?;
                 prev_blank = false;
                 prev_heading = false;
+                prev_prose = true;
                 continue;
             }
             push_content(&mut current, lineno, rest.to_string());
             prev_blank = false;
             prev_heading = false;
+            prev_prose = true;
             continue;
         }
 
@@ -1108,6 +1166,9 @@ fn scan(
         if let Some(rest) = t.strip_prefix('>') {
             pending = None;
             let text = rest.strip_prefix(' ').unwrap_or(rest);
+            if text.starts_with('>') {
+                return Err(ParseError::NestedQuote(lineno));
+            }
             match current.as_mut() {
                 Some(card) => append_note(card, text),
                 // A section has no note to append to, so the line is
@@ -1205,12 +1266,14 @@ fn scan(
             )?;
             prev_blank = false;
             prev_heading = false;
+            prev_prose = true;
             continue;
         }
 
         push_content(&mut current, lineno, t.to_string());
         prev_blank = false;
         prev_heading = false;
+        prev_prose = true;
     }
 
     if let Some((_, _, open_line)) = fence {
@@ -2727,6 +2790,160 @@ mod tests {
             Ok(deck) => Outcome::Cards(deck.cards.len()),
             Err(e) => Outcome::Err(e.line()),
         }
+    }
+
+    /// Decision 12 (reserved shapes): setext underlines, indented code,
+    /// nested quotes, and card thematic breaks are hard errors; each
+    /// error row is flanked by the nearest legal neighbor that must stay
+    /// legal (fence interiors, paragraph continuations, standalone
+    /// shapes, section breaks).
+    #[test]
+    fn reserved_shapes_error_as_ruled_and_their_neighbors_stay_legal() {
+        for (name, deck, expected) in [
+            (
+                "setext under card prose",
+                "## q\nanswer\n===\n",
+                Outcome::Err(3),
+            ),
+            (
+                "longer run, trailing space",
+                "## q\nanswer\n======  \n",
+                Outcome::Err(3),
+            ),
+            (
+                "standalone === is prose",
+                "## q\nanswer\n\n===\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "setext under section prose",
+                "# s\nprose\n===\n## q\na\n",
+                Outcome::Err(3),
+            ),
+            (
+                "=== inside a fence",
+                "## q\n```\ntext\n===\n```\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "=== under a note line stays content",
+                "## q\na\n> note\n===\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "indented after blank",
+                "## q\na\n\n    code\n",
+                Outcome::Err(4),
+            ),
+            (
+                "indented as first answer line",
+                "## q\n    code\n",
+                Outcome::Err(2),
+            ),
+            (
+                "tab indent after blank",
+                "## q\na\n\n\tcode\n",
+                Outcome::Err(4),
+            ),
+            (
+                "paragraph continuation stays legal",
+                "## q\na\n    still prose\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "task-list continuation stays legal",
+                "## q\n- [x] item\n    more\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "indented inside a fence",
+                "## q\n```\n    code\n```\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "indented in a section after blank",
+                "# s\nprose\n\n    code\n## q\na\n",
+                Outcome::Err(4),
+            ),
+            (
+                "three-space indent stays legal",
+                "## q\na\n\n   shallow\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "nested quote in a note",
+                "## q\na\n> > deep\n",
+                Outcome::Err(3),
+            ),
+            (
+                "nested quote unspaced",
+                "## q\na\n>> deep\n",
+                Outcome::Err(3),
+            ),
+            (
+                "one-level note stays legal",
+                "## q\na\n> note\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "nested quote in a section",
+                "# s\n> > deep\n## q\na\n",
+                Outcome::Err(2),
+            ),
+            (
+                "inner > not at start stays legal",
+                "## q\na\n> quoted > inline\n",
+                Outcome::Cards(1),
+            ),
+            ("star break in a card", "## q\na\n***\n", Outcome::Err(3)),
+            (
+                "underscore break in a card",
+                "## q\na\n___\n",
+                Outcome::Err(3),
+            ),
+            (
+                "spaced break in a card",
+                "## q\na\n* * *\n",
+                Outcome::Err(3),
+            ),
+            (
+                "bold-italic line stays legal",
+                "## q\n***bold***\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "section break stays legal",
+                "# s\n***\n## q\na\n",
+                Outcome::Cards(1),
+            ),
+            (
+                "break inside a fence",
+                "## q\n```\n***\n```\n",
+                Outcome::Cards(1),
+            ),
+            ("two stars stay legal", "## q\na\n**\n", Outcome::Cards(1)),
+            (
+                "underscore word stays legal",
+                "## q\na\n___x\n",
+                Outcome::Cards(1),
+            ),
+        ] {
+            assert_eq!(expected, outcome(deck), "{name}: {deck:?}");
+        }
+    }
+
+    /// Decision 12.5: the two-trailing-space hard break is a non-spelling.
+    /// Content lines shed trailing whitespace at scan; fence interiors
+    /// stay verbatim.
+    #[test]
+    fn trailing_spaces_are_stripped_from_content_but_not_fences() {
+        let deck = parse("## q\nanswer  \n```\ncode  \n```\n");
+        assert_eq!("answer", deck.cards[0].back[0]);
+        assert!(
+            deck.cards[0].back.iter().any(|l| l == "code  "),
+            "fence interior keeps its bytes: {:?}",
+            deck.cards[0].back
+        );
     }
 
     /// Spec law 10: the section a card was authored under reaches the

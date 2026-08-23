@@ -346,6 +346,20 @@ answer text, as CommonMark reads them.
 
 A `##` closes every open sub-card chain, and a `#` clears the chain entirely.
 
+## Reserved Markdown shapes
+
+Four Markdown spellings have no alix meaning and fail loudly with the line
+number and a suggested rewrite, instead of showing their markers to the
+learner: a setext `===` underline directly beneath a prose line (write an
+ATX `#`-prefixed heading), four-space/tab indented code opening after a
+blank line or a heading (wrap the code in a ``` fence; ordinary paragraph
+and task-list continuation lines are unaffected), a nested `> >` quote
+(notes are flat, one `>` deep; put literal `>` text in a fence), and a
+`***` or `___` thematic break inside a card (delete it, or move the
+material to a section). Inside fenced code every shape is literal, as
+always. A trailing-two-space hard break is not a spelling at all: content
+lines shed trailing whitespace when the deck is read.
+
 ## Title, and deck-wide settings
 
 A deck's name, its deck-wide settings, and its machine-maintained deck ID all
