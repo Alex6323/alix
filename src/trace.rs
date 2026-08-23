@@ -604,6 +604,20 @@ mod tests {
     }
 
     #[test]
+    fn compression_rubric_preserves_every_checkpoint_point_in_walk_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = Trace::from_deck(&trace_deck(dir.path())).unwrap();
+
+        assert_eq!(
+            vec![
+                "it reads the first line".to_string(),
+                "it reads lines two and three".to_string(),
+            ],
+            trace.compression_rubric()
+        );
+    }
+
+    #[test]
     fn a_trace_checkpoint_rejects_multiple_source_ranges() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(
@@ -720,6 +734,20 @@ mod tests {
         assert!(!block.contains("1\talpha"), "{block}");
     }
 
+    #[cfg(feature = "full")]
+    #[test]
+    fn trace_frozen_block_returns_the_owned_excerpt_not_a_placeholder() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = frozen_workspace(dir.path());
+        crate::assets::initialize(&deck_path).unwrap();
+        let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
+
+        let block = trace.frozen_block(&trace.checkpoints[0]).unwrap();
+        assert!(block.contains("a.rs:2-3"), "{block}");
+        assert!(block.contains("2\tbeta"), "{block}");
+        assert!(block.contains("3\tgamma"), "{block}");
+    }
+
     #[test]
     fn line_only_locator_needs_a_single_source_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -747,6 +775,46 @@ mod tests {
     }
 
     #[test]
+    fn lint_locators_accepts_a_range_ending_on_the_sources_last_line() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "src.txt", "one\ntwo\nthree\n");
+        let path = write(
+            dir.path(),
+            "t.md",
+            "---\ntrace: g\nsource: src.txt\n---\n## q\na\n<!-- at: 3 -->\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+
+        assert!(trace.lint_locators().is_empty());
+    }
+
+    #[test]
+    fn lint_locators_does_not_read_a_url_source_as_a_local_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            dir.path(),
+            "t.md",
+            "---\ntrace: g\nsource: https://example.com/guide\n---\n\
+             ## q\na\n<!-- at: chapter-one -->\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+
+        assert!(trace.lint_locators().is_empty());
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn lint_locators_trusts_owned_assets_after_the_live_source_disappears() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = frozen_workspace(dir.path());
+        crate::assets::initialize(&deck_path).unwrap();
+        std::fs::remove_dir_all(dir.path().join("src")).unwrap();
+        let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
+
+        assert!(trace.lint_locators().is_empty());
+    }
+
+    #[test]
     fn lint_locators_flags_a_start_past_eof() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src.txt", "one\ntwo\nthree\n");
@@ -759,6 +827,7 @@ mod tests {
         let issues = trace.lint_locators();
         assert_eq!(1, issues.len());
         assert_eq!(0, issues[0].checkpoint);
+        assert!(issues[0].message.contains("starts at line 5"));
         assert!(issues[0].message.contains("only 3"));
     }
 
