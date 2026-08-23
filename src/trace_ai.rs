@@ -319,15 +319,13 @@ pub(crate) fn clean_to_cards(raw: &str) -> String {
     let Some(start) = lines.iter().position(|l| l.starts_with("## ")) else {
         return raw.trim().to_string();
     };
-    let mut end = lines.len();
-    while end > start + 1 {
-        let t = lines[end - 1].trim();
-        if t.is_empty() || t.starts_with("```") {
-            end -= 1;
-        } else {
-            break;
-        }
-    }
+    let end = lines[start + 1..]
+        .iter()
+        .rposition(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && !trimmed.starts_with("```")
+        })
+        .map_or(start + 1, |offset| start + offset + 2);
     lines[start..end].join("\n")
 }
 
@@ -494,6 +492,18 @@ mod tests {
     }
 
     #[test]
+    fn suggest_prompt_appends_nonempty_trace_instructions() {
+        let cfg = TraceConfig {
+            extra: Some("map the ownership boundary".to_string()),
+            ..TraceConfig::default()
+        };
+
+        let p = suggest_prompt(".", false, &cfg);
+        assert!(p.contains("Additional instructions:"));
+        assert!(p.contains("map the ownership boundary"));
+    }
+
+    #[test]
     fn build_prompt_url_uses_webfetch_and_quoted_span() {
         let p = build_prompt("how X", "https://x", true, &TraceConfig::default());
         assert!(p.contains("WebFetch"));
@@ -515,14 +525,20 @@ mod tests {
     #[test]
     fn build_run_config_uses_readonly_tools_and_cwd() {
         let cwd = PathBuf::from("/some/src");
-        let cfg = build_run_config(
-            &TraceConfig::default(),
-            &AskConfig::default(),
-            Some(cwd.clone()),
-            false,
-        );
+        let trace_cfg = TraceConfig {
+            effort: Some("trace-effort".to_string()),
+            ..TraceConfig::default()
+        };
+        let ask_cfg = AskConfig {
+            effort: Some("ask-effort".to_string()),
+            source_access: true,
+            ..AskConfig::default()
+        };
+        let cfg = build_run_config(&trace_cfg, &ask_cfg, Some(cwd.clone()), false);
         assert_eq!(vec!["Read", "Glob", "Grep"], cfg.allowed_tools);
         assert_eq!(Some(cwd), cfg.cwd);
+        assert_eq!(Some("trace-effort".to_string()), cfg.effort);
+        assert!(!cfg.source_access);
         assert_eq!(600, cfg.timeout_secs);
     }
 
@@ -572,7 +588,60 @@ mod tests {
         assert_eq!("## Q1\np\n<!-- at: 1 -->", clean_to_cards(raw));
     }
 
-    use crate::testutil::{ask_config, exec_lock, fake_reply};
+    #[test]
+    fn clean_to_cards_keeps_a_front_when_every_trailing_line_is_noise() {
+        assert_eq!("## Q1", clean_to_cards("preamble\n## Q1\n\n```"));
+    }
+
+    use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
+
+    fn grading_checkpoint() -> Checkpoint {
+        Checkpoint {
+            prompt: "Where does the request go?".to_string(),
+            points: vec!["It enters the owner queue".to_string()],
+            givens: Vec::new(),
+            note: None,
+            locator: None,
+            fingerprint: None,
+            asset: None,
+            card_id: "card-test".to_string(),
+            line: 1,
+        }
+    }
+
+    #[test]
+    fn grade_prompt_carries_the_question_rubric_and_prediction() {
+        let prompt = grade_prompt(&grading_checkpoint(), "It is queued");
+
+        assert!(prompt.contains("Where does the request go?"));
+        assert!(prompt.contains("It enters the owner queue"));
+        assert!(prompt.contains("It is queued"));
+    }
+
+    #[test]
+    fn grade_prediction_clears_inherited_tools_and_working_directory() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let wrong_cwd = dir.path().join("wrong-cwd");
+        std::fs::create_dir(&wrong_cwd).unwrap();
+        let cli = fake_cli(
+            dir.path(),
+            "cat >/dev/null; printf 'PASSED - cwd=%s args=%s\\n' \"$PWD\" \"$*\"",
+        );
+        let cfg = AskConfig {
+            command: cli.to_string_lossy().into_owned(),
+            allowed_tools: vec!["WebFetch".to_string()],
+            cwd: Some(wrong_cwd.clone()),
+            timeout_secs: 10,
+            ..AskConfig::default()
+        };
+
+        let (delta, feedback) =
+            grade_prediction(&grading_checkpoint(), "It is queued", &cfg).unwrap();
+        assert_eq!(Delta::Passed, delta);
+        assert!(!feedback.contains(&wrong_cwd.to_string_lossy().into_owned()));
+        assert!(!feedback.contains("--allowedTools"), "{feedback}");
+    }
 
     #[test]
     fn build_end_to_end_returns_cleaned_cards() {
