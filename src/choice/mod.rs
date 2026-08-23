@@ -614,4 +614,11 @@ mod tests {
         );
         assert!(!can_sample(&region, &[region.clone()]));
     }
+
+    #[test]
+    fn numeric_option_positions_are_one_based() {
+        assert!(!note_names_position("Option 0 is impossible."));
+        assert!(!note_names_position("The 0th option is impossible."));
+        assert!(note_names_position("The 1st option is too broad."));
+    }
 }

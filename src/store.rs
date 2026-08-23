@@ -3355,4 +3355,20 @@ mod tests {
         store.get_or_insert("card-one").introduced_ms = Some(0);
         assert!(!store.is_empty());
     }
+
+    #[test]
+    fn every_persisted_learning_signal_engages_a_card_independently() {
+        assert!(!CardState::new().engaged());
+        assert!(CardState::introduced_at(0).engaged());
+
+        for depth in [Depth::Recognize, Depth::Recall, Depth::Reconstruct] {
+            let mut state = CardState::new();
+            *state.schedule_slot(depth).unwrap() = Some(FsrsState::default());
+            assert!(state.engaged(), "{depth:?} schedule must engage the card");
+        }
+
+        let mut reviewed = CardState::new();
+        reviewed.total_reviews = 1;
+        assert!(reviewed.engaged());
+    }
 }
