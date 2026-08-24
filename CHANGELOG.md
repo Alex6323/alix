@@ -98,8 +98,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inside `text <!-- <div> -->` errors like any other.
 
 - Named mapping invocations: `<!-- choices-single -->` or
-  `<!-- choices-multiple -->` above a task list makes it a choice card (one
-  correct answer, or select-all-that-apply), `<!-- cards -->` above a pipe
+  `<!-- choices-multiple -->` below a task list makes it a choice card (one
+  correct answer, or select-all-that-apply), `<!-- cards -->` below a pipe
   table makes it a card table, and the `tasklist:` / `table:` frontmatter
   keys declare a deck-wide default with `<!-- plain -->` as the per-block
   escape. A single-token comment naming no known invocation is an
@@ -129,6 +129,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   frontmatter into the canonical key order. Opt-in only; frontmatter it
   cannot safely permute (a blank line or comment inside the block) is left
   as-is with a note.
+
+- `alix doctor --repair-comment-order` rewrites each checked deck's
+  trailing comment machinery into the canonical order: invocation,
+  directives, region comments, locator, id last. Opt-in only; any order
+  still parses, and content or an editorial comment bounds what may move.
 
 - Mermaid diagrams render into decks: a ```` ```mermaid ```` fence in a
   workspace member freezes at `alix deck init` time into a deck-owned PNG
@@ -354,7 +359,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `review.hint` config key and its `tab`/`ctrl-h`/`ctrl-backspace`
   bindings are gone; a config still naming `review.hint` fails as an
   unknown key.
-
 
 - Four reserved Markdown shapes are now line-numbered errors with a
   suggested rewrite instead of silently showing their markers as card
