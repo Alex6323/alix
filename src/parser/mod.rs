@@ -733,6 +733,9 @@ struct RawTable {
     directives: CardDirectives,
     rows_done: bool,
     end_line: usize,
+    /// The one mapping comment that selected this table; every other
+    /// mapping in its trailing zone is a second invocation of one block.
+    invocation_line: Option<usize>,
 }
 
 struct RawRow {
@@ -1081,12 +1084,14 @@ fn scan(
             && let Some(next) = lines.get(idx + 1)
             && next.starts_with('|')
             && is_delimiter_row(next)
-            && match trailing_table_mapping(lines, idx) {
-                Some(Mapping::Cards) => true,
+            && let declared = trailing_table_mapping(lines, idx)
+            && match declared {
+                Some((_, Mapping::Cards)) => true,
                 Some(_) => false,
                 None => table_default,
             }
         {
+            let invocation_line = declared.map(|(line, _)| line);
             // An empty-bodied heading directly above the table is its TITLE,
             // not a card; any content or note keeps it a card.
             let mut title = None;
@@ -1141,6 +1146,7 @@ fn scan(
                 directives,
                 rows_done: false,
                 end_line: lineno + 1,
+                invocation_line,
             });
             skip_delimiter = true;
             idle_terminators.clear();
@@ -1273,7 +1279,8 @@ fn scan(
         }
 
         if t == "---" {
-            let plain_trails = invocation_below(lines, idx + 1) == Some(Mapping::Plain);
+            let plain_trails =
+                invocation_below(lines, idx + 1).is_some_and(|(_, m)| m == Mapping::Plain);
             if plain_trails {
                 if current.is_none() {
                     section_line(
@@ -1395,7 +1402,7 @@ fn scan(
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
                 if let Some(mapping) = Mapping::parse(trim_ws(body)) {
                     match (mapping, current.as_mut()) {
-                        (Mapping::Plain, None) => {}
+                        (Mapping::Plain, None) if mapping.binds(block_above) => {}
                         (Mapping::Cards, _) | (_, None) => {
                             return Err(ParseError::LeadingInvocation {
                                 line: lineno,
@@ -1784,6 +1791,12 @@ fn table_line(
         return Ok(false);
     }
     if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
+        if Mapping::parse(trim_ws(body)).is_some() && tbl.invocation_line != Some(lineno) {
+            return Err(ParseError::LeadingInvocation {
+                line: lineno,
+                word: trim_ws(body).to_string(),
+            });
+        }
         tbl.rows_done = true;
         tbl.end_line = lineno;
         if let Some((key, value)) = directive(body) {
@@ -1851,12 +1864,12 @@ fn machinery_rank(content: &str) -> Option<usize> {
 /// The invocation a block's trailing machinery run declares, read downward
 /// from the line after the block: recognized machinery is transparent, and
 /// anything else ends the run with the block unbound.
-fn invocation_below(lines: &[&str], from: usize) -> Option<Mapping> {
+fn invocation_below(lines: &[&str], from: usize) -> Option<(usize, Mapping)> {
     let mut at = from;
     while machinery_rank(lines.get(at)?).is_some() {
         let body = lines[at].trim().strip_prefix("<!--")?.strip_suffix("-->")?;
         if let Some(mapping) = Mapping::parse(trim_ws(body)) {
-            return Some(mapping);
+            return Some((at + 1, mapping));
         }
         at += 1;
     }
@@ -1867,7 +1880,7 @@ fn invocation_below(lines: &[&str], from: usize) -> Option<Mapping> {
 /// looking down from its header line: rows first, then adjacent comment
 /// lines (the everything-trails position). None means the zone declares
 /// nothing and the deck default decides.
-fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<Mapping> {
+fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<(usize, Mapping)> {
     let row = |at: usize| {
         lines
             .get(at)
@@ -5833,6 +5846,35 @@ a
             ),
             "an editorial comment ends a table's trailing zone exactly as it \
              ends a checklist's: {error:?}"
+        );
+
+        let error = err(
+            "# Reference\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- cards -->\n<!-- plain -->\n",
+        );
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 6, ref word } if word == "plain"
+            ),
+            "a table is consumed by the one invocation that selected it, like \
+             any other block: {error:?}"
+        );
+
+        let error = err("# Reference\n<!-- plain -->\n## Q\nanswer\n");
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 2, ref word } if word == "plain"
+            ),
+            "an invocation outside a card owns a block or owns nothing: {error:?}"
+        );
+
+        let deck = parse("# S\n\nprose\n\n---\n<!-- plain -->\n");
+        assert!(
+            deck.cards.is_empty() && deck.lints.is_empty(),
+            "a section divider does supply a block, so plain below one stays \
+             legal: {:?}",
+            deck.lints
         );
     }
 
