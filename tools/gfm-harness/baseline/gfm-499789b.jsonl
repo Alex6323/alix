@@ -158,34 +158,34 @@
 {"e":158,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":159,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":160,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
-{"e":161,"g":[8],"cards":1,"back":"ws"}
+{"e":161,"g":[8],"cards":1,"back":"div"}
 {"e":162,"g":[8],"cards":1,"back":"ws"}
 {"e":163,"g":[8],"cards":1,"back":"ws"}
 {"e":164,"g":[8],"err":"line 3: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
-{"e":165,"g":[8],"cards":1,"back":"ws"}
-{"e":166,"g":[8],"cards":1,"back":"ws"}
+{"e":165,"g":[8],"cards":1,"back":"div"}
+{"e":166,"g":[8],"cards":1,"back":"div"}
 {"e":167,"g":[8],"cards":1,"back":"ws"}
 {"e":168,"g":[8],"cards":1,"back":"ws"}
-{"e":169,"g":[8],"cards":1,"back":"ws"}
+{"e":169,"g":[8],"cards":1,"back":"div"}
 {"e":170,"g":[8],"err":"line 2: `<` followed by a letter (column 8) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
-{"e":171,"g":[8],"cards":1,"back":"ws"}
-{"e":172,"g":[8],"cards":1,"back":"ws"}
-{"e":173,"g":[8],"cards":1,"back":"ws"}
-{"e":174,"g":[8],"cards":1,"back":"ws"}
-{"e":175,"g":[8],"cards":1,"back":"ws"}
-{"e":176,"g":[8],"cards":1,"back":"exact"}
+{"e":171,"g":[8],"cards":1,"back":"div"}
+{"e":172,"g":[8],"cards":1,"back":"div"}
+{"e":173,"g":[8],"cards":1,"back":"div"}
+{"e":174,"g":[8],"cards":1,"back":"div"}
+{"e":175,"g":[8],"cards":1,"back":"div"}
+{"e":176,"g":[8],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":177,"g":[8],"cards":1,"back":"exact"}
-{"e":178,"g":[8],"cards":1,"back":"exact"}
-{"e":179,"g":[8],"cards":1,"back":"exact"}
+{"e":178,"g":[8],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":179,"g":[8],"cards":1,"back":"div"}
 {"e":180,"g":[8],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":181,"g":[8],"cards":1,"back":"ws"}
-{"e":182,"g":[8],"cards":1,"back":"ws"}
+{"e":182,"g":[8],"cards":1,"back":"div"}
 {"e":183,"g":[8],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":184,"g":[8],"err":"line 4: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":185,"g":[8],"err":"line 3: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
-{"e":186,"g":[8],"cards":1,"back":"ws"}
+{"e":186,"g":[8],"cards":1,"back":"div"}
 {"e":187,"g":[8],"cards":1,"back":"div"}
-{"e":188,"g":[8],"cards":1,"back":"exact"}
+{"e":188,"g":[8],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":189,"g":[3],"cards":1,"back":"ws"}
 {"e":190,"g":[3],"cards":1,"back":"ws"}
 {"e":191,"g":[3],"cards":1,"back":"ws"}
@@ -294,7 +294,7 @@
 {"e":294,"g":[3,12],"cards":1,"back":"ws"}
 {"e":295,"g":[3,12],"cards":1,"back":"ws"}
 {"e":296,"g":[3,12],"cards":1,"back":"ws"}
-{"e":297,"g":[3,12],"cards":1,"back":"ws"}
+{"e":297,"g":[3,12],"cards":1,"back":"div"}
 {"e":298,"g":[3,12],"cards":1,"back":"ws"}
 {"e":299,"g":[3,12],"err":"line 5: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":300,"g":[3,12],"cards":1,"back":"div"}
@@ -316,7 +316,7 @@
 {"e":316,"g":[5],"cards":1,"back":"exact"}
 {"e":317,"g":[5],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":318,"g":[5],"cards":1,"back":"exact"}
-{"e":319,"g":[5],"cards":1,"back":"ws"}
+{"e":319,"g":[5],"cards":1,"back":"div"}
 {"e":320,"g":[5],"cards":1,"back":"exact"}
 {"e":321,"g":[10,12],"cards":1,"back":"exact"}
 {"e":322,"g":[10,12],"cards":1,"back":"exact"}
@@ -326,7 +326,7 @@
 {"e":326,"g":[10,12],"cards":1,"back":"exact"}
 {"e":327,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":328,"g":[10,12],"cards":1,"back":"exact"}
-{"e":329,"g":[10,12],"cards":1,"back":"ws"}
+{"e":329,"g":[10,12],"cards":1,"back":"div"}
 {"e":330,"g":[10,12],"cards":1,"back":"exact"}
 {"e":331,"g":[10,12],"cards":1,"back":"exact"}
 {"e":332,"g":[10,12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
@@ -532,72 +532,72 @@
 {"e":532,"g":[8],"err":"line 2: `<` followed by a letter (column 6) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":533,"g":[8],"cards":1,"back":"exact"}
 {"e":534,"g":[8],"cards":1,"back":"exact"}
-{"e":535,"g":[8],"cards":1,"back":"ws"}
-{"e":536,"g":[8],"cards":1,"back":"ws"}
-{"e":537,"g":[8],"cards":1,"back":"ws"}
-{"e":538,"g":[8],"cards":1,"back":"ws"}
+{"e":535,"g":[8],"cards":1,"back":"div"}
+{"e":536,"g":[8],"cards":1,"back":"div"}
+{"e":537,"g":[8],"cards":1,"back":"div"}
+{"e":538,"g":[8],"cards":1,"back":"div"}
 {"e":539,"g":[8],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
-{"e":540,"g":[8],"cards":1,"back":"ws"}
-{"e":541,"g":[8],"cards":1,"back":"ws"}
-{"e":542,"g":[8],"cards":1,"back":"ws"}
-{"e":543,"g":[8],"cards":1,"back":"ws"}
+{"e":540,"g":[8],"cards":1,"back":"div"}
+{"e":541,"g":[8],"cards":1,"back":"div"}
+{"e":542,"g":[8],"cards":1,"back":"div"}
+{"e":543,"g":[8],"cards":1,"back":"div"}
 {"e":544,"g":[8],"err":"line 2: `<` followed by a letter (column 6) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
-{"e":545,"g":[8],"cards":1,"back":"ws"}
-{"e":546,"g":[8],"cards":1,"back":"ws"}
-{"e":547,"g":[8],"cards":1,"back":"ws"}
-{"e":548,"g":[8],"cards":1,"back":"ws"}
+{"e":545,"g":[8],"cards":1,"back":"div"}
+{"e":546,"g":[8],"cards":1,"back":"div"}
+{"e":547,"g":[8],"cards":1,"back":"div"}
+{"e":548,"g":[8],"cards":1,"back":"div"}
 {"e":549,"g":[8],"cards":1,"back":"ws"}
-{"e":550,"g":[8],"cards":1,"back":"ws"}
-{"e":551,"g":[8],"cards":1,"back":"ws"}
-{"e":552,"g":[8],"cards":1,"back":"ws"}
-{"e":553,"g":[8],"cards":1,"back":"ws"}
+{"e":550,"g":[8],"cards":1,"back":"div"}
+{"e":551,"g":[8],"cards":1,"back":"div"}
+{"e":552,"g":[8],"cards":1,"back":"div"}
+{"e":553,"g":[8],"cards":1,"back":"div"}
 {"e":554,"g":[8],"cards":1,"back":"ws"}
 {"e":555,"g":[8],"cards":1,"back":"ws"}
 {"e":556,"g":[8],"cards":1,"back":"ws"}
 {"e":557,"g":[8],"cards":1,"back":"ws"}
-{"e":558,"g":[8],"cards":1,"back":"ws"}
+{"e":558,"g":[8],"cards":1,"back":"div"}
 {"e":559,"g":[8],"cards":1,"back":"ws"}
 {"e":560,"g":[8],"cards":1,"back":"ws"}
-{"e":561,"g":[8],"cards":1,"back":"ws"}
-{"e":562,"g":[8],"cards":1,"back":"ws"}
-{"e":563,"g":[8],"cards":1,"back":"ws"}
-{"e":564,"g":[8],"cards":1,"back":"ws"}
-{"e":565,"g":[8],"cards":1,"back":"ws"}
-{"e":566,"g":[8],"cards":1,"back":"ws"}
-{"e":567,"g":[8],"cards":1,"back":"ws"}
-{"e":568,"g":[8],"cards":1,"back":"ws"}
-{"e":569,"g":[8],"cards":1,"back":"ws"}
-{"e":570,"g":[8],"cards":1,"back":"ws"}
-{"e":571,"g":[8],"cards":1,"back":"ws"}
-{"e":572,"g":[8],"cards":1,"back":"ws"}
-{"e":573,"g":[8],"cards":1,"back":"ws"}
-{"e":574,"g":[8],"cards":1,"back":"ws"}
-{"e":575,"g":[8],"cards":1,"back":"ws"}
-{"e":576,"g":[8],"cards":1,"back":"ws"}
-{"e":577,"g":[8],"cards":1,"back":"ws"}
-{"e":578,"g":[8],"cards":1,"back":"ws"}
-{"e":579,"g":[8],"cards":1,"back":"ws"}
+{"e":561,"g":[8],"cards":1,"back":"div"}
+{"e":562,"g":[8],"cards":1,"back":"div"}
+{"e":563,"g":[8],"cards":1,"back":"div"}
+{"e":564,"g":[8],"cards":1,"back":"div"}
+{"e":565,"g":[8],"cards":1,"back":"div"}
+{"e":566,"g":[8],"cards":1,"back":"div"}
+{"e":567,"g":[8],"cards":1,"back":"div"}
+{"e":568,"g":[8],"cards":1,"back":"div"}
+{"e":569,"g":[8],"cards":1,"back":"div"}
+{"e":570,"g":[8],"cards":1,"back":"div"}
+{"e":571,"g":[8],"cards":1,"back":"div"}
+{"e":572,"g":[8],"cards":1,"back":"div"}
+{"e":573,"g":[8],"cards":1,"back":"div"}
+{"e":574,"g":[8],"cards":1,"back":"div"}
+{"e":575,"g":[8],"cards":1,"back":"div"}
+{"e":576,"g":[8],"cards":1,"back":"div"}
+{"e":577,"g":[8],"cards":1,"back":"div"}
+{"e":578,"g":[8],"cards":1,"back":"div"}
+{"e":579,"g":[8],"cards":1,"back":"div"}
 {"e":580,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
-{"e":581,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":581,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":582,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
 {"e":583,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
-{"e":584,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":585,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":584,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":585,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":586,"g":[14],"cards":1,"back":"div"}
 {"e":587,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
 {"e":588,"g":[14],"cards":1,"back":"div"}
 {"e":589,"g":[14],"cards":1,"back":"div"}
-{"e":590,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":591,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":592,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":593,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":594,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":595,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":596,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":597,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
+{"e":590,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":591,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":592,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":593,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":594,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":595,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":596,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":597,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":598,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":599,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"ws"}
-{"e":600,"g":[14],"cards":1,"back":"ws"}
+{"e":599,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
+{"e":600,"g":[14],"cards":1,"back":"div"}
 {"e":601,"g":[14],"cards":1,"back":"div"}
 {"e":602,"g":[8],"cards":1,"back":"exact"}
 {"e":603,"g":[8],"cards":1,"back":"exact"}

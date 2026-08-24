@@ -325,6 +325,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Link-definition lines (`[label]: destination`) are consumed as
+  deck-wide metadata instead of being answer content: they no longer
+  display, never join typed grading, and a card whose entire answer
+  was definitions fails loud as answerless. Fences keep them literal,
+  an escaped bracket or a hole marker keeps the line prose, and the
+  deck file is untouched. The collected labels feed the reference-link
+  rendering that builds next; `[text][label]` itself still displays as
+  written for now.
+
 - The typing-mode character reveal is removed (ruled 2026-08-24 with the
   aid naming: revealing answer characters piecemeal only slow-fails the
   card, and partial recall belongs to the future grade-capped hint). The

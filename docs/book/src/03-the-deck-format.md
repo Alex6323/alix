@@ -88,6 +88,11 @@ pattern such as `[brackets]` alone stays ordinary prose, an escaped
 syntax verbatim. Autolinks (`<https://...>`) are covered under "HTML in
 a deck".
 
+A link-definition line (`[label]: destination`) in an answer is deck
+metadata, not content: it never displays and is never graded, and a card
+whose whole answer is definitions fails loud as answerless. Reference
+links such as `[text][label]` currently display as written.
+
 ## LaTeX math
 
 Use `$...$` for a formula inside prose:

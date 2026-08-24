@@ -42,6 +42,9 @@ pub struct ParsedDeck {
     pub title: Option<String>,
     pub frontmatter: Frontmatter,
     pub cards: Vec<Card>,
+    /// Deck-wide link-definition labels, in document order, unfolded:
+    /// reference-link matching folds at lookup, not at collection.
+    pub definitions: Vec<String>,
     pub lints: Vec<Lint>,
     pub frontmatter_span: Option<LineSpan>,
     pub tables: Vec<TableStamping>,
@@ -397,6 +400,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
         title: document.frontmatter.title.clone(),
         frontmatter: document.frontmatter,
         cards,
+        definitions: document.definitions,
         lints,
         frontmatter_span: document.frontmatter_span,
         tables,
@@ -617,6 +621,7 @@ fn escaped_marker(line: &str, marker: usize) -> bool {
 struct Document {
     frontmatter: Frontmatter,
     blocks: Vec<RawBlock>,
+    definitions: Vec<String>,
     lints: Vec<Lint>,
     frontmatter_span: Option<LineSpan>,
 }
@@ -750,10 +755,11 @@ fn parse_document(text: &str) -> Result<Document, ParseError> {
     let mut lints = Vec::new();
     let (frontmatter, body_start, frontmatter_span) = parse_frontmatter(&lines, &mut lints)?;
     let table_default = frontmatter.table == Some(Mapping::Cards);
-    let blocks = scan(&lines, body_start, table_default, &mut lints)?;
+    let body = scan(&lines, body_start, table_default, &mut lints)?;
     Ok(Document {
         frontmatter,
-        blocks,
+        blocks: body.blocks,
+        definitions: body.definitions,
         lints,
         frontmatter_span,
     })
@@ -810,7 +816,10 @@ pub(crate) fn closes_fence(line: &str, ch: char, open: usize) -> bool {
 
 // ── The line scanner ──
 
-type ScannedBody = Vec<RawBlock>;
+struct ScannedBody {
+    blocks: Vec<RawBlock>,
+    definitions: Vec<String>,
+}
 
 /// A deck body opens with a heading. Before the first one there is no
 /// section to join, so a line that would join it is the error instead.
@@ -862,6 +871,7 @@ fn scan(
     lints: &mut Vec<Lint>,
 ) -> Result<ScannedBody, ParseError> {
     let mut blocks: Vec<RawBlock> = Vec::new();
+    let mut definitions: Vec<String> = Vec::new();
     let mut current: Option<RawCard> = None;
     let mut table: Option<RawTable> = None;
     let mut open_depths: Vec<(usize, usize)> = Vec::new();
@@ -1354,6 +1364,14 @@ fn scan(
             continue;
         }
 
+        if let Some(label) = link_definition(t) {
+            definitions.push(label);
+            prev_blank = false;
+            prev_heading = false;
+            prev_prose = true;
+            continue;
+        }
+
         push_content(&mut current, lineno, t.to_string());
         prev_blank = false;
         prev_heading = false;
@@ -1378,7 +1396,28 @@ fn scan(
             kind: LintKind::PointlessTerminator,
         });
     }
-    Ok(blocks)
+    Ok(ScannedBody {
+        blocks,
+        definitions,
+    })
+}
+
+/// A GFM link definition `[label]: destination`, consumed as deck-wide
+/// metadata rather than answer content. Any hole marker keeps the whole
+/// line prose so an authored blank can never be silently eaten.
+fn link_definition(line: &str) -> Option<String> {
+    let rest = line.strip_prefix('[')?;
+    let (label, destination) = rest.split_once("]:")?;
+    let label = label.trim();
+    if label.is_empty()
+        || label.contains('[')
+        || label.contains(']')
+        || destination.trim().is_empty()
+        || line.contains("\\blank")
+    {
+        return None;
+    }
+    Some(label.to_string())
 }
 
 // ── Table blocks ──
@@ -2863,6 +2902,56 @@ mod tests {
 
     fn parse(text: &str) -> ParsedDeck {
         super::parse("deck.md", text).unwrap()
+    }
+
+    #[test]
+    fn link_definition_lines_are_deck_metadata_never_answer_content() {
+        let deck = parse("## Q\nsee [the ref][r] here\n[r]: https://alix.study\n");
+        assert_eq!(
+            deck.cards[0].back,
+            vec!["see [the ref][r] here"],
+            "the definition line left the answer"
+        );
+        assert_eq!(
+            deck.definitions,
+            vec!["r"],
+            "the label became deck-wide metadata"
+        );
+
+        for (text, back, why) in [
+            (
+                "## Q\n```\n[r]: x\n```\n",
+                vec!["```", "[r]: x", "```"],
+                "a fence keeps a definition line literal",
+            ),
+            (
+                "## Q\n\\[r]: x\n",
+                vec![r"\[r]: x"],
+                "an escaped bracket stays prose",
+            ),
+            (
+                "## Q\n[r]:\n",
+                vec!["[r]:"],
+                "an empty destination stays prose",
+            ),
+        ] {
+            let deck = parse(text);
+            assert_eq!(deck.cards[0].back, back, "{why}");
+            assert!(deck.definitions.is_empty(), "{why}: {:?}", deck.definitions);
+        }
+
+        let holed = parse("## Q\n[\\blank{r}]: x\n");
+        assert!(
+            holed.definitions.is_empty(),
+            "a hole marker keeps the line a card's prose"
+        );
+        assert!(!holed.cards.is_empty(), "the blank stays a drillable hole");
+
+        let err = err("## Q\n[r]: x\n");
+        assert!(
+            matches!(err, ParseError::FrontWithoutAnswer(1)),
+            "a definition-only answer leaves the card answerless: {err}"
+        );
     }
 
     fn err(text: &str) -> ParseError {

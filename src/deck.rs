@@ -79,6 +79,9 @@ pub struct Deck {
     pub subject: String,
     pub deck_token: Option<String>,
     pub cards: Vec<Card>,
+    /// Deck-wide link-definition labels (`[label]: destination` lines),
+    /// distinct from `links`, the frontmatter reference URLs.
+    pub definitions: Vec<String>,
     pub links: Vec<String>,
     pub requires: Vec<String>,
     pub sources: Vec<String>,
@@ -139,6 +142,7 @@ impl Deck {
                 source,
             }
         })?;
+        let definitions = parsed.definitions.clone();
         let links = parsed.frontmatter.link.clone();
         let requires = parsed.frontmatter.requires.clone();
         let sources = parsed.frontmatter.source.clone();
@@ -201,6 +205,7 @@ impl Deck {
             subject,
             deck_token,
             cards,
+            definitions,
             links,
             requires,
             sources,
