@@ -36,6 +36,7 @@ pub mod depth;
 pub mod diagram;
 #[cfg(feature = "full")]
 pub mod doctor;
+mod entities;
 #[cfg(feature = "full")]
 pub mod exam;
 #[cfg(feature = "full")]

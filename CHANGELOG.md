@@ -41,6 +41,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   single or triple tilde run stays ordinary text, and line-start tilde
   fences are unaffected.
 
+- HTML entities decode on display (decision 10, fourth slice): the
+  full HTML5 named set (`&amp;`, `&euro;`, all ~2,100 names) plus the
+  numeric `&#65;` and hex `&#x41;` forms render as their characters on
+  every card surface, per CommonMark. Anything that is not a complete,
+  valid entity stays literal, and a decoded character is content, not
+  markup: `&#42;x&#42;` shows `*x*` without italics and `&lt;div&gt;`
+  shows `<div>` without the reserved-tag error. Code spans and math
+  keep entities as written. Grading compares the decoded text, so
+  typing `Tom & Jerry` answers `Tom &amp; Jerry`; the deck file keeps
+  the authored entity untouched.
+
 - The styled HTML subset renders (decision 10, third slice): `<sub>`,
   `<sup>`, and `<ins>` pairs display as subscript, superscript, and
   underline on all three clients, with the tags dropped from the shown

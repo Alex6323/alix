@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::math::{MathRenderer, MathView};
+use crate::{
+    entities::entity_at,
+    math::{MathRenderer, MathView},
+};
 
 fn is_false(value: &bool) -> bool {
     !*value
@@ -957,6 +960,25 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
             index = end;
             continue;
         }
+        if chars[index] == '&' {
+            // 40 chars covers every entity: the longest name is 31, plus `&;`.
+            let bound = (index + 40).min(chars.len());
+            let tail: String = chars[index..bound].iter().collect();
+            if let Some((consumed, replacement)) = entity_at(&tail) {
+                glyphs.extend(replacement.chars().map(|ch| Glyph {
+                    ch,
+                    raw_index: index,
+                    escaped: true,
+                    code: false,
+                    link: false,
+                    subset: subset_slot[index],
+                    math: None,
+                }));
+                // entity source is ASCII, so its byte length is its char count
+                index += consumed;
+                continue;
+            }
+        }
         glyphs.push(Glyph {
             ch: chars[index],
             raw_index: index,
@@ -1541,6 +1563,7 @@ mod tests {
         let legal_rows = [
             ("a < b", "spaced comparison"),
             ("a<3 and 2<4", "digits after the bracket"),
+            ("&lt;div&gt;", "an angle entity is never a tag shape"),
             ("x <= y", "an operator"),
             ("<", "a lone bracket at line end"),
             (r"\<div>", "the escaped bracket"),
@@ -1594,6 +1617,11 @@ mod tests {
             strip_inline("H<sub>2</sub>O"),
             "H2O",
             "grading sees inner text"
+        );
+        assert_eq!(
+            strip_inline("Tom &amp; Jerry"),
+            "Tom & Jerry",
+            "grading equates an authored entity with the typed literal"
         );
     }
 
@@ -1675,6 +1703,52 @@ mod tests {
             vec![code("<https://alix.study>")],
             parse_inline("``<https://alix.study>``"),
             "the code-span delimiter owns its body before autolink recognition"
+        );
+    }
+
+    #[test]
+    fn entities_decode_in_the_projection_but_never_become_syntax() {
+        for (source, expected, why) in [
+            ("Tom &amp; Jerry", "Tom & Jerry", "a named entity decodes"),
+            ("A&#65;B", "AAB", "a decimal entity decodes"),
+            ("A&#x41;B", "AAB", "a hex entity decodes"),
+            (
+                "&bogus; &#; &#xG; &",
+                "&bogus; &#; &#xG; &",
+                "invalid forms stay literal",
+            ),
+            (r"\&amp;", "&amp;", "an escaped ampersand kills the entity"),
+            (
+                "&#42;x&#42;",
+                "*x*",
+                "a decoded marker is content, not emphasis",
+            ),
+        ] {
+            let runs = parse_inline(source);
+            let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(expected, projected, "{why}: {source:?}");
+            assert!(
+                runs.iter().all(|run| !run.bold && !run.italic),
+                "{why}: no styling from decoded characters: {runs:?}"
+            );
+            assert_eq!(expected, strip_inline(source), "{why} (strip): {source:?}");
+        }
+        assert_eq!(
+            vec![code("&amp;")],
+            parse_inline("`&amp;`"),
+            "a code span keeps the entity literal"
+        );
+        let math = parse_inline("$a &amp; b$");
+        assert_eq!(math.len(), 1, "{math:?}");
+        assert_eq!(
+            math[0].text, "a &amp; b",
+            "math source is verbatim, entities included"
+        );
+        let angles = parse_inline("&lt;div&gt;");
+        let projected: String = angles.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "<div>", projected,
+            "angle entities decode to inert brackets"
         );
     }
 
