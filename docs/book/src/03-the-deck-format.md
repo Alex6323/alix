@@ -71,6 +71,23 @@ punctuation character yields that literal character, and a backslash before
 anything else (letters, digits, spaces) stays a literal backslash. That is
 why `\blank{...}` needs no escaping to survive.
 
+## Links
+
+A complete `[label](destination)` displays as just the label, styled as a
+link; the brackets, parentheses, and destination never reach the screen,
+and the deck file keeps what you wrote. Destinations are inert on study
+surfaces: a card is for recalling, not browsing. Every destination form
+displays the same way, including relative paths and `#anchor` fragments
+(alix has no heading anchors, deliberately: a card's identity survives
+editing its text, so nothing may address a card by its words).
+
+Emphasis works inside a label and across a whole link. Grading compares
+the label text, so type `see the docs`, not the syntax. An incomplete
+pattern such as `[brackets]` alone stays ordinary prose, an escaped
+`\[label](d)` stays literal, and inline code or a fence keeps the whole
+syntax verbatim. Autolinks (`<https://...>`) are covered under "HTML in
+a deck".
+
 ## LaTeX math
 
 Use `$...$` for a formula inside prose:
