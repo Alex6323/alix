@@ -1463,181 +1463,196 @@ fn scan(
 
 /// A complete GFM link-reference-definition block starting at `lines[at]`:
 /// its label and how many lines it consumed, taken as deck-wide metadata
-/// rather than answer content. An invalid or incomplete shape consumes
-/// nothing, and any hole marker inside the candidate keeps every line
-/// prose so an authored blank can never be silently eaten.
+/// rather than answer content. Label, destination, and title each may
+/// continue on a following line, so the whole candidate is scanned as one
+/// joined block. An invalid or incomplete shape consumes nothing, and any
+/// hole marker inside the candidate keeps every line prose so an authored
+/// blank can never be silently eaten.
 fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
     let first = *lines.get(at)?;
-    if indent_width(first) >= 4 {
+    if indent_width(first) >= 4 || !trim_ws(first).starts_with('[') {
         return None;
     }
-    let inner = trim_ws(first).strip_prefix('[')?;
-    let mut close = None;
-    let mut chars = inner.char_indices();
-    while let Some((i, ch)) = chars.next() {
-        match ch {
-            '\\' => {
-                consume_escaped(&mut chars);
-            }
-            '[' => return None,
-            ']' => {
-                close = Some(i);
-                break;
-            }
-            _ => {}
+    let mut block = vec![trim_ws(first)];
+    for line in lines.iter().skip(at + 1) {
+        let text = trim_ws(line);
+        if text.is_empty() || indent_width(line) >= 4 || interrupts_definition(text) {
+            break;
         }
+        block.push(text);
     }
-    let close = close?;
-    let label = inner[..close].trim();
+    let chars: Vec<char> = block.join("\n").chars().collect();
+
+    let label_close = label_end(&chars, 1)?;
+    let label = chars[1..label_close]
+        .iter()
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     if label.is_empty() {
         return None;
     }
-    let rest = inner[close + 1..].strip_prefix(':')?;
-    let after_colon = trim_ws(rest);
-    if after_colon.is_empty() {
+    if chars.get(label_close + 1) != Some(&':') {
         return None;
     }
-    let dest_len = destination_len(after_colon)?;
-    let after_dest = &after_colon[dest_len..];
-    let tail = trim_ws(after_dest);
-    let consumed = match tail.chars().next() {
-        None => match continued_title(lines, at + 1) {
-            Some(title_lines) => 1 + title_lines,
-            None => 1,
-        },
-        Some(open @ ('"' | '\'' | '(')) => {
-            if !after_dest.starts_with(|ch: char| ch.is_whitespace()) {
-                return None;
-            }
-            let closer = if open == '(' { ')' } else { open };
-            1 + title_close(&tail[1..], closer, open == '(', lines, at)?
-        }
-        Some(_) => return None,
-    };
+    let destination = skip_space_across_one_newline(&chars, label_close + 2)?;
+    let destination_close = destination_end(&chars, destination)?;
+    let end = title_after_destination(&chars, destination_close)
+        .filter(|&close| rest_of_line_blank(&chars, close))
+        .unwrap_or(destination_close);
+    if end == destination_close && !rest_of_line_blank(&chars, destination_close) {
+        return None;
+    }
+
+    let consumed = 1 + chars[..end].iter().filter(|&&ch| ch == '\n').count();
     let holed = lines[at..at + consumed]
         .iter()
         .any(|line| line.contains("\\blank"));
-    (!holed).then(|| (label.to_string(), consumed))
+    (!holed).then_some((label, consumed))
 }
 
-/// Consumes the escape's payload only when the next char is escapable
-/// (the CommonMark ASCII-punctuation rule); otherwise the backslash was
-/// literal and the next char keeps its structural meaning.
-fn consume_escaped(chars: &mut std::str::CharIndices) {
-    let mut ahead = chars.clone();
-    if ahead
-        .next()
-        .is_some_and(|(_, ch)| ch.is_ascii_punctuation())
-    {
-        *chars = ahead;
+/// Chars the escape at `at` covers: two when the backslash escapes ASCII
+/// punctuation (the CommonMark rule), else one, leaving a literal
+/// backslash's neighbour its own structural meaning.
+fn escape_len(chars: &[char], at: usize) -> usize {
+    match chars[at] {
+        '\\' if chars
+            .get(at + 1)
+            .is_some_and(|ch| ch.is_ascii_punctuation()) =>
+        {
+            2
+        }
+        _ => 1,
     }
 }
 
-/// Byte length of a valid GFM destination at the start of `s`: an
-/// `<angle>` form, or a bare run with no whitespace or controls and
-/// balanced unescaped parentheses.
-fn destination_len(s: &str) -> Option<usize> {
-    if let Some(rest) = s.strip_prefix('<') {
-        let mut chars = rest.char_indices();
-        while let Some((i, ch)) = chars.next() {
-            match ch {
-                '\\' => {
-                    consume_escaped(&mut chars);
-                }
-                '<' => return None,
-                '>' => return Some(1 + i + 1),
+/// Index of the label's unescaped closing `]`; None when it never closes
+/// or an unescaped `[` nests inside it.
+fn label_end(chars: &[char], from: usize) -> Option<usize> {
+    let mut at = from;
+    while at < chars.len() {
+        let step = escape_len(chars, at);
+        if step == 1 {
+            match chars[at] {
+                '[' => return None,
+                ']' => return Some(at),
                 _ => {}
             }
+        }
+        at += step;
+    }
+    None
+}
+
+/// Whitespace between a definition's parts may cross at most one line
+/// ending; None when it crosses more.
+fn skip_space_across_one_newline(chars: &[char], from: usize) -> Option<usize> {
+    let mut at = from;
+    let mut endings = 0usize;
+    while chars.get(at).is_some_and(|ch| ch.is_whitespace()) {
+        if chars[at] == '\n' {
+            endings += 1;
+            if endings > 1 {
+                return None;
+            }
+        }
+        at += 1;
+    }
+    Some(at)
+}
+
+/// Index one past a valid GFM destination: an `<angle>` form, or a bare
+/// run with no unescaped whitespace or controls and balanced parentheses.
+fn destination_end(chars: &[char], from: usize) -> Option<usize> {
+    if chars.get(from) == Some(&'<') {
+        let mut at = from + 1;
+        while at < chars.len() {
+            let step = escape_len(chars, at);
+            if step == 1 {
+                match chars[at] {
+                    '<' | '\n' => return None,
+                    '>' => return Some(at + 1),
+                    _ => {}
+                }
+            }
+            at += step;
         }
         return None;
     }
     let mut depth = 0usize;
-    let mut end = s.len();
-    let mut chars = s.char_indices();
-    while let Some((i, ch)) = chars.next() {
-        if ch.is_whitespace() {
-            end = i;
-            break;
-        }
-        match ch {
-            '\\' => {
-                consume_escaped(&mut chars);
+    let mut at = from;
+    while at < chars.len() {
+        let step = escape_len(chars, at);
+        if step == 1 {
+            let ch = chars[at];
+            if ch.is_whitespace() {
+                break;
             }
-            '(' => depth += 1,
-            ')' => depth = depth.checked_sub(1)?,
-            ch if ch.is_ascii_control() => return None,
-            _ => {}
+            match ch {
+                '(' => depth += 1,
+                ')' => depth = depth.checked_sub(1)?,
+                _ if ch.is_ascii_control() => return None,
+                _ => {}
+            }
         }
+        at += step;
     }
-    (depth == 0 && end > 0).then_some(end)
+    (depth == 0 && at > from).then_some(at)
 }
 
-/// Lines a title opening on `lines[at]` consumes when it closes cleanly:
-/// the opening line plus any continuation. None leaves every line prose.
-fn continued_title(lines: &[&str], at: usize) -> Option<usize> {
-    let t = trim_ws(lines.get(at)?);
-    if interrupts_title(t) {
-        return None;
-    }
-    let open = t.chars().next()?;
+/// Index one past a title following the destination, which must be
+/// whitespace-separated from it.
+fn title_after_destination(chars: &[char], destination_close: usize) -> Option<usize> {
+    let start = skip_space_across_one_newline(chars, destination_close)?;
+    (start > destination_close).then_some(())?;
+    title_end(chars, start)
+}
+
+/// Index one past a title's closing delimiter; None when it never closes
+/// or a parenthesized title nests an unescaped `(`.
+fn title_end(chars: &[char], from: usize) -> Option<usize> {
+    let open = *chars.get(from)?;
     let closer = match open {
         '"' | '\'' => open,
         '(' => ')',
         _ => return None,
     };
-    Some(1 + title_close(&t[1..], closer, open == '(', lines, at)?)
-}
-
-/// Lines consumed beyond the title's opening line before its closer, with
-/// nothing but whitespace allowed after it. None when the title never
-/// closes cleanly or would swallow a structural line.
-fn title_close(
-    opened: &str,
-    closer: char,
-    paren: bool,
-    lines: &[&str],
-    mut at: usize,
-) -> Option<usize> {
-    let mut line = opened;
-    let mut extra = 0usize;
-    loop {
-        let mut chars = line.char_indices();
-        while let Some((i, ch)) = chars.next() {
-            match ch {
-                '\\' => {
-                    consume_escaped(&mut chars);
-                }
-                '(' if paren => return None,
-                ch if ch == closer => {
-                    return trim_ws(&line[i + 1..]).is_empty().then_some(extra);
-                }
+    let mut at = from + 1;
+    while at < chars.len() {
+        let step = escape_len(chars, at);
+        if step == 1 {
+            match chars[at] {
+                ch if ch == closer => return Some(at + 1),
+                '(' if open == '(' => return None,
                 _ => {}
             }
         }
-        at += 1;
-        let next = trim_ws(lines.get(at)?);
-        if next.is_empty() || interrupts_title(next) {
-            return None;
-        }
-        line = next;
-        extra += 1;
+        at += step;
     }
+    None
 }
 
-/// A continued title never swallows a line the deck grammar gives
-/// structure.
-fn interrupts_title(t: &str) -> bool {
-    thematic_break_shape(t)
-        || t.starts_with('#')
-        || t.starts_with('>')
-        || t.starts_with('|')
-        || t.starts_with("<!--")
-        || t.starts_with("```")
-        || t.starts_with("~~~")
-        || t.starts_with("- ")
-        || t.starts_with("* ")
-        || t.starts_with("+ ")
-        || t == "$$"
+fn rest_of_line_blank(chars: &[char], from: usize) -> bool {
+    chars[from..]
+        .iter()
+        .take_while(|&&ch| ch != '\n')
+        .all(|ch| ch.is_whitespace())
+}
+
+/// A definition never continues into a line the deck grammar owns.
+fn interrupts_definition(text: &str) -> bool {
+    thematic_break_shape(text)
+        || text.starts_with('#')
+        || text.starts_with('>')
+        || text.starts_with('|')
+        || text.starts_with("<!--")
+        || text.starts_with("```")
+        || text.starts_with("~~~")
+        || text.starts_with("- ")
+        || text.starts_with("* ")
+        || text.starts_with("+ ")
+        || text == "$$"
 }
 
 // ── Table blocks ──
@@ -3317,6 +3332,77 @@ mod tests {
             "a continued GFM definition title is hidden metadata, not an answer"
         );
         assert_eq!(deck.definitions, vec!["r"]);
+    }
+
+    #[test]
+    fn link_definition_grammar_accepts_a_destination_on_the_following_line() {
+        let deck = parse("# Section\n[r]:\n  /target\n## Q\n[reference][r]\n");
+
+        assert_eq!(deck.definitions, vec!["r"]);
+        assert!(
+            deck.cards[0]
+                .section_context
+                .iter()
+                .all(|line| line != "[r]:" && line.trim() != "/target"),
+            "the complete definition block is metadata, never section prose"
+        );
+    }
+
+    #[test]
+    fn link_definition_grammar_accepts_a_label_split_across_lines() {
+        let deck = parse("# Section\n[\nr\n]: /target\n## Q\n[reference][r]\n");
+
+        assert_eq!(deck.definitions, vec!["r"]);
+        assert!(
+            deck.cards[0]
+                .section_context
+                .iter()
+                .all(|line| !matches!(line.as_str(), "[" | "r" | "]: /target")),
+            "the complete definition block is metadata, never section prose"
+        );
+    }
+
+    /// Rows pinned to CommonMark 0.31.2 corpus examples, which the local
+    /// harness carries: a definition's parts may each cross one line end.
+    #[test]
+    fn link_definition_grammar_accepts_the_corpus_multiline_forms() {
+        for (block, why) in [
+            (
+                "[r]:\n/target",
+                "e193: the destination may open the next line",
+            ),
+            (
+                "[r]:\n/target\n\"the title\"",
+                "e195: destination and title each take their own line",
+            ),
+            (
+                "[r]:\n<>\n\"the title\"",
+                "e198: an empty angle destination continues the same way",
+            ),
+            ("[\nr\n]: /target", "e208: the label itself may span lines"),
+            (
+                "[the\nlabel]: /target",
+                "a split label collapses to one space",
+            ),
+        ] {
+            let deck = parse(&format!("# Section\n{block}\n## Q\nanswer\n"));
+            assert_eq!(deck.definitions.len(), 1, "{why}");
+            let leaked: Vec<&String> = deck.cards[0]
+                .section_context
+                .iter()
+                .filter(|line| block.lines().any(|part| part.trim() == line.trim()))
+                .collect();
+            assert!(
+                leaked.is_empty(),
+                "{why}: every consumed line is metadata, never section prose: {leaked:?}"
+            );
+        }
+        let deck = parse("# Section\n[the\nlabel]: /target\n## Q\nanswer\n");
+        assert_eq!(
+            deck.definitions,
+            vec!["the label"],
+            "a label spanning lines is stored with its whitespace collapsed"
+        );
     }
 
     #[test]
@@ -5043,17 +5129,58 @@ a
     }
 
     #[test]
-    fn everything_trails_the_invocation_grammar() {
+    fn a_trailing_invocation_maps_its_table() {
         let below = parse("# S\n\n| a | b |\n|---|---|\n| x | y |\n| u | v |\n<!-- cards -->\n");
         assert_eq!(2, below.cards.len(), "a trailing invocation maps its table");
         assert_eq!("x", below.cards[0].front);
+    }
 
+    /// The discriminating law: an invocation must not carry forward into a
+    /// neighbouring uninvoked block, which would silently turn a reference
+    /// table's rows into study cards.
+    #[test]
+    fn a_trailing_invocation_maps_only_its_immediately_preceding_table() {
+        let run = parse(
+            "# S\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n| c | d |\n|---|---|\n| u | v |\n",
+        );
+        assert_eq!(
+            1,
+            run.cards.len(),
+            "only the invoked table maps: {:?}",
+            run.cards.iter().map(|card| &card.front).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            "x", run.cards[0].front,
+            "the card comes from the invoked first table, not the uninvoked second"
+        );
+    }
+
+    #[test]
+    fn each_table_in_a_run_takes_its_own_trailing_invocation() {
+        let run = parse(
+            "# S\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n| c | d |\n|---|---|\n| u | v |\n<!-- cards -->\n",
+        );
+        assert_eq!(
+            vec!["x", "u"],
+            run.cards
+                .iter()
+                .map(|card| card.front.as_str())
+                .collect::<Vec<_>>(),
+            "each table in a run maps under its own invocation"
+        );
+    }
+
+    #[test]
+    fn a_leading_table_invocation_is_machinery_out_of_position() {
         let error = err("# S\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
         let ParseError::LeadingInvocation { line, .. } = error else {
             panic!("a leading invocation is recognized machinery out of position, got {error:?}");
         };
         assert_eq!(3, line, "the error names the invocation's line");
+    }
 
+    #[test]
+    fn a_trailing_choices_invocation_maps_its_task_list() {
         let choices = parse("## Pick\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n");
         assert_eq!(1, choices.cards.len());
         assert_eq!(vec!["right"], choices.cards[0].back);
@@ -5062,7 +5189,10 @@ a
             choices.cards[0].authored_distractors,
             "a choices invocation below its task list maps the card"
         );
+    }
 
+    #[test]
+    fn a_leading_choices_invocation_is_machinery_out_of_position() {
         let leading_choices = err("## Pick\n<!-- choices-single -->\n- [x] right\n- [ ] wrong\n");
         assert!(
             matches!(
@@ -5071,7 +5201,10 @@ a
             ),
             "a choices invocation above its list errors, got {leading_choices:?}"
         );
+    }
 
+    #[test]
+    fn a_trailing_plain_keeps_its_divider_literal() {
         let plain = parse("## Q\nfirst\n\n---\n<!-- plain -->\n\nsecond\n");
         assert_eq!(
             1,
@@ -5082,15 +5215,6 @@ a
             plain.cards[0].back.iter().any(|line| line == "---"),
             "the divider stays content under a trailing plain: {:?}",
             plain.cards[0].back
-        );
-
-        let run = parse(
-            "# S\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n| c | d |\n|---|---|\n| u | v |\n<!-- cards -->\n",
-        );
-        assert_eq!(
-            2,
-            run.cards.len(),
-            "each table in a run takes its own trailing invocation"
         );
     }
 
