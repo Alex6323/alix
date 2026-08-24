@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(s.mode, Mode::Flip, "a choiceless Recognize card is a flip");
     }
 
-    const TABLE_DECK: &str = "<!-- cards -->\n| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+    const TABLE_DECK: &str = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
 
     #[test]
     fn a_table_card_samples_its_column_without_any_authored_or_cached_source() {
@@ -1234,7 +1234,7 @@ mod tests {
     fn authored_distractors_replace_ai_choices_at_recognize() {
         let (mut store, mut augment, _dir) = fixtures();
         let cards =
-            parse("## capital\n<!-- choices-single -->\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
         seen(&mut store, &cards);
         arm(&mut augment, &cards);
         let session = session_at(cards, &mut store, Depth::Recognize, NOW);
@@ -1342,7 +1342,7 @@ mod tests {
     fn the_displayed_answer_still_passes_after_the_session_is_polled() {
         let (mut store, augment, _dir) = fixtures();
         let cards =
-            parse("## capital\n<!-- choices-single -->\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
         seen(&mut store, &cards);
         let mut session = session_at(cards, &mut store, Depth::Recognize, NOW);
         let shown = current_question(&session, &store, &augment).expect("a pick");
@@ -1366,7 +1366,7 @@ mod tests {
     fn authored_choices_vary_between_study_sessions() {
         let (mut store, augment, _dir) = fixtures();
         let cards =
-            parse("## capital\n<!-- choices-single -->\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
         seen(&mut store, &cards);
         let first = current_question(
             &session_at(cards.clone(), &mut store, Depth::Recognize, NOW),
@@ -1396,7 +1396,7 @@ mod tests {
     fn authored_distractors_drive_the_never_seen_introduction_attempt() {
         let (mut store, mut augment, _dir) = fixtures();
         let cards =
-            parse("## capital\n<!-- choices-single -->\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n");
+            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
         // AI distractors exist in the cache but must be ignored for an authored card.
         arm(&mut augment, &cards);
         // Never seen (no `seen(...)`) and depth is Recall, not Recognize: this is the

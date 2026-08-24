@@ -4642,7 +4642,7 @@ mod tests {
     #[test]
     fn a_parent_opens_only_when_every_unit_it_expands_to_has_graduated() {
         let cloze = "## Parent\n\\blank{one} and \\blank{two}\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
-        let table = "## Parent\n<!-- cards -->\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+        let table = "## Parent\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
         for (label, text) in [("a two-hole cloze", cloze), ("a titled table", table)] {
             let cards = gated_cards(text);
             let units: Vec<String> = cards
@@ -4680,8 +4680,8 @@ mod tests {
     /// counting only the stamped rows would open a child on partial evidence.
     #[test]
     fn one_unstamped_row_keeps_its_block_from_ever_opening() {
-        let both = "## Vocabulary\n<!-- cards -->\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
-        let partial = "## Vocabulary\n<!-- cards -->\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei |\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+        let both = "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+        let partial = "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei |\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
 
         let graduate_every_row = |cards: &[Card]| {
             let (mut store, dir) = empty_store();

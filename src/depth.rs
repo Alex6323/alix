@@ -215,7 +215,7 @@ mod tests {
     fn a_table_deck_is_recognizable_by_column_sampling_alone() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let text = "<!-- cards -->\n| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+        let text = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
         assert!(
             cards
@@ -230,7 +230,7 @@ mod tests {
     fn a_three_row_table_cannot_fill_a_pick_and_stays_recall() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let text = "<!-- cards -->\n| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
+        let text = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
         assert!(
             cards

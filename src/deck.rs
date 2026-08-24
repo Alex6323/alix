@@ -1988,7 +1988,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "## Vocabulary\n<!-- cards -->\n| word | meaning |\n|---|---|\n| purported | angeblich | <!-- r:4k2x9w -->\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
+            "## Vocabulary\n| word | meaning |\n|---|---|\n| purported | angeblich | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
         )
         .unwrap();
 

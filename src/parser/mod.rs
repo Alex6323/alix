@@ -1008,7 +1008,7 @@ fn scan(
             && let Some(next) = lines.get(idx + 1)
             && next.starts_with('|')
             && is_delimiter_row(next)
-            && match trailing_table_mapping(&lines, idx) {
+            && match trailing_table_mapping(lines, idx) {
                 Some(Mapping::Cards) => true,
                 Some(_) => false,
                 None => table_default,
@@ -1359,7 +1359,6 @@ fn scan(
             // The line stays content.
         }
 
-
         if t.starts_with("## ") {
             lints.push(Lint {
                 line: lineno,
@@ -1556,7 +1555,10 @@ pub(crate) fn is_delimiter_row(line: &str) -> bool {
 /// nothing and the deck default decides.
 fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<Mapping> {
     let mut idx = header_idx;
-    while lines.get(idx).is_some_and(|line| line.trim_end().starts_with('|')) {
+    while lines
+        .get(idx)
+        .is_some_and(|line| line.trim_end().starts_with('|'))
+    {
         idx += 1;
     }
     while let Some(line) = lines.get(idx) {
@@ -3356,7 +3358,7 @@ mod tests {
 
         let table = parse_str(
             "t",
-            "## Vocabulary\n<!-- cards -->\n| word | meaning |\n|---|---|\n| one | eins |\n| two | zwei |\n",
+            "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins |\n| two | zwei |\n<!-- cards -->\n",
         )
         .expect("the titled table parses");
         assert_eq!(2, table.len(), "two rows are two units");
@@ -3656,10 +3658,10 @@ a
             (
                 "a section closes an open table",
                 "## Capitals
-<!-- cards -->
 | c | a |
 | --- | --- |
 | DE | Berlin |
+<!-- cards -->
 # Two
 ## Next
 answer
@@ -3672,10 +3674,10 @@ answer
                 "## q
 a
 ### t
-<!-- cards -->
 | c | a |
 | --- | --- |
 | DE | Berlin |
+<!-- cards -->
 "
                 .into(),
                 Err(3),
@@ -3683,9 +3685,9 @@ a
             (
                 "a sub-card under a zero-row titled table has no parent",
                 "## Empty
-<!-- cards -->
 | c | a |
 | --- | --- |
+<!-- cards -->
 ### Dependent
 answer
 "
@@ -4495,10 +4497,10 @@ a
 
     #[test]
     fn a_plain_marked_dash_line_is_literal_content() {
-        let deck = parse("## q\nans\n\n<!-- plain -->\n---\n\nmore\n");
+        let deck = parse("## q\nans\n\n---\n<!-- plain -->\n\nmore\n");
         assert_eq!(vec!["ans", "---", "more"], deck.cards[0].back);
 
-        let deck = parse("# S\n\n<!-- plain -->\n---\n\n## q\na\n");
+        let deck = parse("# S\n\n---\n<!-- plain -->\n\n## q\na\n");
         assert_eq!(
             vec!["S".to_string(), "---".to_string()],
             deck.cards[0].section_context
@@ -4534,7 +4536,7 @@ a
     #[test]
     fn an_all_task_list_answer_is_a_single_correct_checkbox_card() {
         let deck =
-            parse("## Which is prime?\n<!-- choices-single -->\n- [ ] 4\n- [x] 5\n- [ ] 6\n");
+            parse("## Which is prime?\n- [ ] 4\n- [x] 5\n- [ ] 6\n<!-- choices-single -->\n");
         let card = &deck.cards[0];
         assert_eq!(vec!["5"], card.back);
         assert_eq!(
@@ -4557,8 +4559,8 @@ a
     }
 
     #[test]
-    fn an_invocation_above_the_task_list_makes_the_choice_card() {
-        let deck = parse("## q\n<!-- choices-single -->\n- [x] a\n- [ ] b\n");
+    fn an_invocation_below_the_task_list_makes_the_choice_card() {
+        let deck = parse("## q\n- [x] a\n- [ ] b\n<!-- choices-single -->\n");
         assert_eq!(vec!["a"], deck.cards[0].back);
         assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
         assert_eq!(Vec::<Lint>::new(), deck.lints);
@@ -4566,16 +4568,16 @@ a
 
     #[test]
     fn a_single_invocation_with_two_checks_fails_loudly() {
-        let error = err("## q\n<!-- choices-single -->\n- [x] a\n- [x] b\n- [ ] c\n");
+        let error = err("## q\n- [x] a\n- [x] b\n- [ ] c\n<!-- choices-single -->\n");
         assert!(
-            matches!(error, ParseError::ChoiceShape { line: 3, .. }),
+            matches!(error, ParseError::ChoiceShape { line: 2, .. }),
             "expected ChoiceShape at the first task line, got {error:?}"
         );
     }
 
     #[test]
     fn a_multiple_invocation_collects_every_checked_option() {
-        let deck = parse("## q\n<!-- choices-multiple -->\n- [x] a\n- [ ] b\n- [x] c\n");
+        let deck = parse("## q\n- [x] a\n- [ ] b\n- [x] c\n<!-- choices-multiple -->\n");
         assert_eq!(vec!["a", "c"], deck.cards[0].back);
         assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
         assert_eq!(Vec::<Lint>::new(), deck.lints);
@@ -4583,7 +4585,7 @@ a
 
     #[test]
     fn one_check_under_multiple_is_legal_and_silent() {
-        let deck = parse("## q\n<!-- choices-multiple -->\n- [x] a\n- [ ] b\n");
+        let deck = parse("## q\n- [x] a\n- [ ] b\n<!-- choices-multiple -->\n");
         assert_eq!(vec!["a"], deck.cards[0].back);
         assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
         assert_eq!(
@@ -4625,9 +4627,7 @@ a
         };
         assert_eq!(3, line, "the error names the invocation's line");
 
-        let choices = parse(
-            "## Pick\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n",
-        );
+        let choices = parse("## Pick\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n");
         assert_eq!(1, choices.cards.len());
         assert_eq!(vec!["right"], choices.cards[0].back);
         assert_eq!(
@@ -4636,15 +4636,21 @@ a
             "a choices invocation below its task list maps the card"
         );
 
-        let leading_choices =
-            err("## Pick\n<!-- choices-single -->\n- [x] right\n- [ ] wrong\n");
+        let leading_choices = err("## Pick\n<!-- choices-single -->\n- [x] right\n- [ ] wrong\n");
         assert!(
-            matches!(leading_choices, ParseError::LeadingInvocation { line: 2, .. }),
+            matches!(
+                leading_choices,
+                ParseError::LeadingInvocation { line: 2, .. }
+            ),
             "a choices invocation above its list errors, got {leading_choices:?}"
         );
 
         let plain = parse("## Q\nfirst\n\n---\n<!-- plain -->\n\nsecond\n");
-        assert_eq!(1, plain.cards.len(), "a trailing plain keeps the divider content");
+        assert_eq!(
+            1,
+            plain.cards.len(),
+            "a trailing plain keeps the divider content"
+        );
         assert!(
             plain.cards[0].back.iter().any(|line| line == "---"),
             "the divider stays content under a trailing plain: {:?}",
@@ -4669,13 +4675,13 @@ a
             ("## What does <div> do?\nanswer\n", 1, "a heading front"),
             ("## Q\nanswer\n> note with <b>bold</b>\n", 3, "a note line"),
             (
-                "<!-- cards -->\n| a | <div> |\n|---|---|\n| x | y |\n",
-                2,
+                "| a | <div> |\n|---|---|\n| x | y |\n<!-- cards -->\n",
+                1,
                 "a table header cell",
             ),
             (
-                "<!-- cards -->\n| a | b |\n|---|---|\n| x | <div> |\n",
-                4,
+                "| a | b |\n|---|---|\n| x | <div> |\n<!-- cards -->\n",
+                3,
                 "a table body cell",
             ),
         ];
@@ -4693,7 +4699,7 @@ a
             ("## Q\n`<div>` in code\n", "a code span"),
             ("## Q\n![d](<old image.png>)\na\n", "an image destination"),
             (
-                "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n",
+                "| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n",
                 "the invocation comment",
             ),
             (
@@ -4858,12 +4864,12 @@ a
 
     #[test]
     fn a_short_delimiter_row_recommends_a_valid_delimiter_cell() {
-        let error = err("<!-- cards -->\n| front | back |\n|---|\n| one | two |\n");
+        let error = err("| front | back |\n|---|\n| one | two |\n<!-- cards -->\n");
         assert!(
             matches!(
                 error,
                 ParseError::TableDelimiterWidth {
-                    line: 3,
+                    line: 2,
                     found: 1,
                     expected: 2,
                 }
@@ -4888,7 +4894,7 @@ a
     #[test]
     fn a_per_block_invocation_overrides_the_deck_default() {
         let deck = parse(
-            "---\ntasklist: choices-multiple\n---\n## q\n<!-- choices-single -->\n- [x] a\n- [ ] b\n",
+            "---\ntasklist: choices-multiple\n---\n## q\n- [x] a\n- [ ] b\n<!-- choices-single -->\n",
         );
         assert_eq!(vec!["a"], deck.cards[0].back);
         assert_eq!(
@@ -4928,7 +4934,7 @@ a
     #[test]
     fn blank_and_image_only_lines_do_not_turn_authored_choices_into_prose() {
         let deck = parse(
-            "## Which is prime?\n<!-- choices-single -->\n\n- [ ] 4\n![](number-line.png)\n- [x] 5\n",
+            "## Which is prime?\n\n- [ ] 4\n![](number-line.png)\n- [x] 5\n<!-- choices-single -->\n",
         );
         assert_eq!(vec!["5"], deck.cards[0].back);
         assert_eq!(vec!["4".to_string()], deck.cards[0].authored_distractors);
@@ -4942,7 +4948,7 @@ a
     #[test]
     fn a_divided_checkbox_card_takes_options_from_the_answer_region() {
         let deck = parse(
-            "## Pick one\nsome stimulus\n\n---\n<!-- choices-single -->\n- [x] yes\n- [ ] no\n",
+            "## Pick one\nsome stimulus\n\n---\n- [x] yes\n- [ ] no\n<!-- choices-single -->\n",
         );
         let card = &deck.cards[0];
         assert_eq!("Pick one\nsome stimulus", card.front);
@@ -4961,9 +4967,9 @@ a
             "bare is literal, no finding"
         );
 
-        let error = err("## q\n<!-- choices-single -->\n- [x] a\nnot an option\n");
+        let error = err("## q\n- [x] a\nnot an option\n<!-- choices-single -->\n");
         assert!(
-            matches!(error, ParseError::ChoiceShape { line: 3, .. }),
+            matches!(error, ParseError::ChoiceShape { line: 2, .. }),
             "loudness follows invocation, got {error:?}"
         );
     }
@@ -4973,17 +4979,17 @@ a
         for (name, text) in [
             (
                 "two checks",
-                "## q\n<!-- choices-single -->\n- [x] a\n- [x] b\n",
+                "## q\n- [x] a\n- [x] b\n<!-- choices-single -->\n",
             ),
             (
                 "no check",
-                "## q\n<!-- choices-single -->\n- [ ] a\n- [ ] b\n",
+                "## q\n- [ ] a\n- [ ] b\n<!-- choices-single -->\n",
             ),
-            ("no distractor", "## q\n<!-- choices-single -->\n- [x] a\n"),
+            ("no distractor", "## q\n- [x] a\n<!-- choices-single -->\n"),
         ] {
             let error = err(text);
             assert!(
-                matches!(error, ParseError::ChoiceShape { line: 3, .. }),
+                matches!(error, ParseError::ChoiceShape { line: 2, .. }),
                 "{name}: expected ChoiceShape, got {error:?}"
             );
         }
@@ -4991,7 +4997,7 @@ a
 
     #[test]
     fn a_duplicate_option_lints_and_keeps_first() {
-        let deck = parse("## q\n<!-- choices-single -->\n- [x] a\n- [ ] b\n- [ ] b\n");
+        let deck = parse("## q\n- [x] a\n- [ ] b\n- [ ] b\n<!-- choices-single -->\n");
         assert_eq!(vec!["b".to_string()], deck.cards[0].authored_distractors);
         assert!(
             deck.lints
@@ -5003,7 +5009,7 @@ a
     #[test]
     fn a_choice_note_cannot_name_an_option_position_that_shuffle_changes() {
         let deck = parse(
-            "## Pick one\n<!-- choices-single -->\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 confuses identity with sampling.\n",
+            "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n<!-- choices-single -->\n> Option 2 confuses identity with sampling.\n",
         );
 
         assert_eq!(
@@ -5024,7 +5030,7 @@ a
 
     #[test]
     fn option_text_preserves_source_while_grading_uses_content() {
-        let deck = parse("## q\n<!-- choices-single -->\n- [x] **Paris**\n- [ ] London\n");
+        let deck = parse("## q\n- [x] **Paris**\n- [ ] London\n<!-- choices-single -->\n");
         assert_eq!(vec!["**Paris**"], deck.cards[0].back);
         assert_eq!("Paris", crate::inline::strip_inline(&deck.cards[0].back[0]));
         assert_eq!(
@@ -5035,7 +5041,7 @@ a
 
     #[test]
     fn math_checkbox_options_preserve_authored_source() {
-        let deck = parse("## q\n<!-- choices-single -->\n- [x] $x^2$\n- [ ] $x^3$\n");
+        let deck = parse("## q\n- [x] $x^2$\n- [ ] $x^3$\n<!-- choices-single -->\n");
         assert_eq!(vec!["$x^2$"], deck.cards[0].back);
         assert_eq!(
             vec!["$x^3$".to_string()],
@@ -5046,7 +5052,7 @@ a
 
     #[test]
     fn formatted_and_plain_checkbox_options_are_content_duplicates() {
-        let deck = parse("## q\n<!-- choices-single -->\n- [x] $x$\n- [ ] x\n- [ ] y\n");
+        let deck = parse("## q\n- [x] $x$\n- [ ] x\n- [ ] y\n<!-- choices-single -->\n");
         assert_eq!(vec!["$x$"], deck.cards[0].back);
         assert_eq!(vec!["y".to_string()], deck.cards[0].authored_distractors);
         assert!(
@@ -5059,10 +5065,10 @@ a
     #[test]
     fn editing_only_a_distractor_preserves_identity_and_fingerprint() {
         let before = parse(
-            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n<!-- choices-single -->\n- [x] right\n- [ ] wrong\n",
+            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n",
         );
         let after = parse(
-            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n<!-- choices-single -->\n- [x] right\n- [ ] different\n",
+            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] different\n<!-- choices-single -->\n",
         );
         assert_eq!(before.cards[0].id(), after.cards[0].id());
         assert_eq!(
@@ -6297,7 +6303,7 @@ the answer
     #[test]
     fn a_two_column_table_emits_one_card_per_row() {
         let text = format!(
-            "<!-- cards -->\n| word | meaning |\n|---|---|\n| hund | dog | <!-- r:4k2x9w -->\n| katze | cat | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
+            "| word | meaning |\n|---|---|\n| hund | dog | <!-- r:4k2x9w -->\n| katze | cat | <!-- r:7m3p5q -->\n<!-- cards -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -6309,17 +6315,17 @@ the answer
         assert_eq!(Some(CONTAINER), first.token.as_deref());
         assert_eq!(Some("4k2x9w"), first.row.as_deref());
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), first.id());
-        assert_eq!(4, first.line);
+        assert_eq!(3, first.line);
         let second = &deck.cards[1];
         assert_eq!("katze", second.front);
         assert_eq!(Some(format!("{CONTAINER}-t7m3p5q")), second.id());
-        assert_eq!(5, second.line);
+        assert_eq!(4, second.line);
     }
 
     #[test]
     fn a_three_column_table_carries_the_note_and_context() {
         let text = format!(
-            "<!-- cards -->\n| word | meaning | note |\n|---|---|---|\n| a | b | care | <!-- r:4k2x9w -->\n| c | d | | <!-- r:7m3p5q -->\n<!-- id: {CONTAINER} -->\n"
+            "| word | meaning | note |\n|---|---|---|\n| a | b | care | <!-- r:4k2x9w -->\n| c | d | | <!-- r:7m3p5q -->\n<!-- cards -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -6331,7 +6337,7 @@ the answer
     #[test]
     fn an_unstamped_row_stays_id_less_even_under_a_container() {
         let text = format!(
-            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- id: {CONTAINER} -->\n"
+            "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- cards -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
@@ -6343,7 +6349,7 @@ the answer
     #[test]
     fn table_directives_apply_to_every_row_card() {
         let text = format!(
-            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:7m3p5q -->\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
+            "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:7m3p5q -->\n<!-- cards -->\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
@@ -6361,14 +6367,14 @@ the answer
 
     #[test]
     fn a_bare_heading_directly_above_a_table_titles_it_instead_of_erroring() {
-        let deck = parse("## q\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## q\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["q"], deck.cards[0].context);
     }
 
     #[test]
     fn a_table_after_a_complete_card_is_its_own_block() {
-        let deck = parse("## q\n---\nanswer\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## q\n---\nanswer\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(2, deck.cards.len());
         assert_eq!(vec!["answer"], deck.cards[0].back);
         assert_eq!("x", deck.cards[1].front);
@@ -6387,78 +6393,78 @@ the answer
     #[test]
     fn a_table_line_without_a_closing_pipe_is_malformed() {
         assert_eq!(
-            ParseError::TableLineMalformed(2),
-            err("<!-- cards -->\n| a | b\n|---|---|\n")
+            ParseError::TableLineMalformed(1),
+            err("| a | b\n|---|---|\n<!-- cards -->\n")
         );
         assert_eq!(
-            ParseError::TableLineMalformed(4),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y\n")
+            ParseError::TableLineMalformed(3),
+            err("| a | b |\n|---|---|\n| x | y\n<!-- cards -->\n")
         );
         assert_eq!(
-            ParseError::TableLineMalformed(2),
-            err("<!-- cards -->\n|\n|---|\n")
+            ParseError::TableLineMalformed(1),
+            err("|\n|---|\n<!-- cards -->\n")
         );
     }
 
     #[test]
     fn a_table_needs_two_or_three_columns() {
         assert_eq!(
-            ParseError::TableColumns { line: 2, found: 1 },
-            err("<!-- cards -->\n| a |\n|---|\n| x |\n")
+            ParseError::TableColumns { line: 1, found: 1 },
+            err("| a |\n|---|\n| x |\n<!-- cards -->\n")
         );
         assert_eq!(
-            ParseError::TableColumns { line: 2, found: 4 },
-            err("<!-- cards -->\n| a | b | c | d |\n|---|---|---|---|\n")
+            ParseError::TableColumns { line: 1, found: 4 },
+            err("| a | b | c | d |\n|---|---|---|---|\n<!-- cards -->\n")
         );
     }
 
     #[test]
     fn an_empty_table_ends_on_its_delimiter() {
-        let deck = parse("<!-- cards -->\n| a | b |\n|---|---|\n");
-        assert_eq!(3, deck.tables[0].end_line);
+        let deck = parse("---\ntable: cards\n---\n| a | b |\n|---|---|\n");
+        assert_eq!(5, deck.tables[0].end_line);
     }
 
     #[test]
     fn every_table_line_matches_the_header_width() {
         assert_eq!(
             ParseError::TableDelimiterWidth {
-                line: 3,
+                line: 2,
                 found: 1,
                 expected: 2
             },
-            err("<!-- cards -->\n| a | b |\n|---|\n")
+            err("| a | b |\n|---|\n<!-- cards -->\n")
         );
         assert_eq!(
             ParseError::TableRowWidth {
-                line: 4,
+                line: 3,
                 found: 3,
                 expected: 2
             },
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y | z |\n")
+            err("| a | b |\n|---|---|\n| x | y | z |\n<!-- cards -->\n")
         );
     }
 
     #[test]
     fn a_blank_marker_or_image_in_a_cell_is_refused() {
         assert_eq!(
-            ParseError::TableCellHole(4),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | \\blank{y} |\n")
+            ParseError::TableCellHole(3),
+            err("| a | b |\n|---|---|\n| x | \\blank{y} |\n<!-- cards -->\n")
         );
         assert_eq!(
-            ParseError::TableCellImage(4),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| ![alt](x.png) | y |\n")
+            ParseError::TableCellImage(3),
+            err("| a | b |\n|---|---|\n| ![alt](x.png) | y |\n<!-- cards -->\n")
         );
     }
 
     #[test]
     fn escaped_images_in_cells_stay_legal_and_a_real_one_after_them_still_refuses() {
-        let deck = parse("<!-- cards -->\n| a | b |\n|---|---|\n| \\![x] \\![y] | z |\n");
+        let deck = parse("| a | b |\n|---|---|\n| \\![x] \\![y] | z |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("\\![x] \\![y]", deck.cards[0].front);
 
         assert_eq!(
-            ParseError::TableCellImage(4),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| \\![x] ![y](p.png) | z |\n")
+            ParseError::TableCellImage(3),
+            err("| a | b |\n|---|---|\n| \\![x] ![y](p.png) | z |\n<!-- cards -->\n")
         );
     }
 
@@ -6466,53 +6472,57 @@ the answer
     fn an_invalid_or_duplicate_row_stamp_is_refused() {
         assert_eq!(
             ParseError::TableRowStamp {
-                line: 4,
+                line: 3,
                 value: "xyz".into()
             },
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:xyz -->\n")
+            err("| a | b |\n|---|---|\n| x | y | <!-- r:xyz -->\n<!-- cards -->\n")
         );
         assert_eq!(
             ParseError::TableDuplicateStamp {
-                line: 5,
+                line: 4,
                 value: "4k2x9w".into()
             },
             err(
-                "<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:4k2x9w -->\n"
+                "| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q | <!-- r:4k2x9w -->\n<!-- cards -->\n"
             )
         );
     }
 
     #[test]
-    fn only_directive_comments_may_follow_a_table() {
+    fn only_comment_machinery_may_follow_a_table() {
         assert_eq!(
-            ParseError::TableTrailing(5),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\nstray prose\n")
+            ParseError::LeadingInvocation {
+                line: 7,
+                word: "cards".into()
+            },
+            err("# S\n\n| a | b |\n|---|---|\n| x | y |\nstray prose\n<!-- cards -->\n"),
+            "prose between a table and its invocation un-tables the block, so the invocation floats"
         );
         assert_eq!(
             ParseError::TableTrailing(5),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n> a note\n")
+            err("| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n> a note\n")
         );
         assert_eq!(
             ParseError::TableTrailing(6),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n\n| z | w |\n")
+            err("| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n| z | w |\n")
         );
     }
 
     #[test]
     fn an_empty_front_or_back_cell_is_refused() {
         assert_eq!(
-            ParseError::EmptyFront(4),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| | y | <!-- r:4k2x9w -->\n")
+            ParseError::EmptyFront(3),
+            err("| a | b |\n|---|---|\n| | y | <!-- r:4k2x9w -->\n<!-- cards -->\n")
         );
         assert_eq!(
-            ParseError::FrontWithoutAnswer(4),
-            err("<!-- cards -->\n| a | b |\n|---|---|\n| x | |\n")
+            ParseError::FrontWithoutAnswer(3),
+            err("| a | b |\n|---|---|\n| x | |\n<!-- cards -->\n")
         );
     }
 
     #[test]
     fn an_escaped_pipe_stays_in_the_cell() {
-        let deck = parse("<!-- cards -->\n| a | b |\n|---|---|\n| x \\| y | z |\n");
+        let deck = parse("| a | b |\n|---|---|\n| x \\| y | z |\n<!-- cards -->\n");
         assert_eq!("x | y", deck.cards[0].front);
     }
 
@@ -6520,21 +6530,21 @@ the answer
     fn a_single_hyphen_delimiter_is_valid_gfm_and_accepted() {
         // GFM defines a delimiter cell as `:?-+:?` with no minimum hyphen
         // count, so `| - |` is a table in every GFM renderer.
-        let deck = parse("<!-- cards -->\n| front | back |\n| - | -- |\n| question | answer |\n");
+        let deck = parse("| front | back |\n| - | -- |\n| question | answer |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("question", deck.cards[0].front);
     }
 
     #[test]
     fn alignment_colons_in_the_delimiter_are_accepted() {
-        let deck = parse("<!-- cards -->\n| a | b |\n|:---|---:|\n| x | y |\n");
+        let deck = parse("| a | b |\n|:---|---:|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
     }
 
     #[test]
     fn adjacent_tables_split_on_the_second_header() {
         let deck = parse(
-            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n| c | d |\n|---|---|\n| z | w |\n",
+            "| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n| c | d |\n|---|---|\n| z | w |\n<!-- cards -->\n",
         );
         assert_eq!(2, deck.cards.len());
         assert!(deck.cards[0].context.is_empty());
@@ -6544,7 +6554,7 @@ the answer
     #[test]
     fn an_empty_heading_above_a_table_becomes_its_title() {
         let text = format!(
-            "## Verbs of arguing\n<!-- cards -->\n| word | meaning |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: {CONTAINER} -->\n"
+            "## Verbs of arguing\n| word | meaning |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(1, deck.cards.len(), "the heading is a title, not a card");
@@ -6554,7 +6564,7 @@ the answer
 
     #[test]
     fn a_heading_with_answer_content_before_a_table_stays_a_card() {
-        let deck = parse("## q\nanswer\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## q\nanswer\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(2, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(vec!["answer"], deck.cards[0].back);
@@ -6565,14 +6575,14 @@ the answer
     fn a_heading_with_only_a_note_keeps_being_a_card_and_fails_loudly() {
         assert_eq!(
             ParseError::FrontWithoutAnswer(1),
-            err("## q\n> a note\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n")
+            err("## q\n> a note\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n")
         );
     }
 
     #[test]
     fn a_heading_id_becomes_the_tables_container_id() {
         let text = format!(
-            "## Title <!-- id: {CONTAINER} -->\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n"
+            "## Title <!-- id: {CONTAINER} -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- cards -->\n"
         );
         let deck = parse(&text);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
@@ -6593,7 +6603,7 @@ the answer
 
     #[test]
     fn a_blank_line_between_title_and_table_still_titles() {
-        let deck = parse("## Title\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("## Title\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["Title"], deck.cards[0].context);
     }
@@ -6606,7 +6616,7 @@ the answer
                 value: format!("{CONTAINER}-2"),
             },
             err(&format!(
-                "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n<!-- id: {CONTAINER}-2 -->\n"
+                "| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n<!-- id: {CONTAINER}-2 -->\n"
             ))
         );
     }
@@ -6927,7 +6937,7 @@ the answer
     #[test]
     fn a_region_directive_on_a_card_table_is_rejected_not_dropped() {
         let error = err(
-            "<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n",
+            "| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7173,7 +7183,7 @@ the answer
     #[test]
     fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
         let error = err(&format!(
-            "## pick <!-- id: {RTOK} -->\n---\n<!-- choices-single -->\n- [x] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+            "## pick <!-- id: {RTOK} -->\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7184,7 +7194,7 @@ the answer
     #[test]
     fn an_incomplete_task_list_plus_a_blank_region_is_still_a_composition_error() {
         let error = err(&format!(
-            "## pick <!-- id: {RTOK} -->\n---\n<!-- choices-single -->\n- [ ] alpha\n- [ ] beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+            "## pick <!-- id: {RTOK} -->\n---\n- [ ] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7204,7 +7214,7 @@ the answer
         assert_eq!(1, cloze.cards[0].images[0].regions.len());
 
         let choice = parse(&format!(
-            "## pick <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n<!-- choices-single -->\n- [x] alpha\n- [ ] beta\n"
+            "## pick <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n"
         ));
         assert_eq!(1, choice.cards.len());
         assert!(!choice.cards[0].authored_distractors.is_empty());

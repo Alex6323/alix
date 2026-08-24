@@ -7,11 +7,11 @@ id: "deck-3s76rwy8znjmmzt2f8hdmnhdnj"
 ---
 
 ## Verbs of arguing
-<!-- cards -->
 | English | German | usage |
 |---------|--------|-------|
 | to advocate | befürworten | eine Sache befürworten | <!-- r:32x23k -->
 | to concede | einräumen | einen Punkt einräumen | <!-- r:qhynsm -->
 | to refute | widerlegen | eine These widerlegen | <!-- r:2w8bmn -->
 | to allege | unterstellen | oft juristisch gefärbt | <!-- r:dcz46y -->
+<!-- cards -->
 <!-- id: card-3g12jfjv4pypppsrx5wvtx65y5 -->

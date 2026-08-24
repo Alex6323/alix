@@ -526,16 +526,6 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
         if parser::heading_depth(raw).is_some() {
             return last;
         }
-        // A mapping invocation opens the NEXT block: an id spliced past it
-        // would sit between the invocation and the shape it binds.
-        if let Some(body) = raw
-            .trim_end()
-            .strip_prefix("<!--")
-            .and_then(|c| c.strip_suffix("-->"))
-            && parser::Mapping::parse(body.trim()).is_some()
-        {
-            return last;
-        }
         // A table opens its own block: the card's id line must not land
         // beyond it, where the parser would hand the marker to the table.
         if raw.starts_with('|')
@@ -1606,7 +1596,7 @@ mod tests {
     #[test]
     fn a_freshly_stamped_mixed_deck_has_no_misplaced_markers() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "## q\na\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n";
+        let original = "## q\na\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
