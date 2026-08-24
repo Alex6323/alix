@@ -371,10 +371,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the line, the why, and the fix. One invocation maps exactly one
   block and consumes it, so adjacent tables each take their own and a
   second invocation below the first fails loud instead of silently
-  overriding it, for a table as for a task list. An invocation outside
-  any card owns a block or owns nothing: a `<!-- plain -->` left behind
-  by a moved or deleted divider names its own line instead of
-  disappearing. Only the recognized machinery run stands between a
+  overriding it, for a table as for a task list. Only the recognized machinery
+  run stands between a
   block and its invocation: a note, a fence, a table, an editorial
   comment, or an unknown directive key in between is a block of its
   own, so the older one no longer binds. The run reads the same

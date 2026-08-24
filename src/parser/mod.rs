@@ -1402,7 +1402,7 @@ fn scan(
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
                 if let Some(mapping) = Mapping::parse(trim_ws(body)) {
                     match (mapping, current.as_mut()) {
-                        (Mapping::Plain, None) if mapping.binds(block_above) => {}
+                        (Mapping::Plain, None) => {}
                         (Mapping::Cards, _) | (_, None) => {
                             return Err(ParseError::LeadingInvocation {
                                 line: lineno,
@@ -5860,21 +5860,22 @@ a
              any other block: {error:?}"
         );
 
-        let error = err("# Reference\n<!-- plain -->\n## Q\nanswer\n");
-        assert!(
-            matches!(
-                error,
-                ParseError::LeadingInvocation { line: 2, ref word } if word == "plain"
-            ),
-            "an invocation outside a card owns a block or owns nothing: {error:?}"
-        );
-
         let deck = parse("# S\n\nprose\n\n---\n<!-- plain -->\n");
         assert!(
             deck.cards.is_empty() && deck.lints.is_empty(),
             "a section divider does supply a block, so plain below one stays \
              legal: {:?}",
             deck.lints
+        );
+
+        let deck = parse(
+            "---\ntable: cards\n---\n# Reference\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n",
+        );
+        assert!(
+            deck.cards.is_empty(),
+            "`plain` below one table is the documented escape from a `table: \
+             cards` default, so the deck loads and the table stays literal: {:?}",
+            deck.cards
         );
     }
 
