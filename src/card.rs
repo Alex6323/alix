@@ -274,6 +274,7 @@ impl Card {
             self.line,
         );
         card.deck_id = Arc::clone(&self.deck_id);
+        card.definitions = Arc::clone(&self.definitions);
         // Built after the parser has finished, so the builder's stamp never
         // reaches it: the reverse half must carry the section itself.
         card.section_context = self.section_context.clone();

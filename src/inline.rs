@@ -159,14 +159,11 @@ impl LinkDefinitions {
     }
 }
 
-/// CommonMark label matching: case-insensitive with interior whitespace
-/// collapsed.
+/// CommonMark label matching: interior whitespace collapsed, then Unicode
+/// default case folding, over the authored spelling; escape and entity
+/// forms stay as written, so only case and whitespace unify labels.
 fn fold_label(label: &str) -> String {
-    label
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
+    caseless::default_case_fold_str(&label.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
 pub fn is_display_math_line(text: &str) -> bool {
@@ -229,7 +226,7 @@ fn classify_line(
     // because its gap rule needs the dropped spans still present.
     let mut labels = Vec::new();
     if style_links {
-        let links = bracket_links(&glyphs, definitions);
+        let links = bracket_links(&chars, &glyphs, definitions);
         let mut dropped = vec![false; glyphs.len()];
         let mut label = vec![false; glyphs.len()];
         for link in &links {
@@ -409,7 +406,8 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
         removed,
         ..
     } = classify_line(text, false, None);
-    let linked = link_syntax_mask(&glyphs);
+    let chars: Vec<char> = text.chars().collect();
+    let linked = link_syntax_mask(&chars, &glyphs);
     let byte_at: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
     let mut pieces: Vec<LinePiece> = Vec::new();
     // A dropped glyph (link syntax, or an excluded authored range such as a
@@ -501,7 +499,11 @@ struct BracketLink {
 /// grammar, two consumers: `link_syntax_mask` drops the syntax from the
 /// maskable stream, and `classify_line` drops it from the display while
 /// styling the label.
-fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec<BracketLink> {
+fn bracket_links(
+    chars: &[char],
+    glyphs: &[Glyph],
+    definitions: Option<&LinkDefinitions>,
+) -> Vec<BracketLink> {
     let plain = |glyph: &Glyph| !glyph.escaped && !glyph.code && glyph.math.is_none();
     // Link text balances nested brackets (GFM); a reference label does not.
     let label_close = |from: usize| {
@@ -560,10 +562,14 @@ fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec
             index = close + 1;
             continue;
         };
-        let label: String = glyphs[index + 1..close]
-            .iter()
-            .map(|glyph| glyph.ch)
-            .collect();
+        // Labels match on their authored spelling (escapes and entities as
+        // written), so candidates slice the raw chars, never decoded glyphs.
+        let raw_span = |open: usize, shut: usize| -> String {
+            chars[glyphs[open].raw_index + 1..glyphs[shut].raw_index]
+                .iter()
+                .collect()
+        };
+        let label = raw_span(index, close);
         if glyphs
             .get(close + 1)
             .is_some_and(|glyph| plain(glyph) && glyph.ch == '[')
@@ -572,10 +578,7 @@ fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec
                 index = close + 1;
                 continue;
             };
-            let reference: String = glyphs[close + 2..reference_close]
-                .iter()
-                .map(|glyph| glyph.ch)
-                .collect();
+            let reference = raw_span(close + 1, reference_close);
             let name = if reference.trim().is_empty() {
                 &label
             } else {
@@ -675,9 +678,9 @@ fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
 /// Marks the glyphs of every complete `[label](destination)` link: the
 /// brackets, the parentheses, and the destination drop from the maskable
 /// stream while the label stays visible text.
-fn link_syntax_mask(glyphs: &[Glyph]) -> Vec<bool> {
+fn link_syntax_mask(chars: &[char], glyphs: &[Glyph]) -> Vec<bool> {
     let mut mask = vec![false; glyphs.len()];
-    for link in bracket_links(glyphs, None) {
+    for link in bracket_links(chars, glyphs, None) {
         mask[link.open] = true;
         mask[link.close..=link.syntax_end]
             .iter_mut()
@@ -2212,6 +2215,125 @@ mod tests {
             context.iter().any(|run| run.link && run.text == "r"),
             "{context:?}"
         );
+    }
+
+    #[test]
+    fn reference_label_matching_uses_commonmark_unicode_case_folding() {
+        let defs = LinkDefinitions::new(["STRASSE", "Σ"]);
+        for (source, label, why) in [
+            (
+                "[straße]",
+                "straße",
+                "German sharp s folds with uppercase SS",
+            ),
+            ("[ς]", "ς", "Greek final sigma folds with capital sigma"),
+        ] {
+            let runs = parse_inline_with(source, &defs);
+            let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(label, projected, "{why}");
+            assert!(
+                runs.iter().all(|run| run.link),
+                "{why}: the CommonMark-equivalent label resolves: {runs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reference_label_matching_uses_the_same_escape_and_entity_form_on_both_sides() {
+        for (definition, source, visible, why) in [
+            (
+                r"a\*b",
+                r"[a\*b]",
+                "a*b",
+                "the same backslash escape matches",
+            ),
+            (
+                "a&amp;b",
+                "[a&amp;b]",
+                "a&b",
+                "the same entity spelling matches",
+            ),
+        ] {
+            let defs = LinkDefinitions::new([definition]);
+            let runs = parse_inline_with(source, &defs);
+            let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(visible, projected, "{why}");
+            assert!(
+                runs.iter().all(|run| run.link),
+                "{why}: authored-equivalent labels resolve: {runs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reference_label_matching_rejects_an_escaped_opener_without_deleting_its_suffix() {
+        let defs = LinkDefinitions::new(["text", "nope"]);
+        let runs = parse_inline_with(r"[text]\[nope]", &defs);
+        let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "text[nope]", projected,
+            "the escape makes the second bracket literal reference-like prose"
+        );
+        assert!(runs.iter().any(|run| run.link && run.text == "text"));
+        assert!(
+            runs.iter().any(|run| !run.link && run.text == "[nope]"),
+            "the literal suffix remains visible and unstyled: {runs:?}"
+        );
+    }
+
+    #[test]
+    fn reference_label_matching_keeps_distinct_authored_spellings_distinct() {
+        for (definition, source, why) in [
+            (
+                "a&amp;b",
+                "[a&b]",
+                "an entity definition does not match a raw candidate",
+            ),
+            (
+                "a&b",
+                "[a&amp;b]",
+                "a raw definition does not match an entity candidate",
+            ),
+            (
+                r"a\*b",
+                "[a*b]",
+                "an escaped definition does not match a bare candidate",
+            ),
+            (
+                r"a*b",
+                r"[a\*b]",
+                "a bare definition does not match an escaped candidate",
+            ),
+        ] {
+            let defs = LinkDefinitions::new([definition]);
+            let runs = parse_inline_with(source, &defs);
+            assert!(
+                runs.iter().all(|run| !run.link),
+                "{why} (cmark 0.31 agrees): {runs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_protected_reference_opener_never_opens_a_full_reference() {
+        let defs = LinkDefinitions::new(["text", "nope"]);
+        for (source, why) in [
+            (r"[text]\[nope]", "an escaped opener"),
+            ("[text]`[nope]`", "a code-span opener"),
+            ("[text]$[nope]$", "a math opener"),
+            ("[text]&lbrack;nope]", "an entity-generated opener"),
+        ] {
+            let runs = parse_inline_with(source, &defs);
+            let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert!(
+                projected.contains("nope"),
+                "{why} keeps its suffix visible: {projected:?}"
+            );
+            assert!(
+                runs.iter().any(|run| run.link && run.text == "text"),
+                "{why} still resolves the shortcut before it: {runs:?}"
+            );
+        }
     }
 
     #[test]

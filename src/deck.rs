@@ -2140,6 +2140,23 @@ mod tests {
     }
 
     #[test]
+    fn reversed_cards_keep_their_decks_reference_definitions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## prompt\nsee [the reference][r]\n[r]: /target\n").unwrap();
+        let defaults = DeckSettings {
+            direction: Some(Direction::Both),
+            ..Default::default()
+        };
+
+        let deck = Deck::load_with_defaults(&path, &defaults).unwrap();
+        let reversed = crate::review::CardView::from(&deck.cards[1]);
+
+        assert_eq!("see the reference", reversed.front);
+        assert!(reversed.front_runs.iter().any(|run| run.link));
+    }
+
+    #[test]
     fn deck_directive_overrides_workspace_default() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");

@@ -17,8 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   grading compares the label text. Reference links resolve against the
   deck's own definition lines and render the same way, in all three
   GFM forms (`[text][label]`, `[text][]`, bare `[text]`); labels match
-  case-insensitively with interior whitespace collapsed, never across
-  deck boundaries, and an undefined reference stays ordinary prose.
+  by Unicode case folding with interior whitespace collapsed (so
+  `[STRASSE]` defines `[straße]`), on the authored spelling, so an
+  escape or entity resolves against the same spelling and not across
+  spellings. Matching never crosses deck boundaries, an undefined
+  reference stays ordinary prose, and a protected `[` (escaped, code,
+  math, entity) never opens a reference, keeping its text visible.
+  A reverse or both-directions card carries its deck's definitions
+  like the forward half.
 
 - The math spellings aligned with GitHub (decision 11). Display math
   gains its two block spellings: a bare `$$` line opens a block that the

@@ -42,6 +42,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 
 [dependencies]
 anyhow = "1"
+caseless = "0.2" # Unicode default case folding for CommonMark reference-label matching
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"], optional = true }
 # flush unsaved review state and exit cleanly on Ctrl-C/SIGTERM
