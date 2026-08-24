@@ -20,7 +20,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by Unicode case folding with interior whitespace collapsed (so
   `[STRASSE]` defines `[straße]`), on the authored spelling, so an
   escape or entity resolves against the same spelling and not across
-  spellings. Matching never crosses deck boundaries, an undefined
+  spellings. Only the grammar's six whitespace characters collapse, so
+  a no-break space pasted from a web page or a PDF stays label content
+  and never silently unifies two different labels. Matching never crosses deck
+  boundaries, an undefined
   reference stays ordinary prose, and a protected `[` (escaped, code,
   math, entity) never opens a reference, keeping its text visible.
   A reverse or both-directions card carries its deck's definitions
@@ -84,7 +87,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   styled as a link on all three clients with no navigation attached.
   The URL text is protected from emphasis (underscores in a URL never
   italicize), and code spans and escapes still show the brackets
-  literally.
+  literally. Only ASCII whitespace and control characters end the URL,
+  so a no-break space inside one is ordinary URL content.
 
 - HTML tag shapes are a loud parse error (decision 10, first slice): a
   `<` directly followed by a letter, or `</`, on any deck surface

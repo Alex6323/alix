@@ -30,7 +30,7 @@ use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal
 pub use sidecar::{SidecarNote, notes, without_notes};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
-const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
+pub(crate) const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
 
 const ESCAPABLE: [&str; 6] = ["#", ">", "---", "<!--", "```", "~~~"];
 
@@ -828,7 +828,7 @@ fn trim_ws(s: &str) -> &str {
     s.trim_matches(&WHITESPACE[..])
 }
 
-fn collapse(s: &str) -> String {
+pub(crate) fn collapse(s: &str) -> String {
     s.split(&WHITESPACE[..])
         .filter(|word| !word.is_empty())
         .collect::<Vec<_>>()
@@ -1506,12 +1506,7 @@ fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
     let chars: Vec<char> = block.join("\n").chars().collect();
 
     let label_close = label_end(&chars, 1)?;
-    let label = chars[1..label_close]
-        .iter()
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let label = collapse(&chars[1..label_close].iter().collect::<String>());
     if label.is_empty() {
         return None;
     }
@@ -1572,7 +1567,7 @@ fn label_end(chars: &[char], from: usize) -> Option<usize> {
 fn skip_space_across_one_newline(chars: &[char], from: usize) -> Option<usize> {
     let mut at = from;
     let mut endings = 0usize;
-    while chars.get(at).is_some_and(|ch| ch.is_whitespace()) {
+    while chars.get(at).is_some_and(|ch| WHITESPACE.contains(ch)) {
         if chars[at] == '\n' {
             endings += 1;
             if endings > 1 {
@@ -1608,7 +1603,7 @@ fn destination_end(chars: &[char], from: usize) -> Option<usize> {
         let step = escape_len(chars, at);
         if step == 1 {
             let ch = chars[at];
-            if ch.is_whitespace() {
+            if WHITESPACE.contains(&ch) {
                 break;
             }
             match ch {
@@ -1659,7 +1654,7 @@ fn rest_of_line_blank(chars: &[char], from: usize) -> bool {
     chars[from..]
         .iter()
         .take_while(|&&ch| ch != '\n')
-        .all(|ch| ch.is_whitespace())
+        .all(|ch| WHITESPACE.contains(ch))
 }
 
 /// A definition never continues into a line the deck grammar owns.
@@ -3392,6 +3387,48 @@ mod tests {
                 .iter()
                 .all(|line| !matches!(line.as_str(), "[" | "r" | "]: /target")),
             "the complete definition block is metadata, never section prose"
+        );
+    }
+
+    /// The definition side normalizes its label by the same grammar class
+    /// as the candidate side, and a bare destination keeps a separator that
+    /// is not in that class.
+    #[test]
+    fn link_definition_labels_collapse_only_the_grammar_whitespace_class() {
+        for gap in ['\t', '\x0B', '\x0C', ' '] {
+            let deck = parse(&format!("# Section\n[a{gap}b]: /target\n## Q\nx\n"));
+            assert_eq!(
+                deck.definitions,
+                vec!["a b"],
+                "U+{:04X} is grammar whitespace and collapses in the label",
+                gap as u32
+            );
+        }
+        let deck = parse("# Section\n[a\u{a0}b]: /target\n## Q\nx\n");
+        assert_eq!(
+            deck.definitions,
+            vec!["a\u{a0}b"],
+            "a no-break space is label content, so it survives normalization"
+        );
+        let deck = parse("# Section\n[r]: /a\u{a0}b\n## Q\nx\n");
+        assert_eq!(
+            deck.definitions,
+            vec!["r"],
+            "a no-break space is not ASCII space, so the destination keeps it"
+        );
+        let deck = parse("# Section\n[r]: /target \"t\"\u{a0}\n## Q\nx\n");
+        assert!(
+            deck.definitions.is_empty(),
+            "a no-break space is a further non-whitespace character on the \
+             line, which the definition grammar forbids"
+        );
+        let deck = parse("# Section\n[r]:\u{a0}\n/target\n## Q\nx\n");
+        assert!(
+            deck.cards[0]
+                .section_context
+                .contains(&"/target".to_owned()),
+            "a no-break space never separates a definition's parts, so the \
+             next line stays prose instead of being eaten as the destination"
         );
     }
 

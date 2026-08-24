@@ -163,7 +163,7 @@ impl LinkDefinitions {
 /// default case folding, over the authored spelling; escape and entity
 /// forms stay as written, so only case and whitespace unify labels.
 fn fold_label(label: &str) -> String {
-    caseless::default_case_fold_str(&label.split_whitespace().collect::<Vec<_>>().join(" "))
+    caseless::default_case_fold_str(&crate::parser::collapse(label))
 }
 
 pub fn is_display_math_line(text: &str) -> bool {
@@ -619,7 +619,7 @@ fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
     };
     let skip_spaces = |mut at: usize| {
         let start = at;
-        while raw(at).is_some_and(|ch| ch.is_ascii_whitespace()) {
+        while raw(at).is_some_and(|ch| crate::parser::WHITESPACE.contains(&ch)) {
             at += 1;
         }
         (at, at > start)
@@ -645,7 +645,7 @@ fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
                 Some(')') if depth == 0 => break,
                 Some(')') => depth -= 1,
                 Some('(') => depth += 1,
-                Some(space) if space.is_ascii_whitespace() => break,
+                Some(space) if crate::parser::WHITESPACE.contains(&space) => break,
                 _ if ch.is_ascii_control() => return None,
                 _ => {}
             }
@@ -1064,9 +1064,12 @@ fn is_uri_autolink(body: &str) -> bool {
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '.' | '-'))
         && !rest.is_empty()
-        && rest
-            .chars()
-            .all(|ch| !ch.is_whitespace() && ch != '<' && ch != '>')
+        && rest.chars().all(|ch| {
+            !crate::parser::WHITESPACE.contains(&ch)
+                && !ch.is_ascii_control()
+                && ch != '<'
+                && ch != '>'
+        })
 }
 
 fn is_email_autolink(body: &str) -> bool {
@@ -1964,6 +1967,10 @@ mod tests {
             ),
             ("<http//no-colon>", "a near-miss stays prose"),
             ("a < b and x<3", "non-tag brackets unaffected"),
+            (
+                "<https://alix.study/a b>",
+                "an ASCII space is not an absolute URI character",
+            ),
         ] {
             let runs = parse_inline(text);
             assert!(runs.iter().all(|run| !run.link), "{why}: {runs:?}");
@@ -1982,6 +1989,12 @@ mod tests {
             "URL underscores are not emphasis"
         );
         assert_eq!(underscored[0].text, "https://a_b_c.io");
+        let unencoded = parse_inline("<https://alix.study/a\u{a0}b>");
+        assert!(
+            unencoded.iter().any(|run| run.link),
+            "only ASCII whitespace and controls are barred from an absolute \
+             URI, so a no-break space is ordinary URI content: {unencoded:?}"
+        );
     }
 
     #[test]
@@ -2137,6 +2150,11 @@ mod tests {
                 "balanced parens stay legal in a bare destination",
             ),
             ("[a]()", "a", "an empty destination is a valid link"),
+            (
+                "[a](url\u{0B}\"the title\")",
+                "a",
+                "line tabulation is grammar whitespace, so it separates a title",
+            ),
         ];
         for (line, label, law) in rows {
             let runs = parse_inline(line);
@@ -2155,6 +2173,10 @@ mod tests {
                 "a bare word after the destination is no title",
             ),
             ("[a](x(y)", "unbalanced destination parens stay literal"),
+            (
+                "[a](url\u{a0}\"the title\")",
+                "a no-break space is destination content, never a separator",
+            ),
         ];
         for (line, law) in rows {
             let runs = parse_inline(line);
@@ -2280,6 +2302,41 @@ mod tests {
             assert!(
                 runs.iter().all(|run| run.link),
                 "{why}: the CommonMark-equivalent label resolves: {runs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reference_label_matching_does_not_collapse_non_breaking_space() {
+        let source = "[a\u{a0}b]";
+        let defs = LinkDefinitions::new(["a b"]);
+        let runs = parse_inline_with(source, &defs);
+        let projected: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(source, projected);
+        assert!(runs.iter().all(|run| !run.link));
+    }
+
+    /// The normalization class is the pinned grammar's six whitespace
+    /// characters, not Rust's Unicode predicate and not its ASCII one
+    /// (which omits line tabulation).
+    #[test]
+    fn reference_label_matching_collapses_exactly_the_grammar_whitespace_class() {
+        for gap in ['\t', '\x0B', '\x0C', ' '] {
+            let source = format!("[a{gap}b]");
+            let runs = parse_inline_with(&source, &LinkDefinitions::new(["a b"]));
+            assert!(
+                runs.iter().any(|run| run.link),
+                "U+{:04X} is grammar whitespace and collapses to the definition",
+                gap as u32
+            );
+        }
+        for content in ['\u{a0}', '\u{2003}', '\u{3000}'] {
+            let source = format!("[a{content}b]");
+            let runs = parse_inline_with(&source, &LinkDefinitions::new(["a b"]));
+            assert!(
+                runs.iter().all(|run| !run.link),
+                "U+{:04X} is label content, so it never unifies two labels",
+                content as u32
             );
         }
     }
