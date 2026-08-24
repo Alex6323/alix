@@ -37,15 +37,37 @@ pub struct InlineRun {
 #[derive(Default)]
 pub struct DisplayProjector {
     renderer: MathRenderer,
+    definitions: Option<LinkDefinitions>,
 }
 
 impl DisplayProjector {
+    pub fn with_definitions<I, S>(labels: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        Self {
+            definitions: Some(LinkDefinitions::new(labels)),
+            ..Self::default()
+        }
+    }
+
     pub fn project(&mut self, text: &str) -> Vec<InlineRun> {
-        project_text(text, Some(&mut self.renderer), false, None)
+        project_text(
+            text,
+            Some(&mut self.renderer),
+            false,
+            self.definitions.as_ref(),
+        )
     }
 
     pub fn project_context(&mut self, text: &str) -> Vec<InlineRun> {
-        project_text(text, Some(&mut self.renderer), true, None)
+        project_text(
+            text,
+            Some(&mut self.renderer),
+            true,
+            self.definitions.as_ref(),
+        )
     }
 
     pub(crate) fn project_display_math(&mut self, source: &str) -> Vec<InlineRun> {
@@ -1984,6 +2006,21 @@ mod tests {
         assert!(
             bare.iter().all(|run| !run.link),
             "without definitions nothing changes: {bare:?}"
+        );
+    }
+
+    #[test]
+    fn a_projector_carries_its_deck_definitions_into_every_projection() {
+        let mut projector = DisplayProjector::with_definitions(["r"]);
+        let runs = projector.project("see [the ref][r] here");
+        assert!(
+            runs.iter().any(|run| run.link && run.text == "the ref"),
+            "{runs:?}"
+        );
+        let context = projector.project_context("[r] leads");
+        assert!(
+            context.iter().any(|run| run.link && run.text == "r"),
+            "{context:?}"
         );
     }
 
