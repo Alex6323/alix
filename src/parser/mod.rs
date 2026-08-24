@@ -1075,6 +1075,13 @@ fn scan(
                     && card.note.is_none()
                     && !card.divided
                 {
+                    // A title's directives govern the rows below it, so a
+                    // directive above the table body is machinery out of
+                    // position exactly as it is for ordinary content.
+                    // A title's directives govern the rows below it, so a
+                    // directive above the table body is machinery out of
+                    // position exactly as it is for ordinary content.
+                    card.machinery_stays_trailing()?;
                     title = Some(card.front);
                     block_line = card.line;
                     directives = card.directives;
@@ -5289,6 +5296,40 @@ a
             stamped.cards.len(),
             "a diagram stamp trails its fence, not the card, so content after it stays legal"
         );
+    }
+
+    #[test]
+    fn a_titled_table_does_not_bypass_the_trailing_directive_rule() {
+        let explicit = super::parse(
+            "deck.md",
+            "## Vocabulary\n<!-- direction: both -->\n| word | meaning |\n|---|---|\n| one | eins |\n<!-- cards -->\n",
+        );
+        let defaulted = super::parse(
+            "deck.md",
+            "---\ntable: cards\n---\n## Vocabulary\n<!-- direction: both -->\n| word | meaning |\n|---|---|\n| one | eins |\n",
+        );
+        assert!(
+            matches!(
+                &explicit,
+                Err(ParseError::LeadingDirective { line: 2, key }) if key == "direction"
+            ) && matches!(
+                &defaulted,
+                Err(ParseError::LeadingDirective { line: 5, key }) if key == "direction"
+            ),
+            "an empty heading absorbed as a table title must not let leading card machinery bypass the card-content guard: explicit={explicit:?}, defaulted={defaulted:?}"
+        );
+    }
+
+    #[test]
+    fn a_titled_tables_trailing_directive_remains_legal() {
+        for text in [
+            "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins |\n<!-- cards -->\n<!-- direction: both -->\n",
+            "---\ntable: cards\n---\n## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins |\n<!-- direction: both -->\n",
+        ] {
+            let deck = super::parse("deck.md", text).unwrap();
+            assert_eq!(1, deck.cards.len());
+            assert_eq!(Some(Direction::Both), deck.cards[0].direction);
+        }
     }
 
     #[test]
