@@ -109,15 +109,14 @@ Every existing deck is affected by the metadata move. The
 maintainer ruled the disposition: old decks RE-MEAN SILENTLY (the old
 `# Title` becomes a section heading, the drawer empties, the list
 falls back to the filename) and no doctor finding is added, because
-444 of the 621 initialized decks measured on 2026-08-21 are
-filename-named by choice, so such a finding would warn forever on
-sanctioned state. The alternative, requiring `title:` whenever `id:`
+most initialized decks measured on 2026-08-21 are filename-named by
+choice, so such a finding would warn forever on sanctioned state. The alternative, requiring `title:` whenever `id:`
 is present (the shape of the existing `format-version` rule,
 `src/parser/frontmatter.rs:189`), would have failed every old
 initialized deck loudly as ordinary invalid input; it was rejected
 for making the key mandatory forever and forcing synthesized titles
-onto those 444 decks. Neither option recognizes the old format. Neither
-recognizes the old format; conversion is disposable tooling outside
+onto that filename-named majority. Neither option recognizes the old
+format; conversion is disposable tooling outside
 the repository, and it must never rewrite `assets/` source
 snapshots, whose sha256 filenames address their content. No deck
 file in either corpus uses column-0 `###`/`####` (measured

@@ -15,9 +15,9 @@ later hole can display an earlier hole's answer before the learner has met it:
     \blank{Unit}, \blank{integration}, \blank{end-to-end}
     > Unit tests sit at the base because they are fastest and most numerous.
 
-Measured on the live corpus 2026-08-06: 63% of 144 cloze blocks have two or
-more holes, and 30 of the 89 multi-hole blocks carrying a note (34%) contain a
-hole's answer verbatim. `feat(doctor): report a note that spells out one hole's
+Measured on the live corpus 2026-08-06: well over half the cloze blocks have
+two or more holes, and about a third of the multi-hole blocks carrying a note
+contain a hole's answer verbatim. `feat(doctor): report a note that spells out one hole's
 answer` now warns about it, but a warning cannot fix a deck that wants both a
 shared note and a per-hole one.
 
