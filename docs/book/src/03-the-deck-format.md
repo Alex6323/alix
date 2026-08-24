@@ -188,14 +188,14 @@ either a [section terminator](#-section-context) or a parse error; a literal
 ## Choice cards (task lists)
 
 A bare GitHub task list is a literal checklist: mappings are opt-in. Name the
-mapping on the line above the list to make it a choice card:
+mapping on the line below the list to make it a choice card:
 
 ```
 ## Which number is prime?
-<!-- choices-single -->
 - [ ] 4
 - [x] 5
 - [ ] 6
+<!-- choices-single -->
 ```
 
 Under `choices-single` the one `[x]` item is the correct answer. Alix shows
@@ -220,7 +220,7 @@ the learner must discover how many options are correct.
 A deck built of choice cards declares the mapping once in frontmatter instead
 of once per card: `tasklist: choices-single` (or `choices-multiple`). A
 per-card invocation overrides the deck default, and `<!-- plain -->` on the
-line above one task list keeps that one literal.
+line below one task list keeps that one literal.
 
 ## Card tables
 
@@ -229,18 +229,18 @@ be one Markdown pipe table instead of a `##` block per fact. A bare pipe
 table renders as a real aligned table: the delimiter row's alignment colons
 set each column's alignment, short rows pad with empty cells, and long rows
 truncate to the header width. It never becomes cards on its own;
-`<!-- cards -->` on the line above maps it (or `table:
+`<!-- cards -->` on the line below maps it (or `table:
 cards` in frontmatter maps every table in the deck, with `<!-- plain -->`
-above one table keeping it literal). Each row is a card: first column front,
+below one table keeping it literal). Each row is a card: first column front,
 second column back, optional third column note. The header row is shown as
 the card's context, never tested:
 
 ```
-<!-- cards -->
 | word      | meaning   | note                 |
 |-----------|-----------|----------------------|
 | purported | angeblich | often in legal prose |
 | feasible  | machbar   |                      |
+<!-- cards -->
 ```
 
 The table must start at column 0 with a header row and a delimiter row
@@ -484,7 +484,7 @@ deck into that order, opt in with `alix doctor <deck>
 Because `##`, `>`, `---`, and the fence and cloze markers are structural, an answer
 line that must *start* with one literally is escaped with a leading backslash:
 `\##`, `\>`, `\---`. The backslash is consumed; the line displays without it.
-For a line that is exactly `---`, `<!-- plain -->` on the line above keeps it as
+For a line that is exactly `---`, `<!-- plain -->` on the line below keeps it as
 content too, as a literal thematic break.
 
 ```

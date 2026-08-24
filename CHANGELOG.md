@@ -328,6 +328,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- BREAKING: comment machinery trails its block (everything-trails).
+  A mapping invocation (`<!-- cards -->`, `<!-- plain -->`,
+  `<!-- choices-single -->`, `<!-- choices-multiple -->`) now sits on
+  the line directly below the table, task list, or `---` it maps,
+  never above; a recognized invocation above its block fails loud with
+  the line, the why, and the fix. One invocation maps exactly one
+  block, so adjacent tables each take their own. Frontmatter stays the
+  leading exception, and a table row's inline `<!-- r:... -->` stamp
+  stays the one sanctioned inline position. Existing decks with
+  leading invocations fail as ordinary invalid input; move each
+  invocation below its block.
+
 - Link-definition lines (`[label]: destination`) are consumed as
   deck-wide metadata instead of being answer content: they no longer
   display, never join typed grading, and a card whose entire answer

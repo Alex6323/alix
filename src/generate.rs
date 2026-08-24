@@ -96,8 +96,8 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              - A card table starts with `| front | back | note |`, then \
              `| --- | --- | --- |`, then one row per pair. Omit the note column when it is \
              unused.\n\
-             - For ordered steps, put `<!-- reveal: line -->` directly below the front and \
-             write one step per answer line.\n\
+             - For ordered steps, write one step per answer line and put `<!-- reveal: line -->` below the \
+             last answer line.\n\
              - For a card needed in both directions, put `<!-- direction: both -->` after \
              its answer.\n\
              - For an answer the learner must sketch, put `<!-- input: draw -->` after its \
@@ -168,8 +168,8 @@ Extra context goes in the `> ` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with a `<!-- reveal: line -->` line right below \
-its front and one item per answer line.
+sequence) keep it as one card with one item per answer line and a \
+`<!-- reveal: line -->` line below the last item.
 - Give non-choice answers and notes clean structure when the content has it \
 (short lines, one point per line); keep an atomic answer atomic; \
 never pad a one-word answer into a list.
@@ -241,8 +241,8 @@ Extra context goes in the `> ` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with a `<!-- reveal: line -->` line right below \
-its front and one item per answer line.
+sequence) keep it as one card with one item per answer line and a \
+`<!-- reveal: line -->` line below the last item.
 - Give non-choice answers and notes clean structure when the content has it \
 (short lines, one point per line); keep an atomic answer atomic; \
 never pad a one-word answer into a list.
