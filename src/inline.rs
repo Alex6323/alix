@@ -503,6 +503,26 @@ struct BracketLink {
 /// styling the label.
 fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec<BracketLink> {
     let plain = |glyph: &Glyph| !glyph.escaped && !glyph.code && glyph.math.is_none();
+    // Link text balances nested brackets (GFM); a reference label does not.
+    let label_close = |from: usize| {
+        let mut depth = 1usize;
+        (from..glyphs.len()).find(|&at| {
+            if !plain(&glyphs[at]) {
+                return false;
+            }
+            match glyphs[at].ch {
+                '[' => {
+                    depth += 1;
+                    false
+                }
+                ']' => {
+                    depth -= 1;
+                    depth == 0
+                }
+                _ => false,
+            }
+        })
+    };
     let bracket_close = |from: usize| {
         (from..glyphs.len())
             .find(|&at| plain(&glyphs[at]) && matches!(glyphs[at].ch, ']' | '['))
@@ -515,37 +535,25 @@ fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec
             index += 1;
             continue;
         }
-        let Some(close) = bracket_close(index + 1) else {
+        let Some(close) = label_close(index + 1) else {
             index += 1;
             continue;
         };
-        if glyphs.get(close + 1).map(|glyph| glyph.ch) == Some('(') {
-            let mut depth = 1usize;
-            let Some(close_paren) = (close + 2..glyphs.len()).find(|&at| {
-                if !plain(&glyphs[at]) {
-                    return false;
+        if glyphs
+            .get(close + 1)
+            .is_some_and(|glyph| plain(glyph) && glyph.ch == '(')
+        {
+            match link_tail_end(glyphs, close + 2) {
+                Some(close_paren) => {
+                    links.push(BracketLink {
+                        open: index,
+                        close,
+                        syntax_end: close_paren,
+                    });
+                    index = close_paren + 1;
                 }
-                match glyphs[at].ch {
-                    '(' => {
-                        depth += 1;
-                        false
-                    }
-                    ')' => {
-                        depth -= 1;
-                        depth == 0
-                    }
-                    _ => false,
-                }
-            }) else {
-                index = close + 1;
-                continue;
-            };
-            links.push(BracketLink {
-                open: index,
-                close,
-                syntax_end: close_paren,
-            });
-            index = close_paren + 1;
+                None => index = close + 1,
+            }
             continue;
         }
         let Some(definitions) = definitions else {
@@ -556,7 +564,10 @@ fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec
             .iter()
             .map(|glyph| glyph.ch)
             .collect();
-        if glyphs.get(close + 1).map(|glyph| glyph.ch) == Some('[') {
+        if glyphs
+            .get(close + 1)
+            .is_some_and(|glyph| plain(glyph) && glyph.ch == '[')
+        {
             let Some(reference_close) = bracket_close(close + 2) else {
                 index = close + 1;
                 continue;
@@ -592,6 +603,73 @@ fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec
         index = close + 1;
     }
     links
+}
+
+/// The closing `)` of an inline-link tail starting just past its opening
+/// parenthesis, or None when the tail is not the GFM production
+/// `(destination optional-title)`: an `<angle>` destination, or a bare one
+/// with no unescaped whitespace or controls and only balanced unescaped
+/// parentheses, then an optional `"..."`/`'...'`/`(...)` title.
+fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
+    let plain = |at: usize| {
+        glyphs
+            .get(at)
+            .filter(|glyph| !glyph.escaped && !glyph.code && glyph.math.is_none())
+            .map(|glyph| glyph.ch)
+    };
+    let skip_spaces = |mut at: usize| {
+        while plain(at).is_some_and(|ch| ch.is_ascii_whitespace()) {
+            at += 1;
+        }
+        at
+    };
+    let mut at = skip_spaces(from);
+    if plain(at) == Some('<') {
+        at += 1;
+        while at < glyphs.len() && !matches!(plain(at), Some('<' | '>')) {
+            at += 1;
+        }
+        if plain(at) != Some('>') {
+            return None;
+        }
+        at += 1;
+    } else {
+        let mut depth = 0usize;
+        loop {
+            let ch = glyphs.get(at).map(|glyph| glyph.ch)?;
+            match plain(at) {
+                Some(')') if depth == 0 => break,
+                Some(')') => depth -= 1,
+                Some('(') => depth += 1,
+                Some(space) if space.is_ascii_whitespace() => break,
+                _ if ch.is_ascii_control() => return None,
+                _ => {}
+            }
+            at += 1;
+        }
+        if depth != 0 {
+            return None;
+        }
+    }
+    at = skip_spaces(at);
+    match plain(at) {
+        Some(')') => Some(at),
+        Some(open @ ('"' | '\'' | '(')) => {
+            let closer = if open == '(' { ')' } else { open };
+            at += 1;
+            while at < glyphs.len()
+                && !matches!(plain(at), Some(ch) if ch == closer || (open == '(' && ch == '('))
+            {
+                at += 1;
+            }
+            if plain(at) != Some(closer) {
+                return None;
+            }
+            at = skip_spaces(at + 1);
+            (plain(at) == Some(')')).then_some(at)
+        }
+        _ => None,
+    }
 }
 
 /// Marks the glyphs of every complete `[label](destination)` link: the
@@ -1960,6 +2038,95 @@ mod tests {
         }
         let spans = parse_inline("`[a](b)`");
         assert_eq!(vec![code("[a](b)")], spans, "a code span keeps the syntax");
+    }
+
+    #[test]
+    fn bracket_link_grammar_keeps_nested_brackets_in_the_label() {
+        let runs = parse_inline("[array[index]](guide)");
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!("array[index]", text, "the full nested label is content");
+        assert!(
+            runs.iter().all(|run| run.link),
+            "the valid GFM link label stays styled: {runs:?}"
+        );
+    }
+
+    #[test]
+    fn bracket_link_grammar_rejects_raw_destination_spaces() {
+        let source = "[ATP](energy currency)";
+        let runs = parse_inline(source);
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(source, text, "parenthesized prose must remain visible");
+        assert!(
+            runs.iter().all(|run| !run.link),
+            "a raw-space destination is not a GFM link: {runs:?}"
+        );
+    }
+
+    #[test]
+    fn bracket_link_grammar_accepts_the_angle_title_and_paren_tails() {
+        let rows = [
+            (
+                "[a](<dest with space>)",
+                "a",
+                "an angle destination may hold spaces",
+            ),
+            (
+                "[a](url \"the title\")",
+                "a",
+                "a quoted title follows a bare destination",
+            ),
+            (
+                "[a](url 'the title')",
+                "a",
+                "a single-quoted title works the same",
+            ),
+            ("[a](url (the title))", "a", "a paren title works the same"),
+            (
+                "[a](path(x))",
+                "a",
+                "balanced parens stay legal in a bare destination",
+            ),
+            ("[a]()", "a", "an empty destination is a valid link"),
+        ];
+        for (line, label, law) in rows {
+            let runs = parse_inline(line);
+            let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(label, text, "{law}");
+            assert!(runs.iter().all(|run| run.link), "{law}: {runs:?}");
+        }
+        let rows = [
+            (
+                "[a](<unclosed)",
+                "an unclosed angle destination stays literal",
+            ),
+            ("[a](url \"unclosed)", "an unclosed title stays literal"),
+            (
+                "[a](url title)",
+                "a bare word after the destination is no title",
+            ),
+            ("[a](x(y)", "unbalanced destination parens stay literal"),
+        ];
+        for (line, law) in rows {
+            let runs = parse_inline(line);
+            let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(line, text, "{law}");
+            assert!(runs.iter().all(|run| !run.link), "{law}: {runs:?}");
+        }
+    }
+
+    #[test]
+    fn bracket_link_grammar_rejects_an_escaped_opening_parenthesis() {
+        let runs = parse_inline(r"[a]\(b)");
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "[a](b)", text,
+            "the escape makes the parenthesis literal, not link syntax"
+        );
+        assert!(
+            runs.iter().all(|run| !run.link),
+            "an escaped opening parenthesis cannot start a link destination: {runs:?}"
+        );
     }
 
     #[test]

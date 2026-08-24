@@ -575,6 +575,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Link display follows the GFM inline-link grammar at its three edges: a
+  nested bracket pair stays inside the label (`[array[index]](url)`
+  links), a parenthesized aside with a raw space is no destination (the
+  prose stays visible and graded), and an escaped `\(` never opens a
+  destination. Angle destinations and quoted or parenthesized titles
+  render as links; unbalanced or whitespace-carrying bare destinations
+  stay literal text.
+
 - A span blank no longer crashes a deck whose answer block contains an
   HTML entity, found by Codex during reciprocal review: the masking
   source map had assumed every escaped glyph was preceded by a
