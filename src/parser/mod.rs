@@ -892,7 +892,6 @@ fn scan(
     let mut prev_blank = false;
     let mut prev_heading = false;
     let mut prev_prose = false;
-    let mut pending: Option<Mapping> = None;
     let mut terminated: Option<usize> = None;
     let mut idle_terminators: Vec<usize> = Vec::new();
 
@@ -910,7 +909,6 @@ fn scan(
         // A fence never opens while a table is active (every non-table line
         // inside a table's scope is either a flush or a loud error).
         if let Some(tbl) = table.as_mut() {
-            pending = None;
             if let Some(column) = crate::inline::tag_shape_column(raw) {
                 return Err(ParseError::TagShape {
                     line: lineno,
@@ -934,20 +932,10 @@ fn scan(
                     open_depths.clear();
                 }
                 blocks.push(RawBlock::Table(tbl));
-                // A directly-adjacent header continues the invoked run: the
-                // one-shot scope covers the contiguous block, not one table.
-                if raw.starts_with('|')
-                    && lines
-                        .get(idx + 1)
-                        .is_some_and(|n| n.starts_with('|') && is_delimiter_row(n))
-                {
-                    pending = Some(Mapping::Cards);
-                }
             }
         }
 
         if let Some((ch, open, _)) = fence {
-            pending = None;
             if closes_fence(raw, ch, open) {
                 fence = None;
             }
@@ -977,7 +965,6 @@ fn scan(
             .as_ref()
             .is_some_and(|card| card.open_math.is_some())
         {
-            pending = None;
             if trim_ws(raw) == "$$"
                 && let Some(card) = current.as_mut()
             {
@@ -998,7 +985,6 @@ fn scan(
         }
 
         if let Some((ch, open)) = fence_opener(raw) {
-            pending = None;
             fence = Some((ch, open, lineno));
             if current.is_none() {
                 section_line(
@@ -1022,8 +1008,11 @@ fn scan(
             && let Some(next) = lines.get(idx + 1)
             && next.starts_with('|')
             && is_delimiter_row(next)
-            && (pending == Some(Mapping::Cards)
-                || (table_default && pending != Some(Mapping::Plain)))
+            && match trailing_table_mapping(&lines, idx) {
+                Some(Mapping::Cards) => true,
+                Some(_) => false,
+                None => table_default,
+            }
         {
             // An empty-bodied heading directly above the table is its TITLE,
             // not a card; any content or note keeps it a card.
@@ -1081,7 +1070,6 @@ fn scan(
             });
             skip_delimiter = true;
             idle_terminators.clear();
-            pending = None;
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -1090,7 +1078,6 @@ fn scan(
         if let Some((depth, rest)) = heading_depth(raw)
             && !(sidecar_mode() && depth != 2)
         {
-            pending = None;
             if depth == 1 {
                 if let Some(card) = take_card(&mut current)? {
                     blocks.push(RawBlock::Card(card));
@@ -1189,7 +1176,6 @@ fn scan(
         if let Some(rest) = t.strip_prefix('\\')
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
-            pending = None;
             if current.is_none() {
                 section_line(
                     &mut section,
@@ -1211,7 +1197,16 @@ fn scan(
         }
 
         if t == "---" {
-            if matches!(pending.take(), Some(Mapping::Plain)) {
+            let plain_trails = lines
+                .get(idx + 1)
+                .and_then(|line| {
+                    line.trim()
+                        .strip_prefix("<!--")
+                        .and_then(|s| s.strip_suffix("-->"))
+                })
+                .and_then(|body| Mapping::parse(trim_ws(body)))
+                == Some(Mapping::Plain);
+            if plain_trails {
                 if current.is_none() {
                     section_line(
                         &mut section,
@@ -1254,7 +1249,6 @@ fn scan(
         }
 
         if let Some(rest) = t.strip_prefix('>') {
-            pending = None;
             let text = rest.strip_prefix(' ').unwrap_or(rest);
             // Inside an open note `$$` block the text after the one note
             // marker is verbatim math source, so a leading `>` is the
@@ -1293,12 +1287,30 @@ fn scan(
         if t.starts_with("<!--") {
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
                 if let Some(mapping) = Mapping::parse(trim_ws(body)) {
-                    if mapping != Mapping::Cards
-                        && let Some(card) = current.as_mut()
-                    {
-                        card.mapping = Some(mapping);
+                    match (mapping, current.as_mut()) {
+                        (Mapping::Plain, None) => {}
+                        (Mapping::Cards, _) | (_, None) => {
+                            return Err(ParseError::LeadingInvocation {
+                                line: lineno,
+                                word: trim_ws(body).to_string(),
+                            });
+                        }
+                        (mapping, Some(card)) => {
+                            if mapping != Mapping::Plain
+                                && !card
+                                    .back
+                                    .iter()
+                                    .chain(card.front_extra.iter())
+                                    .any(|(_, line)| checklist::parse_line(line).is_some())
+                            {
+                                return Err(ParseError::LeadingInvocation {
+                                    line: lineno,
+                                    word: trim_ws(body).to_string(),
+                                });
+                            }
+                            card.mapping = Some(mapping);
+                        }
                     }
-                    pending = Some(mapping);
                     prev_blank = false;
                     prev_heading = false;
                     continue;
@@ -1347,7 +1359,6 @@ fn scan(
             // The line stays content.
         }
 
-        pending = None;
 
         if t.starts_with("## ") {
             lints.push(Lint {
@@ -1537,6 +1548,26 @@ pub(crate) fn is_delimiter_row(line: &str) -> bool {
             let cell = cell.strip_suffix(':').unwrap_or(cell);
             !cell.is_empty() && cell.bytes().all(|b| b == b'-')
         })
+}
+
+/// The mapping declared in a table-shaped block's trailing comment zone,
+/// looking down from its header line: rows first, then adjacent comment
+/// lines (the everything-trails position). None means the zone declares
+/// nothing and the deck default decides.
+fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<Mapping> {
+    let mut idx = header_idx;
+    while lines.get(idx).is_some_and(|line| line.trim_end().starts_with('|')) {
+        idx += 1;
+    }
+    while let Some(line) = lines.get(idx) {
+        let t = line.trim();
+        let body = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->"))?;
+        if let Some(mapping) = Mapping::parse(trim_ws(body)) {
+            return Some(mapping);
+        }
+        idx += 1;
+    }
+    None
 }
 
 fn check_cells(cells: &[String], lineno: usize) -> Result<(), ParseError> {
