@@ -198,11 +198,17 @@ class InlineRuns extends StatelessWidget {
   }
 
   TextStyle _runStyle(InlineRunModel run) {
+    final decorations = [
+      if (run.strike) TextDecoration.lineThrough,
+      if (run.link) TextDecoration.underline,
+    ];
     return style.copyWith(
       fontFamily: run.code ? _mono : style.fontFamily,
       fontWeight: run.bold ? FontWeight.w700 : style.fontWeight,
       fontStyle: run.italic ? FontStyle.italic : style.fontStyle,
-      decoration: run.strike ? TextDecoration.lineThrough : style.decoration,
+      decoration: decorations.isEmpty
+          ? style.decoration
+          : TextDecoration.combine(decorations),
     );
   }
 }

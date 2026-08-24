@@ -1628,6 +1628,7 @@ const _: fn() = || {
         let _: bool = InlineRun.italic;
         let _: bool = InlineRun.strike;
         let _: bool = InlineRun.code;
+        let _: bool = InlineRun.link;
         let _: Option<crate::api::review::MathView> = InlineRun.math;
     }
     {
@@ -2078,6 +2079,7 @@ impl SseDecode for crate::api::review::InlineRun {
         let mut var_italic = <bool>::sse_decode(deserializer);
         let mut var_strike = <bool>::sse_decode(deserializer);
         let mut var_code = <bool>::sse_decode(deserializer);
+        let mut var_link = <bool>::sse_decode(deserializer);
         let mut var_math = <Option<crate::api::review::MathView>>::sse_decode(deserializer);
         return crate::api::review::InlineRun {
             text: var_text,
@@ -2085,6 +2087,7 @@ impl SseDecode for crate::api::review::InlineRun {
             italic: var_italic,
             strike: var_strike,
             code: var_code,
+            link: var_link,
             math: var_math,
         };
     }
@@ -3384,6 +3387,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::InlineRun>
             self.0.italic.into_into_dart().into_dart(),
             self.0.strike.into_into_dart().into_dart(),
             self.0.code.into_into_dart().into_dart(),
+            self.0.link.into_into_dart().into_dart(),
             self.0.math.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -4112,6 +4116,7 @@ impl SseEncode for crate::api::review::InlineRun {
         <bool>::sse_encode(self.italic, serializer);
         <bool>::sse_encode(self.strike, serializer);
         <bool>::sse_encode(self.code, serializer);
+        <bool>::sse_encode(self.link, serializer);
         <Option<crate::api::review::MathView>>::sse_encode(self.math, serializer);
     }
 }

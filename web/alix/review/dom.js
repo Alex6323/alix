@@ -21,6 +21,12 @@ function styledRunNode(run, text) {
     code.appendChild(node);
     node = code;
   }
+  if (run.link) {
+    const link = document.createElement("a");
+    link.className = "autolink";
+    link.appendChild(node);
+    node = link;
+  }
   if (run.italic) {
     const italic = document.createElement("em");
     italic.appendChild(node);

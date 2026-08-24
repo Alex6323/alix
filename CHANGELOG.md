@@ -40,6 +40,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   single or triple tilde run stays ordinary text, and line-start tilde
   fences are unaffected.
 
+- Autolinks render as inert links (decision 10, second slice):
+  `<https://...>` and `<user@host>` display as the bracket-free URL,
+  styled as a link on all three clients with no navigation attached.
+  The URL text is protected from emphasis (underscores in a URL never
+  italicize), and code spans and escapes still show the brackets
+  literally.
+
 - HTML tag shapes are a loud parse error (decision 10, first slice): a
   `<` directly followed by a letter, or `</`, on any deck surface
   (content, sections, fronts, notes, table cells) fails with the line,

@@ -17,6 +17,10 @@ pub struct InlineRun {
     pub strike: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub code: bool,
+    /// An inert autolink: the URL is both label and content; clients
+    /// style it as a link but attach no navigation.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub link: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub math: Option<MathView>,
 }
@@ -56,6 +60,7 @@ struct Glyph {
     raw_index: usize,
     escaped: bool,
     code: bool,
+    link: bool,
     math: Option<usize>,
 }
 
@@ -241,6 +246,7 @@ fn project_line(
                 italic: italic[index],
                 strike: strike[index],
                 code: glyph.code,
+                link: glyph.link,
                 math: None,
             },
         );
@@ -419,7 +425,8 @@ fn push_run(runs: &mut Vec<InlineRun>, run: InlineRun) {
             previous.italic,
             previous.strike,
             previous.code,
-        ) == (run.bold, run.italic, run.strike, run.code)
+            previous.link,
+        ) == (run.bold, run.italic, run.strike, run.code, run.link)
     {
         previous.text.push_str(&run.text);
     } else {
@@ -817,6 +824,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 raw_index: index,
                 escaped: false,
                 code: false,
+                link: false,
                 math: Some(span_index),
             });
             index += 1;
@@ -833,9 +841,25 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 raw_index: index + 1,
                 escaped: true,
                 code: false,
+                link: false,
                 math: None,
             });
             index += 2;
+            continue;
+        }
+        if chars[index] == '<'
+            && let Some(close) = autolink_end(chars, index)
+            && (index..=close).all(|inner| math[inner].is_none() && !removed[inner])
+        {
+            glyphs.extend((index + 1..close).map(|raw_index| Glyph {
+                ch: chars[raw_index],
+                raw_index,
+                escaped: false,
+                code: false,
+                link: true,
+                math: None,
+            }));
+            index = close + 1;
             continue;
         }
         if chars[index] == '`'
@@ -847,6 +871,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 raw_index,
                 escaped: true,
                 code: true,
+                link: false,
                 math: None,
             }));
             index = end + 1;
@@ -857,6 +882,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
             raw_index: index,
             escaped: false,
             code: false,
+            link: false,
             math: None,
         });
         index += 1;
@@ -871,6 +897,7 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
         let glyph = glyphs[index];
         if glyph.escaped
             || glyph.code
+            || glyph.link
             || glyph.math.is_some()
             || !matches!(glyph.ch, '*' | '_' | '~')
         {
@@ -1019,6 +1046,9 @@ mod tests {
             2 => formatted_text().prop_map(|text| (format!("*{text}*"), text)),
             2 => formatted_text().prop_map(|text| (format!("_{text}_"), text)),
             2 => inline_code_body().prop_map(|text| (format!("`{text}`"), text)),
+            2 => formatted_text().prop_map(|text| (format!("~~{text}~~"), text)),
+            1 => "[a-z0-9]{1,8}"
+                .prop_map(|host| (format!("<https://{host}.io>"), format!("https://{host}.io"))),
             1 => prop::sample::select(vec!['*', '_', '$', '`', '\\'])
                 .prop_map(|marker| (format!("\\{marker}"), marker.to_string())),
         ]
@@ -1079,6 +1109,7 @@ mod tests {
             italic: false,
             strike: false,
             code: false,
+            link: false,
             math: None,
         }
     }
@@ -1090,6 +1121,7 @@ mod tests {
             italic: false,
             strike: false,
             code: false,
+            link: false,
             math: None,
         }
     }
@@ -1101,6 +1133,7 @@ mod tests {
             italic: true,
             strike: false,
             code: false,
+            link: false,
             math: None,
         }
     }
@@ -1112,6 +1145,7 @@ mod tests {
             italic: false,
             strike: false,
             code: true,
+            link: false,
             math: None,
         }
     }
@@ -1140,6 +1174,7 @@ mod tests {
             italic: true,
             strike: false,
             code: false,
+            link: false,
             math: None,
         }
     }
@@ -1438,6 +1473,53 @@ mod tests {
     }
 
     #[test]
+    fn autolinks_render_as_inert_link_runs() {
+        let runs = parse_inline("see <https://alix.study/deck> now");
+        assert_eq!(runs.len(), 3, "{runs:?}");
+        assert_eq!(runs[0], plain("see "));
+        assert_eq!(
+            runs[1].text, "https://alix.study/deck",
+            "the brackets are markers, not content"
+        );
+        assert!(runs[1].link && !runs[1].bold && !runs[1].italic && !runs[1].code);
+        assert_eq!(runs[2], plain(" now"));
+
+        let email = parse_inline("<hi@alix.study>");
+        assert_eq!(email.len(), 1, "{email:?}");
+        assert!(email[0].link);
+        assert_eq!(email[0].text, "hi@alix.study");
+    }
+
+    #[test]
+    fn autolink_boundaries_stay_literal_or_protected() {
+        for (text, why) in [
+            (
+                r"\<https://alix.study>",
+                "an escaped bracket kills the form",
+            ),
+            ("<http//no-colon>", "a near-miss stays prose"),
+            ("a < b and x<3", "non-tag brackets unaffected"),
+        ] {
+            let runs = parse_inline(text);
+            assert!(runs.iter().all(|run| !run.link), "{why}: {runs:?}");
+        }
+        let code = parse_inline("`<https://alix.study>`");
+        assert_eq!(code.len(), 1, "{code:?}");
+        assert!(
+            code[0].code && !code[0].link,
+            "a code span keeps the brackets"
+        );
+        assert_eq!(code[0].text, "<https://alix.study>");
+        let underscored = parse_inline("<https://a_b_c.io>");
+        assert_eq!(underscored.len(), 1, "{underscored:?}");
+        assert!(
+            underscored[0].link && !underscored[0].italic,
+            "URL underscores are not emphasis"
+        );
+        assert_eq!(underscored[0].text, "https://a_b_c.io");
+    }
+
+    #[test]
     fn backtick_anchored_inline_math_renders_like_bare_dollars() {
         let runs = parse_inline("Why does $`a^2 + b^2 = c^2`$ hold?");
         assert_eq!(runs.len(), 3, "prose, math, prose: {runs:?}");
@@ -1622,8 +1704,8 @@ mod tests {
             for pair in runs.windows(2) {
                 let mergeable = pair[0].math.is_none()
                     && pair[1].math.is_none()
-                    && (pair[0].bold, pair[0].italic, pair[0].code)
-                        == (pair[1].bold, pair[1].italic, pair[1].code);
+                    && (pair[0].bold, pair[0].italic, pair[0].strike, pair[0].code, pair[0].link)
+                        == (pair[1].bold, pair[1].italic, pair[1].strike, pair[1].code, pair[1].link);
                 prop_assert!(
                     !mergeable,
                     "adjacent runs should have coalesced for source: {source:?}; pair: {pair:?}"

@@ -12,6 +12,7 @@ void main() {
       italic: true,
       strike: true,
       code: false,
+      link: true,
       math: bridge.MathView(display: true, svg: '<svg/>', error: 'fallback'),
     );
 
@@ -25,6 +26,7 @@ void main() {
         italic: true,
         strike: true,
         code: false,
+        link: true,
         math: InlineMathModel(display: true, svg: '<svg/>', error: 'fallback'),
       ),
     );
@@ -37,6 +39,7 @@ void main() {
       italic: false,
       strike: false,
       code: true,
+      link: false,
     );
 
     expect(inlineRunsFromBridge(const [plain]), const [

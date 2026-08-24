@@ -22,6 +22,7 @@
 .unit-table { border-collapse: collapse; margin: 0 auto; text-align: left; }
 .unit-table th, .unit-table td { border: 1px solid #f0c9a0; padding: 5px 10px; }
 .rev-context { font-weight: 600; font-size: 19px; line-height: 1.4; color: var(--muted); margin: 4px 0; }
+a.autolink { color: var(--bolt); text-decoration: underline; cursor: text; }
 .math-run { color: inherit; background: none; }
 .math-run[role="img"] { outline: none; }
 .math-inline { display: inline-flex; align-items: baseline; max-width: 100%; line-height: 1; vertical-align: -0.16em; }
