@@ -464,7 +464,8 @@ e2e:
 # `--with-deps` shells out to `sudo apt-get`, so on a host without apt-get it is
 # a failed sudo auth, not a no-op, and three of those trip pam_faillock's lockout.
 	if command -v apt-get >/dev/null 2>&1; then \
-		npx --prefix e2e playwright install --with-deps chromium; \
+		npx --prefix e2e playwright install --with-deps chromium \
+			|| npx --prefix e2e playwright install chromium; \
 	else \
 		npx --prefix e2e playwright install chromium; \
 	fi
