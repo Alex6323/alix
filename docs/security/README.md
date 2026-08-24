@@ -55,7 +55,14 @@ priority over keeping an individual session running.
 Alix runs with the user's filesystem permissions. A progress save serializes
 one deck's complete replacement document, writes a sibling temporary file,
 checks its loaded revision against the canonical file, then renames the
-replacement into place (`src/store.rs`). A writer marker and
+replacement into place (`src/store.rs`). Every such replacement goes through
+one helper (`src/fsio.rs`), which carries the existing file's permissions onto
+the temporary before the rename and resolves a symlinked path to its target
+first. Both properties are the file's own, not the writer's: a deck the user
+restricted to owner-only keeps that mode instead of taking the process umask,
+and a deck exposed through a symlink is repaired in place rather than having
+the link replaced by a divergent regular copy. A path that does not exist yet
+is created with the umask, which is the intended default for a new file. A writer marker and
 synchronization-conflict detection warn about likely same-deck concurrency;
 none of these mechanisms authenticates a writer or merges concurrent changes.
 An error after the rename remains visible, but progress and augmentation
@@ -298,6 +305,9 @@ The most relevant deterministic checks currently live beside their controls:
   identity, byte-preserving refusal, and initialized-only discovery;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
+- `src/fsio.rs` and `tests/cli.rs`: permission-preserving, symlink-respecting
+  file replacement shared by every deck and progress writer, including each
+  `alix doctor` repair;
 - `src/share.rs`: outgoing filtering and defensive receive sanitization;
 - `src/deck_transfer.rs`: local transfer preflight, private progress handling,
   destination-first publication, and source-deletion rollback;

@@ -10,11 +10,19 @@ pub(crate) enum Operation {
     WriteTemp,
     SyncTemp,
     Rename,
+    SetPermissions,
     CreateDirectory,
     #[cfg(unix)]
     OpenDirectory,
     #[cfg(unix)]
     SyncDirectory,
+}
+
+/// The sibling temporary this path's replacement writes through, matching
+/// the hidden-dot convention every caller already uses.
+fn temp_beside(path: &Path) -> Option<std::path::PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    Some(path.with_file_name(format!(".{name}.tmp")))
 }
 
 fn operation<T>(_operation: Operation, run: impl FnOnce() -> Result<T>) -> Result<T> {
@@ -70,7 +78,35 @@ pub(crate) fn replace_file_report(
         source,
         replaced: false,
     };
+    // A symlink names the entry the user chose to expose, so the replacement
+    // has to land on its target: renaming over the link itself would turn it
+    // into a regular copy and silently fork the two paths.
+    let resolved = std::fs::symlink_metadata(path)
+        .is_ok_and(|entry| entry.file_type().is_symlink())
+        .then(|| std::fs::canonicalize(path).ok())
+        .flatten();
+    let path = resolved.as_deref().unwrap_or(path);
+    let sibling;
+    let tmp = match resolved.as_deref().and_then(temp_beside) {
+        Some(beside) => {
+            sibling = beside;
+            sibling.as_path()
+        }
+        None => tmp,
+    };
+
     let mut file = operation(Operation::CreateTemp, || File::create(tmp)).map_err(before)?;
+    // The temporary is a new file, so it would otherwise carry the umask's
+    // permissions rather than the deck's: a private deck must not widen.
+    if let Ok(existing) = std::fs::metadata(path) {
+        operation(Operation::SetPermissions, || {
+            std::fs::set_permissions(tmp, existing.permissions())
+        })
+        .map_err(|source| {
+            let _ = std::fs::remove_file(tmp);
+            before(source)
+        })?;
+    }
     operation(Operation::WriteTemp, || file.write_all(contents)).map_err(before)?;
     #[cfg(test)]
     fault::trip(fault::After::TmpWrite).map_err(before)?;
@@ -88,6 +124,53 @@ pub(crate) fn replace_file_report(
         sync_dir(dir).map_err(after)?;
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod replacement_contract {
+    use std::os::unix::fs::PermissionsExt;
+
+    /// Every caller of the shared replacement inherits these two properties,
+    /// so they are pinned once here rather than per call site.
+    #[test]
+    fn a_replacement_keeps_the_targets_permissions_and_repairs_through_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let private = dir.path().join("private.md");
+        std::fs::write(&private, "before\n").unwrap();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let tmp = dir.path().join(".private.md.tmp");
+        super::replace_file(&tmp, &private, b"after\n").unwrap();
+
+        assert_eq!(
+            0o600,
+            std::fs::metadata(&private).unwrap().permissions().mode() & 0o777,
+            "a replacement must not widen a private file to the umask"
+        );
+        assert_eq!("after\n", std::fs::read_to_string(&private).unwrap());
+
+        let link = dir.path().join("link.md");
+        std::os::unix::fs::symlink(&private, &link).unwrap();
+        let link_tmp = dir.path().join(".link.md.tmp");
+        super::replace_file(&link_tmp, &link, b"through\n").unwrap();
+
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the replacement must repair through the link, not replace it"
+        );
+        assert_eq!(
+            "through\n",
+            std::fs::read_to_string(&private).unwrap(),
+            "the link's target carries the new content"
+        );
+        assert!(
+            !link_tmp.exists(),
+            "the caller's temporary name is unused when the path resolves elsewhere"
+        );
+    }
 }
 
 // create_dir_all leaves each new directory entry in its parent's page cache, so
@@ -326,6 +409,7 @@ mod tests {
         #[cfg(unix)]
         let expected = vec![
             fault::Operation::CreateTemp,
+            fault::Operation::SetPermissions,
             fault::Operation::WriteTemp,
             fault::Operation::SyncTemp,
             fault::Operation::Rename,
@@ -335,6 +419,7 @@ mod tests {
         #[cfg(not(unix))]
         let expected = vec![
             fault::Operation::CreateTemp,
+            fault::Operation::SetPermissions,
             fault::Operation::WriteTemp,
             fault::Operation::SyncTemp,
             fault::Operation::Rename,

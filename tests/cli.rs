@@ -6950,6 +6950,69 @@ fn doctor_repair_comment_order_moves_the_id_last_and_is_idempotent() {
 }
 
 #[test]
+fn doctor_repair_comment_order_preserves_private_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "private.md",
+        "---\nid: \"deck-private\"\n---\n## Private fact\nanswer\n<!-- id: card-private -->\n<!-- reveal: line -->\n",
+    );
+    std::fs::set_permissions(&deck, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let home = TempDir::new().unwrap();
+    let out = Command::new("/bin/sh")
+        .args([
+            "-c",
+            "umask 022; exec \"$ALIX_UNDER_TEST\" doctor --repair-comment-order \"$DECK_UNDER_TEST\"",
+        ])
+        .env("ALIX_UNDER_TEST", env!("CARGO_BIN_EXE_alix"))
+        .env("DECK_UNDER_TEST", &deck)
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path())
+        .env("XDG_DATA_HOME", home.path())
+        .env("XDG_STATE_HOME", home.path())
+        .output()
+        .expect("failed to run the alix binary");
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let mode = std::fs::metadata(&deck).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        0o600, mode,
+        "an opt-in formatting repair must not make a private deck readable by other users"
+    );
+}
+
+#[test]
+fn doctor_repair_comment_order_repairs_through_a_symlink_without_replacing_it() {
+    let dir = TempDir::new().unwrap();
+    let target = write(
+        dir.path(),
+        "target.md",
+        "---\nid: \"deck-linked\"\n---\n## Linked fact\nanswer\n<!-- id: card-linked -->\n<!-- reveal: line -->\n",
+    );
+    let link = dir.path().join("linked.md");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let out = alix(&["doctor", "--repair-comment-order", link.to_str().unwrap()]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "repairing a symlinked deck must preserve the link instead of replacing it with a divergent copy"
+    );
+    assert!(
+        std::fs::read_to_string(&target)
+            .unwrap()
+            .ends_with("answer\n<!-- reveal: line -->\n<!-- id: card-linked -->\n"),
+        "the repair must reach the linked deck"
+    );
+}
+
+#[test]
 fn doctor_repair_frontmatter_order_moves_machine_lines_last() {
     let dir = TempDir::new().unwrap();
     let deck = write(

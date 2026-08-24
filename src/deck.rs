@@ -557,7 +557,7 @@ fn resolve_image(base: &Path, image: PathBuf) -> PathBuf {
     }
 }
 
-pub(crate) fn write_deck_text(path: &Path, text: &str) -> Result<(), DeckError> {
+pub fn write_deck_text(path: &Path, text: &str) -> Result<(), DeckError> {
     let io_err = |source| DeckError::Io {
         path: path.to_path_buf(),
         source,

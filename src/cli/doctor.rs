@@ -1072,9 +1072,7 @@ fn repair_positions(paths: &[PathBuf]) -> Result<()> {
             &repaired,
         )
         .with_context(|| format!("{}: the repair would not parse", path.display()))?;
-        let tmp = path.with_extension("md.tmp");
-        std::fs::write(&tmp, &repaired)?;
-        std::fs::rename(&tmp, path)?;
+        alix::deck::write_deck_text(path, &repaired)?;
     }
     Ok(())
 }
@@ -1091,9 +1089,7 @@ fn repair_frontmatter_order(paths: &[PathBuf]) -> Result<()> {
                     &repaired,
                 )
                 .with_context(|| format!("{}: the repair would not parse", path.display()))?;
-                let tmp = path.with_extension("md.tmp");
-                std::fs::write(&tmp, &repaired)?;
-                std::fs::rename(&tmp, path)?;
+                alix::deck::write_deck_text(path, &repaired)?;
                 println!("reordered frontmatter in {}", path.display());
             }
             Reorder::Skipped(reason) => {
@@ -1119,9 +1115,7 @@ fn repair_comment_order(paths: &[PathBuf]) -> Result<()> {
                     &repaired,
                 )
                 .with_context(|| format!("{}: the repair would not parse", path.display()))?;
-                let tmp = path.with_extension("md.tmp");
-                std::fs::write(&tmp, &repaired)?;
-                std::fs::rename(&tmp, path)?;
+                alix::deck::write_deck_text(path, &repaired)?;
                 println!("reordered comment machinery in {}", path.display());
             }
             Reorder::Skipped(reason) => {
