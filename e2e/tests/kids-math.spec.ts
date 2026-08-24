@@ -149,6 +149,10 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
     if (!choice || !display || !checklist || !cloze || !code || !error || !explain) {
       throw new Error("math fixture cards are incomplete");
     }
+    const mathUnit = display.back_units.find(
+      (unit: any) => unit.kind === "sentence" && unit.runs?.some((run: any) => run.math?.display),
+    );
+    if (!mathUnit) throw new Error("math fixture has no display unit");
 
     const stage = dom.el("main");
     const actionbar = dom.el("footer");
@@ -227,6 +231,22 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
     const context = dom.el("section", "surface-context");
     context.appendChild(rendered(".rev-context"));
     audit.appendChild(context);
+
+    for (const [name, lines, units] of [
+      ["bare", ["$$", mathUnit.text, "$$"], [mathUnit]],
+      ["fence", ["```math", mathUnit.text, "```"], [mathUnit]],
+      ["unclosed", ["$$", mathUnit.text], []],
+    ]) {
+      study.apply(review({
+        ...cloze,
+        context: lines,
+        context_runs: lines.map((line: string) => [{ text: line }]),
+        context_units: units,
+      }));
+      const block = dom.el("section", `surface-context-${name}`);
+      block.appendChild(rendered(".rev-card"));
+      audit.appendChild(block);
+    }
 
     study.apply(review(display));
     reveal();
@@ -307,6 +327,12 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
       Number.parseFloat(getComputedStyle(node).fontSize) * 1.4;
   })).toBeTruthy();
   await expect(page.locator(".surface-front .math-standalone")).toHaveCount(0);
+
+  await expect(page.locator(".surface-context-bare .math-display")).toBeVisible();
+  await expect(page.locator(".surface-context-bare")).not.toContainText("$$");
+  await expect(page.locator(".surface-context-fence .math-display")).toBeVisible();
+  await expect(page.locator(".surface-context-fence")).not.toContainText("```math");
+  await expect(page.locator(".surface-context-unclosed")).toContainText("$$");
 
   const display = page.locator(".surface-answer .math-display");
   await expect(display).toBeVisible();

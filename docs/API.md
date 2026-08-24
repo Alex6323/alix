@@ -629,11 +629,11 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `front_units` | [NoteUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
 | `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question, so a client shows it only on demand and never by default. Image syntax inside it is prose, not a media element. |
 | `section_context_runs` | [[InlineRun]] | Display projection per section line, same shape as `context_runs`. |
-| `section_context_units` | [NoteUnitDto] | The section's fence-shaped units only, in fence order, same alignment law as `context_units`. Always `code`: nothing freezes a section's fence, so a section never yields a `diagram`. A `***`/`___` break line in the section renders as a horizontal rule; clients detect it from the line, like fences, so no unit carries it. |
+| `section_context_units` | [NoteUnitDto] | The section's structural blocks in source order: one unit per raw fence and per closed, nonempty bare-`$$` block. A math fence or bare-`$$` block yields a display-math `sentence`; other fences yield `code`. Nothing freezes a section's fence, so it never yields a `diagram`. An unmatched `$$` stays in the line projection and consumes no unit. A `***`/`___` break line renders as a horizontal rule; clients detect it from the line, so no unit carries it. |
 | `context` | [string] | Context lines: a cloze card's sentence, or a card table's title. |
 | `context_leads` | bool | True when `context` is the question and the front is a topic above it (cloze); false when `context` only labels the front, which keeps the lead (table title). |
 | `context_runs` | [[InlineRun]] | Display projection per cloze context line. |
-| `context_units` | [NoteUnitDto] | The context's fence-shaped units only (`code` / `diagram`), in fence order. Context prose keeps its per-line rendering; clients consume one unit per closed raw fence in `context` (the same alignment law as `back_units`). Empty when the context has no fences. |
+| `context_units` | [NoteUnitDto] | The context's structural blocks in source order: raw fences yield `code`, `diagram`, or display-math `sentence` units, and each closed, nonempty bare-`$$` block yields a display-math `sentence`. Context prose keeps its per-line rendering. An unmatched `$$` stays literal and consumes no unit. Empty when the context has no structural block. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
@@ -732,7 +732,8 @@ from the delimiter row's colons; `header` is one run list per header cell and
 `rows` are the body cells, each padded or truncated to the header width for
 display (only the mapped-card table enforces widths). Table units appear in
 `back_units`, `front_units`, and `note`; `context_units` and
-`section_context_units` stay fence-shaped only. Example payload:
+`section_context_units` carry only raw fences and closed bare-math blocks.
+Example payload:
 `tests/contracts/CardDto.table.json`.
 
 A `diagram` unit is a frozen mermaid fence, rendered: it occupies the

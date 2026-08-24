@@ -900,6 +900,23 @@ fn carddto_sectioned_wire_shape() {
 }
 
 #[test]
+fn carddto_section_bare_math_is_one_display_sentence() {
+    let text = "# Formula\n\n$$\nx^2 + y^2\n$$\n\n## q\na\n";
+    let cards = crate::parser::parse_str("t", text).expect("the fixture parses");
+    let dto = card_dto(crate::review::CardView::from(&cards[0]), None);
+
+    let [crate::render::NoteUnit::Sentence { text, runs }] = dto.section_context_units.as_slice()
+    else {
+        panic!(
+            "the closed section block must be one display sentence: {:?}",
+            dto.section_context_units
+        );
+    };
+    assert_eq!("x^2 + y^2", text);
+    assert!(runs[0].math.as_ref().is_some_and(|math| math.display));
+}
+
+#[test]
 fn carddto_wire_shape() {
     let dto = card_dto(
         crate::review::CardView {

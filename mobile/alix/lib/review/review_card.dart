@@ -660,9 +660,6 @@ class ReviewCardView extends StatelessWidget {
     return Column(children: children);
   }
 
-  // Context keeps its per-line rendering (blank/hidden glyphs, the
-  // labelling style); only fence slots consume contextUnits. A labelling
-  // context puts its 8px gap after each block, a leading one before it.
   List<Widget> _contextLines(
     ReviewCardModel card,
     AlixTokens tokens, {
@@ -677,14 +674,23 @@ class ReviewCardView extends StatelessWidget {
       if (!leading) children.add(const SizedBox(height: 8));
     }
 
-    _walkFences(
+    _walkContextBlocks(
       card.context,
       card.contextUnits,
-      onFence: (code, unit, closed) {
+      onBlock: (source, unit, closed) {
         if (closed && unit is ReviewDiagramModel) {
           add(_diagram(unit, answered: answered));
+        } else if (closed && unit is ReviewSentenceModel) {
+          add(
+            _runsOrText(
+              unit.runs,
+              unit.text,
+              textAlign: TextAlign.center,
+              style: style,
+            ),
+          );
         } else {
-          add(_codeBlock(code, style?.color ?? tokens.text));
+          add(_codeBlock(source, style?.color ?? tokens.text));
         }
       },
       onLine: (index) {
@@ -701,6 +707,63 @@ class ReviewCardView extends StatelessWidget {
       },
     );
     return children;
+  }
+
+  void _walkContextBlocks(
+    List<String> lines,
+    List<ReviewNoteUnitModel> units, {
+    required void Function(
+      List<String> source,
+      ReviewNoteUnitModel? unit,
+      bool closed,
+    )
+    onBlock,
+    required void Function(int index) onLine,
+  }) {
+    var unitIndex = 0;
+    var index = 0;
+    while (index < lines.length) {
+      if (lines[index].trim() == r'$$') {
+        var close = index + 1;
+        while (close < lines.length && lines[close].trim() != r'$$') {
+          close++;
+        }
+        if (close < lines.length) {
+          final source = lines.sublist(index + 1, close);
+          if (source.any((line) => line.trim().isNotEmpty)) {
+            final unit = unitIndex < units.length ? units[unitIndex] : null;
+            unitIndex++;
+            onBlock(source, unit, true);
+          }
+          index = close + 1;
+          continue;
+        }
+      }
+
+      final trimmed = lines[index].trim();
+      final marker = trimmed.startsWith('```')
+          ? '```'
+          : trimmed.startsWith('~~~')
+          ? '~~~'
+          : null;
+      if (marker != null) {
+        final source = <String>[];
+        index++;
+        while (index < lines.length && lines[index].trim() != marker) {
+          source.add(lines[index]);
+          index++;
+        }
+        final closed = index < lines.length;
+        if (closed) index++;
+        final unit = unitIndex < units.length ? units[unitIndex] : null;
+        unitIndex++;
+        onBlock(source, unit, closed);
+        continue;
+      }
+
+      onLine(index);
+      index++;
+    }
   }
 
   // The ONE fence walk (the same alignment law as the web clients):

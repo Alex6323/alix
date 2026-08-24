@@ -187,8 +187,8 @@ class ReviewCardModel {
   final bool contextLeads;
   final List<List<InlineRunModel>> contextRuns;
 
-  /// The context's fence-shaped units only, in fence order (the nth raw
-  /// fence consumes the nth unit); context prose keeps its line rendering.
+  /// The context's raw fences and closed bare-math blocks, in source order.
+  /// Context prose keeps its line rendering.
   final List<ReviewNoteUnitModel> contextUnits;
   final List<String> back;
   final List<List<InlineRunModel>> backRuns;

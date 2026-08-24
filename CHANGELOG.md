@@ -13,15 +13,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   body the same way; both render as one display formula, exactly like a
   `$$...$$` line, with every interior line as verbatim math source
   (blank lines, `>` lines, and other card-markup shapes included). The
-  fence spelling renders on card, section, and context surfaces alike.
-  A card or note that opens a `$$` block without closing it fails loud
-  at the opener's line instead of swallowing the rest of the card.
+  fence spelling and a closed bare block render on card, section, and
+  context surfaces alike. A card or note that opens a `$$` block without
+  closing it fails loud at the opener's line instead of swallowing the
+  rest of the card. An unmatched section or context opener stays literal
+  and does not consume the lines after it.
   Inline math gains the backtick-anchored spelling: a dollar, a
   backtick-quoted body, a dollar (as in ``$`x^2`$``) renders exactly
-  like `$x^2$`. Code-fence interiors, escaped markers, empty bodies,
-  and bare `$$` lines in section prose stay literal; kids and mobile
-  inherit everything through the existing math-run wire with no client
-  change.
+  like `$x^2$`. Code-fence interiors, escaped markers, and empty bodies
+  stay literal; kids and mobile inherit everything through the existing
+  math-run wire.
 
 - Bare pipe tables render as real aligned tables on every card surface
   (adult web, kids fronts, mobile): alignment colons in the delimiter row

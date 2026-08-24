@@ -97,8 +97,9 @@ $$
 ```
 
 A card that opens a `$$` block without closing it fails to load, with an
-error naming the opener's line. In a section (outside any card), `$$` lines
-stay ordinary text.
+error naming the opener's line. A closed pair in section or context prose
+renders as the same display formula. An unmatched opener on those surfaces
+stays ordinary text and does not consume the lines after it.
 
 An opening dollar must touch the first formula character, and a closing dollar
 must touch the last one. A closing inline `$` cannot be followed by a digit, so

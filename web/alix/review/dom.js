@@ -336,16 +336,66 @@ export function appendReveal(parent, lines, runs, isList, units, makeDiagram) {
   }, makeDiagram);
 }
 
-// Context keeps its per-line rendering (blank/hidden glyphs, standalone
-// math, the labelling style); only fence slots consume context_units.
 export function appendContext(parent, lines, runs, units, cls, makeDiagram) {
-  walkFences(parent, lines || [], units, (index) => {
+  lines = lines || [];
+  const blockUnits = units || [];
+  let unitIndex = 0;
+  const appendLine = (index) => {
     if (isRuleLine(lines[index])) {
       parent.appendChild(el("hr", "context-rule"));
       return;
     }
     parent.appendChild(contextLine(lines[index], runs && runs[index], cls));
-  }, makeDiagram);
+  };
+  const appendBlock = (unit, source) => {
+    if (unit && unit.kind === "sentence") {
+      parent.appendChild(contextLine(unit.text, unit.runs, cls));
+    } else if (unit && unit.kind === "diagram") {
+      parent.appendChild(makeDiagram ? makeDiagram(unit) : diagramImage(unit));
+    } else {
+      const pre = el("pre", "code-block");
+      pre.textContent = source.join("\n");
+      parent.appendChild(pre);
+    }
+  };
+
+  let index = 0;
+  while (index < lines.length) {
+    if (lines[index].trim() === "$$") {
+      let close = index + 1;
+      while (close < lines.length && lines[close].trim() !== "$$") close++;
+      if (close < lines.length) {
+        const source = lines.slice(index + 1, close);
+        if (source.some((line) => line.trim())) {
+          appendBlock(blockUnits[unitIndex], source);
+          unitIndex++;
+        }
+        index = close + 1;
+        continue;
+      }
+    }
+
+    const fence = lines[index].trim().match(/^(`{3,}|~{3,})/);
+    if (fence) {
+      const marker = fence[1];
+      const source = [];
+      index++;
+      while (index < lines.length && !closesFence(lines[index], marker)) {
+        source.push(lines[index]);
+        index++;
+      }
+      const closed = index < lines.length;
+      if (closed) index++;
+      const unit = blockUnits[unitIndex];
+      unitIndex++;
+      if (closed) appendBlock(unit, source);
+      else appendBlock(null, source);
+      continue;
+    }
+
+    appendLine(index);
+    index++;
+  }
 }
 
 function appendContextText(parent, run) {

@@ -330,9 +330,9 @@ pub(crate) fn front_units_with(
         .then_some(units)
 }
 
-/// The fence-shaped units of a card's context, in fence order. Context
-/// renders line-by-line on every client (contextLine semantics), so this
-/// stream carries only what the nth-fence alignment law consumes. The
+/// The structural units of a card's context, in source order. Context
+/// renders prose line-by-line on every client, so this stream carries only
+/// raw fences and closed nonempty bare-math blocks. The
 /// context text is MASKED, so a mermaid fence resolves through its parse
 /// record's unmasked fingerprint, never through the displayed text; a
 /// record carrying spans or holes stays code until span binding ships.
@@ -342,41 +342,63 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
     let context = &card.context;
     let diagrams = &card.resolved_diagrams;
     let fences = &card.answer_fences;
-    let mut units = Vec::new();
     let mut projector = DisplayProjector::default();
     let mut records = fences.iter();
+    structural_units_with(context, &mut projector, |info, lines, projector| {
+        if info.eq_ignore_ascii_case("math") && lines.iter().any(|line| !line.trim().is_empty()) {
+            let source = lines.join("\n");
+            NoteUnit::Sentence {
+                runs: projector.project_display_math(&source),
+                text: source,
+            }
+        } else {
+            let mermaid = info.eq_ignore_ascii_case("mermaid");
+            let record = if mermaid { records.next() } else { None };
+            context_fence_unit(card, mermaid, lines, record, diagrams)
+        }
+    })
+}
+
+fn structural_units_with(
+    lines: &[String],
+    projector: &mut DisplayProjector,
+    mut fence_unit: impl FnMut(&str, Vec<String>, &mut DisplayProjector) -> NoteUnit,
+) -> Vec<NoteUnit> {
+    let mut units = Vec::new();
     let mut open: Option<(char, usize, String)> = None;
     let mut interior: Vec<String> = Vec::new();
-    for line in context {
+    let mut math_block: Option<Vec<String>> = None;
+    for line in lines {
+        if let Some(body) = math_block.as_mut() {
+            if line.trim() == "$$" {
+                let source = std::mem::take(body).join("\n");
+                math_block = None;
+                if !source.trim().is_empty() {
+                    units.push(NoteUnit::Sentence {
+                        runs: projector.project_display_math(&source),
+                        text: source,
+                    });
+                }
+            } else {
+                body.push(line.clone());
+            }
+            continue;
+        }
         match (open.as_ref(), fence_marker(line)) {
             (Some((ch, len, _)), Some(_))
                 if crate::parser::closes_fence(line.trim_start(), *ch, *len) =>
             {
                 let (_, _, info) = open.take().expect("matched Some above");
-                let lines = std::mem::take(&mut interior);
-                if info.eq_ignore_ascii_case("math")
-                    && lines.iter().any(|line| !line.trim().is_empty())
-                {
-                    let source = lines.join("\n");
-                    units.push(NoteUnit::Sentence {
-                        runs: projector.project_display_math(&source),
-                        text: source,
-                    });
-                } else {
-                    let mermaid = info.eq_ignore_ascii_case("mermaid");
-                    let record = if mermaid { records.next() } else { None };
-                    units.push(context_fence_unit(card, mermaid, lines, record, diagrams));
-                }
+                units.push(fence_unit(&info, std::mem::take(&mut interior), projector));
             }
             (Some(_), _) => interior.push(line.clone()),
             (None, Some((marker, run))) => {
                 open = Some((marker, run, fence_info(line, marker).to_string()));
             }
+            (None, None) if line.trim() == "$$" => math_block = Some(Vec::new()),
             (None, None) => {}
         }
     }
-    // An unterminated fence still yields its gathered lines; it was never
-    // recorded, so it can only be code.
     if !interior.is_empty() {
         units.push(NoteUnit::Code { lines: interior });
     }
@@ -385,36 +407,12 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
 
 /// Section prose is never a diagram: nothing freezes a section's fence, so
 /// there is no record to resolve a mermaid body against and it stays code.
-/// A math fence needs no record and renders as display math.
+/// Math fences and closed nonempty bare-math blocks need no record.
 pub(crate) fn section_units(lines: &[String]) -> Vec<NoteUnit> {
-    let mut units = Vec::new();
     let mut projector = DisplayProjector::default();
-    let mut open: Option<(char, usize, String)> = None;
-    let mut interior: Vec<String> = Vec::new();
-    for line in lines {
-        match (open.as_ref(), fence_marker(line)) {
-            (Some((ch, len, _)), Some(_))
-                if crate::parser::closes_fence(line.trim_start(), *ch, *len) =>
-            {
-                let (_, _, info) = open.take().expect("matched Some above");
-                units.push(fence_unit(
-                    &info,
-                    std::mem::take(&mut interior),
-                    &[],
-                    &mut projector,
-                ));
-            }
-            (Some(_), _) => interior.push(line.clone()),
-            (None, Some((marker, run))) => {
-                open = Some((marker, run, fence_info(line, marker).to_string()));
-            }
-            (None, None) => {}
-        }
-    }
-    if !interior.is_empty() {
-        units.push(NoteUnit::Code { lines: interior });
-    }
-    units
+    structural_units_with(lines, &mut projector, |info, lines, projector| {
+        fence_unit(info, lines, &[], projector)
+    })
 }
 
 fn context_fence_unit(
@@ -1235,6 +1233,56 @@ mod tests {
                 runs[0].math.as_ref().is_some_and(|math| math.display),
                 "{surface} must carry a display math run: {runs:?}"
             );
+        }
+    }
+
+    #[test]
+    fn section_and_context_walks_share_the_bare_display_math_boundary() {
+        let cases = [
+            (
+                "closed bare block",
+                vec!["$$", "x^2 + y^2", "$$"],
+                Some("x^2 + y^2"),
+            ),
+            (
+                "unclosed bare opener stays prose",
+                vec!["$$", "x^2 + y^2"],
+                None,
+            ),
+            (
+                "math fence control",
+                vec!["```math", "x^2 + y^2", "```"],
+                Some("x^2 + y^2"),
+            ),
+        ];
+
+        for (case, source, expected) in cases {
+            let lines: Vec<String> = source.into_iter().map(str::to_string).collect();
+            let surfaces = [
+                ("section", section_units(&lines)),
+                (
+                    "context",
+                    context_units_with(&context_card(&lines, Vec::new(), Vec::new())),
+                ),
+            ];
+            for (surface, units) in surfaces {
+                match expected {
+                    Some(expected) => {
+                        let [NoteUnit::Sentence { text, runs }] = units.as_slice() else {
+                            panic!("{case} on {surface} must be display math: {units:?}");
+                        };
+                        assert_eq!(expected, text, "{case} on {surface}");
+                        assert!(
+                            runs[0].math.as_ref().is_some_and(|math| math.display),
+                            "{case} on {surface} must carry a display run: {runs:?}"
+                        );
+                    }
+                    None => assert!(
+                        units.is_empty(),
+                        "{case} on {surface} must remain in the raw prose walk: {units:?}"
+                    ),
+                }
+            }
         }
     }
 

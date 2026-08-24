@@ -8,6 +8,41 @@ test.beforeEach(async ({ page, request }) => {
   await expect(page.locator(".deckrow").first()).toBeVisible();
 });
 
+test("adult context blocks render paired bare math and keep unmatched openers literal", async ({ page, request }) => {
+  const browseResponse = await request.post("/api/browse", {
+    data: { deck: "animals/math.md" },
+  });
+  expect(browseResponse.ok(), await browseResponse.text()).toBeTruthy();
+  const browse = await browseResponse.json();
+  const display = browse.cards.find((card: any) => card.front.includes("Evaluate this display formula"));
+  const mathUnit = display?.back_units?.find(
+    (unit: any) => unit.kind === "sentence" && unit.runs?.some((run: any) => run.math?.display),
+  );
+  expect(mathUnit, "the fixture must provide one reusable display-math unit").toBeTruthy();
+
+  await page.evaluate(async (unit) => {
+    const { appendContext, el } = await import("/review.js");
+    const audit = el("div", "context-block-audit");
+    for (const [name, lines, units] of [
+      ["bare", ["$$", unit.text, "$$"], [unit]],
+      ["fence", ["```math", unit.text, "```"], [unit]],
+      ["unclosed", ["$$", unit.text], []],
+    ]) {
+      const surface = el("section", `surface-${name}`);
+      appendContext(surface, lines, null, units);
+      audit.appendChild(surface);
+    }
+    document.getElementById("stage")!.replaceChildren(audit);
+  }, mathUnit);
+
+  await expect(page.locator(".surface-bare .math-display")).toBeVisible();
+  await expect(page.locator(".surface-bare")).not.toContainText("$$");
+  await expect(page.locator(".surface-fence .math-display")).toBeVisible();
+  await expect(page.locator(".surface-fence")).not.toContainText("```math");
+  await expect(page.locator(".surface-unclosed")).toContainText("$$");
+  await expect(page.locator(".surface-unclosed")).toContainText(mathUnit.text);
+});
+
 test("adult card surfaces render shared math SVGs safely", async ({ page, request }, testInfo) => {
   const browseResponse = await request.post("/api/browse", {
     data: { deck: "animals/math.md" },
