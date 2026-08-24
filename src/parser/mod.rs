@@ -395,6 +395,10 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
             }
         }
     }
+    let table = std::sync::Arc::new(crate::inline::LinkDefinitions::new(&document.definitions));
+    for card in &mut cards {
+        card.definitions = table.clone();
+    }
     Ok(ParsedDeck {
         deck_token: document.frontmatter.id.clone(),
         title: document.frontmatter.title.clone(),

@@ -183,6 +183,7 @@ impl From<&Card> for CardView {
 
 impl CardView {
     pub fn project(card: &Card, projector: &mut DisplayProjector) -> Self {
+        projector.set_definitions(card.definitions.clone());
         let (front, front_runs) = project_block(&card.front, projector);
         let front_units = render::front_units_with(&card.front, projector, &card.resolved_diagrams);
         let context_runs = card
@@ -586,7 +587,7 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
     let expected: Vec<String> = card
         .back
         .iter()
-        .map(|line| crate::inline::strip_inline(line))
+        .map(|line| crate::inline::strip_inline_with(line, &card.definitions))
         .collect();
     let results = if mode == Mode::TypeLine {
         answer::grade_lines_ordered(lines, &expected)
@@ -602,6 +603,30 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+
+    #[test]
+    fn a_reference_link_resolves_against_its_own_decks_definitions() {
+        let deck = parser::parse(
+            "d.md",
+            "## Q\nsee [the ref][r] here\n[r]: https://alix.study\n",
+        )
+        .unwrap();
+        let view = CardView::from(&deck.cards[0]);
+        assert!(
+            view.back_runs[0]
+                .iter()
+                .any(|run| run.link && run.text == "the ref"),
+            "the card's own table styles its reference: {:?}",
+            view.back_runs
+        );
+        let stray = parser::parse("other.md", "## Q\nsee [the ref][r] here\nanswer\n").unwrap();
+        let stray_view = CardView::from(&stray.cards[0]);
+        assert!(
+            stray_view.back_runs[0].iter().all(|run| !run.link),
+            "a deck without the definition keeps the form prose: {:?}",
+            stray_view.back_runs
+        );
+    }
     use crate::{
         answer::Mode,
         augment::AugmentCache,

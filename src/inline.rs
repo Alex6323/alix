@@ -37,7 +37,7 @@ pub struct InlineRun {
 #[derive(Default)]
 pub struct DisplayProjector {
     renderer: MathRenderer,
-    definitions: Option<LinkDefinitions>,
+    definitions: Option<std::sync::Arc<LinkDefinitions>>,
 }
 
 impl DisplayProjector {
@@ -47,9 +47,15 @@ impl DisplayProjector {
         S: AsRef<str>,
     {
         Self {
-            definitions: Some(LinkDefinitions::new(labels)),
+            definitions: Some(std::sync::Arc::new(LinkDefinitions::new(labels))),
             ..Self::default()
         }
+    }
+
+    /// Point the projector at one card's deck table before projecting it: a
+    /// sitting can span decks, and a label must never resolve across them.
+    pub fn set_definitions(&mut self, definitions: std::sync::Arc<LinkDefinitions>) {
+        self.definitions = Some(definitions);
     }
 
     pub fn project(&mut self, text: &str) -> Vec<InlineRun> {
@@ -57,7 +63,7 @@ impl DisplayProjector {
             text,
             Some(&mut self.renderer),
             false,
-            self.definitions.as_ref(),
+            self.definitions.as_deref(),
         )
     }
 
@@ -66,7 +72,7 @@ impl DisplayProjector {
             text,
             Some(&mut self.renderer),
             true,
-            self.definitions.as_ref(),
+            self.definitions.as_deref(),
         )
     }
 
@@ -128,6 +134,7 @@ pub fn strip_inline_with(text: &str, definitions: &LinkDefinitions) -> String {
 }
 
 /// A deck's link-definition labels, folded once for reference matching.
+#[derive(Debug, Default)]
 pub struct LinkDefinitions(std::collections::HashSet<String>);
 
 impl LinkDefinitions {

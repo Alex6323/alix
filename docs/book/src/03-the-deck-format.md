@@ -91,7 +91,11 @@ a deck".
 A link-definition line (`[label]: destination`) in an answer is deck
 metadata, not content: it never displays and is never graded, and a card
 whose whole answer is definitions fails loud as answerless. Reference
-links such as `[text][label]` currently display as written.
+links resolve against the deck's own definitions and render like inline
+links, in all three GFM forms: `[text][label]`, `[text][]`, and bare
+`[text]`. Labels match case-insensitively with interior whitespace
+collapsed, a label never resolves across deck boundaries, and a
+reference whose label is undefined stays ordinary prose.
 
 ## LaTeX math
 

@@ -70,8 +70,8 @@ fn answer_text(card: &Card) -> String {
     card.back.join("\n")
 }
 
-fn content(text: &str) -> String {
-    crate::inline::strip_inline(text.trim())
+fn content(text: &str, card: &Card) -> String {
+    crate::inline::strip_inline_with(text.trim(), &card.definitions)
 }
 
 // Stable across polls of one appearance, but a fresh study session receives a
@@ -88,14 +88,14 @@ fn distinct_distractors(card: &Card, ai_distractors: &[String]) -> Vec<String> {
     let needed = NUM_OPTIONS - 1;
     // Seed with the answer so no AI distractor can duplicate it.
     let mut seen: HashSet<String> = HashSet::new();
-    seen.insert(content(&answer_text(card)));
+    seen.insert(content(&answer_text(card), card));
     let mut chosen: Vec<String> = Vec::new();
     for option in ai_distractors {
         if chosen.len() == needed {
             break;
         }
         let trimmed = option.trim();
-        let content = content(trimmed);
+        let content = content(trimmed, card);
         if !content.is_empty() && seen.insert(content) {
             chosen.push(trimmed.to_string());
         }
@@ -128,11 +128,11 @@ pub fn build_authored(
 ) -> Option<ChoiceQuestion> {
     let correct_text = answer_text(card);
     let mut seen = HashSet::new();
-    seen.insert(content(&correct_text));
+    seen.insert(content(&correct_text, card));
     let mut options = Vec::new();
     for distractor in authored_distractors {
         let trimmed = distractor.trim();
-        let content = content(trimmed);
+        let content = content(trimmed, card);
         if !content.is_empty() && seen.insert(content) {
             options.push(trimmed.to_string());
         }
@@ -161,7 +161,7 @@ pub fn build_authored_multi(
     let mut correct_texts = Vec::new();
     for line in &card.back {
         let trimmed = line.trim();
-        let content = content(trimmed);
+        let content = content(trimmed, card);
         if !content.is_empty() && seen.insert(content) {
             correct_texts.push(trimmed.to_string());
         }
@@ -170,7 +170,7 @@ pub fn build_authored_multi(
     let correct_count = options.len();
     for distractor in authored_distractors {
         let trimmed = distractor.trim();
-        let content = content(trimmed);
+        let content = content(trimmed, card);
         if !content.is_empty() && seen.insert(content) {
             options.push(trimmed.to_string());
         }
@@ -509,7 +509,7 @@ mod tests {
             1,
             q.options
                 .iter()
-                .filter(|option| content(option) == "four")
+                .filter(|option| content(option, &c) == "four")
                 .count()
         );
     }

@@ -143,6 +143,10 @@ pub struct Card {
     /// The owning deck's stable id; empty when the deck has none
     /// (uninitialized deck, or a card built outside deck context).
     pub deck_id: Arc<str>,
+    /// The owning deck's folded link-definition table, shared by every card
+    /// of the deck; empty outside deck context. Labels must never resolve
+    /// across decks, which is why the table rides the card, not the session.
+    pub definitions: Arc<crate::inline::LinkDefinitions>,
     pub front: String,
     /// The card's section: its `# ` heading and that section's prose. Shown
     /// only on demand and never part of identity, so re-filing a card
@@ -218,6 +222,7 @@ impl Card {
         Self {
             subject,
             deck_id: Arc::from(""),
+            definitions: Arc::default(),
             front,
             section_context: Vec::new(),
             context: Vec::new(),

@@ -14,8 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   untouched. Anchor and relative destinations render the same way
   (anchor navigation stays a documented non-feature). Emphasis works
   inside and across labels, code spans keep the syntax literal, and
-  grading compares the label text. Reference links and definition
-  lines follow in a later slice.
+  grading compares the label text. Reference links resolve against the
+  deck's own definition lines and render the same way, in all three
+  GFM forms (`[text][label]`, `[text][]`, bare `[text]`); labels match
+  case-insensitively with interior whitespace collapsed, never across
+  deck boundaries, and an undefined reference stays ordinary prose.
 
 - The math spellings aligned with GitHub (decision 11). Display math
   gains its two block spellings: a bare `$$` line opens a block that the
@@ -330,9 +333,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   display, never join typed grading, and a card whose entire answer
   was definitions fails loud as answerless. Fences keep them literal,
   an escaped bracket or a hole marker keeps the line prose, and the
-  deck file is untouched. The collected labels feed the reference-link
-  rendering that builds next; `[text][label]` itself still displays as
-  written for now.
+  deck file is untouched. The collected labels are what reference
+  links resolve against.
 
 - The typing-mode character reveal is removed (ruled 2026-08-24 with the
   aid naming: revealing answer characters piecemeal only slow-fails the
