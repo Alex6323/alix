@@ -100,6 +100,9 @@ struct Glyph {
     link: bool,
     subset: Option<usize>,
     math: Option<usize>,
+    /// One past the authored char footprint of the entity this glyph was
+    /// decoded from; a splice must replace the whole footprint.
+    entity_end: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -428,7 +431,13 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
             gap = true;
             continue;
         }
-        let splice_start = glyph.raw_index - usize::from(glyph.escaped && !glyph.code);
+        let (splice_start, splice_end) = match glyph.entity_end {
+            Some(end) => (glyph.raw_index, end),
+            None => (
+                glyph.raw_index - usize::from(glyph.escaped && !glyph.code),
+                glyph.raw_index + 1,
+            ),
+        };
         if let Some(span_index) = glyph.math {
             match pieces.last_mut() {
                 Some(piece) if piece.math && last_math == Some(span_index) && !gap => {
@@ -459,13 +468,13 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
             {
                 piece.text.push(glyph.ch);
                 piece.starts.push(splice_start);
-                piece.ends.push(glyph.raw_index + 1);
+                piece.ends.push(splice_end);
             }
             _ => {
                 pieces.push(LinePiece {
                     text: glyph.ch.to_string(),
                     starts: vec![splice_start],
-                    ends: vec![glyph.raw_index + 1],
+                    ends: vec![splice_end],
                     bold: style.0,
                     italic: style.1,
                     code: style.2,
@@ -1070,6 +1079,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 link: false,
                 subset: None,
                 math: Some(span_index),
+                entity_end: None,
             });
             index += 1;
             continue;
@@ -1092,6 +1102,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 link: false,
                 subset: subset_slot[index + 1],
                 math: None,
+                entity_end: None,
             });
             index += 2;
             continue;
@@ -1108,6 +1119,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 link: true,
                 subset: subset_slot[raw_index],
                 math: None,
+                entity_end: None,
             }));
             index = close + 1;
             continue;
@@ -1124,6 +1136,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                     link: false,
                     subset: None,
                     math: None,
+                    entity_end: None,
                 }));
             } else {
                 glyphs.extend((index..index + run).map(|raw_index| Glyph {
@@ -1134,6 +1147,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                     link: false,
                     subset: subset_slot[raw_index],
                     math: None,
+                    entity_end: None,
                 }));
             }
             index = end;
@@ -1152,6 +1166,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                     link: false,
                     subset: subset_slot[index],
                     math: None,
+                    entity_end: Some(index + consumed),
                 }));
                 // entity source is ASCII, so its byte length is its char count
                 index += consumed;
@@ -1166,6 +1181,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
             link: false,
             subset: subset_slot[index],
             math: None,
+            entity_end: None,
         });
         index += 1;
     }

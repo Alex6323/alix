@@ -6571,6 +6571,29 @@ the answer
     }
 
     #[test]
+    fn a_span_enabled_answer_can_start_with_an_entity() {
+        let deck =
+            parse("## q\n---\n&amp; welcome\n<!-- blank: span hidden=\"welcome\" b:a1b2c3 -->\n");
+        assert_eq!(vec!["welcome"], deck.cards[0].back);
+        assert_eq!(
+            vec!["&amp; ⍰"],
+            deck.cards[0].context,
+            "the unrelated entity remains authored while the span masks ordinary prose"
+        );
+    }
+
+    #[test]
+    fn a_span_splice_covers_an_entitys_whole_authored_footprint() {
+        let deck =
+            parse("## q\nTom &amp; Jerry\n<!-- blank: span hidden=\"& Jerry\" b:a1b2c3 -->\n");
+        assert_eq!(
+            vec!["Tom ⍰"],
+            deck.cards[0].context,
+            "the splice takes all of `&amp;`, neither the space before it nor leaving `amp;`"
+        );
+    }
+
+    #[test]
     fn a_nested_fence_records_one_interior_including_the_shorter_delimiter() {
         let deck = parse(
             "## q\n````mermaid\nflowchart LR\n```\n  A[Load] --> B\n````\n<!-- blank: span hidden=\"Load\" -->\n",

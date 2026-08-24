@@ -555,6 +555,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A span blank no longer crashes a deck whose answer block contains an
+  HTML entity, found by Codex during reciprocal review: the masking
+  source map had assumed every escaped glyph was preceded by a
+  backslash, so an entity at the start of a line killed the whole parse
+  and a masked span next to an entity spliced the wrong bytes. Splices
+  now cover an entity's whole authored footprint.
+
 - The mobile app now closes longer code fences by the CommonMark
   closing-length rule like the parser and both web clients, found by
   Codex during reciprocal review: its walks had collapsed every opener
