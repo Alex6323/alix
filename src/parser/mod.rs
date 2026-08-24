@@ -172,6 +172,10 @@ pub enum ParseError {
     #[error("line {0}: only a `## ` heading can title a card table")]
     SubCardTableTitle(usize),
     #[error(
+        "line {line}: `<!-- {word} -->` sits above the block it maps; comment machinery trails: move it to the line directly below the block"
+    )]
+    LeadingInvocation { line: usize, word: String },
+    #[error(
         "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order"
     )]
     InvalidLocator { line: usize, message: String },
@@ -280,6 +284,7 @@ impl ParseError {
             Self::SectionDirective(_) => "section_directive",
             Self::OrphanCardId(_) => "orphan_card_id",
             Self::SubCardTableTitle(_) => "sub_card_table_title",
+            Self::LeadingInvocation { .. } => "leading_invocation",
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
             Self::ChoiceShape { .. } => "choice_shape",
@@ -350,6 +355,7 @@ impl ParseError {
             | Self::TagShape { line, .. }
             | Self::TableDelimiterWidth { line, .. }
             | Self::TableRowStamp { line, .. }
+            | Self::LeadingInvocation { line, .. }
             | Self::TableDuplicateStamp { line, .. } => *line,
         }
     }
@@ -4571,9 +4577,57 @@ a
 
     #[test]
     fn an_invoked_table_still_births_row_cards() {
-        let deck = parse("# S\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
+        let deck = parse("# S\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("x", deck.cards[0].front);
+    }
+
+    #[test]
+    fn everything_trails_the_invocation_grammar() {
+        let below = parse("# S\n\n| a | b |\n|---|---|\n| x | y |\n| u | v |\n<!-- cards -->\n");
+        assert_eq!(2, below.cards.len(), "a trailing invocation maps its table");
+        assert_eq!("x", below.cards[0].front);
+
+        let error = err("# S\n\n<!-- cards -->\n| a | b |\n|---|---|\n| x | y |\n");
+        let ParseError::LeadingInvocation { line, .. } = error else {
+            panic!("a leading invocation is recognized machinery out of position, got {error:?}");
+        };
+        assert_eq!(3, line, "the error names the invocation's line");
+
+        let choices = parse(
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n",
+        );
+        assert_eq!(1, choices.cards.len());
+        assert_eq!(vec!["right"], choices.cards[0].back);
+        assert_eq!(
+            vec!["wrong".to_string()],
+            choices.cards[0].authored_distractors,
+            "a choices invocation below its task list maps the card"
+        );
+
+        let leading_choices =
+            err("## Pick\n<!-- choices-single -->\n- [x] right\n- [ ] wrong\n");
+        assert!(
+            matches!(leading_choices, ParseError::LeadingInvocation { line: 2, .. }),
+            "a choices invocation above its list errors, got {leading_choices:?}"
+        );
+
+        let plain = parse("## Q\nfirst\n\n---\n<!-- plain -->\n\nsecond\n");
+        assert_eq!(1, plain.cards.len(), "a trailing plain keeps the divider content");
+        assert!(
+            plain.cards[0].back.iter().any(|line| line == "---"),
+            "the divider stays content under a trailing plain: {:?}",
+            plain.cards[0].back
+        );
+
+        let run = parse(
+            "# S\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n| c | d |\n|---|---|\n| u | v |\n<!-- cards -->\n",
+        );
+        assert_eq!(
+            2,
+            run.cards.len(),
+            "each table in a run takes its own trailing invocation"
+        );
     }
 
     #[test]
