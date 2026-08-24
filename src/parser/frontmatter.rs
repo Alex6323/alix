@@ -21,6 +21,14 @@ pub enum Mapping {
     Cards,
 }
 
+/// The kind of block a trailing invocation is allowed to bind, tracked as
+/// the scanner passes it rather than rediscovered by reading upward.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MappableBlock {
+    Checklist,
+    Divider,
+}
+
 impl Mapping {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
@@ -30,6 +38,17 @@ impl Mapping {
             "cards" => Some(Self::Cards),
             _ => None,
         }
+    }
+
+    pub(crate) fn binds(self, block: Option<MappableBlock>) -> bool {
+        matches!(
+            (self, block),
+            (Self::Plain, Some(_))
+                | (
+                    Self::ChoicesSingle | Self::ChoicesMultiple,
+                    Some(MappableBlock::Checklist)
+                )
+        )
     }
 }
 

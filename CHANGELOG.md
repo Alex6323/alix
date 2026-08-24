@@ -349,7 +349,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the line directly below the table, task list, or `---` it maps,
   never above; a recognized invocation above its block fails loud with
   the line, the why, and the fix. One invocation maps exactly one
-  block, so adjacent tables each take their own. Frontmatter stays the
+  block, so adjacent tables each take their own, and only the
+  recognized machinery run stands between a block and its invocation:
+  a note, a fence, a table, or an editorial comment in between is a
+  block of its own, so the older one no longer binds. Frontmatter stays the
   leading exception, and a table row's inline `<!-- r:... -->` stamp
   stays the one sanctioned inline position. Existing decks with
   leading invocations fail as ordinary invalid input; move each

@@ -26,7 +26,7 @@ pub use frontmatter::{
     Frontmatter, Mapping, PERSONAL_PARENT_KEY, Reorder, parse_sampling, reorder_frontmatter,
     yaml_quote,
 };
-use frontmatter::{bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
+use frontmatter::{MappableBlock, bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
 pub use sidecar::{SidecarNote, notes, without_notes};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
@@ -920,6 +920,7 @@ fn scan(
     let mut prev_blank = false;
     let mut prev_heading = false;
     let mut prev_prose = false;
+    let mut mappable_block: Option<MappableBlock> = None;
     let mut terminated: Option<usize> = None;
     let mut idle_terminators: Vec<usize> = Vec::new();
 
@@ -932,6 +933,7 @@ fn scan(
         let raw = *raw;
         let was_prose = prev_prose;
         prev_prose = false;
+        let block_above = mappable_block.take();
 
         if skip_delimiter {
             skip_delimiter = false;
@@ -1267,6 +1269,7 @@ fn scan(
                 } else {
                     push_content(&mut current, lineno, "---".to_string())?;
                 }
+                mappable_block = Some(MappableBlock::Divider);
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -1347,28 +1350,7 @@ fn scan(
                             });
                         }
                         (mapping, Some(card)) => {
-                            // An invocation binds the block it sits under,
-                            // never one recalled from anywhere earlier in
-                            // the open card. The block runs up from the
-                            // comment until a blank line or a heading ends
-                            // it, so a machinery run or a lazy continuation
-                            // line still counts as adjacent.
-                            let mut scan = idx;
-                            let mut maps_here = false;
-                            while scan > 0 {
-                                scan -= 1;
-                                let above = lines.get(scan).map_or("", |line| trim_ws(line));
-                                if above.is_empty() || heading_depth(above).is_some() {
-                                    break;
-                                }
-                                if checklist::parse_line(above).is_some()
-                                    || (mapping == Mapping::Plain && above == "---")
-                                {
-                                    maps_here = true;
-                                    break;
-                                }
-                            }
-                            if !maps_here {
+                            if !mapping.binds(block_above) {
                                 return Err(ParseError::LeadingInvocation {
                                     line: lineno,
                                     word: trim_ws(body).to_string(),
@@ -1377,6 +1359,7 @@ fn scan(
                             card.mapping = Some(mapping);
                         }
                     }
+                    mappable_block = block_above;
                     prev_blank = false;
                     prev_heading = false;
                     continue;
@@ -1408,6 +1391,7 @@ fn scan(
                         }
                         None => {}
                     }
+                    mappable_block = block_above;
                 } else {
                     let body = trim_ws(body);
                     if !body.is_empty() && !body.contains(char::is_whitespace) {
@@ -1453,6 +1437,11 @@ fn scan(
             continue;
         }
 
+        // A prose line under a task list is a lazy continuation of the same
+        // block, so it neither opens a block nor ends the one above it.
+        if checklist::parse_line(t).is_some() || block_above == Some(MappableBlock::Checklist) {
+            mappable_block = Some(MappableBlock::Checklist);
+        }
         push_content(&mut current, lineno, t.to_string())?;
         prev_blank = false;
         prev_heading = false;
@@ -5482,6 +5471,84 @@ a
                     if word == "choices-single"
             ),
             "a nonadjacent choices invocation must identify its line, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn everything_trails_invocation_does_not_reach_through_a_note_block() {
+        let error =
+            err("## Pick\n- [x] right\n- [ ] wrong\n> Remember why.\n<!-- choices-single -->\n");
+
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 5, ref word }
+                    if word == "choices-single"
+            ),
+            "the note is the directly preceding block, so the older task list cannot bind: {error:?}"
+        );
+    }
+
+    #[test]
+    fn everything_trails_invocation_does_not_reach_through_a_fence_block() {
+        let error = err(
+            "## Pick\n- [x] right\n- [ ] wrong\n```text\nnot an option\n```\n<!-- choices-single -->\n",
+        );
+
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 7, ref word }
+                    if word == "choices-single"
+            ),
+            "the fence is the directly preceding block, so the older task list cannot bind: {error:?}"
+        );
+    }
+
+    /// The machinery run between a block and its invocation is a closed,
+    /// recognized set; anything else standing there is a block of its own.
+    #[test]
+    fn everything_trails_invocation_sees_through_machinery_and_nothing_else() {
+        let deck = parse(
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- reveal: line -->\n<!-- choices-single -->\n",
+        );
+        assert_eq!(
+            vec!["wrong"],
+            deck.cards[0].authored_distractors,
+            "a recognized directive is machinery, so the list still binds"
+        );
+
+        let error = err(
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- a reminder to myself -->\n<!-- choices-single -->\n",
+        );
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 5, ref word }
+                    if word == "choices-single"
+            ),
+            "an editorial comment is not machinery, so it ends the block: {error:?}"
+        );
+
+        let error = err("## Q\nanswer\n<!-- choices-single -->\n");
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 3, ref word }
+                    if word == "choices-single"
+            ),
+            "ordinary answer prose is no task list, so nothing binds: {error:?}"
+        );
+
+        let error = err("## Q\nanswer\n---\n<!-- plain -->\n<!-- choices-single -->\n");
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 5, ref word }
+                    if word == "choices-single"
+            ),
+            "a divider is a block choices cannot map, even reached through \
+             machinery: {error:?}"
         );
     }
 
