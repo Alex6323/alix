@@ -11,12 +11,13 @@ understanding what you learn, and keeping it for the long run
 > Two halves: spaced reviews make it stick, and an AI exam checks you
 > actually understood it, not just memorized it. This deck shows both.
 
-## The three steps of every single review, in order? <!-- reveal: line -->
+## The three steps of every single review, in order?
 try to recall the answer first
 then reveal it
 then grade yourself
 > This card revealed its answer step by step. Some cards do that;
 > most show it all at once.
+<!-- reveal: line -->
 
 ## Why must you grade yourself honestly rather than generously?
 a fake "Got it" hides the card before you know it

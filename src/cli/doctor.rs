@@ -1492,7 +1492,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "{ANCHOR_DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\n{body}"
+                "{ANCHOR_DECK_HEAD}## q\n---\n{body}<!-- id: card-regionregionregionregionre -->\n"
             ),
         )
         .unwrap();
@@ -1766,7 +1766,7 @@ mod tests {
         w(
             dir.path(),
             "tokens.md",
-            "---\nformat-version: 1\nid: deck-ready\n---\n## q <!-- id: card-short -->\na\n",
+            "---\nformat-version: 1\nid: deck-ready\n---\n## q\na\n<!-- id: card-short -->\n",
         );
 
         let mut report = Report::default();
@@ -1888,7 +1888,7 @@ mod tests {
         w(
             dir.path(),
             "facts.md",
-            "---\nformat-version: 1\nid: deck-facts\n---\n## q <!-- id: card-live -->\na\n",
+            "---\nformat-version: 1\nid: deck-facts\n---\n## q\na\n<!-- id: card-live -->\n",
         );
         let mut store = alix::state::open_store(&deck, dir.path()).unwrap();
         store.get_or_insert("card-live");
@@ -1992,7 +1992,7 @@ mod tests {
         w(
             dir.path(),
             "declared.md",
-            "---\nformat-version: 1\nid: deck-declared\nreveal: line\norder: sequential\nrequires: ghost\nsource: https://example.test/source\n---\n## q <!-- id: card-q -->\na\n",
+            "---\nformat-version: 1\nid: deck-declared\nreveal: line\norder: sequential\nrequires: ghost\nsource: https://example.test/source\n---\n## q\na\n<!-- id: card-q -->\n",
         );
         let plain = dir.path().join("plain.md");
         w(dir.path(), "plain.md", "## q\na\n");
@@ -2000,7 +2000,7 @@ mod tests {
         w(
             dir.path(),
             "empty.md",
-            "---\nformat-version: 1\nid: deck-empty\n---\n## q <!-- id: card-qempty -->\na\n",
+            "---\nformat-version: 1\nid: deck-empty\n---\n## q\na\n<!-- id: card-qempty -->\n",
         );
         check(vec![declared, empty, plain]).unwrap();
 
@@ -2272,7 +2272,7 @@ printf ']}}'
         let path = decks.join("facts.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: notes.md:1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let before = std::fs::read(&path).unwrap();
@@ -2302,7 +2302,7 @@ printf ']}}'
             decks.join("facts.md"),
             format!(
                 "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
-                 ## q <!-- id: card-card1 -->\na\n"
+                 ## q\na\n<!-- id: card-card1 -->\n"
             ),
         )
         .unwrap();
@@ -2331,7 +2331,7 @@ printf ']}}'
             decks.join("facts.md"),
             format!(
                 "---\nformat-version: 1\nid: deck-deck1\n---\n\
-                 ## q <!-- id: card-card1 -->\n![diagram](assets/deck-deck2/{name})\na\n"
+                 ## q\n![diagram](assets/deck-deck2/{name})\na\n<!-- id: card-card1 -->\n"
             ),
         )
         .unwrap();
@@ -2427,7 +2427,7 @@ printf ']}}'
         w(
             dir.path(),
             "cached.md",
-            "---\nformat-version: 1\nid: deck-doctormathdeck\n---\n## q <!-- id: card-doctormath1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-doctormathdeck\n---\n## q\na\n<!-- id: card-doctormath1 -->\n",
         );
         let parsed =
             alix::parser::parse("cached.md", &std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -2749,51 +2749,51 @@ printf ']}}'
         let decks = dir.join("decks");
         std::fs::create_dir(&decks).unwrap();
         w(dir, "alix.toml", "title = \"Check Set\"\n");
-        w(&decks, "bad-token.md", "## q <!-- id: BAD1 -->\na\n");
+        w(&decks, "bad-token.md", "## q\na\n<!-- id: BAD1 -->\n");
         w(
             &decks,
             "bad-value.md",
-            "---\nreveal: bogus\n---\n## q <!-- id: card-bv1 -->\na\n",
+            "---\nreveal: bogus\n---\n## q\na\n<!-- id: card-bv1 -->\n",
         );
         w(
             &decks,
             "dup-deck.md",
-            "---\nformat-version: 1\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-dupdeck\n---\n## q\na\n<!-- id: card-dd1 -->\n",
         );
         w(
             &decks,
             "dup-deck copy.md",
-            "---\nformat-version: 1\nid: deck-dupdeck\n---\n## q <!-- id: card-dd1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-dupdeck\n---\n## q\na\n<!-- id: card-dd1 -->\n",
         );
         w(
             &decks,
             "card-dup.md",
-            "---\nformat-version: 1\nid: deck-cda\n---\n## q <!-- id: card-cshared -->\na\n",
+            "---\nformat-version: 1\nid: deck-cda\n---\n## q\na\n<!-- id: card-cshared -->\n",
         );
         w(
             &decks,
             "card-dup copy.md",
-            "---\nformat-version: 1\nid: deck-cdb\n---\n## q <!-- id: card-cshared -->\nb\n",
+            "---\nformat-version: 1\nid: deck-cdb\n---\n## q\nb\n<!-- id: card-cshared -->\n",
         );
         w(
             &decks,
             "unspliceable.md",
-            "---\n{source: [a]}\n---\n## q <!-- id: card-uq1 -->\nb\n",
+            "---\n{source: [a]}\n---\n## q\nb\n<!-- id: card-uq1 -->\n",
         );
         w(
             &decks,
             "cloze.md",
-            "## Fill <!-- id: card-clz1 -->\n<!-- reveal: line -->\nthe \\blank{a} gap\n",
+            "## Fill\nthe \\blank{a} gap\n<!-- reveal: line -->\n<!-- id: card-clz1 -->\n",
         );
         w(
             &decks,
             "indented.md",
-            "## real <!-- id: card-ind1 -->\n  ## not a front\nanswer\n",
+            "## real\n  ## not a front\nanswer\n<!-- id: card-ind1 -->\n",
         );
         w(
             &decks,
             "imgcard.md",
-            "## pic <!-- id: card-img1 -->\nphoto\n![](missing.png)\n",
+            "## pic\nphoto\n![](missing.png)\n<!-- id: card-img1 -->\n",
         );
         w(
             &decks,
@@ -2803,19 +2803,19 @@ printf ']}}'
         w(
             &decks,
             "trace-bad.md",
-            "---\ntrace: a walk\nsource: trace-src.txt\n---\n## hop <!-- id: card-thop1 -->\nstep\n<!-- at: 5-6 -->\n",
+            "---\ntrace: a walk\nsource: trace-src.txt\n---\n## hop\nstep\n<!-- id: card-thop1 -->\n<!-- at: 5-6 -->\n",
         );
         w(dir, "trace-src.txt", "one\ntwo\n");
         w(
             &decks,
             "at-dangling.md",
-            "---\nsource: .\n---\n## cited <!-- id: card-atd1 -->\nb\n<!-- at: missing.rs:1-2 -->\n",
+            "---\nsource: .\n---\n## cited\nb\n<!-- at: missing.rs:1-2 -->\n<!-- id: card-atd1 -->\n",
         );
-        w(&decks, "sourceless.md", "## a <!-- id: card-sla1 -->\n1\n");
+        w(&decks, "sourceless.md", "## a\n1\n<!-- id: card-sla1 -->\n");
         w(
             &decks,
             "gated.md",
-            "---\nsource: https://example.test\nrequires: sourceless\n---\n## b <!-- id: card-gtd1 -->\n1\n",
+            "---\nsource: https://example.test\nrequires: sourceless\n---\n## b\n1\n<!-- id: card-gtd1 -->\n",
         );
 
         let mut store = alix::store::Store::open_deck(
@@ -2913,7 +2913,7 @@ printf ']}}'
         w(
             dir.path(),
             "deck.md",
-            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
         );
         let user_root = dir.path();
         alix::state::open_store(&dir.path().join("deck.md"), user_root)
@@ -2992,7 +2992,7 @@ printf ']}}'
             "facts.md",
             &format!(
                 "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
-                 ## q <!-- id: card-card1 -->\na\n"
+                 ## q\na\n<!-- id: card-card1 -->\n"
             ),
         );
 
@@ -3106,13 +3106,16 @@ printf ']}}'
         // (deck body, warning expected)
         let cases = [
             (
-                format!("{head}sampling: off\n---\n## q <!-- id: card-q1x -->\na\n"),
+                format!("{head}sampling: off\n---\n## q\na\n<!-- id: card-q1x -->\n"),
                 true,
             ),
             (format!("{head}sampling: off\n---\n{table}"), false),
-            (format!("{head}---\n## q <!-- id: card-q1x -->\na\n"), false),
             (
-                format!("{head}---\n## q <!-- id: card-q1x --> <!-- sampling: off -->\na\n"),
+                format!("{head}---\n## q\na\n<!-- id: card-q1x -->\n"),
+                false,
+            ),
+            (
+                format!("{head}---\n## q\na\n<!-- sampling: off -->\n<!-- id: card-q1x -->\n"),
                 true,
             ),
         ];

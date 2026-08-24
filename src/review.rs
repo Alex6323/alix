@@ -794,7 +794,7 @@ mod tests {
     fn mode_follows_the_depth_and_reveal_matrix() {
         let (mut store, mut augment, _dir) = fixtures();
         let flip = parse("## q\na\n");
-        let line = parse("## q <!-- reveal: line -->\none\ntwo\n");
+        let line = parse("## q\none\ntwo\n<!-- reveal: line -->\n");
         let many = parse(FOUR);
         seen(&mut store, &flip);
         seen(&mut store, &line);
@@ -1119,9 +1119,9 @@ mod tests {
     fn card_view_carries_all_raw_at_locators_in_authored_order() {
         let cards = parse(
             "## q\n\
+             a\n\
              <!-- at: src/lib.rs:10-20 -->\n\
-             <!-- at: src/store.rs:30-40 -->\n\
-             a\n",
+             <!-- at: src/store.rs:30-40 -->\n",
         );
         let view = CardView::from(&cards[0]);
         assert_eq!(view.citations, ["src/lib.rs:10-20", "src/store.rs:30-40"]);
@@ -1460,7 +1460,7 @@ mod tests {
     #[test]
     fn check_typed_orders_only_for_typeline() {
         let (mut store, _augment, _dir) = fixtures();
-        let line = parse("## q <!-- reveal: line -->\none\ntwo\n");
+        let line = parse("## q\none\ntwo\n<!-- reveal: line -->\n");
         seen(&mut store, &line);
         let typeline = session_at(line, &mut store, Depth::Reconstruct, NOW);
         let swapped = vec!["two".to_string(), "one".to_string()];
@@ -1705,7 +1705,7 @@ mod tests {
     #[test]
     fn input_follows_the_card() {
         let (mut store, augment, _dir) = fixtures();
-        let cards = parse("## q <!-- input: draw -->\na\n");
+        let cards = parse("## q\na\n<!-- input: draw -->\n");
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
@@ -1748,7 +1748,7 @@ mod tests {
     #[test]
     fn an_authored_input_beats_the_formula_rule() {
         let (mut store, augment, _dir) = fixtures();
-        let cards = parse("## q <!-- input: type -->\n---\n$x = \\blank{\\pm} y$\n");
+        let cards = parse("## q\n---\n$x = \\blank{\\pm} y$\n<!-- input: type -->\n");
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
@@ -1773,7 +1773,7 @@ mod tests {
 
     #[test]
     fn a_region_cards_view_classifies_asked_sibling_and_cover_masks() {
-        let text = "## bones <!-- id: card-bonesbonesbonesbonesbones -->\n![](hand.png)\n                    <!-- blank: rect x=10 y=20 width=30 height=40 hidden=\"lunate\" b:a1b2c3 -->\n                    <!-- blank: rect x=50 y=60 width=30 height=40 hidden=\"hamate\" b:d4e5f6 -->\n                    <!-- cover: rect x=1 y=2 width=3 height=4 -->\n                    <!-- crop: rect x=0 y=0 width=90 height=90 -->\n\n---\nthe carpals\n";
+        let text = "## bones\n![](hand.png)\n                    <!-- blank: rect x=10 y=20 width=30 height=40 hidden=\"lunate\" b:a1b2c3 -->\n                    <!-- blank: rect x=50 y=60 width=30 height=40 hidden=\"hamate\" b:d4e5f6 -->\n                    <!-- cover: rect x=1 y=2 width=3 height=4 -->\n                    <!-- crop: rect x=0 y=0 width=90 height=90 -->\n\n---\nthe carpals\n<!-- id: card-bonesbonesbonesbonesbones -->\n";
         let cards = crate::parser::parse_str("t.md", text).unwrap();
         let lunate_card = cards
             .iter()
@@ -1973,7 +1973,7 @@ mod tests {
 
     #[test]
     fn a_plain_cards_cover_reveals_with_the_answer() {
-        let text = "## marque <!-- id: card-autosautosautosautosauto -->\n![](car.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\n\n---\nBMW\n";
+        let text = "## marque\n![](car.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\n\n---\nBMW\n<!-- id: card-autosautosautosautosauto -->\n";
         let cards = crate::parser::parse_str("t.md", text).unwrap();
         let plain = &cards[0];
         assert!(

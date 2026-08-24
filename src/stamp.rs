@@ -980,7 +980,7 @@ mod tests {
     #[test]
     fn a_partially_stamped_deck_mints_only_the_missing_tokens() {
         let dir = tempfile::tempdir().unwrap();
-        let stamped_card = "## already <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\na\n";
+        let stamped_card = "## already\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
         let original = format!(
             "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n{stamped_card}## missing\nb\n"
         );
@@ -1206,7 +1206,7 @@ mod tests {
     #[test]
     fn a_front_with_a_trailing_directive_keeps_it_and_the_id_line_closes_the_card() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q <!-- reveal: line -->\na\n";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n<!-- reveal: line -->\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -1216,7 +1216,7 @@ mod tests {
         assert_eq!(
             format!(
                 "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n\
-                 ## q <!-- reveal: line -->\na\n<!-- id: {tok} -->\n"
+                 ## q\na\n<!-- reveal: line -->\n<!-- id: {tok} -->\n"
             ),
             stamped
         );
@@ -1746,7 +1746,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n"
+                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let outcome = stamp_deck(&path).unwrap();
@@ -1777,7 +1777,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\n日本語 target here\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+                "{DECK_HEAD}## q\n---\n日本語 target here\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -1801,7 +1801,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nprose target\n<!-- blank: span hidden=\"target\" -->\n"
+                "{DECK_HEAD}## q\n---\nprose target\n<!-- blank: span hidden=\"target\" -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -1843,7 +1843,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nprose target\n<!-- cover: span hidden=\"target\" -->\n"
+                "{DECK_HEAD}## q\n---\nprose target\n<!-- cover: span hidden=\"target\" -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -1859,7 +1859,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nprose target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:7 -->\n"
+                "{DECK_HEAD}## q\n---\nprose target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:7 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let before = fs::read_to_string(&path).unwrap();
@@ -1874,7 +1874,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\nalpha target beta target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:1 -->\n"
+                "{DECK_HEAD}## q\n---\nalpha target beta target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:1 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let before = fs::read_to_string(&path).unwrap();
@@ -1893,7 +1893,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 -->\n"
+                "{DECK_HEAD}## q\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -1908,7 +1908,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\néx target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+                "{DECK_HEAD}## q\n---\néx target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -1926,7 +1926,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n"
+                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let outcome = stamp_deck(&path).unwrap();
@@ -1951,7 +1951,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\nanswer one\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n"
+                "{DECK_HEAD}## q\nanswer one\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
 
@@ -1977,7 +1977,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let card = |token: &str| {
             format!(
-                "## q{token} <!-- id: card-{token}{token}{token}{token}{token}{token}re -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n"
+                "## q{token}\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n<!-- id: card-{token}{token}{token}{token}{token}{token}re -->\n"
             )
         };
         let path = write(
@@ -2001,7 +2001,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n"
+                "{DECK_HEAD}## q\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let outcome = stamp_deck(&path).unwrap();

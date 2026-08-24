@@ -1317,7 +1317,7 @@ back a
         fs::create_dir_all(staging.join("decks")).unwrap();
         fs::write(
             dest.join("decks/01-a.md"),
-            "---\nformat-version: 1\nid: \"deck-da1\"\n---\n## old <!-- id: card-c1 -->\nold\n",
+            "---\nformat-version: 1\nid: \"deck-da1\"\n---\n## old\nold\n<!-- id: card-c1 -->\n",
         )
         .unwrap();
         fs::write(staging.join("decks/01-a.md"), "## new q\nnew ans\n").unwrap();

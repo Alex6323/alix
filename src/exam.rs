@@ -1860,7 +1860,7 @@ mod tests {
         let path = dir.join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## c <!-- id: card-qc -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## c\na\n<!-- id: card-qc -->\n",
         )
         .unwrap();
         Deck::load(&path).unwrap()

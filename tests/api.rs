@@ -205,7 +205,7 @@ fn open_deck_store(dir: &Path, deck: &str) -> Store {
 /// on the second, rather than jumping straight to `"done"`) — and enough to
 /// make `run_review`'s store resolution (`assemble::store_for`, via
 /// `cfg.instance_store`) do real work if a test picks it via `/api/select`.
-const FIXTURE_DECK: &str = "---\nformat-version: 1\nid: \"deck-sample\"\n---\n## 2 + 2 <!-- id: card-s1 -->\n4\n\n## 3 + 3 <!-- id: card-s2 -->\n6\n";
+const FIXTURE_DECK: &str = "---\nformat-version: 1\nid: \"deck-sample\"\n---\n## 2 + 2\n4\n<!-- id: card-s1 -->\n\n## 3 + 3\n6\n<!-- id: card-s2 -->\n";
 
 /// Builds the `run_review` options over one fixture deck living in `dir`,
 /// mirroring (in miniature) what `src/cli/launch.rs` wires up for the real
@@ -346,12 +346,12 @@ fn spawn_test_server_impl(
 /// filename no longer separates them. Distractors are never sampled from
 /// sibling answers, so only the armed copy renders choices. See
 /// [`spawn_full_server_fixture`].
-const CHOICE_DECK: &str = "---\nformat-version: 1\nid: \"deck-choice\"\n---\n## 1 + 1 <!-- id: card-c1 -->\n2\n\n## 2 + 2 <!-- id: card-c2 -->\n4\n\n\
-                           ## 3 + 3 <!-- id: card-c3 -->\n6\n\n## 4 + 4 <!-- id: card-c4 -->\n8\n\n\
-                           ## 5 + 5 <!-- id: card-c5 -->\n10\n";
-const CHOICE_ARMED_DECK: &str = "---\nformat-version: 1\nid: \"deck-choicearmed\"\n---\n## 1 + 1 <!-- id: card-ca1 -->\n2\n\n## 2 + 2 <!-- id: card-ca2 -->\n4\n\n\
-                                 ## 3 + 3 <!-- id: card-ca3 -->\n6\n\n## 4 + 4 <!-- id: card-ca4 -->\n8\n\n\
-                                 ## 5 + 5 <!-- id: card-ca5 -->\n10\n";
+const CHOICE_DECK: &str = "---\nformat-version: 1\nid: \"deck-choice\"\n---\n## 1 + 1\n2\n<!-- id: card-c1 -->\n\n## 2 + 2\n4\n<!-- id: card-c2 -->\n\n\
+                           ## 3 + 3\n6\n<!-- id: card-c3 -->\n\n## 4 + 4\n8\n<!-- id: card-c4 -->\n\n\
+                           ## 5 + 5\n10\n<!-- id: card-c5 -->\n";
+const CHOICE_ARMED_DECK: &str = "---\nformat-version: 1\nid: \"deck-choicearmed\"\n---\n## 1 + 1\n2\n<!-- id: card-ca1 -->\n\n## 2 + 2\n4\n<!-- id: card-ca2 -->\n\n\
+                                 ## 3 + 3\n6\n<!-- id: card-ca3 -->\n\n## 4 + 4\n8\n<!-- id: card-ca4 -->\n\n\
+                                 ## 5 + 5\n10\n<!-- id: card-ca5 -->\n";
 
 /// A stamped five-row card table, no augment cache: at Recognize its picks
 /// come from column sampling alone, and the header renders as context.
@@ -394,13 +394,15 @@ fn choice_answer(front: &str) -> &'static str {
 /// `walk_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
 const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
-## Predict the first hop <!-- id: card-t1 -->\n\
-<!-- given: line — the input line -->\n\
+## Predict the first hop\n\
 it reads the first line\n\
+<!-- given: line — the input line -->\n\
 <!-- at: 1 fingerprint: xxh64-cc98257fe4be8f5a -->\n\
-## Predict the second hop <!-- id: card-t2 -->\n\
+<!-- id: card-t1 -->\n\
+## Predict the second hop\n\
 it reads line two\n\
-<!-- at: 2 fingerprint: xxh64-ca7ffbd94d5e0037 -->\n";
+<!-- at: 2 fingerprint: xxh64-ca7ffbd94d5e0037 -->\n\
+<!-- id: card-t2 -->\n";
 const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 
 /// Richer than [`spawn_test_server`]: the same open (no-token) server, but its
@@ -1000,7 +1002,7 @@ fn a_folder_members_row_reads_the_served_root_store() {
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(
             folder.join("one.md"),
-            "---\nformat-version: 1\nid: \"deck-folderone\"\n---\n## q1 <!-- id: card-fq1 -->\na1\n",
+            "---\nformat-version: 1\nid: \"deck-folderone\"\n---\n## q1\na1\n<!-- id: card-fq1 -->\n",
         )
         .unwrap();
     });
@@ -1037,7 +1039,7 @@ fn an_unreadable_progress_document_reds_out_its_row_and_review_is_refused() {
     let (base, _guard) = spawn_test_server_booted(|dir| {
         std::fs::write(
             dir.join("other.md"),
-            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1 <!-- id: card-o1 -->\n2\n",
+            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1\n2\n<!-- id: card-o1 -->\n",
         )
         .unwrap();
         let progress = state_root(dir).join("progress");
@@ -1221,7 +1223,7 @@ fn removing_a_damaged_document_heals_its_row_on_the_next_listing() {
     let (base, _guard) = spawn_test_server_booted(|dir| {
         std::fs::write(
             dir.join("other.md"),
-            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1 <!-- id: card-o1 -->\n2\n",
+            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1\n2\n<!-- id: card-o1 -->\n",
         )
         .unwrap();
         let progress = state_root(dir).join("progress");
@@ -1454,12 +1456,12 @@ fn write_animals_workspace(dir: &Path) {
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
     std::fs::write(
         members.join("one.md"),
-        "---\nformat-version: 1\nid: \"deck-animalone\"\n---\n## q1 <!-- id: card-aq1 -->\na1\n",
+        "---\nformat-version: 1\nid: \"deck-animalone\"\n---\n## q1\na1\n<!-- id: card-aq1 -->\n",
     )
     .unwrap();
     std::fs::write(
         members.join("two.md"),
-        "---\nformat-version: 1\nid: \"deck-animaltwo\"\n---\n## q2 <!-- id: card-aq2 -->\na2\n",
+        "---\nformat-version: 1\nid: \"deck-animaltwo\"\n---\n## q2\na2\n<!-- id: card-aq2 -->\n",
     )
     .unwrap();
 }
@@ -1494,7 +1496,7 @@ fn get_api_decks_lists_a_workspace_with_its_member_decks() {
 
 /// A one-card deck whose H1 title is what `/api/decks` serves as the row's
 /// `label`, the field that proves whether the file was (re-)parsed.
-const TITLED_DECK: &str = "---\nformat-version: 1\nid: \"deck-titled\"\ntitle: Original Title\n---\n## q <!-- id: card-ti1 -->\na\n";
+const TITLED_DECK: &str = "---\nformat-version: 1\nid: \"deck-titled\"\ntitle: Original Title\n---\n## q\na\n<!-- id: card-ti1 -->\n";
 
 fn write_titled_deck(dir: &Path) {
     std::fs::write(dir.join("titled.md"), TITLED_DECK).unwrap();
@@ -1551,12 +1553,12 @@ fn a_changed_deck_is_reparsed_on_the_next_listing() {
     // A longer rewrite changes the size, which dodges mtime granularity.
     std::fs::write(
         guard.dir().join("titled.md"),
-        "---\nformat-version: 1\nid: \"deck-titled\"\ntitle: A Renamed Title Longer Than Before\n---\n## q <!-- id: card-ti1 -->\na\n",
+        "---\nformat-version: 1\nid: \"deck-titled\"\ntitle: A Renamed Title Longer Than Before\n---\n## q\na\n<!-- id: card-ti1 -->\n",
     )
     .unwrap();
     std::fs::write(
         guard.dir().join("fresh.md"),
-        "---\nformat-version: 1\nid: \"deck-fresh\"\n---\n## new q <!-- id: card-fr1 -->\nb\n",
+        "---\nformat-version: 1\nid: \"deck-fresh\"\n---\n## new q\nb\n<!-- id: card-fr1 -->\n",
     )
     .unwrap();
 
@@ -2214,7 +2216,7 @@ fn image_route_returns_the_registered_file_bytes_and_type() {
         std::fs::write(
             dir.join("image.md"),
             "---\nformat-version: 1\nid: \"deck-image\"\n---\n\
-             ## Pixel <!-- id: card-pixel -->\n![pixel](pixel.gif)\n",
+             ## Pixel\n![pixel](pixel.gif)\n<!-- id: card-pixel -->\n",
         )
         .unwrap();
     });
@@ -2267,10 +2269,10 @@ fn post_api_browse_serializes_card_images_as_lists_with_alt() {
     // A back card carries two image embeds (the second without an alt); a
     // divided front card carries one. Both sides serialize as ordered
     // `{ src, alt }` lists, and the old scalar `img`/`img_back` keys are gone.
-    const IMG_DECK: &str = "---\nformat-version: 1\nid: \"deck-images\"\n---\n## Back images <!-- id: card-bi1 -->\nWaxing\n\
-                            ![a moon](moon.png)\n![](crescent.png)\n\n\
-                            ## Front image <!-- id: card-fi1 -->\n![the sun](sun.png)\n\n\
-                            ---\nThe sun\n";
+    const IMG_DECK: &str = "---\nformat-version: 1\nid: \"deck-images\"\n---\n## Back images\nWaxing\n\
+                            ![a moon](moon.png)\n![](crescent.png)\n<!-- id: card-bi1 -->\n\n\
+                            ## Front image\n![the sun](sun.png)\n\n\
+                            ---\nThe sun\n<!-- id: card-fi1 -->\n";
     let (base, _guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(dir.join("images.md"), IMG_DECK).unwrap();
     });
@@ -2775,7 +2777,7 @@ fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
     let (base, _guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(
             dir.join("steps.md"),
-            "---\nformat-version: 1\nid: \"deck-steps\"\n---\n## steps <!-- id: card-st1 --> <!-- reveal: line -->\none\ntwo\n",
+            "---\nformat-version: 1\nid: \"deck-steps\"\n---\n## steps\none\ntwo\n<!-- reveal: line -->\n<!-- id: card-st1 -->\n",
         )
         .unwrap();
     });
@@ -2851,7 +2853,7 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
 }
 
 const MULTI_CHOICE_DECK: &str = "---\ntasklist: choices-multiple\nid: \"deck-multichoice\"\n---\n\
-## Which of these are even? <!-- id: card-m1 -->\n- [x] 2\n- [x] 4\n- [ ] 3\n- [ ] 5\n";
+## Which of these are even?\n- [x] 2\n- [x] 4\n- [ ] 3\n- [ ] 5\n<!-- id: card-m1 -->\n";
 
 fn post_choice_multi(base: &str, indices: &[usize]) -> HttpResp {
     let state = http(base, "GET", "/api/state", &[], &[]);
@@ -3136,8 +3138,8 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     // hole has AI distractors cached, served as a choice, answered, then the
     // state re-pulled (the tutor-close pull). The order must hold on both the
     // Recognize path (seen card) and the introduction path (unseen card).
-    const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-frb\"\n---\n## What is frb, in one sentence? <!-- id: card-frb1 -->\n\
-        A \\blank{code-generation} tool generating the \\blank{FFI} glue on both sides.\n";
+    const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-frb\"\n---\n## What is frb, in one sentence?\n\
+        A \\blank{code-generation} tool generating the \\blank{FFI} glue on both sides.\n<!-- id: card-frb1 -->\n";
     for seed_store in [true, false] {
         let (base, _guard) = spawn_full_server_fixture(
             None,
@@ -3201,11 +3203,11 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
 #[test]
 fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
     const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicemixed\"\ntasklist: choices-single\n---\n\
-        ## pick 1 <!-- id: card-cm1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n\n\
-        ## pick 2 <!-- id: card-cm2 -->\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n\n\
-        ## plain 1 <!-- id: card-cm3 -->\nback 3\n\n\
-        ## plain 2 <!-- id: card-cm4 -->\nback 4\n\n\
-        ## plain 3 <!-- id: card-cm5 -->\nback 5\n";
+        ## pick 1\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n<!-- id: card-cm1 -->\n\n\
+        ## pick 2\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n<!-- id: card-cm2 -->\n\n\
+        ## plain 1\nback 3\n<!-- id: card-cm3 -->\n\n\
+        ## plain 2\nback 4\n<!-- id: card-cm4 -->\n\n\
+        ## plain 3\nback 5\n<!-- id: card-cm5 -->\n";
     let (base, _guard) = spawn_full_server_fixture(
         None,
         |dir| {
@@ -3302,9 +3304,9 @@ fn reveal_endpoint_is_gone_and_abandonment_reintroduces_as_new() {
 #[test]
 fn a_recognize_done_with_floored_cards_says_when_one_opens() {
     const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicecool\"\ntasklist: choices-single\n---\n\
-        ## cool 1 <!-- id: card-cc1 -->\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n\n\
-        ## cool 2 <!-- id: card-cc2 -->\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n\n\
-        ## cool plain <!-- id: card-cc3 -->\nback\n";
+        ## cool 1\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n<!-- id: card-cc1 -->\n\n\
+        ## cool 2\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n<!-- id: card-cc2 -->\n\n\
+        ## cool plain\nback\n<!-- id: card-cc3 -->\n";
     let (base, _guard) = spawn_full_server_fixture(
         None,
         |dir| std::fs::write(dir.join("choice-cool.md"), MIXED).unwrap(),
@@ -3346,7 +3348,7 @@ fn a_recognize_done_with_floored_cards_says_when_one_opens() {
 #[test]
 fn an_unrevealed_new_card_stays_new_after_abandoning() {
     const ONE: &str = "---\nformat-version: 1\nid: \"deck-unrevealed\"\n---\n\
-        ## the only card <!-- id: card-ur1 -->\nits answer\n";
+        ## the only card\nits answer\n<!-- id: card-ur1 -->\n";
     let (base, _guard) = spawn_full_server_fixture(
         None,
         |dir| std::fs::write(dir.join("unrevealed.md"), ONE).unwrap(),
@@ -3629,7 +3631,7 @@ fn selecting_the_next_deck_flushes_the_previous_session() {
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(
             dir.join("other.md"),
-            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 7 + 7 <!-- id: card-o1 -->\n14\n",
+            "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 7 + 7\n14\n<!-- id: card-o1 -->\n",
         )
         .unwrap();
     });
@@ -3736,12 +3738,12 @@ fn a_rejected_augment_open_keeps_the_active_progress_store() {
         std::fs::write(workspace.join("alix.toml"), "title = \"Duplicates\"\n").unwrap();
         std::fs::write(
             decks.join("one.md"),
-            "---\nformat-version: 1\nid: \"deck-one\"\n---\n## first <!-- id: card-shared -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-one\"\n---\n## first\na\n<!-- id: card-shared -->\n",
         )
         .unwrap();
         std::fs::write(
             decks.join("two.md"),
-            "---\nformat-version: 1\nid: \"deck-two\"\n---\n## second <!-- id: card-shared -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-two\"\n---\n## second\nb\n<!-- id: card-shared -->\n",
         )
         .unwrap();
     });
@@ -4052,12 +4054,12 @@ fn write_workspace_fixture(dir: &Path) {
     std::fs::write(ws.join("alix.toml"), "title = \"WS\"\n").unwrap();
     std::fs::write(
         members.join("m1.md"),
-        "---\nformat-version: 1\nid: \"deck-workone\"\n---\n## q1 <!-- id: card-w1 -->\na1\n## q2 <!-- id: card-w2 -->\na2\n",
+        "---\nformat-version: 1\nid: \"deck-workone\"\n---\n## q1\na1\n<!-- id: card-w1 -->\n## q2\na2\n<!-- id: card-w2 -->\n",
     )
     .unwrap();
     std::fs::write(
         members.join("m2.md"),
-        "---\nformat-version: 1\nid: \"deck-worktwo\"\n---\n## q3 <!-- id: card-w3 -->\na3\n## q4 <!-- id: card-w4 -->\na4\n## q5 <!-- id: card-w5 -->\na5\n",
+        "---\nformat-version: 1\nid: \"deck-worktwo\"\n---\n## q3\na3\n<!-- id: card-w3 -->\n## q4\na4\n<!-- id: card-w4 -->\n## q5\na5\n<!-- id: card-w5 -->\n",
     )
     .unwrap();
 }
@@ -4072,7 +4074,7 @@ fn write_plain_folder_fixture(dir: &Path) {
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::write(
         folder.join("loose.md"),
-        "---\nformat-version: 1\nid: \"deck-loose\"\n---\n## q <!-- id: card-lq1 -->\na\n",
+        "---\nformat-version: 1\nid: \"deck-loose\"\n---\n## q\na\n<!-- id: card-lq1 -->\n",
     )
     .unwrap();
 }
@@ -4290,7 +4292,7 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(
             dir.join("regions.md"),
-            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## anatomy <!-- id: card-regionfixture000000000000 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n",
+            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-regionfixture000000000000 -->\n",
         )
         .unwrap();
     });
@@ -4344,7 +4346,7 @@ fn removing_a_recognizable_cloze_hole_clears_excluded_sibling_progress() {
     // Removing one hole removes the shared source block, so the sibling a
     // Recognize session excluded (no cached distractors) must lose its
     // progress too; per-card augmentation makes this mixed state ordinary.
-    const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-clozefixture00000000000\"\n---\n\n## ports <!-- id: card-clozefixture0000000000000 -->\nSSH is \\blank{22}; HTTPS is \\blank{443}.\n";
+    const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-clozefixture00000000000\"\n---\n\n## ports\nSSH is \\blank{22}; HTTPS is \\blank{443}.\n<!-- id: card-clozefixture0000000000000 -->\n";
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(dir.join("ports.md"), CLOZE_DECK).unwrap();
         let cards = parser::parse_str("ports.md", CLOZE_DECK).unwrap();
@@ -5817,7 +5819,7 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 fn write_exam_deck_fixture(dir: &Path) {
     std::fs::write(
         dir.join("examdeck.md"),
-        "---\nformat-version: 1\nid: \"deck-examdeck\"\nsource: examsource.txt\n---\n## c <!-- id: card-e1 -->\na\n",
+        "---\nformat-version: 1\nid: \"deck-examdeck\"\nsource: examsource.txt\n---\n## c\na\n<!-- id: card-e1 -->\n",
     )
     .unwrap();
     std::fs::write(dir.join("examsource.txt"), "c stands for a concept.\n").unwrap();

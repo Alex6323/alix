@@ -873,12 +873,12 @@ mod tests {
         let two = b.join("geo.md");
         std::fs::write(
             &one,
-            "---\nformat-version: 1\nid: \"deck-aaaaaaaaaaaaaaaaaaaaaaaaaa\"\n---\n## q <!-- id: card-qa -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-aaaaaaaaaaaaaaaaaaaaaaaaaa\"\n---\n## q\na\n<!-- id: card-qa -->\n",
         )
         .unwrap();
         std::fs::write(
             &two,
-            "---\nformat-version: 1\nid: \"deck-bbbbbbbbbbbbbbbbbbbbbbbbbb\"\n---\n## q <!-- id: card-qb -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-bbbbbbbbbbbbbbbbbbbbbbbbbb\"\n---\n## q\nb\n<!-- id: card-qb -->\n",
         )
         .unwrap();
 
@@ -914,9 +914,9 @@ mod tests {
         std::fs::create_dir_all(ws.join(workspace::DECKS)).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
         let member = ws.join("decks/a.md");
-        write_initialized(&member, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&member, "## q\na\n<!-- id: card-q1 -->\n");
         let loose = dir.path().join("loose.md");
-        write_initialized(&loose, "## q <!-- id: card-q2 -->\na\n");
+        write_initialized(&loose, "## q\na\n<!-- id: card-q2 -->\n");
         let instance = dir.path().join("instance-state");
 
         let p = store_path_for(std::slice::from_ref(&member), None).expect("workspace store");
@@ -982,12 +982,14 @@ mod tests {
     }
 
     const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
-## Predict the first hop <!-- id: card-qhop1 -->\n\
+## Predict the first hop\n\
 it reads the first line\n\
 <!-- at: 1 -->\n\
-## Predict the second hop <!-- id: card-qhop2 -->\n\
+<!-- id: card-qhop1 -->\n\
+## Predict the second hop\n\
 it reads line two\n\
-<!-- at: 2 -->\n";
+<!-- at: 2 -->\n\
+<!-- id: card-qhop2 -->\n";
 
     fn test_config() -> AssembleConfig {
         AssembleConfig {
@@ -1151,10 +1153,10 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         write_initialized(
             &path,
-            "## q1 <!-- id: card-q1 -->\n- [x] a1\n- [ ] w1\n<!-- choices-single -->\n\
-             ## q2 <!-- id: card-q2 -->\n- [x] a2\n- [ ] w2\n<!-- choices-single -->\n\
-             ## q3 <!-- id: card-q3 -->\n- [x] a3\n- [ ] w3\n<!-- choices-single -->\n\
-             ## q4 <!-- id: card-q4 -->\n- [x] a4\n- [ ] w4\n<!-- choices-single -->\n",
+            "## q1\n- [x] a1\n- [ ] w1\n<!-- choices-single -->\n<!-- id: card-q1 -->\n\
+             ## q2\n- [x] a2\n- [ ] w2\n<!-- choices-single -->\n<!-- id: card-q2 -->\n\
+             ## q3\n- [x] a3\n- [ ] w3\n<!-- choices-single -->\n<!-- id: card-q3 -->\n\
+             ## q4\n- [x] a4\n- [ ] w4\n<!-- choices-single -->\n<!-- id: card-q4 -->\n",
         );
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
 
@@ -1182,8 +1184,8 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\
-             the \\blank{alpha} and \\blank{beta}\n## Plain <!-- id: card-plaincard -->\nanswer\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill\n\
+             the \\blank{alpha} and \\blank{beta}\n<!-- id: card-fillcard -->\n## Plain\nanswer\n<!-- id: card-plaincard -->\n",
         )
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
@@ -1208,7 +1210,7 @@ it reads line two\n\
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\\blank{alpha} then \\blank{beta}\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill\n\\blank{alpha} then \\blank{beta}\n<!-- id: card-fillcard -->\n",
         )
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
@@ -1225,7 +1227,7 @@ it reads line two\n\
 
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill <!-- id: card-fillcard -->\n\\blank{beta} then \\blank{alpha}\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill\n\\blank{beta} then \\blank{alpha}\n<!-- id: card-fillcard -->\n",
         )
         .unwrap();
         select(
@@ -1254,7 +1256,7 @@ it reads line two\n\
         let deck_path = dir.path().join("d.md");
         std::fs::write(
             &deck_path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## q <!-- id: card-qcard -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## q\na\n<!-- id: card-qcard -->\n",
         )
         .unwrap();
         let store_path = workspace::root_store_path(dir.path());
@@ -1279,7 +1281,7 @@ it reads line two\n\
         std::fs::write(&trace, TRACE_DECK).unwrap();
         std::fs::write(dir.path().join("source.txt"), "first\nsecond\nthird\n").unwrap();
         let fact = dir.path().join("f.md");
-        write_initialized(&fact, "## q <!-- id: card-qf -->\na\n");
+        write_initialized(&fact, "## q\na\n<!-- id: card-qf -->\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = AssembleConfig {
             trace_auto_grade: false,
@@ -1301,11 +1303,11 @@ it reads line two\n\
         let trace = dir.path().join("t.md");
         std::fs::write(
             &trace,
-            "---\ntrace: how it works\nsource: .\n---\n\n## q <!-- id: card-qq -->\npoint\n<!-- at: 1 -->\n",
+            "---\ntrace: how it works\nsource: .\n---\n\n## q\npoint\n<!-- at: 1 -->\n<!-- id: card-qq -->\n",
         )
         .unwrap();
         let fact = dir.path().join("f.md");
-        std::fs::write(&fact, "## q <!-- id: card-qf -->\na\n").unwrap();
+        std::fs::write(&fact, "## q\na\n<!-- id: card-qf -->\n").unwrap();
 
         assert!(single_trace_to_walk(std::slice::from_ref(&trace)).is_some());
         assert!(single_trace_to_walk(std::slice::from_ref(&fact)).is_none());
@@ -1339,7 +1341,7 @@ it reads line two\n\
         id: &str,
         front: &str,
     ) {
-        let block = format!("## {front} <!-- id: {id} -->\npersonal back\n");
+        let block = format!("## {front}\npersonal back\n<!-- id: {id} -->\n");
         crate::personal::append_cards(deck, deck_id, &block).unwrap();
         store.get_or_insert(id).introduced_ms = Some(0);
     }
@@ -1350,7 +1352,7 @@ it reads line two\n\
         let ws = dir.path().join("animals");
         std::fs::create_dir(&ws).unwrap();
         let member = ws.join("m.md");
-        write_initialized(&member, "## q <!-- id: card-qm -->\na\n");
+        write_initialized(&member, "## q\na\n<!-- id: card-qm -->\n");
         // Pin the store explicitly: a bare `None` would fall through to the
         // real global data dir.
         let mut store = store_for(
@@ -1375,7 +1377,7 @@ it reads line two\n\
     fn select_injects_a_decks_personal_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store =
@@ -1398,7 +1400,7 @@ it reads line two\n\
     fn a_sidecar_note_reaches_the_card_it_addresses_deck_or_personal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
         write_personal_card(&mut store, &path, "deck-rust");
@@ -1451,7 +1453,7 @@ it reads line two\n\
     fn a_sidecar_note_for_no_card_leaves_every_card_alone() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
         crate::personal::append_note(
@@ -1481,7 +1483,7 @@ it reads line two\n\
     fn each_injected_personal_card_gets_a_distinct_reserved_line() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
         let mut store =
             store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
         write_named_personal_card(&mut store, &path, "deck-rust", "card-vq1", "personal one");
@@ -1519,7 +1521,7 @@ it reads line two\n\
         // matching is bound to (not card overlap).
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-dtok1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n",
+            "---\nformat-version: 1\nid: \"deck-dtok1\"\n---\n## q1\na1\n<!-- id: card-q1 -->\n",
         )
         .unwrap();
         // Not a workspace, so pass an explicit `--store`-style override: a
@@ -1565,7 +1567,7 @@ it reads line two\n\
     #[test]
     fn a_format_cache_entry_applies_to_a_bound_personal_card() {
         let subject: Arc<str> = Arc::from("rust.md");
-        let text = "## List the parts <!-- id: card-vlist -->\nA, B, C\n";
+        let text = "## List the parts\nA, B, C\n<!-- id: card-vlist -->\n";
         let mut cards = crate::parser::parse_str(&subject, text).unwrap();
         bind_personal(&mut cards, &subject, &subject);
         let mut synth = cards.remove(0);
@@ -1594,7 +1596,7 @@ it reads line two\n\
     fn select_applies_a_cached_format_to_an_injected_personal_card() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        write_initialized(&path, "## q1 <!-- id: card-q1 -->\na1\n");
+        write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
         // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store =
@@ -1602,7 +1604,7 @@ it reads line two\n\
         write_personal_card(&mut store, &path, "deck-rust");
         let personal_card = crate::parser::parse_str(
             "rust.md",
-            "## personal front <!-- id: card-vq1 -->\npersonal back\n",
+            "## personal front\npersonal back\n<!-- id: card-vq1 -->\n",
         )
         .unwrap()
         .remove(0);
@@ -1648,7 +1650,7 @@ it reads line two\n\
 
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("d.md");
-        write_initialized(&deck, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&deck, "## q\na\n<!-- id: card-q1 -->\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
@@ -1673,7 +1675,7 @@ it reads line two\n\
 
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
-        write_initialized(&deck_path, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&deck_path, "## q\na\n<!-- id: card-q1 -->\n");
         let store_path = dir.path().join("state");
         let mut store = state::open_store(&deck_path, &store_path).unwrap();
         let cfg = test_config();
@@ -1705,7 +1707,7 @@ it reads line two\n\
 
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
-        write_initialized(&deck_path, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&deck_path, "## q\na\n<!-- id: card-q1 -->\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
@@ -1751,7 +1753,7 @@ it reads line two\n\
         let path = ws.join("decks/d.md");
         write_initialized(
             &path,
-            "## List the parts <!-- id: card-qlist -->\nA, B, C\n",
+            "## List the parts\nA, B, C\n<!-- id: card-qlist -->\n",
         );
 
         let raw = browse(vec![path.clone()], None).unwrap();
@@ -1799,7 +1801,7 @@ it reads line two\n\
     fn select_returns_the_decks_augment_cache() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
-        write_initialized(&deck, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&deck, "## q\na\n<!-- id: card-q1 -->\n");
         let store_path = dir.path().join("state");
         let mut store = state::open_store(&deck, &store_path).unwrap();
         let loaded = crate::deck::Deck::load(&deck).unwrap();
@@ -1829,7 +1831,7 @@ it reads line two\n\
     fn a_configured_introduction_cooldown_reaches_the_session() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
-        write_initialized(&deck, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&deck, "## q\na\n<!-- id: card-q1 -->\n");
         let mut store = state::open_store(&deck, dir.path()).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
@@ -1856,7 +1858,7 @@ it reads line two\n\
     fn select_serves_by_the_injected_clock() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
-        write_initialized(&deck, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&deck, "## q\na\n<!-- id: card-q1 -->\n");
         let mut store = state::open_store(&deck, dir.path()).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
@@ -1896,7 +1898,7 @@ it reads line two\n\
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
         std::fs::create_dir(dir.path().join("decks")).unwrap();
         let deck = dir.path().join("decks/m.md");
-        write_initialized(&deck, "## q <!-- id: card-q1 -->\na\n");
+        write_initialized(&deck, "## q\na\n<!-- id: card-q1 -->\n");
         let mut store = crate::state::open_store(&deck, dir.path()).unwrap();
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
@@ -1970,13 +1972,13 @@ it reads line two\n\
         let keeper = dir.path().join("notes.md");
         std::fs::write(
             &keeper,
-            "---\nformat-version: 1\nid: \"deck-dtoka\"\n---\n## q <!-- id: card-cshared -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-dtoka\"\n---\n## q\na\n<!-- id: card-cshared -->\n",
         )
         .unwrap();
         let loser = dir.path().join("notes copy.md");
         std::fs::write(
             &loser,
-            "---\nformat-version: 1\nid: \"deck-dtokb\"\n---\n## q <!-- id: card-cshared -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-dtokb\"\n---\n## q\nb\n<!-- id: card-cshared -->\n",
         )
         .unwrap();
 
@@ -2026,7 +2028,7 @@ it reads line two\n\
         let decks = dir.path().join("decks");
         std::fs::create_dir(&decks).unwrap();
         let deck = decks.join("half.md");
-        write_initialized(&deck, "## a <!-- id: card-q1 -->\n1\n\n## b\n2\n");
+        write_initialized(&deck, "## a\n1\n<!-- id: card-q1 -->\n\n## b\n2\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         std::fs::set_permissions(&decks, std::fs::Permissions::from_mode(0o555)).unwrap();
         let result = select(

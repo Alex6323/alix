@@ -139,7 +139,7 @@ mod tests {
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase();
-        let text = format!("## q <!-- id: card-q{slug}x -->\n{back}\n");
+        let text = format!("## q\n{back}\n<!-- id: card-q{slug}x -->\n");
         parser::parse_str("t.md", &text).unwrap().remove(0)
     }
 
@@ -147,7 +147,7 @@ mod tests {
     fn a_region_card_is_never_recognizable_even_with_cached_distractors() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let text = "## q <!-- id: card-qregionx -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"ans\" b:a1b2c3 -->\n\n---\nback\n";
+        let text = "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"ans\" b:a1b2c3 -->\n\n---\nback\n<!-- id: card-qregionx -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
         let region_card = cards
             .iter()

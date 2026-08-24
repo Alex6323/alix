@@ -942,7 +942,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -965,7 +965,7 @@ mod tests {
     #[test]
     fn a_proposal_may_not_change_the_title_or_the_description() {
         let dir = tempfile::tempdir().unwrap();
-        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: src\ntitle: Facts\ndescription: |\n  Two lines\n  of description.\n---\n## q <!-- id: card-q1 -->\na\n";
+        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: src\ntitle: Facts\ndescription: |\n  Two lines\n  of description.\n---\n## q\na\n<!-- id: card-q1 -->\n";
         let write_deck = |name: &str, text: &str| {
             let path = dir.path().join(name);
             fs::write(&path, text).unwrap();
@@ -1012,7 +1012,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Rewritten question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
+                "## Rewritten question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         let error = stage(
@@ -1044,7 +1044,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question <!-- id: card-oldcard -->\n- [x] Old answer\n- [ ] New distractor\n<!-- at: code.rs:1 -->\n",
+                "## Old question\n- [x] Old answer\n- [ ] New distractor\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         let error = stage(
@@ -1069,7 +1069,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question <!-- id: card-oldcard -->\nOld answer\n> Clearer note.\n<!-- at: code.rs:2 -->\n",
+                "## Old question\nOld answer\n> Clearer note.\n<!-- at: code.rs:2 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
 
@@ -1188,7 +1188,7 @@ mod tests {
         fs::write(
             workspace.join("decks/plain.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck9\"\nsource: {}\n---\n## p <!-- id: card-plain1 -->\na\n",
+                "---\nformat-version: 1\nid: \"deck-deck9\"\nsource: {}\n---\n## p\na\n<!-- id: card-plain1 -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1197,7 +1197,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question <!-- id: card-oldcard -->\nOld answer\n<!-- at: code.rs:1 -->\n",
+                "## Old question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
 
@@ -1228,7 +1228,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question <!-- id: card-oldcard -->\nOld answer\n> reviewed\n<!-- at: code.rs:1 -->\n",
+                "## Old question\nOld answer\n> reviewed\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         stage(

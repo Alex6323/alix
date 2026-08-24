@@ -1453,11 +1453,12 @@ pub fn mint_tutor_card(
         None,
         false,
     );
-    let mut text = format!("## {front} <!-- id: {token} -->\n");
+    let mut text = format!("## {front}\n");
     for line in &back {
         text.push_str(line);
         text.push('\n');
     }
+    text.push_str(&format!("<!-- id: {token} -->\n"));
     let cards = crate::parser::parse_str(deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
     let [card] = cards.as_slice() else {
@@ -1575,7 +1576,7 @@ pub fn store_remediation_cards(
 
     let mut created_or_revived = 0;
     for block in &blocks {
-        // The id rides the `## ` line so the stored text re-parses to the same id forever.
+        // Stamped before storing so the text re-parses to the same id forever.
         let token = crate::token::format_card_id(
             &crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?,
             None,
@@ -1639,9 +1640,9 @@ fn personal_ids_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) 
 }
 
 fn stamp_block(block: &str, token: &str) -> String {
-    match block.split_once('\n') {
-        Some((front, rest)) => format!("{front} <!-- id: {token} -->\n{rest}"),
-        None => format!("{block} <!-- id: {token} -->"),
+    match block.strip_suffix('\n') {
+        Some(body) => format!("{body}\n<!-- id: {token} -->\n"),
+        None => format!("{block}\n<!-- id: {token} -->"),
     }
 }
 
@@ -2577,7 +2578,7 @@ mod tests {
     fn two_cards() -> Vec<crate::card::Card> {
         crate::parser::parse_str(
             "t.md",
-            "## a <!-- id: card-q1 -->\n1\n\n## b <!-- id: card-q2 -->\n2\n",
+            "## a\n1\n<!-- id: card-q1 -->\n\n## b\n2\n<!-- id: card-q2 -->\n",
         )
         .unwrap()
     }
@@ -2945,7 +2946,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let authored = crate::parser::parse_str(
             "d.md",
-            "## Capital of France? <!-- id: card-france -->\n- [x] Paris\n- [ ] Lyon\n<!-- choices-single -->\n",
+            "## Capital of France?\n- [x] Paris\n- [ ] Lyon\n<!-- choices-single -->\n<!-- id: card-france -->\n",
         )
         .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
@@ -3047,7 +3048,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
         let plain =
-            crate::parser::parse_str("d.md", "## Complete the quote <!-- id: card-p1 -->\nbe\n")
+            crate::parser::parse_str("d.md", "## Complete the quote\nbe\n<!-- id: card-p1 -->\n")
                 .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
             plain.iter().map(|c| c.block_fingerprint).collect();
@@ -3079,7 +3080,7 @@ mod tests {
         ] {
             let dir = tempfile::tempdir().unwrap();
             let deck = dir.path().join("d.md");
-            std::fs::write(&deck, "## existing <!-- id: card-ex1 -->\nanswer\n").unwrap();
+            std::fs::write(&deck, "## existing\nanswer\n<!-- id: card-ex1 -->\n").unwrap();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
             let created = store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
@@ -3102,7 +3103,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let deck = dir.path().join("d.md");
         let text =
-            "## Why does X? <!-- reveal: line -->\npoint one\n\n## fact card\nplain answer\n";
+            "## Why does X?\npoint one\n<!-- reveal: line -->\n\n## fact card\nplain answer\n";
 
         store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
         let synthesized = sidecar_cards(&deck, "d.md");

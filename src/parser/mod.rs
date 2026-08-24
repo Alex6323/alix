@@ -176,6 +176,14 @@ pub enum ParseError {
     )]
     LeadingInvocation { line: usize, word: String },
     #[error(
+        "line {line}: `<!-- {key}: ... -->` sits above card content; comment machinery trails: move it below the card's last content line"
+    )]
+    LeadingDirective { line: usize, key: String },
+    #[error(
+        "line {line}: a card heading line takes no `<!-- {key}: ... -->`; comment machinery trails: move it below the card's content"
+    )]
+    FrontDirective { line: usize, key: String },
+    #[error(
         "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order"
     )]
     InvalidLocator { line: usize, message: String },
@@ -285,6 +293,8 @@ impl ParseError {
             Self::OrphanCardId(_) => "orphan_card_id",
             Self::SubCardTableTitle(_) => "sub_card_table_title",
             Self::LeadingInvocation { .. } => "leading_invocation",
+            Self::LeadingDirective { .. } => "leading_directive",
+            Self::FrontDirective { .. } => "front_directive",
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
             Self::ChoiceShape { .. } => "choice_shape",
@@ -356,6 +366,8 @@ impl ParseError {
             | Self::TableDelimiterWidth { line, .. }
             | Self::TableRowStamp { line, .. }
             | Self::LeadingInvocation { line, .. }
+            | Self::LeadingDirective { line, .. }
+            | Self::FrontDirective { line, .. }
             | Self::TableDuplicateStamp { line, .. } => *line,
         }
     }
@@ -661,12 +673,27 @@ struct RawCard {
     note: Option<String>,
     directives: CardDirectives,
     mapping: Option<Mapping>,
+    /// The first card-zone directive (`is_known_card_key`) applied to this
+    /// card; content arriving afterward proves it sat above content.
+    machinery: Option<(usize, String)>,
     /// The line of a bare `$$` opener still unclosed; a card may not end
     /// with one open.
     open_math: Option<usize>,
     /// The same rule for the note stream: a `> $$` opener, tracked on the
     /// stripped note text.
     open_note_math: Option<usize>,
+}
+
+impl RawCard {
+    fn machinery_stays_trailing(&self) -> Result<(), ParseError> {
+        match &self.machinery {
+            Some((line, key)) => Err(ParseError::LeadingDirective {
+                line: *line,
+                key: key.clone(),
+            }),
+            None => Ok(()),
+        }
+    }
 }
 
 struct RawTable {
@@ -951,7 +978,7 @@ fn scan(
                 prev_heading = false;
                 continue;
             }
-            push_content(&mut current, lineno, raw.to_string());
+            push_content(&mut current, lineno, raw.to_string())?;
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -970,7 +997,7 @@ fn scan(
             {
                 card.open_math = None;
             }
-            push_content(&mut current, lineno, raw.to_string());
+            push_content(&mut current, lineno, raw.to_string())?;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -998,7 +1025,7 @@ fn scan(
                 prev_heading = false;
                 continue;
             }
-            push_content(&mut current, lineno, raw.to_string());
+            push_content(&mut current, lineno, raw.to_string())?;
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -1141,6 +1168,7 @@ fn scan(
                 note: None,
                 directives,
                 mapping: None,
+                machinery: None,
                 open_math: None,
                 open_note_math: None,
             });
@@ -1189,7 +1217,7 @@ fn scan(
                 prev_prose = true;
                 continue;
             }
-            push_content(&mut current, lineno, rest.to_string());
+            push_content(&mut current, lineno, rest.to_string())?;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -1216,7 +1244,7 @@ fn scan(
                         "---".to_string(),
                     )?;
                 } else {
-                    push_content(&mut current, lineno, "---".to_string());
+                    push_content(&mut current, lineno, "---".to_string())?;
                 }
                 prev_blank = false;
                 prev_heading = false;
@@ -1229,6 +1257,7 @@ fn scan(
                 current.as_ref().is_some_and(|card| !card.divided) && (prev_blank || prev_heading);
             if attached && divides {
                 if let Some(card) = current.as_mut() {
+                    card.machinery_stays_trailing()?;
                     card.divided = true;
                     card.divider_line = Some(lineno);
                 }
@@ -1261,6 +1290,7 @@ fn scan(
             }
             match current.as_mut() {
                 Some(card) => {
+                    card.machinery_stays_trailing()?;
                     if trim_ws(text) == "$$" {
                         card.open_note_math = match card.open_note_math {
                             None => Some(lineno),
@@ -1319,6 +1349,9 @@ fn scan(
                     match current.as_mut() {
                         Some(card) => {
                             apply_directive(&mut card.directives, &key, value, lineno, lints)?;
+                            if is_known_card_key(&key) && card.machinery.is_none() {
+                                card.machinery = Some((lineno, key));
+                            }
                         }
                         // A region outside any card has nothing to bind to and
                         // would otherwise vanish silently; other directives
@@ -1392,7 +1425,7 @@ fn scan(
             continue;
         }
 
-        push_content(&mut current, lineno, t.to_string());
+        push_content(&mut current, lineno, t.to_string())?;
         prev_blank = false;
         prev_heading = false;
         prev_prose = true;
@@ -1985,14 +2018,20 @@ fn take_card(current: &mut Option<RawCard>) -> Result<Option<RawCard>, ParseErro
     Ok(card)
 }
 
-fn push_content(current: &mut Option<RawCard>, lineno: usize, text: String) {
+fn push_content(
+    current: &mut Option<RawCard>,
+    lineno: usize,
+    text: String,
+) -> Result<(), ParseError> {
     if let Some(card) = current.as_mut() {
+        card.machinery_stays_trailing()?;
         if card.divided {
             card.back.push((lineno, text));
         } else {
             card.front_extra.push((lineno, text));
         }
     }
+    Ok(())
 }
 
 fn append_note(card: &mut RawCard, text: &str) {
@@ -2014,7 +2053,16 @@ fn heading(
     let (text, bodies) = split_trailing_comments(rest);
     for body in bodies {
         if let Some((key, value)) = directive(&body) {
-            apply_directive(&mut directives, &key, value, lineno, lints)?;
+            let before = lints.len();
+            let recognized = match apply_directive(&mut directives, &key, value, lineno, lints) {
+                Err(_) => true,
+                Ok(()) => !lints[before..]
+                    .iter()
+                    .any(|lint| matches!(&lint.kind, LintKind::UnknownKey { key: k } if *k == key)),
+            };
+            if recognized {
+                return Err(ParseError::FrontDirective { line: lineno, key });
+            }
         }
     }
     // `\#` is a literal front-text hash; never part of a trailing closing run.
@@ -2282,6 +2330,7 @@ fn build_card_inner(
         note,
         directives,
         mapping,
+        machinery: _,
         open_math: _,
         open_note_math: _,
     } = raw;
@@ -3345,7 +3394,7 @@ mod tests {
     fn a_sidecar_never_turns_leading_headings_into_section_context() {
         let cards = parse_sidecar(
             "deck.personal.md",
-            "#### reader label\n## personal <!-- id: card-personal -->\nanswer\n",
+            "#### reader label\n## personal\nanswer\n<!-- id: card-personal -->\n",
         )
         .unwrap();
         assert_eq!(1, cards.len());
@@ -3451,8 +3500,8 @@ mod tests {
     #[test]
     fn re_heading_a_card_changes_neither_its_id_nor_its_fingerprints() {
         let stamped = "<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->";
-        let shallow = parse(&format!("## q {stamped}\na\n"));
-        let deep = parse(&format!("## parent\np\n### q {stamped}\na\n"));
+        let shallow = parse(&format!("## q\na\n{stamped}\n"));
+        let deep = parse(&format!("## parent\np\n### q\na\n{stamped}\n"));
         let a = &shallow.cards[0];
         let b = &deep.cards[1];
         assert_eq!(a.id(), b.id(), "the minted token is the identity");
@@ -4773,6 +4822,99 @@ a
     }
 
     #[test]
+    fn a_card_directive_above_content_is_machinery_out_of_position() {
+        let rows = [
+            ("<!-- reveal: line -->", "reveal"),
+            ("<!-- input: draw -->", "input"),
+            ("<!-- direction: both -->", "direction"),
+            ("<!-- at: src/x.rs:1-2 -->", "at"),
+            ("<!-- given: a hint -->", "given"),
+            ("<!-- sampling: off -->", "sampling"),
+            ("<!-- id: card-3g12jfjv4pypppsrx5wvtx65y5 -->", "id"),
+        ];
+        for (comment, key) in rows {
+            let error = err(&format!("## q\n{comment}\nanswer\n"));
+            match &error {
+                ParseError::LeadingDirective { line, key: found } => {
+                    assert_eq!((2, key), (*line, found.as_str()), "{key} above content");
+                }
+                other => panic!("{key} above content: expected LeadingDirective, got {other:?}"),
+            }
+        }
+        for (comment, key) in rows {
+            let deck = parse(&format!("## q\nanswer\n{comment}\n"));
+            assert_eq!(1, deck.cards.len(), "{key} in the trailing zone is legal");
+        }
+
+        let note = err("## q\nanswer\n<!-- reveal: line -->\n> a note\n");
+        assert!(
+            matches!(&note, ParseError::LeadingDirective { line: 3, .. }),
+            "a note is content, so machinery above it errors, got {note:?}"
+        );
+
+        let divider = err("## q\n<!-- reveal: line -->\n\n---\nback\n");
+        assert!(
+            matches!(&divider, ParseError::LeadingDirective { line: 2, .. }),
+            "the divider is card structure, so machinery above it errors, got {divider:?}"
+        );
+
+        let stamped = parse(
+            "## q\n```mermaid\ngraph TD\n```\n<!-- diagram: fingerprint: xxh64-0123456789abcdef asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.png geometry: sha256-0000000000000000000000000000000000000000000000000000000000000000.json -->\nprose after\n",
+        );
+        assert_eq!(
+            1,
+            stamped.cards.len(),
+            "a diagram stamp trails its fence, not the card, so content after it stays legal"
+        );
+    }
+
+    #[test]
+    fn a_recognized_directive_on_the_heading_line_is_machinery_out_of_position() {
+        let rows = [
+            ("reveal: line", "reveal"),
+            ("input: draw", "input"),
+            ("direction: both", "direction"),
+            ("at: src/x.rs:1-2", "at"),
+            ("given: a hint", "given"),
+            ("sampling: off", "sampling"),
+            ("id: card-3g12jfjv4pypppsrx5wvtx65y5", "id"),
+            (
+                "diagram: fingerprint: xxh64-0123456789abcdef asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.png geometry: sha256-0000000000000000000000000000000000000000000000000000000000000000.json",
+                "diagram",
+            ),
+            ("blank: span hidden=\"a\"", "blank"),
+            ("cover: rect x=1 y=2 width=3 height=4", "cover"),
+            ("crop: rect x=1 y=2 width=3 height=4", "crop"),
+        ];
+        for (body, key) in rows {
+            let error = err(&format!("## q <!-- {body} -->\nanswer\n"));
+            match &error {
+                ParseError::FrontDirective { line, key: found } => {
+                    assert_eq!(
+                        (1, key),
+                        (*line, found.as_str()),
+                        "{key} on the heading line"
+                    );
+                }
+                other => {
+                    panic!("{key} on the heading line: expected FrontDirective, got {other:?}")
+                }
+            }
+        }
+
+        let unknown = parse("## q <!-- zzz: 1 -->\nanswer\n");
+        assert_eq!(
+            "q", unknown.cards[0].front,
+            "an unknown key on the heading line stays a stripped lint, not an error"
+        );
+        let editorial = parse("## q <!-- keep this short -->\nanswer\n");
+        assert_eq!(
+            "q", editorial.cards[0].front,
+            "an editorial comment on the heading line strips silently"
+        );
+    }
+
+    #[test]
     fn tag_shapes_error_on_every_deck_surface_and_the_outs_stay_legal() {
         let error_rows = [
             ("## Q\na <div> b\n", 2, "card content"),
@@ -5170,10 +5312,10 @@ a
     #[test]
     fn editing_only_a_distractor_preserves_identity_and_fingerprint() {
         let before = parse(
-            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n",
+            "## q\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         );
         let after = parse(
-            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n- [x] right\n- [ ] different\n<!-- choices-single -->\n",
+            "## q\n- [x] right\n- [ ] different\n<!-- choices-single -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         );
         assert_eq!(before.cards[0].id(), after.cards[0].id());
         assert_eq!(
@@ -5187,7 +5329,7 @@ a
     #[test]
     fn an_id_directive_yields_the_card_token() {
         let deck = parse(
-            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n---\na\n## r\n---\nb\n\
+            "## q\n---\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n## r\n---\nb\n\
              <!-- id: card-0m5v2 -->\n",
         );
         assert_eq!(
@@ -5633,7 +5775,7 @@ a
 
     #[test]
     fn a_formula_hole_pinned_back_to_typing_is_linted() {
-        let deck = parse("## q <!-- input: type -->\n---\n$x = \\blank{\\pm} y$\n");
+        let deck = parse("## q\n---\n$x = \\blank{\\pm} y$\n<!-- input: type -->\n");
         assert_eq!(
             vec![LintKind::UntypableHole {
                 answer: "\\pm".to_string()
@@ -6147,7 +6289,7 @@ created-at: 2026-07-19
 ---
 # The Title
 
-## The question <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->
+## The question
 
 ---
 the answer
@@ -6157,6 +6299,7 @@ the answer
 <!-- at: src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->
 <!-- given: state - the parser position -->
 <!-- given: partial - the card -->
+<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->
 "#;
         let document = parse_document(text).unwrap();
         assert_eq!(
@@ -6360,9 +6503,9 @@ the answer
 
     #[test]
     fn adding_an_image_preserves_the_card_token() {
-        let base = parse("## q <!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\nWaxing\n");
+        let base = parse("## q\nWaxing\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n");
         let with =
-            parse("## q <!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\nWaxing\n![](moon.png)\n");
+            parse("## q\nWaxing\n![](moon.png)\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n");
         let card_base = &base.cards[0];
         let card_with = &with.cards[0];
         assert_eq!(card_base.id(), card_with.id());
@@ -6687,7 +6830,7 @@ the answer
     #[test]
     fn a_heading_id_becomes_the_tables_container_id() {
         let text = format!(
-            "## Title <!-- id: {CONTAINER} -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- cards -->\n"
+            "## Title\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
@@ -6696,7 +6839,7 @@ the answer
     #[test]
     fn heading_directives_apply_to_the_titled_tables_rows() {
         let text = format!(
-            "## Title <!-- direction: both -->\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- id: {CONTAINER} -->\n"
+            "## Title\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n<!-- direction: both -->\n<!-- id: {CONTAINER} -->\n"
         );
         let deck = parse(&text);
         assert!(
@@ -7104,7 +7247,7 @@ the answer
 
     fn region_deck(regions: &str) -> String {
         format!(
-            "## name the parts <!-- id: {RTOK} -->\n![](hand.png)\n{regions}\n\n---\nthe parts\n"
+            "## name the parts\n![](hand.png)\n{regions}\n\n---\nthe parts\n<!-- id: {RTOK} -->\n"
         )
     }
 
@@ -7161,7 +7304,7 @@ the answer
     #[test]
     fn a_mixed_shape_group_keeps_its_answers_in_file_order() {
         let deck = parse(
-            "## identify both <!-- id: card-mixed1 -->\n---\nalpha beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n![](diagram.png)\n<!-- blank: rect [pair] x=1 y=1 width=2 height=2 hidden=\"diagram\" b:d4e5f6 -->\n",
+            "## identify both\n---\nalpha beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n![](diagram.png)\n<!-- blank: rect [pair] x=1 y=1 width=2 height=2 hidden=\"diagram\" b:d4e5f6 -->\n<!-- id: card-mixed1 -->\n",
         );
         let group = deck
             .cards
@@ -7252,7 +7395,7 @@ the answer
     #[test]
     fn notes_ride_every_region_card() {
         let deck = parse(&format!(
-            "## name the parts <!-- id: {RTOK} -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->\n\n---\nthe parts\n> the lunate sits center\n"
+            "## name the parts\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->\n\n---\nthe parts\n> the lunate sits center\n<!-- id: {RTOK} -->\n"
         ));
         for card in &deck.cards {
             assert_eq!(
@@ -7266,7 +7409,7 @@ the answer
     #[test]
     fn a_text_hole_plus_a_blank_span_is_a_composition_error() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nalpha \\blank{{beta}}\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+            "## q\n---\nalpha \\blank{{beta}}\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7277,7 +7420,7 @@ the answer
     #[test]
     fn a_text_hole_plus_a_blank_rect_is_a_composition_error() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nalpha \\blank{{beta}}\n"
+            "## q\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nalpha \\blank{{beta}}\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7288,7 +7431,7 @@ the answer
     #[test]
     fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
         let error = err(&format!(
-            "## pick <!-- id: {RTOK} -->\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+            "## pick\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7299,7 +7442,7 @@ the answer
     #[test]
     fn an_incomplete_task_list_plus_a_blank_region_is_still_a_composition_error() {
         let error = err(&format!(
-            "## pick <!-- id: {RTOK} -->\n---\n- [ ] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"
+            "## pick\n---\n- [ ] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7310,7 +7453,7 @@ the answer
     #[test]
     fn covers_and_crops_stay_legal_beside_holes_and_task_lists() {
         let cloze = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n\n---\nw \\blank{{z}} y\n"
+            "## q\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n\n---\nw \\blank{{z}} y\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             cloze.cards[0].hole.is_some(),
@@ -7319,7 +7462,7 @@ the answer
         assert_eq!(1, cloze.cards[0].images[0].regions.len());
 
         let choice = parse(&format!(
-            "## pick <!-- id: {RTOK} -->\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n"
+            "## pick\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, choice.cards.len());
         assert!(!choice.cards[0].authored_distractors.is_empty());
@@ -7328,7 +7471,7 @@ the answer
     #[test]
     fn a_cover_span_cannot_bind_to_text_inside_a_cloze_hole() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nthe first is \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n"
+            "## q\n---\nthe first is \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7339,7 +7482,7 @@ the answer
     #[test]
     fn a_cloze_gap_is_a_word_boundary_for_an_adjacent_cover_span() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nleft\\blank{{middle}}right\n<!-- cover: span hidden=\"right\" -->\n"
+            "## q\n---\nleft\\blank{{middle}}right\n<!-- cover: span hidden=\"right\" -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(Some(0), deck.cards[0].hole);
@@ -7348,7 +7491,7 @@ the answer
     #[test]
     fn a_span_binds_into_styled_contents_over_the_stream() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nthe **lunate** bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
+            "## q\n---\nthe **lunate** bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["lunate"], deck.cards[0].back);
@@ -7357,7 +7500,7 @@ the answer
     #[test]
     fn a_span_crossing_a_style_boundary_is_rejected_naming_it() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n**New** York is big\n<!-- blank: span hidden=\"New York\" b:a1b2c3 -->\n"
+            "## q\n---\n**New** York is big\n<!-- blank: span hidden=\"New York\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7368,7 +7511,7 @@ the answer
     #[test]
     fn a_span_cannot_bind_to_a_markdown_link_destination() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nread [the guide](https://secret.example/path)\n<!-- blank: span hidden=\"secret.example\" b:a1b2c3 -->\n"
+            "## q\n---\nread [the guide](https://secret.example/path)\n<!-- blank: span hidden=\"secret.example\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7379,7 +7522,7 @@ the answer
     #[test]
     fn a_span_cannot_bind_to_a_balanced_link_destination_suffix() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nread [the article](https://example.test/a(part)suffix) now\n<!-- blank: span hidden=\"suffix\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\nread [the article](https://example.test/a(part)suffix) now\n<!-- blank: span hidden=\"suffix\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7390,7 +7533,7 @@ the answer
     #[test]
     fn a_crossing_candidate_does_not_consume_an_overlapping_matchable_occurrence() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nba\\blank{{x}}nana\n<!-- cover: span hidden=\"ana\" boundary=char -->\n"
+            "## q\n---\nba\\blank{{x}}nana\n<!-- cover: span hidden=\"ana\" boundary=char -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(Some(0), deck.cards[0].hole);
@@ -7399,7 +7542,7 @@ the answer
     #[test]
     fn a_whole_math_formula_is_a_legal_span_blank() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nsum $x+y$ here\n<!-- blank: span hidden=\"x+y\" b:a1b2c3 -->\n"
+            "## q\n---\nsum $x+y$ here\n<!-- blank: span hidden=\"x+y\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(
@@ -7413,7 +7556,7 @@ the answer
     fn a_partial_match_containing_a_structural_token_is_rejected() {
         for hidden in ["x^", "^2"] {
             let error = err(&format!(
-                "## q <!-- id: {RTOK} -->\n---\n$x^2$\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+                "## q\n---\n$x^2$\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             let ParseError::InvalidRegion { message, .. } = error else {
                 panic!("expected InvalidRegion for {hidden}, got {error:?}");
@@ -7429,7 +7572,7 @@ the answer
     fn a_matrix_column_separator_is_never_inside_a_span_match() {
         let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"a &\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\n{line}\n<!-- blank: span hidden=\"a &\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7440,7 +7583,7 @@ the answer
     #[test]
     fn a_span_endpoint_inside_a_control_word_is_rejected_naming_it() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$x \\leq y$\n<!-- blank: span hidden=\"q\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\n$x \\leq y$\n<!-- blank: span hidden=\"q\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7453,7 +7596,7 @@ the answer
         let line = r"$A=\{x\}$";
         let hidden = r"\\{x\\}";
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["$A=\u{2370}$"], deck.cards[0].context);
@@ -7463,7 +7606,7 @@ the answer
     fn a_matrix_cell_is_a_complete_structural_unit() {
         let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"a\" b:a1b2c3 -->\n"
+            "## q\n---\n{line}\n<!-- blank: span hidden=\"a\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["$\\begin{pmatrix}\u{2370} & b\\end{pmatrix}$"],
@@ -7475,7 +7618,7 @@ the answer
     fn a_group_interior_binds_at_equal_depth_and_a_group_split_is_rejected() {
         let line = r"$\frac{ab}{cd}$";
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"ab\" b:a1b2c3 -->\n"
+            "## q\n---\n{line}\n<!-- blank: span hidden=\"ab\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["$\\frac{\u{2370}}{cd}$"],
@@ -7485,7 +7628,7 @@ the answer
 
         let hidden = r"ab}{cd";
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7496,7 +7639,7 @@ the answer
     #[test]
     fn a_partial_match_containing_a_command_is_rejected_in_v1() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$x + \\gamma + y$\n<!-- blank: span hidden=\"\\\\gamma\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\n$x + \\gamma + y$\n<!-- blank: span hidden=\"\\\\gamma\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7511,7 +7654,7 @@ the answer
             (r"$\begin{pmatrix}a\end{pmatrix}$", r"\\begin{pmatrix}a"),
         ] {
             let error = err(&format!(
-                "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+                "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             let ParseError::InvalidRegion { message, .. } = error else {
                 panic!("expected InvalidRegion for {hidden}, got {error:?}");
@@ -7530,7 +7673,7 @@ the answer
             ),
         ] {
             let deck = parse(&format!(
-                "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n"
+                "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             assert_eq!(1, deck.cards.len(), "{hidden}");
             assert_eq!(vec!["$\u{2370}$"], deck.cards[0].context, "{hidden}");
@@ -7540,7 +7683,7 @@ the answer
     #[test]
     fn space_padded_dollars_are_prose_so_the_span_binds_as_text() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$ \\gamma $\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n"
+            "## q\n---\n$ \\gamma $\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["$ \u{2370} $"],
@@ -7552,7 +7695,7 @@ the answer
     #[test]
     fn a_math_comment_does_not_consume_the_first_visible_occurrence() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$a % target$ target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+            "## q\n---\n$a % target$ target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
 
         assert_eq!(
@@ -7565,7 +7708,7 @@ the answer
     #[test]
     fn a_span_inside_phantom_is_rejected_as_not_learner_visible() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$\\phantom{{target}}$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+            "## q\n---\n$\\phantom{{target}}$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             matches!(error, ParseError::InvalidRegion { .. }),
@@ -7576,7 +7719,7 @@ the answer
     #[test]
     fn a_span_inside_math_verb_is_rejected_because_the_blank_stays_literal() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$\\verb|target|$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+            "## q\n---\n$\\verb|target|$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             matches!(error, ParseError::InvalidRegion { .. }),
@@ -7587,7 +7730,7 @@ the answer
     #[test]
     fn an_unterminated_verb_after_a_span_is_a_loud_binding_error() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$target + \\verb|abc$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n"
+            "## q\n---\n$target + \\verb|abc$\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             matches!(error, ParseError::InvalidRegion { .. }),
@@ -7602,7 +7745,7 @@ the answer
             (r"$$a + b$$", "b", "$$a + \u{2370}$$"),
         ] {
             let deck = parse(&format!(
-                "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" b:a1b2c3 -->\n"
+                "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             assert_eq!(vec![masked.to_string()], deck.cards[0].context, "{line}");
         }
@@ -7612,7 +7755,7 @@ the answer
     fn an_authored_malformed_formula_under_a_span_is_a_loud_binding_error() {
         let line = r"$x^{2$";
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n{line}\n<!-- blank: span hidden=\"x\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\n{line}\n<!-- blank: span hidden=\"x\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7623,7 +7766,7 @@ the answer
     #[test]
     fn a_structurally_legal_mask_that_fails_the_renderer_is_a_loud_binding_error() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$x^2$\n<!-- blank: span hidden=\"2\" b:a1b2c3 -->\n"
+            "## q\n---\n$x^2$\n<!-- blank: span hidden=\"2\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7637,7 +7780,7 @@ the answer
     #[test]
     fn a_math_span_pinned_to_typing_a_command_is_linted_untypable() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$\\gamma$\n<!-- input: type -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n"
+            "## q\n---\n$\\gamma$\n<!-- input: type -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec![LintKind::UntypableHole {
@@ -7651,7 +7794,7 @@ the answer
         );
 
         let contains = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$x \\leq y$\n<!-- input: type -->\n<!-- blank: span hidden=\"x \\\\leq y\" b:a1b2c3 -->\n"
+            "## q\n---\n$x \\leq y$\n<!-- input: type -->\n<!-- blank: span hidden=\"x \\\\leq y\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             1,
@@ -7665,7 +7808,7 @@ the answer
         );
 
         let drawn = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n"
+            "## q\n---\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             drawn.lints.is_empty(),
@@ -7677,7 +7820,7 @@ the answer
     #[test]
     fn image_syntax_is_invisible_to_span_binding() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nprose here\n![lunate](lunate.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
+            "## q\n---\nprose here\n![lunate](lunate.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7697,7 +7840,7 @@ the answer
     #[test]
     fn literal_underscores_and_bracket_dots_are_ordinary_prose_beside_spans() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nfill the ____ gap in prose\n<!-- blank: span hidden=\"prose\" b:a1b2c3 -->\n"
+            "## q\n---\nfill the ____ gap in prose\n<!-- blank: span hidden=\"prose\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["fill the ____ gap in ⍰"],
@@ -7745,7 +7888,7 @@ the answer
     #[test]
     fn occurrence_counting_skips_hole_answers_and_link_destinations() {
         let beside_hole = err(&format!(
-            "## ports <!-- id: {RTOK} -->\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" occurrence=2 -->\n"
+            "## ports\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" occurrence=2 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = beside_hole else {
             panic!("expected InvalidRegion, got {beside_hole:?}");
@@ -7756,7 +7899,7 @@ the answer
         );
 
         let beside_link = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://rfc.example/22) for port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n"
+            "## q\n---\nsee [the RFC](https://rfc.example/22) for port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = beside_link else {
             panic!("expected InvalidRegion, got {beside_link:?}");
@@ -7770,7 +7913,7 @@ the answer
     #[test]
     fn prose_beside_holes_and_links_stays_blankable() {
         let beside_hole = parse(&format!(
-            "## ports <!-- id: {RTOK} -->\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" -->\n"
+            "## ports\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             beside_hole.cards.iter().all(|card| card.region.is_none()),
@@ -7778,12 +7921,12 @@ the answer
         );
 
         let beside_link = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"port\" b:a1b2c3 -->\n"
+            "## q\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"port\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(vec!["port"], beside_link.cards[0].back);
 
         let label = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"RFC\" b:a1b2c3 -->\n"
+            "## q\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"RFC\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["RFC"],
@@ -7795,7 +7938,7 @@ the answer
     #[test]
     fn a_match_crossing_a_link_label_edge_is_a_style_boundary_error() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nsee [the RFC](https://x) now\n<!-- blank: span hidden=\"see the\" boundary=char b:a1b2c3 -->\n"
+            "## q\n---\nsee [the RFC](https://x) now\n<!-- blank: span hidden=\"see the\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7806,7 +7949,7 @@ the answer
     #[test]
     fn a_span_cards_context_masks_own_as_blank_and_siblings_as_hidden() {
         let deck = parse(&format!(
-            "## anatomy <!-- id: {RTOK} -->\n---\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n"
+            "## anatomy\n---\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(2, deck.cards.len());
         assert_eq!(
@@ -7825,7 +7968,7 @@ the answer
     #[test]
     fn a_rect_cards_context_masks_every_span_as_hidden() {
         let deck = parse(&format!(
-            "## anatomy <!-- id: {RTOK} -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:d4e5f6 -->\n"
+            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         let rect = deck
             .cards
@@ -7842,7 +7985,7 @@ the answer
     #[test]
     fn masking_splices_authored_bytes_so_styling_survives() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\n**New** York is big\n<!-- blank: span hidden=\"New\" b:a1b2c3 -->\n"
+            "## q\n---\n**New** York is big\n<!-- blank: span hidden=\"New\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["**⍰** York is big"],
@@ -7854,7 +7997,7 @@ the answer
     #[test]
     fn a_group_card_blanks_every_member_in_context() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n"
+            "## q\n---\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len(), "one group card");
         assert_eq!(vec!["⍰ then ⍰"], deck.cards[0].context);
@@ -7863,10 +8006,10 @@ the answer
     #[test]
     fn moving_a_span_to_another_occurrence_changes_the_fingerprint() {
         let one = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" b:a1b2c3 -->\n"
+            "## q\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let two = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n"
+            "## q\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_ne!(
             one.cards[0].content_fingerprint, two.cards[0].content_fingerprint,
@@ -7881,7 +8024,7 @@ the answer
     #[test]
     fn image_only_lines_stay_out_of_region_context() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nthe lunate sits center\n![](hand.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n"
+            "## q\n---\nthe lunate sits center\n![](hand.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["the ⍰ sits center"],
@@ -7894,7 +8037,7 @@ the answer
     #[test]
     fn overlapping_span_ranges_are_rejected_before_masking() {
         let error = err(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nNew York City Hall\n<!-- blank: span hidden=\"New York City Hall\" boundary=char b:a1b2c3 -->\n<!-- blank: span hidden=\"York City Hall\" boundary=char b:d4e5f6 -->\n"
+            "## q\n---\nNew York City Hall\n<!-- blank: span hidden=\"New York City Hall\" boundary=char b:a1b2c3 -->\n<!-- blank: span hidden=\"York City Hall\" boundary=char b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -7905,7 +8048,7 @@ the answer
     #[test]
     fn a_cover_span_masks_answer_giving_prose_in_cloze_context() {
         let deck = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nthe legend says alpha; fill \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n"
+            "## q\n---\nthe legend says alpha; fill \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(Some(0), deck.cards[0].hole);
@@ -7915,10 +8058,10 @@ the answer
     #[test]
     fn moving_a_cloze_cover_span_changes_the_fingerprint() {
         let first = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" -->\n"
+            "## q\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" -->\n<!-- id: {RTOK} -->\n"
         ));
         let second = parse(&format!(
-            "## q <!-- id: {RTOK} -->\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" occurrence=2 -->\n"
+            "## q\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" occurrence=2 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_ne!(
             first.cards[0].content_fingerprint,

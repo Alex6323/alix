@@ -122,8 +122,8 @@ void main() {
       final deck = '${root.path}/flip.md';
       writeTestDeck(
         deck,
-        '## First question? <!-- id: card-first -->\nFirst answer\n\n'
-        '## Second question? <!-- id: card-second -->\nSecond answer\n',
+        '## First question?\nFirst answer\n<!-- id: card-first -->\n\n'
+        '## Second question?\nSecond answer\n<!-- id: card-second -->\n',
       );
       makeDue(deck, root.path, device: 'desktop');
       await pumpReview(
@@ -169,9 +169,10 @@ void main() {
     final deck = '${root.path}/choice.md';
     writeTestDeck(
       deck,
-      '## Capital of France? <!-- id: card-choice -->\n'
+      '## Capital of France?\n'
+      '- [x] Paris\n- [ ] Rome\n- [ ] Bern\n- [ ] Madrid\n'
       '<!-- choices-single -->\n'
-      '- [x] Paris\n- [ ] Rome\n- [ ] Bern\n- [ ] Madrid\n',
+      '<!-- id: card-choice -->\n',
     );
     makeDue(deck, root.path);
     await pumpReview(
@@ -199,7 +200,7 @@ void main() {
   ) async {
     final root = tempDir('alix-review-structure-typing-');
     final typing = '${root.path}/typing.md';
-    writeTestDeck(typing, '## Atomic? <!-- id: card-atomic -->\nanswer\n');
+    writeTestDeck(typing, '## Atomic?\nanswer\n<!-- id: card-atomic -->\n');
     makeDue(typing, root.path);
     await pumpReview(
       tester,
@@ -224,9 +225,10 @@ void main() {
     final typeLine = '${root.path}/type-line.md';
     writeTestDeck(
       typeLine,
-      '## Ordered? <!-- id: card-ordered -->\n'
+      '## Ordered?\n'
+      'first\nsecond\n'
       '<!-- reveal: line -->\n'
-      'first\nsecond\n',
+      '<!-- id: card-ordered -->\n',
     );
     makeDue(typeLine, root.path);
     await pumpReview(
@@ -259,9 +261,10 @@ void main() {
     final deck = '${root.path}/lines.md';
     writeTestDeck(
       deck,
-      '## Ordered? <!-- id: card-lines -->\n'
+      '## Ordered?\n'
+      'first\nsecond\n'
       '<!-- reveal: line -->\n'
-      'first\nsecond\n',
+      '<!-- id: card-lines -->\n',
     );
     makeDue(deck, root.path);
     await pumpReview(tester, root: root, deck: deck, depth: ReviewDepth.recall);
@@ -293,7 +296,7 @@ void main() {
     final deck = '${root.path}/explain.md';
     writeTestDeck(
       deck,
-      '## Why? <!-- id: card-explain -->\nfirst reason\nsecond reason\n',
+      '## Why?\nfirst reason\nsecond reason\n<!-- id: card-explain -->\n',
     );
     makeDue(deck, root.path);
     await pumpReview(
@@ -359,7 +362,7 @@ void main() {
 
     final root = tempDir('alix-review-structure-summary-');
     final deck = '${root.path}/summary.md';
-    writeTestDeck(deck, '## New? <!-- id: card-new -->\nanswer\n');
+    writeTestDeck(deck, '## New?\nanswer\n<!-- id: card-new -->\n');
     await pumpReview(tester, root: root, deck: deck, depth: ReviewDepth.recall);
     await tester.tap(find.text('Reveal'));
     await tester.pump();

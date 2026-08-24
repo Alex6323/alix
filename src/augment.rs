@@ -2291,7 +2291,7 @@ mod tests {
     fn a_stale_target_drops_out_of_coverage_and_into_the_gap_list() {
         let deck = crate::parser::parse_str(
             "d.md",
-            "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n---\na\n",
+            "## q\n---\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         )
         .unwrap();
         let card = &deck[0];

@@ -543,7 +543,7 @@ mod tests {
         let deck_path = dir.path().join("alpha.md");
         std::fs::write(
             &deck_path,
-            "---\nformat-version: 1\nid: \"deck-alpha\"\n---\n## f <!-- id: card-alpha -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-alpha\"\n---\n## f\nb\n<!-- id: card-alpha -->\n",
         )
         .unwrap();
         let mut s = state_over(dir.path());

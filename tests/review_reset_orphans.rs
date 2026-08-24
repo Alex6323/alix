@@ -10,7 +10,7 @@ fn reset_orphans_does_not_prune_progress_for_a_malformed_live_deck() {
     let deck = dir.path().join("live.md");
     std::fs::write(
         &deck,
-        "---\nformat-version: 1\nid: deck-live\n---\n## question <!-- id: card-live1 -->\nanswer\n",
+        "---\nformat-version: 1\nid: deck-live\n---\n## question\nanswer\n<!-- id: card-live1 -->\n",
     )
     .unwrap();
     let mut store = alix::state::open_store(&deck, dir.path()).unwrap();
@@ -21,7 +21,7 @@ fn reset_orphans_does_not_prune_progress_for_a_malformed_live_deck() {
 
     std::fs::write(
         &deck,
-        "---\nformat-version: 1\nid: deck-live\n---\n## question <!-- id: card-live1 -->\n",
+        "---\nformat-version: 1\nid: deck-live\n---\n## question\n<!-- id: card-live1 -->\n",
     )
     .unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_alix"))

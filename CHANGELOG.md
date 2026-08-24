@@ -343,7 +343,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   leading exception, and a table row's inline `<!-- r:... -->` stamp
   stays the one sanctioned inline position. Existing decks with
   leading invocations fail as ordinary invalid input; move each
-  invocation below its block.
+  invocation below its block. Card directive comments (`reveal:`,
+  `direction:`, `input:`, `at:` locators, the id) gather at the card
+  end the same way: a recognized directive on the heading line or with
+  card content below it fails loud with the line, the why, and the
+  fix. A `diagram:` stamp keeps its place on the line after its fence.
 
 - Link-definition lines (`[label]: destination`) are consumed as
   deck-wide metadata instead of being answer content: they no longer

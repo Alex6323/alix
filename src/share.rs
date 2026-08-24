@@ -695,7 +695,7 @@ mod tests {
         std::fs::create_dir_all(src.join("decks")).unwrap();
         std::fs::write(
             src.join("decks/deck.md"),
-            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         touch(&src, "alix.toml");
@@ -736,7 +736,7 @@ mod tests {
         let deck = decks.join("facts.md");
         std::fs::write(
             &deck,
-            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let stage = dir.path().join("stage");
@@ -764,7 +764,7 @@ mod tests {
             &deck_path,
             format!(
                 "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{source_name}\n---\n\
-                 ## q <!-- id: card-card1 -->\na\n<!-- at: {source_name}:1 -->\n"
+                 ## q\na\n<!-- at: {source_name}:1 -->\n<!-- id: card-card1 -->\n"
             ),
         )
         .unwrap();
@@ -875,7 +875,7 @@ mod tests {
             &deck,
             format!(
                 "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
-                 ## q <!-- id: card-card1 -->\na\n"
+                 ## q\na\n<!-- id: card-card1 -->\n"
             ),
         )
         .unwrap();
@@ -904,7 +904,7 @@ mod tests {
             &deck,
             format!(
                 "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
-                 ## q <!-- id: card-card1 -->\na\n"
+                 ## q\na\n<!-- id: card-card1 -->\n"
             ),
         )
         .unwrap();

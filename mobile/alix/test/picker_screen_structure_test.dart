@@ -83,7 +83,7 @@ void main() {
       final root = tempDir('alix-picker-structure-active-');
       writeTestDeck(
         '${root.path}/due.md',
-        '---\ntitle: Due\n---\n## q <!-- id: card-due -->\na\n',
+        '---\ntitle: Due\n---\n## q\na\n<!-- id: card-due -->\n',
       );
       final exam = '${root.path}/exam.md';
       writeTestDeck(
@@ -110,7 +110,7 @@ void main() {
 
       writeTestDeck(
         '${root.path}/mastered.md',
-        '---\ntitle: Mastered\n---\n## q <!-- id: card-mastered -->\na\n',
+        '---\ntitle: Mastered\n---\n## q\na\n<!-- id: card-mastered -->\n',
         id: 'mastered',
       );
       Directory('${root.path}/progress').createSync();

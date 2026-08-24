@@ -174,7 +174,7 @@ mod tests {
         std::fs::write(
             path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-{deck_id}\"\n---\n## question <!-- id: card-{card_id} -->\nanswer\n"
+                "---\nformat-version: 1\nid: \"deck-{deck_id}\"\n---\n## question\nanswer\n<!-- id: card-{card_id} -->\n"
             ),
         )
         .unwrap();

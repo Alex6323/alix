@@ -857,12 +857,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nformat-version: 1\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
+            "---\nformat-version: 1\nid: \"deck-da\"\n---\n## qa\nans-a\n<!-- id: card-qa -->\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nformat-version: 1\nid: \"deck-db\"\n---\n## qb <!-- id: card-qb -->\nans-b\n",
+            "---\nformat-version: 1\nid: \"deck-db\"\n---\n## qb\nans-b\n<!-- id: card-qb -->\n",
         )
         .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();
@@ -895,7 +895,7 @@ mod tests {
     fn personal_card(store: &mut Store, deck: &Path, deck_id: &str, back: &str) -> String {
         let slug: String = back.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
         let block = format!(
-            "## front <!-- id: card-v{} -->\n{back}\n",
+            "## front\n{back}\n<!-- id: card-v{} -->\n",
             slug.to_ascii_lowercase()
         );
         let id = crate::parser::parse_str(deck_id, &block).unwrap()[0]
@@ -910,7 +910,7 @@ mod tests {
         std::fs::write(
             dir.join(name),
             format!(
-                "---\nformat-version: 1\nid: \"deck-{deck_token}\"\n---\n## q <!-- id: card-{card_token} -->\nans\n"
+                "---\nformat-version: 1\nid: \"deck-{deck_token}\"\n---\n## q\nans\n<!-- id: card-{card_token} -->\n"
             ),
         )
         .unwrap();
@@ -1379,7 +1379,7 @@ mod tests {
         write_deck(&members, "b.md", "db1", "cb1");
         std::fs::write(
             members.join("consumer.md"),
-            "---\nformat-version: 1\nid: \"deck-consumer\"\nrequires: [\"a.md\", \"b.md\"]\n---\n## q <!-- id: card-consumer -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-consumer\"\nrequires: [\"a.md\", \"b.md\"]\n---\n## q\na\n<!-- id: card-consumer -->\n",
         )
         .unwrap();
         let paths = vec![
@@ -1474,7 +1474,7 @@ mod tests {
         write_deck(dir.path(), "a.md", "da1", "c1");
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nformat-version: 1\nid: \"deck-db1\"\nrequires: [\"a.md\"]\n---\n## qb <!-- id: card-cb1 -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-db1\"\nrequires: [\"a.md\"]\n---\n## qb\nb\n<!-- id: card-cb1 -->\n",
         )
         .unwrap();
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
@@ -1783,7 +1783,7 @@ mod tests {
             let added = "card-aaaaaaaaaaaaaaaaaaaaaaaaap";
             crate::deck::append_cards(
                 &placed.path,
-                &format!("## added <!-- id: {added} -->\nans\n"),
+                &format!("## added\nans\n<!-- id: {added} -->\n"),
             )
             .unwrap();
             let text = std::fs::read_to_string(&placed.path).unwrap();
@@ -1799,7 +1799,7 @@ mod tests {
     #[test]
     fn a_trace_rebuild_routes_through_replace_and_wipes_the_old_checkpoints() {
         let dir = tempfile::tempdir().unwrap();
-        let existing = "---\nformat-version: 1\nid: \"deck-da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp <!-- id: card-c1 -->\nold\n";
+        let existing = "---\nformat-version: 1\nid: \"deck-da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp\nold\n<!-- id: card-c1 -->\n";
         let path = dir.path().join("t.md");
         std::fs::write(&path, existing).unwrap();
         let mut store = crate::state::open_store(&path, dir.path()).unwrap();
@@ -1838,12 +1838,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nformat-version: 1\nid: \"deck-da\"\n---\n## qa <!-- id: card-qa -->\nans-a\n",
+            "---\nformat-version: 1\nid: \"deck-da\"\n---\n## qa\nans-a\n<!-- id: card-qa -->\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nformat-version: 1\nid: \"deck-db\"\n---\n## qb <!-- id: card-qb -->\nans-b\n",
+            "---\nformat-version: 1\nid: \"deck-db\"\n---\n## qb\nans-b\n<!-- id: card-qb -->\n",
         )
         .unwrap();
         let deck_a = Deck::load(dir.path().join("a.md")).unwrap();

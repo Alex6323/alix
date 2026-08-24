@@ -1252,7 +1252,7 @@ mod tests {
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase();
-        let text = format!("## personal front <!-- id: card-v{slug} -->\n{back}\n");
+        let text = format!("## personal front\n{back}\n<!-- id: card-v{slug} -->\n");
         let mut card = crate::parser::parse_str(deck_id, &text).unwrap().remove(0);
         card.line = crate::assemble::PERSONAL_LINE_BASE;
         store.get_or_insert(&card.id().unwrap()).introduced_ms = Some(created_ms);

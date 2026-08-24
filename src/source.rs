@@ -773,7 +773,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "decks/facts.md",
-            "---\nformat-version: 1\nid: deck-deck1\nsource: own.md\n---\n## q <!-- id: card-card1 -->\na\n<!-- at: 2 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nsource: own.md\n---\n## q\na\n<!-- at: 2 -->\n<!-- id: card-card1 -->\n",
         );
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);

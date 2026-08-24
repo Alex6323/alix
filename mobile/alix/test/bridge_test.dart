@@ -59,16 +59,16 @@ Directory makeRoot() {
   final root = Directory.systemTemp.createTempSync('alix-decks-');
   writeTestDeck(
     '${root.path}/loose.md',
-    '---\ntitle: Loose\n---\n## capital of france? <!-- id: card-capital -->\nParis\n',
+    '---\ntitle: Loose\n---\n## capital of france?\nParis\n<!-- id: card-capital -->\n',
   );
   Directory('${root.path}/ws/decks').createSync(recursive: true);
   File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
   writeTestDeck(
     '${root.path}/ws/decks/m.md',
-    '## q1 <!-- id: card-q1 -->\na1\n\n'
-        '## q2 <!-- id: card-q2 -->\na2\n\n'
-        '## q3 <!-- id: card-q3 -->\na3\n\n'
-        '## q4 <!-- id: card-q4 -->\na4\n',
+    '## q1\na1\n<!-- id: card-q1 -->\n\n'
+        '## q2\na2\n<!-- id: card-q2 -->\n\n'
+        '## q3\na3\n<!-- id: card-q3 -->\n\n'
+        '## q4\na4\n<!-- id: card-q4 -->\n',
   );
   return root;
 }
@@ -135,12 +135,13 @@ void main() {
     final choiceDeck = '${root.path}/choice.md';
     writeTestDeck(
       choiceDeck,
-      '## What does \$E = mc^2\$ describe? <!-- id: card-choice -->\n'
-      '<!-- choices-single -->\n'
+      '## What does \$E = mc^2\$ describe?\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
+      '<!-- choices-single -->\n'
       '> Energy and mass use \$E = mc^2\$.\n'
-      '> - [x] Includes \$c^2\$\n',
+      '> - [x] Includes \$c^2\$\n'
+      '<!-- id: card-choice -->\n',
     );
     final choice = ReviewSession.open(
       deckPath: choiceDeck,
@@ -172,8 +173,9 @@ void main() {
     final displayDeck = '${root.path}/display.md';
     writeTestDeck(
       displayDeck,
-      '## Evaluate <!-- id: card-display -->\n'
-      '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
+      '## Evaluate\n'
+      '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n'
+      '<!-- id: card-display -->\n',
     );
     final display = ReviewSession.open(
       deckPath: displayDeck,
@@ -189,8 +191,9 @@ void main() {
     final clozeDeck = '${root.path}/cloze.md';
     writeTestDeck(
       clozeDeck,
-      '## Complete <!-- id: card-cloze -->\n'
-      '\$x = \\blank{alpha} + \\blank{beta}\$\n',
+      '## Complete\n'
+      '\$x = \\blank{alpha} + \\blank{beta}\$\n'
+      '<!-- id: card-cloze -->\n',
     );
     final cloze = ReviewSession.open(
       deckPath: clozeDeck,
@@ -211,9 +214,10 @@ void main() {
     final explainDeck = '${root.path}/explain.md';
     writeTestDeck(
       explainDeck,
-      '## Explain <!-- id: card-explain -->\n'
+      '## Explain\n'
       'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
-      'The discriminant is \$b^2 - 4ac\$.\n',
+      'The discriminant is \$b^2 - 4ac\$.\n'
+      '<!-- id: card-explain -->\n',
     );
     final introduction = ReviewSession.open(
       deckPath: explainDeck,
@@ -241,11 +245,12 @@ void main() {
     final deck = '${root.path}/table.md';
     writeTestDeck(
       deck,
-      '## Name the columns <!-- id: card-table -->\n'
+      '## Name the columns\n'
       '| h1 | h2 |\n'
       '|:---|---:|\n'
       '| **a** | b |\n'
-      '| c |\n',
+      '| c |\n'
+      '<!-- id: card-table -->\n',
     );
     final card = ReviewSession.open(
       deckPath: deck,
@@ -271,11 +276,12 @@ void main() {
     final deck = '${root.path}/multi.md';
     writeTestDeck(
       deck,
-      '## Which are even? <!-- id: card-multi -->\n'
-      '<!-- choices-multiple -->\n'
+      '## Which are even?\n'
       '- [x] two\n'
       '- [ ] three\n'
-      '- [x] four\n',
+      '- [x] four\n'
+      '<!-- choices-multiple -->\n'
+      '<!-- id: card-multi -->\n',
     );
     final session = ReviewSession.open(
       deckPath: deck,
@@ -314,10 +320,11 @@ void main() {
     final singleDeck = '${root.path}/single.md';
     writeTestDeck(
       singleDeck,
-      '## Pick one <!-- id: card-single -->\n'
-      '<!-- choices-single -->\n'
+      '## Pick one\n'
       '- [x] yes\n'
-      '- [ ] no\n',
+      '- [ ] no\n'
+      '<!-- choices-single -->\n'
+      '<!-- id: card-single -->\n',
     );
     final single = ReviewSession.open(
       deckPath: singleDeck,
@@ -333,11 +340,12 @@ void main() {
     final portDeck = '${root.path}/multi-port.md';
     writeTestDeck(
       portDeck,
-      '## Which are odd? <!-- id: card-multiport -->\n'
-      '<!-- choices-multiple -->\n'
+      '## Which are odd?\n'
       '- [ ] two\n'
       '- [x] three\n'
-      '- [x] five\n',
+      '- [x] five\n'
+      '<!-- choices-multiple -->\n'
+      '<!-- id: card-multiport -->\n',
     );
     final port = const ReviewBridgeFactory().open(
       deckPath: portDeck,
@@ -863,9 +871,10 @@ void main() {
     final deck = '${root.path}/why.md';
     writeTestDeck(
       deck,
-      '## why does spacing work? <!-- id: card-why -->\n'
+      '## why does spacing work?\n'
       'recall strengthens the memory\n'
-      'stronger memories fade more slowly\n',
+      'stronger memories fade more slowly\n'
+      '<!-- id: card-why -->\n',
     );
     final backdated = BigInt.from(
       DateTime.now().millisecondsSinceEpoch - 600000,
@@ -927,12 +936,13 @@ void main() {
     final choiceDeck = '${root.path}/choice.md';
     writeTestDeck(
       choiceDeck,
-      '## What does \$E = mc^2\$ describe? <!-- id: card-choice -->\n'
-      '<!-- choices-single -->\n'
+      '## What does \$E = mc^2\$ describe?\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
+      '<!-- choices-single -->\n'
       '> Energy and mass use \$E = mc^2\$.\n'
-      '> - [x] Includes \$c^2\$\n',
+      '> - [x] Includes \$c^2\$\n'
+      '<!-- id: card-choice -->\n',
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -955,8 +965,9 @@ void main() {
     final displayDeck = '${root.path}/display.md';
     writeTestDeck(
       displayDeck,
-      '## Evaluate <!-- id: card-display -->\n'
-      '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n',
+      '## Evaluate\n'
+      '\$\$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}\$\$\n'
+      '<!-- id: card-display -->\n',
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -984,8 +995,9 @@ void main() {
     final clozeDeck = '${root.path}/cloze.md';
     writeTestDeck(
       clozeDeck,
-      '## Complete <!-- id: card-cloze -->\n'
-      '\$x = \\blank{alpha} + \\blank{beta}\$\n',
+      '## Complete\n'
+      '\$x = \\blank{alpha} + \\blank{beta}\$\n'
+      '<!-- id: card-cloze -->\n',
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -1006,9 +1018,10 @@ void main() {
     final explainDeck = '${root.path}/explain.md';
     writeTestDeck(
       explainDeck,
-      '## Explain <!-- id: card-explain -->\n'
+      '## Explain\n'
       'The roots use \$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$.\n'
-      'The discriminant is \$b^2 - 4ac\$.\n',
+      'The discriminant is \$b^2 - 4ac\$.\n'
+      '<!-- id: card-explain -->\n',
     );
     final backdated = BigInt.from(
       DateTime.now().millisecondsSinceEpoch - 600000,
@@ -1039,8 +1052,9 @@ void main() {
     final malformedDeck = '${root.path}/malformed.md';
     writeTestDeck(
       malformedDeck,
-      '## Broken \$\\frac{1\$ <!-- id: card-malformed -->\n'
-      'still reviewable\n',
+      '## Broken \$\\frac{1\$\n'
+      'still reviewable\n'
+      '<!-- id: card-malformed -->\n',
     );
     await tester.pumpWidget(
       MaterialApp(

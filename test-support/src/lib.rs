@@ -27,8 +27,9 @@ pub const MINTED_BACK: &str = "a card of the learner's own";
 pub const MINTED: &str = "card-<minted>";
 
 pub const DECK: &str = "---\nformat-version: 1\nid: deck-parityparityparityparit\n---\n\
-                        ## what is parity <!-- id: card-parityparityparityparit -->\n\
-                        the same effects from either client\n";
+                        ## what is parity\n\
+                        the same effects from either client\n\
+                        <!-- id: card-parityparityparityparit -->\n";
 
 /// The durable effects a client action leaves behind. Timestamps are
 /// deliberately absent, and minted tokens are normalized: the two surfaces run
@@ -181,7 +182,7 @@ pub fn after_mint() -> Effects {
         deck: DECK.to_string(),
         sidecar: Some(format!(
             "---\nfor: deck-parityparityparityparit\n---\n\n\
-             ## {MINTED_FRONT} <!-- id: {MINTED} -->\n{MINTED_BACK}\n"
+             ## {MINTED_FRONT}\n{MINTED_BACK}\n<!-- id: {MINTED} -->\n"
         )),
         scheduled: vec![MINTED.to_string()],
         reviews: vec![(MINTED.to_string(), 0, 0)],
@@ -220,7 +221,7 @@ mod tests {
             deck.with_extension("personal.md"),
             format!(
                 "---\nformat-version: 1\nfor: {DECK_ID}\n---\n\n\
-                 ## {MINTED_FRONT} <!-- id: {SIDECAR_ID} -->\n{MINTED_BACK}\n"
+                 ## {MINTED_FRONT}\n{MINTED_BACK}\n<!-- id: {SIDECAR_ID} -->\n"
             ),
         )
         .unwrap();

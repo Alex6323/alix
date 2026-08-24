@@ -1352,7 +1352,7 @@ mod tests {
         let deck_path = dir.path().join("rust.md");
         std::fs::write(
             &deck_path,
-            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n## q1 <!-- id: card-q1 -->\na1\n## q2\na2\n",
+            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n## q1\na1\n<!-- id: card-q1 -->\n## q2\na2\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -1383,10 +1383,10 @@ mod tests {
         std::fs::write(
             &deck_path,
             "---\nformat-version: 1\nid: \"deck-rust\"\n---\n\
-             ## a <!-- id: card-a -->\n1\n\
-             ## b <!-- id: card-b -->\n2\n\
-             ## c <!-- id: card-c -->\n3\n\
-             ## d <!-- id: card-d -->\n4\n",
+             ## a\n1\n<!-- id: card-a -->\n\
+             ## b\n2\n<!-- id: card-b -->\n\
+             ## c\n3\n<!-- id: card-c -->\n\
+             ## d\n4\n<!-- id: card-d -->\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();

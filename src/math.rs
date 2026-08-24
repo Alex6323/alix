@@ -548,7 +548,7 @@ mod tests {
     fn validator_includes_current_generated_choices_and_keypoints() {
         let dir = tempfile::tempdir().unwrap();
         let parsed =
-            crate::parser::parse("deck.md", "## q <!-- id: card-mathdiag1 -->\na\n").unwrap();
+            crate::parser::parse("deck.md", "## q\na\n<!-- id: card-mathdiag1 -->\n").unwrap();
         let card = &parsed.cards[0];
         let id = card.id().unwrap();
         let mut augment = AugmentCache::open(dir.path().join("deck1.json"));

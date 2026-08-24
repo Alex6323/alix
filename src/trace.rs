@@ -567,10 +567,10 @@ mod tests {
             "---\ntrace: how it works\n\
              source: source.txt\n---\n\
              ## Predict the first hop\n\
-             <!-- given: line — the current input line -->\n\
              it reads the first line\n\
-             <!-- at: 1 -->\n\
              > the entry point\n\
+             <!-- given: line — the current input line -->\n\
+             <!-- at: 1 -->\n\
              ## Predict the second hop\n\
              it reads lines two and three\n\
              <!-- at: 2-3 -->\n",

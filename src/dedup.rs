@@ -130,11 +130,6 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
         prev_pipe = line.starts_with('|');
         let candidate = if line.trim().starts_with("<!--") {
             line.trim()
-        } else if crate::parser::heading_depth(line)
-            .is_some_and(|(d, _)| crate::parser::is_card_depth(d))
-            && let Some(pos) = line.find("<!--")
-        {
-            line[pos..].trim()
         } else {
             continue;
         };
@@ -331,7 +326,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"{token}\"\n---\n## q <!-- id: {card_token} -->\na\n"
+                "---\nformat-version: 1\nid: \"{token}\"\n---\n## q\na\n<!-- id: {card_token} -->\n"
             ),
         )
         .unwrap();
@@ -343,7 +338,7 @@ mod tests {
     /// same proposition.
     #[test]
     fn existing_ids_are_found_at_every_card_depth() {
-        let text = "## a <!-- id: card-a1 -->\n1\n### b <!-- id: card-b1 -->\n2\n#### c <!-- id: card-c1 -->\n3\n##### d <!-- id: card-d1 -->\n4\n###### e <!-- id: card-e1 -->\n5\n";
+        let text = "## a\n1\n<!-- id: card-a1 -->\n### b\n2\n<!-- id: card-b1 -->\n#### c\n3\n<!-- id: card-c1 -->\n##### d\n4\n<!-- id: card-d1 -->\n###### e\n5\n<!-- id: card-e1 -->\n";
         let (_, ids) = extract_ids(text);
         let found: Vec<&str> = ids.iter().map(|(id, _)| id.as_str()).collect();
         for want in ["card-a1", "card-b1", "card-c1", "card-d1", "card-e1"] {
@@ -358,7 +353,7 @@ mod tests {
             format!(
                 "---\nformat-version: 1\nid: \"{deck}\"\n---\n\
                  ## a\n1\n### b\n2\n#### c\n3\n##### d\n4\n\
-                 ###### e <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n{leaf}\n"
+                 ###### e\n{leaf}\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n"
             )
         };
         std::fs::write(
@@ -387,12 +382,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.md"),
-            "---\nformat-version: 1\nid: \"deck-dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: card-shared1 -->\n\n## q2 <!-- id: card-samelinetok -->\nanswer\n",
+            "---\nformat-version: 1\nid: \"deck-dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: card-shared1 -->\n\n## q2\nanswer\n<!-- id: card-trailingtok -->\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("b.md"),
-            "---\nformat-version: 1\nid: \"deck-dtok2\"\n---\n## q3\n<!-- id: card-shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: card-fencedtok -->\n<!-- id: card-alsofenced -->\n```\n<!-- id: card-realtok -->\n",
+            "---\nformat-version: 1\nid: \"deck-dtok2\"\n---\n## q3\nbelow front\n<!-- id: card-shared1 -->\n\n## q4\n```\n## fenced <!-- id: card-fencedtok -->\n<!-- id: card-alsofenced -->\n```\n<!-- id: card-realtok -->\n",
         )
         .unwrap();
         std::fs::write(dir.path().join("notes.md"), "just prose, no cards\n").unwrap();
@@ -411,7 +406,7 @@ mod tests {
 
     fn table_deck(deck_id: &str, container: &str) -> String {
         format!(
-            "---\nformat-version: 1\nid: \"{deck_id}\"\n---\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:4k2x9w -->\n| two | zwei | <!-- r:7m3p5q -->\n<!-- id: {container} -->\n"
+            "---\nformat-version: 1\nid: \"{deck_id}\"\n---\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:4k2x9w -->\n| two | zwei | <!-- r:7m3p5q -->\n<!-- cards -->\n<!-- id: {container} -->\n"
         )
     }
 
@@ -430,6 +425,11 @@ mod tests {
         let map = scan_dir(dir.path());
 
         assert!(map.card_dupes.is_empty(), "{:#?}", map.card_dupes);
+        assert_eq!(
+            map,
+            scan_dir_fast(dir.path()),
+            "the deck must parse, or emptiness here is vacuous"
+        );
     }
 
     #[test]
@@ -504,13 +504,13 @@ mod tests {
         let a = dir.path().join("notes.md");
         std::fs::write(
             &a,
-            "---\nformat-version: 1\nid: \"deck-dtoka\"\n---\n## q <!-- id: card-cshared -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-dtoka\"\n---\n## q\na\n<!-- id: card-cshared -->\n",
         )
         .unwrap();
         let b = dir.path().join("notes copy.md");
         std::fs::write(
             &b,
-            "---\nformat-version: 1\nid: \"deck-dtokb\"\n---\n## q <!-- id: card-cshared -->\nb\n",
+            "---\nformat-version: 1\nid: \"deck-dtokb\"\n---\n## q\nb\n<!-- id: card-cshared -->\n",
         )
         .unwrap();
 

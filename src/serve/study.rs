@@ -1805,8 +1805,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (mut state, deck_id) = study_state_with_review(dir.path(), crate::depth::Depth::Recall);
         let deck = dir.path().join("study.md");
-        let text =
-            "## Complete the sentence <!-- id: card-studytest -->\nThe capital is \\blank{Paris}\n";
+        let text = "## Complete the sentence\nThe capital is \\blank{Paris}\n<!-- id: card-studytest -->\n";
         std::fs::write(&deck, text).unwrap();
         let cards = crate::parser::parse_str(&deck_id, text).unwrap();
         let session = crate::session::Session::new(

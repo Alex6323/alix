@@ -1082,7 +1082,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\ninput: type\n---\n## q <!-- id: card-q1 -->\n---\n$x = \\blank{\\pm} y$\n",
+            "---\ninput: type\n---\n## q\n---\n$x = \\blank{\\pm} y$\n<!-- id: card-q1 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
 
@@ -1096,7 +1096,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
+            "## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1118,7 +1118,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1136,7 +1136,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
+            "---\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1152,7 +1152,7 @@ mod tests {
     #[test]
     fn a_sourceless_deck_finishes_once_every_card_graduates() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## a <!-- id: card-q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## a\n1\n<!-- id: card-q1 -->\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
 
@@ -1163,7 +1163,7 @@ mod tests {
     #[test]
     fn a_deck_still_learning_a_card_is_only_started() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## a <!-- id: card-q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## a\n1\n<!-- id: card-q1 -->\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         learning(&mut store, &deck.cards[0].id().unwrap());
@@ -1204,7 +1204,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n## b <!-- id: card-q2 -->\n2\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1217,7 +1217,7 @@ mod tests {
     #[test]
     fn sourceless_deck_finishes_on_drill_alone() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## a <!-- id: card-q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## a\n1\n<!-- id: card-q1 -->\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         retire(&mut store, &deck.cards[0].id().unwrap());
@@ -1230,7 +1230,7 @@ mod tests {
         let basics = write_deck(
             dir.path(),
             "basics.md",
-            "---\nformat-version: 1\nid: \"deck-basics1\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+            "---\nformat-version: 1\nid: \"deck-basics1\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1289,16 +1289,16 @@ mod tests {
     #[test]
     fn append_cards_appends_with_separation_and_parses() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "## one <!-- id: card-q1 -->\n1\n");
+        let path = write_deck(dir.path(), "d.md", "## one\n1\n<!-- id: card-q1 -->\n");
         append_cards(
             &path,
-            "## two <!-- id: card-q2 --> <!-- reveal: line -->\nkey point\n",
+            "## two\nkey point\n<!-- reveal: line -->\n<!-- id: card-q2 -->\n",
         )
         .unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
-            "## one <!-- id: card-q1 -->\n1\n\n## two <!-- id: card-q2 --> <!-- reveal: line -->\nkey point\n",
+            "## one\n1\n<!-- id: card-q1 -->\n\n## two\nkey point\n<!-- reveal: line -->\n<!-- id: card-q2 -->\n",
             text
         );
         let cards = parser::parse_str("d.md", &text).unwrap();
@@ -1383,7 +1383,7 @@ mod tests {
         write_deck(
             dir.path(),
             "b.md",
-            "---\nrequires: a\n---\n## b <!-- id: card-q1 -->\n2\n",
+            "---\nrequires: a\n---\n## b\n2\n<!-- id: card-q1 -->\n",
         );
         let cpath = write_deck(
             dir.path(),
@@ -1448,7 +1448,7 @@ mod tests {
             dir.path(),
             "basics.md",
             &format!(
-                "---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n"
+                "---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n"
             ),
         );
         let adv = write_deck(
@@ -1508,7 +1508,7 @@ mod tests {
         write_deck(
             dir.path(),
             &format!("{CANONICAL_DECK_ID}.md"),
-            "---\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+            "---\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1529,7 +1529,7 @@ mod tests {
         write_deck(
             dir.path(),
             &format!("{CANONICAL_DECK_ID}.md"),
-            "---\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+            "---\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1600,8 +1600,8 @@ mod tests {
 
     #[test]
     fn removing_a_region_card_keeps_its_parent_cards_answer() {
-        let text = "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n\n## next <!-- id: card-next1 -->\nanswer\n";
-        let expected = "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n\n---\ncarpals\n\n## next <!-- id: card-next1 -->\nanswer\n";
+        let text = "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-parent1 -->\n\n## next\nanswer\n<!-- id: card-next1 -->\n";
+        let expected = "## anatomy\n![](hand.png)\n\n---\ncarpals\n<!-- id: card-parent1 -->\n\n## next\nanswer\n<!-- id: card-next1 -->\n";
 
         assert_eq!(
             expected,
@@ -1621,7 +1621,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "regions.md",
-            "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n",
+            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-parent1 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         assert!(
@@ -1637,7 +1637,7 @@ mod tests {
         let plain = write_deck(
             dir.path(),
             "plain.md",
-            "## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n\n---\ncarpals\n",
+            "## anatomy\n![](hand.png)\n\n---\ncarpals\n<!-- id: card-parent1 -->\n",
         );
         let deck = Deck::load(&plain).unwrap();
         assert_eq!(
@@ -1929,7 +1929,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nreveal: flip\n---\n## a <!-- reveal: line -->\nx\n## b\ny\n",
+            "---\nreveal: flip\n---\n## a\nx\n<!-- reveal: line -->\n## b\ny\n",
         )
         .unwrap();
 
@@ -1944,7 +1944,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\ninput: draw\n---\n## a <!-- input: type -->\nx\n## b\ny\n",
+            "---\ninput: draw\n---\n## a\nx\n<!-- input: type -->\n## b\ny\n",
         )
         .unwrap();
 
@@ -1967,7 +1967,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "## purported <!-- id: card-q1 --> <!-- direction: both -->\nangeblich\n",
+            "## purported\nangeblich\n<!-- direction: both -->\n<!-- id: card-q1 -->\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -2009,7 +2009,7 @@ mod tests {
     fn direction_reverse_keeps_only_the_swapped_card() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(&path, "## q <!-- direction: reverse -->\na\n").unwrap();
+        std::fs::write(&path, "## q\na\n<!-- direction: reverse -->\n").unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(1, deck.cards.len());
         assert_eq!("a", deck.cards[0].front);
@@ -2045,7 +2045,7 @@ mod tests {
         let path = dir.path().join("regions.md");
         std::fs::write(
             &path,
-            "---\ninput: type\ndirection: both\n---\n## anatomy <!-- id: card-parent1 -->\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n",
+            "---\ninput: type\ndirection: both\n---\n## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-parent1 -->\n",
         )
         .unwrap();
 

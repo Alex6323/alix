@@ -178,10 +178,11 @@ mod tests {
     #[test]
     fn a_sidecar_keeps_deeper_headings_as_card_content() {
         let text = "---\nformat-version: 1\nfor: deck-abc\n---\n\
-                    ## personal <!-- id: card-personal -->\n\
+                    ## personal\n\
                     answer\n\
                     ### hand-written detail\n\
-                    more detail\n";
+                    more detail\n\
+                    <!-- id: card-personal -->\n";
         let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
         assert_eq!(1, cards.len(), "sub-card syntax is disabled in a sidecar");
         assert_eq!(
@@ -194,7 +195,7 @@ mod tests {
     /// empty the whole file; in a sidecar it is simply content.
     #[test]
     fn a_leading_deep_heading_never_empties_a_sidecar() {
-        let text = "## personal <!-- id: card-p2 -->\nanswer\n#### deep\ntail\n";
+        let text = "## personal\nanswer\n#### deep\ntail\n<!-- id: card-p2 -->\n";
         let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
         assert_eq!(1, cards.len());
     }
@@ -310,7 +311,7 @@ mod tests {
         append_cards(
             &deck,
             "deck-abc",
-            "## a gap the exam found <!-- id: card-two -->\nthe answer\n",
+            "## a gap the exam found\nthe answer\n<!-- id: card-two -->\n",
         )
         .unwrap();
 
@@ -328,8 +329,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_cards(&deck, "deck-abc", "## one <!-- id: card-aa -->\nx\n").unwrap();
-        append_cards(&deck, "deck-abc", "## two <!-- id: card-bb -->\ny\n").unwrap();
+        append_cards(&deck, "deck-abc", "## one\nx\n<!-- id: card-aa -->\n").unwrap();
+        append_cards(&deck, "deck-abc", "## two\ny\n<!-- id: card-bb -->\n").unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         let cards =
@@ -346,7 +347,7 @@ mod tests {
         let deck = deck(dir.path());
 
         append_note(&deck, "deck-abc", "card-one", &note("a note")).unwrap();
-        append_cards(&deck, "deck-abc", "## mine <!-- id: card-zz -->\nback\n").unwrap();
+        append_cards(&deck, "deck-abc", "## mine\nback\n<!-- id: card-zz -->\n").unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(1, crate::parser::notes(&text).len());

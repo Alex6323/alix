@@ -260,7 +260,7 @@ void main() {
       // needs an explicit id to count as due.
       writeTestDeck(
         '${root.path}/plain.md',
-        '---\ntitle: Plain\n---\n## q <!-- id: card-q1 -->\na\n',
+        '---\ntitle: Plain\n---\n## q\na\n<!-- id: card-q1 -->\n',
       );
 
       await tester.pumpWidget(MaterialApp(
@@ -290,15 +290,15 @@ void main() {
       final root = tempRoot('alix-picker-mastered-');
       File('${root.path}/a-active.md').writeAsStringSync(
         '---\nformat-version: 1\nid: "deck-activea"\ntitle: Active A\n---\n'
-        '## q <!-- id: card-activeaq -->\na\n',
+        '## q\na\n<!-- id: card-activeaq -->\n',
       );
       File('${root.path}/b-active.md').writeAsStringSync(
         '---\nformat-version: 1\nid: "deck-activeb"\ntitle: Active B\n---\n'
-        '## q <!-- id: card-activebq -->\na\n',
+        '## q\na\n<!-- id: card-activebq -->\n',
       );
       File('${root.path}/z-mastered.md').writeAsStringSync(
         '---\nformat-version: 1\nid: "deck-masteredz"\ntitle: Mastered Z\n---\n'
-        '## q <!-- id: card-masteredzq -->\na\n',
+        '## q\na\n<!-- id: card-masteredzq -->\n',
       );
       Directory('${root.path}/progress').createSync();
       File('${root.path}/progress/deck-masteredz.json').writeAsStringSync(
@@ -506,7 +506,7 @@ void main() {
     final root = tempRoot('alix-picker-progress-error-');
     File('${root.path}/damaged.md').writeAsStringSync(
       '---\nformat-version: 1\nid: "deck-00000000000000000000000000"\ntitle: Damaged\n---\n'
-      '## q <!-- id: card-11111111111111111111111111 -->\na\n',
+      '## q\na\n<!-- id: card-11111111111111111111111111 -->\n',
     );
     Directory('${root.path}/progress').createSync();
     File('${root.path}/progress/deck-00000000000000000000000000.json')

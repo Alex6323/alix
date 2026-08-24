@@ -535,7 +535,7 @@ mod tests {
         let deck = root.join("divorce-lawyer-questions.md");
         std::fs::write(
             &deck,
-            "---\nformat-version: 1\nid: \"deck-0j2k4m6p8r1t3v5x7z9b2d4f6h\"\n---\n## private-front <!-- id: card-1j3k5m7p9r2t4v6x8z0b3d5f7h -->\nprivate-back\n> private-note\n",
+            "---\nformat-version: 1\nid: \"deck-0j2k4m6p8r1t3v5x7z9b2d4f6h\"\n---\n## private-front\nprivate-back\n> private-note\n<!-- id: card-1j3k5m7p9r2t4v6x8z0b3d5f7h -->\n",
         )
         .unwrap();
         std::fs::write(
@@ -647,7 +647,7 @@ mod tests {
         let second = dir.path().join("new-private-name.md");
         std::fs::write(
             &first,
-            "---\nformat-version: 1\nid: \"deck-0j2k4m6p8r1t3v5x7z9b2d4f6h\"\n---\n## front <!-- id: card-1j3k5m7p9r2t4v6x8z0b3d5f7h -->\nback\n",
+            "---\nformat-version: 1\nid: \"deck-0j2k4m6p8r1t3v5x7z9b2d4f6h\"\n---\n## front\nback\n<!-- id: card-1j3k5m7p9r2t4v6x8z0b3d5f7h -->\n",
         )
         .unwrap();
 

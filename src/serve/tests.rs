@@ -907,7 +907,10 @@ fn workspace_members_fall_back_to_the_workspaces_own_store_on_disk() {
     let ws = dir.path().join("animals");
     std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
+    write_initialized(
+        &ws.join("decks/one.md"),
+        "## q1\na1\n<!-- id: card-qa -->\n",
+    );
 
     // Saved to the workspace's own store, with nothing retained in memory: the
     // only way to see it is to open that store from disk.
@@ -962,7 +965,10 @@ fn workspace_members_prefer_a_retained_store_over_reopening_from_disk() {
     let ws = dir.path().join("animals");
     std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
+    write_initialized(
+        &ws.join("decks/one.md"),
+        "## q1\na1\n<!-- id: card-qa -->\n",
+    );
 
     // Recognized only in memory, never saved: on-disk the card is untouched.
     // The owner's retained projection is authoritative, so a member built from
@@ -1019,8 +1025,14 @@ fn a_members_unreadable_document_reds_out_that_member_row_alone() {
     let ws = dir.path().join("animals");
     std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
-    write_initialized(&ws.join("decks/two.md"), "## q2 <!-- id: card-qb -->\na2\n");
+    write_initialized(
+        &ws.join("decks/one.md"),
+        "## q1\na1\n<!-- id: card-qa -->\n",
+    );
+    write_initialized(
+        &ws.join("decks/two.md"),
+        "## q2\na2\n<!-- id: card-qb -->\n",
+    );
     let progress = crate::workspace::store_path(&ws).join("progress");
     std::fs::create_dir_all(&progress).unwrap();
     std::fs::write(progress.join("deck-two.json"), "{ corrupt").unwrap();
@@ -1081,12 +1093,12 @@ fn a_dependent_member_reads_its_prerequisites_active_owner_projection() {
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
     std::fs::write(
         ws.join("decks/base.md"),
-        "---\nformat-version: 1\nid: \"deck-base\"\nsource: https://example.org\n---\n## q1 <!-- id: card-qa -->\na1\n",
+        "---\nformat-version: 1\nid: \"deck-base\"\nsource: https://example.org\n---\n## q1\na1\n<!-- id: card-qa -->\n",
     )
     .unwrap();
     std::fs::write(
         ws.join("decks/advanced.md"),
-        "---\nformat-version: 1\nid: \"deck-adv\"\nrequires: base\n---\n## q2 <!-- id: card-qb -->\na2\n",
+        "---\nformat-version: 1\nid: \"deck-adv\"\nrequires: base\n---\n## q2\na2\n<!-- id: card-qb -->\n",
     )
     .unwrap();
 
@@ -1188,8 +1200,14 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     let ws = dir.path().join("animals");
     std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
-    write_initialized(&ws.join("decks/two.md"), "## q2 <!-- id: card-qb -->\na2\n");
+    write_initialized(
+        &ws.join("decks/one.md"),
+        "## q1\na1\n<!-- id: card-qa -->\n",
+    );
+    write_initialized(
+        &ws.join("decks/two.md"),
+        "## q2\na2\n<!-- id: card-qb -->\n",
+    );
 
     let paths = crate::workspace::deck_files(&ws);
     let mut ws_store =
@@ -1272,7 +1290,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("letters");
     std::fs::create_dir(&folder).unwrap();
-    write_initialized(&folder.join("a.md"), "## q <!-- id: card-qa -->\na\n");
+    write_initialized(&folder.join("a.md"), "## q\na\n<!-- id: card-qa -->\n");
 
     let mut instance_store = Store::open(dir.path().join("instance.json")).unwrap();
     let deck = Deck::load(folder.join("a.md")).unwrap();
@@ -1361,9 +1379,12 @@ fn a_deck_with_an_unreadable_progress_document_reds_out_alone_in_the_catalog() {
     let dir = tempfile::tempdir().unwrap();
     write_initialized(
         &dir.path().join("good.md"),
-        "## q <!-- id: card-qg -->\na\n",
+        "## q\na\n<!-- id: card-qg -->\n",
     );
-    write_initialized(&dir.path().join("bad.md"), "## q <!-- id: card-qb -->\na\n");
+    write_initialized(
+        &dir.path().join("bad.md"),
+        "## q\na\n<!-- id: card-qb -->\n",
+    );
     let progress = dir.path().join("progress");
     std::fs::create_dir(&progress).unwrap();
     std::fs::write(progress.join("deck-bad.json"), "{ corrupt").unwrap();
@@ -1575,7 +1596,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth
 fn state_reports_the_sessions_depth_and_typeline_mode() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## steps <!-- reveal: line --> <!-- id: card-q1 -->\nfirst\nsecond\n";
+    let text = "## steps\nfirst\nsecond\n<!-- reveal: line -->\n<!-- id: card-q1 -->\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -1597,7 +1618,7 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
 fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## why <!-- id: card-q1 -->\nfirst fact\nsecond fact\n";
+    let text = "## why\nfirst fact\nsecond fact\n<!-- id: card-q1 -->\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -1624,7 +1645,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
 fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## where <!-- id: card-q1 -->\nThe \\blank{cat} sat here\n";
+    let text = "## where\nThe \\blank{cat} sat here\n<!-- id: card-q1 -->\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     assert_eq!(vec!["cat".to_string()], cards[0].back);
@@ -1654,7 +1675,7 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
 fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## steps <!-- reveal: line --> <!-- id: card-q1 -->\nfirst\nsecond\nthird\n";
+    let text = "## steps\nfirst\nsecond\nthird\n<!-- reveal: line -->\n<!-- id: card-q1 -->\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
@@ -1693,7 +1714,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
 fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## steps <!-- reveal: line --> <!-- id: card-q1 -->\nfirst\nsecond\nthird\n";
+    let text = "## steps\nfirst\nsecond\nthird\n<!-- reveal: line -->\n<!-- id: card-q1 -->\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -1711,7 +1732,7 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
 fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_poll() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## q <!-- id: card-q1 -->\nanswer\n";
+    let text = "## q\nanswer\n<!-- id: card-q1 -->\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
@@ -1769,7 +1790,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
 fn an_already_recognized_card_skips_the_introduction_mc() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    let text = "## q <!-- id: card-q1 -->\nanswer\n";
+    let text = "## q\nanswer\n<!-- id: card-q1 -->\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -2062,7 +2083,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
     std::fs::write(
         &deck_path,
         "---\nformat-version: 1\nid: \"deck-livefrozen1\"\nsource: source.rs\n---\n\
-         ## q <!-- id: card-livefrozen1 -->\na\n<!-- at: source.rs:1 -->\n",
+         ## q\na\n<!-- at: source.rs:1 -->\n<!-- id: card-livefrozen1 -->\n",
     )
     .unwrap();
     crate::assets::freeze_member(&deck_path).unwrap();
@@ -2143,7 +2164,7 @@ fn exam_due_reports_the_decks_name_not_its_routing_id() {
     // keyed by it, but the wire value must stay the resolvable deck name.
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-examduedeck\"\nsource: https://x\n---\n## a <!-- id: card-q1 -->\n1\n",
+        "---\nformat-version: 1\nid: \"deck-examduedeck\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
     )
     .unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();
@@ -2172,14 +2193,16 @@ fn walk_deck(dir: &Path) -> crate::trace::Trace {
     std::fs::write(
         &path,
         "---\ntrace: how `it` works\nsource: source.txt\n---\n\
-         ## Predict the `first` hop <!-- id: card-t1 -->\n\
-         <!-- given: line — the `input` line -->\n\
+         ## Predict the `first` hop\n\
          it reads the `first` line\n\
          > call `read`\n\
+         <!-- given: line — the `input` line -->\n\
          <!-- at: 1 -->\n\
-         ## Predict the second hop <!-- id: card-t2 -->\n\
+         <!-- id: card-t1 -->\n\
+         ## Predict the second hop\n\
          it reads line two\n\
-         <!-- at: 2 -->\n",
+         <!-- at: 2 -->\n\
+         <!-- id: card-t2 -->\n",
     )
     .unwrap();
     crate::source::stamp_citations(&path).unwrap();
@@ -2542,7 +2565,7 @@ fn deck_drawer_dto_exposes_the_description_and_a_flat_heatmap() {
     let deck_path = dir.path().join("rust.md");
     std::fs::write(
         &deck_path,
-        "---\ntitle: Rust\ndescription: A short intro.\n---\n## q1 <!-- id: card-qa -->\na1\n## q2 <!-- id: card-qb -->\na2\n",
+        "---\ntitle: Rust\ndescription: A short intro.\n---\n## q1\na1\n<!-- id: card-qa -->\n## q2\na2\n<!-- id: card-qb -->\n",
     )
     .unwrap();
     let deck = Deck::load(&deck_path).unwrap();

@@ -88,7 +88,7 @@ mod tests {
     /// or opening a card of its own.
     #[test]
     fn a_stray_deep_heading_stays_the_personal_cards_own_content() {
-        let text = "## personal <!-- id: card-p1 -->\nanswer\n### stray label\ntail\n";
+        let text = "## personal\nanswer\n### stray label\ntail\n<!-- id: card-p1 -->\n";
         let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
         assert_eq!(1, cards.len());
         assert_eq!(vec!["answer", "### stray label", "tail"], cards[0].back);
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn a_depth_six_note_label_never_leaks_into_a_personal_cards_answer() {
-        let text = "## personal <!-- id: card-p1 -->\nanswer\n\n\
+        let text = "## personal\nanswer\n<!-- id: card-p1 -->\n\n\
                     ###### why\n<!-- note: card-q1 -->\n> because\n";
         let stripped = without_notes(text);
         let cards = crate::parser::parse_sidecar("deck.personal.md", &stripped)
