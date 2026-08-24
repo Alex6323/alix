@@ -1340,13 +1340,28 @@ fn scan(
                             });
                         }
                         (mapping, Some(card)) => {
-                            if mapping != Mapping::Plain
-                                && !card
-                                    .back
-                                    .iter()
-                                    .chain(card.front_extra.iter())
-                                    .any(|(_, line)| checklist::parse_line(line).is_some())
-                            {
+                            // An invocation binds the block it sits under,
+                            // never one recalled from anywhere earlier in
+                            // the open card. The block runs up from the
+                            // comment until a blank line or a heading ends
+                            // it, so a machinery run or a lazy continuation
+                            // line still counts as adjacent.
+                            let mut scan = idx;
+                            let mut maps_here = false;
+                            while scan > 0 {
+                                scan -= 1;
+                                let above = lines.get(scan).map_or("", |line| trim_ws(line));
+                                if above.is_empty() || heading_depth(above).is_some() {
+                                    break;
+                                }
+                                if checklist::parse_line(above).is_some()
+                                    || (mapping == Mapping::Plain && above == "---")
+                                {
+                                    maps_here = true;
+                                    break;
+                                }
+                            }
+                            if !maps_here {
                                 return Err(ParseError::LeadingInvocation {
                                     line: lineno,
                                     word: trim_ws(body).to_string(),
@@ -1769,11 +1784,22 @@ pub(crate) fn is_delimiter_row(line: &str) -> bool {
 /// lines (the everything-trails position). None means the zone declares
 /// nothing and the deck default decides.
 fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<Mapping> {
+    let row = |at: usize| {
+        lines
+            .get(at)
+            .is_some_and(|line| line.trim_end().starts_with('|'))
+    };
     let mut idx = header_idx;
-    while lines
-        .get(idx)
-        .is_some_and(|line| line.trim_end().starts_with('|'))
-    {
+    while row(idx) {
+        // A row followed by a delimiter opens the NEXT table: this block's
+        // rows end above it, so its trailing zone is not ours to read.
+        if idx > header_idx
+            && lines
+                .get(idx + 1)
+                .is_some_and(|next| is_delimiter_row(next))
+        {
+            return None;
+        }
         idx += 1;
     }
     while let Some(line) = lines.get(idx) {
@@ -5312,6 +5338,60 @@ a
     }
 
     #[test]
+    fn everything_trails_invocation_boundary_table_does_not_reach_back() {
+        let deck = parse(
+            "# S\n\n| a | b |\n|---|---|\n| x | y |\n| c | d |\n|---|---|\n| u | v |\n<!-- cards -->\n",
+        );
+
+        assert_eq!(
+            1,
+            deck.cards.len(),
+            "only the immediately preceding second table is invoked"
+        );
+        assert_eq!("u", deck.cards[0].front);
+    }
+
+    #[test]
+    fn everything_trails_invocation_boundary_table_is_loud_when_nonadjacent() {
+        let error = err("# S\n\n| a | b |\n|---|---|\n| x | y |\n\n<!-- cards -->\n");
+
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 7, ref word } if word == "cards"
+            ),
+            "a nonadjacent table invocation must identify its line, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn everything_trails_invocation_boundary_choices_is_loud_when_nonadjacent() {
+        let error = err("## Pick\n- [x] right\n- [ ] wrong\n\n<!-- choices-single -->\n");
+
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 5, ref word }
+                    if word == "choices-single"
+            ),
+            "a nonadjacent choices invocation must identify its line, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn everything_trails_invocation_boundary_plain_is_loud_when_leading() {
+        let error = err("## Q\nanswer\n\n<!-- plain -->\n---\n");
+
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 4, ref word } if word == "plain"
+            ),
+            "the error must identify the misplaced invocation and its line, got {error:?}"
+        );
+    }
+
+    #[test]
     fn tag_shapes_error_on_every_deck_surface_and_the_outs_stay_legal() {
         let error_rows = [
             ("## Q\na <div> b\n", 2, "card content"),
@@ -5551,7 +5631,7 @@ a
     #[test]
     fn a_plain_marker_escapes_the_deck_default() {
         let deck =
-            parse("---\ntasklist: choices-single\n---\n## q\n<!-- plain -->\n- [x] a\n- [ ] b\n");
+            parse("---\ntasklist: choices-single\n---\n## q\n- [x] a\n- [ ] b\n<!-- plain -->\n");
         assert_eq!(vec!["- [x] a", "- [ ] b"], deck.cards[0].back);
     }
 
