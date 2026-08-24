@@ -461,7 +461,13 @@ check-mail:
 # it deliberately, like `calibrate`. See e2e/README.md.
 e2e:
 	npm --prefix e2e ci
-	npx --prefix e2e playwright install --with-deps chromium || npx --prefix e2e playwright install chromium
+# `--with-deps` shells out to `sudo apt-get`, so on a host without apt-get it is
+# a failed sudo auth, not a no-op, and three of those trip pam_faillock's lockout.
+	if command -v apt-get >/dev/null 2>&1; then \
+		npx --prefix e2e playwright install --with-deps chromium; \
+	else \
+		npx --prefix e2e playwright install chromium; \
+	fi
 	npx --prefix e2e playwright test --config=e2e/playwright.config.ts
 
 # Regenerate the landing-page carousel screenshots (site/img/shot-*.webp) from
