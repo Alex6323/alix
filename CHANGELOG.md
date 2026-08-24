@@ -296,6 +296,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The typing-mode character reveal is removed (ruled 2026-08-24 with the
+  aid naming: revealing answer characters piecemeal only slow-fails the
+  card, and partial recall belongs to the future grade-capped hint). The
+  `review.hint` config key and its `tab`/`ctrl-h`/`ctrl-backspace`
+  bindings are gone; a config still naming `review.hint` fails as an
+  unknown key.
+
+
 - Four reserved Markdown shapes are now line-numbered errors with a
   suggested rewrite instead of silently showing their markers as card
   content: setext `===` underlines, indented code blocks, nested `> >`

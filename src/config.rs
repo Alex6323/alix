@@ -79,7 +79,6 @@ pub struct Bindings {
     pub up: Vec<KeyPattern>,
     pub down: Vec<KeyPattern>,
     pub reveal: Vec<KeyPattern>,
-    pub hint: Vec<KeyPattern>,
     pub submit: Vec<KeyPattern>,
     pub skip: Vec<KeyPattern>,
     pub remove: Vec<KeyPattern>,
@@ -102,7 +101,6 @@ impl Default for Bindings {
             up: keys(&["k"]),
             down: keys(&["j"]),
             reveal: keys(&["space", "enter"]),
-            hint: keys(&["tab", "ctrl-h", "ctrl-backspace"]),
             submit: keys(&["enter"]),
             skip: keys(&["ctrl-s"]),
             remove: keys(&["ctrl-x"]),
@@ -716,7 +714,6 @@ struct RawReview {
     up: Option<Vec<String>>,
     down: Option<Vec<String>>,
     reveal: Option<Vec<String>>,
-    hint: Option<Vec<String>>,
     submit: Option<Vec<String>>,
     skip: Option<Vec<String>>,
     remove: Option<Vec<String>>,
@@ -754,7 +751,6 @@ impl Config {
         assign(&mut keys.up, review.up, "review.up")?;
         assign(&mut keys.down, review.down, "review.down")?;
         assign(&mut keys.reveal, review.reveal, "review.reveal")?;
-        assign(&mut keys.hint, review.hint, "review.hint")?;
         assign(&mut keys.submit, review.submit, "review.submit")?;
         assign(&mut keys.skip, review.skip, "review.skip")?;
         assign(&mut keys.remove, review.remove, "review.remove")?;
@@ -1122,7 +1118,7 @@ pub fn default_config_toml() -> &'static str {
 #
 # Note: while you are typing an answer (typing and typeline mode), plain
 # character bindings are ignored so they cannot shadow text input; use
-# ctrl-/special keys for hint, skip and quit.
+# ctrl-/special keys for skip and quit.
 
 # Directory the startup picker lists decks from (when `alix` is launched
 # without deck arguments). A leading ~ is expanded. Defaults to ~/decks.
@@ -1134,7 +1130,6 @@ pub fn default_config_toml() -> &'static str {
 # partly = ["2", "p"]           # self-graded: grade as partly (FSRS Hard, still a pass)
 # passed = ["3", "n"]           # self-graded: grade as passed (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
-# hint = ["tab", "ctrl-h", "ctrl-backspace"]  # typing mode (fails the card)
 # submit = ["enter"]            # typeline mode: submit the current line
 # skip = ["ctrl-s"]             # requeue the current card without grading
 # remove = ["ctrl-x"]           # mark the card for removal from the deck file
@@ -1755,7 +1750,6 @@ mod tests {
                     "up",
                     "down",
                     "reveal",
-                    "hint",
                     "submit",
                     "skip",
                     "remove",

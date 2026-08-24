@@ -22,13 +22,13 @@ passed = ["l"]
 
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
-rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
+rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `submit`, `skip`,
 `remove` (default `ctrl-x`), `ask` (default `?`), `context` (default `c`),
 `continue`, `restart` (default `r`), `quit`, `up`/`down`
 (defaults `k`/`j`) to move within a multiple-choice or key-point list (the arrow keys always work too),
 and the tutor's distill actions `make_note` (default `ctrl-n`) and `make_card` (default `ctrl-d`). While
 you're typing an answer (a reconstruct check), plain-character bindings are ignored so
-they can't shadow your input: use `ctrl-`/special keys for `hint`, `skip`, and
+they can't shadow your input: use `ctrl-`/special keys for `skip` and
 `quit` there. Pass a different file with `--config <path>`.
 
 The picker's navigation is `[keys.picker]` (`up`, `down`, `open`, `back`,

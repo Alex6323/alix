@@ -773,7 +773,6 @@ fn config_cmd(init: bool) -> Result<()> {
     show("partly", &keys.partly);
     show("passed", &keys.passed);
     show("reveal", &keys.reveal);
-    show("hint", &keys.hint);
     show("submit", &keys.submit);
     show("skip", &keys.skip);
     show("remove", &keys.remove);

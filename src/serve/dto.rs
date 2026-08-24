@@ -465,7 +465,7 @@ mod review_keys_parity {
             .collect();
         // Terminal-only actions: the browser has its own affordances for
         // these and never binds them.
-        let withheld = ["hint", "submit", "cont", "quit"];
+        let withheld = ["submit", "cont", "quit"];
 
         assert!(bindings.len() > 10, "the scrape found {bindings:?}");
         for name in &bindings {
