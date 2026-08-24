@@ -941,12 +941,12 @@ mod tests {
         write_deck(
             &root.join("math.md"),
             "## What does $E = mc^2$ describe?\n\
-             <!-- id: card-math -->\n\
-             <!-- choices-single -->\n\
              - [x] **$E = mc^2$**\n\
              - [ ] $F = ma$\n\
+             <!-- choices-single -->\n\
              > Energy and mass use $E = mc^2$.\n\
-             > - [x] Includes $c^2$\n",
+             > - [x] Includes $c^2$\n\
+             <!-- id: card-math -->\n",
         );
 
         let session = ReviewSession::open(
@@ -997,7 +997,7 @@ mod tests {
         let root = dir.path();
         write_deck(
             &root.join("d.md"),
-            "## one? <!-- id: card-one -->\n1\n\n## two? <!-- id: card-two -->\n2\n",
+            "## one?\n1\n<!-- id: card-one -->\n\n## two?\n2\n<!-- id: card-two -->\n",
         );
         let mut s = opened_after_introduction(&root.join("d.md"), root, Some(Depth::Recall));
         let progress = root.join("progress");
@@ -1080,7 +1080,7 @@ mod tests {
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "title = \"W\"\n");
         let deck_path = ws.join("decks/m.md");
-        write_deck(&deck_path, "## q <!-- id: card-q1 -->\na\n");
+        write_deck(&deck_path, "## q\na\n<!-- id: card-q1 -->\n");
         let deadline = alix::time::local_date(T0) + chrono::Days::new(3);
         write(
             &ws.join("alix.local.toml"),
@@ -1129,10 +1129,10 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "## q1 <!-- id: card-q1 -->\na1\n\n\
-             ## q2 <!-- id: card-q2 -->\na2\n\n\
-             ## q3 <!-- id: card-q3 -->\na3\n\n\
-             ## q4 <!-- id: card-q4 -->\na4\n",
+            "## q1\na1\n<!-- id: card-q1 -->\n\n\
+             ## q2\na2\n<!-- id: card-q2 -->\n\n\
+             ## q3\na3\n<!-- id: card-q3 -->\n\n\
+             ## q4\na4\n<!-- id: card-q4 -->\n",
         );
         alix::stamp::stamp_deck(&root.join("d.md")).unwrap();
         let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
@@ -1176,7 +1176,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "## why <!-- id: card-q1 -->\nfirst fact\nsecond fact\n",
+            "## why\nfirst fact\nsecond fact\n<!-- id: card-q1 -->\n",
         );
         let s = opened_after_introduction(&root.join("d.md"), root, Some(Depth::Reconstruct));
         let state = s.state(Some(LATER));
@@ -1334,7 +1334,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "---\nformat-version: 1\nid: \"deck-d1\"\nlink: https://x\n---\n## q <!-- id: card-q1 -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nlink: https://x\n---\n## q\na\n<!-- id: card-q1 -->\n",
         );
         let authored = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let authored_line = authored.cards[0].line;
@@ -1355,7 +1355,7 @@ mod tests {
     fn apply_card_note_writes_note_lines_and_preserves_the_card_id() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.md"), "## q <!-- id: card-q1 -->\na\n");
+        write(&root.join("d.md"), "## q\na\n<!-- id: card-q1 -->\n");
 
         let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         // Read after opening: stamping adds frontmatter, so the card moves.
@@ -1411,7 +1411,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("d.md"),
-            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q <!-- id: card-q1 -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q\na\n<!-- id: card-q1 -->\n",
         );
         let before_bytes = std::fs::read(root.join("d.md")).unwrap();
 
@@ -1727,7 +1727,7 @@ mod tests {
         let deck = root.join("d.md");
         write(
             &deck,
-            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q1\na1\n<!-- id: card-q1 -->\n\n## q2\na2\n<!-- id: card-q2 -->\n",
         );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
         let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");
@@ -1761,7 +1761,7 @@ mod tests {
         let deck = root.join("d.md");
         write(
             &deck,
-            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q1 <!-- id: card-q1 -->\na1\n\n## q2 <!-- id: card-q2 -->\na2\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q1\na1\n<!-- id: card-q1 -->\n\n## q2\na2\n<!-- id: card-q2 -->\n",
         );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
         let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");
@@ -1796,9 +1796,9 @@ mod tests {
              source: source.txt\n\
              ---\n\
              ## Predict the `first` hop\n\
-             <!-- given: line — the `input` line -->\n\
              it reads the `first` line\n\
              > call `read`\n\
+             <!-- given: line — the `input` line -->\n\
              <!-- at: 1 -->\n\
              \n\
              ## Predict the second hop\n\

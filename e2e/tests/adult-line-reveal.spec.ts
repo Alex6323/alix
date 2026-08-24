@@ -45,11 +45,13 @@ format-version: 1
 id: "deck-00000000000000000000000012"
 title: "Boot Sequence"
 ---
-## The boot sequence, in order <!-- id: card-lineintro1 --> <!-- reveal: line -->
+## The boot sequence, in order
 Firmware runs from ROM.
 The bootloader loads the kernel.
 The kernel starts init.
 Init brings up services.
+<!-- reveal: line -->
+<!-- id: card-lineintro1 -->
 `,
   );
 

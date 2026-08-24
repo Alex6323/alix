@@ -49,7 +49,7 @@ test("the picker orders numbered deck titles naturally", async ({ page }) => {
   ]) {
     fs.writeFileSync(
       path.join(NUMBERED_WORKSPACE, "decks", file),
-      `---\nformat-version: 1\nid: "${id}"\ntitle: "${title}"\n---\n## Question <!-- id: ${cardId} -->\nAnswer\n`,
+      `---\nformat-version: 1\nid: "${id}"\ntitle: "${title}"\n---\n## Question\nAnswer\n<!-- id: ${cardId} -->\n`,
     );
   }
 

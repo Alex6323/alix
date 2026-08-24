@@ -124,11 +124,11 @@ mod tests {
         let root = dir.path();
         write_deck(
             root.join("loose.md"),
-            "---\ntitle: Loose\n---\n## q <!-- id: card-q1 -->\na\n",
+            "---\ntitle: Loose\n---\n## q\na\n<!-- id: card-q1 -->\n",
         );
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         std::fs::write(root.join("ws/alix.toml"), "title = \"Ws\"\n").unwrap();
-        write_deck(root.join("ws/decks/m.md"), "## q <!-- id: card-q1 -->\na\n");
+        write_deck(root.join("ws/decks/m.md"), "## q\na\n<!-- id: card-q1 -->\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(1_000_000));
         let titles: Vec<(&str, bool, bool)> = rows
@@ -189,7 +189,7 @@ mod tests {
         let root = dir.path();
         write_deck(
             root.join("base.md"),
-            "---\nsource: \"https://x\"\n---\n## q <!-- id: card-q1 -->\na\n",
+            "---\nsource: \"https://x\"\n---\n## q\na\n<!-- id: card-q1 -->\n",
         );
         write_deck(root.join("fresh.md"), "## q\na\n");
 

@@ -11,19 +11,19 @@ enough to demonstrate why optional orientation must not displace the question
 or crowd the answer choices during an ordinary review.
 
 ## Which German verb means "to advocate"?
-<!-- id: card-2kdq2rmxgjz93sdpd3xne603w0 -->
-<!-- choices-single -->
 - [x] befürworten
 - [ ] einräumen
 - [ ] unterstellen
 - [ ] widerlegen
+<!-- choices-single -->
 > Einräumen means to concede, unterstellen means to allege, and widerlegen means to refute.
+<!-- id: card-2kdq2rmxgjz93sdpd3xne603w0 -->
 
 ## Which German verb means "to concede"?
-<!-- id: card-35x9dyx527mb9ydkqp12wgmek2 -->
-<!-- choices-single -->
 - [ ] befürworten
 - [x] einräumen
 - [ ] unterstellen
 - [ ] widerlegen
+<!-- choices-single -->
 > Befürworten means to advocate, unterstellen means to allege, and widerlegen means to refute.
+<!-- id: card-35x9dyx527mb9ydkqp12wgmek2 -->

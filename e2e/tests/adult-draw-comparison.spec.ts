@@ -32,8 +32,10 @@ format-version: 1
 id: "deck-00000000000000000000000013"
 title: "TCP Stack"
 ---
-## Sketch the layers of a TCP/IP stack <!-- id: card-drawcompare1 --> <!-- input: draw -->
+## Sketch the layers of a TCP/IP stack
 Application, transport, internet, link.
+<!-- input: draw -->
+<!-- id: card-drawcompare1 -->
 `,
   );
 
