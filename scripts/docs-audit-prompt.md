@@ -63,7 +63,14 @@ Compare the manifests against current implementation and report:
   that omission makes the public contract misleading;
 - screenshots, diagrams, and slide visuals whose visible labels, controls,
   layout, workflow, or captions materially disagree with the current clients;
-- screenshots that the current capture recipe can no longer reproduce.
+- screenshots that the current capture recipe can no longer reproduce;
+- personal information about the maintainer on any public surface: personal
+  deck or card counts and other usage metrics, family or profile names, and
+  personal filesystem paths. Such specifics are irrelevant to public
+  documentation and must be stripped or stated abstractly ("most decks",
+  "a large workspace"); flag every instance, in prose and in visuals
+  (screenshots showing personal deck lists or counts included). Neutral or
+  synthetic example values are fine.
 
 For visual assets, actually inspect the image rather than relying only on its
 filename or alt text. Compare it with its consuming page, the current UI source,
@@ -85,7 +92,9 @@ Every finding must include:
 - the stale public file and line number, or the visual asset plus its consuming
   page;
 - the exact current claim, summarized without a long quotation;
-- implementation evidence with file and line number;
+- implementation evidence with file and line number (for a
+  personal-information finding the flagged instance itself is the evidence;
+  no implementation reference is required);
 - the smallest recommended documentation or asset correction.
 
 Do not report guesses. If implementation evidence is ambiguous, list the item
