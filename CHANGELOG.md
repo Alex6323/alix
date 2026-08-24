@@ -40,6 +40,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   single or triple tilde run stays ordinary text, and line-start tilde
   fences are unaffected.
 
+- The styled HTML subset renders (decision 10, third slice): `<sub>`,
+  `<sup>`, and `<ins>` pairs display as subscript, superscript, and
+  underline on all three clients, with the tags dropped from the shown
+  text. Grading compares the tag-free content, so typing `H2O` answers
+  `H<sub>2</sub>O`. Pair interiors keep normal inline scanning
+  (emphasis and code inside a pair still render), while code spans and
+  escapes keep the tags literal.
+
 - Autolinks render as inert links (decision 10, second slice):
   `<https://...>` and `<user@host>` display as the bracket-free URL,
   styled as a link on all three clients with no navigation attached.
@@ -56,8 +64,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   verbatim math, whole-line comments (the channel), complete image
   destinations (`![d](<a b.png>)`), non-tag brackets (`a < b`, `<3`),
   autolink shapes (`<https://...>`, `<user@host>`), and the
-  `<sub>`/`<sup>`/`<ins>` pairs stay legal; autolinks and the styled
-  subset render as plain text until their styling lands. The
+  `<sub>`/`<sup>`/`<ins>` pairs stay legal. The
   boundaries are exact: subset pairs close in order on the same line
   (nested, cross-nested, mismatched, doubled, and unclosed forms all
   error), an image destination is exempt only as the complete

@@ -18,6 +18,7 @@ function styledRunNode(run, text) {
   if (run.code) { const code = document.createElement("code"); code.appendChild(node); node = code; }
   if (run.italic) { const italic = document.createElement("em"); italic.appendChild(node); node = italic; }
   if (run.link) { const link = document.createElement("a"); link.className = "autolink"; link.appendChild(node); node = link; }
+  if (run.sub || run.sup || run.ins) { const tag = document.createElement(run.sub ? "sub" : run.sup ? "sup" : "ins"); tag.appendChild(node); node = tag; }
   if (run.strike) { const strike = document.createElement("del"); strike.appendChild(node); node = strike; }
   if (run.bold) { const bold = document.createElement("strong"); bold.appendChild(node); node = bold; }
   return node;

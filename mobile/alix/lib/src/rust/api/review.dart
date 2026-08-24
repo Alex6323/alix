@@ -373,6 +373,9 @@ class InlineRun {
   final bool strike;
   final bool code;
   final bool link;
+  final bool sub;
+  final bool sup;
+  final bool ins;
   final MathView? math;
 
   const InlineRun({
@@ -382,6 +385,9 @@ class InlineRun {
     required this.strike,
     required this.code,
     required this.link,
+    required this.sub,
+    required this.sup,
+    required this.ins,
     this.math,
   });
 
@@ -393,6 +399,9 @@ class InlineRun {
       strike.hashCode ^
       code.hashCode ^
       link.hashCode ^
+      sub.hashCode ^
+      sup.hashCode ^
+      ins.hashCode ^
       math.hashCode;
 
   @override
@@ -406,6 +415,9 @@ class InlineRun {
           strike == other.strike &&
           code == other.code &&
           link == other.link &&
+          sub == other.sub &&
+          sup == other.sup &&
+          ins == other.ins &&
           math == other.math;
 }
 

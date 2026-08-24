@@ -21,6 +21,12 @@ pub struct InlineRun {
     /// style it as a link but attach no navigation.
     #[serde(default, skip_serializing_if = "is_false")]
     pub link: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub sub: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub sup: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ins: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub math: Option<MathView>,
 }
@@ -61,6 +67,7 @@ struct Glyph {
     escaped: bool,
     code: bool,
     link: bool,
+    subset: Option<usize>,
     math: Option<usize>,
 }
 
@@ -247,6 +254,9 @@ fn project_line(
                 strike: strike[index],
                 code: glyph.code,
                 link: glyph.link,
+                sub: glyph.subset == Some(0),
+                sup: glyph.subset == Some(1),
+                ins: glyph.subset == Some(2),
                 math: None,
             },
         );
@@ -426,7 +436,12 @@ fn push_run(runs: &mut Vec<InlineRun>, run: InlineRun) {
             previous.strike,
             previous.code,
             previous.link,
-        ) == (run.bold, run.italic, run.strike, run.code, run.link)
+            previous.sub,
+            previous.sup,
+            previous.ins,
+        ) == (
+            run.bold, run.italic, run.strike, run.code, run.link, run.sub, run.sup, run.ins,
+        )
     {
         previous.text.push_str(&run.text);
     } else {
@@ -589,38 +604,71 @@ pub(crate) fn tag_shape_column(text: &str) -> Option<usize> {
         return None;
     }
     let chars: Vec<char> = text.chars().collect();
+    angle_scan(&chars).error_column
+}
+
+/// A completed styled-subset pair: the tag glyph ranges are markers,
+/// the span between them is the styled interior.
+struct SubsetSpan {
+    slot: usize,
+    open_start: usize,
+    interior_start: usize,
+    interior_end: usize,
+    close_end: usize,
+}
+
+#[derive(Default)]
+struct AngleScan {
+    error_column: Option<usize>,
+    subsets: Vec<SubsetSpan>,
+}
+
+/// One walk, two consumers: the parser's tag-shape error and the
+/// display projection's subset styling read the same angle grammar.
+fn angle_scan(chars: &[char]) -> AngleScan {
+    let mut scan = AngleScan::default();
     let mut open_subset: Option<(usize, usize)> = None;
     let mut index = 0;
     while index < chars.len() {
-        if chars[index] == '`' && !is_escaped(&chars, index) {
-            index = code_span_end(&chars, index);
+        if chars[index] == '`' && !is_escaped(chars, index) {
+            index = code_span_end(chars, index);
             continue;
         }
-        if chars[index] != '<' || is_escaped(&chars, index) {
+        if chars[index] != '<' || is_escaped(chars, index) {
             index += 1;
             continue;
         }
-        if let Some(close) = image_destination_end(&chars, index) {
+        if let Some(close) = image_destination_end(chars, index) {
             index = close + 1;
             continue;
         }
-        if let Some(end) = autolink_end(&chars, index) {
+        if let Some(end) = autolink_end(chars, index) {
             index = end + 1;
             continue;
         }
-        if let Some((slot, len, closing)) = subset_tag(&chars, index) {
+        if let Some((slot, len, closing)) = subset_tag(chars, index) {
             match (open_subset, closing) {
-                (Some((open_slot, _)), true) if open_slot == slot => {
+                (Some((open_slot, open_start)), true) if open_slot == slot => {
                     open_subset = None;
+                    scan.subsets.push(SubsetSpan {
+                        slot,
+                        open_start,
+                        interior_start: open_start + slot_open_len(slot),
+                        interior_end: index,
+                        close_end: index + len,
+                    });
                     index += len;
                     continue;
                 }
                 (None, false) => {
-                    open_subset = Some((slot, index + 1));
+                    open_subset = Some((slot, index));
                     index += len;
                     continue;
                 }
-                _ => return Some(index + 1),
+                _ => {
+                    scan.error_column = Some(index + 1);
+                    return scan;
+                }
             }
         }
         let tag = match chars.get(index + 1) {
@@ -631,11 +679,17 @@ pub(crate) fn tag_shape_column(text: &str) -> Option<usize> {
             None => false,
         };
         if tag {
-            return Some(index + 1);
+            scan.error_column = Some(index + 1);
+            return scan;
         }
         index += 1;
     }
-    open_subset.map(|(_, column)| column)
+    scan.error_column = open_subset.map(|(_, start)| start + 1);
+    scan
+}
+
+fn slot_open_len(slot: usize) -> usize {
+    SUBSET_TAGS[slot].len() + 2
 }
 
 /// The closing `>` of a complete image destination: `start` sits on the
@@ -800,6 +854,13 @@ fn consume_delimiters(
 fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
     let mut math = vec![None; chars.len()];
     let mut removed = vec![false; chars.len()];
+    let mut subset_marker = vec![false; chars.len()];
+    let mut subset_slot: Vec<Option<usize>> = vec![None; chars.len()];
+    for span in angle_scan(chars).subsets {
+        subset_marker[span.open_start..span.interior_start].fill(true);
+        subset_marker[span.interior_end..span.close_end].fill(true);
+        subset_slot[span.interior_start..span.interior_end].fill(Some(span.slot));
+    }
     if spans.first().is_some_and(|span| span.display) {
         removed.fill(true);
     }
@@ -825,8 +886,13 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 escaped: false,
                 code: false,
                 link: false,
+                subset: None,
                 math: Some(span_index),
             });
+            index += 1;
+            continue;
+        }
+        if subset_marker[index] {
             index += 1;
             continue;
         }
@@ -842,6 +908,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 escaped: true,
                 code: false,
                 link: false,
+                subset: subset_slot[index + 1],
                 math: None,
             });
             index += 2;
@@ -857,6 +924,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 escaped: false,
                 code: false,
                 link: true,
+                subset: subset_slot[raw_index],
                 math: None,
             }));
             index = close + 1;
@@ -872,6 +940,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
                 escaped: true,
                 code: true,
                 link: false,
+                subset: None,
                 math: None,
             }));
             index = end + 1;
@@ -883,6 +952,7 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
             escaped: false,
             code: false,
             link: false,
+            subset: subset_slot[index],
             math: None,
         });
         index += 1;
@@ -1049,6 +1119,11 @@ mod tests {
             2 => formatted_text().prop_map(|text| (format!("~~{text}~~"), text)),
             1 => "[a-z0-9]{1,8}"
                 .prop_map(|host| (format!("<https://{host}.io>"), format!("https://{host}.io"))),
+            1 => (
+                prop::sample::select(vec!["sub", "sup", "ins"]),
+                formatted_text(),
+            )
+                .prop_map(|(tag, text)| (format!("<{tag}>{text}</{tag}>"), text)),
             1 => prop::sample::select(vec!['*', '_', '$', '`', '\\'])
                 .prop_map(|marker| (format!("\\{marker}"), marker.to_string())),
         ]
@@ -1110,6 +1185,9 @@ mod tests {
             strike: false,
             code: false,
             link: false,
+            sub: false,
+            sup: false,
+            ins: false,
             math: None,
         }
     }
@@ -1122,6 +1200,9 @@ mod tests {
             strike: false,
             code: false,
             link: false,
+            sub: false,
+            sup: false,
+            ins: false,
             math: None,
         }
     }
@@ -1134,6 +1215,9 @@ mod tests {
             strike: false,
             code: false,
             link: false,
+            sub: false,
+            sup: false,
+            ins: false,
             math: None,
         }
     }
@@ -1146,6 +1230,9 @@ mod tests {
             strike: false,
             code: true,
             link: false,
+            sub: false,
+            sup: false,
+            ins: false,
             math: None,
         }
     }
@@ -1175,6 +1262,9 @@ mod tests {
             strike: false,
             code: false,
             link: false,
+            sub: false,
+            sup: false,
+            ins: false,
             math: None,
         }
     }
@@ -1473,6 +1563,55 @@ mod tests {
     }
 
     #[test]
+    fn subset_pairs_render_as_styled_runs_without_their_tags() {
+        let runs = parse_inline("H<sub>2</sub>O and E=mc<sup>2</sup>");
+        let flat: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(flat, "H2O and E=mc2", "tag glyphs are markers, not content");
+        assert!(
+            runs.iter().any(|run| run.sub && run.text == "2"),
+            "{runs:?}"
+        );
+        assert!(
+            runs.iter().any(|run| run.sup && run.text == "2"),
+            "{runs:?}"
+        );
+        let ins = parse_inline("<ins>new</ins>");
+        assert_eq!(ins.len(), 1, "{ins:?}");
+        assert!(ins[0].ins && !ins[0].sub && !ins[0].sup);
+        assert_eq!(ins[0].text, "new");
+        assert_eq!(
+            strip_inline("H<sub>2</sub>O"),
+            "H2O",
+            "grading sees inner text"
+        );
+    }
+
+    #[test]
+    fn subset_interiors_keep_normal_inline_scanning() {
+        let styled = parse_inline("<sub>**x**</sub>");
+        assert_eq!(styled.len(), 1, "{styled:?}");
+        assert!(
+            styled[0].sub && styled[0].bold,
+            "emphasis works inside a pair"
+        );
+        assert_eq!(styled[0].text, "x");
+        let coded = parse_inline("`<sub>x</sub>`");
+        assert_eq!(coded.len(), 1, "{coded:?}");
+        assert!(
+            coded[0].code && !coded[0].sub,
+            "a code span keeps the tags literal"
+        );
+        assert_eq!(coded[0].text, "<sub>x</sub>");
+        let unpaired = parse_inline("<sub>unclosed");
+        assert!(
+            unpaired.iter().all(|run| !run.sub),
+            "an unpaired open stays literal in projection: {unpaired:?}"
+        );
+        let flat: String = unpaired.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(flat, "<sub>unclosed");
+    }
+
+    #[test]
     fn autolinks_render_as_inert_link_runs() {
         let runs = parse_inline("see <https://alix.study/deck> now");
         assert_eq!(runs.len(), 3, "{runs:?}");
@@ -1704,8 +1843,25 @@ mod tests {
             for pair in runs.windows(2) {
                 let mergeable = pair[0].math.is_none()
                     && pair[1].math.is_none()
-                    && (pair[0].bold, pair[0].italic, pair[0].strike, pair[0].code, pair[0].link)
-                        == (pair[1].bold, pair[1].italic, pair[1].strike, pair[1].code, pair[1].link);
+                    && (
+                        pair[0].bold,
+                        pair[0].italic,
+                        pair[0].strike,
+                        pair[0].code,
+                        pair[0].link,
+                        pair[0].sub,
+                        pair[0].sup,
+                        pair[0].ins,
+                    ) == (
+                        pair[1].bold,
+                        pair[1].italic,
+                        pair[1].strike,
+                        pair[1].code,
+                        pair[1].link,
+                        pair[1].sub,
+                        pair[1].sup,
+                        pair[1].ins,
+                    );
                 prop_assert!(
                     !mergeable,
                     "adjacent runs should have coalesced for source: {source:?}; pair: {pair:?}"

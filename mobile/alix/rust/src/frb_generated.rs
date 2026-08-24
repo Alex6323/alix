@@ -1629,6 +1629,9 @@ const _: fn() = || {
         let _: bool = InlineRun.strike;
         let _: bool = InlineRun.code;
         let _: bool = InlineRun.link;
+        let _: bool = InlineRun.sub;
+        let _: bool = InlineRun.sup;
+        let _: bool = InlineRun.ins;
         let _: Option<crate::api::review::MathView> = InlineRun.math;
     }
     {
@@ -2080,6 +2083,9 @@ impl SseDecode for crate::api::review::InlineRun {
         let mut var_strike = <bool>::sse_decode(deserializer);
         let mut var_code = <bool>::sse_decode(deserializer);
         let mut var_link = <bool>::sse_decode(deserializer);
+        let mut var_sub = <bool>::sse_decode(deserializer);
+        let mut var_sup = <bool>::sse_decode(deserializer);
+        let mut var_ins = <bool>::sse_decode(deserializer);
         let mut var_math = <Option<crate::api::review::MathView>>::sse_decode(deserializer);
         return crate::api::review::InlineRun {
             text: var_text,
@@ -2088,6 +2094,9 @@ impl SseDecode for crate::api::review::InlineRun {
             strike: var_strike,
             code: var_code,
             link: var_link,
+            sub: var_sub,
+            sup: var_sup,
+            ins: var_ins,
             math: var_math,
         };
     }
@@ -3388,6 +3397,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::InlineRun>
             self.0.strike.into_into_dart().into_dart(),
             self.0.code.into_into_dart().into_dart(),
             self.0.link.into_into_dart().into_dart(),
+            self.0.sub.into_into_dart().into_dart(),
+            self.0.sup.into_into_dart().into_dart(),
+            self.0.ins.into_into_dart().into_dart(),
             self.0.math.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -4117,6 +4129,9 @@ impl SseEncode for crate::api::review::InlineRun {
         <bool>::sse_encode(self.strike, serializer);
         <bool>::sse_encode(self.code, serializer);
         <bool>::sse_encode(self.link, serializer);
+        <bool>::sse_encode(self.sub, serializer);
+        <bool>::sse_encode(self.sup, serializer);
+        <bool>::sse_encode(self.ins, serializer);
         <Option<crate::api::review::MathView>>::sse_encode(self.math, serializer);
     }
 }

@@ -684,13 +684,17 @@ full image. Region coordinates stay in full-source space, never crop space.
 ### InlineRun
 
 `{text: string, bold?: bool, italic?: bool, strike?: bool, code?: bool,
-link?: bool, math?: MathView}`.
+link?: bool, sub?: bool, sup?: bool, ins?: bool, math?: MathView}`.
 False style flags and absent `math` are omitted. Concatenating `text` produces
 the matching content projection. For a math run, `text` is delimiter-free
 LaTeX source and the style flags are false. `strike` is `~~strikethrough~~`,
 pure presentation with no study semantics. `link` is an autolink
 (`<https://...>` or `<user@host>`): `text` is the bracket-free URL serving as
 both label and content, styled as a link with NO navigation attached (inert).
+`sub`, `sup`, and `ins` carry the styled HTML subset (`<sub>`, `<sup>`,
+`<ins>`): the tags are dropped from `text` and at most one of the three is set
+on a run (the grammar allows one open element at a time). Clients render them
+as subscript, superscript, and underline.
 Clients render runs in order and use `text` as the accessible label and
 fallback.
 

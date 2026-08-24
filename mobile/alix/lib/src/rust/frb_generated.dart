@@ -1739,8 +1739,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   InlineRun dco_decode_inline_run(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return InlineRun(
       text: dco_decode_String(arr[0]),
       bold: dco_decode_bool(arr[1]),
@@ -1748,7 +1748,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       strike: dco_decode_bool(arr[3]),
       code: dco_decode_bool(arr[4]),
       link: dco_decode_bool(arr[5]),
-      math: dco_decode_opt_box_autoadd_math_view(arr[6]),
+      sub: dco_decode_bool(arr[6]),
+      sup: dco_decode_bool(arr[7]),
+      ins: dco_decode_bool(arr[8]),
+      math: dco_decode_opt_box_autoadd_math_view(arr[9]),
     );
   }
 
@@ -2725,6 +2728,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_strike = sse_decode_bool(deserializer);
     var var_code = sse_decode_bool(deserializer);
     var var_link = sse_decode_bool(deserializer);
+    var var_sub = sse_decode_bool(deserializer);
+    var var_sup = sse_decode_bool(deserializer);
+    var var_ins = sse_decode_bool(deserializer);
     var var_math = sse_decode_opt_box_autoadd_math_view(deserializer);
     return InlineRun(
       text: var_text,
@@ -2733,6 +2739,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       strike: var_strike,
       code: var_code,
       link: var_link,
+      sub: var_sub,
+      sup: var_sup,
+      ins: var_ins,
       math: var_math,
     );
   }
@@ -3938,6 +3947,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.strike, serializer);
     sse_encode_bool(self.code, serializer);
     sse_encode_bool(self.link, serializer);
+    sse_encode_bool(self.sub, serializer);
+    sse_encode_bool(self.sup, serializer);
+    sse_encode_bool(self.ins, serializer);
     sse_encode_opt_box_autoadd_math_view(self.math, serializer);
   }
 

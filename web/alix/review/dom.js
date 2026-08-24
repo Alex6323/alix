@@ -27,6 +27,11 @@ function styledRunNode(run, text) {
     link.appendChild(node);
     node = link;
   }
+  if (run.sub || run.sup || run.ins) {
+    const tag = document.createElement(run.sub ? "sub" : run.sup ? "sup" : "ins");
+    tag.appendChild(node);
+    node = tag;
+  }
   if (run.italic) {
     const italic = document.createElement("em");
     italic.appendChild(node);

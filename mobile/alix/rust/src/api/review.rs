@@ -53,6 +53,9 @@ pub struct _InlineRun {
     pub strike: bool,
     pub code: bool,
     pub link: bool,
+    pub sub: bool,
+    pub sup: bool,
+    pub ins: bool,
     pub math: Option<MathView>,
 }
 

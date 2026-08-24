@@ -10,6 +10,9 @@ InlineRunModel inlineRunFromBridge(bridge.InlineRun run) {
     strike: run.strike,
     code: run.code,
     link: run.link,
+    sub: run.sub,
+    sup: run.sup,
+    ins: run.ins,
     math: math == null
         ? null
         : InlineMathModel(
