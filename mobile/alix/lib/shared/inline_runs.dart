@@ -106,9 +106,7 @@ class InlineRuns extends StatelessWidget {
       return _mathErrorSpans(run);
     }
     if (run.sub || run.sup) {
-      if (!contextHoles || !_holeMarker.hasMatch(run.text)) {
-        return [_scriptSpan(run)];
-      }
+      return [_scriptSpan(run)];
     }
     if (!contextHoles) {
       return [TextSpan(text: run.text, style: _runStyle(run))];
@@ -117,7 +115,9 @@ class InlineRuns extends StatelessWidget {
   }
 
   InlineSpan _scriptSpan(InlineRunModel run) {
-    final text = Text(run.text, style: _runStyle(run), softWrap: false);
+    final Widget text = contextHoles && _holeMarker.hasMatch(run.text)
+        ? Text.rich(TextSpan(children: _contextSpans(run)), softWrap: false)
+        : Text(run.text, style: _runStyle(run), softWrap: false);
     if (run.sup) {
       return WidgetSpan(
         alignment: PlaceholderAlignment.aboveBaseline,

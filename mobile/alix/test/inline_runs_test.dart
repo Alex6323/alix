@@ -118,6 +118,67 @@ void main() {
     expect(sub.top, greaterThan(sup.top));
   });
 
+  testWidgets('scripted cloze markers keep script baselines and hole colors', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testApp(const [
+        InlineRunModel(text: 'A', bold: false, italic: false, code: false),
+        InlineRunModel(
+          text: '⍰',
+          bold: false,
+          italic: false,
+          code: false,
+          sub: true,
+        ),
+        InlineRunModel(text: ' ', bold: false, italic: false, code: false),
+        InlineRunModel(
+          text: '⬚',
+          bold: false,
+          italic: false,
+          code: false,
+          sup: true,
+        ),
+      ], contextHoles: true),
+    );
+
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find
+          .descendant(
+            of: find.byType(InlineRuns),
+            matching: find.byType(RichText),
+          )
+          .first,
+    );
+    final sub = paragraph
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 1, extentOffset: 2),
+        )
+        .single;
+    final sup = paragraph
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 3, extentOffset: 4),
+        )
+        .single;
+
+    expect(sub.top, greaterThan(sup.top));
+
+    final spans = tester
+        .widgetList<RichText>(
+          find.descendant(
+            of: find.byType(InlineRuns),
+            matching: find.byType(RichText),
+          ),
+        )
+        .expand((rich) => textSpans(rich.text))
+        .toList();
+    final active = spans.singleWhere((span) => span.text == '⍰');
+    final hidden = spans.singleWhere((span) => span.text == '⬚');
+    expect(active.style?.color, const Color(0xFF00AA44));
+    expect(active.style?.fontWeight, FontWeight.w700);
+    expect(hidden.style?.color, const Color(0xFF777777));
+  });
+
   testWidgets('inline math uses SVG, foreground color, and one label', (
     tester,
   ) async {

@@ -129,6 +129,44 @@ void main() {
       await tester.pumpWidget(app(card(['\$\$', 'x^2'], [])));
       expect(find.text('\$\$'), findsOneWidget);
       expect(find.text('x^2'), findsOneWidget);
+
+      final fenceRows = [
+        (
+          'a longer context fence must not steal the following math unit',
+          '````text',
+          const ['before', '```', 'after'],
+          '````',
+        ),
+        (
+          'a five-tilde fence must not close on its interior triple run',
+          '~~~~~',
+          const ['before', '~~~', 'after'],
+          '~~~~~',
+        ),
+        (
+          'a backtick fence must not close on a tilde run',
+          '```',
+          const ['before', '~~~', 'after'],
+          '```',
+        ),
+        (
+          'a longer run of the same marker is a legal closer',
+          '```text',
+          const ['before'],
+          '`````',
+        ),
+      ];
+      for (final (label, opener, body, closer) in fenceRows) {
+        await tester.pumpWidget(
+          app(
+            card(
+              [opener, ...body, closer, '\$\$', 'x^2', '\$\$'],
+              [ReviewCodeModel(body), unit],
+            ),
+          ),
+        );
+        expect(find.bySemanticsLabel('x^2'), findsOneWidget, reason: label);
+      }
     },
   );
 
@@ -138,89 +176,98 @@ void main() {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
     final source = File('assets/icon/alix-192.png').absolute.path;
-    final card = ReviewCardModel(
-      front: 'Question',
-      frontRuns: const [],
-      context: const [],
-      contextLeads: false,
-      contextRuns: const [],
-      contextUnits: const [],
-      back: const ['```mermaid', 'flowchart LR', ' A-->B', '```'],
-      backRuns: const [[], [], [], []],
-      backUnits: [
-        ReviewDiagramModel(
-          src: source,
-          width: 188,
-          height: 114,
-          alt: 'flowchart LR\n A-->B',
-        ),
-      ],
-      reshaped: false,
-      note: const [],
-      images: const [],
-      imagesBack: const [],
-    );
-    final state = ReviewStateModel(
-      card: card,
-      mode: ReviewMode.lineByLine,
-      depth: ReviewDepth.recall,
-      introducing: false,
-      finished: false,
-      remaining: 1,
-      reviews: 0,
-      passed: 0,
-      failed: 0,
-      introduced: 0,
-      partial: 0,
-      canRestart: false,
-      dueLeft: 0,
-      newLeft: 0,
-    );
+    for (final back in const [
+      ['```mermaid', 'flowchart LR', ' A-->B', '```'],
+      ['````mermaid', 'flowchart LR', ' A-->B', '````'],
+    ]) {
+      final card = ReviewCardModel(
+        front: 'Question',
+        frontRuns: const [],
+        context: const [],
+        contextLeads: false,
+        contextRuns: const [],
+        contextUnits: const [],
+        back: back,
+        backRuns: [for (final _ in back) const <InlineRunModel>[]],
+        backUnits: [
+          ReviewDiagramModel(
+            src: source,
+            width: 188,
+            height: 114,
+            alt: 'flowchart LR\n A-->B',
+          ),
+        ],
+        reshaped: false,
+        note: const [],
+        images: const [],
+        imagesBack: const [],
+      );
+      final state = ReviewStateModel(
+        card: card,
+        mode: ReviewMode.lineByLine,
+        depth: ReviewDepth.recall,
+        introducing: false,
+        finished: false,
+        remaining: 1,
+        reviews: 0,
+        passed: 0,
+        failed: 0,
+        introduced: 0,
+        partial: 0,
+        canRestart: false,
+        dueLeft: 0,
+        newLeft: 0,
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: alixDark(),
-        home: Scaffold(
-          body: ReviewCardView(
-            state: state,
-            revealed: false,
-            revealedLines: card.back.length,
-            choice: null,
-            multiChoice: null,
-            multiSelected: const {},
-            checkFeedback: null,
-            tickedKeypoints: const {},
-            sketch: Sketch(),
-            onSketchBegin: (_, _) {},
-            onSketchExtend: (_) {},
-            onSketchEnd: () {},
-            onSketchTool: (_) {},
-            onSketchUndo: () {},
-            onSketchClear: () {},
-            attemptOpen: false,
-            attemptController: attempt,
-            typedControllers: const [],
-            serverLive: true,
-            tutorCard: null,
-            verdictGrade: ReviewGrade.fail,
-            onChoose: (_) {},
-            onToggleChoice: (_) {},
-            onSubmitChoices: () {},
-            onCheck: (_) {},
-            onOpenAttempt: () {},
-            onToggleKeypoint: (_) {},
-            onReveal: () {},
-            onRevealNextLine: () {},
-            onIntroduce: () {},
-            onGrade: (_) {},
-            onOpenTutor: (_) {},
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: Scaffold(
+            body: ReviewCardView(
+              state: state,
+              revealed: false,
+              revealedLines: card.back.length,
+              choice: null,
+              multiChoice: null,
+              multiSelected: const {},
+              checkFeedback: null,
+              tickedKeypoints: const {},
+              sketch: Sketch(),
+              onSketchBegin: (_, _) {},
+              onSketchExtend: (_) {},
+              onSketchEnd: () {},
+              onSketchTool: (_) {},
+              onSketchUndo: () {},
+              onSketchClear: () {},
+              attemptOpen: false,
+              attemptController: attempt,
+              typedControllers: const [],
+              serverLive: true,
+              tutorCard: null,
+              verdictGrade: ReviewGrade.fail,
+              onChoose: (_) {},
+              onToggleChoice: (_) {},
+              onSubmitChoices: () {},
+              onCheck: (_) {},
+              onOpenAttempt: () {},
+              onToggleKeypoint: (_) {},
+              onReveal: () {},
+              onRevealNextLine: () {},
+              onIntroduce: () {},
+              onGrade: (_) {},
+              onOpenTutor: (_) {},
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.byType(Image), findsOneWidget);
-    expect(find.bySemanticsLabel('flowchart LR\n A-->B'), findsOneWidget);
+      expect(find.byType(Image), findsOneWidget, reason: '$back');
+      expect(
+        find.bySemanticsLabel('flowchart LR\n A-->B'),
+        findsOneWidget,
+        reason: '$back',
+      );
+    }
   });
 
   testWidgets('a leading context fence renders the resolved diagram unit', (

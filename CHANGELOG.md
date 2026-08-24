@@ -534,6 +534,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The mobile app now closes longer code fences by the CommonMark
+  closing-length rule like the parser and both web clients, found by
+  Codex during reciprocal review: its walks had collapsed every opener
+  to three markers and required an exact three-marker closer, so a
+  four-backtick fence quoting a literal triple-backtick line closed
+  early and silently swallowed the display-math block after it.
+
+- A cloze blank inside subscript or superscript keeps its raised or
+  lowered position on the phone, found by Codex during reciprocal
+  review: marker-bearing script runs had skipped the baseline placement
+  to keep their hole coloring, putting scripted blanks back on the
+  normal baseline; placement and coloring now compose.
+
 - Multi-backtick code spans keep their body as code in the display
   projection, found by Codex during reciprocal review: the glyph scan
   paired a backtick to the next single backtick instead of matching the

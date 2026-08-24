@@ -740,16 +740,11 @@ class ReviewCardView extends StatelessWidget {
         }
       }
 
-      final trimmed = lines[index].trim();
-      final marker = trimmed.startsWith('```')
-          ? '```'
-          : trimmed.startsWith('~~~')
-          ? '~~~'
-          : null;
-      if (marker != null) {
+      final opener = _fenceOpener(lines[index]);
+      if (opener != null) {
         final source = <String>[];
         index++;
-        while (index < lines.length && lines[index].trim() != marker) {
+        while (index < lines.length && !_closesFence(lines[index], opener)) {
           source.add(lines[index]);
           index++;
         }
@@ -789,16 +784,11 @@ class ReviewCardView extends StatelessWidget {
     var fenceIndex = 0;
     var index = 0;
     while (index < lines.length) {
-      final trimmed = lines[index].trim();
-      final marker = trimmed.startsWith('```')
-          ? '```'
-          : trimmed.startsWith('~~~')
-          ? '~~~'
-          : null;
-      if (marker != null) {
+      final opener = _fenceOpener(lines[index]);
+      if (opener != null) {
         final code = <String>[];
         index++;
-        while (index < lines.length && lines[index].trim() != marker) {
+        while (index < lines.length && !_closesFence(lines[index], opener)) {
           code.add(lines[index]);
           index++;
         }
@@ -1528,6 +1518,27 @@ class ReviewCardView extends StatelessWidget {
       onTap: () => onGrade(verdictGrade),
     );
   }
+}
+
+String? _fenceOpener(String line) {
+  final trimmed = line.trim();
+  final ch = trimmed.startsWith('```')
+      ? '`'
+      : trimmed.startsWith('~~~')
+      ? '~'
+      : null;
+  if (ch == null) return null;
+  var run = 3;
+  while (run < trimmed.length && trimmed[run] == ch) {
+    run++;
+  }
+  return trimmed.substring(0, run);
+}
+
+bool _closesFence(String line, String opener) {
+  final trimmed = line.trim();
+  return trimmed.length >= opener.length &&
+      trimmed.codeUnits.every((unit) => unit == opener.codeUnitAt(0));
 }
 
 enum ReviewChipKind {
