@@ -191,10 +191,10 @@
 {"e":191,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":192,"g":[8],"cards":1,"back":"div"}
 {"e":193,"g":[8],"cards":1,"back":"ws"}
-{"e":194,"g":[8],"cards":1,"back":"ws"}
+{"e":194,"g":[8],"cards":1,"back":"div"}
 {"e":195,"g":[8],"err":"line 3: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":196,"g":[8],"cards":1,"back":"div"}
-{"e":197,"g":[8],"cards":1,"back":"div"}
+{"e":197,"g":[8],"cards":1,"back":"ws"}
 {"e":198,"g":[8],"cards":1,"back":"ws"}
 {"e":199,"g":[8],"cards":1,"back":"ws"}
 {"e":200,"g":[8],"cards":1,"back":"div"}
@@ -206,7 +206,7 @@
 {"e":206,"g":[8],"cards":1,"back":"div"}
 {"e":207,"g":[8],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":208,"g":[8],"cards":1,"back":"exact"}
-{"e":209,"g":[8],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":209,"g":[8],"cards":1,"back":"exact"}
 {"e":210,"g":[8],"cards":1,"back":"div"}
 {"e":211,"g":[8],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":212,"g":[8],"cards":1,"back":"ws"}
@@ -546,7 +546,7 @@
 {"e":546,"g":[8],"cards":1,"back":"ws"}
 {"e":547,"g":[8],"cards":1,"back":"ws"}
 {"e":548,"g":[8],"cards":1,"back":"ws"}
-{"e":549,"g":[8],"cards":1,"back":"ws"}
+{"e":549,"g":[8],"cards":1,"back":"div"}
 {"e":550,"g":[8],"cards":1,"back":"div"}
 {"e":551,"g":[8],"cards":1,"back":"ws"}
 {"e":552,"g":[8],"cards":1,"back":"ws"}

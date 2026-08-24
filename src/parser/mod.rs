@@ -915,6 +915,7 @@ fn scan(
     let mut section: Vec<String> = Vec::new();
     let mut seen_heading = false;
     let mut skip_delimiter = false;
+    let mut skip_lines = 0usize;
     let mut fence: Option<(char, usize, usize)> = None;
     let mut prev_blank = false;
     let mut prev_heading = false;
@@ -923,6 +924,10 @@ fn scan(
     let mut idle_terminators: Vec<usize> = Vec::new();
 
     for (idx, raw) in lines.iter().enumerate().skip(start) {
+        if skip_lines > 0 {
+            skip_lines -= 1;
+            continue;
+        }
         let lineno = idx + 1;
         let raw = *raw;
         let was_prose = prev_prose;
@@ -998,6 +1003,15 @@ fn scan(
                 card.open_math = None;
             }
             push_content(&mut current, lineno, raw.to_string())?;
+            prev_blank = false;
+            prev_heading = false;
+            prev_prose = true;
+            continue;
+        }
+
+        if let Some((label, consumed)) = link_definition(lines, idx) {
+            definitions.push(label);
+            skip_lines = consumed - 1;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -1417,14 +1431,6 @@ fn scan(
             continue;
         }
 
-        if let Some(label) = link_definition(t) {
-            definitions.push(label);
-            prev_blank = false;
-            prev_heading = false;
-            prev_prose = true;
-            continue;
-        }
-
         push_content(&mut current, lineno, t.to_string())?;
         prev_blank = false;
         prev_heading = false;
@@ -1455,22 +1461,183 @@ fn scan(
     })
 }
 
-/// A GFM link definition `[label]: destination`, consumed as deck-wide
-/// metadata rather than answer content. Any hole marker keeps the whole
-/// line prose so an authored blank can never be silently eaten.
-fn link_definition(line: &str) -> Option<String> {
-    let rest = line.strip_prefix('[')?;
-    let (label, destination) = rest.split_once("]:")?;
-    let label = label.trim();
-    if label.is_empty()
-        || label.contains('[')
-        || label.contains(']')
-        || destination.trim().is_empty()
-        || line.contains("\\blank")
-    {
+/// A complete GFM link-reference-definition block starting at `lines[at]`:
+/// its label and how many lines it consumed, taken as deck-wide metadata
+/// rather than answer content. An invalid or incomplete shape consumes
+/// nothing, and any hole marker inside the candidate keeps every line
+/// prose so an authored blank can never be silently eaten.
+fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
+    let first = *lines.get(at)?;
+    if indent_width(first) >= 4 {
         return None;
     }
-    Some(label.to_string())
+    let inner = trim_ws(first).strip_prefix('[')?;
+    let mut close = None;
+    let mut chars = inner.char_indices();
+    while let Some((i, ch)) = chars.next() {
+        match ch {
+            '\\' => {
+                consume_escaped(&mut chars);
+            }
+            '[' => return None,
+            ']' => {
+                close = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let close = close?;
+    let label = inner[..close].trim();
+    if label.is_empty() {
+        return None;
+    }
+    let rest = inner[close + 1..].strip_prefix(':')?;
+    let after_colon = trim_ws(rest);
+    if after_colon.is_empty() {
+        return None;
+    }
+    let dest_len = destination_len(after_colon)?;
+    let after_dest = &after_colon[dest_len..];
+    let tail = trim_ws(after_dest);
+    let consumed = match tail.chars().next() {
+        None => match continued_title(lines, at + 1) {
+            Some(title_lines) => 1 + title_lines,
+            None => 1,
+        },
+        Some(open @ ('"' | '\'' | '(')) => {
+            if !after_dest.starts_with(|ch: char| ch.is_whitespace()) {
+                return None;
+            }
+            let closer = if open == '(' { ')' } else { open };
+            1 + title_close(&tail[1..], closer, open == '(', lines, at)?
+        }
+        Some(_) => return None,
+    };
+    let holed = lines[at..at + consumed]
+        .iter()
+        .any(|line| line.contains("\\blank"));
+    (!holed).then(|| (label.to_string(), consumed))
+}
+
+/// Consumes the escape's payload only when the next char is escapable
+/// (the CommonMark ASCII-punctuation rule); otherwise the backslash was
+/// literal and the next char keeps its structural meaning.
+fn consume_escaped(chars: &mut std::str::CharIndices) {
+    let mut ahead = chars.clone();
+    if ahead
+        .next()
+        .is_some_and(|(_, ch)| ch.is_ascii_punctuation())
+    {
+        *chars = ahead;
+    }
+}
+
+/// Byte length of a valid GFM destination at the start of `s`: an
+/// `<angle>` form, or a bare run with no whitespace or controls and
+/// balanced unescaped parentheses.
+fn destination_len(s: &str) -> Option<usize> {
+    if let Some(rest) = s.strip_prefix('<') {
+        let mut chars = rest.char_indices();
+        while let Some((i, ch)) = chars.next() {
+            match ch {
+                '\\' => {
+                    consume_escaped(&mut chars);
+                }
+                '<' => return None,
+                '>' => return Some(1 + i + 1),
+                _ => {}
+            }
+        }
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut end = s.len();
+    let mut chars = s.char_indices();
+    while let Some((i, ch)) = chars.next() {
+        if ch.is_whitespace() {
+            end = i;
+            break;
+        }
+        match ch {
+            '\\' => {
+                consume_escaped(&mut chars);
+            }
+            '(' => depth += 1,
+            ')' => depth = depth.checked_sub(1)?,
+            ch if ch.is_ascii_control() => return None,
+            _ => {}
+        }
+    }
+    (depth == 0 && end > 0).then_some(end)
+}
+
+/// Lines a title opening on `lines[at]` consumes when it closes cleanly:
+/// the opening line plus any continuation. None leaves every line prose.
+fn continued_title(lines: &[&str], at: usize) -> Option<usize> {
+    let t = trim_ws(lines.get(at)?);
+    if interrupts_title(t) {
+        return None;
+    }
+    let open = t.chars().next()?;
+    let closer = match open {
+        '"' | '\'' => open,
+        '(' => ')',
+        _ => return None,
+    };
+    Some(1 + title_close(&t[1..], closer, open == '(', lines, at)?)
+}
+
+/// Lines consumed beyond the title's opening line before its closer, with
+/// nothing but whitespace allowed after it. None when the title never
+/// closes cleanly or would swallow a structural line.
+fn title_close(
+    opened: &str,
+    closer: char,
+    paren: bool,
+    lines: &[&str],
+    mut at: usize,
+) -> Option<usize> {
+    let mut line = opened;
+    let mut extra = 0usize;
+    loop {
+        let mut chars = line.char_indices();
+        while let Some((i, ch)) = chars.next() {
+            match ch {
+                '\\' => {
+                    consume_escaped(&mut chars);
+                }
+                '(' if paren => return None,
+                ch if ch == closer => {
+                    return trim_ws(&line[i + 1..]).is_empty().then_some(extra);
+                }
+                _ => {}
+            }
+        }
+        at += 1;
+        let next = trim_ws(lines.get(at)?);
+        if next.is_empty() || interrupts_title(next) {
+            return None;
+        }
+        line = next;
+        extra += 1;
+    }
+}
+
+/// A continued title never swallows a line the deck grammar gives
+/// structure.
+fn interrupts_title(t: &str) -> bool {
+    thematic_break_shape(t)
+        || t.starts_with('#')
+        || t.starts_with('>')
+        || t.starts_with('|')
+        || t.starts_with("<!--")
+        || t.starts_with("```")
+        || t.starts_with("~~~")
+        || t.starts_with("- ")
+        || t.starts_with("* ")
+        || t.starts_with("+ ")
+        || t == "$$"
 }
 
 // ── Table blocks ──
@@ -3111,6 +3278,112 @@ mod tests {
             matches!(err, ParseError::FrontWithoutAnswer(1)),
             "a definition-only answer leaves the card answerless: {err}"
         );
+    }
+
+    #[test]
+    fn link_definition_grammar_keeps_invalid_raw_space_destinations_as_answer_prose() {
+        let deck = parse("## Q\nprimary answer\n[ATP]: energy currency\n");
+        assert_eq!(
+            deck.cards[0].back,
+            vec!["primary answer", "[ATP]: energy currency"],
+            "a raw-space destination is not a GFM link definition"
+        );
+        assert!(
+            deck.definitions.is_empty(),
+            "invalid definition-shaped prose must not enter metadata"
+        );
+    }
+
+    #[test]
+    fn link_definition_grammar_consumes_definitions_outside_card_answers() {
+        let deck = parse("# Section\n[r]: /url\n## Q\n[use][r]\n");
+        assert_eq!(
+            deck.definitions,
+            vec!["r"],
+            "the ruled definition table is deck-wide, including section prose"
+        );
+        assert!(
+            deck.cards[0].context.iter().all(|line| line != "[r]: /url"),
+            "hidden definition metadata must not leak into card context"
+        );
+    }
+
+    #[test]
+    fn link_definition_grammar_consumes_a_title_on_the_following_line() {
+        let deck = parse("## Q\nprimary answer\n[r]: /url\n  \"reference title\"\n");
+        assert_eq!(
+            deck.cards[0].back,
+            vec!["primary answer"],
+            "a continued GFM definition title is hidden metadata, not an answer"
+        );
+        assert_eq!(deck.definitions, vec!["r"]);
+    }
+
+    #[test]
+    fn link_definition_grammar_accepts_gfm_forms_and_rejects_trailing_prose() {
+        let accepted = [
+            ("[r]: <>", "an empty angle destination is valid"),
+            ("[a\\]b]: /url", "an escaped bracket stays inside the label"),
+            ("[r]: /url \"t\"", "a double-quoted same-line title"),
+            ("[r]: /url 't'", "a single-quoted same-line title"),
+            ("[r]: /url (t)", "a parenthesized same-line title"),
+            ("[r]: </u rl> \"t\"", "an angle destination may hold spaces"),
+            ("[r]: /u(r)l", "balanced parens stay in a bare destination"),
+        ];
+        for (line, why) in accepted {
+            let deck = parse(&format!("## Q\nanswer\n{line}\n"));
+            assert_eq!(deck.cards[0].back, vec!["answer"], "{why}: {line}");
+            assert_eq!(deck.definitions.len(), 1, "{why}: {line}");
+        }
+        let rejected = [
+            ("[r]: /url junk", "trailing prose after the destination"),
+            ("[r]: /url \"t\" junk", "trailing prose after the title"),
+            ("[r]: /url \"unclosed", "an unclosed same-line title"),
+            ("[r]: /u(rl", "an unbalanced bare destination"),
+            (
+                "[r]: /url (with (nested))",
+                "a paren title cannot reopen a paren",
+            ),
+            (
+                "[r]: <>(t)",
+                "a title needs whitespace after the destination",
+            ),
+        ];
+        for (line, why) in rejected {
+            let deck = parse(&format!("## Q\nanswer\n{line}\n"));
+            assert_eq!(
+                deck.cards[0].back,
+                vec!["answer", line],
+                "{why} keeps the line as answer prose: {line}"
+            );
+            assert!(deck.definitions.is_empty(), "{why}: {line}");
+        }
+        assert!(
+            matches!(
+                err("## Q\nanswer\n[r]: <un closed\n"),
+                ParseError::TagShape { line: 3, .. }
+            ),
+            "an unclosed angle stays inside the tag-shape error, never silent prose"
+        );
+        let deck = parse("## Q\nanswer\n[r]: /url\n\"two\nline title\"\n");
+        assert_eq!(
+            deck.cards[0].back,
+            vec!["answer"],
+            "a title may continue across lines until its closer"
+        );
+        assert_eq!(deck.definitions, vec!["r"]);
+        let deck = parse("## Q\nanswer\n[r]: /url\n\"sneaky\n## Q2\nanswer2\n");
+        assert_eq!(
+            deck.cards[0].back,
+            vec!["answer", "\"sneaky"],
+            "an unclosed continued title falls back to a destination-only definition"
+        );
+        assert_eq!(
+            deck.cards.len(),
+            2,
+            "a structural line is never swallowed as title continuation"
+        );
+        assert_eq!(deck.definitions, vec!["r"]);
     }
 
     fn err(text: &str) -> ParseError {

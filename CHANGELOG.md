@@ -355,7 +355,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was definitions fails loud as answerless. Fences keep them literal,
   an escaped bracket or a hole marker keeps the line prose, and the
   deck file is untouched. The collected labels are what reference
-  links resolve against.
+  links resolve against. Recognition follows the GFM
+  link-reference-definition block grammar, not a line shape: a
+  destination is an `<angle>` form or a bare run with no raw
+  whitespace and balanced parentheses, a title may sit whitespace-
+  separated on the same line or continue on following lines, and
+  definitions in section prose join the same deck-wide table. An
+  invalid shape (raw-space destination, trailing prose, unclosed
+  title) consumes nothing and stays visible answer content.
 
 - The typing-mode character reveal is removed (ruled 2026-08-24 with the
   aid naming: revealing answer characters piecemeal only slow-fails the
