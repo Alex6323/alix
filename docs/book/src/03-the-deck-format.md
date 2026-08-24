@@ -333,7 +333,13 @@ That it shows the presence of bugs, never their absence.
 A badge alix does not recognize, a badge in the wrong case, or a badge with
 text after it on the same line is a quote, exactly as on GitHub. That is a
 quiet change of meaning, so `alix doctor` names it rather than leaving you to
-find it. A badge with no body below it draws a warning too, and shows nothing.
+find it. A badge whose body is empty, or only blank `>` lines, draws a warning
+too and shows nothing.
+
+A note trails its card the way a directive comment does, so a `<!-- reveal:
+line -->` may stand above one, and answer content may not come after one. Prose
+or a quotation below a note fails loud pointing at the badge line: move the
+content above the note.
 
 Keep the *answer* to the thing you want to recall, and put the *why*, the example,
 or the mnemonic in a note.

@@ -187,6 +187,10 @@ pub enum ParseError {
     )]
     LeadingDirective { line: usize, key: String },
     #[error(
+        "line {line}: the note opened here trails the card, and answer content follows it; comment machinery trails: move the content above the note"
+    )]
+    ContentAfterNote { line: usize },
+    #[error(
         "line {line}: a card heading line takes no `<!-- {key}: ... -->`; comment machinery trails: move it below the card's content"
     )]
     FrontDirective { line: usize, key: String },
@@ -301,6 +305,7 @@ impl ParseError {
             Self::SubCardTableTitle(_) => "sub_card_table_title",
             Self::LeadingInvocation { .. } => "leading_invocation",
             Self::LeadingDirective { .. } => "leading_directive",
+            Self::ContentAfterNote { .. } => "content_after_note",
             Self::FrontDirective { .. } => "front_directive",
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
@@ -374,6 +379,7 @@ impl ParseError {
             | Self::TableRowStamp { line, .. }
             | Self::LeadingInvocation { line, .. }
             | Self::LeadingDirective { line, .. }
+            | Self::ContentAfterNote { line }
             | Self::FrontDirective { line, .. }
             | Self::TableDuplicateStamp { line, .. } => *line,
         }
@@ -680,9 +686,9 @@ struct RawCard {
     note: Option<String>,
     directives: CardDirectives,
     mapping: Option<Mapping>,
-    /// The first card-zone directive (`is_known_card_key`) applied to this
-    /// card; content arriving afterward proves it sat above content.
-    machinery: Option<(usize, String)>,
+    /// What opened this card's trailing machinery run; content arriving
+    /// afterward proves the run sat above content.
+    machinery: Option<TrailingStart>,
     /// The line of a bare `$$` opener still unclosed; a card may not end
     /// with one open.
     open_math: Option<usize>,
@@ -690,6 +696,12 @@ struct RawCard {
     /// stripped note text.
     open_note_math: Option<usize>,
     note_badge: Option<Badge>,
+}
+
+/// What opened a card's trailing machinery run, and where.
+enum TrailingStart {
+    Directive { line: usize, key: String },
+    Note { line: usize },
 }
 
 /// What the blockquote run currently being scanned turned out to be.
@@ -702,10 +714,11 @@ enum QuoteRun {
 impl RawCard {
     fn machinery_stays_trailing(&self) -> Result<(), ParseError> {
         match &self.machinery {
-            Some((line, key)) => Err(ParseError::LeadingDirective {
+            Some(TrailingStart::Directive { line, key }) => Err(ParseError::LeadingDirective {
                 line: *line,
                 key: key.clone(),
             }),
+            Some(TrailingStart::Note { line }) => Err(ParseError::ContentAfterNote { line: *line }),
             None => Ok(()),
         }
     }
@@ -1318,7 +1331,6 @@ fn scan(
             }
             match current.as_mut() {
                 Some(card) => {
-                    card.machinery_stays_trailing()?;
                     // A badge opens a note; every other blockquote is a
                     // quote, which is answer content and reveals with it.
                     let run = run_above.unwrap_or_else(|| match Badge::parse(trim_ws(text)) {
@@ -1342,10 +1354,10 @@ fn scan(
                     match run {
                         QuoteRun::Note => {
                             if run_above.is_none() {
-                                if lines
-                                    .get(idx + 1)
-                                    .is_none_or(|next| trim_ws(next).strip_prefix('>').is_none())
-                                {
+                                if card.machinery.is_none() {
+                                    card.machinery = Some(TrailingStart::Note { line: lineno });
+                                }
+                                if note_run_is_empty(lines, idx + 1) {
                                     lints.push(Lint {
                                         line: lineno,
                                         kind: LintKind::EmptyNote,
@@ -1409,7 +1421,8 @@ fn scan(
                         Some(card) => {
                             apply_directive(&mut card.directives, &key, value, lineno, lints)?;
                             if is_known_card_key(&key) && card.machinery.is_none() {
-                                card.machinery = Some((lineno, key));
+                                card.machinery =
+                                    Some(TrailingStart::Directive { line: lineno, key });
                             }
                         }
                         // A region outside any card has nothing to bind to and
@@ -2287,6 +2300,17 @@ fn push_content(
     Ok(())
 }
 
+/// Whether the note run starting at `from` carries any visible text: a
+/// draft or a pasted callout can leave a body of blank `>` lines, which
+/// renders as nothing at all.
+fn note_run_is_empty(lines: &[&str], from: usize) -> bool {
+    lines[from.min(lines.len())..]
+        .iter()
+        .map(|line| trim_ws(line))
+        .map_while(|line| line.strip_prefix('>'))
+        .all(|body| trim_ws(body).is_empty())
+}
+
 fn append_note(card: &mut RawCard, text: &str) {
     match &mut card.note {
         Some(note) => {
@@ -2952,7 +2976,7 @@ fn build_card_inner(
         }
         let mut card = Card::plain(Arc::clone(subject), front, correct, note, line);
         card.deck_id = Arc::clone(deck_id);
-        card.note_badge = note_badge;
+        card.note_badge = note_badge.filter(|_| card.note.is_some());
         card.token = directives.token.as_deref().map(Arc::from);
         card.images = images;
         card.images_back = images_back;
@@ -3116,7 +3140,7 @@ fn build_card_inner(
             .collect();
         let mut card = Card::plain(Arc::clone(subject), front, back_lines, note, line);
         card.deck_id = Arc::clone(deck_id);
-        card.note_badge = note_badge;
+        card.note_badge = note_badge.filter(|_| card.note.is_some());
         card.token = directives.token.as_deref().map(Arc::from);
         card.reveal = directives.reveal;
         card.input = directives.input;
@@ -3252,7 +3276,7 @@ fn build_card_inner(
             line,
         );
         card.deck_id = Arc::clone(deck_id);
-        card.note_badge = note_badge;
+        card.note_badge = note_badge.filter(|_| card.note.is_some());
         card.context = context;
         card.context_leads = true;
         card.hash_lines = Some(hash_lines);
@@ -5389,10 +5413,11 @@ a
             assert_eq!(1, deck.cards.len(), "{key} in the trailing zone is legal");
         }
 
-        let note = err("## q\nanswer\n<!-- reveal: line -->\n> a note\n");
+        let quote = err("## q\nanswer\n<!-- reveal: line -->\n> a quotation\n");
         assert!(
-            matches!(&note, ParseError::LeadingDirective { line: 3, .. }),
-            "a note is content, so machinery above it errors, got {note:?}"
+            matches!(&quote, ParseError::LeadingDirective { line: 3, .. }),
+            "an unbadged blockquote is answer content, so machinery above it \
+             errors, got {quote:?}"
         );
 
         let divider = err("## q\n<!-- reveal: line -->\n\n---\nback\n");
@@ -5641,6 +5666,76 @@ a
         assert!(
             matches!(deck.lints[0].kind, LintKind::EmptyNote),
             "a badge with no body is named rather than failing the deck: {:?}",
+            deck.lints
+        );
+    }
+
+    /// A badged note trails its card like every other recognized machinery:
+    /// a directive may stand above it, and answer content may not follow it.
+    #[test]
+    fn a_note_is_trailing_machinery_that_content_may_not_follow() {
+        let deck = parse("## q\nanswer\n<!-- reveal: line -->\n> [!WARNING]\n> body\n");
+        assert_eq!(
+            Some("body".to_string()),
+            deck.cards[0].note,
+            "a directive above a note is two machinery items, not one above content"
+        );
+        assert_eq!(
+            Some(crate::depth::Reveal::Line),
+            deck.cards[0].reveal,
+            "and the directive still applies"
+        );
+
+        let rows = [
+            (
+                "## q\nanswer\n> [!NOTE]\n> body\nmore answer\n",
+                "prose below a note",
+            ),
+            (
+                "## q\nanswer\n> [!NOTE]\n> body\n\n> a quotation\n",
+                "a quote below a note, since a quote is answer content",
+            ),
+        ];
+        for (src, why) in rows {
+            let error = err(src);
+            assert!(
+                matches!(error, ParseError::ContentAfterNote { line: 3 }),
+                "{why} must name the badge line, got {error:?}"
+            );
+        }
+
+        let error = err("## q\nanswer\n<!-- reveal: line -->\n> [!NOTE]\n> body\nmore\n");
+        assert!(
+            matches!(error, ParseError::LeadingDirective { line: 3, .. }),
+            "whatever opened the run is what the error names, got {error:?}"
+        );
+    }
+
+    /// Emptiness is a property of the finished note body, not of the one
+    /// line under the badge.
+    #[test]
+    fn an_empty_note_is_judged_on_its_whole_body() {
+        for (src, why) in [
+            ("## q\nanswer\n> [!NOTE]\n", "a badge with nothing under it"),
+            (
+                "## q\nanswer\n> [!NOTE]\n>\n>   \n",
+                "a body of blank quote lines, as a draft or a pasted callout leaves",
+            ),
+        ] {
+            let deck = parse(src);
+            assert!(
+                deck.lints
+                    .iter()
+                    .any(|lint| matches!(lint.kind, LintKind::EmptyNote)),
+                "{why} renders nothing, so it is named: {:?}",
+                deck.lints
+            );
+        }
+
+        let deck = parse("## q\nanswer\n> [!NOTE]\n>\n> real text\n");
+        assert!(
+            deck.lints.is_empty(),
+            "a blank spacer above real text is not an empty note: {:?}",
             deck.lints
         );
     }
@@ -6951,6 +7046,15 @@ a
         );
         assert_eq!(Some("Fastest."), deck.cards[0].note.as_deref());
         assert_eq!(None, deck.cards[1].note.as_deref());
+        assert_eq!(
+            Some(Badge::Note),
+            deck.cards[0].note_badge,
+            "the badge belongs to the note it opened"
+        );
+        assert_eq!(
+            None, deck.cards[1].note_badge,
+            "a card that resolves no note resolves no badge either"
+        );
     }
 
     #[test]

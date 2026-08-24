@@ -353,9 +353,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   note becomes a quote in the answer, so add a badge line above each one. A
   badge alix does not know, a badge in the wrong case, and a badge with text
   after it on the same line are all quotes, matching GitHub, and each draws a
-  doctor warning naming the shift; a badge with no body draws one too and
-  shows nothing. Sidecar notes in a personal file are unaffected: their
-  `<!-- note: card-... -->` marker already declares them.
+  doctor warning naming the shift; a badge whose body is empty or only blank
+  `>` lines draws one too and shows nothing. A note is trailing card
+  machinery like a directive comment, so a directive may stand above it and
+  answer content may not follow it: prose or a quotation below a note fails
+  loud naming the badge line, rather than being silently reordered below the
+  note. A card that resolves no note carries no badge either, so an addressed
+  cloze note never leaves its badge on a sibling hole's card. Sidecar notes in
+  a personal file are unaffected: their `<!-- note: card-... -->` marker
+  already declares them.
 
 - BREAKING: comment machinery trails its block (everything-trails).
   A mapping invocation (`<!-- cards -->`, `<!-- plain -->`,
