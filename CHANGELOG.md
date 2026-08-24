@@ -523,6 +523,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A doubled backslash before an image marker no longer produces a
+  silent third state, found by Codex during reciprocal review: the
+  tag-shape carve-out judged `\\![d](<x.png>)` a live image by escape
+  parity while the card scanner treated any backslash run as escaping
+  the marker, so the deck loaded with neither the image nor an error.
+  All three marker consumers (the card scanner, `image_references`,
+  and the carve-out) now share CommonMark parity: pairs of backslashes
+  are literal text, an odd run escapes the marker, and a live image on
+  a line with leftover text fails loud as a mixed image line.
+
 - The kids reviewer now shows a bare-table note after reveal, found by
   Codex during reciprocal review: the table renderer existed but was
   never handed to the kids study view, so a note authored as a

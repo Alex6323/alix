@@ -4552,6 +4552,56 @@ a
     }
 
     #[test]
+    fn the_three_image_marker_consumers_agree_on_escape_parity() {
+        for run in 0..=3usize {
+            let deck = format!("## Q\n{}![d](<x.png>)\n", "\\".repeat(run));
+            let result = super::parse("deck.md", &deck);
+            let escaped = run % 2 == 1;
+            match (run, result) {
+                (0, Ok(deck)) => assert_eq!(
+                    vec![PathBuf::from("x.png")],
+                    img_srcs(&deck.cards[0].images_back),
+                    "a bare marker consumes the image"
+                ),
+                (2, Err(ParseError::MixedImageLine(2))) => {}
+                (_, Err(ParseError::TagShape { line: 2, column })) if escaped => assert_eq!(
+                    run + 6,
+                    column,
+                    "an escaped marker denies the carve-out at the angle bracket, run {run}"
+                ),
+                (_, other) => panic!("run {run}: unexpected outcome {other:?}"),
+            }
+            let references: Vec<_> = super::image_references(&deck)
+                .into_iter()
+                .map(|reference| reference.source)
+                .collect();
+            let expected: Vec<String> = if escaped {
+                Vec::new()
+            } else {
+                vec!["x.png".into()]
+            };
+            assert_eq!(
+                expected, references,
+                "image_references must share the marker's parity, run {run}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_image_destination_exemption_requires_a_consumed_image() {
+        let result = super::parse("deck.md", "## Q\n\\\\![d](<x.png>)\n");
+        match result {
+            Err(ParseError::TagShape { line: 2, column: 8 } | ParseError::MixedImageLine(2)) => {}
+            Ok(deck) => assert_eq!(
+                vec![PathBuf::from("x.png")],
+                img_srcs(&deck.cards[0].images_back),
+                "the tag-shape classifier exempted the angle destination, but the card parser left the same marker as literal prose"
+            ),
+            Err(other) => panic!("unexpected diagnosis: {other:?}"),
+        }
+    }
+
+    #[test]
     fn an_inline_comment_does_not_create_a_second_comment_channel() {
         assert_eq!(
             err("## Q\ntext <!-- <div> inside -->\n"),

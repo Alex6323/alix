@@ -96,9 +96,19 @@ pub(super) fn scan_markers(
         if let Some(after) = rest.strip_prefix("\\\\blank") {
             text.push_str("\\blank");
             rest = after;
-        } else if let Some(after) = rest.strip_prefix("\\![") {
-            text.push_str("![");
-            rest = after;
+        } else if rest.starts_with('\\') && rest.trim_start_matches('\\').starts_with("![") {
+            // Parity for the image marker only; `\blank` keeps its own escape grammar.
+            let run = rest.chars().take_while(|ch| *ch == '\\').count();
+            let escaped = run % 2 == 1;
+            for _ in 0..run - usize::from(escaped) {
+                text.push('\\');
+            }
+            if escaped {
+                text.push_str("![");
+                rest = &rest[run + 2..];
+            } else {
+                rest = scan_image(&rest[run + 2..], lineno, &mut text, &mut segments, lints);
+            }
         } else if side == Side::Answer
             && let Some(after) = rest.strip_prefix("\\blank")
         {
