@@ -140,10 +140,39 @@ struct LineClassification {
     removed: Vec<bool>,
 }
 
-fn classify_line(text: &str) -> LineClassification {
+fn classify_line(text: &str, style_links: bool) -> LineClassification {
     let chars: Vec<char> = text.chars().collect();
     let spans = math_spans(&chars);
-    let glyphs = scan_glyphs(&chars, &spans);
+    let mut glyphs = scan_glyphs(&chars, &spans);
+    // The display drops link syntax and styles the label; the maskable
+    // stream keeps the raw glyphs and applies `link_syntax_mask` itself,
+    // because its gap rule needs the dropped spans still present.
+    let mut labels = Vec::new();
+    if style_links {
+        let links = bracket_links(&glyphs);
+        let mut dropped = vec![false; glyphs.len()];
+        let mut label = vec![false; glyphs.len()];
+        for link in &links {
+            dropped[link.open] = true;
+            dropped[link.close..=link.close_paren]
+                .iter_mut()
+                .for_each(|flag| *flag = true);
+            label[link.open + 1..link.close]
+                .iter_mut()
+                .for_each(|flag| *flag = true);
+        }
+        let mut kept = Vec::with_capacity(glyphs.len());
+        for (index, glyph) in glyphs.into_iter().enumerate() {
+            if dropped[index] {
+                continue;
+            }
+            if label[index] {
+                labels.push(kept.len());
+            }
+            kept.push(glyph);
+        }
+        glyphs = kept;
+    }
     let delimiters = emphasis_delimiters(&glyphs);
     let mut bold = vec![false; glyphs.len()];
     let mut italic = vec![false; glyphs.len()];
@@ -198,6 +227,11 @@ fn classify_line(text: &str) -> LineClassification {
             open.push(delimiter_index);
         }
     }
+    // After emphasis: a link-marked glyph never delimits (the autolink
+    // rule), but a bracket label takes emphasis like any prose.
+    for index in labels {
+        glyphs[index].link = true;
+    }
     LineClassification {
         spans,
         glyphs,
@@ -220,7 +254,7 @@ fn project_line(
         italic,
         strike,
         removed,
-    } = classify_line(text);
+    } = classify_line(text, true);
     let mut runs = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
@@ -293,7 +327,7 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
         italic,
         removed,
         ..
-    } = classify_line(text);
+    } = classify_line(text, false);
     let linked = link_syntax_mask(&glyphs);
     let byte_at: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
     let mut pieces: Vec<LinePiece> = Vec::new();
@@ -367,14 +401,19 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
     pieces
 }
 
-/// Marks the glyphs of every complete `[label](destination)` link: the
-/// brackets, the parentheses, and the destination drop from the maskable
-/// stream while the label stays visible text. An incomplete pattern is
-/// ordinary prose. Display projection never consults this: clients still
-/// receive the raw syntax until link styling lands.
-fn link_syntax_mask(glyphs: &[Glyph]) -> Vec<bool> {
+struct BracketLink {
+    open: usize,
+    close: usize,
+    close_paren: usize,
+}
+
+/// Finds every complete `[label](destination)` span in the glyph stream.
+/// An incomplete pattern is ordinary prose. One grammar, two consumers:
+/// `link_syntax_mask` drops the syntax from the maskable stream, and
+/// `classify_line` drops it from the display while styling the label.
+fn bracket_links(glyphs: &[Glyph]) -> Vec<BracketLink> {
     let plain = |glyph: &Glyph| !glyph.escaped && !glyph.code && glyph.math.is_none();
-    let mut mask = vec![false; glyphs.len()];
+    let mut links = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
         if !(plain(&glyphs[index]) && glyphs[index].ch == '[') {
@@ -411,11 +450,26 @@ fn link_syntax_mask(glyphs: &[Glyph]) -> Vec<bool> {
             index = close + 1;
             continue;
         };
-        mask[index] = true;
-        mask[close..=close_paren]
+        links.push(BracketLink {
+            open: index,
+            close,
+            close_paren,
+        });
+        index = close_paren + 1;
+    }
+    links
+}
+
+/// Marks the glyphs of every complete `[label](destination)` link: the
+/// brackets, the parentheses, and the destination drop from the maskable
+/// stream while the label stays visible text.
+fn link_syntax_mask(glyphs: &[Glyph]) -> Vec<bool> {
+    let mut mask = vec![false; glyphs.len()];
+    for link in bracket_links(glyphs) {
+        mask[link.open] = true;
+        mask[link.close..=link.close_paren]
             .iter_mut()
             .for_each(|dropped| *dropped = true);
-        index = close_paren + 1;
     }
     mask
 }
@@ -1153,6 +1207,11 @@ mod tests {
             1 => "[a-z0-9]{1,8}"
                 .prop_map(|host| (format!("<https://{host}.io>"), format!("https://{host}.io"))),
             1 => (
+                "[a-zA-Z]{1,8}",
+                prop::sample::select(vec!["https://alix.study", "#anchor", "guide/ch3.md"]),
+            )
+                .prop_map(|(label, dest)| (format!("[{label}]({dest})"), label)),
+            1 => (
                 prop::sample::select(vec!["sub", "sup", "ins"]),
                 formatted_text(),
             )
@@ -1695,6 +1754,79 @@ mod tests {
             "URL underscores are not emphasis"
         );
         assert_eq!(underscored[0].text, "https://a_b_c.io");
+    }
+
+    #[test]
+    fn bracket_links_render_as_styled_labels_with_inert_destinations() {
+        let runs = parse_inline("see [the docs](https://alix.study) now");
+        assert_eq!(runs.len(), 3, "{runs:?}");
+        assert_eq!(runs[0], plain("see "));
+        assert_eq!(
+            runs[1].text, "the docs",
+            "the label is the content; brackets, parens, and destination drop"
+        );
+        assert!(runs[1].link && !runs[1].bold && !runs[1].italic && !runs[1].code);
+        assert_eq!(runs[2], plain(" now"));
+
+        for (source, label, why) in [
+            (
+                "[a](#anchor)",
+                "a",
+                "an anchor destination styles like any link",
+            ),
+            (
+                "[a](guide/ch3.md)",
+                "a",
+                "a relative destination is the same display",
+            ),
+        ] {
+            let runs = parse_inline(source);
+            assert_eq!(runs.len(), 1, "{why}: {runs:?}");
+            assert!(runs[0].link, "{why}");
+            assert_eq!(runs[0].text, label, "{why}");
+        }
+
+        let inner = parse_inline("[*x*](d)");
+        assert_eq!(inner.len(), 1, "{inner:?}");
+        assert!(
+            inner[0].link && inner[0].italic,
+            "emphasis inside a label still renders"
+        );
+        assert_eq!(inner[0].text, "x");
+
+        let across = parse_inline("*a [b](c) d*");
+        assert!(
+            across.iter().all(|run| run.italic),
+            "emphasis spans across a link: {across:?}"
+        );
+        assert!(
+            across.iter().any(|run| run.link && run.text == "b"),
+            "the label inside keeps its link styling: {across:?}"
+        );
+    }
+
+    #[test]
+    fn bracket_link_boundaries_stay_literal_or_protected() {
+        for (text, why) in [
+            (r"\[a](b)", "an escaped opening bracket kills the form"),
+            ("just [brackets] here", "no destination means prose"),
+            ("[a] (b)", "a space before the parens breaks the form"),
+        ] {
+            let runs = parse_inline(text);
+            assert!(runs.iter().all(|run| !run.link), "{why}: {runs:?}");
+            let joined: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(joined, text.replace('\\', ""), "{why}");
+        }
+        let spans = parse_inline("`[a](b)`");
+        assert_eq!(vec![code("[a](b)")], spans, "a code span keeps the syntax");
+    }
+
+    #[test]
+    fn typed_grading_compares_the_link_label_alone() {
+        assert_eq!(
+            strip_inline("see [the docs](https://alix.study)"),
+            "see the docs"
+        );
     }
 
     #[test]

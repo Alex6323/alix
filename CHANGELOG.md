@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Links display as their labels (decision 8, first slice):
+  `[label](destination)` renders the label styled as an inert link on
+  every card surface, with the brackets, parentheses, and destination
+  dropped from display; the deck file keeps the authored syntax
+  untouched. Anchor and relative destinations render the same way
+  (anchor navigation stays a documented non-feature). Emphasis works
+  inside and across labels, code spans keep the syntax literal, and
+  grading compares the label text. Reference links and definition
+  lines follow in a later slice.
+
 - The math spellings aligned with GitHub (decision 11). Display math
   gains its two block spellings: a bare `$$` line opens a block that the
   next bare `$$` line closes, and a ```` ```math ```` fence carries its
