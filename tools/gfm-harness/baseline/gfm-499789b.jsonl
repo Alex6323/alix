@@ -159,7 +159,7 @@
 {"e":159,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":160,"g":[10,12],"err":"line 2: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
 {"e":161,"g":[8],"cards":1,"back":"div"}
-{"e":162,"g":[8],"cards":1,"back":"ws"}
+{"e":162,"g":[8],"cards":1,"back":"div"}
 {"e":163,"g":[8],"cards":1,"back":"div"}
 {"e":164,"g":[8],"cards":1,"back":"div"}
 {"e":165,"g":[8],"cards":1,"back":"div"}

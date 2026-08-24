@@ -1498,7 +1498,7 @@ fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
     let mut block = vec![trim_ws(first)];
     for line in lines.iter().skip(at + 1) {
         let text = trim_ws(line);
-        if text.is_empty() || indent_width(line) >= 4 || interrupts_definition(text) {
+        if text.is_empty() || interrupts_definition(text) {
             break;
         }
         block.push(text);
@@ -3436,27 +3436,35 @@ mod tests {
     /// harness carries: a definition's parts may each cross one line end.
     #[test]
     fn link_definition_grammar_accepts_the_corpus_multiline_forms() {
-        for (block, why) in [
+        for (block, label, why) in [
             (
-                "[r]:\n/target",
-                "e193: the destination may open the next line",
+                "   [foo]: \n      /url  \n           'the title'  ",
+                "foo",
+                "e193 verbatim: continuation lines carry their own indentation",
             ),
             (
-                "[r]:\n/target\n\"the title\"",
-                "e195: destination and title each take their own line",
+                "[Foo bar]:\n<my url>\n'title'",
+                "Foo bar",
+                "e195 verbatim: an angle destination and title each take a line",
             ),
             (
-                "[r]:\n<>\n\"the title\"",
-                "e198: an empty angle destination continues the same way",
+                "[foo]:\n/url",
+                "foo",
+                "e198 verbatim: the destination may open the next line",
             ),
-            ("[\nr\n]: /target", "e208: the label itself may span lines"),
+            (
+                "[\nfoo\n]: /url",
+                "foo",
+                "e208 verbatim: the label itself may span lines",
+            ),
             (
                 "[the\nlabel]: /target",
+                "the label",
                 "a split label collapses to one space",
             ),
         ] {
             let deck = parse(&format!("# Section\n{block}\n## Q\nanswer\n"));
-            assert_eq!(deck.definitions.len(), 1, "{why}");
+            assert_eq!(deck.definitions, vec![label], "{why}");
             let leaked: Vec<&String> = deck.cards[0]
                 .section_context
                 .iter()
@@ -3467,11 +3475,24 @@ mod tests {
                 "{why}: every consumed line is metadata, never section prose: {leaked:?}"
             );
         }
-        let deck = parse("# Section\n[the\nlabel]: /target\n## Q\nanswer\n");
+    }
+
+    #[test]
+    fn link_definition_grammar_accepts_the_exact_indented_commonmark_example_193() {
+        let deck =
+            parse("# Section\n   [foo]: \n      /url  \n           'the title'  \n## Q\n[foo]\n");
+
         assert_eq!(
             deck.definitions,
-            vec!["the label"],
-            "a label spanning lines is stored with its whitespace collapsed"
+            vec!["foo"],
+            "the exact continuation indentation from CommonMark 0.31.2 example 193 remains definition metadata"
+        );
+        assert!(
+            deck.cards[0]
+                .section_context
+                .iter()
+                .all(|line| !line.contains("/url") && !line.contains("the title")),
+            "the destination and title continuation lines never leak into section context"
         );
     }
 
@@ -3540,6 +3561,14 @@ mod tests {
             "a structural line is never swallowed as title continuation"
         );
         assert_eq!(deck.definitions, vec!["r"]);
+        let deck = parse("## Q\nanswer\n[r]:\n    /url with a space\n");
+        assert_eq!(
+            deck.cards[0].back,
+            vec!["answer", "[r]:", "/url with a space"],
+            "an indented continuation that does not complete the grammar \
+             consumes nothing, indentation included"
+        );
+        assert!(deck.definitions.is_empty());
     }
 
     fn err(text: &str) -> ParseError {
