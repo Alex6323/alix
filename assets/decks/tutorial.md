@@ -8,6 +8,7 @@ description: >-
 
 ## What is alix for?
 understanding what you learn, and keeping it for the long run
+> [!NOTE]
 > Two halves: spaced reviews make it stick, and an AI exam checks you
 > actually understood it, not just memorized it. This deck shows both.
 
@@ -15,34 +16,40 @@ understanding what you learn, and keeping it for the long run
 try to recall the answer first
 then reveal it
 then grade yourself
+> [!NOTE]
 > This card revealed its answer step by step. Some cards do that;
 > most show it all at once.
 <!-- reveal: line -->
 
 ## Why must you grade yourself honestly rather than generously?
 a fake "Got it" hides the card before you know it
+> [!NOTE]
 > alix only sees your grades; generous grading quietly removes exactly
 > the cards you still need. The three grade taps (Missed it / Partly /
 > Got it) are the whole interface of a review.
 
 ## Why does a card you keep getting right appear more and more rarely?
 alix re-shows each card just before you would \blank{forget} it
+> [!NOTE]
 > And a card you miss comes back soon. That spacing is the trick
 > behind long-term memory. (This one was a gap-fill card.)
 
 ## What decides whether you pick from choices or answer from memory?
 the depth you choose when starting a session
+> [!NOTE]
 > The depths are Recognize (pick the answer), Recall (from memory),
 > and Reconstruct (rebuild the answer in your own words). Deeper is
 > stronger; start easy and go deeper as a deck grows familiar.
 
 ## Where do new decks come from?
 write them yourself, or let the AI draft them from a source
+> [!NOTE]
 > In the web app: point alix at an article or your notes and it
 > drafts the cards, which you edit like any deck.
 
 ## You are stuck on a card. Where do you get help without leaving the review?
 the tutor, right on the card
+> [!NOTE]
 > The AI features (tutor, deck generation, the exam) need an AI
 > assistant signed in where alix runs. On the phone, pairing with
 > your desktop brings the tutor and the exam along. Plain reviewing
@@ -50,16 +57,19 @@ the tutor, right on the card
 
 ## How does alix check that you truly understood a deck, not just memorized it?
 a short AI exam about the deck's material
+> [!NOTE]
 > It grades your written answers against the deck's source, so it
 > works on decks built from one. Passing marks the deck understood.
 
 ## Who owns your decks and your progress?
 you: plain files on your own device
+> [!NOTE]
 > No account. The AI features send the relevant card and deck text to
 > the assistant you chose; plain reviewing never sends anything.
 
 ## What should you do with this tutorial once it has nothing left to teach you?
 delete it
+> [!NOTE]
 > On the desktop, `alix deck remove tutorial.md` takes it and its
 > review history away in one confirmed step; deleting the plain file
 > by hand works too.

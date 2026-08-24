@@ -8,6 +8,7 @@ reviews
 ## Why do reviews get spaced further apart?
 each successful recall strengthens the memory
 a stronger memory fades more slowly
+> [!NOTE]
 > At Reconstruct depth this answer becomes a tick-the-keypoints checklist.
 
 ## Where does alix keep a deck?
@@ -21,4 +22,5 @@ progress/
 
 ## What marks a note line in a deck file?
 a leading > (blockquote) marker
+> [!NOTE]
 > Like this line, shown after the reveal.

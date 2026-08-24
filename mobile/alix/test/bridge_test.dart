@@ -139,6 +139,7 @@ void main() {
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
       '<!-- choices-single -->\n'
+      '> [!NOTE]\n'
       '> Energy and mass use \$E = mc^2\$.\n'
       '> - [x] Includes \$c^2\$\n'
       '<!-- id: card-choice -->\n',
@@ -940,6 +941,7 @@ void main() {
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
       '<!-- choices-single -->\n'
+      '> [!NOTE]\n'
       '> Energy and mass use \$E = mc^2\$.\n'
       '> - [x] Includes \$c^2\$\n'
       '<!-- id: card-choice -->\n',
