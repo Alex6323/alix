@@ -376,6 +376,37 @@ section view). Inside fenced code every shape is literal, as
 always. A trailing-two-space hard break is not a spelling at all: content
 lines shed trailing whitespace when the deck is read.
 
+## HTML in a deck
+
+alix renders Markdown, never HTML, so a tag shape is reserved rather than
+silently shown as text: a `<` directly followed by a letter, or `</`, on any
+deck surface fails to load, naming the line, the column, and the two outs
+(wrap literal markup in backticks, or escape a lone bracket as `\<`).
+Ordinary brackets are unaffected: `a < b`, `a<3`, and `<1>` are plain text.
+
+Three HTML spellings do render, each with a fixed meaning:
+
+- **Autolinks.** `<https://alix.study>` and `<user@host>` display as the
+  bracket-free URL styled as a link, with no navigation attached: the deck
+  is a study surface, not a browser.
+- **The styled subset.** `<sub>…</sub>`, `<sup>…</sup>`, and `<ins>…</ins>`
+  display as subscript, superscript, and underline on every client, tags
+  dropped. One element opens at a time on a line, and each pair must close
+  in order; a mismatched, doubled, or unclosed pair is a tag-shape error.
+  Grading compares the inner text, so type `H2O` for `H<sub>2</sub>O`.
+- **Entities.** The full HTML5 named set (`&amp;`, `&euro;`, …) and the
+  numeric forms `&#65;` / `&#x41;` decode to their characters on display,
+  per CommonMark. Anything that is not a complete, valid entity stays
+  literal. A decoded character is content, never markup: `&#42;x&#42;`
+  shows `*x*` without italics, and `&lt;div&gt;` shows `<div>` without the
+  tag-shape error. Grading compares the decoded text, and the deck file
+  keeps the entity exactly as you wrote it.
+
+The usual protections apply on top: inline code, fenced blocks, and math
+bodies keep every one of these spellings literal, a whole-line `<!-- -->`
+comment protects its interior, and a complete image destination in angle
+brackets (`![diagram](<a b.png>)`) is an address, not a tag.
+
 ## Title, and deck-wide settings
 
 A deck's name, its deck-wide settings, and its machine-maintained deck ID all
