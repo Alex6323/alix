@@ -92,7 +92,9 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              leaves scope, the value is \\blank{{dropped}}.`\n\
              - An authored-choice card puts 3-5 GitHub task-list options directly below its \
              front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
-             distractors. Add a `> ` note explaining their mistaken premises.\n\
+             distractors, then `<!-- choices-single -->` on the line directly below the last \
+             option. Without that line the options stay a literal checklist instead of \
+             becoming a card. Add a `> ` note explaining their mistaken premises.\n\
              - A card table starts with `| front | back | note |`, then \
              `| --- | --- | --- |`, then one row per pair. Omit the note column when it is \
              unused.\n\
@@ -119,7 +121,9 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
         GenerateCardStyle::AuthoredChoices => Cow::Borrowed(
             "- Write EVERY card as authored multiple-choice. Directly below the `## ` front, \
              write 3-5 GitHub task-list options: exactly one checked `- [x]` correct answer \
-             and at least two unchecked `- [ ]` plausible distractors. Do not add a separate \
+             and at least two unchecked `- [ ]` plausible distractors. On the line directly \
+             below the last option, write `<!-- choices-single -->`; without it the options \
+             stay a literal checklist instead of becoming a card. Do not add a separate \
              plain answer or use `\\blank{...}`. Keep options parallel in form and length. \
              Add a short `> ` note explaining the mistaken premise behind the distractors. \
              For a mapping, make one authored-choice card per pair and use plausible values \
@@ -786,6 +790,85 @@ mod tests {
         assert!(p.contains("exactly one checked"));
         assert!(p.contains(choice::NOTE_POSITION_INSTRUCTION));
         assert!(!p.contains("no bullet"));
+    }
+
+    #[test]
+    fn authored_choice_prompt_contract_url_teaches_the_required_trailing_invocation() {
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+
+        let prompt = build_prompt("https://example.org", true, &cfg(10), &spec);
+
+        assert!(
+            prompt.contains("<!-- choices-single -->"),
+            "the URL template has no tasklist frontmatter, so the explicit style must teach the trailing invocation: {prompt}"
+        );
+    }
+
+    /// Every prompt that teaches the task-list shape must also teach the
+    /// invocation that turns it into a card: the URL template carries no
+    /// `tasklist:` default, so a taught shape without it is a checklist.
+    #[test]
+    fn every_card_style_teaching_task_list_options_also_teaches_the_invocation() {
+        for style in [GenerateCardStyle::Mixed, GenerateCardStyle::AuthoredChoices] {
+            let format = card_format(style);
+            if !format.contains("- [x]") {
+                continue;
+            }
+            assert!(
+                format.contains("<!-- choices-single -->"),
+                "{style:?} teaches task-list options without the trailing invocation, \
+                 so its output parses as a literal checklist: {format}"
+            );
+        }
+    }
+
+    #[test]
+    fn authored_choice_prompt_contract_url_shape_survives_the_validator() {
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+        let following_the_prompt = "---\nlink: https://example.org\n\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n<!-- choices-single -->\n";
+        let without_the_invocation = "---\nlink: https://example.org\n\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n";
+
+        assert!(
+            validate_card_style(following_the_prompt, &spec).is_ok(),
+            "the explicit URL prompt's prescribed task-list shape must pass its own validator"
+        );
+        assert!(
+            validate_card_style(without_the_invocation, &spec).is_err(),
+            "the shape the prompt used to prescribe is exactly what the validator rejects, \
+             which is why the instruction has to name the invocation"
+        );
+    }
+
+    #[test]
+    fn authored_choice_prompt_contract_local_source_has_a_deck_default() {
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::AuthoredChoices,
+        };
+
+        let prompt = build_prompt(".", false, &cfg(10), &spec);
+
+        assert!(prompt.contains("tasklist: choices-single"));
+        assert!(
+            validate_card_style(
+                "---\ntasklist: choices-single\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n",
+                &spec,
+            )
+            .is_ok(),
+            "the local-source template's deck default keeps the same bare task list valid"
+        );
     }
 
     #[test]
