@@ -1077,12 +1077,6 @@ fn scan(
                     && card.note.is_none()
                     && !card.divided
                 {
-                    // A title's directives govern the rows below it, so a
-                    // directive above the table body is machinery out of
-                    // position exactly as it is for ordinary content.
-                    // A title's directives govern the rows below it, so a
-                    // directive above the table body is machinery out of
-                    // position exactly as it is for ordinary content.
                     card.machinery_stays_trailing()?;
                     title = Some(card.front);
                     block_line = card.line;
