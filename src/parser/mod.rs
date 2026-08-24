@@ -6557,6 +6557,28 @@ a
         );
     }
 
+    /// A `given:` is stored verbatim and both study phases hand it to
+    /// `DisplayProjector::project` (`src/serve/dto.rs`), so an inline grammar
+    /// defect reaches the learner through an ordinary authored card.
+    #[test]
+    fn a_linked_image_in_a_given_keeps_its_outer_link() {
+        let deck = parse("## q\n---\na\n<!-- given: [![moon](moon.jpg)](/uri) -->\n");
+        assert_eq!(
+            vec!["[![moon](moon.jpg)](/uri)".to_string()],
+            deck.cards[0].givens,
+            "the given is stored exactly as authored"
+        );
+
+        let mut projector = crate::inline::DisplayProjector::default();
+        let runs = projector.project(&deck.cards[0].givens[0]);
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "![moon](moon.jpg)", text,
+            "and projecting it leaves the outer link's label whole rather than \
+             showing raw link syntax: {runs:?}"
+        );
+    }
+
     #[test]
     fn given_is_repeatable() {
         let deck = parse(

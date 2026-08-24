@@ -632,7 +632,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Link display follows the GFM inline-link grammar at its edges: a nested
   bracket pair stays inside the label (`[array[index]](url)` links) while
   a nested link beats the outer one (`[foo [bar](/inner)](/outer)` links
-  only `bar`, since links may not contain links), a parenthesized aside
+  only `bar`, since links may not contain links) while a nested IMAGE does
+  not, so `[![moon](moon.jpg)](/uri)` stays one link around its image, a
+  parenthesized aside
   with a raw space is no destination (the prose stays visible and
   graded), and an escaped `\(` never opens a destination. Angle
   destinations and quoted or parenthesized titles render as links, with a

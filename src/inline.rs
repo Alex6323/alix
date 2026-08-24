@@ -519,10 +519,11 @@ fn bracket_links(
     };
 
     let mut links: Vec<BracketLink> = Vec::new();
-    // GFM matches a `]` against the most recent opener, so the innermost
-    // link wins; forming one then deactivates every opener still stacked
-    // beneath it, which is the rule that links may not contain links.
-    let mut openers: Vec<usize> = Vec::new();
+    // GFM matches a `]` against the most recent opener, so the innermost link
+    // wins; forming one then deactivates the LINK openers stacked beneath it,
+    // which is the rule that links may not contain links. Image openers are a
+    // separate kind and survive it, since an image may sit inside a link.
+    let mut openers: Vec<(usize, bool)> = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
         if !plain(&glyphs[index]) {
@@ -531,15 +532,23 @@ fn bracket_links(
         }
         match glyphs[index].ch {
             '[' => {
-                openers.push(index);
+                let image = index
+                    .checked_sub(1)
+                    .and_then(|before| glyphs.get(before))
+                    .is_some_and(|glyph| plain(glyph) && glyph.ch == '!');
+                openers.push((index, image));
                 index += 1;
             }
             ']' => {
-                let Some(open) = openers.pop() else {
+                let Some((open, image)) = openers.pop() else {
                     index += 1;
                     continue;
                 };
                 let close = index;
+                if image {
+                    index = close + 1;
+                    continue;
+                }
                 if glyphs
                     .get(close + 1)
                     .is_some_and(|glyph| plain(glyph) && glyph.ch == '(')
@@ -550,7 +559,7 @@ fn bracket_links(
                         close,
                         syntax_end: close_paren,
                     });
-                    openers.clear();
+                    openers.retain(|(_, image)| *image);
                     index = close_paren + 1;
                     continue;
                 }
@@ -579,7 +588,7 @@ fn bracket_links(
                             close,
                             syntax_end: reference_close,
                         });
-                        openers.clear();
+                        openers.retain(|(_, image)| *image);
                         index = reference_close + 1;
                     } else {
                         index = close + 1;
@@ -592,7 +601,7 @@ fn bracket_links(
                         close,
                         syntax_end: close,
                     });
-                    openers.clear();
+                    openers.retain(|(_, image)| *image);
                 }
                 index = close + 1;
             }
@@ -2080,6 +2089,62 @@ mod tests {
                 .map(|run| run.text.as_str())
                 .collect::<String>(),
             "bar"
+        );
+    }
+
+    /// CommonMark stacks link openers and image openers as distinct kinds:
+    /// forming a link deactivates earlier LINK openers, and an image may sit
+    /// inside a link.
+    #[test]
+    fn an_image_opener_neither_forms_a_link_nor_deactivates_the_one_around_it() {
+        let runs = parse_inline("[![moon](moon.jpg)](/uri)");
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "![moon](moon.jpg)", text,
+            "the outer link owns the whole image as its label: {runs:?}"
+        );
+        assert!(
+            runs.iter().all(|run| run.link),
+            "and the label is what displays as the link: {runs:?}"
+        );
+
+        let runs = parse_inline("![moon](moon.jpg)");
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "![moon](moon.jpg)", text,
+            "a bare image is not a link and keeps its authored syntax: {runs:?}"
+        );
+        assert!(
+            runs.iter().all(|run| !run.link),
+            "nothing about an image is a link: {runs:?}"
+        );
+
+        let runs = parse_inline("[a](/one) and [![m](m.jpg)](/two)");
+        assert_eq!(
+            2,
+            runs.iter().filter(|run| run.link).count(),
+            "an image between links leaves both of them formed: {runs:?}"
+        );
+
+        let runs = parse_inline("![a [b](/c)](/d)");
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "![a b](/d)", text,
+            "an image label may still hold a working link: {runs:?}"
+        );
+        assert_eq!(
+            1,
+            runs.iter().filter(|run| run.link).count(),
+            "exactly the inner one: {runs:?}"
+        );
+
+        let source = "\\![not an image](/uri)";
+        let runs = parse_inline(source);
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(
+            "!not an image", text,
+            "an escaped bang is literal, so the bracket is an ordinary link \
+             opener: {runs:?}"
         );
     }
 
