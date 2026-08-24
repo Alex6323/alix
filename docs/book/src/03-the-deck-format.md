@@ -503,7 +503,11 @@ deck into that order, opt in with `alix doctor <deck>
 --repair-frontmatter-order`. The same applies to a card's trailing comment
 machinery (any order parses, the id last is canonical):
 `--repair-comment-order` rewrites each machinery run into the canonical
-order without touching content.
+order without touching content. A run holds recognized machinery only, so an
+invocation reads down through the card's own directive comments to the block
+above them, and an editorial comment or an unknown key ends the run: the
+invocation below one maps nothing and fails loud. One invocation consumes the
+block it maps, so a second below the first fails the same way.
 
 ## Escaping
 

@@ -1260,15 +1260,7 @@ fn scan(
         }
 
         if t == "---" {
-            let plain_trails = lines
-                .get(idx + 1)
-                .and_then(|line| {
-                    line.trim()
-                        .strip_prefix("<!--")
-                        .and_then(|s| s.strip_suffix("-->"))
-                })
-                .and_then(|body| Mapping::parse(trim_ws(body)))
-                == Some(Mapping::Plain);
+            let plain_trails = invocation_below(lines, idx + 1) == Some(Mapping::Plain);
             if plain_trails {
                 if current.is_none() {
                     section_line(
@@ -1408,7 +1400,6 @@ fn scan(
                             card.mapping = Some(mapping);
                         }
                     }
-                    mappable_block = block_above;
                     prev_blank = false;
                     prev_heading = false;
                     continue;
@@ -1440,7 +1431,9 @@ fn scan(
                         }
                         None => {}
                     }
-                    mappable_block = block_above;
+                    if machinery_rank(t).is_some() {
+                        mappable_block = block_above;
+                    }
                 } else {
                     let body = trim_ws(body);
                     if !body.is_empty() && !body.contains(char::is_whitespace) {
@@ -1819,6 +1812,44 @@ pub(crate) fn is_delimiter_row(line: &str) -> bool {
         })
 }
 
+/// A comment's place in the canonical trailing order, or None when the line
+/// is not recognized machinery: content, an editorial comment, an unknown
+/// key, or an unclosed comment. The forward scanner, both lookaheads, and
+/// the reorder repair share this one classification.
+fn machinery_rank(content: &str) -> Option<usize> {
+    let body = content
+        .trim()
+        .strip_prefix("<!--")?
+        .strip_suffix("-->")
+        .map(trim_ws)?;
+    if Mapping::parse(body).is_some() {
+        return Some(0);
+    }
+    let (key, _) = directive(body)?;
+    match key.as_str() {
+        "blank" | "cover" | "crop" => Some(2),
+        "at" => Some(3),
+        "id" => Some(4),
+        _ if is_known_card_key(&key) || matches!(key.as_str(), "diagram") => Some(1),
+        _ => None,
+    }
+}
+
+/// The invocation a block's trailing machinery run declares, read downward
+/// from the line after the block: recognized machinery is transparent, and
+/// anything else ends the run with the block unbound.
+fn invocation_below(lines: &[&str], from: usize) -> Option<Mapping> {
+    let mut at = from;
+    while machinery_rank(lines.get(at)?).is_some() {
+        let body = lines[at].trim().strip_prefix("<!--")?.strip_suffix("-->")?;
+        if let Some(mapping) = Mapping::parse(trim_ws(body)) {
+            return Some(mapping);
+        }
+        at += 1;
+    }
+    None
+}
+
 /// The mapping declared in a table-shaped block's trailing comment zone,
 /// looking down from its header line: rows first, then adjacent comment
 /// lines (the everything-trails position). None means the zone declares
@@ -1842,15 +1873,7 @@ fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<Mapping> 
         }
         idx += 1;
     }
-    while let Some(line) = lines.get(idx) {
-        let t = line.trim();
-        let body = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->"))?;
-        if let Some(mapping) = Mapping::parse(trim_ws(body)) {
-            return Some(mapping);
-        }
-        idx += 1;
-    }
-    None
+    invocation_below(lines, idx)
 }
 
 /// The opt-in doctor repair's half of spec choice 2 (liberal read,
@@ -1860,24 +1883,6 @@ fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<Mapping> 
 /// run, so the repair can never move a comment across content it might
 /// change the meaning of.
 pub fn reorder_card_comments(text: &str) -> Reorder {
-    fn machinery_rank(content: &str) -> Option<usize> {
-        let body = content
-            .trim()
-            .strip_prefix("<!--")?
-            .strip_suffix("-->")
-            .map(trim_ws)?;
-        if Mapping::parse(body).is_some() {
-            return Some(0);
-        }
-        let (key, _) = directive(body)?;
-        match key.as_str() {
-            "blank" | "cover" | "crop" => Some(2),
-            "at" => Some(3),
-            "id" => Some(4),
-            _ if is_known_card_key(&key) || matches!(key.as_str(), "diagram") => Some(1),
-            _ => None,
-        }
-    }
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     let mut out = String::with_capacity(text.len());
     let mut fence: Option<(char, usize)> = None;
@@ -5682,6 +5687,57 @@ a
             ),
             "a divider is a block choices cannot map, even reached through \
              machinery: {error:?}"
+        );
+
+        let deck = parse("## Q\nfirst\n\n---\n<!-- reveal: line -->\n<!-- plain -->\n");
+        assert!(
+            deck.cards[0].back.contains(&"---".to_string()),
+            "a recognized directive is transparent for a divider too, so plain \
+             still keeps it literal: {:?}",
+            deck.cards[0].back
+        );
+        assert_eq!(
+            Some(crate::depth::Reveal::Line),
+            deck.cards[0].reveal,
+            "and the directive it reached across still applies"
+        );
+
+        let error = err(
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- reveel: line -->\n<!-- choices-single -->\n",
+        );
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 5, ref word }
+                    if word == "choices-single"
+            ),
+            "an unknown key is not recognized machinery, so it ends the run \
+             instead of silently reclassifying the list: {error:?}"
+        );
+
+        let error = err(
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n<!-- choices-multiple -->\n",
+        );
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 5, ref word }
+                    if word == "choices-multiple"
+            ),
+            "one invocation consumes the block it binds, so a second cannot \
+             silently win: {error:?}"
+        );
+
+        let error = err(
+            "# Reference\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- editorial note -->\n<!-- cards -->\n",
+        );
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 6, ref word } if word == "cards"
+            ),
+            "an editorial comment ends a table's trailing zone exactly as it \
+             ends a checklist's: {error:?}"
         );
     }
 
