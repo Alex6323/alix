@@ -29,9 +29,8 @@ impl Direction {
 pub struct GroupMember {
     pub stamp: Option<Arc<str>>,
     pub hidden: Option<String>,
-    /// The member's directive line: the removal address of e        line.starts_with("[!") &&
-    /// line.contains(0x27]0x27) && Self::parse(line).is_none()actly this region, never a
-    /// card-block boundary.
+    /// The member's directive line: the removal address of exactly this
+    /// region, never a card-block boundary.
     pub line: usize,
 }
 

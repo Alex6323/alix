@@ -90,4 +90,51 @@ mod tests {
              assets/decks/tutorial.md (copy the canonical file over)"
         );
     }
+
+    /// A seeded deck is the first grammar a new learner reads, so it must
+    /// both use and describe the grammar that actually ships.
+    #[test]
+    fn every_seeded_deck_shows_the_note_grammar_and_the_teaching_one_names_it() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mobile_dir = root.join("mobile/alix");
+        if !mobile_dir.exists() {
+            eprintln!("skipping: no mobile/alix tree here (published crate)");
+            return;
+        }
+        let rows = [
+            (
+                root.join("assets/decks/tutorial.md"),
+                "the desktop seed",
+                false,
+            ),
+            (
+                mobile_dir.join("assets/decks/basics.md"),
+                "the mobile onboarding deck",
+                true,
+            ),
+        ];
+        for (path, why, teaches_the_grammar) in rows {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let text = std::fs::read_to_string(&path).unwrap();
+            let deck = crate::parser::parse(&name, &text).unwrap();
+            assert!(
+                deck.cards.iter().any(|card| card.note.is_some()),
+                "{why} shows a real note, so a grammar change that stops opening one is loud"
+            );
+            assert!(
+                deck.cards
+                    .iter()
+                    .all(|card| card.back.iter().all(|line| !line.starts_with('>'))),
+                "{why} authors every blockquote as a note, so one reaching an answer means the deck went stale"
+            );
+            if teaches_the_grammar {
+                assert!(
+                    deck.cards
+                        .iter()
+                        .any(|card| card.back.iter().any(|line| line.contains("[!NOTE]"))),
+                    "{why} teaches what opens a note, so its answer must name the badge that does"
+                );
+            }
+        }
+    }
 }

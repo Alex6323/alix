@@ -20,7 +20,8 @@ Partly or Got it (only Missed it brings it back)
 ## Which folder holds per-deck review progress?
 progress/
 
-## What marks a note line in a deck file?
-a leading > (blockquote) marker
+## What opens a note in a deck file?
+a blockquote whose first line is a badge, such as [!NOTE]
 > [!NOTE]
-> Like this line, shown after the reveal.
+> Like this one. A blockquote without a badge is a quotation, and it
+> reveals with the answer instead.
