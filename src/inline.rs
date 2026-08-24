@@ -41,11 +41,11 @@ pub struct DisplayProjector {
 
 impl DisplayProjector {
     pub fn project(&mut self, text: &str) -> Vec<InlineRun> {
-        project_text(text, Some(&mut self.renderer), false)
+        project_text(text, Some(&mut self.renderer), false, None)
     }
 
     pub fn project_context(&mut self, text: &str) -> Vec<InlineRun> {
-        project_text(text, Some(&mut self.renderer), true)
+        project_text(text, Some(&mut self.renderer), true, None)
     }
 
     pub(crate) fn project_display_math(&mut self, source: &str) -> Vec<InlineRun> {
@@ -87,11 +87,54 @@ pub fn parse_inline(text: &str) -> Vec<InlineRun> {
     DisplayProjector::default().project(text)
 }
 
+pub fn parse_inline_with(text: &str, definitions: &LinkDefinitions) -> Vec<InlineRun> {
+    project_text(text, None, false, Some(definitions))
+}
+
 pub fn strip_inline(text: &str) -> String {
-    project_text(text, None, false)
+    project_text(text, None, false, None)
         .into_iter()
         .map(|run| run.text)
         .collect()
+}
+
+pub fn strip_inline_with(text: &str, definitions: &LinkDefinitions) -> String {
+    parse_inline_with(text, definitions)
+        .into_iter()
+        .map(|run| run.text)
+        .collect()
+}
+
+/// A deck's link-definition labels, folded once for reference matching.
+pub struct LinkDefinitions(std::collections::HashSet<String>);
+
+impl LinkDefinitions {
+    pub fn new<I, S>(labels: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        Self(
+            labels
+                .into_iter()
+                .map(|label| fold_label(label.as_ref()))
+                .collect(),
+        )
+    }
+
+    fn contains(&self, candidate: &str) -> bool {
+        self.0.contains(&fold_label(candidate))
+    }
+}
+
+/// CommonMark label matching: case-insensitive with interior whitespace
+/// collapsed.
+fn fold_label(label: &str) -> String {
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 pub fn is_display_math_line(text: &str) -> bool {
@@ -110,13 +153,14 @@ fn project_text(
     text: &str,
     mut renderer: Option<&mut MathRenderer>,
     context: bool,
+    definitions: Option<&LinkDefinitions>,
 ) -> Vec<InlineRun> {
     let mut runs = Vec::new();
     for chunk in text.split_inclusive('\n') {
         let (line, newline) = chunk
             .strip_suffix('\n')
             .map_or((chunk, false), |line| (line, true));
-        let mut line_runs = project_line(line, renderer.as_deref_mut(), context);
+        let mut line_runs = project_line(line, renderer.as_deref_mut(), context, definitions);
         append_runs(&mut runs, &mut line_runs);
         if newline {
             push_run(
@@ -140,7 +184,11 @@ struct LineClassification {
     removed: Vec<bool>,
 }
 
-fn classify_line(text: &str, style_links: bool) -> LineClassification {
+fn classify_line(
+    text: &str,
+    style_links: bool,
+    definitions: Option<&LinkDefinitions>,
+) -> LineClassification {
     let chars: Vec<char> = text.chars().collect();
     let spans = math_spans(&chars);
     let mut glyphs = scan_glyphs(&chars, &spans);
@@ -149,12 +197,12 @@ fn classify_line(text: &str, style_links: bool) -> LineClassification {
     // because its gap rule needs the dropped spans still present.
     let mut labels = Vec::new();
     if style_links {
-        let links = bracket_links(&glyphs);
+        let links = bracket_links(&glyphs, definitions);
         let mut dropped = vec![false; glyphs.len()];
         let mut label = vec![false; glyphs.len()];
         for link in &links {
             dropped[link.open] = true;
-            dropped[link.close..=link.close_paren]
+            dropped[link.close..=link.syntax_end]
                 .iter_mut()
                 .for_each(|flag| *flag = true);
             label[link.open + 1..link.close]
@@ -246,6 +294,7 @@ fn project_line(
     text: &str,
     mut renderer: Option<&mut MathRenderer>,
     context: bool,
+    definitions: Option<&LinkDefinitions>,
 ) -> Vec<InlineRun> {
     let LineClassification {
         spans,
@@ -254,7 +303,7 @@ fn project_line(
         italic,
         strike,
         removed,
-    } = classify_line(text, true);
+    } = classify_line(text, true, definitions);
     let mut runs = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
@@ -327,7 +376,7 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
         italic,
         removed,
         ..
-    } = classify_line(text, false);
+    } = classify_line(text, false, None);
     let linked = link_syntax_mask(&glyphs);
     let byte_at: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
     let mut pieces: Vec<LinePiece> = Vec::new();
@@ -404,15 +453,23 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
 struct BracketLink {
     open: usize,
     close: usize,
-    close_paren: usize,
+    syntax_end: usize,
 }
 
-/// Finds every complete `[label](destination)` span in the glyph stream.
-/// An incomplete pattern is ordinary prose. One grammar, two consumers:
-/// `link_syntax_mask` drops the syntax from the maskable stream, and
-/// `classify_line` drops it from the display while styling the label.
-fn bracket_links(glyphs: &[Glyph]) -> Vec<BracketLink> {
+/// Finds every complete link span in the glyph stream: the inline
+/// `[label](destination)` form always, and with a definition table the
+/// reference forms `[label][name]`, `[label][]`, and `[label]` whose
+/// folded name is defined. An unmatched pattern is ordinary prose. One
+/// grammar, two consumers: `link_syntax_mask` drops the syntax from the
+/// maskable stream, and `classify_line` drops it from the display while
+/// styling the label.
+fn bracket_links(glyphs: &[Glyph], definitions: Option<&LinkDefinitions>) -> Vec<BracketLink> {
     let plain = |glyph: &Glyph| !glyph.escaped && !glyph.code && glyph.math.is_none();
+    let bracket_close = |from: usize| {
+        (from..glyphs.len())
+            .find(|&at| plain(&glyphs[at]) && matches!(glyphs[at].ch, ']' | '['))
+            .filter(|&at| glyphs[at].ch == ']')
+    };
     let mut links = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
@@ -420,42 +477,81 @@ fn bracket_links(glyphs: &[Glyph]) -> Vec<BracketLink> {
             index += 1;
             continue;
         }
-        let close = (index + 1..glyphs.len())
-            .find(|&at| plain(&glyphs[at]) && matches!(glyphs[at].ch, ']' | '['));
-        let Some(close) = close.filter(|&at| glyphs[at].ch == ']') else {
+        let Some(close) = bracket_close(index + 1) else {
             index += 1;
             continue;
         };
-        if glyphs.get(close + 1).map(|glyph| glyph.ch) != Some('(') {
-            index = close + 1;
+        if glyphs.get(close + 1).map(|glyph| glyph.ch) == Some('(') {
+            let mut depth = 1usize;
+            let Some(close_paren) = (close + 2..glyphs.len()).find(|&at| {
+                if !plain(&glyphs[at]) {
+                    return false;
+                }
+                match glyphs[at].ch {
+                    '(' => {
+                        depth += 1;
+                        false
+                    }
+                    ')' => {
+                        depth -= 1;
+                        depth == 0
+                    }
+                    _ => false,
+                }
+            }) else {
+                index = close + 1;
+                continue;
+            };
+            links.push(BracketLink {
+                open: index,
+                close,
+                syntax_end: close_paren,
+            });
+            index = close_paren + 1;
             continue;
         }
-        let mut depth = 1usize;
-        let Some(close_paren) = (close + 2..glyphs.len()).find(|&at| {
-            if !plain(&glyphs[at]) {
-                return false;
-            }
-            match glyphs[at].ch {
-                '(' => {
-                    depth += 1;
-                    false
-                }
-                ')' => {
-                    depth -= 1;
-                    depth == 0
-                }
-                _ => false,
-            }
-        }) else {
+        let Some(definitions) = definitions else {
             index = close + 1;
             continue;
         };
-        links.push(BracketLink {
-            open: index,
-            close,
-            close_paren,
-        });
-        index = close_paren + 1;
+        let label: String = glyphs[index + 1..close]
+            .iter()
+            .map(|glyph| glyph.ch)
+            .collect();
+        if glyphs.get(close + 1).map(|glyph| glyph.ch) == Some('[') {
+            let Some(reference_close) = bracket_close(close + 2) else {
+                index = close + 1;
+                continue;
+            };
+            let reference: String = glyphs[close + 2..reference_close]
+                .iter()
+                .map(|glyph| glyph.ch)
+                .collect();
+            let name = if reference.trim().is_empty() {
+                &label
+            } else {
+                &reference
+            };
+            if definitions.contains(name) {
+                links.push(BracketLink {
+                    open: index,
+                    close,
+                    syntax_end: reference_close,
+                });
+                index = reference_close + 1;
+            } else {
+                index = close + 1;
+            }
+            continue;
+        }
+        if definitions.contains(&label) {
+            links.push(BracketLink {
+                open: index,
+                close,
+                syntax_end: close,
+            });
+        }
+        index = close + 1;
     }
     links
 }
@@ -465,9 +561,9 @@ fn bracket_links(glyphs: &[Glyph]) -> Vec<BracketLink> {
 /// stream while the label stays visible text.
 fn link_syntax_mask(glyphs: &[Glyph]) -> Vec<bool> {
     let mut mask = vec![false; glyphs.len()];
-    for link in bracket_links(glyphs) {
+    for link in bracket_links(glyphs, None) {
         mask[link.open] = true;
-        mask[link.close..=link.close_paren]
+        mask[link.close..=link.syntax_end]
             .iter_mut()
             .for_each(|dropped| *dropped = true);
     }
@@ -1826,6 +1922,68 @@ mod tests {
         assert_eq!(
             strip_inline("see [the docs](https://alix.study)"),
             "see the docs"
+        );
+    }
+
+    #[test]
+    fn reference_links_render_as_styled_labels_when_their_label_is_defined() {
+        let defs = LinkDefinitions::new(["r", "Spaced  Label"]);
+        for (source, label, why) in [
+            (
+                "see [the ref][r] here",
+                "the ref",
+                "the full form styles its text",
+            ),
+            ("see [r][] here", "r", "the collapsed form is its own label"),
+            ("see [r] here", "r", "the shortcut form is its own label"),
+            ("see [R] here", "R", "labels match by case folding"),
+            (
+                "see [spaced label] here",
+                "spaced label",
+                "interior whitespace collapses before matching",
+            ),
+        ] {
+            let runs = parse_inline_with(source, &defs);
+            assert_eq!(runs.len(), 3, "{why}: {runs:?}");
+            assert_eq!(runs[0], plain("see "));
+            assert!(runs[1].link, "{why}");
+            assert_eq!(runs[1].text, label, "{why}");
+            assert_eq!(runs[2], plain(" here"));
+            assert_eq!(
+                strip_inline_with(source, &defs),
+                format!("see {label} here"),
+                "{why}: grading follows the same projection"
+            );
+        }
+
+        for (source, why) in [
+            ("see [nope] here", "an undefined shortcut stays prose"),
+            (
+                "see [text][nope] here",
+                "an undefined reference keeps the whole form prose",
+            ),
+            (
+                "see [nope][] here",
+                "an undefined collapsed form stays prose",
+            ),
+        ] {
+            let runs = parse_inline_with(source, &defs);
+            assert!(runs.iter().all(|run| !run.link), "{why}: {runs:?}");
+            let joined: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(joined, source, "{why}");
+        }
+
+        let inline_wins = parse_inline_with("[r](https://alix.study)", &defs);
+        assert_eq!(inline_wins.len(), 1, "{inline_wins:?}");
+        assert_eq!(
+            inline_wins[0].text, "r",
+            "the inline form owns its destination even when the label is defined"
+        );
+
+        let bare = parse_inline("just [r] alone");
+        assert!(
+            bare.iter().all(|run| !run.link),
+            "without definitions nothing changes: {bare:?}"
         );
     }
 
