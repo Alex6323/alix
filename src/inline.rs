@@ -930,20 +930,31 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
             index = close + 1;
             continue;
         }
-        if chars[index] == '`'
-            && let Some(offset) = chars[index + 1..].iter().position(|ch| *ch == '`')
-        {
-            let end = index + offset + 1;
-            glyphs.extend((index + 1..end).map(|raw_index| Glyph {
-                ch: chars[raw_index],
-                raw_index,
-                escaped: true,
-                code: true,
-                link: false,
-                subset: None,
-                math: None,
-            }));
-            index = end + 1;
+        if chars[index] == '`' {
+            let run = chars[index..].iter().take_while(|ch| **ch == '`').count();
+            let end = code_span_end(chars, index);
+            if end > index + run {
+                glyphs.extend((index + run..end - run).map(|raw_index| Glyph {
+                    ch: chars[raw_index],
+                    raw_index,
+                    escaped: true,
+                    code: true,
+                    link: false,
+                    subset: None,
+                    math: None,
+                }));
+            } else {
+                glyphs.extend((index..index + run).map(|raw_index| Glyph {
+                    ch: chars[raw_index],
+                    raw_index,
+                    escaped: false,
+                    code: false,
+                    link: false,
+                    subset: subset_slot[raw_index],
+                    math: None,
+                }));
+            }
+            index = end;
             continue;
         }
         glyphs.push(Glyph {
@@ -1656,6 +1667,46 @@ mod tests {
             "URL underscores are not emphasis"
         );
         assert_eq!(underscored[0].text, "https://a_b_c.io");
+    }
+
+    #[test]
+    fn an_autolink_inside_a_double_backtick_code_span_stays_code() {
+        assert_eq!(
+            vec![code("<https://alix.study>")],
+            parse_inline("``<https://alix.study>``"),
+            "the code-span delimiter owns its body before autolink recognition"
+        );
+    }
+
+    #[test]
+    fn code_span_runs_close_on_their_exact_length_in_the_projection() {
+        for (source, expected, why) in [
+            ("`x`", vec![code("x")], "a single-backtick span"),
+            ("``x``", vec![code("x")], "a double-backtick span"),
+            ("```x```", vec![code("x")], "a triple-backtick span"),
+            (
+                "``a`b``",
+                vec![code("a`b")],
+                "a shorter run inside the body stays body",
+            ),
+            (
+                "`` `x` ``",
+                vec![code(" `x` ")],
+                "a fully backtick-wrapped body stays body",
+            ),
+            (
+                "a``b",
+                vec![plain("a``b")],
+                "an unmatched double run stays literal text",
+            ),
+            (
+                "`a``",
+                vec![plain("`a``")],
+                "a longer run never closes a shorter opener",
+            ),
+        ] {
+            assert_eq!(expected, parse_inline(source), "{why}: {source:?}");
+        }
     }
 
     #[test]

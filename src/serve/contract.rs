@@ -873,7 +873,7 @@ fn carddto_sectioned_wire_shape() {
                 ],
                 [
                     {
-                        "text": "`rust"
+                        "text": "```rust"
                     }
                 ],
                 [
@@ -883,7 +883,7 @@ fn carddto_sectioned_wire_shape() {
                 ],
                 [
                     {
-                        "text": "`"
+                        "text": "```"
                     }
                 ]
             ],

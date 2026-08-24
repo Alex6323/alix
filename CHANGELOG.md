@@ -523,6 +523,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Multi-backtick code spans keep their body as code in the display
+  projection, found by Codex during reciprocal review: the glyph scan
+  paired a backtick to the next single backtick instead of matching the
+  opening run's exact length, so ``` ``<https://alix.study>`` ``` lost
+  its brackets and rendered as a link instead of literal code. The scan
+  now claims code spans with the same exact-run grammar as the parse
+  classifier, and an unmatched run stays literal text. Fence-shaped
+  lines inside per-line projections (a section's ```` ```rust ````
+  line) stay verbatim instead of losing backticks to phantom empty
+  spans.
+
+- Mobile renders subscript below and superscript above the baseline,
+  found by Codex during reciprocal review: both had been drawn as small
+  text on the normal baseline, so `H<sub>2</sub>O` and `x<sup>2</sup>`
+  were indistinguishable on the phone while web rendered them natively.
+
 - A doubled backslash before an image marker no longer produces a
   silent third state, found by Codex during reciprocal review: the
   tag-shape carve-out judged `\\![d](<x.png>)` a live image by escape

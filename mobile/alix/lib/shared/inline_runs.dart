@@ -105,15 +105,41 @@ class InlineRuns extends StatelessWidget {
       }
       return _mathErrorSpans(run);
     }
+    if (run.sub || run.sup) {
+      if (!contextHoles || !_holeMarker.hasMatch(run.text)) {
+        return [_scriptSpan(run)];
+      }
+    }
     if (!contextHoles) {
       return [TextSpan(text: run.text, style: _runStyle(run))];
     }
     return _contextSpans(run);
   }
 
+  InlineSpan _scriptSpan(InlineRunModel run) {
+    final text = Text(run.text, style: _runStyle(run), softWrap: false);
+    if (run.sup) {
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.aboveBaseline,
+        baseline: TextBaseline.alphabetic,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: (style.fontSize ?? 14) * 0.28),
+          child: text,
+        ),
+      );
+    }
+    return WidgetSpan(
+      alignment: PlaceholderAlignment.belowBaseline,
+      baseline: TextBaseline.alphabetic,
+      child: text,
+    );
+  }
+
+  static final _holeMarker = RegExp('⍰|⬚');
+
   List<InlineSpan> _contextSpans(InlineRunModel run) {
     final spans = <InlineSpan>[];
-    final marker = RegExp('⍰|⬚');
+    final marker = _holeMarker;
     var start = 0;
     for (final match in marker.allMatches(run.text)) {
       if (match.start > start) {

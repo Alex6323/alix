@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -71,6 +72,52 @@ Iterable<TextSpan> textSpans(InlineSpan span) sync* {
 }
 
 void main() {
+  testWidgets('subscript and superscript use opposite baselines', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testApp(const [
+        InlineRunModel(text: 'A', bold: false, italic: false, code: false),
+        InlineRunModel(
+          text: '2',
+          bold: false,
+          italic: false,
+          code: false,
+          sub: true,
+        ),
+        InlineRunModel(text: ' ', bold: false, italic: false, code: false),
+        InlineRunModel(
+          text: '3',
+          bold: false,
+          italic: false,
+          code: false,
+          sup: true,
+        ),
+      ]),
+    );
+
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find
+          .descendant(
+            of: find.byType(InlineRuns),
+            matching: find.byType(RichText),
+          )
+          .first,
+    );
+    final sub = paragraph
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 1, extentOffset: 2),
+        )
+        .single;
+    final sup = paragraph
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 3, extentOffset: 4),
+        )
+        .single;
+
+    expect(sub.top, greaterThan(sup.top));
+  });
+
   testWidgets('inline math uses SVG, foreground color, and one label', (
     tester,
   ) async {
