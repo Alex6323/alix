@@ -623,7 +623,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a raw space is no destination (the prose stays visible and
   graded), and an escaped `\(` never opens a destination. Angle
   destinations and quoted or parenthesized titles render as links, with a
-  title separated from a nonempty destination by whitespace; unbalanced
+  title always separated from its destination by whitespace, an explicit
+  empty `<>` destination included; unbalanced
   or whitespace-carrying bare destinations stay literal text, backticks
   included, so a code span cannot hide an unbalanced parenthesis from the
   destination grammar.

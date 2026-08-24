@@ -625,8 +625,7 @@ fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
         (at, at > start)
     };
     let (mut at, _) = skip_spaces(from);
-    let empty_destination = if raw(at) == Some('<') {
-        let opened = at;
+    if raw(at) == Some('<') {
         at += 1;
         while at < glyphs.len() && !matches!(raw(at), Some('<' | '>')) {
             at += 1;
@@ -635,9 +634,7 @@ fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
             return None;
         }
         at += 1;
-        at == opened + 2
     } else {
-        let opened = at;
         let mut depth = 0usize;
         loop {
             let ch = glyphs.get(at).map(|glyph| glyph.ch)?;
@@ -654,14 +651,13 @@ fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
         if depth != 0 {
             return None;
         }
-        at == opened
-    };
+    }
     let (after, separated) = skip_spaces(at);
     at = after;
     match raw(at) {
         Some(')') => Some(at),
         Some(open @ ('"' | '\'' | '(')) => {
-            if !separated && !empty_destination {
+            if !separated {
                 return None;
             }
             let closer = if open == '(' { ')' } else { open };
@@ -2089,11 +2085,21 @@ mod tests {
 
     #[test]
     fn an_angle_destination_title_requires_separating_whitespace() {
-        let source = "[label](<destination>\"title\")";
-        let runs = parse_inline(source);
-        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
-        assert_eq!(source, text);
-        assert!(runs.iter().all(|run| !run.link));
+        let rows = [
+            "[label](<destination>\"title\")",
+            "[label](<>\"title\")",
+            "[label](<>'title')",
+            "[label](<>(title))",
+        ];
+        for source in rows {
+            let runs = parse_inline(source);
+            let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(source, text, "an unseparated title leaves {source} literal");
+            assert!(
+                runs.iter().all(|run| !run.link),
+                "an unseparated title is not a link: {source}"
+            );
+        }
     }
 
     #[test]
@@ -2150,6 +2156,11 @@ mod tests {
                 "balanced parens stay legal in a bare destination",
             ),
             ("[a]()", "a", "an empty destination is a valid link"),
+            (
+                "[a](<> \"the title\")",
+                "a",
+                "an explicit empty destination still separates its title",
+            ),
             (
                 "[a](url\u{0B}\"the title\")",
                 "a",
