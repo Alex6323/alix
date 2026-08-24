@@ -505,106 +505,101 @@ fn bracket_links(
     definitions: Option<&LinkDefinitions>,
 ) -> Vec<BracketLink> {
     let plain = |glyph: &Glyph| !glyph.escaped && !glyph.code && glyph.math.is_none();
-    // Link text balances nested brackets (GFM); a reference label does not.
-    let label_close = |from: usize| {
-        let mut depth = 1usize;
-        (from..glyphs.len()).find(|&at| {
-            if !plain(&glyphs[at]) {
-                return false;
-            }
-            match glyphs[at].ch {
-                '[' => {
-                    depth += 1;
-                    false
-                }
-                ']' => {
-                    depth -= 1;
-                    depth == 0
-                }
-                _ => false,
-            }
-        })
-    };
     let bracket_close = |from: usize| {
         (from..glyphs.len())
             .find(|&at| plain(&glyphs[at]) && matches!(glyphs[at].ch, ']' | '['))
             .filter(|&at| glyphs[at].ch == ']')
     };
-    let mut links = Vec::new();
+    // Labels match on their authored spelling (escapes and entities as
+    // written), so candidates slice the raw chars, never decoded glyphs.
+    let raw_span = |open: usize, shut: usize| -> String {
+        chars[glyphs[open].raw_index + 1..glyphs[shut].raw_index]
+            .iter()
+            .collect()
+    };
+
+    let mut links: Vec<BracketLink> = Vec::new();
+    // GFM matches a `]` against the most recent opener, so the innermost
+    // link wins; forming one then deactivates every opener still stacked
+    // beneath it, which is the rule that links may not contain links.
+    let mut openers: Vec<usize> = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
-        if !(plain(&glyphs[index]) && glyphs[index].ch == '[') {
+        if !plain(&glyphs[index]) {
             index += 1;
             continue;
         }
-        let Some(close) = label_close(index + 1) else {
-            index += 1;
-            continue;
-        };
-        if glyphs
-            .get(close + 1)
-            .is_some_and(|glyph| plain(glyph) && glyph.ch == '(')
-        {
-            match link_tail_end(glyphs, close + 2) {
-                Some(close_paren) => {
+        match glyphs[index].ch {
+            '[' => {
+                openers.push(index);
+                index += 1;
+            }
+            ']' => {
+                let Some(open) = openers.pop() else {
+                    index += 1;
+                    continue;
+                };
+                let close = index;
+                if glyphs
+                    .get(close + 1)
+                    .is_some_and(|glyph| plain(glyph) && glyph.ch == '(')
+                    && let Some(close_paren) = link_tail_end(glyphs, close + 2)
+                {
                     links.push(BracketLink {
-                        open: index,
+                        open,
                         close,
                         syntax_end: close_paren,
                     });
+                    openers.clear();
                     index = close_paren + 1;
+                    continue;
                 }
-                None => index = close + 1,
-            }
-            continue;
-        }
-        let Some(definitions) = definitions else {
-            index = close + 1;
-            continue;
-        };
-        // Labels match on their authored spelling (escapes and entities as
-        // written), so candidates slice the raw chars, never decoded glyphs.
-        let raw_span = |open: usize, shut: usize| -> String {
-            chars[glyphs[open].raw_index + 1..glyphs[shut].raw_index]
-                .iter()
-                .collect()
-        };
-        let label = raw_span(index, close);
-        if glyphs
-            .get(close + 1)
-            .is_some_and(|glyph| plain(glyph) && glyph.ch == '[')
-        {
-            let Some(reference_close) = bracket_close(close + 2) else {
+                let Some(definitions) = definitions else {
+                    index = close + 1;
+                    continue;
+                };
+                let label = raw_span(open, close);
+                if glyphs
+                    .get(close + 1)
+                    .is_some_and(|glyph| plain(glyph) && glyph.ch == '[')
+                {
+                    let Some(reference_close) = bracket_close(close + 2) else {
+                        index = close + 1;
+                        continue;
+                    };
+                    let reference = raw_span(close + 1, reference_close);
+                    let name = if reference.trim().is_empty() {
+                        &label
+                    } else {
+                        &reference
+                    };
+                    if definitions.contains(name) {
+                        links.push(BracketLink {
+                            open,
+                            close,
+                            syntax_end: reference_close,
+                        });
+                        openers.clear();
+                        index = reference_close + 1;
+                    } else {
+                        index = close + 1;
+                    }
+                    continue;
+                }
+                if definitions.contains(&label) {
+                    links.push(BracketLink {
+                        open,
+                        close,
+                        syntax_end: close,
+                    });
+                    openers.clear();
+                }
                 index = close + 1;
-                continue;
-            };
-            let reference = raw_span(close + 1, reference_close);
-            let name = if reference.trim().is_empty() {
-                &label
-            } else {
-                &reference
-            };
-            if definitions.contains(name) {
-                links.push(BracketLink {
-                    open: index,
-                    close,
-                    syntax_end: reference_close,
-                });
-                index = reference_close + 1;
-            } else {
-                index = close + 1;
             }
-            continue;
+            _ => index += 1,
         }
-        if definitions.contains(&label) {
-            links.push(BracketLink {
-                open: index,
-                close,
-                syntax_end: close,
-            });
-        }
-        index = close + 1;
     }
+    links.sort_by_key(|link| link.open);
     links
 }
 
@@ -614,33 +609,39 @@ fn bracket_links(
 /// with no unescaped whitespace or controls and only balanced unescaped
 /// parentheses, then an optional `"..."`/`'...'`/`(...)` title.
 fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
-    let plain = |at: usize| {
+    // A code span marks its glyphs `escaped` so emphasis skips them; to the
+    // destination grammar they are raw punctuation.
+    let raw = |at: usize| {
         glyphs
             .get(at)
-            .filter(|glyph| !glyph.escaped && !glyph.code && glyph.math.is_none())
+            .filter(|glyph| glyph.entity_end.is_none() && (glyph.code || !glyph.escaped))
             .map(|glyph| glyph.ch)
     };
     let skip_spaces = |mut at: usize| {
-        while plain(at).is_some_and(|ch| ch.is_ascii_whitespace()) {
+        let start = at;
+        while raw(at).is_some_and(|ch| ch.is_ascii_whitespace()) {
             at += 1;
         }
-        at
+        (at, at > start)
     };
-    let mut at = skip_spaces(from);
-    if plain(at) == Some('<') {
+    let (mut at, _) = skip_spaces(from);
+    let empty_destination = if raw(at) == Some('<') {
+        let opened = at;
         at += 1;
-        while at < glyphs.len() && !matches!(plain(at), Some('<' | '>')) {
+        while at < glyphs.len() && !matches!(raw(at), Some('<' | '>')) {
             at += 1;
         }
-        if plain(at) != Some('>') {
+        if raw(at) != Some('>') {
             return None;
         }
         at += 1;
+        at == opened + 2
     } else {
+        let opened = at;
         let mut depth = 0usize;
         loop {
             let ch = glyphs.get(at).map(|glyph| glyph.ch)?;
-            match plain(at) {
+            match raw(at) {
                 Some(')') if depth == 0 => break,
                 Some(')') => depth -= 1,
                 Some('(') => depth += 1,
@@ -653,23 +654,28 @@ fn link_tail_end(glyphs: &[Glyph], from: usize) -> Option<usize> {
         if depth != 0 {
             return None;
         }
-    }
-    at = skip_spaces(at);
-    match plain(at) {
+        at == opened
+    };
+    let (after, separated) = skip_spaces(at);
+    at = after;
+    match raw(at) {
         Some(')') => Some(at),
         Some(open @ ('"' | '\'' | '(')) => {
+            if !separated && !empty_destination {
+                return None;
+            }
             let closer = if open == '(' { ')' } else { open };
             at += 1;
             while at < glyphs.len()
-                && !matches!(plain(at), Some(ch) if ch == closer || (open == '(' && ch == '('))
+                && !matches!(raw(at), Some(ch) if ch == closer || (open == '(' && ch == '('))
             {
                 at += 1;
             }
-            if plain(at) != Some(closer) {
+            if raw(at) != Some(closer) {
                 return None;
             }
-            at = skip_spaces(at + 1);
-            (plain(at) == Some(')')).then_some(at)
+            let (after_title, _) = skip_spaces(at + 1);
+            (raw(after_title) == Some(')')).then_some(after_title)
         }
         _ => None,
     }
@@ -2052,6 +2058,46 @@ mod tests {
             runs.iter().all(|run| run.link),
             "the valid GFM link label stays styled: {runs:?}"
         );
+    }
+
+    #[test]
+    fn an_inner_link_prevents_an_outer_link_from_forming() {
+        let runs = parse_inline("[foo [bar](/inner)](/outer)");
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!("[foo bar](/outer)", text);
+        assert_eq!(
+            runs.iter()
+                .filter(|run| run.link)
+                .map(|run| run.text.as_str())
+                .collect::<String>(),
+            "bar"
+        );
+    }
+
+    #[test]
+    fn an_angle_destination_title_requires_separating_whitespace() {
+        let source = "[label](<destination>\"title\")";
+        let runs = parse_inline(source);
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(source, text);
+        assert!(runs.iter().all(|run| !run.link));
+    }
+
+    #[test]
+    fn backticks_do_not_hide_unbalanced_destination_parentheses() {
+        let source = "[label](`x(y`)";
+        let runs = parse_inline(source);
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!("[label](x(y)", text);
+        assert!(runs.iter().all(|run| !run.link));
+    }
+
+    #[test]
+    fn backticks_keep_balanced_destination_parentheses_legal() {
+        let runs = parse_inline("[label](`x(y)`)");
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!("label", text);
+        assert!(runs.iter().all(|run| run.link));
     }
 
     #[test]
